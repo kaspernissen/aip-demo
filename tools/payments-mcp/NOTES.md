@@ -199,41 +199,52 @@ so Task 7/8's cross-service attribute queries see one convention, not two.
 
 ## 4. Does MCP trace context cross the client → payments-mcp boundary?
 
-**As things stand: no — and this is expected at this stage, not a bug.** The e2e test
-(`tests/e2e/test_payments_mcp_trace.py`) drives the MCP tool calls through a plain
-`mcp.ClientSession`/`streamablehttp_client`, which has no OpenTelemetry instrumentation
-of its own and never had a `TracerProvider` configured in the test process. It sends
-no `traceparent` header and injects nothing into `params._meta`. Consequently,
-`payments-mcp`'s `tools/call execute_payment` span is always the **root** of a fresh
-trace (`parent_id = None`), regardless of who called it.
+**Updated in the fix round (A14a).** The original version of this section reported "no,
+untested" because the e2e test's plain `mcp.ClientSession` sent no `traceparent` and
+injected nothing into `params._meta`. A reviewer correctly identified that this was an
+avoidable gap, not a genuine "cannot be known up front" case (see task-3-review.md
+finding 1 and amendment A14a): `mcp.types.CallToolRequestParams` has a `meta` field
+aliased to the wire key `_meta` (`RequestParams.Meta`, which allows extra fields), and
+FastMCP's `_get_parent_trace_context()` reads exactly that key
+(`TRACE_PARENT_KEY = "traceparent"`, `fastmcp/telemetry.py`). The test now injects a
+self-minted `traceparent` into `params._meta` via `mcp`'s lower-level
+`ClientSession.send_request()` with a hand-built `CallToolRequest` (see
+`tests/e2e/test_payments_mcp_trace.py`), rather than assuming this could only be
+verified by production code.
 
-What **is** confirmed working, entirely within this task's scope: once the tool-call
-span exists, everything downstream of it inside payments-mcp propagates correctly —
-the outbound `httpx` `POST` client span is a child of the tool-call span, and
-payments-api's own server span (Go, `otelhttp`) is in turn a child of that client
-span, with no orphans, one root, and the stable HTTP semconv attribute names visible
-on both hops (see §3). That chain uses ordinary W3C `traceparent` HTTP-header
-propagation end-to-end (payments-mcp → payments-api), which is unrelated to the
-MCP-specific `params._meta` mechanism.
+**Result: server-side `params._meta` extraction already works on FastMCP 4.0.3.**
+`test_tool_call_span_is_parented_to_the_injected_context` asserts the `tools/call
+execute_payment` span's `parent_id` equals the span ID this test invented and sent —
+and it passes, repeatably, against the real deployed pod. FastMCP correctly extracts
+`traceparent` from an incoming `params._meta` and parents its own span there. Combined
+with the pre-existing finding that everything *downstream* of that span (the outbound
+httpx call and payments-api's own server span) is correctly parented via ordinary W3C
+HTTP-header propagation, this means: **the entire chain from an inbound
+`params._meta.traceparent` through to payments-api's server span is provably intact end
+to end**, when something injects that `_meta` field.
 
-The still-open question — whether a real *caller's* trace context (sent via MCP
-`params._meta`, per the MCP transport spec) gets extracted by FastMCP and joined into
-`payments-mcp`'s span — is explicitly **Task 7's job, not this task's**. No
-header-based workaround was added, and none should be: MCP does not propagate trace
-context in HTTP headers, and faking that would produce a passing test with a false
-architecture. Task 7 should verify FastMCP's native extraction of `traceparent` from
-incoming `params._meta` directly, since this task never exercised that path (its own
-test client never populates it).
+**This narrows Task 7's remaining work to the client side.** The one piece not yet
+exercised in production is the settlement-agent's own MCP client actually *performing*
+this injection when it calls payments-mcp — this test proves the mechanism works, it
+does not make settlement-agent do it. Per A14a, a test injecting `_meta` for itself is
+test infrastructure, not a pre-emption of Task 7's job. No HTTP-header workaround was
+used anywhere; MCP does not propagate trace context in HTTP headers, and faking that
+would produce a passing test with a false architecture.
 
 ## 5. Trace-assembly timing note (unrelated to any of the above)
 
-The first raw run of the e2e trace test intermittently found `payments-api`'s server
-span missing from the freshly-fetched trace (`api_spans == []`), even though the
-propagation is correct — confirmed by immediately re-querying the same trace ID by ID
-a few seconds later and seeing the complete 3-span trace with no orphans. This is a
-`BatchSpanProcessor` export-latency race in `wait_for_trace` (which returns as soon as
-the *matching* span is visible, not once every expected descendant has landed), not a
-propagation bug. `tests/e2e/test_payments_mcp_trace.py`'s `mcp_trace` fixture polls the
-same trace ID (via the harness's existing `get_trace`) for up to 30s until the
-payments-api span is present before handing the trace to the assertions — no change to
-`tests/harness/jaeger.py` itself.
+Even with `wait_for_trace_id` (by-ID lookup, added in the fix round), the e2e trace
+test intermittently found `payments-api`'s server span missing from the
+freshly-fetched trace (`api_spans == []`) on the very first fetch — `wait_for_trace_id`
+returns as soon as the span named in its `operation` argument (`tools/call
+execute_payment`) is visible, not once every expected descendant span (exported by a
+*different* process's own `BatchSpanProcessor`) has also landed. This reproduced in a
+real fix-round test run (see the fix-round report) even though propagation itself is
+correct — confirmed by immediately re-querying the same trace ID and seeing the
+complete 3-span trace with no orphans moments later. `tests/e2e/test_payments_mcp_trace.py`'s
+`executed_call` fixture therefore polls the same trace ID (via the harness's existing
+public `get_trace`) for up to 30s after `wait_for_trace_id` returns, until the
+payments-api span is present, before handing the trace to the assertions. No change to
+`tests/harness/jaeger.py` itself. Empirically this step is still necessary — it is not
+made redundant by `wait_for_trace_id`'s own polling, since that only waits for one
+named span, not for spans from a second service.
