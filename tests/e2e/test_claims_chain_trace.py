@@ -154,19 +154,43 @@ def chain_trace():
     # xfailing forever instead of flipping to an unexpected pass the day that
     # gap actually closes — a silent false negative in the one signal
     # `strict=True` exists to surface. So: once is_complete() holds (or its
-    # own deadline elapses), keep polling until the *total span count* is
-    # unchanged across two consecutive polls. This can only make the fixture
-    # wait longer or accept a bigger trace than before — it never accepts an
-    # earlier or smaller snapshot than is_complete() already required, so the
-    # wait condition only gets stricter, never looser.
-    stability_deadline = time.time() + 30
+    # own deadline elapses), keep polling until the *total span count* has
+    # gone unchanged for a continuous quiet window.
+    #
+    # Amendment A20a (round-2 re-review finding): that quiet window MUST be
+    # strictly longer than the export interval it is waiting on, or it is not
+    # a quiet window at all. Every service here (claims-agent,
+    # settlement-agent, and payments-mcp/payments-api once Task 7 lands) uses
+    # `BatchSpanProcessor(OTLPSpanExporter())` with no schedule_delay_millis
+    # override (see each service's bootstrap.py), i.e. the OTel SDK's default
+    # 5s export delay. Round 1's quiet window was a single 2s gap between two
+    # polls — shorter than that 5s delay — so the common case of three
+    # independent 5s timers would very often land a batch *after* a 2s gap
+    # already looked quiet, and the loop would exit early anyway. Fixed: track
+    # the wall-clock time of the last observed span-count change and only
+    # accept the trace as stable once that change is more than
+    # QUIET_WINDOW_S (10s) in the past — any span landing resets the clock.
+    # 10s, not just-over-5s: a bare 1s margin over the nominal 5s export
+    # delay is not enough once real network/collector latency is added on
+    # top of the timer itself (a timing simulation built while implementing
+    # this amendment demonstrated a 6s window missing a batch that landed at
+    # 6.5s for exactly that reason). If the BatchSpanProcessor's schedule
+    # delay is ever tuned away from the SDK default in any service's
+    # bootstrap.py, QUIET_WINDOW_S must move with it.
+    QUIET_WINDOW_S = 10  # comfortably > 5s BatchSpanProcessor default export delay (A20a)
+    POLL_INTERVAL_S = 1
+    stability_deadline = time.time() + 90
     previous_count = len(trace.spans)
-    time.sleep(2)
-    trace = client.get_trace(trace_id)
-    while len(trace.spans) != previous_count and time.time() < stability_deadline:
-        previous_count = len(trace.spans)
-        time.sleep(2)
+    last_change = time.time()
+    while (
+        time.time() - last_change < QUIET_WINDOW_S and time.time() < stability_deadline
+    ):
+        time.sleep(POLL_INTERVAL_S)
         trace = client.get_trace(trace_id)
+        count = len(trace.spans)
+        if count != previous_count:
+            previous_count = count
+            last_change = time.time()
 
     return SimpleNamespace(
         trace=trace, trace_id=trace_id, span_id=span_id, claim_id=claim_id, result=result
