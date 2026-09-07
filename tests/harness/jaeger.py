@@ -142,6 +142,40 @@ class JaegerClient:
             f"tags={tags!r} within {timeout}s{detail}"
         )
 
+    def wait_for_trace_id(
+        self,
+        trace_id: str,
+        operation: str | None = None,
+        timeout: float = 60.0,
+        interval: float = 2.0,
+    ) -> Trace:
+        """Poll for a trace by an ID the caller already knows (e.g. one it minted
+        itself and sent as a `traceparent` header), rather than searching for it
+        by service/operation/tags. Use this whenever the test is the request's
+        origin: it removes any dependence on Jaeger's positional ordering or on
+        attribute values staying unique across pod restarts.
+        """
+        deadline = time.time() + timeout
+        last_error: Exception | None = None
+        last_trace: Trace | None = None
+        while time.time() < deadline:
+            try:
+                trace = self.get_trace(trace_id)
+                last_trace = trace
+                if operation is None or trace.has_span(operation):
+                    return trace
+            except (requests.RequestException, AssertionError) as exc:
+                last_error = exc
+            time.sleep(interval)
+        if last_trace is not None:
+            raise AssertionError(
+                f"trace {trace_id!r} found but no span named {operation!r} "
+                f"within {timeout}s; present: "
+                f"{sorted(s.operation for s in last_trace.spans)}"
+            )
+        detail = f" (last error: {last_error})" if last_error else ""
+        raise AssertionError(f"trace {trace_id!r} not found within {timeout}s{detail}")
+
 
 def assert_single_root(trace: Trace) -> None:
     roots = trace.roots()
