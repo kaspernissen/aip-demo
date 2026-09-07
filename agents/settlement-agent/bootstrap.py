@@ -7,6 +7,11 @@ original sketch) because settlement-agent's MCP client
 (`mcp.client.streamable_http`) is httpx-based under the hood, and A13
 requires measuring this service's own outbound HTTP spans rather than
 assuming payments-mcp's spelling carries over.
+
+A18: a2a-sdk 0.3.7's own telemetry does not extract inbound W3C trace context
+(verified empirically — see NOTES.md); StarletteInstrumentor (applied to the
+built app in main.py, since the a2a-sdk's Starlette instance doesn't exist
+until then) is what does that, using the global propagator configured below.
 """
 from __future__ import annotations
 
@@ -15,9 +20,13 @@ import os
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.propagate import set_global_textmap
+from opentelemetry.propagators.composite import CompositePropagator
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+from opentelemetry.baggage.propagation import W3CBaggagePropagator
 
 
 def configure() -> None:
@@ -32,6 +41,17 @@ def configure() -> None:
     provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
+
+    # W3C trace-context + baggage, explicitly, matching payments-api's Go
+    # side (systems/payments-api/telemetry.go:
+    # propagation.NewCompositeTextMapPropagator(propagation.TraceContext{},
+    # propagation.Baggage{})) — this is already OTel Python's own default
+    # (OTEL_PROPAGATORS defaults to "tracecontext,baggage"), but A18 asks for
+    # it registered explicitly, the same way the rest of the repo does, not
+    # left to an implicit default.
+    set_global_textmap(
+        CompositePropagator([TraceContextTextMapPropagator(), W3CBaggagePropagator()])
+    )
 
     # Emits CLIENT spans for the outbound HTTP calls the MCP streamable-http
     # transport makes to payments-mcp, and injects trace context into those

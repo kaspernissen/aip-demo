@@ -42,7 +42,12 @@ uvicorn==0.34.0
 opentelemetry-sdk==1.44.0
 opentelemetry-exporter-otlp-proto-http==1.44.0
 opentelemetry-instrumentation-httpx==0.65b0
+opentelemetry-instrumentation-starlette==0.65b0
 ```
+
+(`opentelemetry-instrumentation-starlette` was added in fix round 1, A18 —
+see §4a — and resolves at the same `0.65b0` line with zero additional
+conflicts.)
 
 A clean `uv venv --python 3.13 .venv && uv pip install -r requirements.txt`
 resolves with zero conflicts against this file as committed.
@@ -287,51 +292,165 @@ gap rather than by Task 7's browser-origin case.
 **This is worth an upstream issue distinct from the attribute-gap one in
 §3**: `a2a-sdk[telemetry]` instruments the framework's own call graph but
 does not wire up W3C trace-context extraction for the transport it serves
-over (HTTP via Starlette). No fix was added in this task — adding
-`opentelemetry-instrumentation-asgi`/`-starlette` ourselves was considered
-and deliberately **not** done, since it is a nontrivial architectural
-addition beyond this task's brief and amendments, not a "measure and
-converge" case like A13's httpx spelling. Recorded here for Task 7/8 and any
-future task to make that call deliberately, not as a byproduct of this one.
+over (HTTP via Starlette). The rest of this section (as originally written,
+before the fix round below) considered adding ASGI instrumentation ourselves
+and deliberately did not, judging it a nontrivial architectural addition
+beyond this task's scope. **The coordinator overruled that call in fix round
+1 — see §4a.** The upstream gap in `a2a-sdk` itself is unchanged by that fix
+and remains open: this section documents what `a2a-sdk[telemetry]` does and
+does not do on its own, unmodified by anything this repo adds on top.
 
-## 5. Trace-context propagation, hop by hop — the true starting point (as things stand)
+## 4a. Fix round 1 (A18): ASGI instrumentation fixes inbound extraction — verified by capture
 
-- **A2A client → settlement-agent: does NOT propagate.** See §4. Every A2A
-  request starts a brand-new root trace inside settlement-agent, regardless
-  of any `traceparent` header the caller sends.
-- **settlement-agent (internal) is coherent.** Once a request lands, all of
-  settlement-agent's own spans — the 20 `a2a.server.*` spans and this
+**Ruling (A18):** hand-rolling spans to compensate for §4 would be wrong, but
+instrumenting the ASGI application underneath `a2a-sdk` is real OTel
+framework instrumentation, not a workaround, and settlement-agent is the
+first of several A2A servers in this milestone — fixing it here means
+Tasks 5/6 follow the same pattern instead of each hitting the same wall.
+
+**Package verified against the installed `a2a-sdk`, not assumed:**
+`A2AStarletteApplication.build()` (`a2a/server/apps/jsonrpc/starlette_app.py`)
+returns a plain `starlette.applications.Starlette` instance (confirmed via
+`inspect.getsource`), so `opentelemetry-instrumentation-starlette` — not the
+lower-level generic `-asgi` package directly — is the applicable
+instrumentation; it pulls in `opentelemetry-instrumentation-asgi==0.65b0` as
+its own dependency, resolved cleanly (`uv pip install
+opentelemetry-instrumentation-starlette` → `opentelemetry-instrumentation-
+starlette==0.65b0`, `opentelemetry-instrumentation-asgi==0.65b0`, no
+conflicts against the pins in §1). Pinned in `requirements.txt`:
+`opentelemetry-instrumentation-starlette==0.65b0`.
+
+**Where it's applied:** `StarletteInstrumentor().instrument_app(app)` in
+`main.py`, right after `A2AStarletteApplication(...).build()` returns — the
+per-app `instrument_app` API is used (not the global `.instrument()`) since
+the `Starlette` instance doesn't exist until `build()` returns.
+
+**Propagators registered explicitly (A18):** `bootstrap.py` now calls
+`opentelemetry.propagate.set_global_textmap` with a `CompositePropagator`
+of `TraceContextTextMapPropagator` + `W3CBaggagePropagator`, matching
+`systems/payments-api/telemetry.go`'s
+`propagation.NewCompositeTextMapPropagator(propagation.TraceContext{},
+propagation.Baggage{})`. This is already OTel Python's own default
+(`OTEL_PROPAGATORS` defaults to `"tracecontext,baggage"`), so this call
+changes no behaviour — it makes the choice explicit in code, the same way
+the Go side does, rather than leaving it to an implicit default.
+
+**Verified by capture — before and after, same technique as §4:**
+
+Before (§4, unchanged, kept as evidence): injected `traceparent`
+`00-9309938991454833960210249664e14a-4af77f0781894886-01` on the real
+deployed pod → entry span `d27e6099bd47df64e06f5b8a2f683c9a` (unrelated trace
+ID, `parent_id: null`).
+
+After (this fix, real deployed pod, fresh capture):
+
+```
+injected trace_id 63748f22e3f04ed7be13c115a279ab86  span_id 48f523bbcc714961
+...
+settlement-agent :: POST / [kind=server] parent=48f523bbcc714961
+{
+  "client.address": "127.0.0.1", "client.port": 48050,
+  "http.request.method": "POST", "http.response.status_code": 200,
+  "http.route": "/", "internal.span.format": "otlp",
+  "network.protocol.version": "1.1",
+  "otel.scope.name": "opentelemetry.instrumentation.starlette",
+  "otel.scope.version": "0.65b0", "server.address": "127.0.0.1:9002",
+  "server.port": 9002, "span.kind": "server", "url.path": "/",
+  "url.scheme": "http", "user_agent.original": "python-httpx/0.28.1"
+}
+trace_id (jaeger): 63748f22e3f04ed7be13c115a279ab86
+```
+
+The entry span's trace ID now **equals** the injected trace ID, and its
+`parent_id` **equals** the injected span ID — exactly what A14 requires, and
+the opposite of §4's finding. `tests/e2e/test_settlement_agent_trace.py::
+test_settlement_agent_entry_span_is_parented_to_the_injected_context` asserts
+this directly against a live deployment. A negative control was also run as
+part of this fix round: temporarily sending no `traceparent` header
+reproduces §4's original symptom exactly (`wait_for_trace_id` times out
+after 90s, `404 Client Error: Not Found` on every poll of the injected trace
+ID) — confirming the test would fail if this fix ever regressed. The file
+was restored to its committed state immediately after and `git diff` showed
+no residual change.
+
+**New span, new semconv spelling to check (A13):** `StarletteInstrumentor`'s
+`POST /` span is itself an HTTP-facing span, subject to the same legacy/
+stable spelling question as the outbound httpx spans in §6. Measured the
+same way: default is legacy (`http.method`, `http.url`, `http.status_code`,
+`net.peer.ip`); with `OTEL_SEMCONV_STABILITY_OPT_IN=http` (already set on
+`deploy/k8s/settlement-agent.yaml` for the outbound hop) the same span comes
+out with `http.request.method`, `http.response.status_code`, `server.address`,
+`url.path`, `client.address` — confirmed in the capture above, no manifest
+change needed since the env var applies process-wide.
+
+**Double-counting check (explicitly asked for):** compared the full span set
+before and after. `StarletteInstrumentor` adds four *new*, distinctly-named
+spans per request (`POST /`, `POST / http receive`, `POST / http send` ×2)
+that did not exist before; every one of the pre-existing 20 `a2a.server.*`
+spans is still present, unchanged in name, kind, and (empty) attribute
+content, just now correctly nested one level deeper (under `POST /` via
+`JSONRPCHandler.on_message_send`, whose own parent is now the ASGI
+`http receive` span rather than `null`). **No duplicate spans for the same
+logical operation were found** — this is two complementary instrumentation
+layers (ASGI transport vs. a2a-sdk's internal call graph), not double
+counting of one operation. Reported here per instruction, since the
+coordinator asked to know either way.
+
+**What this fix does and does not address, precisely:** it fixes *context
+extraction* — an inbound `traceparent` now correctly becomes the ambient
+OTel context a2a-sdk's own spans nest under. It does **not** give a2a-sdk's
+own spans any attributes: every `a2a.server.*` span still carries only
+`{internal.span.format, otel.scope.name, otel.scope.version,
+otel.status_code, span.kind}` (§3, re-verified in this round's captures,
+identical). The `gen_ai.operation.name`/`gen_ai.conversation.id`/task-identity
+gap is **untouched** and remains open upstream-issue material — see §3 and
+the note at the top of this section. Nothing new (`a2a.*`, `gen_ai.*`, or
+otherwise) was invented to fill it.
+
+## 5. Trace-context propagation, hop by hop — the true starting point after this fix round
+
+- **A2A client → settlement-agent: now propagates.** Fixed in §4a: an
+  inbound `traceparent` is extracted by `StarletteInstrumentor` and produces
+  a real child span, not a fresh root. Historical note: before this fix
+  round, this hop did not propagate at all (§4) — kept for the record since
+  §4's finding remains true of `a2a-sdk[telemetry]` on its own, unmodified.
+- **settlement-agent (internal) is coherent.** All of settlement-agent's own
+  spans — the ASGI-level spans, the 20 `a2a.server.*` spans, and this
   agent's own outbound httpx CLIENT spans to payments-mcp — correctly share
-  one trace with a single root and no orphans (verified via
-  `assert_single_root`/`assert_no_orphans` against a real deployed trace).
-  This is ordinary in-process ambient-context propagation, not W3C
-  header-based propagation, and it works.
-- **settlement-agent → payments-mcp: does NOT propagate**, for two
+  one trace with no orphans beyond the expected synthetic-root exception
+  (A17; the entry span's declared parent is the externally-injected span ID,
+  which never itself lands in Jaeger). Verified against a real deployed
+  trace via `tests/e2e/test_settlement_agent_trace.py`.
+- **settlement-agent → payments-mcp: does NOT propagate, unchanged, by
+  deliberate scope decision (coordinator's ruling on fix round 1):** for two
   independent reasons that compound:
   1. `mcp_tools.py` uses `mcp==1.9.4`'s high-level `ClientSession.call_tool()`
      (per this task's explicit scope — production `_meta` injection is
-     Task 7's job, not this task's), which has no way to set
-     `params._meta`, and does not do so automatically.
+     Task 7's job via the shared `correlation.py`, A6, because more than one
+     service needs it), which has no way to set `params._meta`, and does not
+     do so automatically.
   2. FastMCP (payments-mcp, Task 3's findings, reconfirmed here) only ever
      extracts trace context from `params._meta` — never from HTTP headers —
      so even though this agent's outbound httpx call *does* carry a
      `traceparent` HTTP header (via `HTTPXClientInstrumentor`'s ordinary
-     ambient-context injection, confirmed present on the captured spans),
-     payments-mcp has nothing that reads it.
-  Verified directly: after a real settlement call, payments-mcp's
-  `tools/call propose_payment`/`tools/call execute_payment` spans do **not**
-  appear anywhere in settlement-agent's trace — `settlement_trace.services()
-  == {"settlement-agent"}` only.
+     ambient-context injection, and now carrying the real externally-injected
+     trace rather than a self-generated one), payments-mcp has nothing that
+     reads it.
+  Verified directly, post-fix: after a real settlement call with an injected
+  `traceparent`, payments-mcp's `tools/call propose_payment`/`tools/call
+  execute_payment` spans still do **not** appear anywhere in settlement-agent's
+  trace — `trace.services() == {"settlement-agent"}` only. This is expected
+  and intentionally left as `xfail(strict=True)` in the e2e test (§9).
 - **payments-mcp → payments-api: propagates correctly** (Task 3's own
   finding, unaffected by anything in this task — that hop is ordinary
   W3C-header-based httpx→otelhttp propagation and was already proven intact).
 
-**Net: as things stand, no hop in the A2A → settlement-agent → payments-mcp
-→ payments-api chain that crosses a service boundary carries trace context
-through settlement-agent.** The chain is broken at both ends of this task's
-service: nothing comes in, and nothing (usable by the far side) goes out.
-Task 7's stated job (MCP client `_meta` injection) fixes the *second* break;
-the *first* break (§4) is a separate, currently-unassigned a2a-sdk gap.
+**Net, after this fix round: trace context now propagates *into*
+settlement-agent from its A2A caller, but not *out* to payments-mcp.** The
+chain is connected from the browser/A2A-client side through settlement-agent,
+and breaks exactly once, at the MCP boundary — a single, precisely located,
+deliberately deferred gap rather than two compounding ones. Task 7's MCP
+client `_meta` injection is the one remaining piece.
 
 ## 6. Outbound HTTP semconv spelling (A13) — measured, not assumed
 
@@ -451,34 +570,54 @@ interface (`{claimId, paymentId, amount, status, narrative}`). Verified after
 the fix: the same real call now returns that full JSON object as the
 `message/send` response.
 
-## 9. `tests/e2e/test_settlement_agent_trace.py` — deviation from the brief's Step 10 sketch, and why
+## 9. `tests/e2e/test_settlement_agent_trace.py` — evolution across both rounds
 
-Given §4 (A2A hop never propagates) and §5 (MCP hop never propagates today,
-by design, per this task's scope), the brief's original Step 10 test — which
-asserted `{"settlement-agent", "payments-mcp", "payments-api"} <=
-services()` for a single trace — cannot pass against the real, current
-system, and forcing it to pass would require either fabricating
-instrumentation beyond this task's brief (§4) or pre-implementing Task 7's
-MCP client injection in production code, both explicitly out of scope.
+**Round 1 (pre-A18):** given §4 (A2A hop never propagated) and the MCP hop
+never propagating (by scope decision), the brief's original Step 10 test —
+which asserted `{"settlement-agent", "payments-mcp", "payments-api"} <=
+services()` for a single trace, found via a plain `wait_for_trace` search —
+could not pass against the real system, and forcing it to pass would have
+required either fabricating instrumentation beyond the brief or
+pre-implementing Task 7's MCP client injection, both out of scope. That
+round's file passed 3 real assertions (card served; internal trace
+coherence; outbound MCP-transport tracing) and marked all three
+cross-service assertions `xfail(strict=True)`.
 
-The committed test file instead:
-- Passes 3 real assertions: the agent card is served correctly; this agent's
-  own trace is internally coherent (single root, no orphans); this agent's
-  own outbound MCP-transport HTTP calls are traced with the stable HTTP
-  semconv spelling.
-- Marks the three cross-service assertions from the brief's sketch
-  `xfail(strict=True)`, each citing the specific confirmed gap. `strict=True`
-  means the day either gap closes, the corresponding test becomes an
-  **unexpected pass** and pytest fails the run — forcing this file to be
-  revisited and the marker removed, rather than silently staying green while
-  claiming more than is true.
+**Round 2 (A18, this fix round):** with the A2A hop now fixed (§4a), the file
+was rewritten to use the real thing A14 asks for rather than the search-based
+fallback:
+- `settlement_trace` now mints its own trace/span ID, sends it as a
+  `traceparent` header (an A2A/HTTP boundary — a header is correct here,
+  unlike the MCP boundary below), and looks it up with `wait_for_trace_id`,
+  never search.
+- `test_settlement_agent_entry_span_is_parented_to_the_injected_context`
+  replaces the old internal-coherence check with the real A14 assertion:
+  the entry span's `parent_id` equals the injected span ID, and the trace ID
+  matches.
+- `test_settlement_agent_trace_has_no_unexpected_orphans` applies A17's
+  precise exclusion: the synthetic root's span ID never lands in Jaeger, so
+  the entry span is an unavoidable orphan — excluded by *both* its operation
+  name and its `parent_id`, not a count tolerance, so a genuine propagation
+  defect anywhere else in the trace still fails this test.
+- The MCP-hop assertions (`test_all_four_services_are_in_one_trace`,
+  `test_mcp_tool_calls_are_present`, `test_settlement_agent_span_precedes_
+  the_payment`) remain `xfail(strict=True)`, per the coordinator's explicit
+  ruling to keep this hop as-is and defer to Task 7's shared
+  `correlation.py` (A6). `strict=True` still means the day that gap closes,
+  the corresponding test becomes an unexpected pass and fails the run,
+  forcing the marker's removal rather than a silent stale pass.
 
-A residual risk noted for whoever next touches this file: since the A2A hop
-gap (§4) forces search-based trace lookup (`find_trace`, not
-`wait_for_trace_id`), running ad hoc manual calls against the same
-deployment shortly before the test suite can make it pick up an unrelated
-recent trace (observed once during this task's own manual verification,
-self-resolved by re-running without interference). A short lookback (5
-minutes, via a direct `find_trace` poll rather than `wait_for_trace`, since
-the latter has no lookback parameter) bounds this but does not eliminate it,
-short of a genuine by-ID lookup which the SDK does not support today.
+**Negative-control verification (this fix round):** before committing, the
+fixture's `traceparent=traceparent` argument was temporarily changed to
+`traceparent=None` and the suite re-run. Result: `wait_for_trace_id` timed
+out after 90s with `404 Client Error: Not Found` on every poll — the
+injected trace ID this test asserts about is never created without the
+header, so the newly-added assertions cannot pass vacuously; they fail
+exactly the way they should if the A18 fix ever regressed. The file was
+restored to its exact prior content immediately afterward (`diff` confirmed
+byte-identical).
+
+The round-1 residual risk note (ad hoc manual calls polluting a
+search-based lookup) no longer applies to the A2A-hop assertions, since
+they're now looked up by exact injected ID rather than search — that risk
+was specific to the pre-A18 fallback and is retired along with it.
