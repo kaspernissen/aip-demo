@@ -368,17 +368,57 @@ problem in insurance. Defaulting to off, then showing the setting that enables i
 specific consequential tool, is a more credible position than capturing everything and
 calling it observability.
 
-### Convention gaps to report (candidates, confirmed during M1)
+### Convention gaps — and upstream contribution as a deliverable
 
-These are talk content, not embarrassments — they are where the conventions run out for
-regulated agentic systems:
+Gaps are not talk decoration. **Where we find a gap, we attempt to fix it upstream**, and
+the contribution is a tracked deliverable of the milestone that surfaced it. This is the
+strongest available version of the talk's argument: the cloud-native community solves this
+by extending its own standards, and here is the pull request.
 
-1. Whether A2A spans carry agent/task/context identity, or only HTTP/gRPC semconv.
-2. Human-in-the-loop approval: no convention appears to exist for a human decision inside
-   an agent trajectory.
-3. Policy and autonomy decisions: no convention appears to exist.
+**Gaps must be confirmed before they are proposed.** General web search does not index
+GitHub issues or SIG meeting notes well, so a candidate gap is only real after checking
+the `open-telemetry/semantic-conventions-genai` issue tracker and the GenAI SIG meeting
+notes. Proposing something already merged or under active discussion would undercut the
+point.
 
-Each gap is either confirmed and reported, or found to be already covered and adopted.
+Current state of the three candidates, from initial research:
+
+**1. Agent-to-agent identity in spans — likely a real gap, with a well-founded proposal
+available.** GenAI semconv *does* define agent operations (`create_agent`, `invoke_agent`,
+`execute_tool`), so agent spans are covered. What appears missing is cross-agent
+correlation for delegation. The closest existing mechanism is `gen_ai.conversation.id`,
+and the spec explicitly says instrumentations *should* populate it when an identifier is
+readily available, and should *not* fall back to a new UUID, trace ID, or content hash.
+A2A supplies exactly such readily-available identifiers: `contextId` and `taskId`. That
+makes for a concrete, defensible contribution rather than a vague request — map A2A
+`contextId` onto `gen_ai.conversation.id`, and propose representation for task identity.
+Targets: the `a2a-python` SDK's instrumentation, and/or semconv-genai.
+
+**2. Human-in-the-loop approval — no convention found.** Nothing surfaced covering an
+approval, escalation, or human-interrupt step inside an agent trajectory. Adjacent
+research (PROV-AGENT, agent audit-trail systems) handles identity, authorization and
+delegation chains as *extensions* rather than core semconv, which suggests the space is
+genuinely open. This is the gap most specific to regulated domains and the one where this
+project has the most standing to contribute, since M3 will have a working implementation
+to argue from.
+
+**3. Policy and autonomy decisions — no convention found.** Same category as (2): our
+`policy.decision` spans in M2 are ours to define because nothing covers them.
+
+Volatility caveat: most GenAI semantic conventions remain experimental, so we pin versions
+and keep a mapping layer between attribute keys and anything a human reads.
+
+Contribution targets are not limited to OTel semconv. Also in scope where we find
+something worth fixing: the `a2a-python` SDK, FastMCP / the MCP SDK, agentgateway
+(a working ExtMCP Policy Decision Service is a plausible reference example for a project
+whose ExtMCP documentation is new), OpenSearch Agent Evals, and AAIF's governed-MCP
+reference architecture.
+
+Process for each confirmed gap: check upstream for existing work → open an issue
+describing the concrete use case → offer a PR where we have a working implementation to
+back it → record the outcome in the telemetry contract, whether accepted, rejected or
+still open. **An honest "we proposed this and it was rejected for these reasons" is
+legitimate talk content**; a fabricated success is not.
 
 ---
 
