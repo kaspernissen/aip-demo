@@ -1,0 +1,8 @@
+a2a-sdk[telemetry]==0.3.7
+mcp==1.9.4
+uvicorn==0.34.0
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0
+opentelemetry-instrumentation-httpx==0.65b0
+pytest==8.3.4
+pytest-asyncio==0.25.0

@@ -108,7 +108,21 @@ for component in "${targets[@]}"; do
   fi
 
   echo -e "${BLUE}Step ${step}/${total}: Building ${image} from ${context}${NC}"
-  docker build -t "$image" "$ROOT/$context"
+  # Agent Dockerfiles COPY agent-card.json from their own build context, but
+  # the canonical copy lives in contracts/agent-cards/ (one source of truth,
+  # shared with the A2A trace tests). Stage it in before the build and always
+  # remove it after — including on a failed build, so `set -e` exiting this
+  # script never leaves a stray copy behind for git to pick up (see
+  # .gitignore: agents/*/agent-card.json, belt-and-braces on top of this).
+  card="$ROOT/contracts/agent-cards/${component}.json"
+  if [[ -f "$card" ]]; then
+    cp "$card" "$ROOT/$context/agent-card.json"
+  fi
+  if ! docker build -t "$image" "$ROOT/$context"; then
+    rm -f "$ROOT/$context/agent-card.json"
+    exit 1
+  fi
+  rm -f "$ROOT/$context/agent-card.json"
 
   echo -e "${BLUE}Step ${step}/${total}: Pushing ${image} to the local registry${NC}"
   docker push "$image"

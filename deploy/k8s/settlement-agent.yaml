@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: settlement-agent
+  namespace: northstar-agents
+  labels:
+    app: settlement-agent
+    northstar.io/plane: agents
+    northstar.io/owner: claims-team
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: settlement-agent
+  template:
+    metadata:
+      labels:
+        app: settlement-agent
+        northstar.io/plane: agents
+        northstar.io/owner: claims-team
+    spec:
+      containers:
+        - name: settlement-agent
+          image: localhost:5001/northstar/settlement-agent:dev
+          imagePullPolicy: Always
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: settlement-agent
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            # opentelemetry-instrumentation-httpx==0.65b0 emits the legacy HTTP
+            # attribute spelling (http.method, http.url, http.status_code) by
+            # default; this opt-in converges the outbound calls this agent
+            # makes to payments-mcp onto the stable spelling (A13). Verified
+            # empirically — see NOTES.md.
+            - name: OTEL_SEMCONV_STABILITY_OPT_IN
+              value: http
+            - name: PAYMENTS_MCP_URL
+              value: http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp
+            - name: AGENT_CARD_PATH
+              value: /app/agent-card.json
+            - name: PORT
+              value: "9002"
+          ports:
+            - name: http
+              containerPort: 9002
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 50m
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: settlement-agent
+  namespace: northstar-agents
+spec:
+  selector:
+    app: settlement-agent
+  ports:
+    - name: http
+      port: 9002
+      targetPort: 9002

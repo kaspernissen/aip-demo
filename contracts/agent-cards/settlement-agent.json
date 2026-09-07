@@ -1,0 +1,26 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "settlement-agent",
+  "description": "Proposes and executes settlements for motor claims at Northstar Insurance.",
+  "url": "http://settlement-agent.northstar-agents.svc.cluster.local:9002/",
+  "version": "0.1.0",
+  "preferredTransport": "JSONRPC",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false,
+    "stateTransitionHistory": false
+  },
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain"],
+  "skills": [
+    {
+      "id": "settle-claim",
+      "name": "Settle a claim",
+      "description": "Given a claim id and an assessed amount, propose and execute the payment.",
+      "tags": ["claims", "payments", "settlement"],
+      "examples": [
+        "{\"claimId\": \"CLM-1842\", \"amount\": 6200, \"currency\": \"EUR\"}"
+      ]
+    }
+  ]
+}
