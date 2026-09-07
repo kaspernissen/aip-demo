@@ -53,18 +53,39 @@ class Trace:
     def trace_id(self) -> str:
         return self._raw["traceID"]
 
-    def span(self, operation: str) -> Span:
-        matches = [s for s in self.spans if s.operation == operation]
+    def span(self, operation: str, service: str | None = None) -> Span:
+        """Look up the single span named `operation`.
+
+        A20: once two services each have a same-named span (e.g. both
+        claims-agent and settlement-agent have their own "POST /" entry span,
+        A18), `operation` alone is ambiguous across the whole trace. The
+        optional `service` filter disambiguates *across* services; ambiguity
+        *within* one service still raises, unchanged from before.
+        """
+        matches = self.spans_named(operation, service=service)
         if not matches:
+            if service is None:
+                raise AssertionError(
+                    f"no span named {operation!r}; present: "
+                    f"{sorted(s.operation for s in self.spans)}"
+                )
             raise AssertionError(
-                f"no span named {operation!r}; present: {sorted(s.operation for s in self.spans)}"
+                f"no span named {operation!r} in service {service!r}; present: "
+                f"{sorted((s.service, s.operation) for s in self.spans)}"
             )
         if len(matches) > 1:
-            raise AssertionError(f"{len(matches)} spans named {operation!r}, expected one")
+            scope = f" in service {service!r}" if service is not None else ""
+            raise AssertionError(
+                f"{len(matches)} spans named {operation!r}{scope}, expected one"
+            )
         return matches[0]
 
-    def spans_named(self, operation: str) -> list[Span]:
-        return [s for s in self.spans if s.operation == operation]
+    def spans_named(self, operation: str, service: str | None = None) -> list[Span]:
+        return [
+            s
+            for s in self.spans
+            if s.operation == operation and (service is None or s.service == service)
+        ]
 
     def has_span(self, operation: str) -> bool:
         return any(s.operation == operation for s in self.spans)
@@ -142,37 +163,96 @@ class JaegerClient:
             f"tags={tags!r} within {timeout}s{detail}"
         )
 
+    # A20a: independent processes' BatchSpanProcessors export on their own
+    # timers, and every service in this repo uses the OTel SDK's default 5s
+    # schedule_delay_millis (unmodified in any service's bootstrap.py). A
+    # trace can look complete for an instant and then gain more spans
+    # seconds later as a straggling batch lands. QUIET_WINDOW_S is the
+    # minimum span-count-unchanged window `wait_for_trace_id` requires before
+    # trusting a `services`-complete trace as actually complete. It must stay
+    # comfortably longer than that 5s export delay: a timing simulation built
+    # while pinning this constant showed a 2s window (Task 5's original
+    # local loop) and even a 6s window both miss a batch landing just past
+    # the window edge once real network/collector latency stacks on top of
+    # the timer itself; 10s held in that simulation and in repeated live
+    # captures. If any service's BatchSpanProcessor is ever retuned away from
+    # the SDK default in its bootstrap.py, this constant must move with it.
+    QUIET_WINDOW_S = 10.0
+
     def wait_for_trace_id(
         self,
         trace_id: str,
         operation: str | None = None,
         timeout: float = 60.0,
         interval: float = 2.0,
+        services: set[str] | None = None,
     ) -> Trace:
         """Poll for a trace by an ID the caller already knows (e.g. one it minted
         itself and sent as a `traceparent` header), rather than searching for it
         by service/operation/tags. Use this whenever the test is the request's
         origin: it removes any dependence on Jaeger's positional ordering or on
         attribute values staying unique across pod restarts.
+
+        A20: `services`, if given, additionally waits for the trace to look
+        *complete*, not merely present — every named service must be
+        represented, and the trace's total span count must then hold steady
+        for `QUIET_WINDOW_S` (see above) before it is returned. This must
+        never become a way to tolerate an absent span: the timeout below
+        still fails closed and names exactly which services never showed up,
+        and every downstream assertion still runs against whatever trace was
+        last fetched only via that failure being raised (it is never
+        swallowed).
         """
         deadline = time.time() + timeout
         last_error: Exception | None = None
         last_trace: Trace | None = None
+        last_span_count: int | None = None
+        quiet_since: float | None = None
         while time.time() < deadline:
             try:
                 trace = self.get_trace(trace_id)
                 last_trace = trace
-                if operation is None or trace.has_span(operation):
+                if operation is not None and not trace.has_span(operation):
+                    last_span_count = None
+                    quiet_since = None
+                elif services is None:
                     return trace
+                else:
+                    missing = services - trace.services()
+                    if missing:
+                        last_span_count = None
+                        quiet_since = None
+                    else:
+                        now = time.time()
+                        span_count = len(trace.spans)
+                        if last_span_count is None or span_count != last_span_count:
+                            last_span_count = span_count
+                            quiet_since = now
+                        elif now - quiet_since >= self.QUIET_WINDOW_S:
+                            return trace
             except (requests.RequestException, AssertionError) as exc:
                 last_error = exc
             time.sleep(interval)
         if last_trace is not None:
-            raise AssertionError(
-                f"trace {trace_id!r} found but no span named {operation!r} "
-                f"within {timeout}s; present: "
-                f"{sorted(s.operation for s in last_trace.spans)}"
-            )
+            if operation is not None and not last_trace.has_span(operation):
+                raise AssertionError(
+                    f"trace {trace_id!r} found but no span named {operation!r} "
+                    f"within {timeout}s; present: "
+                    f"{sorted(s.operation for s in last_trace.spans)}"
+                )
+            if services is not None:
+                missing = services - last_trace.services()
+                if missing:
+                    raise AssertionError(
+                        f"trace {trace_id!r} never gained services "
+                        f"{sorted(missing)} within {timeout}s; present services: "
+                        f"{sorted(last_trace.services())}"
+                    )
+                raise AssertionError(
+                    f"trace {trace_id!r} had all of {sorted(services)} but its "
+                    f"span count never held steady for {self.QUIET_WINDOW_S}s "
+                    f"within {timeout}s total (last count: {len(last_trace.spans)})"
+                )
         detail = f" (last error: {last_error})" if last_error else ""
         raise AssertionError(f"trace {trace_id!r} not found within {timeout}s{detail}")
 
