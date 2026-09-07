@@ -14,12 +14,12 @@ receivers:
 processors:
   batch:
     timeout: 1s
-  resourcedetection:
+  resource_detection:
     detectors: [env]
     override: false
 
 exporters:
-  otlp/jaeger:
+  otlp_grpc/jaeger:
     endpoint: jaeger.observability.svc.cluster.local:4317
     tls:
       insecure: true
@@ -30,8 +30,8 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [resourcedetection, batch]
-      exporters: [otlp/jaeger, debug]
+      processors: [resource_detection, batch]
+      exporters: [otlp_grpc/jaeger, debug]
     metrics:
       receivers: [otlp]
       processors: [batch]

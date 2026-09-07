@@ -14,16 +14,16 @@ receivers:
 processors:
   batch:
     timeout: 1s
-  resourcedetection:
+  resource_detection:
     detectors: [env]
     override: false
 
 exporters:
-  otlp/jaeger:
+  otlp_grpc/jaeger:
     endpoint: jaeger.observability.svc.cluster.local:4317
     tls:
       insecure: true
-  otlp/dash0:
+  otlp_grpc/dash0:
     endpoint: ${env:DASH0_GRPC_HOSTNAME}:${env:DASH0_GRPC_PORT}
     headers:
       Authorization: "Bearer ${env:DASH0_AUTH_TOKEN}"
@@ -35,13 +35,13 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [resourcedetection, batch]
-      exporters: [otlp/jaeger, otlp/dash0, debug]
+      processors: [resource_detection, batch]
+      exporters: [otlp_grpc/jaeger, otlp_grpc/dash0, debug]
     metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlp/dash0, debug]
+      exporters: [otlp_grpc/dash0, debug]
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlp/dash0, debug]
+      exporters: [otlp_grpc/dash0, debug]
