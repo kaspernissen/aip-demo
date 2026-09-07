@@ -43,6 +43,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if ! [[ "$STAGE" =~ ^[0-9]+$ ]]; then
+  echo "Error: --stage must be a positive integer, got '${STAGE}'" >&2
+  usage
+  exit 1
+fi
+
 if [[ "$STAGE" -gt 1 ]]; then
   echo "Stage $STAGE is not implemented yet. M1.1 implements stage 1 only." >&2
   exit 1
@@ -63,6 +69,7 @@ echo -e "${BLUE}--- Checking prerequisites ---${NC}"
 command_exists docker || { echo -e "${RED}docker is required${NC}" >&2; exit 1; }
 command_exists kind || { echo -e "${RED}kind is required: brew install kind${NC}" >&2; exit 1; }
 command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1; }
+: "${OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE:?OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE not set in .env}"
 
 echo -e "${BLUE}Step 1/8: Creating local registry '${REGISTRY_NAME}'...${NC}"
 if [ "$(docker inspect -f '{{.State.Running}}' "${REGISTRY_NAME}" 2>/dev/null || true)" != 'true' ]; then
@@ -135,6 +142,10 @@ kubectl create configmap otel-collector-config \
 
 kubectl apply -f "$ROOT/deploy/observability/jaeger.yaml"
 kubectl apply -f "$ROOT/deploy/observability/collector.yaml"
+# The manifest's `image:` literal is a documented default; the deployed image genuinely
+# derives from OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE (.env), not the literal.
+kubectl -n observability set image deployment/otel-collector \
+  collector="${OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE}"
 
 echo -e "${BLUE}Step 8/8: Rolling out observability workloads...${NC}"
 kubectl -n observability rollout restart deployment/otel-collector

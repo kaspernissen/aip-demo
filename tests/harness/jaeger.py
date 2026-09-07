@@ -6,6 +6,7 @@ becomes worthless. These assertions are the guard against that.
 """
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -101,8 +102,6 @@ class JaegerClient:
         if operation:
             params["operation"] = operation
         if tags:
-            import json
-
             params["tags"] = json.dumps(tags)
         resp = requests.get(f"{self.base_url}/api/traces", params=params, timeout=15)
         resp.raise_for_status()
@@ -147,7 +146,15 @@ class JaegerClient:
 def assert_single_root(trace: Trace) -> None:
     roots = trace.roots()
     if len(roots) != 1:
-        described = [f"{s.service}:{s.operation}" for s in roots]
+        if roots:
+            described = [f"{s.service}:{s.operation}" for s in roots]
+        else:
+            # No roots at all is exactly the signature of broken context propagation:
+            # list the full span inventory with declared parents so a reader can see
+            # what was present and where each span thought it attached.
+            described = [
+                f"{s.service}:{s.operation} (parent={s.parent_id})" for s in trace.spans
+            ]
         raise AssertionError(f"expected exactly one root span, found {len(roots)}: {described}")
 
 
