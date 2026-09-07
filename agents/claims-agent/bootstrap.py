@@ -32,7 +32,7 @@ from opentelemetry.sdk.trace import Span, SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-CLAIM_ID_KEY = "northstar.claim.id"
+from correlation import CLAIM_ID_KEY
 
 
 class ClaimIdSpanProcessor(SpanProcessor):

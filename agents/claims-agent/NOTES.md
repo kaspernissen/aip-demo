@@ -636,6 +636,51 @@ workaround this milestone avoids elsewhere (contrast: A18's ASGI
 instrumentation fix, which used *real* framework instrumentation rather than
 patching a2a-sdk).
 
+**Correction (fix round 1, review finding — a precision error, not a scope
+change):** the task-boundary explanation above is accurate for 20 of the 21
+uncorrelated spans, but not for one of them: `EventQueue.close`. Read
+directly, `DefaultRequestHandler._run_event_stream`
+(`default_request_handler.py` lines 204-214) is exactly
+`await self.agent_executor.execute(request, queue)` followed by
+`await queue.close()` — both awaited sequentially inside the *same*
+coroutine that `_setup_message_execution` passes to `asyncio.create_task`.
+`EventQueue.close`'s span therefore runs in the producer task, not the
+separate consumer/main task the rest of this section describes — the
+create_task-context-copy explanation above does not apply to it. It still
+lacks `northstar.claim.id`, but for a different, self-caused reason: by the
+time `queue.close()` runs, `executor.py`'s own `finally: otel_context.detach(token)`
+(`executor.py` lines 106-107) has already executed, because `execute()` must
+return before `_run_event_stream` can reach the `queue.close()` line that
+follows it. This is our own context hygiene — the `attach`/`finally: detach`
+pairing that correctly scopes baggage to a single request — running one
+statement too early for this one third-party span's benefit, not a2a-sdk's
+task-spawning model. An earlier version of this section folded
+`EventQueue.close` into "every a2a-sdk-owned span... lacks it" without
+singling it out, which over-attributed a gap this project's own code causes
+to a third party; corrected here (and in `task-7-report.md`) after a
+reviewer traced `_run_event_stream`'s source directly. Not fixed, because
+there is nothing to fix: widening `executor.py`'s attach/detach scope to
+also cover code it doesn't call directly (`_run_event_stream`'s own
+`queue.close()` line, in a2a-sdk) purely to grow this one span's coverage
+is not something this task's brief or amendments ask for.
+
+**Architectural fact, stated plainly for Task 8 (a substantive finding, not
+a footnote):** claims-agent creates **no spans of its own**. Every span this
+service emits for a request — the ASGI entry span, every `a2a.server.*`
+span, the outbound A2A `CLIENT` span, `EventQueue.enqueue_event` — comes
+from third-party instrumentation (`StarletteInstrumentor`, `a2a-sdk`'s own
+`@trace_class`/`@trace_function` decorators, `HTTPXClientInstrumentor`).
+There is no `get_tracer`, `start_span`, or `start_as_current_span` anywhere
+in this project's own `agents/`, `tools/`, or `systems/` source; the only
+hit for any of those three anywhere in the repo is `tests/e2e/test_harness.py`,
+a harness probe, not production code. This is why `northstar.claim.id`'s
+reach is governed entirely by *when* a given library's instrumentation reads
+the ambient context relative to this task's `attach()`/`detach()` calls,
+rather than by any span this project's own code controls the start or end
+of — and it predicts where this changes shape: M1.2 introduces PydanticAI,
+expected to be this project's first library that gives calling code spans to
+open directly, rather than only ever wrapping calls from the outside.
+
 **Practical consequence, by contrast with settlement-agent:** settlement-agent
 receives `northstar.claim.id` via an *inbound* baggage header (from claims-agent's
 outbound A2A call), extracted by `StarletteInstrumentor` at the ASGI boundary

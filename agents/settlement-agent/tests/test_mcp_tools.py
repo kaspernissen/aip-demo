@@ -147,6 +147,19 @@ class _FakeSessionRaisingNestedGroup:
         )
         raise BaseExceptionGroup("outer", [BaseExceptionGroup("inner", [leaf])])
 
+    async def call_tool(self, name, arguments):
+        # Review nit 6: without this method, reverting `_call` to the
+        # pre-Task-7 `session.call_tool(...)` shape would fail this fake
+        # with a bare `AttributeError` (no such attribute), not a message
+        # that says anything about what's actually wrong. Fail loudly with
+        # the real reason instead, in case a future revert lands here.
+        raise AssertionError(
+            "_call() invoked session.call_tool(), not send_request() — this "
+            "fake exercises the send_request() path Task 7 introduced (see "
+            "mcp_tools.py's module docstring); call_tool() gives no way to "
+            "set params._meta at all"
+        )
+
 
 async def test_call_unwraps_a_doubly_nested_exception_group_to_the_tool_call_error(monkeypatch):
     monkeypatch.setattr(mcp_tools, "streamablehttp_client", lambda url: _FakeReadWriteContext())
@@ -180,6 +193,16 @@ class _FakeSessionCapturingRequest:
     async def send_request(self, request, result_type):
         _FakeSessionCapturingRequest.captured["request"] = request
         return _FakeCallToolResult(structuredContent={"paymentId": "PAY-000001"})
+
+    async def call_tool(self, name, arguments):
+        # Review nit 6: same rationale as _FakeSessionRaisingNestedGroup's
+        # call_tool above — a substantive failure, not AttributeError, if
+        # _call is ever reverted to the pre-Task-7 call_tool() shape.
+        raise AssertionError(
+            "_call() invoked session.call_tool(), not send_request() — "
+            "params._meta was never set because call_tool() gives no way "
+            "to set it at all (see mcp_tools.py's module docstring)"
+        )
 
 
 def _remote_span_context() -> SpanContext:

@@ -134,6 +134,40 @@ def correlated_trace(claim_id):
     return SimpleNamespace(trace=trace, trace_id=trace_id, span_id=span_id, claim_id=claim_id)
 
 
+def test_correlated_trace_entry_span_is_parented_to_the_injected_context(correlated_trace):
+    """A14's other half: minting trace_id/span_id and injecting a traceparent
+    header is only sound evidence of propagation if something actually
+    checks that the resulting entry span is a *child* of the injected span
+    id, not merely that a trace with the injected trace_id exists (Jaeger
+    would happily return an unrelated orphan sharing the same trace_id if
+    propagation were silently broken at the very first hop). Mirrors
+    test_claims_chain_trace.py's identical idiom for the same claims-agent
+    entry span. Per A17, the one orphan this whole chain is expected to
+    contain is pinned precisely (operation and parent_id), not tolerated by
+    a bare count or name allowlist."""
+    trace = correlated_trace.trace
+    entry = trace.span(ENTRY_SPAN, service="claims-agent")
+    assert entry.parent_id == correlated_trace.span_id, (
+        f"{ENTRY_SPAN!r} span's parent is {entry.parent_id!r}, expected the "
+        f"injected span id {correlated_trace.span_id!r} — inbound trace "
+        "context was not honoured at the very first hop"
+    )
+
+    unexpected = [
+        s
+        for s in trace.orphans()
+        if not (
+            s.operation == ENTRY_SPAN
+            and s.service == "claims-agent"
+            and s.parent_id == correlated_trace.span_id
+        )
+    ]
+    assert not unexpected, (
+        "orphan spans present beyond the expected synthetic root (the "
+        f"injected traceparent's own span id): {[(s.service, s.operation, s.parent_id) for s in unexpected]}"
+    )
+
+
 def test_claim_id_is_on_every_settlement_agent_span(correlated_trace):
     """settlement-agent receives northstar.claim.id via an inbound baggage
     header (from claims-agent's outbound A2A call), extracted at the ASGI
@@ -200,20 +234,48 @@ def test_trace_is_findable_by_claim_id(correlated_trace):
     assert found.trace_id == correlated_trace.trace.trace_id
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Confirmed upstream gap (see module docstring / tools/payments-mcp/"
-        "NOTES.md): FastMCP 4.0.3's extract_trace_context() only copies "
-        "traceparent/tracestate out of params._meta, never baggage, even "
-        "though mcp_tools.py's client injects a baggage key per SEP-414. "
-        "The MCP hop still joins the *trace* (traceparent crosses fine — see "
-        "the six flipped xfails elsewhere in this suite); only the "
-        "northstar.claim.id attribute itself does not reach payments-mcp or "
-        "payments-api, which are correlated by trace ID instead (brief Step "
-        "11's own sanctioned fallback). Flip this and delete it the day "
-        "FastMCP starts propagating baggage through params._meta."
-    ),
-)
 def test_claim_id_is_on_every_mcp_hop_span(correlated_trace):
-    assert_attr_on_all_spans(correlated_trace.trace, CLAIM_ID_KEY, services=MCP_GAP_SERVICES)
+    """Confirmed upstream gap (see module docstring / tools/payments-mcp/
+    NOTES.md): FastMCP 4.0.3's extract_trace_context() only copies
+    traceparent/tracestate out of params._meta, never baggage, even though
+    mcp_tools.py's client injects a baggage key per SEP-414. The MCP hop
+    still joins the *trace* (traceparent crosses fine — see the six flipped
+    xfails elsewhere in this suite); only the northstar.claim.id attribute
+    itself does not reach payments-mcp or payments-api, which are correlated
+    by trace ID instead (brief Step 11's own sanctioned fallback).
+
+    This is a manual xfail, not `@pytest.mark.xfail(strict=True)` (review
+    finding, should-fix 1): a bare decorator on a test that depends on the
+    module-scoped `correlated_trace` fixture also catches exceptions raised
+    during that fixture's *own* setup (pytest's xfail machinery covers the
+    setup phase, not just the call phase) — so if the MCP hop were severed
+    entirely and `wait_for_trace_id` timed out before the chain ever
+    assembled, that would be reported as a quiet `xfailed` too, identical to
+    this test's own documented condition, even though the fixture never got
+    far enough to run this test's body at all. Catching only `AssertionError`
+    from this one call keeps the blast radius to exactly the condition this
+    test documents: if the fixture itself fails, there is no marker here to
+    intercept it, so it surfaces as a loud `ERROR`, not `xfailed`. If the
+    assertion below ever stops failing (FastMCP starts propagating baggage),
+    the `else` branch below fails loudly too, the same way
+    `xfail(strict=True)`'s XPASS-becomes-fail behaviour would — narrowing
+    only ever adds strictness here, never removes it.
+    """
+    try:
+        assert_attr_on_all_spans(correlated_trace.trace, CLAIM_ID_KEY, services=MCP_GAP_SERVICES)
+    except AssertionError:
+        pytest.xfail(
+            "Confirmed upstream gap: FastMCP 4.0.3's extract_trace_context() "
+            "never copies baggage out of params._meta. Flip this and delete "
+            "the try/except the day FastMCP starts propagating baggage "
+            "through params._meta."
+        )
+    else:
+        pytest.fail(
+            "northstar.claim.id now reaches every MCP-hop span — the "
+            "FastMCP baggage gap this test documents appears to be fixed "
+            "upstream. Replace this try/except with a plain assertion, and "
+            "update the module docstring, agents/settlement-agent/NOTES.md "
+            "§11, and tools/payments-mcp/NOTES.md §6, which all still "
+            "describe the gap as open."
+        )
