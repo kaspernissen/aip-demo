@@ -67,7 +67,9 @@ component_spec() {
 }
 
 targets=("$@")
+explicit=true
 if [[ ${#targets[@]} -eq 0 ]]; then
+  explicit=false
   targets=()
   while IFS= read -r name; do
     targets+=("$name")
@@ -76,6 +78,8 @@ fi
 
 total=${#targets[@]}
 step=0
+deployed=()
+skipped=()
 
 for component in "${targets[@]}"; do
   step=$((step + 1))
@@ -87,6 +91,21 @@ for component in "${targets[@]}"; do
   context="${spec%%:*}"
   namespace="${spec##*:}"
   image="localhost:${REGISTRY_PORT}/northstar/${component}:dev"
+
+  # A15: until all five build contexts exist (by end of M1.1), a default
+  # no-argument run must skip a component whose context directory doesn't
+  # exist yet rather than dying on `docker build`. A component named
+  # explicitly on the command line is a hard error instead — the user asked
+  # for it by name, so silently doing nothing would be worse than failing.
+  if [[ ! -d "$ROOT/$context" ]]; then
+    if [[ "$explicit" == true ]]; then
+      echo -e "${RED}Error: ${component}'s build context ${context} does not exist${NC}" >&2
+      exit 1
+    fi
+    echo -e "${YELLOW}Skipping ${component} — ${context} does not exist yet${NC}"
+    skipped+=("$component")
+    continue
+  fi
 
   echo -e "${BLUE}Step ${step}/${total}: Building ${image} from ${context}${NC}"
   docker build -t "$image" "$ROOT/$context"
@@ -100,9 +119,17 @@ for component in "${targets[@]}"; do
   kubectl -n "$namespace" rollout status "deployment/${component}" --timeout=180s
 
   echo -e "${GREEN}${component} deployed.${NC}"
+  deployed+=("$component")
 done
 
 echo ""
-echo -e "${GREEN}Rebuilt and deployed: ${targets[*]}${NC}"
+if [[ ${#deployed[@]} -gt 0 ]]; then
+  echo -e "${GREEN}Rebuilt and deployed: ${deployed[*]}${NC}"
+else
+  echo -e "${YELLOW}Nothing was deployed.${NC}"
+fi
+if [[ ${#skipped[@]} -gt 0 ]]; then
+  echo -e "${YELLOW}Skipped (build context does not exist yet): ${skipped[*]}${NC}"
+fi
 echo "Check status:  kubectl get pods -A"
 echo "Follow logs:   kubectl -n <namespace> logs -f deployment/<component>"

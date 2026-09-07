@@ -1,0 +1,44 @@
+{
+  "server": "payments-mcp",
+  "transport": "streamable-http",
+  "endpoint": "http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp",
+  "fronts": "payments-api",
+  "tools": [
+    {
+      "name": "propose_payment",
+      "description": "Propose a payment for a claim. Records an intent; moves no money.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["claim_id", "amount"],
+        "properties": {
+          "claim_id": { "type": "string", "examples": ["CLM-1842"] },
+          "amount": { "type": "number", "minimum": 0, "examples": [6200] },
+          "currency": { "type": "string", "enum": ["EUR"], "default": "EUR" }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "execute_payment",
+      "description": "Execute a previously proposed payment. Money leaves the company. This action cannot be undone.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["payment_id"],
+        "properties": {
+          "payment_id": { "type": "string", "examples": ["PAY-000001"] }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    }
+  ]
+}

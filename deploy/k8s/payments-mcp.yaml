@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-mcp
+  namespace: northstar-tools
+  labels:
+    app: payments-mcp
+    northstar.io/plane: tools
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payments-mcp
+  template:
+    metadata:
+      labels:
+        app: payments-mcp
+        northstar.io/plane: tools
+    spec:
+      containers:
+        - name: payments-mcp
+          image: localhost:5001/northstar/payments-mcp:dev
+          imagePullPolicy: Always
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: payments-mcp
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            # Default is 'native'. Set explicitly so a future upstream default
+            # change cannot silently suppress MCP spans. Verified against the
+            # installed fastmcp==4.0.3 (A16) — see NOTES.md.
+            - name: FASTMCP_TELEMETRY_MODE
+              value: native
+            # opentelemetry-instrumentation-httpx==0.50b0 emits the legacy HTTP
+            # attribute spelling (http.method, http.url, http.status_code) by
+            # default; this opt-in converges outbound calls to payments-api on
+            # the stable spelling payments-api itself emits (A13). Verified
+            # empirically — see NOTES.md.
+            - name: OTEL_SEMCONV_STABILITY_OPT_IN
+              value: http
+            - name: PAYMENTS_API_URL
+              value: http://payments-api.northstar-systems.svc.cluster.local:8080
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              memory: 96Mi
+              cpu: 50m
+            limits:
+              memory: 192Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments-mcp
+  namespace: northstar-tools
+spec:
+  selector:
+    app: payments-mcp
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
