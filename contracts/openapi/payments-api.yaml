@@ -1,0 +1,102 @@
+openapi: 3.1.0
+info:
+  title: Northstar Payments API
+  version: 1.0.0
+  description: >
+    System of record for claim payments. Deliberately tiny. In M1 it has no
+    authorization of any kind: anything that can reach it can move money.
+servers:
+  - url: http://payments-api.northstar-systems.svc.cluster.local:8080
+paths:
+  /healthz:
+    get:
+      operationId: health
+      responses:
+        "200":
+          description: Service is healthy
+  /payments/propose:
+    post:
+      operationId: proposePayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [claimId, amount, currency]
+              properties:
+                claimId:
+                  type: string
+                  examples: ["CLM-1842"]
+                amount:
+                  type: number
+                  minimum: 0
+                  examples: [6200]
+                currency:
+                  type: string
+                  enum: [EUR]
+      responses:
+        "201":
+          description: Payment proposed but not executed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "400":
+          description: Invalid request
+  /payments/{paymentId}/execute:
+    post:
+      operationId: executePayment
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payment executed. Money has moved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "404":
+          description: Unknown payment
+        "409":
+          description: Payment already executed
+  /payments/{paymentId}:
+    get:
+      operationId: getPayment
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payment record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "404":
+          description: Unknown payment
+components:
+  schemas:
+    Payment:
+      type: object
+      required: [paymentId, claimId, amount, currency, status]
+      properties:
+        paymentId:
+          type: string
+          examples: ["PAY-000001"]
+        claimId:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+        status:
+          type: string
+          enum: [proposed, executed]
