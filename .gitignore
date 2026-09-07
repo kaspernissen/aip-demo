@@ -1,0 +1,13 @@
+.env
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+.next/
+out/
+next-env.d.ts
+.superpowers/
+# Staged into the build context by scripts/rebuild-and-deploy.sh; canonical copy
+# lives in contracts/agent-cards/
+agents/*/agent-card.json
