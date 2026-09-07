@@ -112,6 +112,11 @@ def browser_trace():
     # settlement-agent) to all land and hold steady, not merely for one span
     # to appear. payments-mcp/payments-api are excluded on purpose — see the
     # module docstring and test_all_five_services_are_in_one_trace below.
+    # N7 (task-6-review.md): this set stays at the three reachable services on
+    # purpose (see the module docstring). Task 7 must widen it to all five —
+    # customer-ui, claims-agent, settlement-agent, payments-mcp, payments-api —
+    # in lockstep with flipping test_all_five_services_are_in_one_trace's
+    # xfail below; leaving it at three here is not an oversight to fix now.
     trace = client.wait_for_trace_id(
         trace_id,
         operation="claim.submit",
@@ -123,6 +128,13 @@ def browser_trace():
 
 
 def test_browser_emits_the_claim_submit_span(browser_trace):
+    """N8 (task-6-review.md): the fixture's own wait_for_trace_id(...,
+    operation="claim.submit") already requires this span to exist before it
+    returns, so this assertion can only ever restate what the fixture
+    enforced. Kept anyway, same reasoning as
+    test_claims_agent_and_settlement_agent_join_the_browsers_trace below: a
+    named, specific failure if this ever regresses, not just a fixture-setup
+    error shared across the whole file."""
     assert browser_trace.trace.has_span("claim.submit")
 
 
@@ -146,7 +158,15 @@ def test_claims_agent_and_settlement_agent_join_the_browsers_trace(browser_trace
     """The two real hops this task can prove today: browser -> claims-agent
     (this task's new CORS-crossing hop) and claims-agent -> settlement-agent
     (already proven in tests/e2e/test_claims_chain_trace.py, reconfirmed here
-    now that a genuine browser, not a raw HTTP client, originates the call)."""
+    now that a genuine browser, not a raw HTTP client, originates the call).
+
+    N8 (task-6-review.md): the fixture's own wait_for_trace_id(...,
+    services={...}) already blocks until this exact set is present, so this
+    assertion can only ever restate what the fixture enforced. Kept anyway as
+    a documented, intentional redundancy: it gives a specific, readable
+    failure message pinned to *this* test's name if that ever regresses,
+    rather than only a fixture-setup error shared by every test in the file.
+    """
     services = browser_trace.trace.services()
     expected = {"customer-ui", "claims-agent", "settlement-agent"}
     assert expected <= services, f"missing services: {sorted(expected - services)}"

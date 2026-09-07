@@ -2,7 +2,21 @@
 
 import { context, propagation, trace } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { Resource } from "@opentelemetry/resources";
+// A21: @opentelemetry/resources 2.x (bumped to clear GHSA-8988-4f7v-96qf, see
+// NOTES.md §6) dropped the constructable `Resource` class in favour of the
+// `resourceFromAttributes` factory function — a real API break, not a
+// cosmetic rename: `Resource` is now only a type, no longer `new`-able.
+//
+// It also removed a second, easier-to-miss behaviour: 1.x's
+// BasicTracerProvider silently merged any user-supplied `resource` with
+// `Resource.default()` (which carries the `telemetry.sdk.language/name/version`
+// SDK_INFO attributes) via a `mergeResourceWithDefaults` config flag that
+// defaulted to true. 2.x's BasicTracerProvider does no such merge — it uses
+// exactly the resource it is given. Discovered by re-capturing a live trace
+// after this bump and finding the customer-ui resource's tags empty (no
+// telemetry.sdk.* attributes) where the pre-bump capture had them. Fixed by
+// merging explicitly below, restoring the old effective behaviour.
+import { defaultResource, resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchSpanProcessor, WebTracerProvider } from "@opentelemetry/sdk-trace-web";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { ZoneContextManager } from "@opentelemetry/context-zone";
@@ -25,7 +39,9 @@ export function initTelemetry(): void {
     process.env.NEXT_PUBLIC_OTLP_ENDPOINT ?? "http://localhost:4318";
 
   const provider = new WebTracerProvider({
-    resource: new Resource({ [ATTR_SERVICE_NAME]: "customer-ui" }),
+    resource: defaultResource().merge(
+      resourceFromAttributes({ [ATTR_SERVICE_NAME]: "customer-ui" }),
+    ),
     spanProcessors: [
       new BatchSpanProcessor(
         new OTLPTraceExporter({ url: `${collectorUrl}/v1/traces` }),

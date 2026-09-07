@@ -1,0 +1,12 @@
+# S1 (task-6-review.md): the Dockerfile's build stage runs `npm ci` (which
+# installs strictly from package-lock.json) and then `COPY . .`. Without this
+# file, `COPY . .` layers the host's own node_modules/.next/out over that
+# fresh install inside the image, so whatever happens to be sitting on the
+# developer's machine (a stale build, a different platform's native binary,
+# an out-of-date dependency tree) can silently ship instead of what npm ci
+# just resolved. Excluding them forces the image to always contain exactly
+# what npm ci produced from package-lock.json.
+node_modules
+.next
+out
+npm-debug.log*

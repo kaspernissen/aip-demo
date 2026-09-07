@@ -164,8 +164,9 @@ class JaegerClient:
         )
 
     # A20a: independent processes' BatchSpanProcessors export on their own
-    # timers, and every service in this repo uses the OTel SDK's default 5s
-    # schedule_delay_millis (unmodified in any service's bootstrap.py). A
+    # timers, and every service in this repo — Python (bootstrap.py),
+    # Go (payments-api), and the browser (customer-ui's telemetry.ts) alike —
+    # uses the OTel SDK's default 5s schedule_delay_millis, unmodified. A
     # trace can look complete for an instant and then gain more spans
     # seconds later as a straggling batch lands. QUIET_WINDOW_S is the
     # minimum span-count-unchanged window `wait_for_trace_id` requires before
@@ -176,7 +177,7 @@ class JaegerClient:
     # the window edge once real network/collector latency stacks on top of
     # the timer itself; 10s held in that simulation and in repeated live
     # captures. If any service's BatchSpanProcessor is ever retuned away from
-    # the SDK default in its bootstrap.py, this constant must move with it.
+    # the SDK default, this constant must move with it.
     QUIET_WINDOW_S = 10.0
 
     def wait_for_trace_id(
@@ -197,11 +198,10 @@ class JaegerClient:
         *complete*, not merely present — every named service must be
         represented, and the trace's total span count must then hold steady
         for `QUIET_WINDOW_S` (see above) before it is returned. This must
-        never become a way to tolerate an absent span: the timeout below
-        still fails closed and names exactly which services never showed up,
-        and every downstream assertion still runs against whatever trace was
-        last fetched only via that failure being raised (it is never
-        swallowed).
+        never become a way to tolerate an absent span: on timeout this
+        raises `AssertionError` naming exactly which services never showed
+        up, rather than returning whatever trace was last fetched — a caller
+        can only ever act on a trace this method itself judged complete.
         """
         deadline = time.time() + timeout
         last_error: Exception | None = None

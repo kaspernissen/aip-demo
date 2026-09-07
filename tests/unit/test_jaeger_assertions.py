@@ -200,8 +200,6 @@ def _script_get_trace(monkeypatch, client: JaegerClient, schedule: list[tuple[fl
     the fake clock installed by _install_fake_clock. `schedule` must be
     sorted ascending by threshold and cover t=0.
     """
-    clock_holder = {"clock": None}
-
     def fake_get_trace(trace_id: str) -> Trace:
         now = jaeger_module.time.time()
         raw = schedule[0][1]

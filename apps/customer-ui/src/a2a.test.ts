@@ -95,18 +95,22 @@ describe("sendClaim", () => {
     // Plan defect, found empirically against the real deployed browser: the
     // brief's Step 6 sketch read `injectContext` via
     // `const { injectContext } = await import("./telemetry")` as the first
-    // thing inside sendClaim, immediately before the fetch call. Verified by
-    // capture: crossing that await loses the active span context under
-    // Zone.js's ZoneContextManager (native async/await bypasses Zone's
+    // thing inside sendClaim, immediately before the fetch call. The cause is
+    // crossing *any* `await` before `injectContext` runs, not dynamic import
+    // specifically — a reviewer's own follow-up experiment confirmed this by
+    // reproducing the identical dropped header with a static import plus a
+    // bare, unrelated `await Promise.resolve();` in the same spot. Under
+    // Zone.js's ZoneContextManager, native async/await bypasses Zone's
     // monkey-patched global Promise via realm-intrinsic continuation
-    // scheduling), so the request that reaches claims-agent carries no
+    // scheduling, so the request that reaches claims-agent carries no
     // traceparent header at all — the browser's root span never connects to
-    // anything downstream. Fixed: `injectContext` is imported statically, so
-    // it runs synchronously, before sendClaim's own first await. This test
-    // asserts the actual header's substance (a real traceparent carrying the
-    // active span's own trace/span IDs), not merely that no error occurred,
-    // and reproduces the same real ZoneContextManager used in production
-    // (telemetry.ts's initTelemetry), not a hand-rolled stand-in.
+    // anything downstream. Fixed: `injectContext` is imported statically AND
+    // called before sendClaim's own first await, so no context ever needs to
+    // survive crossing one. This test asserts the actual header's substance
+    // (a real traceparent carrying the active span's own trace and span
+    // IDs), not merely that no error occurred, and reproduces the same real
+    // ZoneContextManager used in production (telemetry.ts's initTelemetry),
+    // not a hand-rolled stand-in.
     initTelemetry();
 
     const fetchMock = vi.fn(async () =>
@@ -142,5 +146,6 @@ describe("sendClaim", () => {
     const match = /^00-([0-9a-f]{32})-([0-9a-f]{16})-\d{2}$/.exec(traceparent);
     expect(match, `traceparent ${traceparent} does not match the W3C format`).toBeTruthy();
     expect(match![1]).toBe(spanContext!.traceId);
+    expect(match![2]).toBe(spanContext!.spanId);
   });
 });

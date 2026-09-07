@@ -30,8 +30,19 @@ interoperates with the deployed claims-agent. Not used, so no further protocol-s
 investigation was done — recorded here only so a future task knows this was
 checked, not overlooked.
 
-## 2. Plan defect (A19): the brief's Step 6 dynamic-import loses the active span
-   across the fetch call — traceparent injection silently produces nothing
+## 2. Plan defect (A19): the brief's Step 6 crosses an await before injecting
+   trace context, losing the active span across the fetch call — traceparent
+   injection silently produces nothing
+
+**Correction (fix round 1):** an earlier version of this section attributed the
+cause to *dynamic import* specifically. That framing was too narrow. A reviewer's
+own follow-up experiment proved the cause is crossing **any** `await` before
+`injectContext` runs: a *static* import of `injectContext` plus one bare, unrelated
+`await Promise.resolve();` inserted in the same spot reproduces the identical
+dropped header, with no dynamic import anywhere in the picture. The brief's Step 6
+code happened to use a dynamic `import()` as its particular await, but that was
+incidental, not causal — this section is corrected below to say so plainly, since
+this is A8 upstream-contribution evidence and must not overstate what was shown.
 
 **What the brief said:** Step 6 has `sendClaim` read `injectContext` via
 `const { injectContext } = await import("./telemetry");` as the very first thing
@@ -77,6 +88,16 @@ deployed browser and, independently, under `vitest` (Node) using the exact same
 `ZoneContextManager` — see the regression test below; the loss reproduces in both
 environments, so it is fundamental to Zone.js + native async/await, not a
 browser-only quirk.
+
+**Further confirmed by a reviewer, more cleanly, in fix round 1:** every await used
+in the diagnostic above still happened to be an `await import(...)` of some
+module. A reviewer went one step further and removed dynamic import from the
+experiment entirely — a *static* top-level import of `injectContext` plus a single
+bare `await Promise.resolve();` inserted immediately before the fetch call, with no
+`import()` anywhere in the function — and reproduced the exact same failure (no
+`traceparent` header on the outbound request). This is the more precise proof: the
+mechanism is "crosses an await," full stop; dynamic import was never a necessary
+ingredient, only what the brief's own Step 6 sketch happened to use.
 
 **Fixed:** `a2a.ts` imports `injectContext` **statically**
 (`import { injectContext } from "./telemetry";`) instead of dynamically. This means
@@ -141,6 +162,16 @@ defaults produced):
   { "key": "telemetry.sdk.version", "value": "1.30.0" }
 ]
 ```
+
+**Fix round 1 note:** the capture above predates the A21 OTel bump (§6) and the
+`new Resource(...)` call it names no longer exists — `@opentelemetry/resources`
+2.x removed the constructable class. Re-captured post-bump (see §6a): the same
+three `telemetry.sdk.*` attributes are present, now reading
+`telemetry.sdk.version: "2.8.0"`, alongside the identical `claim.submit` span
+shape, 1 root, 0 orphans, and the same three services in one trace. The gaps
+table below (§3, "Comparison against OTel conventions") is unaffected by the
+bump — those are pin-list gaps (no fetch instrumentation, no browser resource
+detector), not something the OTel version itself changes.
 (plus the implicit `service.name = customer-ui` used as the process key itself).
 
 ### Comparison against OTel conventions — gaps, not filled
@@ -206,19 +237,148 @@ legacy" doesn't apply to this task — there is nothing to opt into. Recorded he
 so a future reader doesn't wonder why no `OTEL_SEMCONV_STABILITY_OPT_IN` appears
 anywhere in this app's build args or manifest.
 
-## 6. `next@15.1.3` (the brief's exact pin) carries a known CVE
+## 6. Dependency advisories found — what was bumped (A21) and what was
+   deliberately left alone
 
-`npm install` warns: `next@15.1.3: This version has a security vulnerability...
-See https://nextjs.org/blog/CVE-2025-66478`. `npm audit` additionally reports a
-broad range of moderate/high/critical advisories spanning nearly the entire
-`next` version history (`9.3.4-canary.0` through `16.3.0-preview.10`), which
-reads as a low-precision advisory rather than a version-specific one. This is a
-conference-demo app with no auth and no untrusted server-side rendering (static
-`output: "export"`, served by plain nginx) — not a production deployment. Recorded
-here rather than silently deviating from the brief's pinned version; not
-upgraded, since the brief's version pin is otherwise exactly what was asked for
-and the blast radius here is minimal. Flag for the coordinator if this pin should
-be revisited before the demo ships.
+`npm install` originally warned: `next@15.1.3: This version has a security
+vulnerability... See https://nextjs.org/blog/CVE-2025-66478`. Task 6's first pass
+recorded this CVE but did not bump the pin, pending the coordinator's ruling.
+**A21 is that ruling** ("no component ships on a dependency with a published
+CVE") and this section is now complete per that ruling, with every advisory
+found — not just `next`'s — recorded below.
+
+**N6 correction (fix round 1):** the first pass characterized `next`'s
+`npm audit` output as "a broad range… which reads as a low-precision advisory
+rather than a version-specific one." That was imprecise. It is not one low-
+precision advisory; `npm audit --json` resolves it to **30 distinct GHSA
+advisories**, each with its own specific affected-version range, that happen to
+collectively span nearly `next`'s whole history because `next` has shipped a
+steady stream of them. `15.5.21` is confirmed (by re-running the same audit
+against `next@15.5.21`) to be the lowest release whose remaining `next`-specific
+advisory count is zero — every one of the 30 below has an upper bound `<15.5.21`
+or earlier.
+
+### Bumped (A21) — direct pins with a published, version-bounded advisory
+
+| Package | Old pin | New pin | Advisory / advisories |
+|---|---|---|---|
+| `next` | `15.1.3` | `15.5.21` | CVE-2025-66478 (GHSA-4342-x723-ch2f, SSRF via Middleware redirect handling) plus 29 further Next.js GHSA advisories with upper bounds from `<15.1.6` up to `<15.5.21` (cache poisoning, DoS, XSS, SSRF, auth-bypass, and cache-confusion families across the 15.x line) — full list: GHSA-3h52-269p-cp9r, GHSA-67rr-84xm-4c7r, GHSA-g5qg-72qw-gw5v, GHSA-xv57-4mr9-wg8v, GHSA-4342-x723-ch2f, GHSA-qpjv-v59x-3qc4, GHSA-9qr9-h5gf-34mp, GHSA-w37m-7fhw-fmv9, GHSA-mwv6-3258-q52c, GHSA-9g9p-9gw9-jx7f, GHSA-h25m-26qc-wcjf, GHSA-f82v-jwr5-mffw, GHSA-ggv3-7p47-pfv8, GHSA-3x4c-7xq6-9pq8, GHSA-q4gf-8mx6-v5v3, GHSA-8h8q-6873-q5fj, GHSA-3g8h-86w9-wvmq, GHSA-ffhc-5mcf-pf4q, GHSA-vfv6-92ff-j949, GHSA-gx5p-jg67-6x7h, GHSA-mg66-mrh9-m8jx, GHSA-h64f-5h5j-jqjh, GHSA-c4j6-fc7j-m34r, GHSA-wfc6-r584-vfw7, GHSA-36qx-fr4f-26g5, GHSA-m99w-x7hq-7vfj, GHSA-89xv-2m56-2m9x, GHSA-68g3-v927-f742, GHSA-4633-3j49-mh5q, GHSA-4c39-4ccg-62r3, GHSA-p9j2-gv94-2wf4, GHSA-955p-x3mx-jcvp. |
+| `@opentelemetry/sdk-trace-web` | `1.30.0` | `2.8.0` | GHSA-8988-4f7v-96qf — "OpenTelemetry Core: Unbounded memory allocation in W3C Baggage propagation," rooted in the `@opentelemetry/core <2.8.0` dependency this package pins in lockstep. |
+| `@opentelemetry/exporter-trace-otlp-http` | `0.57.0` | `0.219.0` | Same GHSA-8988-4f7v-96qf, via the same `@opentelemetry/core <2.8.0` transitive dependency. |
+| `@opentelemetry/resources` | `1.30.0` | `2.8.0` | Same GHSA-8988-4f7v-96qf. Notable specifically because this is the exact baggage-propagation code path Task 7 leans on hardest (`northstar.claim.id` correlation via baggage), and `injectContext` in `telemetry.ts` already exercises it on every claim submission. |
+
+Confirmed by `npm audit --json` before/after: `next`'s own advisory count and all
+three `@opentelemetry/core <2.8.0` advisories are gone post-bump; `npm run build`
+and `npx vitest run` both pass on the new pins (see the fix-round report for
+verbatim output), and the end-to-end trace was re-captured (§6a) to confirm the
+browser's span shape did not change.
+
+**A21 divergence, reported plainly rather than silently complied with:** A21
+literally says "bump it, within the same major version, to the lowest release
+that clears the advisory." For the three OTel packages, no same-major-version fix
+exists. `@opentelemetry/core`'s vulnerable range is `<2.8.0`; its last 1.x release
+is `1.30.1`, with no later 1.x patch — the fix landed only in the 2.x line.
+`sdk-trace-web` and `resources` pin `core` in lockstep (identical version numbers
+every release), so they can only clear the advisory by moving to their own 2.x
+lines. `exporter-trace-otlp-http` is a 0.x package, where npm/semver treats every
+`0.x.0` bump as major regardless of size, so it has no "same major version" bump
+available either — `0.219.0` is a major bump by that definition even though it is
+the smallest one that clears the advisory. Proceeded with the major bump anyway,
+since A21's overriding stated principle ("no component ships on a dependency with
+a published CVE") outranks its own literal "same major version" phrasing when the
+two conflict, and because leaving these three unpinned would leave Task 7's own
+baggage code path on a vulnerable dependency. Flag for the coordinator if this
+reading of A21 is wrong.
+
+**Consequence of the OTel 2.x bump — an API break and a behavior break, both
+fixed:** see §3's fix-round note and §6a.
+
+### Deliberately left alone — dev-only or transitive, out of scope per A21
+
+A21: "bump what the advisory names and nothing else." `npm audit` (post-bump)
+still reports 8 vulnerabilities, all confirmed dev-only or transitive — none of
+these are shipped in the built static export (`out/`) or the nginx runtime image,
+only in the `node_modules` used to run `next build` and `vitest` locally:
+
+| Package | Severity | Advisory / advisories | Why untouched |
+|---|---|---|---|
+| `vitest` | critical | GHSA-9crc-q9x8-hgqq, GHSA-5xrq-8626-4rwp | Dev/test-runner only; not in the shipped image. |
+| `esbuild` | moderate | GHSA-67mh-4wv8-2f99 | Transitive, via `vite`/`vitest`'s dev server; not in the shipped image. |
+| `vite` | high | GHSA-4w7w-66w2-5vf9, GHSA-v6wh-96g9-6wx3, GHSA-fx2h-pf6j-xcff | `vitest`'s transitive dependency; dev/test only. |
+| `vite-node` | moderate | (rolled up via `vite`) | Same as `vite`. |
+| `@vitest/mocker` | moderate | (rolled up via `vite`) | Same as `vite`. |
+| `postcss` | high | GHSA-qx2v-qp2m-jg93, GHSA-6g55-p6wh-862q, GHSA-fxqj-rqcc-2cmp, GHSA-r28c-9q8g-f849 | `next`'s own transitive build-time dependency (CSS tooling); not a `customer-ui` direct pin, no upstream fix available at `next@15.5.21` without `next` itself moving it. |
+| `sharp` | high | GHSA-f88m-g3jw-g9cj (inherited libvips CVEs) | `next`'s own optional transitive dependency (server-side image optimization); irrelevant here since this app is `output: "export"` with no Image Optimization API in use. |
+
+This is a conference-demo app with no auth and no untrusted server-side rendering
+(static `output: "export"`, served by plain nginx) — the dev-only tools above never
+run in the deployed container, and the two transitive `next` deps (`postcss`,
+`sharp`) are exercised only by a build feature (`next/image`'s optimizer) this app
+does not use. Recorded here per A21's instruction to note, not silently fix, what
+is out of scope. Flag for the coordinator if any of these should be revisited
+before the demo ships.
+
+## 6a. Fix round 1: the OTel 2.x bump's own regressions, found and fixed
+
+Bumping `@opentelemetry/resources` across its 2.0 boundary (§6) surfaced two real
+breaks in `telemetry.ts`, both found by re-capturing a live trace after the bump
+and comparing it against §3's original pre-bump capture — exactly the
+verification A21/the fix-round instructions asked for ("re-capture the end-to-end
+trace to confirm the browser's span output did not change shape").
+
+**1. API break — the constructable `Resource` class is gone.** 2.x replaced
+`new Resource({...})` with a `resourceFromAttributes({...})` factory function;
+`Resource` is now only a type, no longer `new`-able. Fixed by switching the import
+and call site in `telemetry.ts` accordingly.
+
+**2. Behavior break — the automatic merge with SDK defaults is gone.** This one
+was not in any changelog line read up front; it was found empirically. 1.x's
+`BasicTracerProvider` silently merged any user-supplied `resource` with
+`Resource.default()` (which carries `telemetry.sdk.language`/`name`/`version`) via
+a `mergeResourceWithDefaults` config flag that defaulted to `true` (confirmed by
+reading `@opentelemetry/sdk-trace-base@1.30.1`'s own
+`build/src/BasicTracerProvider.js`). 2.x's `BasicTracerProvider` does no such
+merge — it uses exactly the resource it is given (confirmed by reading
+`@opentelemetry/sdk-trace-base@2.8.0`'s equivalent source: `this._resource =
+mergedConfig.resource ?? defaultResource();`, no merge step at all). Supplying
+only `resourceFromAttributes({ service.name })`, as the first post-bump edit did,
+therefore silently dropped `telemetry.sdk.*` from every trace: a first sound
+re-capture (via `wait_for_trace_id`, not `find_trace` — see below) showed
+`customer-ui resource tags: []`, empty, where the pre-bump capture in §3 had all
+three `telemetry.sdk.*` attributes.
+
+**Fixed** by merging explicitly:
+```ts
+resource: defaultResource().merge(
+  resourceFromAttributes({ [ATTR_SERVICE_NAME]: "customer-ui" }),
+),
+```
+confirmed against `@opentelemetry/resources@2.8.0`'s own type definitions
+(`ResourceImpl.d.ts` exports `defaultResource`/`resourceFromAttributes`;
+`Resource.d.ts`'s `Resource` interface has `merge(other: Resource | null):
+Resource`) — restoring the old effective behavior explicitly rather than relying
+on an implicit default that no longer exists.
+
+**Re-verified sound, not by re-running `find_trace`:** the first check of this
+bump used `find_trace(service="customer-ui", ..., lookback="5m")` as a quick
+ad-hoc look — the exact unsound pattern A14 warns against, caught mid-investigation
+before drawing any conclusion from it (it returned a trace consistent with
+*before* the redeploy, which is precisely the staleness risk A14 names). Redone
+the sound way used throughout this task: a fresh Playwright session observed the
+real wire `traceparent`, and `wait_for_trace_id` looked the trace up by that exact
+ID. That capture, post-fix, showed:
+
+- `span_count: 56`, `services: ['claims-agent', 'customer-ui', 'settlement-agent']`
+  — unchanged from the pre-bump shape.
+- `roots: [('customer-ui', 'claim.submit', <span_id matching the observed
+  traceparent>)]` — 1 root, unchanged.
+- `orphans: []` — 0 orphans, unchanged.
+- `customer-ui resource tags: {'telemetry.sdk.language': 'webjs',
+  'telemetry.sdk.name': 'opentelemetry', 'telemetry.sdk.version': '2.8.0'}` —
+  restored, now correctly reporting the new SDK version.
+
+Full suite re-run after the fix: `RUN_BROWSER_TESTS=1 pytest tests/e2e/test_browser_root_span.py -q`
+→ `5 passed, 1 xfailed` (the pre-existing MCP-hop xfail, untouched — see §4/§7).
 
 ## 7. The harness additions this task owns (A20/A20a)
 
