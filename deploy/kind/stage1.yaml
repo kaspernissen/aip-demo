@@ -1,0 +1,19 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: northstar
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080   # customer-ui
+        hostPort: 8080
+        protocol: TCP
+      - containerPort: 30686   # jaeger query UI
+        hostPort: 16686
+        protocol: TCP
+      - containerPort: 30318   # collector OTLP/HTTP, for tests running on the host
+        hostPort: 4318
+        protocol: TCP

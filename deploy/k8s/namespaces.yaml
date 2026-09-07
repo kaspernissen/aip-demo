@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: northstar-agents
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: northstar-tools
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: northstar-systems
