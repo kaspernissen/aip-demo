@@ -52,6 +52,21 @@ conflicts.)
 A clean `uv venv --python 3.13 .venv && uv pip install -r requirements.txt`
 resolves with zero conflicts against this file as committed.
 
+**A16 client-side skew check (review nit 6 — demonstrated in this task but
+not previously written down):** `mcp==1.9.4`'s `ClientSession`/
+`streamablehttp_client` (this pin, not the brief's) was exercised live
+against the deployed FastMCP 4.x `payments-mcp` server (A16) for all four
+paths this agent depends on — `propose_payment` success, `execute_payment`
+success, the 404 (payment not found) error shape, and the 409 (already
+executed) error shape (§7 below has the verbatim `CallToolResult`s). All
+four worked exactly as the MCP spec and `mcp_tools.py`'s handling expect.
+**No protocol skew was found between the `mcp==1.9.4` client and the pinned
+4.x FastMCP server** on the surface this agent actually uses (`initialize`,
+`call_tool`, `CallToolResult.isError`/`structuredContent`). This narrows
+Task 7's `params._meta` client-injection work to exactly that one gap (§5) —
+the transport and tool-call plumbing underneath it is not itself a source of
+version-skew risk.
+
 ## 2. a2a-sdk 0.3.7 API surface — verified (Step 1)
 
 ```
@@ -116,8 +131,10 @@ precisely.
 Captured against the deployed pod (`kubectl -n northstar-agents port-forward
 svc/settlement-agent 19002:9002`), sending one real `message/send` settling a
 claim, then reading the resulting trace back from Jaeger (deduplicated by
-operation name; the full per-call dump is longer — 20 `a2a.server.*` spans
-plus outbound httpx spans per request).
+operation name; the full per-call dump is longer — 18-20 `a2a.server.*`
+spans plus outbound httpx spans per request, the count varying slightly by
+how many times `EventQueue.close` fires in a given capture — see the
+per-capture note after the attribute map below).
 
 ### Span names, kinds
 
@@ -143,7 +160,7 @@ a2a.server.events.event_consumer.EventConsumer.consume_all   [kind=server]
 a2a.server.events.event_consumer.EventConsumer.agent_task_callback   [kind=server]
 ```
 
-**All 20 of these are `SpanKind.SERVER`** — including internal, in-process
+**All of these are `SpanKind.SERVER`** — including internal, in-process
 helper methods that create/close a queue or track a producer task. There is
 no `SpanKind.INTERNAL` used anywhere despite `trace_function`'s own default
 being `SpanKind.INTERNAL` (see `a2a/utils/telemetry.py`'s docstring) — every
@@ -151,7 +168,7 @@ one of these is explicitly overridden to `SERVER` via `@trace_class(kind=
 SpanKind.SERVER)` on both `DefaultRequestHandler` and `JSONRPCHandler`, and
 apparently on the `events` submodule's classes too.
 
-### Full attribute map — every single one of the 20 `a2a.server.*` spans (verbatim)
+### Full attribute map — every `a2a.server.*` span in this capture (verbatim)
 
 ```json
 {
@@ -163,10 +180,19 @@ apparently on the `events` submodule's classes too.
 }
 ```
 
-**This is the complete attribute set on every single a2a-sdk span, with no
-exceptions** — the root span (`JSONRPCHandler.on_message_send`) is
-identical to the innermost helper (`EventQueue.task_done`). None of the
-following ever appear, on any span, anywhere in this SDK's telemetry:
+**This is the complete attribute set on every a2a-sdk span in this capture,
+with no exceptions** — the root span (`JSONRPCHandler.on_message_send`) is
+identical to the innermost helper (`EventQueue.task_done`). (Per-capture note,
+corrected during review: the exact count and the attribute keys present vary
+slightly capture to capture — a fresh capture taken during fix round 2 found
+18 `a2a.server.*` spans, 15 carrying all five keys above and 3 omitting
+`otel.scope.version`; a review capture independently found the same 18/15/3
+split. Read "20" elsewhere in this file, and "every single one", as referring
+to a specific capture rather than a fixed constant — the substantive claim,
+that no `gen_ai.*`/A2A-identity/`http.*` attribute is ever present on any of
+these spans in any capture taken, holds across every capture regardless of
+the exact count.) None of the following ever appear, on any span, anywhere in
+this SDK's telemetry:
 
 - `gen_ai.operation.name` (the spec expects `invoke_agent` for an agent
   invocation)
@@ -386,15 +412,29 @@ change needed since the env var applies process-wide.
 **Double-counting check (explicitly asked for):** compared the full span set
 before and after. `StarletteInstrumentor` adds four *new*, distinctly-named
 spans per request (`POST /`, `POST / http receive`, `POST / http send` ×2)
-that did not exist before; every one of the pre-existing 20 `a2a.server.*`
+that did not exist before; every one of the pre-existing `a2a.server.*`
 spans is still present, unchanged in name, kind, and (empty) attribute
-content, just now correctly nested one level deeper (under `POST /` via
-`JSONRPCHandler.on_message_send`, whose own parent is now the ASGI
-`http receive` span rather than `null`). **No duplicate spans for the same
-logical operation were found** — this is two complementary instrumentation
-layers (ASGI transport vs. a2a-sdk's internal call graph), not double
-counting of one operation. Reported here per instruction, since the
-coordinator asked to know either way.
+content, just now correctly nested one level deeper.
+
+**Correction (review Finding 4):** an earlier draft of this section
+misstated the nesting as "under `POST /` via `JSONRPCHandler.on_message_send`,
+whose own parent is now the ASGI `http receive` span rather than `null`" —
+that is wrong on two counts, confirmed by re-capturing the live span tree
+(`JSONRPCHandler.on_message_send` span id `a259bdf2fa14c263`, `POST /` span
+id `a63ae041e614173c`, `POST / http receive` span id `8d45f0a811b58af4`,
+trace `822c17bb87414069a08021fe8f71b2e4`):
+`JSONRPCHandler.on_message_send`'s `parent_id` is `a63ae041e614173c` — a
+**direct** child of `POST /` itself, not of `http receive`; and
+`POST / http receive` has **zero** children of its own (queried by parent_id
+over the same trace) — it is a sibling leaf span next to `POST /`'s other
+descendants, not an intermediate parent of anything. The conclusion the
+sentence was supporting is correct and unaffected: `a2a-sdk`'s spans nest one
+level deeper under the new ASGI root, with no duplicate span for the same
+logical operation. **No duplicate spans for the same logical operation were
+found** — this is two complementary instrumentation layers (ASGI transport
+vs. a2a-sdk's internal call graph), not double counting of one operation.
+Reported here per instruction, since the coordinator asked to know either
+way.
 
 **What this fix does and does not address, precisely:** it fixes *context
 extraction* — an inbound `traceparent` now correctly becomes the ambient
@@ -415,7 +455,7 @@ otherwise) was invented to fill it.
   round, this hop did not propagate at all (§4) — kept for the record since
   §4's finding remains true of `a2a-sdk[telemetry]` on its own, unmodified.
 - **settlement-agent (internal) is coherent.** All of settlement-agent's own
-  spans — the ASGI-level spans, the 20 `a2a.server.*` spans, and this
+  spans — the ASGI-level spans, the `a2a.server.*` spans (§3), and this
   agent's own outbound httpx CLIENT spans to payments-mcp — correctly share
   one trace with no orphans beyond the expected synthetic-root exception
   (A17; the entry span's declared parent is the externally-injected span ID,
@@ -621,3 +661,37 @@ The round-1 residual risk note (ad hoc manual calls polluting a
 search-based lookup) no longer applies to the A2A-hop assertions, since
 they're now looked up by exact injected ID rather than search — that risk
 was specific to the pre-A18 fallback and is retired along with it.
+
+**Fix round 2 (A19 / review Findings 1-4, nits 6/8/9/10):** the two hardest
+correctness fixes in this task — the single-`Message` executor change and
+the `BaseExceptionGroup` unwrap in `mcp_tools.py` — had no test that would
+fail if they regressed (review Findings 1 and 2). Fixed:
+
+- `tests/e2e/test_settlement_agent_trace.py` gained
+  `test_message_send_returns_the_full_settlement_reply`, which parses the
+  actual `message/send` JSON reply and asserts `claimId`, `paymentId`,
+  `amount`, `currency`, `status == "executed"`, and a non-empty `narrative`.
+  Confirmed to fail against the brief's original three-`enqueue_event`
+  executor (verbatim failure output in `task-4-report.md`'s fix-round-2
+  section), restoring the file exactly afterward.
+- `agents/settlement-agent/tests/test_mcp_tools.py` (new) pins `_unwrap` and
+  `_leaf_exception`/`_call`'s exception-group handling with pure-unit and one
+  async test; confirmed to fail if either fix is reverted (same report
+  section has the verbatim failures).
+- `test_agent_card_is_served` now diffs the full served card against
+  `contracts/agent-cards/settlement-agent.json` rather than checking two
+  fields (Finding 3), so a served/contract drift fails here instead of
+  shipping silently.
+- `_leaf_exception` now prefers a `ToolCallError` leaf over blind
+  `exceptions[0]` (nit 9), and is covered by
+  `test_leaf_exception_prefers_a_tool_call_error_over_other_siblings`.
+- The e2e trace-ID comparison now zero-pads rather than double-`lstrip`s
+  (nit 10's first point); the span-ordering timing concern (nit 10's second
+  point) was assessed and left as-is — see task-4-report.md's fix-round-2
+  section for the reasoning.
+- §4a's misstated span parentage (Finding 4) and this file's overstated
+  "20 spans, no exceptions" phrasing (nit 5) are corrected in place above,
+  re-verified against a fresh live capture taken during this fix round.
+- `bootstrap.py`'s stale "if the measurement shows it is needed" hedge
+  (nit 8) is now a statement of fact, since the measurement was done and the
+  opt-in is set.

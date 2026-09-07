@@ -39,11 +39,23 @@ class ToolCallError(RuntimeError):
 
 
 def _leaf_exception(exc: BaseException) -> BaseException:
-    """Recursively unwrap a (possibly nested) BaseExceptionGroup to its
-    first leaf exception, for surfacing through a JSON-RPC error message."""
-    while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
-        exc = exc.exceptions[0]
-    return exc
+    """Recursively unwrap a (possibly nested) BaseExceptionGroup to a leaf
+    exception, for surfacing through a JSON-RPC error message.
+
+    Prefers a ToolCallError leaf if one is present anywhere in the group —
+    that is the case this whole mechanism exists for, and it is the one
+    whose text a caller actually needs to see. Falls back to the first leaf
+    found if no ToolCallError is present (fine for M1.1's single-failure
+    paths; a real anyio cancellation/transport error ahead of a ToolCallError
+    would previously have won by accident of ordering — see review nit 9).
+    """
+    if not isinstance(exc, BaseExceptionGroup):
+        return exc
+    leaves = [_leaf_exception(sub) for sub in exc.exceptions]
+    for leaf in leaves:
+        if isinstance(leaf, ToolCallError):
+            return leaf
+    return leaves[0] if leaves else exc
 
 
 def _unwrap(result: Any) -> dict:

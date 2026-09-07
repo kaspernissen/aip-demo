@@ -31,13 +31,34 @@ job (shared `correlation.py`, A6) because more than one service needs it.
 The three tests below asserting cross-service joining remain
 `xfail(strict=True)`, citing this one remaining gap precisely.
 
-**Net effect after this fix round**: trace context now propagates *into*
-settlement-agent from its A2A caller, but not *out* to payments-mcp. A
-partially connected chain, labelled honestly.
+**Fix round 2 (A19 / review Finding 1).** The round-1 fixture only asserted
+`"error" not in result` on the settlement reply — which tests nothing about
+the payload. Restoring the brief's original three-`enqueue_event` executor
+(the plan defect fixed in round 1, see `executor.py` and NOTES.md §8) would
+still satisfy that assertion, because a2a-sdk's blocking `message/send`
+returns the *first* enqueued `Message` regardless of which executor is
+running, and that first message is always non-error text. The suite would
+report green while silently returning narration instead of the documented
+`{claimId, paymentId, amount, status, narrative}` JSON that Task 5 and
+Task 7 consume. `test_message_send_returns_the_full_settlement_reply` below
+replaces that vacuous check with one that parses and asserts the actual
+payload, and was confirmed to fail against the brief's three-message
+executor (see task-4-report.md's fix-round-2 section for the verbatim
+failure). `test_agent_card_is_served` similarly now diffs the full served
+card against `contracts/agent-cards/settlement-agent.json` rather than
+checking two fields (review Finding 3), so served/contract drift is caught
+here instead of shipping silently.
+
+**Net effect after both fix rounds**: trace context now propagates *into*
+settlement-agent from its A2A caller, but not *out* to payments-mcp. The
+settlement reply's actual JSON payload, and the served agent card's parity
+with its committed contract, are both now under test rather than assumed.
 """
 import json
 import os
 import uuid
+from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -48,6 +69,9 @@ JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 SETTLEMENT_URL = os.environ.get("SETTLEMENT_AGENT_URL", "http://localhost:19002")
 
 ENTRY_SPAN = "POST /"  # StarletteInstrumentor's ASGI server span (A18)
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+AGENT_CARD_CONTRACT = REPO_ROOT / "contracts" / "agent-cards" / "settlement-agent.json"
 
 
 def send_message(text: str, traceparent: str | None = None) -> dict:
@@ -81,6 +105,19 @@ def test_agent_card_is_served():
     assert card["name"] == "settlement-agent"
     assert any(skill["id"] == "settle-claim" for skill in card["skills"])
 
+    # Review Finding 3: the card is baked into the image at build time by
+    # rebuild-and-deploy.sh's staging step, whose whole point is that
+    # contracts/agent-cards/<component>.json is the single source of truth.
+    # Checking only `name` and one skill id lets the served card silently
+    # drift from the committed contract (e.g. an edited `description` or
+    # `version` that never gets rebuilt) without failing anything. Diff the
+    # whole document instead.
+    contract = json.loads(AGENT_CARD_CONTRACT.read_text())
+    assert card == contract, (
+        "served agent card does not match the committed contract "
+        f"({AGENT_CARD_CONTRACT}) — rebuild and redeploy settlement-agent"
+    )
+
 
 @pytest.fixture(scope="module")
 def settlement_trace():
@@ -104,7 +141,32 @@ def settlement_trace():
 
     client = JaegerClient(JAEGER_URL)
     trace = client.wait_for_trace_id(trace_id, operation=ENTRY_SPAN, timeout=90)
-    return trace, trace_id, span_id
+    return SimpleNamespace(
+        trace=trace, trace_id=trace_id, span_id=span_id, claim_id=claim_id, result=result
+    )
+
+
+def test_message_send_returns_the_full_settlement_reply(settlement_trace):
+    """Plan defect (A19, review Finding 1): the brief's Step 8 executor
+    sketch enqueued three Message events, assuming a blocking message/send
+    caller would receive the last one. It doesn't — a2a-sdk 0.3.7's
+    ResultAggregator.consume_and_break_on_interrupt returns as soon as it
+    sees the FIRST Message-kind event (verified, NOTES.md §8), so the
+    brief's version would have replied with "Assessed settlement: ..."
+    narration text and silently dropped the promised JSON. `executor.py` now
+    enqueues exactly one Message — the final JSON result. This test asserts
+    that payload's substance, not merely that no error occurred: restoring
+    the brief's three-message executor makes this test fail (verified, see
+    task-4-report.md fix round 2), while the old `"error" not in result`
+    assertion alone would not have caught it.
+    """
+    payload = json.loads(settlement_trace.result["result"]["parts"][0]["text"])
+    assert payload["claimId"] == settlement_trace.claim_id
+    assert payload["paymentId"].startswith("PAY-")
+    assert payload["amount"] == 6200
+    assert payload["currency"] == "EUR"
+    assert payload["status"] == "executed"
+    assert payload["narrative"], "narrative must be non-empty"
 
 
 def test_settlement_agent_entry_span_is_parented_to_the_injected_context(settlement_trace):
@@ -112,17 +174,21 @@ def test_settlement_agent_entry_span_is_parented_to_the_injected_context(settlem
     extracts the injected `traceparent` and starts the entry span as a real
     child of it — not a new, disconnected root, which is what this same
     check proved *before* A18 (see NOTES.md for the before/after)."""
-    trace, trace_id, span_id = settlement_trace
+    trace = settlement_trace.trace
     entry = trace.span(ENTRY_SPAN)
-    assert entry.parent_id == span_id, (
+    assert entry.parent_id == settlement_trace.span_id, (
         f"{ENTRY_SPAN!r} span's parent is {entry.parent_id!r}, expected the "
-        f"injected span id {span_id!r} — inbound trace context did not propagate"
+        f"injected span id {settlement_trace.span_id!r} — inbound trace "
+        "context did not propagate"
     )
     # Jaeger's TraceID.String() drops a whole-number leading zero nibble when
     # the high 64 bits start with a zero hex digit (see
-    # model.TraceID.String() in jaeger-idl); compare normalized rather than
-    # requiring an exact 32-char match, matching the other e2e tests' convention.
-    assert trace.trace_id.lower().lstrip("0") == trace_id.lower().lstrip("0")
+    # model.TraceID.String() in jaeger-idl), so the returned ID can be
+    # shorter than 32 hex chars. Zero-pad it back out to 32 for an exact
+    # comparison rather than stripping leading zeros from both sides (review
+    # nit 10), which could mask a genuine mismatch that happened to leave
+    # both operands with the same stripped form.
+    assert trace.trace_id.lower().zfill(32) == settlement_trace.trace_id.lower()
 
 
 def test_settlement_agent_trace_has_no_unexpected_orphans(settlement_trace):
@@ -132,10 +198,12 @@ def test_settlement_agent_trace_has_no_unexpected_orphans(settlement_trace):
     genuine propagation defect anywhere else (a real internal hop dropping
     context) still fails this test, per A17's explicit rule against a count
     tolerance or a name allowlist."""
-    trace, _trace_id, span_id = settlement_trace
+    trace = settlement_trace.trace
     orphans = trace.orphans()
     unexpected = [
-        s for s in orphans if not (s.operation == ENTRY_SPAN and s.parent_id == span_id)
+        s
+        for s in orphans
+        if not (s.operation == ENTRY_SPAN and s.parent_id == settlement_trace.span_id)
     ]
     assert not unexpected, (
         "orphan spans present beyond the expected synthetic root, context "
@@ -150,8 +218,7 @@ def test_settlement_agent_outbound_mcp_calls_are_traced(settlement_trace):
     rooted) A2A request span. This proves this agent's own outbound HTTP hop
     is instrumented and uses the stable HTTP semconv spelling (A13) — even
     though the far side does not yet join the trace (the one remaining gap)."""
-    trace, _trace_id, _span_id = settlement_trace
-    client_spans = [s for s in trace.spans if s.kind == "client"]
+    client_spans = [s for s in settlement_trace.trace.spans if s.kind == "client"]
     assert client_spans, "no outbound CLIENT spans found for the MCP transport"
     for span in client_spans:
         target = span.attrs.get("url.full") or ""
@@ -175,8 +242,7 @@ def test_settlement_agent_outbound_mcp_calls_are_traced(settlement_trace):
     ),
 )
 def test_all_four_services_are_in_one_trace(settlement_trace):
-    trace, _trace_id, _span_id = settlement_trace
-    services = trace.services()
+    services = settlement_trace.trace.services()
     assert {"settlement-agent", "payments-mcp", "payments-api"} <= services, (
         f"expected one trace spanning the chain; got services: {sorted(services)}"
     )
@@ -187,8 +253,7 @@ def test_all_four_services_are_in_one_trace(settlement_trace):
     reason="Same remaining gap as test_all_four_services_are_in_one_trace.",
 )
 def test_mcp_tool_calls_are_present(settlement_trace):
-    trace, _trace_id, _span_id = settlement_trace
-    operations = {s.operation for s in trace.spans}
+    operations = {s.operation for s in settlement_trace.trace.spans}
     assert "tools/call propose_payment" in operations
     assert "tools/call execute_payment" in operations
 
@@ -198,7 +263,7 @@ def test_mcp_tool_calls_are_present(settlement_trace):
     reason="Same remaining gap as test_all_four_services_are_in_one_trace.",
 )
 def test_settlement_agent_span_precedes_the_payment(settlement_trace):
-    trace, _trace_id, _span_id = settlement_trace
+    trace = settlement_trace.trace
     agent_spans = [s for s in trace.spans if s.service == "settlement-agent"]
     api_spans = [s for s in trace.spans if s.service == "payments-api"]
     assert agent_spans, "no settlement-agent spans"

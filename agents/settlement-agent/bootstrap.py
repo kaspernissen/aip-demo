@@ -55,9 +55,10 @@ def configure() -> None:
 
     # Emits CLIENT spans for the outbound HTTP calls the MCP streamable-http
     # transport makes to payments-mcp, and injects trace context into those
-    # outbound headers. OTEL_SEMCONV_STABILITY_OPT_IN=http (set in the
-    # deployment manifest, if the measurement in NOTES.md shows it is needed)
-    # converges these onto the stable HTTP attribute spelling.
+    # outbound headers. The measurement in NOTES.md §6 confirmed this
+    # instrumentation defaults to the legacy HTTP attribute spelling, so
+    # OTEL_SEMCONV_STABILITY_OPT_IN=http is set on the deployment manifest to
+    # converge it onto the stable spelling.
     HTTPXClientInstrumentor().instrument()
 
 
