@@ -1,0 +1,26 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "claims-agent",
+  "description": "Front door for motor claims at Northstar Insurance. Coordinates policy, assessment and settlement agents.",
+  "url": "http://claims-agent.northstar-agents.svc.cluster.local:9001/",
+  "version": "0.1.0",
+  "preferredTransport": "JSONRPC",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false,
+    "stateTransitionHistory": false
+  },
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain"],
+  "skills": [
+    {
+      "id": "file-claim",
+      "name": "File a motor claim",
+      "description": "Accept a vehicle-damage claim and drive it to a settlement decision.",
+      "tags": ["claims", "intake", "motor"],
+      "examples": [
+        "{\"claimId\": \"CLM-1842\", \"policyNumber\": \"POL-77120\", \"description\": \"Rear-end collision at a junction\", \"estimatedAmount\": 6200}"
+      ]
+    }
+  ]
+}

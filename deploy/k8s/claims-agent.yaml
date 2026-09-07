@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claims-agent
+  namespace: northstar-agents
+  labels:
+    app: claims-agent
+    northstar.io/plane: agents
+    northstar.io/owner: claims-team
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: claims-agent
+  template:
+    metadata:
+      labels:
+        app: claims-agent
+        northstar.io/plane: agents
+        northstar.io/owner: claims-team
+    spec:
+      containers:
+        - name: claims-agent
+          image: localhost:5001/northstar/claims-agent:dev
+          imagePullPolicy: Always
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: claims-agent
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            # opentelemetry-instrumentation-httpx==0.65b0 emits the legacy HTTP
+            # attribute spelling (http.method, http.url, http.status_code) by
+            # default; this opt-in converges the outbound A2A call this agent
+            # makes to settlement-agent, and the inbound StarletteInstrumentor
+            # entry span, onto the stable spelling (A13). Verified empirically
+            # against this agent's own deployed pod — see NOTES.md.
+            - name: OTEL_SEMCONV_STABILITY_OPT_IN
+              value: http
+            # Delegation is configured, never discovered. M2 replaces these with
+            # agentgateway routes; M6 generates them from the Agent CRD.
+            - name: NORTHSTAR_ALLOWED_AGENTS
+              value: settlement-agent=http://settlement-agent.northstar-agents.svc.cluster.local:9002
+            - name: CORS_ALLOWED_ORIGINS
+              value: http://localhost:8080
+            - name: AGENT_CARD_PATH
+              value: /app/agent-card.json
+            - name: PORT
+              value: "9001"
+          ports:
+            - name: http
+              containerPort: 9001
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 50m
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: claims-agent
+  namespace: northstar-agents
+spec:
+  selector:
+    app: claims-agent
+  ports:
+    - name: http
+      port: 9001
+      targetPort: 9001
