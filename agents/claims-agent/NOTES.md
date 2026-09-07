@@ -594,3 +594,57 @@ incidental) and zero conflicts. settlement-agent was rebuilt and redeployed
 (`./scripts/rebuild-and-deploy.sh settlement-agent`) and its own test suite
 re-run against the live pod — see `task-5-report.md`'s fix-round section for
 the command and verbatim output.
+
+## 13. Task 7 finding: `a2a-sdk` 0.3.7 runs the executor in a *separate* asyncio task, so baggage attached inside it never reaches this agent's own request-handling spans
+
+Task 7 attaches `northstar.claim.id` to OTel baggage inside
+`ClaimsAgentExecutor.execute()`, at intake (`otel_context.attach(set_claim_id(...))`).
+Empirical capture (real deployed pod, full chain end to end — see
+`task-7-report.md`) showed the attribute reaching only **2 of claims-agent's
+~23 own spans for a given request**: the outbound A2A `CLIENT` span to
+settlement-agent, and the `EventQueue.enqueue_event` call for the final JSON
+reply — both created directly inside the executor's own coroutine, after the
+attach. Every other claims-agent span for the same request — the ASGI entry
+span (`POST /`, StarletteInstrumentor) and every `a2a.server.*` span
+(`DefaultRequestHandler.on_message_send`, `EventQueue.dequeue_event`,
+`EventConsumer.consume_all`, etc.) — lacks it.
+
+**Root cause, confirmed by an isolated reproduction** (a minimal script
+driving `a2a.server.request_handlers.DefaultRequestHandler` directly against
+a real `AgentExecutor`, with an `InMemorySpanExporter`, no network involved):
+`DefaultRequestHandler._setup_message_execution` (`default_request_handler.py`
+line ~278) starts the executor via `asyncio.create_task(...)` — a producer
+task — while a *separate* consumer loop (in the same "main" task that also
+owns the ASGI entry span) drains the `EventQueue` until it sees the first
+`Message`-kind event. `asyncio.create_task()` copies the current
+`contextvars.Context` at the moment it is called, which is *before* the
+producer task has had any chance to run `execute()` — so nothing the executor
+attaches to its own context after that point can retroactively reach the
+consumer/main task's context, or any span that task creates. The isolated
+reproduction confirmed this exactly: a span opened before the executor's
+`context.attach()` call, and every span opened by the consumer/main task
+throughout the request, showed no baggage; a span opened directly inside the
+executor's own coroutine *after* the attach did.
+
+This is not a bug in `correlation.py`, `executor.py`, or `bootstrap.py` — it
+is intrinsic to how `a2a-sdk` 0.3.7 splits request handling across tasks. It
+is also not something this project's own `ClaimIdSpanProcessor` should try to
+route around: `a2a-sdk`'s own spans are third-party telemetry (per this
+task's brief), and reaching into a2a-sdk's task-spawning behaviour to force
+context to cross that boundary would be exactly the kind of hand-rolled
+workaround this milestone avoids elsewhere (contrast: A18's ASGI
+instrumentation fix, which used *real* framework instrumentation rather than
+patching a2a-sdk).
+
+**Practical consequence, by contrast with settlement-agent:** settlement-agent
+receives `northstar.claim.id` via an *inbound* baggage header (from claims-agent's
+outbound A2A call), extracted by `StarletteInstrumentor` at the ASGI boundary
+— i.e., *before* any of settlement-agent's own internal a2a-sdk tasks are
+spawned for that request. Every task spawned afterwards inherits it via the
+normal context-copy-on-task-creation mechanism, so settlement-agent shows
+**100% coverage** (32/32 spans in one live capture) with no exceptions, while
+claims-agent — the one service that *mints* the id mid-request rather than
+receiving it — cannot achieve that for its own pre-intake/consumer-task
+spans. `tests/e2e/test_claim_correlation.py` asserts this real, capture-verified
+boundary precisely rather than the brief's original blanket "every span in
+every service" assertion (a plan defect per A19 — see `task-7-report.md`).

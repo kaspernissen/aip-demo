@@ -695,3 +695,85 @@ fail if they regressed (review Findings 1 and 2). Fixed:
 - `bootstrap.py`'s stale "if the measurement shows it is needed" hedge
   (nit 8) is now a statement of fact, since the measurement was done and the
   opt-in is set.
+
+## 10. Task 7: client-side `params._meta` injection — the API used, and why it is the lower-level one
+
+`mcp_tools.py`'s `_call` now builds its own `CallToolRequest` and calls
+`ClientSession.send_request()` instead of `ClientSession.call_tool()`. This is
+not a stylistic choice: **`mcp==1.9.4`'s `ClientSession.call_tool(name,
+arguments, ...)` has no `_meta` parameter at all** (verified by reading
+`mcp/client/session.py`: its signature is `name: str, arguments: dict | None,
+read_timeout_seconds, progress_callback` — nothing else), and it always
+constructs `CallToolRequestParams(name=name, arguments=arguments)` internally
+with no route to set `params._meta`. The only way to set it is to hand-build
+a `CallToolRequestParams(..., _meta=types.RequestParams.Meta(**carrier))` and
+call the lower-level `send_request(ClientRequest(CallToolRequest(...)),
+CallToolResult)` — the exact technique
+`tests/e2e/test_payments_mcp_trace.py` already used as test infrastructure
+(A14a). `RequestParams.Meta` accepts arbitrary extra keys
+(`model_config = ConfigDict(extra="allow")`), which is what lets
+`Meta(traceparent=..., baggage=...)` work even though only `progressToken` is
+a declared field.
+
+**This is upstream-contribution evidence**: there is no public, supported way
+in `mcp==1.9.4`'s high-level client API to attach `_meta` to an ordinary tool
+call. A client that wants SEP-414 propagation must always drop to the
+low-level request API and duplicate `call_tool`'s own request-building logic
+(name, arguments, result-type wiring, read-timeout/progress-callback
+plumbing). A natural upstream fix would be an optional `meta: dict | None`
+parameter on `call_tool()` itself, mirroring what `CallToolRequestParams`
+already supports internally.
+
+The carrier is built with `opentelemetry.propagate.inject(carrier)` against
+the *ambient* context — the same call HTTPXClientInstrumentor makes
+internally for ordinary HTTP headers elsewhere in this repo — so it carries
+whatever the global propagator produces: `traceparent` (and `tracestate` if
+present) plus `baggage`, generically, not just `northstar.claim.id`
+specifically. No claim-id-specific code lives in `mcp_tools.py` at all.
+
+## 11. Task 7 finding: FastMCP 4.0.3 does not propagate `baggage` through `params._meta` — confirmed by source and by capture
+
+`mcp_tools.py`'s carrier includes a `baggage` key whenever baggage is present
+in the ambient context (§10 above). Read directly from the installed
+`fastmcp==4.0.3` package, `fastmcp/telemetry.py`'s `extract_trace_context()`:
+
+```python
+carrier: dict[str, str] = {}
+if TRACE_PARENT_KEY in meta:
+    carrier["traceparent"] = str(meta[TRACE_PARENT_KEY])
+if TRACE_STATE_KEY in meta:
+    carrier["tracestate"] = str(meta[TRACE_STATE_KEY])
+if carrier:
+    return propagate.extract(carrier, context=otel_context.get_current())
+```
+
+Only `traceparent`/`tracestate` are ever copied out of `_meta` into the
+carrier passed to `propagate.extract()` — **`baggage` is never read**, even
+though the client sends it and even though SEP-414 (cited in this task's own
+brief) documents `baggage` as one of the three unprefixed `_meta` keys MCP
+carries. `inject_trace_context()` (the server-side counterpart, used when
+FastMCP acts as an MCP *client*) has the identical omission: it only ever
+populates `traceparent`/`tracestate` in its own outbound `_meta`, never
+`baggage`. A repo-wide `grep -rn baggage` inside the installed `fastmcp`
+package tree confirms zero matches, other than one unrelated code comment.
+
+**Confirmed by capture, not just by reading source**: a real deployed
+`payments-mcp` pod, driven through the full chain, shows the `tools/call
+propose_payment`/`tools/call execute_payment` spans correctly *parented*
+into the caller's trace (traceparent crosses — the fix that flips the six
+`xfail(strict=True)` tests this task closes), but **0 of those spans ever
+carry `northstar.claim.id`**, and neither does payments-api's own span
+downstream of them (baggage never entered payments-mcp's ambient context in
+the first place, so nothing was left to forward). See
+`tests/e2e/test_claim_correlation.py::test_claim_id_is_on_every_mcp_hop_span`
+(`xfail(strict=True)`, pinning this precisely) and `task-7-report.md` for the
+verbatim capture.
+
+This is the "fourth candidate upstream gap" this task's brief anticipated
+(Step 11): the MCP hop is trace-ID-joined but not attribute-correlated, and
+per the brief's own instruction that is the correct, honest state to leave
+it in — no attribute is faked, and no attempt was made to route around
+FastMCP's own `_meta` handling from `mcp_tools.py` or `server.py`. A natural
+upstream fix would add a `baggage` key to both `extract_trace_context()`'s
+and `inject_trace_context()`'s carriers, symmetric with how they already
+handle `traceparent`/`tracestate`.

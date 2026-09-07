@@ -1,6 +1,5 @@
 """Asserts the A2A hop is now correctly traced end to end into
-settlement-agent, and pins the one remaining confirmed propagation gap down
-as xfail rather than asserting behaviour that empirically does not exist.
+settlement-agent, and that the MCP hop below it now joins the same trace.
 
 Chain under test: A2A client -> settlement-agent -> payments-mcp -> payments-api.
 
@@ -18,18 +17,6 @@ per A14. Because the injected root span never itself lands in Jaeger, the
 `POST /` entry span is a legitimate orphan by the harness's definition; per
 A17 the exclusion below is pinned to exactly that one span (its operation
 *and* its `parent_id`), not a count tolerance.
-
-**One gap remains, deliberately.** settlement-agent's MCP client
-(`mcp==1.9.4`'s high-level `ClientSession.call_tool()`, per this task's
-explicit scope) still does not inject `params._meta`, and FastMCP only ever
-extracts trace context from `params._meta` — never HTTP headers — so
-payments-mcp's tool-call spans still do not join this trace, even though
-settlement-agent's own outbound HTTP request to payments-mcp carries a
-`traceparent` header (ordinary ambient-context injection from
-`HTTPXClientInstrumentor`). Per the coordinator's ruling, that stays Task 7's
-job (shared `correlation.py`, A6) because more than one service needs it.
-The three tests below asserting cross-service joining remain
-`xfail(strict=True)`, citing this one remaining gap precisely.
 
 **Fix round 2 (A19 / review Finding 1).** The round-1 fixture only asserted
 `"error" not in result` on the settlement reply — which tests nothing about
@@ -49,10 +36,24 @@ card against `contracts/agent-cards/settlement-agent.json` rather than
 checking two fields (review Finding 3), so served/contract drift is caught
 here instead of shipping silently.
 
-**Net effect after both fix rounds**: trace context now propagates *into*
-settlement-agent from its A2A caller, but not *out* to payments-mcp. The
-settlement reply's actual JSON payload, and the served agent card's parity
-with its committed contract, are both now under test rather than assumed.
+**Task 7: the MCP-hop gap is now closed.** settlement-agent's MCP client
+(`mcp_tools.py`) now injects `params._meta` (traceparent + baggage) via the
+lower-level `ClientSession.send_request()` API — `mcp==1.9.4`'s high-level
+`call_tool()` has no way to set `_meta` at all (see
+`agents/settlement-agent/NOTES.md` §10). FastMCP 4.0.3's server-side
+extraction (already proven working in Task 3/A14a) joins the trace, so
+`test_all_four_services_are_in_one_trace`, `test_mcp_tool_calls_are_present`
+and `test_settlement_agent_span_precedes_the_payment` below are no longer
+`xfail(strict=True)` — they assert real, confirmed-by-capture behaviour.
+(The `northstar.claim.id` *attribute* still does not cross this hop — a
+separate, confirmed FastMCP gap; see `tests/e2e/test_claim_correlation.py`
+and `agents/settlement-agent/NOTES.md` §11.)
+
+**Net effect after all fix rounds**: trace context now propagates all the way
+from an A2A client into settlement-agent, through the MCP hop into
+payments-mcp, and on into payments-api — one trace, no orphans beyond the
+expected synthetic root. The settlement reply's actual JSON payload, and the
+served agent card's parity with its committed contract, are both under test.
 """
 import json
 import os
@@ -140,7 +141,20 @@ def settlement_trace():
     assert "error" not in result, f"A2A call failed: {result}"
 
     client = JaegerClient(JAEGER_URL)
-    trace = client.wait_for_trace_id(trace_id, operation=ENTRY_SPAN, timeout=90)
+    # A20/A20a (Task 7 update): now that settlement-agent's MCP client injects
+    # params._meta, payments-mcp and payments-api join this trace too, on
+    # their own independent BatchSpanProcessor export timers. Before Task 7,
+    # ENTRY_SPAN appearing was sufficient (the trace legitimately stopped at
+    # settlement-agent); now the fixture must wait for the whole chain to
+    # land and hold steady via the harness's own `services` argument, exactly
+    # the race test_claims_chain_trace.py's fixture comment already
+    # anticipated ("exactly the shape Task 7's MCP fix will add").
+    trace = client.wait_for_trace_id(
+        trace_id,
+        operation=ENTRY_SPAN,
+        timeout=90,
+        services={"settlement-agent", "payments-mcp", "payments-api"},
+    )
     return SimpleNamespace(
         trace=trace, trace_id=trace_id, span_id=span_id, claim_id=claim_id, result=result
     )
@@ -216,9 +230,20 @@ def test_settlement_agent_outbound_mcp_calls_are_traced(settlement_trace):
     emits CLIENT spans for the MCP streamable-http transport's own HTTP
     calls to payments-mcp, nested inside the (now correctly externally
     rooted) A2A request span. This proves this agent's own outbound HTTP hop
-    is instrumented and uses the stable HTTP semconv spelling (A13) — even
-    though the far side does not yet join the trace (the one remaining gap)."""
-    client_spans = [s for s in settlement_trace.trace.spans if s.kind == "client"]
+    is instrumented and uses the stable HTTP semconv spelling (A13).
+
+    Task 7 update: since the MCP hop now joins this trace (params._meta
+    injection, correlation.py), the trace also legitimately contains
+    payments-mcp's *own* outbound CLIENT span to payments-api — filtering to
+    settlement-agent's own spans is what keeps this test's assertion (every
+    one of *this* service's outbound calls targets payments-mcp) precise
+    rather than accidentally also asserting something false about a
+    different service's own outbound hop."""
+    client_spans = [
+        s
+        for s in settlement_trace.trace.spans
+        if s.kind == "client" and s.service == "settlement-agent"
+    ]
     assert client_spans, "no outbound CLIENT spans found for the MCP transport"
     for span in client_spans:
         target = span.attrs.get("url.full") or ""
@@ -230,39 +255,30 @@ def test_settlement_agent_outbound_mcp_calls_are_traced(settlement_trace):
         assert "http.method" not in span.attrs
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Confirmed, remaining gap (see module docstring / NOTES.md): "
-        "settlement-agent's MCP client does not inject params._meta, so "
-        "FastMCP's tool-call spans never join this trace. This one stays "
-        "Task 7's job (shared correlation.py, A6) per the coordinator's "
-        "ruling. Flip once client-side _meta injection lands, and remove "
-        "this marker."
-    ),
-)
 def test_all_four_services_are_in_one_trace(settlement_trace):
+    """Task 7 flips this from xfail(strict=True): settlement-agent's MCP
+    client (mcp_tools.py) now injects params._meta (traceparent + baggage)
+    via the lower-level ClientSession.send_request() API, and FastMCP 4.0.3's
+    server-side extraction (already proven in NOTES.md/A14a) joins the trace.
+    Confirmed by capture: settlement-agent, payments-mcp and payments-api all
+    land in the one trace this test originates."""
     services = settlement_trace.trace.services()
     assert {"settlement-agent", "payments-mcp", "payments-api"} <= services, (
         f"expected one trace spanning the chain; got services: {sorted(services)}"
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Same remaining gap as test_all_four_services_are_in_one_trace.",
-)
 def test_mcp_tool_calls_are_present(settlement_trace):
+    """Task 7 flips this from xfail(strict=True) — same fix as
+    test_all_four_services_are_in_one_trace above."""
     operations = {s.operation for s in settlement_trace.trace.spans}
     assert "tools/call propose_payment" in operations
     assert "tools/call execute_payment" in operations
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Same remaining gap as test_all_four_services_are_in_one_trace.",
-)
 def test_settlement_agent_span_precedes_the_payment(settlement_trace):
+    """Task 7 flips this from xfail(strict=True) — same fix as
+    test_all_four_services_are_in_one_trace above."""
     trace = settlement_trace.trace
     agent_spans = [s for s in trace.spans if s.service == "settlement-agent"]
     api_spans = [s for s in trace.spans if s.service == "payments-api"]

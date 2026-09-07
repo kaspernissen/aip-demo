@@ -248,3 +248,24 @@ payments-api span is present, before handing the trace to the assertions. No cha
 `tests/harness/jaeger.py` itself. Empirically this step is still necessary — it is not
 made redundant by `wait_for_trace_id`'s own polling, since that only waits for one
 named span, not for spans from a second service.
+
+## 6. Task 7 finding: `_meta` extraction here never reads `baggage`, only `traceparent`/`tracestate`
+
+Task 7 makes settlement-agent's MCP client inject a `baggage` key into
+`params._meta` (SEP-414), alongside `traceparent`. Reading this package's own
+`fastmcp/telemetry.py::extract_trace_context()` shows it only ever copies
+`traceparent`/`tracestate` out of `meta` into the carrier it hands to
+`propagate.extract()` — `baggage` is never read, and `inject_trace_context()`
+(FastMCP acting as an MCP *client*) has the same omission on the outbound
+side. Confirmed by capture against this real deployed server: the
+`tools/call propose_payment`/`tools/call execute_payment` spans correctly
+join the caller's trace (traceparent crosses), but never carry
+`northstar.claim.id`, and this server's own outbound call to payments-api
+carries no `baggage` header either, since none ever entered its ambient
+context. Full detail, the capture evidence, and the upstream-fix shape are
+in `agents/settlement-agent/NOTES.md` §11 (the client-side half of this same
+finding) and `task-7-report.md`. No workaround was added here: `server.py`
+does not reach into FastMCP's `_meta` handling by hand to bridge this gap,
+since that would mean either patching third-party behaviour or inventing a
+correlation mechanism outside the standard propagation APIs this project
+otherwise relies on everywhere else.

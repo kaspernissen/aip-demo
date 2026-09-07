@@ -1,6 +1,6 @@
 """Asserts the first agent-to-agent handoff — claims-agent delegating to
-settlement-agent over A2A — is correctly traced, and pins down precisely how
-far the trace reaches today.
+settlement-agent over A2A — is correctly traced, and that the chain now
+reaches all the way down through the MCP hop into payments-api.
 
 Chain under test: A2A client -> claims-agent -> settlement-agent -> payments-mcp
 -> payments-api.
@@ -13,17 +13,19 @@ orphan by the harness's definition; per A17 the exclusion below is pinned to
 exactly that one span (its operation *and* its `parent_id`), not a count
 tolerance.
 
-**One gap remains, deliberately — same one Task 4 found and deferred.**
-settlement-agent's MCP client does not inject `params._meta`, and FastMCP only
-ever extracts trace context from `params._meta`, never HTTP headers (see
-`agents/settlement-agent/NOTES.md`). So even though this chain now propagates
-correctly from the test client through claims-agent and into settlement-agent
-(the new hop this task adds — see `agents/claims-agent/NOTES.md` for the
-empirical proof), it still does not reach payments-mcp or payments-api. Per
-the coordinator's ruling (A6/A18), that stays Task 7's job via the shared
-`correlation.py`. The tests asserting the full four-service chain remain
-`xfail(strict=True)`, citing this one remaining gap precisely — the same gap,
-not a new one.
+**Task 7: the MCP-hop gap (same one Task 4 found and deferred) is now
+closed.** settlement-agent's MCP client (`mcp_tools.py`) now injects
+`params._meta` (traceparent + baggage) via the lower-level
+`ClientSession.send_request()` API — `mcp==1.9.4`'s high-level `call_tool()`
+has no way to set `_meta` at all (see `agents/settlement-agent/NOTES.md`
+§10). FastMCP 4.0.3's server-side extraction joins the trace, so
+`test_all_four_backend_services_are_in_one_trace` and
+`test_payment_was_executed_with_no_governance` below are no longer
+`xfail(strict=True)` — they assert real, confirmed-by-capture behaviour: the
+whole chain, from this test's injected root through claims-agent,
+settlement-agent, payments-mcp and payments-api, is one trace. (The
+`northstar.claim.id` *attribute* still does not cross the MCP hop — a
+separate, confirmed FastMCP gap; see `tests/e2e/test_claim_correlation.py`.)
 """
 import json
 import os
@@ -339,18 +341,12 @@ def test_settlement_failure_reaches_the_caller_with_its_real_reason():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Confirmed, remaining gap (see module docstring / "
-        "agents/settlement-agent/NOTES.md): settlement-agent's MCP client "
-        "does not inject params._meta, so FastMCP's tool-call spans never "
-        "join this trace. This stays Task 7's job (shared correlation.py, "
-        "A6) per the coordinator's ruling. Flip once client-side _meta "
-        "injection lands, and remove this marker."
-    ),
-)
 def test_all_four_backend_services_are_in_one_trace(chain_trace):
+    """Task 7 flips this from xfail(strict=True): settlement-agent's MCP
+    client (mcp_tools.py) now injects params._meta (traceparent + baggage)
+    into the MCP hop via the lower-level ClientSession.send_request() API,
+    closing the last broken hop in the chain. Confirmed by capture: all four
+    backend services land in the one trace this test originates."""
     expected = {"claims-agent", "settlement-agent", "payments-mcp", "payments-api"}
     services = chain_trace.trace.services()
     assert expected <= services, (
@@ -358,14 +354,13 @@ def test_all_four_backend_services_are_in_one_trace(chain_trace):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Same remaining gap as test_all_four_backend_services_are_in_one_trace.",
-)
 def test_payment_was_executed_with_no_governance(chain_trace):
-    """M1's deliberate horror: nothing stopped the payment. Would be a
-    real assertion once the MCP hop joins this trace (Task 7); until then,
-    payments-api's span lives in a disconnected trace of its own."""
+    """M1's deliberate horror: nothing stopped the payment.
+
+    Task 7 flips this from xfail(strict=True) — same fix as
+    test_all_four_backend_services_are_in_one_trace above. Now a real
+    assertion: payments-api's execute span is provably in the same trace as
+    the rest of the chain, and nothing in that chain is a policy check."""
     operations = {s.operation for s in chain_trace.trace.spans}
     assert "tools/call execute_payment" in operations
     api_span = next(

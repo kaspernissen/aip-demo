@@ -6,21 +6,26 @@ boundary is configuration here and enforcement at the gateway in M2.
 Trace context crosses this boundary in the JSON-RPC params._meta bag, handled
 by the MCP SDK. Nothing is injected into HTTP headers by hand.
 
-Note (verified for this task, see NOTES.md): mcp==1.9.4's high-level
-ClientSession.call_tool() used below has no way to set params._meta, and does
-not inject one automatically. So, as things stand, calls made through this
-client do NOT carry trace context across the MCP boundary — payments-mcp's
-FastMCP server only extracts context from params._meta (never from HTTP
-headers), so its tool-call spans will not be joined to a caller's trace via
-this client. Making that injection happen is Task 7's job, not this file's;
-see NOTES.md for the empirical proof.
+Task 7: mcp==1.9.4's high-level ClientSession.call_tool() (used until this
+task) has no way to set params._meta, and does not inject one automatically
+(confirmed empirically, see NOTES.md and tests/e2e/test_payments_mcp_trace.py,
+which used the same technique as test-side infrastructure). This client now
+goes through the lower-level ClientSession.send_request() with a hand-built
+CallToolRequest instead, injecting the ambient OTel context (trace context
+*and* baggage — whatever the global propagator produces) into
+params._meta via the standard `opentelemetry.propagate.inject()` API. This is
+the one piece of production code in the repo that needs the lower-level
+request API rather than the SDK's own convenience wrapper; see this task's
+report for whether that gap is upstream-contribution evidence.
 """
 from __future__ import annotations
 
 from typing import Any
 
+import mcp.types as types
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from opentelemetry import propagate
 
 
 class ToolCallError(RuntimeError):
@@ -84,7 +89,32 @@ class PaymentsTools:
             async with streamablehttp_client(self._mcp_url) as (read, write, _):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-                    return _unwrap(await session.call_tool(tool, arguments))
+
+                    # Inject whatever the ambient OTel context carries
+                    # (trace context, and baggage if any is set — e.g.
+                    # northstar.claim.id) into a plain string carrier via the
+                    # standard propagate.inject() API, exactly as
+                    # HTTPXClientInstrumentor does for ordinary HTTP headers
+                    # elsewhere in this repo. The only difference here is the
+                    # carrier: params._meta (SEP-414's unprefixed
+                    # traceparent/tracestate/baggage keys), not an HTTP
+                    # header, because there is no HTTP header across an MCP
+                    # JSON-RPC boundary.
+                    carrier: dict[str, str] = {}
+                    propagate.inject(carrier)
+
+                    request = types.ClientRequest(
+                        types.CallToolRequest(
+                            method="tools/call",
+                            params=types.CallToolRequestParams(
+                                name=tool,
+                                arguments=arguments,
+                                _meta=types.RequestParams.Meta(**carrier) if carrier else None,
+                            ),
+                        )
+                    )
+                    result = await session.send_request(request, types.CallToolResult)
+                    return _unwrap(result)
         except BaseExceptionGroup as eg:
             # streamablehttp_client and ClientSession are each backed by their
             # own anyio TaskGroup, so an exception raised inside the `async

@@ -6,6 +6,9 @@ import (
 	"net/http"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type proposeRequest struct {
@@ -24,6 +27,20 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
+// claimIDFromBaggage annotates the current span with the claim id carried in
+// W3C baggage. The Go SDK has no baggage span processor, so our own middleware
+// does the same job explicitly.
+func withClaimID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if member := baggage.FromContext(r.Context()).Member("northstar.claim.id"); member.Value() != "" {
+			trace.SpanFromContext(r.Context()).SetAttributes(
+				attribute.String("northstar.claim.id", member.Value()),
+			)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // newRouter wires the HTTP surface. Each route is wrapped individually with
 // otelhttp so the span name is the route template rather than the raw path,
 // keeping span names low-cardinality per HTTP semantic conventions.
@@ -31,7 +48,7 @@ func newRouter(s *store) http.Handler {
 	mux := http.NewServeMux()
 
 	handle := func(pattern, spanName string, h http.HandlerFunc) {
-		mux.Handle(pattern, otelhttp.NewHandler(h, spanName))
+		mux.Handle(pattern, otelhttp.NewHandler(withClaimID(h), spanName))
 	}
 
 	handle("GET /healthz", "GET /healthz", func(w http.ResponseWriter, r *http.Request) {

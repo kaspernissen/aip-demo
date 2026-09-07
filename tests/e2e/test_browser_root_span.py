@@ -18,12 +18,15 @@ is strictly sounder than a service+operation search: two reviewers elsewhere
 in this milestone proved `find_trace` can return a stale trace minutes old,
 which this approach cannot do by construction.
 
-**A20/A20a in use**: `wait_for_trace_id`'s `services` argument (this task's
-own harness addition) waits for customer-ui, claims-agent and
-settlement-agent to all land, holding for the 10s quiet window past the 5s
-BatchSpanProcessor export delay, before treating the trace as complete.
-payments-mcp/payments-api are deliberately excluded from that set — they are
-not expected to join (see below) and including them would just time out.
+**A20/A20a in use**: `wait_for_trace_id`'s `services` argument (Task 6's
+harness addition) waits for the whole chain to land and hold steady for the
+10s quiet window past the 5s BatchSpanProcessor export delay before treating
+the trace as complete. Task 7 widens this from the three reachable services
+(customer-ui, claims-agent, settlement-agent) to all five — settlement-agent's
+MCP client now injects `params._meta`, so payments-mcp and payments-api join
+this trace too (see agents/settlement-agent/NOTES.md §10/§11 and
+tests/e2e/test_claim_correlation.py for what does and does not cross that
+hop: the trace joins fully; the northstar.claim.id attribute does not).
 
 Requires a real browser. Skipped unless RUN_BROWSER_TESTS=1.
 """
@@ -108,20 +111,23 @@ def browser_trace():
     trace_id, span_id = match.group(1), match.group(2)
 
     client = JaegerClient(JAEGER_URL)
-    # A20: wait for the real, reachable hops (customer-ui, claims-agent,
-    # settlement-agent) to all land and hold steady, not merely for one span
-    # to appear. payments-mcp/payments-api are excluded on purpose — see the
-    # module docstring and test_all_five_services_are_in_one_trace below.
-    # N7 (task-6-review.md): this set stays at the three reachable services on
-    # purpose (see the module docstring). Task 7 must widen it to all five —
-    # customer-ui, claims-agent, settlement-agent, payments-mcp, payments-api —
-    # in lockstep with flipping test_all_five_services_are_in_one_trace's
-    # xfail below; leaving it at three here is not an oversight to fix now.
+    # A20: wait for the whole chain to land and hold steady, not merely for
+    # one span to appear. Task 7 widens this from the three reachable
+    # services (N7, task-6-review.md) to all five: settlement-agent's MCP
+    # client now injects params._meta (correlation.py), so payments-mcp and
+    # payments-api join this trace too (traceparent crosses that hop
+    # correctly — see test_all_five_services_are_in_one_trace below).
     trace = client.wait_for_trace_id(
         trace_id,
         operation="claim.submit",
         timeout=150,
-        services={"customer-ui", "claims-agent", "settlement-agent"},
+        services={
+            "customer-ui",
+            "claims-agent",
+            "settlement-agent",
+            "payments-mcp",
+            "payments-api",
+        },
     )
 
     return SimpleNamespace(trace=trace, trace_id=trace_id, span_id=span_id, claim_id=claim_id)
@@ -182,24 +188,13 @@ def test_trace_has_a_single_root(browser_trace):
     assert_single_root(browser_trace.trace)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Plan defect (A19): the task brief's Step 9/11 wrote this as a plain "
-        "passing assertion ('Expected: 4 passed') covering all five services, "
-        "including payments-mcp and payments-api. That is not achievable by "
-        "this task: settlement-agent's MCP client still does not inject "
-        "params._meta (agents/settlement-agent/NOTES.md), so FastMCP never "
-        "extracts trace context from the MCP hop, exactly the same confirmed "
-        "gap tests/e2e/test_claims_chain_trace.py::"
-        "test_all_four_backend_services_are_in_one_trace already pins "
-        "xfail(strict=True) for. Fixing it is explicitly Task 7's job via the "
-        "shared correlation.py (A6/A18); this task must not fix it. Flip once "
-        "client-side _meta injection lands, and remove this marker — same as "
-        "the existing four-service xfail."
-    ),
-)
 def test_all_five_services_are_in_one_trace(browser_trace):
+    """Task 7 flips this from xfail(strict=True): settlement-agent's MCP
+    client (mcp_tools.py) now injects params._meta via the lower-level
+    ClientSession.send_request() API, closing the last broken hop. Confirmed
+    by capture: all five services — customer-ui, claims-agent,
+    settlement-agent, payments-mcp, payments-api — land in the one trace
+    rooted at the browser's own claim.submit span."""
     expected = {
         "customer-ui",
         "claims-agent",
