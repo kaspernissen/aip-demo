@@ -1,4 +1,4 @@
-a2a-sdk[telemetry,http-server]==0.3.7
+a2a-sdk[telemetry]==0.3.7
 starlette==1.6.0
 sse-starlette==3.4.11
 httpx==0.28.1

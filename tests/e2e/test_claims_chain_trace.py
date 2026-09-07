@@ -143,6 +143,31 @@ def chain_trace():
         time.sleep(2)
         trace = client.get_trace(trace_id)
 
+    # Review finding S4: is_complete() proves claims-agent and
+    # settlement-agent have both fully landed, but says nothing about a
+    # *third* service's spans landing later still, on that service's own
+    # independent BatchSpanProcessor timer — exactly the shape Task 7's MCP
+    # fix will add (payments-mcp/payments-api joining this same trace once
+    # params._meta injection lands). Snapshotting the instant is_complete()
+    # first holds risks handing the two xfail(strict=True) tests below a
+    # trace that is missing those not-yet-landed spans, which would keep them
+    # xfailing forever instead of flipping to an unexpected pass the day that
+    # gap actually closes — a silent false negative in the one signal
+    # `strict=True` exists to surface. So: once is_complete() holds (or its
+    # own deadline elapses), keep polling until the *total span count* is
+    # unchanged across two consecutive polls. This can only make the fixture
+    # wait longer or accept a bigger trace than before — it never accepts an
+    # earlier or smaller snapshot than is_complete() already required, so the
+    # wait condition only gets stricter, never looser.
+    stability_deadline = time.time() + 30
+    previous_count = len(trace.spans)
+    time.sleep(2)
+    trace = client.get_trace(trace_id)
+    while len(trace.spans) != previous_count and time.time() < stability_deadline:
+        previous_count = len(trace.spans)
+        time.sleep(2)
+        trace = client.get_trace(trace_id)
+
     return SimpleNamespace(
         trace=trace, trace_id=trace_id, span_id=span_id, claim_id=claim_id, result=result
     )
@@ -242,8 +267,21 @@ def test_claims_agent_trace_has_no_unexpected_orphans(chain_trace):
     claims-agent's entry span (parented to it) is an unavoidable, legitimate
     orphan. Pinned to exactly that one span — operation *and* parent_id — so a
     genuine propagation defect anywhere else (settlement-agent's own entry
-    span losing its parent, for instance) still fails this test."""
+    span losing its parent, for instance) still fails this test.
+
+    `assert_single_root` (the harness's usual check) cannot be used here — it
+    would never hold for a synthetic root by construction — but nothing
+    replaced it (review finding N4). `trace.roots() == []` is the positive
+    complement: every span actually stored in this trace has *some* parent,
+    and the only span without one (the injected root) never lands in Jaeger
+    at all. Together with the orphan-exclusion assertion below, this pins
+    "every span has a parent, and the only external one is the injected
+    root" precisely, rather than leaving that half of A17's claim unchecked."""
     trace = chain_trace.trace
+    assert trace.roots() == [], (
+        f"expected no real root spans (the trace's root is the synthetic, "
+        f"never-collected injected span); found: {trace.roots()}"
+    )
     orphans = trace.orphans()
     unexpected = [
         s

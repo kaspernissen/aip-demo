@@ -71,21 +71,67 @@ plus the brief's other packages, nothing else) leaves `A2AStarletteApplication`
 unusable — not caught by `pip install` (no error there), only at first
 `.build()` call, i.e. at container startup.
 
-**Fixed:** `requirements.txt` pins `a2a-sdk[telemetry,http-server]==0.3.7`
-plus explicit `starlette==1.6.0` / `sse-starlette==3.4.11` (the exact versions
-that extra resolves to). A clean `uv venv --python 3.13 .venv && uv pip
-install -r requirements.txt` now resolves 34 packages with zero conflicts and
-`A2AStarletteApplication(...).build()` succeeds.
+**Fixed:** `requirements.txt` pins explicit `starlette==1.6.0` /
+`sse-starlette==3.4.11` (the exact versions `mcp==1.9.4` resolves
+settlement-agent to, kept identical here for consistency) directly, rather
+than through the `a2a-sdk[http-server]` extra. **Fix round 1 correction:** an
+earlier version of this fix used `a2a-sdk[telemetry,http-server]==0.3.7`,
+which resolves that extra's *entire* dependency set — including `fastapi`
+and `annotated-doc`, neither of which claims-agent needs (it uses only
+`A2AStarletteApplication`, never `A2AFastAPIApplication`; settlement-agent
+runs the identical `A2AStarletteApplication` with no `fastapi` installed at
+all). The two explicit pins alone are sufficient — confirmed by two clean
+`uv venv --python 3.13 .venv && uv pip install -r requirements.txt` builds,
+one per pin set: `a2a-sdk[telemetry]` alone resolves **48** packages;
+`a2a-sdk[telemetry,http-server]` resolves **50** — a difference of exactly
+two, `fastapi` and `annotated-doc`, both absent from the trimmed venv, both
+present in the other. (An earlier version of this note claimed "33
+packages, down from 34," and that `click` was also absent from the trimmed
+venv — both wrong. `click` is present in **both** venvs; it is `uvicorn`'s
+own unconditional dependency and has nothing to do with which `a2a-sdk`
+extra is chosen. Caught and corrected while re-verifying for this same fix
+round, before committing.) `A2AStarletteApplication(...).build()` still
+succeeds against the trimmed venv.
 
-**Regression test (A19):** `agents/claims-agent/tests/test_main.py::
+**Regression test (A19), and a correction to what "fails" actually means
+here (review finding S1):** `agents/claims-agent/tests/test_main.py::
 test_build_app_constructs_a_starlette_app_without_import_error` calls
 `main.build_app()` directly and asserts it returns a `Starlette` instance
-without raising. This fails with the exact `ImportError` quoted above if
-requirements.txt reverts to the brief's original pin set (`a2a-sdk[telemetry]`
-without the `http-server` extra or the explicit starlette/sse-starlette
-pins) and the venv is reinstalled clean — verified directly (see the
-transcript above, produced against that exact reverted pin set before the
-fix).
+without raising.
+
+**This is not the same failure as the `ImportError` quoted above.** An
+earlier version of this section (and the matching test docstring and
+`task-5-report.md`) claimed the regression test "fails with the exact
+`ImportError`" shown at the top of this section. That is wrong, and a
+reviewer caught it by direct reproduction. `main.py:12` does
+`from opentelemetry.instrumentation.starlette import StarletteInstrumentor`
+(the A18 instrumentation, required — see NOTES.md §4 below) **before**
+`A2AStarletteApplication` is ever constructed, and
+`opentelemetry.instrumentation.starlette.__init__` itself does
+`from starlette import applications` at import time. So if `requirements.txt`
+reverts to the brief's original pin set (no explicit `starlette`/
+`sse-starlette`, no `http-server` extra) and the venv is reinstalled clean,
+`import main` fails at **collection**, not inside `build_app()`, with:
+
+```
+tests/test_main.py:30: in <module>   import main
+main.py:12: in <module>              from opentelemetry.instrumentation.starlette import StarletteInstrumentor
+E   ModuleNotFoundError: No module named 'starlette'
+ERROR tests/test_main.py
+!!!! Interrupted: 1 error during collection !!!!
+```
+
+verified directly in a clean venv built from exactly the brief's pin set
+(plus the A18-required `opentelemetry-instrumentation-starlette`, which A18
+forbids dropping). The a2a-sdk `ImportError` quoted at the top of this
+section is real and was reproduced too (calling
+`A2AStarletteApplication(...).build()` directly, bypassing `main.py`'s own
+import order) — it is just not the error path this particular test exercises,
+because `main.py` never gets that far without `starlette` already being
+importable. **The regression coverage itself is not weakened by this
+correction**: the test still goes from a hard collection error to a clean
+pass across the same before/after pin change: it is the *documented reason*
+that was wrong, not the test's effectiveness.
 
 ## 3. Same class of executor defect as Task 4's settlement-agent — fixed the same way
 
@@ -137,6 +183,7 @@ globally, matching settlement-agent and payments-api's Go side.
   "parent_id": "<the injected span_id>",
   "attrs": {
     "client.address": "127.0.0.1",
+    "client.port": 35814,
     "http.request.method": "POST",
     "http.response.status_code": 200,
     "http.route": "/",
@@ -449,10 +496,101 @@ Reproduced identically in settlement-agent's own venv
 issue (an `a2a-sdk` internal module using a Starlette constant that
 `starlette==1.6.0` has since renamed), not introduced by anything in this
 task, and not specific to claims-agent. It surfaces once in this agent's own
-pod startup log (confirmed via `kubectl logs`) but never in this repo's own
-test output, since no test in `tests/` or `agents/*/tests/` imports
-`a2a.server.apps` at collection time in a way that would print it to a test
-run — the full `28 passed, 5 xfailed` run recorded in `task-5-report.md`
-carries no warnings section. Recorded here as upstream evidence per A8; not
-worked around (a `filterwarnings` suppression would hide, not fix, an
-upstream naming drift).
+pod startup log (confirmed via `kubectl logs`).
+
+**Correction (review finding S2):** an earlier version of this section
+claimed the warning appears "never in this repo's own test output." That is
+only half true, and stated too broadly. It is **absent from the repo-root
+`tests/` suite** (`.venv/bin/python -m pytest tests/ -q` — the
+`28 passed, 5 xfailed` run in `task-5-report.md` — genuinely carries no
+warnings section, since nothing under `tests/` imports `a2a.server.apps`).
+It **is present in claims-agent's own unit suite**:
+`agents/claims-agent/tests/test_main.py` imports `main`, which imports
+`a2a.server.apps` at collection time, and that run ends
+`11 passed, 1 warning` with exactly this warning printed. Verified directly,
+both before and after this fix round's `requirements.txt` change (dropping
+the unused `fastapi` dependency, N2, does not remove the warning — it
+originates in `a2a-sdk`'s own `fastapi_app.py` module importing a deprecated
+Starlette constant, independent of whether the `fastapi` *package* is
+installed). Recorded here as upstream evidence per A8; not worked around (a
+`filterwarnings` suppression would hide, not fix, an upstream naming drift).
+
+## 11. Review finding S3 — `message/stream` also lost its progress narration; documented, not fixed
+
+§3's fix (log the narration, enqueue exactly one `Message`) was chosen to
+stop `message/send` from silently dropping the JSON reply. A reviewer
+pointed out, correctly, that this same fix also removes the progress
+narration from **`message/stream`** — a distinct transport that the brief's
+Produces § says this agent supports ("streams progress") and that the
+committed agent card still advertises (`"streaming": true`). Before this fix
+round, neither `NOTES.md` §3 nor `task-5-report.md` said so; both described
+the brief's two-`enqueue_event` shape as simply "broken," which is only true
+for `message/send`.
+
+**Verified directly, this fix round**, against the live deployed pod, a raw
+`message/stream` call with `Accept: text/event-stream`:
+
+```
+content-type: text/event-stream; charset=utf-8
+data: {"id":"...","jsonrpc":"2.0","result":{"kind":"message","messageId":"...",
+       "parts":[{"kind":"text","text":"{\"claimId\": \"CLM-STREAM-...\", ...,
+                  \"status\": \"executed\", ...}"}],"role":"agent"}}
+```
+
+Exactly one `data:` frame, the final settlement JSON, nothing before it. Had
+the brief's original two-`enqueue_event` executor been kept, `message/stream`
+would have delivered **both** frames (unlike `message/send`, which the
+a2a-sdk internals only ever resolve to the first `Message`) — the narration
+frame first, then the JSON — genuinely satisfying the brief's "streams
+progress" language for that one transport, at the cost of `message/send`
+silently returning only the narration (§3's bug).
+
+**Why this was not fixed in this round, deliberately:** the two transports
+share one `AgentExecutor.execute()` implementation and one sequence of
+enqueued events; `RequestContext`/`EventQueue` give the executor no signal
+about which transport a given call arrived over. A single hard-coded
+sequence of `enqueue_event` calls therefore cannot simultaneously give
+`message/send` exactly one reply message (its own internal aggregation logic
+demands this) **and** give `message/stream` a genuine progress frame ahead
+of the final one — satisfying one transport's semantics costs the other's.
+The one construct that could resolve this without picking a transport at
+authoring time is `a2a.server.tasks.TaskStatusUpdateEvent` (a2a-sdk's own
+documented mechanism for interim progress, distinct from a terminal
+`Message` — noted but not exercised in
+`agents/settlement-agent/NOTES.md` §8): if `TaskUpdater`/`TaskStatusUpdateEvent`
+genuinely doesn't trip `ResultAggregator.consume_and_break_on_interrupt`'s
+first-`Message`-wins rule the way a second `Message` event does, it could
+give `message/stream` its progress event back without touching
+`message/send`'s single-JSON-reply guarantee. That is untested here and is a
+nontrivial behavioural change to an already-fixed, already-tested code path
+— not something to make as an incidental part of a fix round without an
+explicit ruling, especially since Task 4's settlement-agent carries the
+identical unfixed gap and a fix really wants to cover both agents
+consistently (the reviewer's own framing). **Left open, flagged plainly here
+and in `task-5-report.md`, for the coordinator's ruling** rather than
+resolved unilaterally in either direction.
+
+## 12. Cross-task fix (this round, coordinator-authorised): `agents/settlement-agent/requirements.txt` hardened the same way
+
+§2 above already established that settlement-agent's `requirements.txt`
+(Task 4) gets `starlette`/`sse-starlette` only by accident, via `mcp==1.9.4`
+declaring them as its own unconditional dependencies. That is a real, if
+currently dormant, fragility in a closed task's own tree: the day anything
+in settlement-agent's dependency graph drops or replaces `mcp`, the service
+stops starting with nothing in its own manifest to explain why. The
+coordinator authorised fixing it as part of this round rather than leaving
+it as a landmine.
+
+**Fix:** `agents/settlement-agent/requirements.txt` gained two explicit
+lines, `starlette==1.6.0` and `sse-starlette==3.4.11` — the exact versions
+already present in that service's venv (confirmed via
+`ls .venv/lib/python3.13/site-packages/ | grep -iE "starlette|sse"` before
+the change: `starlette-1.6.0.dist-info`, `sse_starlette-3.4.11.dist-info`),
+so this is a determinism fix, not a version bump. A clean
+`uv venv --python 3.13 .venv && uv pip install -r requirements.txt` resolves
+with the same package set as before (`mcp` still pulls the same two packages
+transitively; the explicit pins just make the dependency direct rather than
+incidental) and zero conflicts. settlement-agent was rebuilt and redeployed
+(`./scripts/rebuild-and-deploy.sh settlement-agent`) and its own test suite
+re-run against the live pod — see `task-5-report.md`'s fix-round section for
+the command and verbatim output.

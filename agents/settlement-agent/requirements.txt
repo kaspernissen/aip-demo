@@ -1,4 +1,15 @@
 a2a-sdk[telemetry]==0.3.7
+# a2a.server.apps.A2AStarletteApplication requires starlette/sse-starlette to
+# be importable, but a2a-sdk's telemetry extra doesn't declare them — only
+# the separate http-server extra does. This service's venv has always had
+# them, but only because mcp declares both as its own unconditional
+# dependencies; that made this dependency accidental rather than declared
+# (found while implementing Task 5's claims-agent, which has no mcp
+# dependency to mask the same gap — see agents/claims-agent/NOTES.md §2/§12).
+# Pinned explicitly here, at the exact versions already resolved via mcp, so
+# this is a determinism fix, not a version bump.
+starlette==1.6.0
+sse-starlette==3.4.11
 mcp==1.9.4
 uvicorn==0.34.0
 opentelemetry-sdk==1.44.0
