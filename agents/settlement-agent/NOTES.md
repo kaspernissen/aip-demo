@@ -666,7 +666,9 @@ fallback:
   were flipped from `xfail(strict=True)` to plain passing assertions once
   settlement-agent's MCP client started injecting `params._meta` (§10/§11) —
   confirmed still passing at the final whole-branch review's gate run
-  (`55 passed, 1 xfailed`). They are not `xfail` today; do not read this
+  (`55 passed, 1 xfailed` at the first final-review round; `62 passed, 1
+  xfailed` after the second round added seven more tests — see
+  `docs/telemetry-contract.md`). They are not `xfail` today; do not read this
   bullet as describing their current state.
 
 **Negative-control verification (this fix round):** before committing, the
@@ -788,7 +790,9 @@ carry `northstar.claim.id`**, and neither does payments-api's own span
 downstream of them (baggage never entered payments-mcp's ambient context in
 the first place, so nothing was left to forward). See
 `tests/e2e/test_claim_correlation.py::test_claim_id_is_on_every_mcp_hop_span`
-(`xfail(strict=True)`, pinning this precisely) and `task-7-report.md` for the
+(a manual `pytest.xfail(...)`, not `@pytest.mark.xfail(strict=True)` —
+final-review.md finding S3, second round — pinning this precisely) and
+`task-7-report.md` for the
 verbatim capture.
 
 This is the "fourth candidate upstream gap" this task's brief anticipated

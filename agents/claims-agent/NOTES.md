@@ -290,7 +290,9 @@ Jaeger query window.
   FastMCP's server-side extraction joins the trace. Both tests named above
   have not been `xfail(strict=True)` since Task 7 landed — they are plain
   passing assertions today, confirmed at the final whole-branch review
-  (`55 passed, 1 xfailed` gate run). The one remaining gap at this boundary
+  (`55 passed, 1 xfailed` at the first final-review round; `62 passed, 1
+  xfailed` after the second round added seven more tests — see
+  `docs/telemetry-contract.md`). The one remaining gap at this boundary
   is narrower than "does not propagate": the trace joins fully; only the
   `northstar.claim.id` *attribute* still does not cross it (FastMCP never
   reads `baggage` out of `params._meta` — see `tools/payments-mcp/NOTES.md`

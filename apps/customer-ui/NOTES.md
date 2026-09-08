@@ -163,16 +163,25 @@ defaults produced):
 ]
 ```
 
-**Fix round 1 note:** the capture above predates the A21 OTel bump (§6) and the
-`new Resource(...)` call it names no longer exists — `@opentelemetry/resources`
-2.x removed the constructable class. Re-captured post-bump (see §6a): the same
-three `telemetry.sdk.*` attributes are present, now reading
-`telemetry.sdk.version: "2.8.0"`, alongside the identical `claim.submit` span
-shape, 1 root, 0 orphans, and the same three services in one trace. The gaps
-table below (§3, "Comparison against OTel conventions") is unaffected by the
-bump — those are pin-list gaps (no fetch instrumentation, no browser resource
+**Fix round 1 note, as of that round (before Task 7):** the capture above
+predates the A21 OTel bump (§6) and the `new Resource(...)` call it names no
+longer exists — `@opentelemetry/resources` 2.x removed the constructable
+class. Re-captured post-bump (see §6a): the same three `telemetry.sdk.*`
+attributes are present, now reading `telemetry.sdk.version: "2.8.0"`,
+alongside the identical `claim.submit` span shape, 1 root, 0 orphans, and —
+**as of fix round 1, before Task 7 added the MCP hop's client-side
+propagation** — the same three services in one trace. The gaps table below
+(§3, "Comparison against OTel conventions") is unaffected by the bump —
+those are pin-list gaps (no fetch instrumentation, no browser resource
 detector), not something the OTel version itself changes.
 (plus the implicit `service.name = customer-ui` used as the process key itself).
+
+**Superseded by Task 7 (final-review.md finding S2, second round):** "three
+services in one trace" was accurate for fix round 1's capture and is not
+accurate now. §4 below documents the current, reconfirmed state: one root,
+zero orphans, five services in one trace. The span shape and resource
+attributes captured above are otherwise still current — only the
+service-count claim in this paragraph was stale.
 
 ### Comparison against OTel conventions — gaps, not filled
 

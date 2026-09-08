@@ -11,14 +11,26 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}--- Stopping this repo's port-forwards ---${NC}"
-# S1 (final-review.md): this pattern used to be "port-forward.*northstar",
-# which cannot match this repo's own commands ("kubectl -n northstar-<ns>
-# port-forward ..." — "northstar" precedes "port-forward"). The old pattern
-# made this line announce success and kill nothing. Verified directly:
-# `pgrep -f 'port-forward.*northstar'` finds nothing against live forwards
-# from this repo; `pgrep -f 'northstar.*port-forward'` finds them. See
-# scripts/setup-kind.sh for the matching fix.
+# S1 (final-review.md, first round): this pattern used to be
+# "port-forward.*northstar", which cannot match this repo's own commands
+# ("kubectl -n northstar-<ns> port-forward ..." — "northstar" precedes
+# "port-forward"). The old pattern made this line announce success and kill
+# nothing. Fixed to "northstar.*port-forward" — verified directly against a
+# live forward.
+#
+# Second round (final-review.md, nit 4): that single-order fix is itself
+# order-sensitive, so a hand-typed "kubectl port-forward -n northstar-agents
+# ..." — the form the plan document itself uses, and so the form a reader is
+# likely to type — still escapes cleanup, since there "port-forward"
+# precedes "northstar". Two calls instead of one regex, one per order,
+# cover both without needing alternation support in pkill's regex engine
+# (unavailable/unreliable across BSD and GNU pkill). Re-verified after this
+# change, live: both call orders correctly kill this repo's forwards
+# regardless of which way they were typed, and neither ever matches a
+# `capybara`-cluster forward (which contains no "northstar" substring in
+# either position).
 pkill -f "northstar.*port-forward" 2>/dev/null || true
+pkill -f "port-forward.*northstar" 2>/dev/null || true
 
 echo -e "${BLUE}--- Deleting cluster '${CLUSTER_NAME}' ---${NC}"
 if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then

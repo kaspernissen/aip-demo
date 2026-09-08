@@ -36,13 +36,21 @@ Measured counts, from a clean cluster (`./scripts/teardown.sh &&
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `49 passed, 6 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `55 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `57 passed, 7 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `64 passed, 1 xfailed` |
+
+(Second final-review round, finding 3: these two rows previously read `49
+passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
+a commit added seven tests to the suite without updating the one document
+whose entire purpose is stating these numbers.
+`tests/unit/test_telemetry_contract_counts.py` now guards this: it runs
+`pytest --collect-only` and fails loudly if either row's sum ever again
+diverges from what pytest actually collects.)
 
 `tests/unit/test_smoke_test_gate.py` (2 tests, counted in both rows above)
 pins this distinction directly: it reads `scripts/smoke-test.sh`'s own source
 and fails if the gate's pytest target ever reverts to `tests/e2e` (dropping
-the 12 other `tests/unit/` harness-correctness tests silently) or if
+the 19 other `tests/unit/` harness-correctness tests silently) or if
 `RUN_BROWSER_TESTS=1` ever becomes something the gate reads from the caller's
 environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).

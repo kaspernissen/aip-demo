@@ -173,15 +173,27 @@ echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then startin
 # kills forwards matching this repo's own pattern, never blanket-kills
 # another cluster's forwards — see scripts/teardown.sh for the same rule.
 #
-# S1 (final-review.md): the pattern used to be "port-forward.*northstar",
-# which cannot match anything this script itself launches — every command
-# below reads "kubectl -n northstar-<ns> port-forward ...", i.e. "northstar"
-# precedes "port-forward", not the other way round. Verified directly:
-# `pgrep -f 'port-forward.*northstar'` finds nothing even with these
-# port-forwards running; `pgrep -f 'northstar.*port-forward'` finds them.
-# The old pattern's only practical effect was a silent no-op here, and (in
-# teardown.sh) an announced cleanup that stopped nothing.
+# S1 (final-review.md, first round): the pattern used to be
+# "port-forward.*northstar", which cannot match anything this script itself
+# launches — every command below reads "kubectl -n northstar-<ns>
+# port-forward ...", i.e. "northstar" precedes "port-forward", not the
+# other way round. The old pattern's only practical effect was a silent
+# no-op here. Fixed to "northstar.*port-forward" — verified directly
+# against a live forward.
+#
+# Second round (final-review.md, nit 4): that single-order fix is itself
+# order-sensitive, so a hand-typed "kubectl port-forward -n
+# northstar-agents ..." — the form the plan document itself uses, and so
+# the form a reader is likely to type — still escapes cleanup, since there
+# "port-forward" precedes "northstar". Two calls instead of one regex, one
+# per order, cover both without needing alternation support in pkill's
+# regex engine (unavailable/unreliable across BSD and GNU pkill).
+# Re-verified after this change, live: both call orders correctly kill this
+# repo's forwards regardless of which way they were typed, and neither
+# ever matches a `capybara`-cluster forward (which contains no "northstar"
+# substring in either position).
 pkill -f "northstar.*port-forward" 2>/dev/null || true
+pkill -f "port-forward.*northstar" 2>/dev/null || true
 kubectl -n northstar-agents port-forward svc/claims-agent 19001:9001 >/dev/null 2>&1 &
 CLAIMS_PF_PID=$!
 kubectl -n northstar-agents port-forward svc/settlement-agent 19002:9002 >/dev/null 2>&1 &
