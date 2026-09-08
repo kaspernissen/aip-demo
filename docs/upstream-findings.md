@@ -556,6 +556,26 @@ version against the rest of this project's pin set is its own piece of work
 with its own re-verification obligations, not something to fold unexplained
 into a documentation pass.
 
+**Update, Task 7 (M1.2, dependency-advisory remediation):** the `mcp` pin
+this project actually runs moved from `1.9.4` to `1.28.1` — verified
+directly against the installed `1.28.1` distribution's own
+`ClientSession.call_tool()` signature, which now carries the `meta` keyword
+parameter `#1231` added. The simplification described above is therefore no
+longer hypothetical: `mcp_tools.py` could today call
+`session.call_tool(tool, arguments, meta=carrier)` instead of hand-building
+a `CallToolRequest` and calling `send_request()` directly, and the same is
+true of `tests/e2e/test_payments_mcp_trace.py`'s own use of the identical
+technique. **This task deliberately did not make that change.** The bump's
+own isolation requirement — proving the *existing*, already-verified
+`send_request` path still propagates correctly at the new `mcp` version,
+with nothing else moving in the same deploy — is exactly what would be lost
+by also switching call paths in the same change; `tests/e2e/
+test_payments_mcp_trace.py`'s full pass at `1.28.1`, including with a
+deliberately broken `_meta` key proven to fail first, is evidence for the
+path this project actually runs, not for the simpler path now available.
+Adopting `call_tool(meta=...)` remains recorded, available work for a future
+task with its own re-verification obligation, not decided here.
+
 ---
 
 ## Finding 5: the model's own outbound HTTP hop has no CLIENT span — and, unlike Findings 1–4, the fix is already shipped
