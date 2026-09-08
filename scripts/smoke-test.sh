@@ -33,6 +33,25 @@ for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent; do
     exit 1
   }
 done
+command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1; }
+kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
+  echo -e "${RED}Error: cannot reach the 'kind-northstar' cluster.${NC}" >&2
+  echo "Run ./scripts/setup-kind.sh --stage 1 first." >&2
+  exit 1
+}
+# The e2e/browser assertions below need all four port-forwards up. They die
+# after any redeploy and simply need re-establishing (A9) — check for that
+# now, so a stale/missing forward fails in a second, not after minutes of
+# test timeouts that look like a broken chain.
+for port_name in "19001:claims-agent" "19002:settlement-agent" "18000:payments-mcp" "18080:payments-api"; do
+  port="${port_name%%:*}"
+  name="${port_name##*:}"
+  lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1 || {
+    echo -e "${RED}Error: nothing is listening on port ${port} (${name}).${NC}" >&2
+    echo "Port-forwards die after a redeploy and need re-establishing: kubectl -n <namespace> port-forward svc/${name} ${port}:<container-port> (or re-run ./scripts/setup-kind.sh --stage 1)." >&2
+    exit 1
+  }
+done
 
 echo ""
 echo -e "${BLUE}--- Step 1/2: Unit tests ---${NC}"

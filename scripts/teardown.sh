@@ -17,6 +17,10 @@ echo -e "${BLUE}--- Deleting cluster '${CLUSTER_NAME}' ---${NC}"
 if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
   kind delete cluster --name "$CLUSTER_NAME"
   echo -e "${GREEN}Cluster '${CLUSTER_NAME}' deleted.${NC}"
+  # N7: kind's own behaviour, not something this script does — but worth
+  # saying, since a bare terminal afterward gives no hint why kubectl now
+  # errors or targets nothing.
+  echo -e "${YELLOW}Note: kind cleared kubectl's current-context. If you use another cluster (e.g. capybara), run: kubectl config use-context kind-capybara${NC}"
 else
   echo -e "${YELLOW}Cluster '${CLUSTER_NAME}' does not exist.${NC}"
 fi

@@ -152,21 +152,44 @@ kubectl -n observability rollout restart deployment/otel-collector
 kubectl -n observability rollout status deployment/jaeger --timeout=180s
 kubectl -n observability rollout status deployment/otel-collector --timeout=180s
 
-echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads...${NC}"
+echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then starting port-forwards...${NC}"
 "$ROOT/scripts/rebuild-and-deploy.sh" \
   payments-api payments-mcp settlement-agent claims-agent customer-ui
 
-echo -e "${BLUE}Starting port-forwards...${NC}"
 # A9: a stray port-forward from another cluster on this machine (e.g.
-# `capybara`) has silently shadowed a host port before. This only ever kills
-# forwards matching this repo's own pattern, never blanket-kills another
-# cluster's forwards — see scripts/teardown.sh for the same rule.
+# `capybara`) has silently shadowed a host port before, twice. This only ever
+# kills forwards matching this repo's own pattern, never blanket-kills
+# another cluster's forwards — see scripts/teardown.sh for the same rule.
 pkill -f "port-forward.*northstar" 2>/dev/null || true
 kubectl -n northstar-agents port-forward svc/claims-agent 19001:9001 >/dev/null 2>&1 &
+CLAIMS_PF_PID=$!
 kubectl -n northstar-agents port-forward svc/settlement-agent 19002:9002 >/dev/null 2>&1 &
+SETTLEMENT_PF_PID=$!
 kubectl -n northstar-tools port-forward svc/payments-mcp 18000:8000 >/dev/null 2>&1 &
+MCP_PF_PID=$!
 kubectl -n northstar-systems port-forward svc/payments-api 18080:8080 >/dev/null 2>&1 &
+API_PF_PID=$!
 sleep 4
+
+# A9 again: don't just launch the forwards and declare success — a stray
+# forward from another cluster silently shadowing one of these host ports is
+# exactly the failure mode A9 exists to catch, and this project has hit it
+# twice already (see apps/customer-ui/NOTES.md §8). Verify each port is
+# actually bound by the PID we just started, not merely that something is
+# listening there.
+verify_port_forward() {
+  local port="$1" pid="$2" name="$3"
+  if ! lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $2}' | grep -qx "${pid}"; then
+    echo -e "${RED}Error: the port-forward for ${name} (expected PID ${pid} listening on ${port}) never bound.${NC}" >&2
+    echo "Another process may already hold that port — check: lsof -nP -iTCP:${port} -sTCP:LISTEN (amendment A9)." >&2
+    exit 1
+  fi
+}
+verify_port_forward 19001 "${CLAIMS_PF_PID}" claims-agent
+verify_port_forward 19002 "${SETTLEMENT_PF_PID}" settlement-agent
+verify_port_forward 18000 "${MCP_PF_PID}" payments-mcp
+verify_port_forward 18080 "${API_PF_PID}" payments-api
+echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payments-mcp, payments-api.${NC}"
 
 echo ""
 echo -e "${GREEN}Stage 1 (Connected) is up.${NC}"

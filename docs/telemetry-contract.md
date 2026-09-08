@@ -10,34 +10,50 @@ paper over it with a bespoke convention.
 
 ## What the default suite proves, and what only the full run proves
 
-`./scripts/smoke-test.sh` runs `pytest tests/e2e -v -k "not browser"` by default,
-which excludes `tests/e2e/test_browser_root_span.py` entirely — that file is
-gated behind `RUN_BROWSER_TESTS=1` (it needs a real Chromium via Playwright).
-The default run proves the chain from claims-agent down to payments-api:
-claims-agent → settlement-agent → payments-mcp → payments-api, one trace, no
-orphans, `northstar.claim.id` correlated as far as the boundary below states.
-**It proves nothing about the browser.** It does not start a browser, does not
-exercise CORS, and does not confirm the root span the milestone's whole claim
-depends on — that customer-ui, not a test harness, owns the trace root.
+A bare `pytest tests/` run (no environment variable set) skips
+`tests/e2e/test_browser_root_span.py` entirely — that file's own `pytestmark`
+is gated behind `RUN_BROWSER_TESTS=1` (it needs a real Chromium via
+Playwright). That default run proves the chain from claims-agent down to
+payments-api: claims-agent → settlement-agent → payments-mcp → payments-api,
+one trace, no orphans, `northstar.claim.id` correlated as far as the boundary
+below states. **It proves nothing about the browser.** It does not start a
+browser, does not exercise CORS, and does not confirm the root span the
+milestone's whole claim depends on — that customer-ui, not a test harness,
+owns the trace root.
 
-`./scripts/smoke-test.sh` **always** sets `RUN_BROWSER_TESTS=1` before invoking
-pytest, precisely so the milestone's own gate exercises its own headline claim.
-A future reader who sees `smoke-test.sh` finish green has confirmed the browser
-hop; a reader who instead runs a bare `pytest tests/e2e` by hand — bypassing the
-gate — has confirmed everything except it, and should not conclude the top of
-the chain was checked.
+**`./scripts/smoke-test.sh` — the actual M1.1 gate — has no default mode that
+skips this.** It runs one unconditional invocation,
+`RUN_BROWSER_TESTS=1 pytest tests -v`, over the whole `tests/` tree, every
+time it is run. There is no environment variable, flag, or code path that
+lets a caller run the gate itself and skip the browser hop — that is the
+entire point of A22. A future reader who sees `./scripts/smoke-test.sh` finish
+green has confirmed the browser hop; a reader who instead runs a bare
+`pytest tests/` by hand — bypassing the gate — gets the weaker, default
+result below, and should not conclude the top of the chain was checked.
 
 Measured counts, from a clean cluster (`./scripts/teardown.sh &&
-./scripts/setup-kind.sh --stage 1`), repo-root `pytest tests/`:
+./scripts/setup-kind.sh --stage 1`):
 
-| Run | Result |
-|---|---|
-| Default (`RUN_BROWSER_TESTS` unset) | `47 passed, 6 skipped, 1 xfailed` |
-| `RUN_BROWSER_TESTS=1` (what the gate always runs) | `53 passed, 1 xfailed` |
+| Run | Command | Result |
+|---|---|---|
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `49 passed, 6 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `55 passed, 1 xfailed` |
+
+`tests/unit/test_smoke_test_gate.py` (2 tests, counted in both rows above)
+pins this distinction directly: it reads `scripts/smoke-test.sh`'s own source
+and fails if the gate's pytest target ever reverts to `tests/e2e` (dropping
+the 12 other `tests/unit/` harness-correctness tests silently) or if
+`RUN_BROWSER_TESTS=1` ever becomes something the gate reads from the caller's
+environment rather than forcing itself (A19 — this is the guard for exactly
+the plan defect described two paragraphs up).
 
 Per-service unit suites (also run by `smoke-test.sh`, before any e2e test):
-claims-agent 14, settlement-agent 19, payments-mcp 7, payments-api (Go) 7 —
-all passing.
+claims-agent 14, settlement-agent 19, payments-mcp 7, payments-api (Go) 7,
+customer-ui (vitest) 6 — all passing. customer-ui's suite includes its own
+A19 regression test for the traceparent-across-await fix described below
+(`apps/customer-ui/NOTES.md` §2) — worth naming explicitly, since it's the
+one unit suite that pins a real, previously-silent defect in this project's
+own code, not only in a third-party library's behavior.
 
 The one remaining `xfail(strict=True)` in both runs is
 `tests/e2e/test_claim_correlation.py::test_claim_id_is_on_every_mcp_hop_span`,
@@ -50,11 +66,27 @@ staying silently green.
 
 | Component | Instrumentation | Version | Verified span names | Notes |
 |---|---|---|---|---|
-| customer-ui | OpenTelemetry JS web, manual root span | `@opentelemetry/sdk-trace-web` 2.8.0, `@opentelemetry/context-zone` 1.30.0, `@opentelemetry/exporter-trace-otlp-http` 0.219.0, `@opentelemetry/resources` 2.8.0 | `claim.submit` | Owns the trace root. Requires `traceparent` in CORS allow-headers on both the collector and claims-agent. Requires a *static* import of the injection helper — a dynamic `import()` (or any other `await`) before reading the active span loses it under `ZoneContextManager` (see Gap 5). |
-| claims-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` | `a2a-sdk[telemetry]==0.3.7`, `opentelemetry-instrumentation-starlette==0.65b0` | ASGI entry span `POST /`; `a2a.server.request_handlers.jsonrpc_handler.JSONRPCHandler.on_message_send` and the rest of the `a2a.server.*` call-graph spans (`DefaultRequestHandler.on_message_send`, `EventQueue.enqueue_event`/`.dequeue_event`/`.close`, `EventConsumer.consume_all`, etc.) | `DISABLE_OTEL_INSTRUMENTATION` must remain unset; `bootstrap.configure()` raises if it is `true`. Inbound W3C trace-context extraction comes from `StarletteInstrumentor` wrapping the built ASGI app (A18) — `a2a-sdk` itself extracts nothing (see Gap 1). |
-| settlement-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` + `mcp` client | `a2a-sdk[telemetry]==0.3.7`, `mcp==1.9.4`, `opentelemetry-instrumentation-starlette==0.65b0` | Same shape as claims-agent (`POST /` ASGI entry span, `a2a.server.*` call-graph spans), plus outbound `httpx` CLIENT spans (`POST`) to payments-mcp | Only agent permitted to reach payments-mcp. Same `StarletteInstrumentor` fix as claims-agent for inbound extraction. |
-| payments-mcp | FastMCP native | `fastmcp==4.0.3` | `tools/call propose_payment`, `tools/call execute_payment` | TracerProvider does **not** need to be installed before importing fastmcp on this version — `fastmcp.telemetry.get_tracer()` calls `get_tracer_provider()` fresh on every span, not once at import (measured; the brief's premise here was wrong for 4.0.3 — kept as a code convention anyway, not a correctness requirement). `FASTMCP_TELEMETRY_MODE=native` is set explicitly even though it is already the default. |
-| payments-api | `otelhttp` | `otelhttp v0.66.0`, otel core `v1.41.0` | `POST /payments/propose`, `POST /payments/{paymentId}/execute`, `GET /payments/{paymentId}` | HTTP attribute spelling as emitted by the pinned version: **stable** — `http.request.method` / `http.response.status_code` / `http.route`, not the legacy `http.method`/`http.status_code`. `network.protocol.name` is **not** emitted by this otelhttp version (only `network.protocol.version` is); do not assert its presence. No `OTEL_SEMCONV_STABILITY_OPT_IN` is set or needed. |
+| customer-ui | OpenTelemetry JS web, manual root span | `@opentelemetry/sdk-trace-web` 2.8.0, `@opentelemetry/context-zone` 1.30.0, `@opentelemetry/exporter-trace-otlp-http` 0.219.0, `@opentelemetry/resources` 2.8.0 | `claim.submit` | Owns the trace root. Requires `traceparent`/`tracestate`/`baggage` in claims-agent's own CORS `allow_headers` (`agents/claims-agent/main.py`) so the browser's request survives preflight — the collector's own CORS requirement is different: it needs `http://localhost:8080` in `allowed_origins` (its `allowed_headers` is already wildcarded), since the browser's OTLP export to the collector carries no `traceparent` header of its own. Requires a *static* import of the injection helper — a dynamic `import()` (or any other `await`) before reading the active span loses it under `ZoneContextManager` (`apps/customer-ui/NOTES.md` §2; pinned by that service's own vitest regression test). |
+| claims-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` | `a2a-sdk[telemetry]==0.3.7`, `opentelemetry-instrumentation-starlette==0.65b0` | ASGI entry span `POST /`; `a2a.server.request_handlers.jsonrpc_handler.JSONRPCHandler.on_message_send` and the rest of the `a2a.server.*` call-graph spans (`DefaultRequestHandler.on_message_send`, `EventQueue.enqueue_event`/`.dequeue_event`/`.close`, `EventConsumer.consume_all`, etc.) | `DISABLE_OTEL_INSTRUMENTATION` must remain unset; `bootstrap.configure()` raises if it is `true`. Inbound W3C trace-context extraction comes from `StarletteInstrumentor` wrapping the built ASGI app (A18) — `a2a-sdk` itself extracts nothing (see Gap 1). **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/claims-agent.yaml`) — OTel Python's HTTP instrumentation defaults to the legacy spelling (`http.method`/`http.url`/`http.status_code`) on both the ASGI entry span and the outbound httpx span; without this, this service alone would mix conventions with the Go hop (`agents/claims-agent/NOTES.md` §7, which also records a measurement mistake made while proving the opt-in was genuinely needed, not assumed). |
+| settlement-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` + `mcp` client | `a2a-sdk[telemetry]==0.3.7`, `mcp==1.9.4`, `opentelemetry-instrumentation-starlette==0.65b0` | Same shape as claims-agent (`POST /` ASGI entry span, `a2a.server.*` call-graph spans), plus outbound `httpx` CLIENT spans (`POST`) to payments-mcp | Only agent permitted to reach payments-mcp. Same `StarletteInstrumentor` fix as claims-agent for inbound extraction. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/settlement-agent.yaml`), same reason as claims-agent — measured legacy-by-default, confirmed stable after the opt-in (`agents/settlement-agent/NOTES.md` §6). |
+| payments-mcp | FastMCP native | `fastmcp==4.0.3` | `tools/call propose_payment`, `tools/call execute_payment` | TracerProvider does **not** need to be installed before importing fastmcp on this version — `fastmcp.telemetry.get_tracer()` calls `get_tracer_provider()` fresh on every span, not once at import (measured; the brief's premise here was wrong for 4.0.3 — kept as a code convention anyway, not a correctness requirement). `FASTMCP_TELEMETRY_MODE=native` is set explicitly even though it is already the default. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is also set** (`deploy/k8s/payments-mcp.yaml`) — this governs only the *outbound httpx* span to payments-api (FastMCP's own native MCP spans are unaffected; this knob is httpx-instrumentation-specific), measured legacy-by-default, confirmed stable after (`tools/payments-mcp/NOTES.md` §3). |
+| payments-api | `otelhttp` | `otelhttp v0.66.0`, otel core `v1.41.0` | `POST /payments/propose`, `POST /payments/{paymentId}/execute`, `GET /payments/{paymentId}` | HTTP attribute spelling as emitted by the pinned version: **stable** — `http.request.method` / `http.response.status_code` / `http.route`, not the legacy `http.method`/`http.status_code`. `network.protocol.name` is **not** emitted by this otelhttp version (only `network.protocol.version` is); do not assert its presence. No `OTEL_SEMCONV_STABILITY_OPT_IN` is set or needed — this version emits the stable spelling by default (A12), unlike every Python service in this table. |
+
+**Operational fact that keeps the chain on one HTTP convention:**
+`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set on all three Python services
+(claims-agent, settlement-agent, payments-mcp) and on none of the others.
+Without it, OTel Python's HTTP instrumentation defaults to the legacy
+attribute spelling (`http.method`/`http.url`/`http.status_code`) while
+payments-api's Go `otelhttp v0.66.0` emits the stable spelling by default
+with no opt-in available to change that — measured, not assumed, for each
+service independently (`agents/claims-agent/NOTES.md` §7,
+`agents/settlement-agent/NOTES.md` §6, `tools/payments-mcp/NOTES.md` §3),
+each showing the legacy capture before the opt-in and the stable capture
+after. This single non-default env var is the only reason this milestone's
+five services agree on one HTTP semantic convention instead of silently
+splitting across languages — exactly the class of breakage A13 exists to
+catch. Any service added later without it would reintroduce a mixed-convention
+chain invisibly, since both spellings are individually well-formed telemetry.
 
 **Architectural fact, applying to every component above:** none of them creates
 a span of its own. Every span in this milestone comes from library
@@ -62,12 +94,15 @@ instrumentation — `StarletteInstrumentor`, `a2a-sdk`'s own `@trace_class`/
 `@trace_function` decorators, `HTTPXClientInstrumentor`, FastMCP's native
 tracer, `otelhttp`, and customer-ui's one hand-written `claim.submit` span
 (the sole exception — it is the root, and nothing upstream of the browser
-could have created it instead). There is no `get_tracer`/`start_span`/
-`start_as_current_span` anywhere in this project's own `agents/`, `tools/`, or
-`systems/` source; the only hit anywhere in the repo is a harness test probe.
-This predicts where M1.2 changes shape: PydanticAI is expected to be the
-first library that gives this project's own code spans to open directly,
-rather than only ever wrapping calls from the outside.
+could have created it instead). Besides that one exception's own two files
+(`apps/customer-ui/src/telemetry.ts`, `apps/customer-ui/src/app/page.tsx`)
+and one docstring mention in `tools/payments-mcp/bootstrap.py`, there is no
+`get_tracer`/`start_span`/`start_as_current_span` anywhere in this project's
+own `agents/`, `tools/`, or `systems/` source; the only other hit anywhere in
+the repo is a harness test probe (`tests/e2e/test_harness.py`). This predicts
+where M1.2 changes shape: PydanticAI is expected to be the first library
+that gives this project's own code spans to open directly, rather than only
+ever wrapping calls from the outside.
 
 ## Conventions adopted
 
@@ -81,22 +116,43 @@ rather than only ever wrapping calls from the outside.
 
 | Attribute | Set by | Propagation | Applies to |
 |---|---|---|---|
-| `northstar.claim.id` | claims-agent at intake | W3C baggage | Every span from claims-agent inward |
+| `northstar.claim.id` | claims-agent at intake | W3C baggage | See "Real, measured coverage" below — **not** every span everywhere |
 | `northstar.policy.number` | customer-ui root span | none | The root span only |
 
-**Documented exemption:** the `customer-ui` root span does not carry
-`northstar.claim.id` as an enriched attribute — the id is minted at intake, so the
-browser span predates it. The browser sets it explicitly as its own attribute
-instead. Correlation for that span is by trace ID.
+**Real, measured coverage, one live capture (trace `8a59dfee2b192408f4282a07a0938f43`,
+62 spans):** customer-ui 1/1, claims-agent 2/23, settlement-agent 32/32,
+payments-mcp 0/4, payments-api 0/2. This is asymmetric by design, not by
+accident, and the true shape is more interesting than a blanket "every span"
+claim would be — it is **correct by this project's own correlation rule**
+(a reviewer adjudicated this explicitly): `ClaimIdSpanProcessor` copies
+`northstar.claim.id` onto a span only if that value is already present as
+OTel baggage in the ambient context the moment the span starts — it never
+reaches outside the process to fetch it. All three Python services
+(claims-agent, settlement-agent, payments-mcp) run this processor; the
+counts differ only by whether baggage had actually arrived in that process's
+ambient context by then. Everywhere the count is less than 100%, the reason
+is either that the span predates the id being minted (customer-ui, and
+claims-agent's own pre-intake spans), or that baggage never crossed the
+boundary into that process at all (payments-mcp/payments-api — Gap 4) —
+never a bug in the processor itself, and never something this project routes
+around by reaching into third-party telemetry it does not own.
 
-**A second, deeper instance of the same exemption, one layer down:** of
-claims-agent's own ~23 spans for a request, only 2 carry `northstar.claim.id` —
-the outbound A2A `CLIENT` span and the final `EventQueue.enqueue_event` call,
-both created inside the executor's own coroutine *after* the attach. The other
-21 (the ASGI entry span and every `a2a.server.*` span) run in a separate
-asyncio task that `a2a-sdk` 0.3.7 spawns via `asyncio.create_task()` before the
-executor has attached anything to the ambient context — `create_task` copies
-the context at call time, so nothing attached afterward can reach it
+**Documented exemption 1 — customer-ui (1/1, but not as an enriched
+attribute):** the root span does not carry `northstar.claim.id` as something
+*added* to it — the id is minted at claims-agent's intake, after the browser
+span already exists, so it predates the id entirely. The browser instead sets
+it explicitly as its own attribute at creation time. Correlation for that
+span is by trace ID; propagation is "none" in the table above because nothing
+is *propagated into* it — the value there is authored locally, not inherited.
+
+**Documented exemption 2 — claims-agent (2/23):** of claims-agent's own ~23
+spans for a request, only 2 carry `northstar.claim.id` — the outbound A2A
+`CLIENT` span and the final `EventQueue.enqueue_event` call, both created
+inside the executor's own coroutine *after* the attach. The other 21 (the
+ASGI entry span and every `a2a.server.*` span) run in a separate asyncio task
+that `a2a-sdk` 0.3.7 spawns via `asyncio.create_task()` before the executor
+has attached anything to the ambient context — `create_task` copies the
+context at call time, so nothing attached afterward can reach it
 retroactively. Verified by an isolated reproduction (a minimal script driving
 `DefaultRequestHandler` directly against a real `AgentExecutor`, with an
 `InMemorySpanExporter`, no network). This is not a bug in this project's own
@@ -109,8 +165,19 @@ workaround this milestone avoids elsewhere. By contrast, settlement-agent
 `StarletteInstrumentor` at the ASGI boundary *before* any of its own internal
 tasks spawn — every task spawned afterwards inherits it, so settlement-agent
 shows 100% coverage (32/32 spans in one live capture) with no exceptions.
+
+**Documented exemption 3 — payments-mcp and payments-api (0/4, 0/2):** this
+is Gap 4 below, not a bug either. `northstar.claim.id` never reaches these two
+services at all, because FastMCP 4.0.3 never reads the `baggage` key out of
+MCP's `params._meta` — the trace still joins correctly (traceparent crosses
+the MCP boundary intact), only the domain attribute doesn't. Trace-ID
+correlation is intact regardless of this attribute's absence; see Gap 4 for
+the full evidence.
+
 `tests/e2e/test_claim_correlation.py` asserts this real, capture-verified
-boundary precisely, not a blanket "every span in every service" claim.
+boundary precisely — customer-ui, claims-agent's 2 spans, and settlement-agent's
+32 spans, positively; payments-mcp/payments-api's absence via a narrow
+`xfail(strict=True)` — not a blanket "every span in every service" claim.
 
 **Enrichment boundary:** the baggage span processor runs only in our own service
 processes. Nothing is injected into telemetry emitted by infrastructure we do not
@@ -194,32 +261,43 @@ For each: the evidence, whether upstream already has work in flight, and what we
   correlation gap, not a broken trace: FastMCP 4.0.3's own
   `extract_trace_context()`/`inject_trace_context()` (`fastmcp/telemetry.py`)
   copy only `traceparent`/`tracestate` out of `params._meta`; `baggage` is
-  read and written nowhere in the installed package (`grep -rn baggage` over
-  the package tree: zero matches). SEP-414 (which this project's own MCP
-  trace-context convention already follows) documents `baggage` as one of the
-  three unprefixed `_meta` keys, alongside `traceparent`/`tracestate`.
-- **Upstream check:** No open FastMCP (`PrefectHQ/fastmcp`) issue found asking
-  for `baggage` support in `_meta` specifically, despite several open issues
-  about this exact file's trace-context handling (e.g. [#4358 "Incoming W3C
-  traceparent header not propagated to FastMCP's internal
-  spans"](https://github.com/PrefectHQ/fastmcp/issues/4358), [#3998 "FastMCP
-  client does not propagate trace context on initialize and list
-  methods"](https://github.com/PrefectHQ/fastmcp/issues/3998)) — none of them
-  mention `baggage`. The MCP spec repo has a related but distinct open
-  proposal, [SEP-2028 "Automatic `_meta` to HTTP header forwarding for
-  distributed
+  never read or written as a `_meta` key anywhere in the installed package
+  (`grep -rn baggage` over the package tree returns exactly **one** match,
+  `fastmcp/telemetry.py:297` — a code comment about preserving already-active
+  baggage on extract, not a `_meta` key read or write). SEP-414 (which this
+  project's own MCP trace-context convention already follows) documents
+  `baggage` as one of the three unprefixed `_meta` keys, alongside
+  `traceparent`/`tracestate`.
+- **Upstream check:** `PrefectHQ/fastmcp#3998` ("OpenTelemetry: FastMCP client
+  does not propagate trace context on initialize and list methods", open)
+  **already reports the client side of exactly this gap** — its own body
+  states the server "does not receive `traceparent` / `baggage` through MCP
+  `_meta`" and asks that FastMCP's *client* requests "propagate
+  `_meta.traceparent` and `_meta.baggage`" on `initialize`/`list` calls. Its
+  premise is that `tools/call` (the method this project's chain actually
+  uses) already propagates baggage correctly — which our own live capture
+  shows is not true for the `baggage` key specifically, only for
+  `traceparent`/`tracestate`. No open issue reports that the **server** side
+  never reads `baggage` out of `_meta` at all, which is our precise finding;
+  [#4358](https://github.com/PrefectHQ/fastmcp/issues/4358) is on the same
+  file's trace-context handling but does not mention `baggage` anywhere. A
+  gap independently reported by a third party (even on a narrower slice of
+  it) is stronger evidence that this is real than if we were the only ones to
+  have found it. The MCP spec repo has a related but distinct open proposal,
+  [SEP-2028 "Automatic `_meta` to HTTP header forwarding for distributed
   tracing"](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/2028),
-  which is about forwarding `_meta` context (including `baggage`) to
-  *downstream HTTP calls a server makes*, not about a server reading `baggage`
-  out of `_meta` into its own OTel context in the first place — adjacent
-  motivation, different gap.
-- **Action:** Not filed. Recorded here as upstream-contribution evidence
-  (`tools/payments-mcp/NOTES.md` §6, `agents/settlement-agent/NOTES.md` §11).
-  A natural upstream fix would add a `baggage` key to both
+  about forwarding `_meta` context (including `baggage`) to *downstream HTTP
+  calls a server makes*, not about a server reading `baggage` out of `_meta`
+  into its own OTel context in the first place — adjacent motivation,
+  different gap.
+- **Action:** Not filed by this project. Recorded here as upstream-contribution
+  evidence (`tools/payments-mcp/NOTES.md` §6, `agents/settlement-agent/NOTES.md`
+  §11). A natural upstream fix would add a `baggage` key to both
   `extract_trace_context()` and `inject_trace_context()`, symmetric with how
-  they already handle `traceparent`/`tracestate`. Not worked around: no code
-  in this repo reaches into FastMCP's own `_meta` handling to bridge this
-  gap. Pinned by `tests/e2e/test_claim_correlation.py::
+  they already handle `traceparent`/`tracestate` — the same fix #3998 is
+  already asking for on the client side. Not worked around: no code in this
+  repo reaches into FastMCP's own `_meta` handling to bridge this gap. Pinned
+  by `tests/e2e/test_claim_correlation.py::
   test_claim_id_is_on_every_mcp_hop_span` (`xfail(strict=True)`, narrowed to
   this one assertion per a review finding — a fixture-setup failure upstream
   of it now surfaces as an ordinary `ERROR`, not a false-quiet `xfailed`).
