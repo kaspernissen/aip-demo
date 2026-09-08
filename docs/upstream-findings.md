@@ -1,6 +1,7 @@
 # Upstream findings — held locally, not filed
 
-Status: M1.1. No upstream repository exists for this project yet, and filing
+Status: M1.1, revised through M1.2 for the settlement-agent's model-driven
+decision logic. No upstream repository exists for this project yet, and filing
 these upstream is a deliberate decision this project defers to its
 maintainers rather than one any implementation task makes unilaterally. The
 standard held here is the honest one: *we found this, here is the evidence,
@@ -328,16 +329,37 @@ project actually has installed: the server is `fastmcp==4.0.3`
 (`tools/payments-mcp/requirements.txt:1`, and confirmed by the
 `.dist-info` directory name in that service's own `.venv`); the client is
 this project's own settlement-agent, pinned to `mcp==1.9.4`
-(`agents/settlement-agent/requirements.txt:13`). The capture was taken via
-`tests/e2e/test_claim_correlation.py` and
-`agents/settlement-agent/tests/test_mcp_tools.py` against the real deployed
-payments-mcp service (`task-7-report.md`, "Where `northstar.claim.id`
-lands"; see also `docs/telemetry-contract.md`'s Gap 4, which cites the same
-live capture: "`northstar.claim.id` reaches payments-mcp on **0** of its
-tool-call spans... in a live capture of the full chain"). This predates
-Task 6 — it was Task 7's own finding — but it is a genuine live observation
-at this project's real, installed versions, not a prediction from reading
-source alone.
+(`agents/settlement-agent/requirements.txt:13`). Two different, and
+differently-weighted, tests are cited here — kept distinct rather than
+merged, since they demonstrate different things:
+
+- The live capture against the real deployed server is
+  `tests/e2e/test_claim_correlation.py::test_claim_id_is_on_every_mcp_hop_span`:
+  it drives a real HTTP request through the real deployed chain
+  (`claims-agent` → `settlement-agent` → `payments-mcp` → `payments-api`)
+  and polls real Jaeger for the resulting trace, then asserts
+  `northstar.claim.id` is present on every `settlement-agent` span and
+  absent from every `payments-mcp`/`payments-api` span. This is the test
+  `task-7-report.md`'s "Where `northstar.claim.id` lands" and
+  `docs/telemetry-contract.md`'s Gap 4 ("`northstar.claim.id` reaches
+  payments-mcp on **0** of its tool-call spans... in a live capture of the
+  full chain") both cite. This predates Task 6 — it was Task 7's own
+  finding — but it is a genuine live observation at this project's real,
+  installed versions, not a prediction from reading source alone.
+- `agents/settlement-agent/tests/test_mcp_tools.py::test_call_injects_params_meta_baggage_from_the_ambient_context`
+  is a different kind of evidence and is **not** a capture against any
+  deployed service: it monkeypatches both `mcp_tools.streamablehttp_client`
+  and `mcp_tools.ClientSession` with in-process fakes
+  (`_FakeReadWriteContext`, `_FakeSessionCapturingRequest`) that never open
+  a socket — `send_request` simply stores the outgoing request object in a
+  class dict and returns a canned result, no bytes cross a process
+  boundary. It is useful evidence of a narrower, but still real, claim:
+  that this project's own production client code
+  (`agents/settlement-agent/mcp_tools.py`) genuinely constructs a `baggage`
+  key in `params._meta` before ever reaching the wire — confirming the
+  *client's* half of the gap is not the missing half. It observes nothing
+  about the deployed `payments-mcp` server, which is what the live capture
+  above is for.
 
 **Note on a withdrawn evidence-upgrade plan.** A later planning step (M1.2
 Task 6, Step 3) proposed re-observing this same gap "at
