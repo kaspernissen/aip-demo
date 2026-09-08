@@ -1,7 +1,10 @@
 # Northstar Architecture — M1.1 (Connected)
 
-Status: M1.1. This is the walking-skeleton stage: one claim, five components,
-one trace, no governance. Every claim below was checked against the code in
+Status: M1.1, revised through M1.2 for the settlement-agent's model-driven
+decision logic. This is the walking-skeleton stage: one claim, five
+components, one trace, no governance — M1.2 adds a real model call inside
+that skeleton without changing its shape. Every claim below was checked
+against the code in
 this worktree (HEAD `0a1a1f7`) and against the live `kind-northstar` cluster
 at the time of writing — see "See it yourself" for how to reproduce each
 capture yourself.

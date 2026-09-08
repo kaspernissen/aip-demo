@@ -322,6 +322,48 @@ that was sent, on that span or on the server's own outbound call further
 downstream — confirming the value was never read into the process's ambient
 OTel context in the first place, not merely dropped somewhere later.
 
+**This finding therefore rests on live observation, not source reading and
+`grep` alone**, and both halves of that observation are at versions this
+project actually has installed: the server is `fastmcp==4.0.3`
+(`tools/payments-mcp/requirements.txt:1`, and confirmed by the
+`.dist-info` directory name in that service's own `.venv`); the client is
+this project's own settlement-agent, pinned to `mcp==1.9.4`
+(`agents/settlement-agent/requirements.txt:13`). The capture was taken via
+`tests/e2e/test_claim_correlation.py` and
+`agents/settlement-agent/tests/test_mcp_tools.py` against the real deployed
+payments-mcp service (`task-7-report.md`, "Where `northstar.claim.id`
+lands"; see also `docs/telemetry-contract.md`'s Gap 4, which cites the same
+live capture: "`northstar.claim.id` reaches payments-mcp on **0** of its
+tool-call spans... in a live capture of the full chain"). This predates
+Task 6 — it was Task 7's own finding — but it is a genuine live observation
+at this project's real, installed versions, not a prediction from reading
+source alone.
+
+**Note on a withdrawn evidence-upgrade plan.** A later planning step (M1.2
+Task 6, Step 3) proposed re-observing this same gap "at
+`fastmcp-slim==4.0.3` with `mcp==2.2.0`," with a tool handler seeing an
+`ambient_baggage_northstar_claim_id: None` attribute alongside `baggage` on
+the wire. **That specific claimed observation was never made and could not
+have been:** `ambient_baggage_northstar_claim_id` does not appear anywhere
+in any installed package in this project, in any of this project's own
+code, or in any test — a repo-wide search finds that string in exactly one
+place, the withdrawn plan text itself. (One nuance worth recording precisely
+rather than waved away: `fastmcp-slim==4.0.3` and a close-but-not-identical
+`mcp==2.1.1` *do* exist as real, imported, transitive dependencies inside
+`payments-mcp`'s own `.venv` — `fastmcp==4.0.3`'s own package metadata
+requires `fastmcp-slim[client,server]==4.0.3`, whose `[server]` extra in
+turn requires `mcp<3.0.0,>=2.0.0`, which this venv resolved to `mcp==2.1.1`,
+genuinely imported by `fastmcp/server/sessions.py` and
+`fastmcp/server/low_level.py`, not merely present and unused. So the
+package-name coincidence with settlement-agent's unused PydanticAI `[mcp]`
+extra is real but beside the point: nothing in this project's own code
+drives that transitive `mcp` copy through the scenario the withdrawn step
+describes, and the specific attribute name it names was never observed
+anywhere, at any version.) That evidence-upgrade step was withdrawn before
+implementation, as an observation that cannot be traced to anything this
+project has measured — recorded here so a future reader does not go looking
+for a measurement that was never taken.
+
 **Why it matters, beyond this project:** OTel Baggage is the standard
 mechanism for carrying an application-defined identifier (a tenant ID, a
 user ID, a request-scoped correlation key — anything) across process

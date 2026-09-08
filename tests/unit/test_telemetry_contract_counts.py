@@ -118,9 +118,15 @@ def test_contracts_published_counts_match_what_pytest_actually_collects():
 #
 # Each service is checked with the *same command* `scripts/smoke-test.sh`
 # uses for it (Step 1/2), just in collect/list mode instead of run mode, so
-# this never actually executes a service's tests (no cluster, no tokens, no
-# side effects) -- it only asks each runner how many tests it sees, the
-# per-service analogue of `--collect-only` above.
+# this never actually executes a service's tests: no cluster, no tokens, no
+# side effects, and -- as of this fix round -- no network access either.
+# Each counter asserts its own toolchain is present first (venv python,
+# vitest binary) and fails loudly if it isn't, rather than falling back to
+# something that could reach out over the network (`npx vitest`) or resolve
+# unpredictably (a global npx cache); `_go_test_count` additionally runs
+# with `GOPROXY=off` so a cold Go module cache fails loudly instead of
+# fetching. A missing toolchain is a hard failure here, never a skip -- a
+# guard that skips silently is a guard that stops guarding.
 
 PER_SERVICE_ROW_RE = re.compile(
     r"Per-service unit suites[^\n]*:\s*\n(.*?)\N{EM DASH} all passing",
@@ -159,8 +165,12 @@ def _go_test_count(service_dir: Path) -> int:
     # runs a single one of them -- the Go analogue of `--collect-only`,
     # confirmed by timing (sub-second here vs. the real run) and by reading
     # `go help testflag`. Mirrors smoke-test.sh's own `GOTOOLCHAIN=local`.
+    # `GOPROXY=off` forbids the Go toolchain from reaching the module proxy
+    # network for anything not already in the local module cache -- a
+    # missing/incomplete cache must fail loudly here, not silently fetch.
     env = dict(os.environ)
     env["GOTOOLCHAIN"] = "local"
+    env["GOPROXY"] = "off"
     result = subprocess.run(
         ["go", "test", "./...", "-list", ".*"],
         cwd=service_dir,
@@ -190,21 +200,41 @@ def _vitest_test_count(service_dir: Path) -> int:
     # <describe> > <test name>") without running any of them -- the vitest
     # analogue of `--collect-only`, confirmed by timing against a real
     # `vitest run` of the same suite.
+    #
+    # Invoke the service's own installed binary directly rather than `npx
+    # vitest list`: `npx` resolves the name over the network (a registry
+    # metadata fetch, then a download) whenever it isn't already satisfied
+    # by *some* local copy -- including a stale, unrelated global npx cache
+    # under `~/.npm/_npx` that happens to have `vitest` from an earlier,
+    # unrelated invocation on this machine, which would make this "no side
+    # effects" guard silently network-dependent on a machine where that
+    # cache doesn't exist. Asserting the project's own binary exists first,
+    # the same way `_pytest_collected_count()` asserts its venv python
+    # exists, makes a missing toolchain fail loudly instead of resolving to
+    # the wrong copy or reaching the network.
+    vitest_bin = service_dir / "node_modules" / ".bin" / "vitest"
+    assert vitest_bin.exists(), (
+        f"{vitest_bin} does not exist -- this check needs the service's own "
+        "installed vitest binary (from `npm install`), the same one "
+        "scripts/smoke-test.sh requires; it deliberately does not fall back "
+        "to `npx vitest`, which can silently resolve over the network or "
+        "through an unrelated global cache instead of failing loudly"
+    )
     result = subprocess.run(
-        ["npx", "vitest", "list"],
+        [str(vitest_bin), "list"],
         cwd=service_dir,
         capture_output=True,
         text=True,
         timeout=60,
     )
     assert result.returncode == 0, (
-        f"`npx vitest list` failed in {service_dir}, so this test cannot "
+        f"`{vitest_bin} list` failed in {service_dir}, so this test cannot "
         f"verify its published count:\nstdout:\n{result.stdout}\n"
         f"stderr:\n{result.stderr}"
     )
     lines = [line for line in result.stdout.splitlines() if line.strip()]
     assert lines, (
-        f"`npx vitest list` in {service_dir} printed no test lines at all:\n"
+        f"`{vitest_bin} list` in {service_dir} printed no test lines at all:\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
     return len(lines)

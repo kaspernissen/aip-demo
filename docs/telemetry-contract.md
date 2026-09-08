@@ -1,6 +1,7 @@
 # Northstar Telemetry Contract
 
-Status: M1.1. Revised at every milestone.
+Status: M1.1, revised through M1.2 for the settlement-agent's model-driven
+decision logic. Revised at every milestone.
 
 ## The governing rule
 
@@ -100,16 +101,28 @@ drifting instead.
 `test_per_service_counts_match_what_each_suites_own_runner_collects`
 (same file) now parses this exact row and, for each service, calls that
 service's own test runner in collect/list mode — `pytest --collect-only`
-for the three Python services, `go test ./... -list '.*'` for payments-api,
-`npx vitest list` for customer-ui — the same command `scripts/smoke-test.sh`
-uses for each, just asking what exists rather than running it. Verified by
-deliberately corrupting `settlement-agent 31` to `settlement-agent 30` in
-this file: the new test went **RED**
-(`settlement-agent: the contract says 30, but its own test runner collects
-31 in agents/settlement-agent`), confirming it actually reads this row and
-actually compares against a live count, not a cached or hand-maintained
-one; reverted immediately, `__pycache__` swept, and confirmed green again
-before this document was committed.
+for the three Python services, `go test ./... -list '.*'` (with
+`GOPROXY=off`) for payments-api, and `node_modules/.bin/vitest list` for
+customer-ui, invoked directly rather than via `npx vitest run` (the command
+`scripts/smoke-test.sh` itself uses to *run* that suite) — just asking what
+exists rather than running it. Verified by deliberately corrupting
+`settlement-agent 31` to `settlement-agent 30` in this file: the new test
+went **RED** (`settlement-agent: the contract says 30, but its own test
+runner collects 31 in agents/settlement-agent`), confirming it actually
+reads this row and actually compares against a live count, not a cached or
+hand-maintained one; reverted immediately, `__pycache__` swept, and
+confirmed green again before this document was committed. **Fix round
+(Task 6 review, Finding C):** the per-service check originally shelled to
+`npx vitest list`, which on a cold machine with no local `node_modules`
+resolves `vitest` over the network (or, worse, silently through a stale
+global `~/.npm/_npx` cache from an unrelated earlier install, as reproduced
+in the review) — a hidden network dependency this guard's own docstring
+claimed not to have. It now asserts the service's own
+`node_modules/.bin/vitest` exists first, the same way the Python counters
+assert their venv exists, and invokes that binary directly; `_go_test_count`
+now also sets `GOPROXY=off` so a cold Go module cache fails loudly instead
+of fetching. A missing toolchain is a hard failure in every counter, never a
+skip.
 
 The one remaining xfail in both runs is
 `tests/e2e/test_claim_correlation.py::test_claim_id_is_on_every_mcp_hop_span`,
@@ -251,7 +264,13 @@ claims-agent and settlement-agent in that same window is the Task 4
 reviewer's own deliberate severance experiments (payments-mcp scaled to
 zero, the MCP URL mis-targeted) landing in the same Dash0 dataset, not a
 production defect — recorded here so a future reader does not go looking for
-a bug that was a review technique.
+a bug that was a review technique. **This paragraph is transcribed from this
+project's own progress ledger's 2026-09-08 entry ("Dash0 export — already
+live, verified rather than assumed"), not re-measured for this revision** —
+the ledger (`.superpowers/sdd/2026-09-08-m1.2-intelligence/progress.md`) is
+git-ignored working history, not a file distributed with this repository, so
+cite it as the dated ledger entry it is rather than a path a reader can
+necessarily open.
 
 This matters beyond this milestone: M4 ("Observable & evaluable") needs
 somewhere for metrics and eval scores to live, and this dual-export path is
