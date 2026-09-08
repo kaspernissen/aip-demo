@@ -1,10 +1,13 @@
 """A2A executor for settlement-agent.
 
-M1.1 has no LLM. The executor parses the incoming message, calls
-decide_settlement, then drives payments-mcp: propose, then execute.
+As of M1.2, decide_settlement is a real PydanticAI agent: it decides whether
+and how to pay, and drives payments-mcp itself (propose, then execute). The
+executor's job is just intake and reply — parse the incoming message, call
+decide_settlement once, and report what the ledger recorded.
 
-In M1.1 it executes unconditionally. That is the point: EUR 6,200 leaves the
-company because a message asked for it. M2 puts a policy decision in the path.
+There is no policy check here. That is the point: EUR 6,200 leaves the
+company because a message asked for it, and the model itself chose to spend
+it. M2 puts a policy decision in the path.
 """
 from __future__ import annotations
 
@@ -36,23 +39,15 @@ class SettlementAgentExecutor(AgentExecutor):
         # executor. Keeping the name consistent across agents avoids a rename.
         claim = json.loads(request_context.get_user_input())
 
-        decision = decide_settlement(claim)
-        logger.info("Assessed settlement: %s", decision["narrative"])
-
-        # propose() and execute() raise mcp_tools.ToolCallError (payments-api's
-        # 404/409 surfaced as the tool's own error text) or ValueError on an
-        # unhandled call shape. Left to propagate, the a2a-sdk's request
-        # handler turns an unhandled exception from this method into a
-        # JSON-RPC error response carrying str(exc) (verified empirically),
-        # so the caller sees the real reason a settlement failed rather than
-        # a flattened success or a swallowed exception.
-        proposed = await self._payments.propose(
-            claim["claimId"], decision["amount"], decision["currency"]
-        )
-        payment_id = proposed["paymentId"]
-        logger.info("Proposed payment %s.", payment_id)
-
-        executed = await self._payments.execute(payment_id)
+        # decide_settlement raises mcp_tools.ToolCallError (payments-api's
+        # 404/409 surfaced as the tool's own error text) or ValueError on a
+        # malformed claim. Left to propagate, the a2a-sdk's request handler
+        # turns an unhandled exception from this method into a JSON-RPC error
+        # response carrying str(exc) (verified empirically), so the caller
+        # sees the real reason a settlement failed rather than a flattened
+        # success or a swallowed exception.
+        decision = await decide_settlement(claim, self._payments)
+        logger.info("Settled claim %s: %s", claim["claimId"], decision["narrative"])
 
         # Only one Message is ever enqueued, deliberately: verified
         # empirically (see NOTES.md) that a2a-sdk 0.3.7's blocking
@@ -72,10 +67,10 @@ class SettlementAgentExecutor(AgentExecutor):
                 json.dumps(
                     {
                         "claimId": claim["claimId"],
-                        "paymentId": payment_id,
-                        "amount": executed["amount"],
-                        "currency": executed["currency"],
-                        "status": executed["status"],
+                        "paymentId": decision["paymentId"],
+                        "amount": decision["amount"],
+                        "currency": decision["currency"],
+                        "status": decision["status"],
                         "narrative": decision["narrative"],
                     }
                 )

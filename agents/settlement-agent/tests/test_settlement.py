@@ -1,7 +1,7 @@
 """Settlement agent behaviour, with no API key and no network.
 
-FunctionModel drives an exact tool-call script; TestModel exercises the
-happy path generically. Neither touches Anthropic.
+FunctionModel drives an exact tool-call script for every case below,
+including the happy path. It never touches Anthropic.
 """
 from __future__ import annotations
 
@@ -130,4 +130,23 @@ async def test_negative_amount_is_rejected_before_the_model_runs():
     payments = FakePayments()
     with pytest.raises(ValueError, match="negative"):
         await _run({"claimId": "CLM-1", "amount": -5}, payments, _script())
+    assert payments.calls == []
+
+
+@pytest.mark.asyncio
+async def test_model_finishing_without_executing_a_payment_raises():
+    """A model that only narrates, never calling the tools, must not be
+
+    mistaken for a settlement. This is a real risk live on stage: nothing
+    forces the model to call propose_payment/execute_payment before its
+    final reply. decide_settlement must raise rather than return a reply
+    with no ledger-backed amount/status/paymentId.
+    """
+    payments = FakePayments()
+
+    def fake_model(messages, info):
+        return ModelResponse(parts=[TextPart(content="This claim looks covered.")])
+
+    with pytest.raises(RuntimeError, match=r"CLM-1842.*executing a payment.*proposed=None"):
+        await _run(CLAIM, payments, FunctionModel(fake_model))
     assert payments.calls == []
