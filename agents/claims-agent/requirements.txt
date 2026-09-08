@@ -11,17 +11,20 @@ opentelemetry-instrumentation-starlette==0.65b0
 # PYSEC-2026-1845 (pip-audit). This file's runtime image installs the whole
 # requirements.txt (Dockerfile), so the advisory was shipping in the running
 # claims-agent pod, not just a dev venv. pytest-asyncio 0.25.0 -> 1.4.0
-# alongside it: 0.25.0 only supports pytest<8.4 (its own metadata), so it was
-# already the ceiling on the pytest bump; 1.4.0 is pytest-asyncio's own
-# current release and declares pytest<10,>=8.4, satisfied by 9.0.3. This is
+# alongside it: 0.25.0 declares `pytest<9,>=8.2` (its own Requires-Dist on
+# PyPI, checked directly), so it capped the pytest bump one minor short of
+# 9.0.3; 1.4.0 declares pytest<10,>=8.4, satisfied by 9.0.3. This is
 # the same paired bump agents/settlement-agent/requirements.txt already made
 # in Task 7 (settlement-agent's pytest advisory), applied here because Task 7
 # only touched the two files its own brief named and this service's copy of
 # the same advisory went unnoticed until the final review.
 pytest==9.0.3
 pytest-asyncio==1.4.0
-# pytest 9.0.3 newly declares pygments>=2.7.2 as a direct dependency
-# (pytest==8.3.4 did not; verified via both versions' own Requires-Dist).
+# pytest 9.0.3 declares pygments>=2.7.2 as an unconditional dependency, so it
+# is now a pinned transitive here. pytest==8.3.4 declared it too, but only
+# behind its unused `dev` extra (`pygments>=2.7.2; extra == "dev"`), so it was
+# never installed before this bump. Both checked against each version's own
+# Requires-Dist on PyPI.
 # Pinned exactly as resolved by `uv pip install -r requirements.txt` into a
 # clean venv (house style: nothing floats).
 pygments==2.21.0

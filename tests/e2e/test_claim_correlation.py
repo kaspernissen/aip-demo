@@ -115,8 +115,15 @@ def correlated_trace(claim_id):
             }
         },
     }
+    # 180s, matching every other call site that drives a settlement: since M1.2
+    # this is three sequential model turns plus two MCP round trips, not one
+    # hardcoded function call. Observed latency is 2.6-7.9s, so the margin is
+    # for the Anthropic SDK's exponential backoff after a 429/529 on a slow
+    # uplink -- conference wifi. A timeout here raises inside a module-scoped
+    # fixture, which reports every test in the file as ERROR with a traceback
+    # rather than one named failure.
     response = httpx.post(
-        f"{CLAIMS_URL}/", json=payload, headers={"traceparent": traceparent}, timeout=120
+        f"{CLAIMS_URL}/", json=payload, headers={"traceparent": traceparent}, timeout=180
     )
     response.raise_for_status()
     assert "error" not in response.json(), response.text

@@ -63,6 +63,28 @@ Then open:
 
 Tear down with `./scripts/teardown.sh`.
 
+### Running the tests directly costs money
+
+`./scripts/smoke-test.sh` is the supported way to run the suite. If you invoke
+pytest yourself, know what you are paying for:
+
+| Command | Cluster | Anthropic tokens |
+|---|---|---|
+| `.venv/bin/python -m pytest tests/unit -q` | not needed | none |
+| `.venv/bin/python -m pytest tests/ -q` | **required** | **yes — two live settlements** |
+| `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | required | yes — the full gate |
+
+A bare `pytest tests/` is **not** free and **not** cluster-independent. Since
+M1.2 made the settlement a real model call, `tests/e2e/test_settlement_agent_trace.py`
+and `tests/e2e/test_claims_chain_trace.py` each drive a live model-driven
+settlement — three Anthropic turns apiece — from a module-scoped fixture, and
+they are deliberately left ungated so the default suite still proves the chain
+end to end. Only `tests/e2e/test_browser_root_span.py` and
+`tests/e2e/test_settlement_llm_trace.py` sit behind `RUN_BROWSER_TESTS=1`.
+Without a live cluster and port-forwards those e2e files fail rather than skip.
+
+`tests/unit` is the hermetic subset: no cluster, no API key, no network.
+
 ## Stages
 
 The demo has six stages; the setup script installs only what a stage needs, so
