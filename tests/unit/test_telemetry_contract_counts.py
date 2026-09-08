@@ -5,14 +5,14 @@ xfailed` after a commit had already taken the real numbers to `55/7/1` and
 `62/1` — the commit message and the task report were both updated, but the
 one artefact whose entire purpose is stating what is true was not.
 
-**What this test can and cannot verify, and why it stops there:** the
-contract publishes two numbers for the *same* fixed set of collected
+**What the whole-tree check can and cannot verify, and why it stops there:**
+the contract publishes two numbers for the *same* fixed set of collected
 tests — what a bare `pytest tests/` run proves (passed + skipped + xfailed)
 and what the gate's `RUN_BROWSER_TESTS=1` run proves (passed + xfailed, no
 skips, since nothing is gated out). Both totals must equal each other and
 must equal how many tests `pytest` actually collects under `tests/` today.
-`--collect-only` needs no live cluster, no `.env`, and no port-forwards —
-it only imports test modules and enumerates test IDs — so this can run
+`--collect-only` needs no live cluster, no `.env`, and no port-forwards --
+it only imports test modules and enumerates test IDs -- so this can run
 anywhere the rest of `tests/unit/` runs. What it deliberately does NOT do is
 re-run the full suite to confirm every documented "passed" is still true:
 that would require the live cluster and the browser, making this "unit"
@@ -21,7 +21,25 @@ checking, for a check `smoke-test.sh` already performs directly every time
 it runs. A collection-count cross-check catches the specific, cheap,
 frequent failure mode (someone adds or removes a test and forgets the two
 numbers in the doc) without trying to be a second copy of the gate.
+
+**Why a second, per-service check exists (M1.2 Task 6).** The contract also
+publishes one more row -- "Per-service unit suites" -- and the whole-tree
+check above structurally cannot see it: each per-service suite lives
+*outside* `tests/`, in its own directory with its own `.venv` (or its own
+Go module, or its own Node package), so `pytest --collect-only tests/`
+never touches it. This is not a hypothetical blind spot: the
+`settlement-agent` count in that row went stale at "19" for the entirety of
+M1.2 Tasks 1-4 -- three tasks in a row that each added tests to that
+suite -- and nothing caught it until a human re-counted by hand in Task 5.
+That is the third time a published count in this document has drifted
+silently; the first two both went through the whole-tree check above, which
+is exactly why it exists, and this one didn't, which is exactly why it kept
+recurring. `test_per_service_counts_match_what_each_suites_own_runner_collects`
+below closes that blind spot the same way the whole-tree check closes its
+own: by asking each service's own test runner what it actually has, rather
+than trusting a number someone typed by hand.
 """
+import os
 import re
 import subprocess
 import sys
@@ -88,4 +106,161 @@ def test_contracts_published_counts_match_what_pytest_actually_collects():
         f"({gate_match.group(0)}), but `pytest --collect-only tests/` "
         f"actually collects {collected} today -- the document has drifted "
         f"from the suite; update {CONTRACT_PATH.relative_to(REPO_ROOT)}"
+    )
+
+
+# --- Per-service row (M1.2 Task 6) -----------------------------------------
+#
+# The row this guards reads, verbatim, as of this writing:
+#
+#   claims-agent 14, settlement-agent 31, payments-mcp 7, payments-api (Go) 7,
+#   customer-ui (vitest) 6 -- all passing.
+#
+# Each service is checked with the *same command* `scripts/smoke-test.sh`
+# uses for it (Step 1/2), just in collect/list mode instead of run mode, so
+# this never actually executes a service's tests (no cluster, no tokens, no
+# side effects) -- it only asks each runner how many tests it sees, the
+# per-service analogue of `--collect-only` above.
+
+PER_SERVICE_ROW_RE = re.compile(
+    r"Per-service unit suites[^\n]*:\s*\n(.*?)\N{EM DASH} all passing",
+    re.DOTALL,
+)
+
+
+def _pytest_collected_count(service_dir: Path) -> int:
+    venv_python = service_dir / ".venv" / "bin" / "python"
+    assert venv_python.exists(), (
+        f"{venv_python} does not exist -- this check needs each service's "
+        "own virtualenv, the same one scripts/smoke-test.sh requires"
+    )
+    result = subprocess.run(
+        [str(venv_python), "-m", "pytest", "--collect-only", "-q", "tests"],
+        cwd=service_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, (
+        f"`{venv_python} -m pytest --collect-only -q tests` failed in "
+        f"{service_dir}, so this test cannot verify its published count:\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    match = re.search(r"(\d+) tests? collected", result.stdout)
+    assert match, (
+        f"could not parse a '<N> tests collected' summary line out of "
+        f"pytest's --collect-only output in {service_dir}:\n{result.stdout}"
+    )
+    return int(match.group(1))
+
+
+def _go_test_count(service_dir: Path) -> int:
+    # `go test -list '.*'` prints one matching test name per line and never
+    # runs a single one of them -- the Go analogue of `--collect-only`,
+    # confirmed by timing (sub-second here vs. the real run) and by reading
+    # `go help testflag`. Mirrors smoke-test.sh's own `GOTOOLCHAIN=local`.
+    env = dict(os.environ)
+    env["GOTOOLCHAIN"] = "local"
+    result = subprocess.run(
+        ["go", "test", "./...", "-list", ".*"],
+        cwd=service_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=env,
+    )
+    assert result.returncode == 0, (
+        f"`go test ./... -list '.*'` failed in {service_dir}, so this test "
+        f"cannot verify its published count:\nstdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    # Every line is a matched test name except the trailing `ok  <pkg> ...`
+    # (or `?   <pkg> [no test files]`) summary line(s) `go test` always
+    # prints, with or without -list.
+    names = [
+        line
+        for line in result.stdout.splitlines()
+        if line.strip() and not line.startswith(("ok", "?", "FAIL"))
+    ]
+    return len(names)
+
+
+def _vitest_test_count(service_dir: Path) -> int:
+    # `vitest list` enumerates every test case (one per line, "<file> >
+    # <describe> > <test name>") without running any of them -- the vitest
+    # analogue of `--collect-only`, confirmed by timing against a real
+    # `vitest run` of the same suite.
+    result = subprocess.run(
+        ["npx", "vitest", "list"],
+        cwd=service_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, (
+        f"`npx vitest list` failed in {service_dir}, so this test cannot "
+        f"verify its published count:\nstdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    assert lines, (
+        f"`npx vitest list` in {service_dir} printed no test lines at all:\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    return len(lines)
+
+
+# (published name in the doc row, directory relative to REPO_ROOT, counter)
+_PER_SERVICE_SUITES = [
+    ("claims-agent", REPO_ROOT / "agents" / "claims-agent", _pytest_collected_count),
+    ("settlement-agent", REPO_ROOT / "agents" / "settlement-agent", _pytest_collected_count),
+    ("payments-mcp", REPO_ROOT / "tools" / "payments-mcp", _pytest_collected_count),
+    ("payments-api", REPO_ROOT / "systems" / "payments-api", _go_test_count),
+    ("customer-ui", REPO_ROOT / "apps" / "customer-ui", _vitest_test_count),
+]
+
+
+def test_per_service_counts_match_what_each_suites_own_runner_collects():
+    text = CONTRACT_PATH.read_text()
+
+    row_match = PER_SERVICE_ROW_RE.search(text)
+    assert row_match, (
+        "could not find the 'Per-service unit suites' row in "
+        f"{CONTRACT_PATH.relative_to(REPO_ROOT)} -- expected a paragraph "
+        "starting 'Per-service unit suites' and ending '— all passing', "
+        "listing one count per service"
+    )
+    row = row_match.group(1)
+
+    mismatches = []
+    missing = []
+    for name, service_dir, counter in _PER_SERVICE_SUITES:
+        # Matches "claims-agent 14", "payments-api (Go) 7", "customer-ui
+        # (vitest) 6" -- an optional "(<runner>)" annotation between the
+        # service name and its count.
+        name_match = re.search(
+            re.escape(name) + r"(?:\s*\([^)]*\))?\s+(\d+)", row
+        )
+        if not name_match:
+            missing.append(name)
+            continue
+        published = int(name_match.group(1))
+        actual = counter(service_dir)
+        if published != actual:
+            mismatches.append(
+                f"{name}: the contract says {published}, but its own test "
+                f"runner collects {actual} in {service_dir.relative_to(REPO_ROOT)}"
+            )
+
+    assert not missing, (
+        "the 'Per-service unit suites' row is missing a published count for: "
+        f"{', '.join(missing)} -- expected every one of "
+        f"{[n for n, _, _ in _PER_SERVICE_SUITES]} to appear as '<name> <N>' "
+        f"in that row:\n{row}"
+    )
+    assert not mismatches, (
+        "docs/telemetry-contract.md's 'Per-service unit suites' row has "
+        "drifted from what each service's own suite actually collects "
+        "(this is the third recurrence of exactly this defect -- see the "
+        "module docstring):\n" + "\n".join(mismatches)
     )

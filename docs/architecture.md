@@ -61,7 +61,7 @@ Namespaces, ports, and service DNS names below are read directly from
 |---|---|---|---|---|---|
 | `customer-ui` | TypeScript, Next.js 15.5.21 (`output: "export"`, static, served by nginx 1.27) | `northstar-agents` (**not** its own namespace — see note below) | `customer-ui.northstar-agents.svc.cluster.local:8080`, exposed as a `NodePort` (30080) mapped to host `8080` by kind's `extraPortMappings` | `localhost:5001/northstar/customer-ui:dev` | Owns the trace root. The only component a human touches directly. |
 | `claims-agent` | Python 3.13, `a2a-sdk[telemetry]==0.3.7` + Starlette | `northstar-agents` | `claims-agent.northstar-agents.svc.cluster.local:9001` | `localhost:5001/northstar/claims-agent:dev` | A2A server (inbound, from the browser) and A2A client (outbound, to settlement-agent). Parses the claim, delegates, returns settlement-agent's JSON verbatim. |
-| `settlement-agent` | Python 3.13, `a2a-sdk[telemetry]==0.3.7` + Starlette + `mcp==1.9.4` client | `northstar-agents` | `settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` | A2A server; MCP client. Runs the (hardcoded, see below) settlement decision, then proposes and executes the payment via payments-mcp. |
+| `settlement-agent` | Python 3.13, `a2a-sdk[telemetry]==0.3.7` + Starlette + `mcp==1.9.4` client + `pydantic-ai-slim==2.41.0` (M1.2) | `northstar-agents` | `settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` | A2A server; MCP client. As of M1.2, the settlement decision itself is a real model call (see "The decision logic" below) — the model chooses whether and how to propose and execute the payment via payments-mcp. |
 | `payments-mcp` | Python 3.13, FastMCP 4.0.3 | `northstar-tools` | `payments-mcp.northstar-tools.svc.cluster.local:8000`, MCP endpoint at `/mcp` | `localhost:5001/northstar/payments-mcp:dev` | MCP server exposing two tools. An adapter over payments-api — it owns no state of its own (`server.py`'s own docstring: "This is an adapter over payments-api, not a system of record."). |
 | `payments-api` | Go 1.24, `otelhttp v0.66.0` / otel core `v1.41.0` | `northstar-systems` | `payments-api.northstar-systems.svc.cluster.local:8080` | `localhost:5001/northstar/payments-api:dev` | The system of record for payments. In-memory store, sequential IDs, no persistence. |
 
@@ -85,9 +85,11 @@ What each component is explicitly **not** responsible for:
   delegates unconditionally to settlement-agent. It does not decide whether
   the delegation should happen — the allow-list below governs the target,
   not the decision.
-- **settlement-agent** does not talk to payments-api directly, does not
-  own payment state, and — in M1.1 — does not reason about the claim at all
-  (see "The decision logic" below).
+- **settlement-agent** does not talk to payments-api directly and does not
+  own payment state. As of M1.2 it *does* reason about the claim — a real
+  model call decides whether and how to settle it — but the reply's amounts
+  still come from what payments-api's ledger recorded, never from the
+  model's own words (see "The decision logic" below).
 - **payments-mcp** does not own payment state. It has no logic of its own
   beyond translating an MCP tool call into an HTTP call to payments-api and
   returning the result (`payments_client.py`).
@@ -303,45 +305,105 @@ polling it produced "162 GET /healthz traces against 44 POST
 was polluting the trace view, so it was excluded from tracing entirely
 rather than filtered downstream.
 
-## The decision logic — stated honestly: there is no LLM in M1.1
+## The decision logic — M1.2: a real model now decides, the ledger still states the amounts
 
-`agents/settlement-agent/settlement.py`'s entire body:
+M1.1's `decide_settlement` was the deterministic stub its own docstring
+promised to become: *"In M1.2 the body becomes a PydanticAI agent; this
+signature and return shape stay the same so nothing downstream changes."*
+That happened at M1.2 Tasks 2–4. `agents/settlement-agent/settlement.py` now
+validates the same three fields as before — `claimId` present, `amount`
+present, `amount >= 0` — but the settlement decision after that validation
+is a real PydanticAI `Agent` call against `anthropic:claude-sonnet-5`, not a
+fixed narrative string:
 
 ```python
-def decide_settlement(claim: dict) -> dict:
-    claim_id = claim.get("claimId")
-    if not claim_id:
-        raise ValueError("claimId is required")
-    amount = claim.get("amount")
-    if amount is None:
-        raise ValueError("amount is required")
-    if amount < 0:
-        raise ValueError("amount must not be negative")
-    currency = claim.get("currency") or "EUR"
-    return {
-        "amount": float(amount),
-        "currency": currency,
-        "narrative": f"Claim {claim_id} is covered. Settling at {amount:.0f} {currency} against the assessed damage.",
-    }
+settlement_agent = Agent(
+    os.environ.get("NORTHSTAR_SETTLEMENT_MODEL", DEFAULT_MODEL),
+    deps_type=SettlementDeps,
+    instructions=(
+        "You settle motor insurance claims for Northstar Insurance.\n"
+        "You are given a claim that has already been assessed as covered.\n"
+        "Settle it by calling propose_payment with the assessed amount, then "
+        "execute_payment with the paymentId you get back.\n"
+        "Then reply with a short narrative for the claimant.\n"
+        "Settle the assessed amount. Do not round it, discount it or "
+        "renegotiate it. Do not state amounts in your narrative."
+    ),
+)
+
+@settlement_agent.tool
+async def propose_payment(ctx, amount, currency="EUR") -> dict: ...
+
+@settlement_agent.tool
+async def execute_payment(ctx, payment_id) -> dict: ...
 ```
 
-That is the whole decision: validate three fields, echo the amount back,
-generate a fixed narrative string. There is no assessment of the claim's
-merits, no fraud check, no policy lookup — the claim is "covered" and
-settled at exactly the amount the caller asked for, every time, for any
-positive amount. The module's own docstring states the plan plainly:
-*"Hardcoded and deterministic in M1.1. In M1.2 the body becomes a PydanticAI
-agent; this signature and return shape stay the same so nothing downstream
-changes."*
+**The model chooses the tool sequence.** `decide_settlement` no longer calls
+`propose`/`execute` itself — it runs `settlement_agent.run(prompt, deps=...)`
+with one templated sentence (`f"Claim {claim_id} is assessed as covered for
+{amount:.0f} {currency}. Settle it."`, built only from `{claimId, amount,
+currency}` — the claim's free-text description never reaches the model at
+all) and lets the model decide when, whether, and in what order to call
+`propose_payment` and `execute_payment`. Both tools still call
+`mcp_tools.PaymentsTools` exactly as before — the MCP call path, the
+verified `params._meta` trace-context propagation, and payments-mcp's own
+error handling are all unchanged from M1.1. The model chooses; the same
+M1.1-proven code calls.
 
-A reader watching this trace in Jaeger will see two real network calls
-(propose, execute) and a plausible-sounding narrative, and it would be easy
-to come away thinking an agent reasoned about the claim. It did not. Nothing
-in M1.1 calls a model of any kind — confirmed by reading every source file
-under `agents/`, `tools/`, and `systems/`; there is no LLM client, no prompt,
-no `ANTHROPIC_API_KEY` usage anywhere in this milestone's code (the variable
-is sourced in `.env` per `README.md`'s own note, "unused until M1.2 but
-sourced regardless").
+**The reply's amounts come from the ledger, never from the model's own
+words.** `decide_settlement` reads `deps.record.executed` — the actual
+`propose`/`execute` results returned by payments-mcp, captured by the tool
+functions themselves as a side effect — and builds the reply's
+`amount`/`currency`/`status`/`paymentId` from *that*, not from anything the
+model said. Only the reply's `narrative` field is the model's own text
+(`result.output`, the agent's final free-form turn). Concretely:
+
+```python
+return {
+    "amount": executed["amount"],       # from payments-api's ledger
+    "currency": executed["currency"],   # from payments-api's ledger
+    "status": executed["status"],       # from payments-api's ledger
+    "paymentId": executed["paymentId"], # from payments-api's ledger
+    "narrative": result.output,         # the model's own prose — nothing else
+}
+```
+
+This is deliberately testable and tested:
+`test_reply_amount_comes_from_the_ledger_not_from_the_model` (Task 2) drives
+a scripted model that narrates one amount while the mocked ledger returns
+another, and asserts the reply carries the ledger's figure — proving the
+separation is real, not incidental. If the model finishes a run without
+ever calling `execute_payment`, `decide_settlement` raises a `RuntimeError`
+naming the claim and whatever was proposed, rather than silently reporting
+success; and any `ToolCallError` from a failed payments-mcp call propagates
+uncaught out to the caller as a JSON-RPC error, so a real failure is never
+smoothed over into friendly prose.
+
+A reader watching this trace in Jaeger sees the same two real network calls
+(propose, execute) M1.1 always showed, plus — new in M1.2 — one
+`invoke_agent settlement_agent` span, three `chat claude-sonnet-5` spans
+(one model turn each: propose, execute, final narrative), and two
+`execute_tool` spans, all nested inside the same request
+(`docs/telemetry-contract.md`'s "PydanticAI instrumentation, as measured"
+section has the full attribute inventory). Where M1.1's narrative was a
+fixed string and this document had to say so plainly, M1.2's narrative is
+genuinely the model's own words about a decision the model itself made —
+the trajectory a reader follows in Jaeger now really did happen the way it
+reads, not merely look like it did.
+
+**No amount check, clamp, threshold or guard rail exists anywhere in this
+path**, confirmed by reading `settlement.py`, `executor.py`, `mcp_tools.py`,
+`tools/payments-mcp/*.py` and `systems/payments-api/*.go` — the only numeric
+checks anywhere are `_validate`'s pre-model `amount is None`/`amount < 0`
+guards, both inherited unchanged from M1.1 and both about the *inbound*
+claim, not the model's proposal. `settlement.py`'s own module docstring
+states the intent as plainly as M1.1's did: *"There is no €5,000 check here,
+and that is the point: M1 is ungoverned on purpose. The model can propose
+any amount and nothing stops it. That hole is what M2's Policy Decision
+Service fills."* Three independent live runs (a direct A2A measurement, the
+gate's own assertions, and a real browser submission) all settled exactly
+the assessed €6,200 — a fact about this model on this prompt, not a property
+anything in this chain enforces.
 
 ## What the system deliberately does not do
 
@@ -350,11 +412,14 @@ by reading every hop's code, not inferred:
 
 - claims-agent's delegate allow-list (Hop 2) checks a target *name*, not
   whether the delegation should happen for this claim.
-- settlement-agent executes the payment unconditionally — `executor.py`
-  calls `propose` then `execute` with no approval step, no check against a
-  policy, no human in the loop. Its own module docstring: *"In M1.1 it
-  executes unconditionally. That is the point: EUR 6,200 leaves the company
-  because a message asked for it. M2 puts a policy decision in the path."*
+- settlement-agent executes the payment unconditionally — as of M1.2, the
+  model itself decides to call `propose_payment` then `execute_payment`,
+  with no approval step, no check against a policy, and no human in the
+  loop anywhere in that decision. `executor.py`'s own module docstring
+  states it plainly, updated for the model now being the one that chooses:
+  *"There is no policy check here. That is the point: EUR 6,200 leaves the
+  company because a message asked for it, and the model itself chose to
+  spend it. M2 puts a policy decision in the path."*
 - payments-mcp performs no check of its own before calling payments-api.
 - payments-api's own OpenAPI contract states it outright: *"Deliberately
   tiny. In M1 it has no authorization of any kind: anything that can reach

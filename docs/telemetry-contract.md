@@ -36,8 +36,8 @@ Measured counts, from a clean cluster (`./scripts/teardown.sh &&
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `57 passed, 17 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `74 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `58 passed, 17 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `75 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -63,6 +63,10 @@ M1.2 Task 5 also revises this document's substantive content** — including
 what content capture does and does not redact now that it is configuration
 rather than a hardcoded constant, which
 `tests/e2e/test_settlement_llm_trace.py` measures rather than assumes.
+Task 6 grew the **passed** count in both rows by one, 74→75 and 57→58: it
+strengthened `tests/unit/test_telemetry_contract_counts.py` with a second
+test (see below) that needs no cluster and no browser, so it runs — and
+passes — in a bare `pytest tests/` too, not only behind the gate's flag.
 
 `tests/unit/test_smoke_test_gate.py` (2 tests, counted in both rows above)
 pins this distinction directly: it reads `scripts/smoke-test.sh`'s own source
@@ -86,6 +90,27 @@ A19 regression test for the traceparent-across-await fix described below
 one unit suite that pins a real, previously-silent defect in this project's
 own code, not only in a third-party library's behavior.
 
+**M1.2 Task 6 closed that blind spot rather than re-stating the number a
+fourth time.** The stale-at-19 defect above was the third recurrence of the
+same failure mode (a published count drifting because nothing automated
+checks it), and the first two recurrences both went through
+`test_telemetry_contract_counts.py`'s whole-tree check — which is exactly
+why that check exists and why this row, structurally invisible to it, kept
+drifting instead.
+`test_per_service_counts_match_what_each_suites_own_runner_collects`
+(same file) now parses this exact row and, for each service, calls that
+service's own test runner in collect/list mode — `pytest --collect-only`
+for the three Python services, `go test ./... -list '.*'` for payments-api,
+`npx vitest list` for customer-ui — the same command `scripts/smoke-test.sh`
+uses for each, just asking what exists rather than running it. Verified by
+deliberately corrupting `settlement-agent 31` to `settlement-agent 30` in
+this file: the new test went **RED**
+(`settlement-agent: the contract says 30, but its own test runner collects
+31 in agents/settlement-agent`), confirming it actually reads this row and
+actually compares against a live count, not a cached or hand-maintained
+one; reverted immediately, `__pycache__` swept, and confirmed green again
+before this document was committed.
+
 The one remaining xfail in both runs is
 `tests/e2e/test_claim_correlation.py::test_claim_id_is_on_every_mcp_hop_span`,
 documenting the FastMCP baggage gap below (Gap 4). It is deliberately narrow —
@@ -107,6 +132,7 @@ marker is removed, rather than staying silently green.
 | customer-ui | OpenTelemetry JS web, manual root span | `@opentelemetry/sdk-trace-web` 2.8.0, `@opentelemetry/context-zone` 1.30.0, `@opentelemetry/exporter-trace-otlp-http` 0.219.0, `@opentelemetry/resources` 2.8.0 | `claim.submit` | Owns the trace root. Requires `traceparent`/`tracestate`/`baggage` in claims-agent's own CORS `allow_headers` (`agents/claims-agent/main.py`) so the browser's request survives preflight — the collector's own CORS requirement is different: it needs `http://localhost:8080` in `allowed_origins` (its `allowed_headers` is already wildcarded), since the browser's OTLP export to the collector carries no `traceparent` header of its own. Requires a *static* import of the injection helper — a dynamic `import()` (or any other `await`) before reading the active span loses it under `ZoneContextManager` (`apps/customer-ui/NOTES.md` §2; pinned by that service's own vitest regression test). |
 | claims-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` | `a2a-sdk[telemetry]==0.3.7`, `opentelemetry-instrumentation-starlette==0.65b0` | ASGI entry span `POST /`; `a2a.server.request_handlers.jsonrpc_handler.JSONRPCHandler.on_message_send` and the rest of the `a2a.server.*` call-graph spans (`DefaultRequestHandler.on_message_send`, `EventQueue.enqueue_event`/`.dequeue_event`/`.close`, `EventConsumer.consume_all`, etc.) | `DISABLE_OTEL_INSTRUMENTATION` must remain unset; `bootstrap.configure()` raises if it is `true`. Inbound W3C trace-context extraction comes from `StarletteInstrumentor` wrapping the built ASGI app (A18) — `a2a-sdk` itself extracts nothing (see Gap 1). **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/claims-agent.yaml`) — OTel Python's HTTP instrumentation defaults to the legacy spelling (`http.method`/`http.url`/`http.status_code`) on both the ASGI entry span and the outbound httpx span; without this, this service alone would mix conventions with the Go hop (`agents/claims-agent/NOTES.md` §7, which also records a measurement mistake made while proving the opt-in was genuinely needed, not assumed). |
 | settlement-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` + `mcp` client | `a2a-sdk[telemetry]==0.3.7`, `mcp==1.9.4`, `opentelemetry-instrumentation-starlette==0.65b0` | Same shape as claims-agent (`POST /` ASGI entry span, `a2a.server.*` call-graph spans), plus outbound `httpx` CLIENT spans (`POST`) to payments-mcp | Only agent permitted to reach payments-mcp. Same `StarletteInstrumentor` fix as claims-agent for inbound extraction. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/settlement-agent.yaml`), same reason as claims-agent — measured legacy-by-default, confirmed stable after the opt-in (`agents/settlement-agent/NOTES.md` §6). |
+| settlement-agent (model) | PydanticAI `Agent.instrument_all(InstrumentationSettings(...))` (`bootstrap.py`) | `pydantic-ai-slim==2.41.0`, `version=5` (the library default, pinned explicitly) | `invoke_agent settlement_agent` (internal, ×1/request), `chat claude-sonnet-5` (client, ×3/request — one per model turn: propose, execute, final narrative), `execute_tool propose_payment`, `execute_tool execute_payment` (internal, ×1 each) | As of M1.2: the settlement decision itself, not only its transport. **25 distinct `gen_ai.*` attribute names measured** across these four span shapes — full inventory and per-span breakdown below. `include_content` is **not** hardcoded — it reads `NORTHSTAR_CAPTURE_CONTENT` (default ON; see "Content capture" below) — and `include_model_request_parameters` is left at its library default (`True`), never passed explicitly. |
 | payments-mcp | FastMCP native | `fastmcp==4.0.3` | `tools/call propose_payment`, `tools/call execute_payment` | TracerProvider does **not** need to be installed before importing fastmcp on this version — `fastmcp.telemetry.get_tracer()` calls `get_tracer_provider()` fresh on every span, not once at import (measured; the brief's premise here was wrong for 4.0.3 — kept as a code convention anyway, not a correctness requirement). `FASTMCP_TELEMETRY_MODE=native` is set explicitly even though it is already the default. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is also set** (`deploy/k8s/payments-mcp.yaml`) — this governs only the *outbound httpx* span to payments-api (FastMCP's own native MCP spans are unaffected; this knob is httpx-instrumentation-specific), measured legacy-by-default, confirmed stable after (`tools/payments-mcp/NOTES.md` §3). |
 | payments-api | `otelhttp` | `otelhttp v0.66.0`, otel core `v1.41.0` | `POST /payments/propose`, `POST /payments/{paymentId}/execute`, `GET /payments/{paymentId}` | HTTP attribute spelling as emitted by the pinned version: **stable** — `http.request.method` / `http.response.status_code` / `http.route`, not the legacy `http.method`/`http.status_code`. `network.protocol.name` is **not** emitted by this otelhttp version (only `network.protocol.version` is); do not assert its presence. No `OTEL_SEMCONV_STABILITY_OPT_IN` is set or needed — this version emits the stable spelling by default (A12), unlike every Python service in this table. |
 
@@ -171,9 +197,174 @@ probe). This predicts where M1.2 changes shape: PydanticAI is expected to be
 the first library that gives this project's own code spans to open directly,
 rather than only ever wrapping calls from the outside.
 
+That prediction held, and this is where M1.2 changes it: PydanticAI's own
+`invoke_agent`/`chat`/`execute_tool` spans are the first spans in this project
+opened by a library specifically to represent *our own agent's reasoning*,
+not a network call our code happened to make.
+
+## Export destinations: Jaeger and Dash0, and they are not symmetric
+
+This has been live and correct since before M1.2 started, and was previously
+undocumented — recorded here rather than changed, because nothing about it
+needed changing. `scripts/setup-kind.sh` (around line 159, "Step 7/9:
+Installing observability backbone") switches the collector's own config on
+whether `DASH0_AUTH_TOKEN` is present:
+
+```bash
+if [[ -n "${DASH0_AUTH_TOKEN:-}" ]]; then
+  COLLECTOR_CONFIG="$ROOT/deploy/observability/collector-config-dash0.yaml"
+  # ...creates dash0-secrets, then the collector loads this config...
+else
+  # exports to Jaeger only — the vendor-neutral default
+fi
+```
+
+Read directly from `deploy/observability/collector-config-dash0.yaml`'s own
+pipeline definitions — **the two pipelines are not symmetric**:
+
+| Signal | Exporters |
+|---|---|
+| Traces | `otlp_grpc/jaeger`, `otlp_grpc/dash0`, `debug` |
+| Metrics | `otlp_grpc/dash0`, `debug` |
+| Logs | `otlp_grpc/dash0`, `debug` |
+
+**Traces go to both Jaeger and Dash0; metrics and logs go to Dash0 only.**
+Jaeger is a traces-only backend by design, so it was never a candidate for
+the other two signals — this is not an oversight, it is what "traces to a
+vendor-neutral OSS backend, everything else to whichever vendor is
+configured" looks like when the OSS backend genuinely can't carry metrics or
+logs. **Dash0 is therefore strictly richer than the on-stage Jaeger view**:
+anyone looking at Dash0 sees the same traces plus metrics and logs that never
+reach Jaeger at all.
+
+Verified live, not inferred, 2026-09-08: `dash0-secrets` present with all
+four keys; the collector pod carries all four `DASH0_*` env vars; the
+collector pod itself **0 restarts**, running 5h31m at measurement time; zero
+export failures and zero dropped spans across 4,000 collector log lines. All
+five services appear in the Dash0 dataset with the dependency chain
+correctly inferred (`customer-ui` → `claims-agent` → `settlement-agent` →
+`payments-mcp` → `payments-api`), `customer-ui` classified as RUM/browser,
+and the M1.2 model spans (`invoke_agent settlement_agent`,
+`chat claude-sonnet-5` ×3, both `execute_tool` spans) arriving with full
+token-usage attributes intact. The ~1.9% error rate briefly visible on
+claims-agent and settlement-agent in that same window is the Task 4
+reviewer's own deliberate severance experiments (payments-mcp scaled to
+zero, the MCP URL mis-targeted) landing in the same Dash0 dataset, not a
+production defect — recorded here so a future reader does not go looking for
+a bug that was a review technique.
+
+This matters beyond this milestone: M4 ("Observable & evaluable") needs
+somewhere for metrics and eval scores to live, and this dual-export path is
+already that home — it does not need to be built later, only pointed at. The
+on-stage narrative stays vendor-neutral regardless of this: Jaeger is what
+the talk shows, because it is what anyone can stand up locally with no
+account; Dash0's presence is additive, opt-in via one env var
+(`DASH0_AUTH_TOKEN`), and never a dependency of the demo working at all.
+
+## PydanticAI instrumentation, as measured (M1.2)
+
+`agents/settlement-agent/bootstrap.py` applies
+`Agent.instrument_all(InstrumentationSettings(include_content=capture_content_enabled(), version=5))`.
+`version` is pinned at the library default, `5`; `include_model_request_parameters`
+is never passed and stays at its library default (`True`) — see "Content
+capture" below for exactly what each of those two independent settings gates.
+The emitting library is `pydantic-ai-slim==2.41.0`
+(`agents/settlement-agent/requirements.txt`).
+
+**The complete `gen_ai.*` attribute vocabulary observed — 25 names, measured
+twice (a direct A2A run and the browser-rooted exit-criterion run) and
+identical both times** (task-4-report.md §3.1; every name below was measured,
+none predicted):
+
+```
+gen_ai.agent.call.id
+gen_ai.agent.name
+gen_ai.aggregated_usage.details.cache_creation_input_tokens
+gen_ai.aggregated_usage.details.cache_read_input_tokens
+gen_ai.aggregated_usage.details.thinking_tokens
+gen_ai.aggregated_usage.input_tokens
+gen_ai.aggregated_usage.output_tokens
+gen_ai.conversation.id
+gen_ai.input.messages
+gen_ai.operation.name
+gen_ai.output.messages
+gen_ai.provider.name
+gen_ai.request.model
+gen_ai.response.finish_reasons
+gen_ai.response.id
+gen_ai.response.model
+gen_ai.system
+gen_ai.tool.call.id
+gen_ai.tool.definitions
+gen_ai.tool.name
+gen_ai.usage.details.cache_creation_input_tokens
+gen_ai.usage.details.cache_read_input_tokens
+gen_ai.usage.details.thinking_tokens
+gen_ai.usage.input_tokens
+gen_ai.usage.output_tokens
+```
+
+Two further attributes are content-gated and so not part of this
+mode-independent inventory — `gen_ai.tool.call.arguments` and
+`gen_ai.tool.call.result` on the `execute_tool` spans, present only when
+`NORTHSTAR_CAPTURE_CONTENT` is ON — documented in full under "Content
+capture" below, not repeated here.
+
+**Four span shapes carry `gen_ai.*`**, emitted by scope `pydantic-ai` 2.41.0
+(settlement-agent) and scope `fastmcp` (payments-mcp, pre-existing from
+M1.1, unaffected by any of this):
+
+| Span | Kind | Count/request | Carries |
+|---|---|---|---|
+| `invoke_agent settlement_agent` | internal | 1 | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=invoke_agent`, the five `gen_ai.aggregated_usage.*` roll-ups. Also the non-`gen_ai` `agent_name`, `model_name`, `logfire.msg`, `logfire.json_schema`, and `pydantic_ai.all_messages` (the full conversation, redacted to shape only unless capture is ON). |
+| `chat claude-sonnet-5` | client | 3 (one per model turn: propose, execute, final narrative) | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=chat`, `gen_ai.provider.name`/`gen_ai.system` (both `anthropic` — `gen_ai.system` is the deprecated spelling; `version=5` emits both), `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.response.id`, `gen_ai.response.finish_reasons`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.definitions`, the five `gen_ai.usage.*` fields (`details.thinking_tokens` only on turns where the model actually thought — deliberately not asserted, since that is the model's behaviour, not our wiring). Also `server.address=api.anthropic.com`, `operation.cost` (e.g. `0.002894`), and `model_request_parameters` (see "Content capture"). |
+| `execute_tool propose_payment` / `execute_tool execute_payment` | internal | 1 each | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=execute_tool`, `gen_ai.tool.call.id`, `gen_ai.tool.name`, plus `gen_ai.tool.call.arguments`/`gen_ai.tool.call.result` when capture is ON. |
+| `tools/call propose_payment` / `tools/call execute_payment` (payments-mcp) | server | 1 each | `gen_ai.tool.name` only — pre-existing FastMCP behaviour from M1.1 (Gap 5 below covers what's still missing from it). |
+
+Two things worth recording because the governing rule is to write down what
+was measured, not what was expected: `gen_ai.aggregated_usage.*` is a
+pydantic-ai extension with no counterpart in the GenAI semantic conventions,
+carrying per-run token roll-ups on the `invoke_agent` span; and
+`gen_ai.tool.definitions` is **not** redacted by `include_content=False` —
+see "Content capture" for what it carries and why that means neither
+`include_content` nor `include_model_request_parameters` is, on its own, a
+complete redaction switch.
+
+**For M3:** `version=5` (the default, and what this project pins) stops
+`CallDeferred`/`ApprovalRequired` from marking their span `ERROR` — treated
+as control flow instead of a failure, per the installed library's own
+`version` docstring (verified against `pydantic_ai/_instrumentation.py`;
+cross-checked in `.superpowers/research/m1.2-pydanticai-verification.md`).
+This matters directly to the human-approval milestone: an approval step that
+pauses execution should not read as a span-level error in this project's
+trace, and pinning `version=5` (rather than a later default drifting under
+us) already buys that for free, with no code of our own needed. `version=6`
+would additionally emit tool results as `role='tool'` messages instead of
+`role='user'` — opt-in, not adopted here, and not needed for M3's purposes.
+
+**The trace's shape, with a model in the path** — verified independently
+twice, by the implementer and by the reviewer, on two different live runs
+(task-4-report.md §7, task-4-review.md §7): **5 services**
+(`customer-ui`, `claims-agent`, `settlement-agent`, `payments-mcp`,
+`payments-api`), **1 root** (`customer-ui:claim.submit`, matching the span id
+observed in the browser's own `traceparent` header), **0 orphans**,
+containing `invoke_agent settlement_agent` ×1, `chat claude-sonnet-5` ×3,
+both `execute_tool` spans, both `tools/call` spans, and payments-api's
+propose (`201`) and execute (`200`). **No exact span count is published
+here, deliberately:** the implementer measured 88 spans on the browser
+exit-criterion run; the reviewer, running the identical scenario
+independently, measured 86. Same shape both times, different total — real
+per-run variance (whether a given turn produced a `thinking` part, MCP
+session bookkeeping), not a defect, and not a number this document commits
+to. The shape above — which services, which operations, one root, zero
+orphans — is the property this project actually tests and guarantees; a
+specific span total is not, and publishing one here would only become the
+next stale number this contract has already had to correct twice.
+
 ## Conventions adopted
 
-- **GenAI semconv** for model calls. Not yet exercised: M1.1 has no LLM.
+- **GenAI semconv** for model calls, exercised as of M1.2 — see "PydanticAI
+  instrumentation, as measured" above for the full attribute inventory.
 - **MCP semconv** (`mcp.method.name`, `mcp.session.id`, `mcp.protocol.version`),
   with tool names in `gen_ai.tool.name`. `mcp.tool.name` does not exist.
 - **HTTP semconv** for the Go system of record and A2A's transport spans.
@@ -276,6 +467,25 @@ tool, but not *why that amount*, on what stated grounds, or what the model
 was told about the claim. Redaction is a trade, not a free safety win — so
 this milestone shows the trade rather than asserting redaction is correct by
 default.
+
+**This is a recorded decision, not drift.**
+`docs/superpowers/specs/2026-09-07-northstar-m1-connected-design.md`'s
+§"Content capture" (lines 362-369 at the time of writing) still reads:
+"Prompt and completion capture is **off by default** via
+`InstrumentationSettings(include_content=False)`... Recording everything a
+model was told is itself a compliance problem in insurance." That text was
+correct when written and is not being corrected — the spec is not edited to
+match this document, deliberately, so its own history stays legible. The
+reversal is Ruling 9
+(`.superpowers/sdd/2026-09-08-m1.2-intelligence/progress.md`), made after
+Task 4 shipped `include_content=False` exactly matching the spec, on the
+project owner's explicit instruction: *"for now we shouldn't limit or redact
+things... in order to fully understand what the agent did, you might need to
+trade in some information that potentially can be critical."* A future
+reader who finds the spec and this contract disagreeing on the default
+should read that as this milestone's own recorded reversal of an earlier,
+reasoned decision — not as one of the two documents having drifted out of
+date unnoticed.
 
 `NORTHSTAR_CAPTURE_CONTENT` (`agents/settlement-agent/bootstrap.py`'s
 `capture_content_enabled()`, read at `configure()` time and handed to
@@ -561,6 +771,100 @@ For each: the evidence, whether upstream already has work in flight, and what we
   its own re-verification), not something to fold unexplained into a
   contract-wording fix.
 
+### Gap 7: the model's own outbound HTTP hop has no CLIENT span — already fixed upstream, not yet applied here
+
+- **Evidence:** `anthropic==1.4.0` requires `httpx2<3,>=2.0.0` — a distribution
+  genuinely separate from `httpx` — confirmed by reading the installed
+  package (`anthropic/_base_client.py:41`:
+  `from httpx2 import URL, Proxy, HTTPTransport, AsyncHTTPTransport`;
+  `pydantic_ai/providers/anthropic.py` types its client as
+  `httpx2.AsyncClient`). `bootstrap.py` applies only `HTTPXClientInstrumentor()`
+  (`_module_name="httpx"`); the sibling `HTTPX2ClientInstrumentor`
+  (`_module_name="httpx2"`), present in the **same already-installed**
+  `opentelemetry-instrumentation-httpx==0.65b0` package, is never called.
+  Measured consequence: 12 httpx-instrumented spans in a captured trace, all
+  of them settlement-agent's or payments-mcp's calls to payments-mcp or
+  payments-api — none to `api.anthropic.com` (task-4-report.md §6.4,
+  task-4-review.md §5). The only trace of the Anthropic call anywhere is
+  `server.address=api.anthropic.com` on pydantic-ai's own `chat` span.
+- **What is lost:** HTTP status code (a 429 that succeeded on retry, a 529
+  overload, a malformed 400 are all indistinguishable from a slow success);
+  the Anthropic SDK's own internal retry count (retries collapse into one
+  `chat` span's duration); wire-versus-logical latency (the `chat` span's
+  duration mixes SDK serialization, retry backoff and streaming assembly
+  with actual network time, with no way to separate them); and
+  connection-level failure detail (DNS/TLS/connect-timeout failures surface
+  only as an exception on the `chat` span, without the peer address/port an
+  httpx span would carry).
+- **What survives:** the hop's existence, position and duration in the
+  trace; `server.address`; request/response model; response id; finish
+  reasons; token counts; even `operation.cost`. The causal chain — that the
+  model was called, in this position, with this outcome — is intact via
+  pydantic-ai's own `chat` span. Only the transport-layer diagnostic view is
+  gone.
+- **Correction to how this gap was first framed in this milestone's own
+  working notes:** it was initially treated as a candidate *upstream*
+  finding — a library not supporting `httpx2`. **That framing does not
+  survive a tracker search.** `httpx2` is `pydantic/httpx2`, a
+  Pydantic-maintained, API-compatible fork of `httpx` created after concerns
+  about `httpx`'s own maintenance (see
+  [`open-telemetry/opentelemetry-python-contrib#4635`](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/4635)
+  for the history). Support for it was requested in that same issue, **fixed
+  in [`#4730`](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/4730)
+  ("Feature/httpx2 instrumentor")**, and **shipped in the project's own
+  changelog under "Version 1.44.0/0.65b0 (2026-07-16)"** — *the exact
+  `opentelemetry-instrumentation-httpx` version already pinned and installed
+  in this repository* (`docs/telemetry-contract.md`'s own instrumentation
+  table, above). The library's installed docstring even documents the fix
+  directly: "When instrumenting `httpx2` clients, use `HTTPX2ClientInstrumentor`."
+  So there is no upstream gap to report here at all — the fix shipped before
+  this milestone ever measured the absence.
+- **Where the actual gap lives:** entirely in this project's own
+  `bootstrap.py`, which calls `HTTPXClientInstrumentor()` and not also
+  `HTTPX2ClientInstrumentor()`. A one-line addition
+  (`HTTPX2ClientInstrumentor().instrument()`, alongside the existing call)
+  would close it completely with the version already installed — no
+  dependency bump, no upstream wait. Left unfixed this task, deliberately:
+  `bootstrap.py` is out of scope for this milestone's plan, and the gap is
+  pinned rather than silently fixed —
+  `tests/e2e/test_settlement_llm_trace.py::test_the_models_own_http_hop_has_no_client_span`
+  is written to fail loudly the day someone adds that line, which is the
+  intended signal of the fix landing, not a regression.
+- **Existing upstream activity (verified live, read-only, 2026-09-08, `gh`
+  against the real repositories — no comment or issue posted anywhere):**
+  the httpx2-instrumentation gap itself is closed and merged, as above. Two
+  related, still-**open** issues on the same package show the httpx2 side of
+  this instrumentor is actively maintained but not yet complete for every
+  provider:
+  [`open-telemetry/opentelemetry-python-contrib#4953`](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/4953)
+  ("`openai` 3.x: `server.address`/`server.port` are never recorded
+  (`isinstance` check misses `httpx2.URL`)") and its companion fix-in-progress
+  [`#4954`](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/4954)
+  — both about OpenAI's client specifically, not Anthropic's, and about a
+  narrower attribute-extraction bug within the already-applied instrumentor,
+  not about the instrumentor's existence. Two other observability vendors
+  show the same "httpx2 exists, our tracer doesn't cover it yet" gap
+  independently — [`DataDog/dd-trace-py#18780`](https://github.com/DataDog/dd-trace-py/issues/18780)
+  ("[FEATURE]: Support httpx2", open) and
+  [`elastic/apm-agent-python#2706`](https://github.com/elastic/apm-agent-python/issues/2706)
+  ("feat: add httpx2 instrumentation", open) — corroborating that the
+  httpx-to-httpx2 migration this finding sits on top of is a real,
+  ecosystem-wide instrumentation transition, not a quirk unique to this
+  project's dependency tree. No open issue was found on
+  `anthropics/anthropic-sdk-python`, `pydantic/pydantic-ai`, or
+  `open-telemetry/opentelemetry-python-contrib` asking specifically for the
+  Anthropic client's own transport hop to gain a CLIENT span — this
+  project's specific instance of the gap is unreported, because the generic
+  fix that would close it is already shipped and merely unapplied here.
+- **Status: not filed by this project, and there is nothing to file.**
+  Unlike Findings 1 and 3 in `docs/upstream-findings.md`, this is not
+  filing-ready material — filing would ask upstream to do something it
+  already did. The only remaining action is local: apply
+  `HTTPX2ClientInstrumentor()` in this project's own `bootstrap.py`, which is
+  out of scope for this milestone by the plan's own boundary, not by any
+  upstream limitation. See `docs/upstream-findings.md` Finding 5 for the
+  full write-up in that document's format.
+
 ## Open questions
 
 ### OQ-1: Content capture is a trade, not a settled answer
@@ -596,3 +900,41 @@ Recorded here, rather than resolved, because resolving it needs a governance
 model this milestone does not yet have (see settlement.py's own "no €5,000
 check" note — M1 is ungoverned by design, and this switch inherits that same
 honesty: it is a lever, not a policy).
+
+**The trade, stated concretely, now that the facts are known.** With capture
+ON, `gen_ai.tool.call.arguments` on `execute_tool propose_payment` carries
+`{"amount":6200,"currency":"EUR"}` — "why that amount?" is directly
+answerable from the span, no reconstruction needed. With capture OFF, the
+same tool-call part reduces to exactly `{"type":"tool_call","id":...,
+"name":...}` (`pydantic_ai/messages.py`'s `_tool_call_otel_part`, gated on
+`include_content`) and that question is unanswerable from spans — not
+harder, unanswerable, because no other attribute recovers it.
+`model_request_parameters` survives regardless of `NORTHSTAR_CAPTURE_CONTENT`
+(gated only by the separate, always-`True` `include_model_request_parameters`)
+and defines the floor of what this project retains even at maximum
+redaction: the static system instructions and both tool schemas, never the
+claimant's own data. That floor tells an auditor what the agent was *told it
+could do*; it does not tell them what the agent was told about *this claim*,
+or what it chose to do with it. Those two are genuinely different facts, and
+only one of them survives full redaction.
+
+**The experiment this open question calls for, and has not yet run** (the
+project owner's own framing, preserved verbatim as the shape of the test):
+
+1. Induce a genuine settlement failure or a wrong-amount run.
+2. Attempt root-cause diagnosis from the trace with capture **off**. Record
+   exactly what cannot be determined.
+3. Repeat with capture **on**. Record what became determinable, and what
+   claimant data that required retaining to determine it.
+4. The deliverable is the difference — the specific diagnostic questions
+   answerable only by retaining data a regulated insurer would rather not
+   keep. That difference is the argument, not an assertion that ON or OFF is
+   simply correct.
+
+This is not academic bookkeeping: M2's Policy Decision Service and a later
+reviewer UI both need to know *what the agent was told* to do their own
+jobs — a policy engine cannot weigh a decision it cannot see the grounds for,
+and a human reviewer cannot approve or reject what they were never shown.
+Whichever way this trade is eventually resolved constrains how those two
+components get designed, not only how this milestone's one env var happens
+to default.

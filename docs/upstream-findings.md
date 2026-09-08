@@ -19,9 +19,9 @@ own history.
 ## A note on numbering
 
 `docs/telemetry-contract.md`'s "Confirmed convention gaps" section numbers
-six items, 1 through 6. Two of those are not findings about a third-party
-library's behaviour at all — they are open design questions this project has
-not yet answered itself:
+seven items, 1 through 7 (M1.2 added Gap 7). Two of those are not findings
+about a third-party library's behaviour at all — they are open design
+questions this project has not yet answered itself:
 
 - **Gap 2** ("human-in-the-loop approval spans") — no convention exists yet
   for representing an approval/escalation step in a trace; deferred to M3,
@@ -30,18 +30,30 @@ not yet answered itself:
   a policy/autonomy decision span; `policy.decision` is this project's own
   attribute to define in M2, not a gap in someone else's library.
 
-Neither is "filing-ready" in the sense the four findings below are: there is
-no specific library behaviour to point at, no version to cite, no issue
-number to check. They are recorded in the contract as open questions this
-project will need to resolve itself, not as upstream defects. This document
-covers the remaining four contract items — Gaps 1, 4, 5, and 6 — renumbered
-below as Findings 1–4 in the order a reader would hit them walking the chain
-from the A2A hop to the MCP hop. The evidence for all four was originally
-gathered as A8 upstream-contribution material and lives, in full, in
-`docs/telemetry-contract.md` and the per-component `NOTES.md` files
-(`agents/claims-agent/NOTES.md`, `agents/settlement-agent/NOTES.md`,
-`tools/payments-mcp/NOTES.md`) — this document consolidates and re-verifies
-it into one filing-ready list; it does not re-derive it.
+Neither is "filing-ready" in the sense the findings below are: there is no
+specific library behaviour to point at, no version to cite, no issue number
+to check. They are recorded in the contract as open questions this project
+will need to resolve itself, not as upstream defects. This document covers
+the remaining five contract items — Gaps 1, 4, 5, 6, and 7 — renumbered below
+as Findings 1–5 in the order a reader would hit them walking the chain from
+the A2A hop down to the model's own outbound call. The evidence for Findings
+1–4 was originally gathered as A8 upstream-contribution material and lives,
+in full, in `docs/telemetry-contract.md` and the per-component `NOTES.md`
+files (`agents/claims-agent/NOTES.md`, `agents/settlement-agent/NOTES.md`,
+`tools/payments-mcp/NOTES.md`); Finding 5's evidence was gathered in M1.2
+Task 4 and re-verified, including a fresh tracker search, for this document —
+this document consolidates and re-verifies it into one filing-ready list; it
+does not re-derive it.
+
+**Finding 5 is not filing-ready the way Findings 1–4 are, and that is itself
+the finding.** It was first suspected as a genuine upstream gap (a library
+not supporting a newer HTTP client). A tracker search shows the opposite: the
+fix is already merged and already shipped in the exact library version this
+project has installed. What remains is a one-line change in this project's
+own code, not an upstream ask. It is included here anyway, in the same
+format as the other four, because "we searched and there is nothing to file
+because it is already fixed" is exactly the kind of claim this document
+exists to state precisely rather than assume.
 
 ---
 
@@ -476,3 +488,158 @@ simplification, deliberately left out of scope here — verifying a new `mcp`
 version against the rest of this project's pin set is its own piece of work
 with its own re-verification obligations, not something to fold unexplained
 into a documentation pass.
+
+---
+
+## Finding 5: the model's own outbound HTTP hop has no CLIENT span — and, unlike Findings 1–4, the fix is already shipped
+
+**The problem, plainly:** the settlement agent's calls to the Anthropic model
+travel over a distribution named `httpx2`, not the `httpx` this project
+instruments everywhere else. The standard OpenTelemetry HTTP instrumentation
+this project applies covers only `httpx`. The consequence is that one entire
+HTTP hop in the trace — the model call itself — produces no CLIENT span at
+all: no HTTP status code, no retry count, no way to separate wire latency
+from SDK-side processing, no connection-level failure detail. Every other
+outbound hop in this project's chain gets exactly this information; this one
+hop does not.
+
+**Project and version:** `anthropic==1.4.0` (PyPI: `anthropic`, the official
+Python SDK), which requires `httpx2<3,>=2.0.0` — `httpx2` (PyPI: `httpx2`,
+GitHub `pydantic/httpx2`) is a distribution genuinely separate from `httpx`,
+not a typo or a private vendor fork: it is a Pydantic-maintained,
+API-compatible fork of `httpx`, created in response to concerns about the
+upstream `httpx` maintainer's own activity (`httpx`'s last release was over
+a year old and its maintainer had closed off issue discussions at the time
+the fork's rationale was written — see the tracker evidence below). The
+instrumentation package in question is
+`opentelemetry-instrumentation-httpx==0.65b0`, already installed in this
+project (`agents/settlement-agent/requirements.txt` and
+`agents/claims-agent/requirements.txt`, via `opentelemetry-instrumentation-starlette`'s
+own dependency chain).
+
+**Where the behaviour lives:** confirmed by reading the installed packages
+directly. `anthropic/_base_client.py:41`:
+`from httpx2 import URL, Proxy, HTTPTransport, AsyncHTTPTransport`;
+`pydantic_ai/providers/anthropic.py` types its client as
+`httpx2.AsyncClient`. This project's own `agents/settlement-agent/bootstrap.py`
+applies `HTTPXClientInstrumentor()` (`_module_name="httpx"`,
+`opentelemetry/instrumentation/httpx/__init__.py:1796-1800` in the installed
+package) and never applies the sibling `HTTPX2ClientInstrumentor`
+(`_module_name="httpx2"`, same installed file, lines 1821-1825) — which is
+present in the very same package, not a separate dependency that would need
+adding.
+
+**What the convention/library says should happen:** the installed
+`opentelemetry-instrumentation-httpx` package's own module docstring states
+the fix directly: "When instrumenting `httpx2` clients, use
+`HTTPX2ClientInstrumentor`" — with a code example. The library does not
+silently degrade or warn when only `HTTPXClientInstrumentor` is applied
+against a codebase that also uses `httpx2`; the two instrumentors are
+independent, opt-in calls, and using only one is a valid but incomplete
+configuration.
+
+**What we observed instead:** capturing a real settlement end to end and
+reading every httpx-instrumented CLIENT span back from Jaeger: 12 spans, all
+of them settlement-agent's or payments-mcp's calls to payments-mcp or
+payments-api (`POST`/`GET`/`DELETE` against
+`payments-mcp...svc.cluster.local:8000` and
+`payments-api...svc.cluster.local:8080`). **Zero** spans target
+`api.anthropic.com`. The only trace of the Anthropic call anywhere in the
+captured spans is `server.address=api.anthropic.com`, appearing as an
+attribute on pydantic-ai's own `chat claude-sonnet-5` span — a real, useful
+span, but not an HTTP CLIENT span, and carrying none of the HTTP-layer
+attributes an httpx span would.
+
+**Why it matters, beyond this project:** any integrator instrumenting
+`httpx` in the ordinary way, and depending — directly or, as here,
+transitively through the Anthropic SDK — on a library that has moved its
+transport to `httpx2`, gets a silent, total gap for that one hop. Nothing
+errors, nothing warns; the span for that hop simply never appears. The
+transition from `httpx` to `httpx2` is not unique to this project's
+dependency tree: at the time of this search, GitHub issue search turns up
+dozens of open issues and PRs across widely-used projects (`stripe-python`,
+`datasette`, `huggingface_hub`, `litestar`, `reflex`, `chroma`, `AutoGPT`,
+Apache Airflow's own provider packages, among many others) either migrating
+to `httpx2` or asking to. Anyone instrumenting HTTP calls generically across
+a dependency tree that includes even one such library needs to know both
+instrumentors exist and apply both — the library's own docstring says so,
+but nothing forces or checks it.
+
+**What a fix needs:** for this project specifically, one line —
+`HTTPX2ClientInstrumentor().instrument()` alongside the existing
+`HTTPXClientInstrumentor().instrument()` call in `bootstrap.py`. No
+dependency bump, no waiting on anyone: the class needed is already installed.
+
+**How we worked around it, and whether it should be adopted upstream:** we
+did not work around it, and there is no upstream action to recommend —
+unlike Findings 1–4, upstream already did the work. This project's own
+`bootstrap.py` is deliberately unchanged this milestone (out of scope per
+the plan), and the gap is pinned rather than silently left to rot:
+`tests/e2e/test_settlement_llm_trace.py::test_the_models_own_http_hop_has_no_client_span`
+asserts the absence directly and is written to fail loudly the day someone
+adds the missing instrumentor call — the intended signal that the fix
+landed, not a regression to chase.
+
+**Existing upstream activity (verified live against the real repositories,
+read-only, via `gh issue`/`gh pr`, 2026-09-08 — no comment or issue was
+posted anywhere as part of writing this):**
+
+- [`open-telemetry/opentelemetry-python-contrib#4635`](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/4635)
+  ("httpx2 instrumentor/httpx instrumentor support for httpx2") — **closed**,
+  filed by a third party (`gloshkajian`), explaining the `httpx`-maintenance
+  concerns behind the `httpx2` fork's existence and asking for matching
+  OTel instrumentation.
+- [`open-telemetry/opentelemetry-python-contrib#4730`](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/4730)
+  ("Feature/httpx2 instrumentor") — **merged** 2026-07-15 (`mergedAt`
+  timestamp read directly from the PR), by the same author, closing #4635.
+  Adds `HTTPX2ClientInstrumentor` as an independent sibling to
+  `HTTPXClientInstrumentor`, tested against dedicated `httpx2` and
+  coexistence test environments.
+- The package's own `CHANGELOG.md`, read directly from the repository,
+  confirms the release: **"Version 1.44.0/0.65b0 (2026-07-16) — Added —
+  `opentelemetry-instrumentation-httpx`: add support for httpx2 (#4730)"** —
+  `0.65b0` is the exact version string this project already pins and has
+  installed. The fix was not merely available before this milestone started;
+  it was already inside the dependency this project had already chosen.
+- Two open, unrelated-but-adjacent issues on the same instrumentation
+  package show the `httpx2` surface is still actively maturing, not that it
+  is missing: [`#4953`](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/4953)
+  ("`openai` 3.x: `server.address`/`server.port` are never recorded
+  (`isinstance` check misses `httpx2.URL`)") and its in-progress fix
+  [`#4954`](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/4954)
+  — both about a narrower attribute-extraction bug in OpenAI's own client
+  specifically, with the instrumentor already applied; not about the
+  instrumentor's existence, and not about Anthropic's client.
+- Two other observability vendors show the identical "httpx2 exists, our own
+  tracer doesn't cover it yet" gap independently, corroborating that this is
+  a real, ecosystem-wide instrumentation transition rather than a quirk of
+  this project's own dependency choices: [`DataDog/dd-trace-py#18780`](https://github.com/DataDog/dd-trace-py/issues/18780)
+  ("[FEATURE]: Support httpx2", open) and
+  [`elastic/apm-agent-python#2706`](https://github.com/elastic/apm-agent-python/issues/2706)
+  ("feat: add httpx2 instrumentation", open).
+- Searched specifically and found **nothing**: no open issue on
+  `anthropics/anthropic-sdk-python`, `pydantic/pydantic-ai`, or
+  `open-telemetry/opentelemetry-python-contrib` asks for the Anthropic
+  client's own outbound hop to gain a CLIENT span, or documents this
+  project's specific instance of the gap (an integrator applying only
+  `HTTPXClientInstrumentor` against a dependency tree that includes
+  `httpx2` via the Anthropic SDK). This is not because the gap is
+  unreportable — it is because the generic fix that would close it is
+  already shipped, so there is nothing left for a report to ask for beyond
+  "apply the instrumentor you already have," which is this project's own
+  homework, not upstream's.
+
+**Status: not filed by this project — and, unlike every other finding in
+this document, there is no upstream action left to file.** The fix exists,
+is merged, and is already installed in this repository's own dependency
+tree. The only remaining step — applying `HTTPX2ClientInstrumentor()` in
+`agents/settlement-agent/bootstrap.py` — is this project's own deliberately
+deferred work (`bootstrap.py` is out of scope for this milestone), not an
+upstream gap. Recording this here in full, in the same format as Findings
+1–4, rather than silently dropping it once the search came back negative for
+"a gap worth filing," because the accurate statement — "we suspected an
+upstream defect, searched, and found it already fixed" — is itself a
+correction to how this milestone's own working notes had framed the finding
+before this document was written, and the project's governing rule is to
+correct a telemetry claim the moment it is found to be wrong, not to quietly
+let the more interesting-sounding version stand.
