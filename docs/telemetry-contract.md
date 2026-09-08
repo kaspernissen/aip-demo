@@ -674,8 +674,13 @@ For each: the evidence, whether upstream already has work in flight, and what we
 
 - **Evidence:** Neither. `northstar.claim.id` reaches payments-mcp on **0** of
   its tool-call spans, and payments-api on **0** of its spans, in a live
-  capture of the full chain (`task-7-report.md`, "Where `northstar.claim.id`
-  lands"). The `traceparent`/`tracestate` crossing is intact — this is a
+  capture of the full chain, asserted by
+  `tests/e2e/test_claim_correlation.py::test_claim_id_is_on_every_mcp_hop_span`.
+  (Originally recorded as "Where `northstar.claim.id` lands" in the **M1.1**
+  milestone's Task 7 report — a git-ignored SDD working artifact, cited as
+  provenance rather than as a document you can open; the runnable test above
+  is the evidence. Note that M1.2 has its own, unrelated Task 7.)
+  The `traceparent`/`tracestate` crossing is intact — this is a
   correlation gap, not a broken trace: FastMCP 4.0.3's own
   `extract_trace_context()`/`inject_trace_context()` (`fastmcp/telemetry.py`)
   copy only `traceparent`/`tracestate` out of `params._meta`; `baggage` is

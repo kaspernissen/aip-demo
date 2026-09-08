@@ -340,12 +340,15 @@ merged, since they demonstrate different things:
   and polls real Jaeger for the resulting trace, then asserts
   `northstar.claim.id` is present on every `settlement-agent` span and
   absent from every `payments-mcp`/`payments-api` span. This is the test
-  `task-7-report.md`'s "Where `northstar.claim.id` lands" and
-  `docs/telemetry-contract.md`'s Gap 4 ("`northstar.claim.id` reaches
+  `docs/telemetry-contract.md`'s Gap 4 cites ("`northstar.claim.id` reaches
   payments-mcp on **0** of its tool-call spans... in a live capture of the
-  full chain") both cite. This predates Task 6 — it was Task 7's own
-  finding — but it is a genuine live observation at this project's real,
-  installed versions, not a prediction from reading source alone.
+  full chain"). The finding originates in the **M1.1** milestone's Task 7,
+  recorded in that milestone's SDD workspace — a git-ignored working
+  artifact, so treat this as provenance rather than a document you can
+  open; the runnable test in this repository is the evidence. (Note the
+  numbering collision: M1.2 has its own, unrelated Task 7.) It predates
+  M1.2's Task 6, but it is a genuine live observation at this project's
+  real, installed versions, not a prediction from reading source alone.
 - `agents/settlement-agent/tests/test_mcp_tools.py::test_call_injects_params_meta_baggage_from_the_ambient_context`
   is a different kind of evidence and is **not** a capture against any
   deployed service: it monkeypatches both `mcp_tools.streamablehttp_client`
