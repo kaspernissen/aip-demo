@@ -18,3 +18,24 @@ opentelemetry-instrumentation-httpx==0.65b0
 opentelemetry-instrumentation-starlette==0.65b0
 pytest==8.3.4
 pytest-asyncio==0.25.0
+
+# M1.2: the settlement decision becomes a real model call.
+# `pydantic-ai-slim[anthropic]`, NOT `pydantic-ai` and NOT the [mcp] extra:
+# the [mcp] extra requires fastmcp-slim[client]<5,>=3.3.0 -> mcp<3.0.0,>=2.0.0,
+# which is directly unsatisfiable against the mcp==1.9.4 pin above that
+# mcp_tools.py's low-level send_request propagation is verified against.
+# Enforced by tests/test_pins.py.
+pydantic-ai-slim[anthropic]==2.41.0
+# Transitive pins pulled in by pydantic-ai-slim[anthropic]==2.41.0, recorded
+# exactly as resolved by `uv pip install` (house style: nothing floats).
+anthropic==1.4.0
+docstring-parser==0.18.0
+genai-prices==0.1.6
+griffelib==2.3.0
+httpcore2==2.12.0
+httpx2==2.12.0
+jiter==0.16.0
+logfire-api==5.0.0
+pydantic-graph==2.41.0
+sniffio==1.3.1
+truststore==0.10.4

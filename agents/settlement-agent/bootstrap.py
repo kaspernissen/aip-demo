@@ -68,5 +68,29 @@ def configure() -> None:
     # converge it onto the stable spelling.
     HTTPXClientInstrumentor().instrument()
 
+    _instrument_pydantic_ai()
+
+
+def _instrument_pydantic_ai() -> None:
+    """Turn on PydanticAI's own OTel instrumentation.
+
+    Verified against pydantic-ai-slim 2.41.0:
+      * `Agent(..., instrument=True)` does NOT exist at this version — it
+        raises TypeError. `Agent.instrument_all()` is a staticmethod setting a
+        process-wide default, which is what we want: one call, every agent.
+      * `include_content=False` keeps message *shape* in the spans
+        (role, parts[].type) but drops prompts, completions and tool
+        arguments/results. Recording everything a model was told is itself a
+        compliance problem in insurance — see docs/telemetry-contract.md.
+      * `version` is Literal[2,3,4,5,6], default 5. Pinned explicitly so a
+        library default change cannot silently reshape our spans.
+    """
+    from pydantic_ai import Agent
+    from pydantic_ai.models.instrumented import InstrumentationSettings
+
+    Agent.instrument_all(
+        InstrumentationSettings(include_content=False, version=5)
+    )
+
 
 configure()
