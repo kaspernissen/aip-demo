@@ -50,7 +50,7 @@ if ! [[ "$STAGE" =~ ^[0-9]+$ ]]; then
 fi
 
 if [[ "$STAGE" -gt 1 ]]; then
-  echo "Stage $STAGE is not implemented yet. M1.1 implements stage 1 only." >&2
+  echo "Stage $STAGE is not implemented yet. M1.1 and M1.2 implement stage 1 only; Cilium arrives at stage 2 via a cluster recreate." >&2
   exit 1
 fi
 
