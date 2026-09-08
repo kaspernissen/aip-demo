@@ -647,18 +647,56 @@ spans total, one per model turn, no duplicates.
 
 The evidence for that is a before/after comparison of live trace dumps, and
 it is worth being precise about what such a comparison can and cannot show
-here, because this trace is **not** deterministic. Across eight
-identically-shaped runs, the a2a-sdk's internal
-`a2a.server.events.event_queue.EventQueue.dequeue_event` polling span
-varies between **11 and 13** occurrences, so whole-trace totals differ
-run to run for reasons unrelated to any change — the same variance this
-project already documents when it declines to publish an exact span total.
-What holds steady across every one of those runs is the part this finding
-actually claims: the anthropic-bound httpx CLIENT count is exactly **3**,
-and the service's total httpx CLIENT count exactly **15**, every time. So
-the before/after evidence is a comparison of those stable counts, not a
-span-for-span identity between two runs, and a raw total-span delta should
-not be read as the effect of this fix. Reading a
+here, because this trace is **not** deterministic.
+
+**Fix round (final-review.md SF-4): the paragraph that used to sit here —
+itself written to correct an earlier overstatement of this same
+measurement — was wrong in three ways, all found by measuring it again
+rather than trusting the review's own table either.** Measured directly off
+nine traces already in Jaeger (trace IDs and per-service breakdown below),
+not copied from any report:
+
+1. **"Varies between 11 and 13" is falsified.** The a2a-sdk's internal
+   `a2a.server.events.event_queue.EventQueue.dequeue_event` polling span
+   (settlement-agent) varies **10 to 16** across the nine traces measured
+   here — a post-fix direct-A2A run of the same shape the original range was
+   drawn from shows 16. This is a **sample of nine**, not a bound; a
+   different nine runs would likely show a different range. Whole-trace
+   totals differ run to run for reasons unrelated to any change — the same
+   variance this project already documents when it declines to publish an
+   exact span total — and a raw total-span delta must not be read as the
+   effect of this fix.
+2. **"The service's total httpx CLIENT count exactly 15, every time" was
+   scenario-scoped but stated unconditionally.** It is 15 on a direct-A2A
+   run and **16** on a browser- or claims-agent-rooted run, because
+   claims-agent contributes one outbound-A2A httpx CLIENT span under the
+   same instrumentation scope in those scenarios — and the browser-rooted
+   run is the one the talk actually drives.
+3. **"The service's total" was never one service's total.** The 15 (or 16)
+   is settlement-agent's own httpx CLIENT spans plus payments-mcp's 2. The
+   number that *is* stable across every post-fix trace measured here, in
+   both scenarios — **settlement-agent's own httpx CLIENT count: exactly
+   13**, of which **exactly 3** target `api.anthropic.com` — is the claim
+   this finding actually needs, and it holds:
+
+| trace | scenario | settlement-agent `dequeue_event` | settlement-agent httpx CLIENT | anthropic-bound |
+|---|---|---|---|---|
+| `18372fc00318` | browser-rooted | 10 | 13 | 3 |
+| `85489d704685` | claims-rooted | 11 | 13 | 3 |
+| `abfed25aec96` | claims-rooted | 12 | 13 | 3 |
+| `a6d0e07addd6` | direct A2A | 12 | 13 | 3 |
+| `6099a9509c66` | direct A2A | 13 | 13 | 3 |
+| `21ca441e8fec` | direct A2A | 16 | 13 | 3 |
+| `f80b118405a9` | direct A2A | 12 | 13 | 3 |
+| `410e94191314` | direct A2A, **pre-fix** | 13 | 10 | **0** |
+| `0defba41e0fb` | direct A2A, **pre-fix** | 11 | 10 | **0** |
+
+So: settlement-agent's own httpx CLIENT spans, 10 pre-fix to 13 post-fix, of
+which exactly 3 target `api.anthropic.com` in every post-fix trace measured
+here, across both the direct-A2A and browser/claims-rooted scenarios. That is
+the before/after evidence this finding rests on. `dequeue_event` varies run
+to run (10-16 observed across this sample) for reasons unrelated to this fix
+and is not part of the claim. Reading a
 full attribute dump directly, rather than assuming the spelling: the
 settlement-agent deployment sets `OTEL_SEMCONV_STABILITY_OPT_IN=http`, so
 this new span carries the **stable** HTTP semconv spelling, matching every

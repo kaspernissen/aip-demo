@@ -28,9 +28,15 @@ is that missing step:
 
 ```bash
 cp .env.template .env
-# edit .env: ANTHROPIC_API_KEY unused until M1.2 but sourced regardless (A2);
-# DASH0_AUTH_TOKEN and its three DASH0_* siblings are optional — see the
-# comments in .env.template for exactly which variables are required.
+# edit .env: ANTHROPIC_API_KEY is REQUIRED now that M1.2 shipped — the
+# settlement decision is a real Claude model call, not a stub. Leave it
+# blank and setup-kind.sh will still bring up all 7 pods Running and fully
+# traced (the key is deliberately optional at the Kubernetes level), but the
+# FIRST claim submission fails at the model call — the one thing this
+# milestone exists to demonstrate. setup-kind.sh prints SET/EMPTY for this
+# variable; check for SET before going on stage. DASH0_AUTH_TOKEN and its
+# three DASH0_* siblings are optional — see the comments in .env.template for
+# exactly which variables are required.
 
 ./scripts/setup-kind.sh --stage 1
 ./scripts/smoke-test.sh

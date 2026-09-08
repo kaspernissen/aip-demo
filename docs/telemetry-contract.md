@@ -22,6 +22,24 @@ browser, does not exercise CORS, and does not confirm the root span the
 milestone's whole claim depends on — that customer-ui, not a test harness,
 owns the trace root.
 
+**Fix round (final-review.md SF-8): that default run needs the live cluster
+by design (always has, since M1.1) and, since M1.2, is no longer
+token-free.** `test_settlement_agent_trace.py` and `test_claims_chain_trace.py`
+are the two ungated files that prove the chain described above; Tasks 2-3
+turned settlement-agent's decision into a real three-turn Claude call, so
+every bare `pytest tests/` invocation now drives two live model-driven
+settlements as a side effect of proving that chain — genuine cross-task
+drift Task 4's cost-gate rationale (below) did not account for, since it
+only reasoned about the one new gated file. This is deliberately left
+ungated rather than folded behind `RUN_BROWSER_TESTS=1`: gating them would
+make a bare `pytest tests/` prove nothing about the backend chain at all,
+which is the property this section exists to describe, in exchange for
+token-freedom this run was never actually free of at the cluster-dependency
+level. `scripts/smoke-test.sh` already spends these tokens unconditionally
+via the gate below, so the practical cost is one bare `pytest tests/` run's
+worth of tokens, not a new one — the fix here is documenting that reality
+plainly rather than restructuring around it.
+
 **`./scripts/smoke-test.sh` — the actual M1.1 gate — has no default mode that
 skips this.** It runs one unconditional invocation,
 `RUN_BROWSER_TESTS=1 pytest tests -v`, over the whole `tests/` tree, every
@@ -78,14 +96,18 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (also run by `smoke-test.sh`, before any e2e test):
-claims-agent 14, settlement-agent 31, payments-mcp 7, payments-api (Go) 7,
+claims-agent 14, settlement-agent 33, payments-mcp 7, payments-api (Go) 7,
 customer-ui (vitest) 6 — all passing. (This row was stale at 19 for
 settlement-agent from before M1.2 Tasks 1-4 added the PydanticAI agent's own
 tests — `tests/unit/test_telemetry_contract_counts.py` cannot see per-service
 rows, only the whole-tree total, so nothing caught the drift until Task 5
 re-measured it directly: `cd agents/settlement-agent && .venv/bin/python -m
 pytest tests -q` → 31 passed, including this task's own 7-test
-`tests/test_instrumentation_settings.py`.) customer-ui's suite includes its own
+`tests/test_instrumentation_settings.py`. Grown again to 33 by the M1.2 final
+fix round: SF-2 added two pin assertions to `tests/test_pins.py`, pinning
+`pytest`/`pytest-asyncio` themselves against the silent-downgrade gap the
+final review found — re-measured the same way, not typed by hand.)
+customer-ui's suite includes its own
 A19 regression test for the traceparent-across-await fix described below
 (`apps/customer-ui/NOTES.md` §2) — worth naming explicitly, since it's the
 one unit suite that pins a real, previously-silent defect in this project's
@@ -290,10 +312,20 @@ capture" below for exactly what each of those two independent settings gates.
 The emitting library is `pydantic-ai-slim==2.41.0`
 (`agents/settlement-agent/requirements.txt`).
 
-**The complete `gen_ai.*` attribute vocabulary observed — 25 names, measured
-twice (a direct A2A run and the browser-rooted exit-criterion run) and
-identical both times** (task-4-report.md §3.1; every name below was measured,
-none predicted):
+**Fix round (final-review.md SF-3): this inventory previously said "25
+names... complete" and "two further attributes are content-gated."** Both
+halves were wrong. The 25 were measured under Task 4's `include_content=False`
+default; Task 5 flipped the shipped default to ON and nobody re-derived the
+set, so the document contradicted itself 30-odd lines later (`gen_ai.system_
+instructions`'s own gating section, below) without anyone reconciling the two.
+
+**The complete `gen_ai.*` attribute vocabulary at the shipped default
+(`NORTHSTAR_CAPTURE_CONTENT` ON) — 28 names, re-measured for this fix round
+off two live traces in Jaeger, identical in both:**
+`21ca441e8fec4a8f89bb8ec51cc6e1ca` (2026-09-08 16:03 UTC, direct-A2A
+scenario) and `18372fc00318f9ca75d4ae3e58bf9db7` (2026-09-08 15:34 UTC,
+browser-rooted scenario) — every name below was read off those two spans
+sets, none predicted:
 
 ```
 gen_ai.agent.call.id
@@ -313,7 +345,10 @@ gen_ai.response.finish_reasons
 gen_ai.response.id
 gen_ai.response.model
 gen_ai.system
+gen_ai.system_instructions
+gen_ai.tool.call.arguments
 gen_ai.tool.call.id
+gen_ai.tool.call.result
 gen_ai.tool.definitions
 gen_ai.tool.name
 gen_ai.usage.details.cache_creation_input_tokens
@@ -323,11 +358,14 @@ gen_ai.usage.input_tokens
 gen_ai.usage.output_tokens
 ```
 
-Two further attributes are content-gated and so not part of this
-mode-independent inventory — `gen_ai.tool.call.arguments` and
-`gen_ai.tool.call.result` on the `execute_tool` spans, present only when
-`NORTHSTAR_CAPTURE_CONTENT` is ON — documented in full under "Content
-capture" below, not repeated here.
+**Three of these are content-gated** and disappear when
+`NORTHSTAR_CAPTURE_CONTENT` is OFF — `gen_ai.tool.call.arguments` and
+`gen_ai.tool.call.result` on the `execute_tool` spans, and
+`gen_ai.system_instructions` on the `chat`/`invoke_agent` spans (see its own
+gating section below for the source). With those three removed, the
+remaining 25 are exactly Task 4's original OFF-mode measurement — that
+number was never wrong, only mislabeled as "complete" when it was one mode's
+subset.
 
 **Four span shapes carry `gen_ai.*`**, emitted by scope `pydantic-ai` 2.41.0
 (settlement-agent) and scope `fastmcp` (payments-mcp, pre-existing from

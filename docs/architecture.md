@@ -3,11 +3,22 @@
 Status: M1.1, revised through M1.2 for the settlement-agent's model-driven
 decision logic. This is the walking-skeleton stage: one claim, five
 components, one trace, no governance — M1.2 adds a real model call inside
-that skeleton without changing its shape. Every claim below was checked
-against the code in
-this worktree (HEAD `0a1a1f7`) and against the live `kind-northstar` cluster
-at the time of writing — see "See it yourself" for how to reproduce each
-capture yourself.
+that skeleton without changing its shape.
+
+**Provenance (fixed by the M1.2 final-review fix round, SF-6):** this
+document previously claimed every claim in it was checked against HEAD
+`0a1a1f7` — a commit that is an ancestor of the M1.1 merge point
+(`f104109`), predating every line of M1.2 behaviour this document describes
+(the PydanticAI agent, the ledger/model split, Task 8's CLIENT span). That
+was false for every M1.2-era claim below. The truth, from `git log --
+docs/architecture.md`: this file's M1.1-era content was checked against
+`0a1a1f7`; its M1.2 content was added and last checked against the code and
+the live `kind-northstar` cluster as of commit `85882e9` ("instrument httpx2
+so the model call gets its CLIENT span" — Task 8, the last commit to touch
+this file). This fix round corrected the provenance claim itself; it did not
+re-run a fresh verification pass over every claim in this document against
+the current worktree HEAD (`8e1f030`) — see "See it yourself" for how to
+reproduce each capture yourself if you want to check further.
 
 This document does not duplicate [`docs/telemetry-contract.md`](telemetry-contract.md),
 which is the authority on exactly what instrumentation is enabled, what it
