@@ -8,13 +8,14 @@
       "name": "propose_payment",
       "description": "Propose a payment for a claim. Records an intent; moves no money.",
       "inputSchema": {
-        "type": "object",
-        "required": ["claim_id", "amount"],
         "properties": {
-          "claim_id": { "type": "string", "examples": ["CLM-1842"] },
-          "amount": { "type": "number", "minimum": 0, "examples": [6200] },
-          "currency": { "type": "string", "enum": ["EUR"], "default": "EUR" }
-        }
+          "claim_id": { "type": "string" },
+          "amount": { "type": "number" },
+          "currency": { "default": "EUR", "type": "string" }
+        },
+        "required": ["claim_id", "amount"],
+        "type": "object",
+        "additionalProperties": false
       },
       "annotations": {
         "readOnlyHint": false,
@@ -25,13 +26,14 @@
     },
     {
       "name": "execute_payment",
-      "description": "Execute a previously proposed payment. Money leaves the company. This action cannot be undone.",
+      "description": "Execute a previously proposed payment.\n\nMoney leaves the company. This action cannot be undone.",
       "inputSchema": {
-        "type": "object",
-        "required": ["payment_id"],
         "properties": {
-          "payment_id": { "type": "string", "examples": ["PAY-000001"] }
-        }
+          "payment_id": { "type": "string" }
+        },
+        "required": ["payment_id"],
+        "type": "object",
+        "additionalProperties": false
       },
       "annotations": {
         "readOnlyHint": false,

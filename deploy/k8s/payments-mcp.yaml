@@ -45,6 +45,17 @@ spec:
           ports:
             - name: http
               containerPort: 8000
+          # S6 (final-review.md): see claims-agent.yaml for the general fix.
+          # FastMCP's streamable-HTTP endpoint expects MCP protocol framing
+          # on every request (a bare GET/HEAD is not a meaningful health
+          # check), so this uses a TCP-connect probe rather than httpGet —
+          # good enough to confirm the process is actually listening, which
+          # is what rollout status/the sleep 4 in setup-kind.sh assume today
+          # with no check at all.
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 2
           resources:
             requests:
               memory: 96Mi

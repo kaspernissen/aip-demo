@@ -210,24 +210,50 @@ narrows what an upstream-facing improvement would need to add.
 - **claims-agent → settlement-agent:** **Works** — unchanged from Task 5's own
   finding (`HTTPXClientInstrumentor`'s ambient-context injection); reconfirmed here
   now that a real browser, not a raw HTTP test client, originates the call.
-- **settlement-agent → payments-mcp → payments-api:** **Still does not
-  propagate.** Same confirmed gap as every earlier task in this milestone
-  (settlement-agent's MCP client does not inject `params._meta`; FastMCP only ever
-  extracts trace context from there, never from an HTTP header). This is Task 7's
-  job (shared `correlation.py`, A6/A18) and was **not** touched here. Per this
-  task's own instructions, the corresponding assertion
-  (`test_all_five_services_are_in_one_trace`) is `xfail(strict=True)`, mirroring
-  `tests/e2e/test_claims_chain_trace.py`'s existing pair of xfails for the exact
-  same gap.
+- **settlement-agent → payments-mcp → payments-api, as of this task (Task 6):**
+  **Still does not propagate.** Same confirmed gap as every earlier task in
+  this milestone (settlement-agent's MCP client does not inject
+  `params._meta`; FastMCP only ever extracts trace context from there, never
+  from an HTTP header). This was Task 7's job (shared `correlation.py`,
+  A6/A18) and was **not** touched here. Per this task's own instructions, the
+  corresponding assertion (`test_all_five_services_are_in_one_trace`) was
+  `xfail(strict=True)`, mirroring `tests/e2e/test_claims_chain_trace.py`'s
+  existing pair of xfails for the exact same gap.
+  **Superseded by Task 7 (final-review.md finding S2) — flagged here, not
+  left to read as current:** Task 7 later made settlement-agent's MCP client
+  inject `params._meta` (traceparent + baggage) via the low-level request
+  API, and FastMCP's server-side extraction (already proven working) joins
+  the trace. `test_all_five_services_are_in_one_trace` has not been
+  `xfail(strict=True)` since Task 7 landed — it is a plain passing assertion
+  today. See the historical/current split below.
 
-**Net result: the complete chain now forms ONE trace with ONE root and NO
-orphans, for the reachable four-fifths of it** (customer-ui, claims-agent,
-settlement-agent — payments-mcp/payments-api remain a separate, detached trace of
-their own, unchanged from before). Verified directly against a real captured trace
-(`trace_id` redacted per-run, reproducible on demand): `roots() == [customer-ui:
-claim.submit]`, `orphans() == []`, `services() == {customer-ui, claims-agent,
-settlement-agent}`. This is the M1.1 claim, stated plainly: sound and complete for
-the A2A hops; the MCP hop remains the one deliberate, already-known gap.
+**Historical net result, as of this task (Task 6), before Task 7's fix:** the
+complete chain formed ONE trace with ONE root and NO orphans, for the
+reachable four-fifths of it (customer-ui, claims-agent, settlement-agent —
+payments-mcp/payments-api remained a separate, detached trace of their own).
+Verified directly against a real captured trace (`trace_id` redacted per-run,
+reproducible on demand): `roots() == [customer-ui: claim.submit]`,
+`orphans() == []`, `services() == {customer-ui, claims-agent,
+settlement-agent}`. That was the M1.1 claim as it stood after this task: sound
+and complete for the A2A hops, with the MCP hop as the one deliberate,
+already-known gap.
+
+**Current state (as of Task 7, reconfirmed at the final whole-branch review,
+final-review.md): the chain is five services, not three.** Task 7's MCP
+client fix (above) closes the gap this section originally described.
+`test_all_five_services_are_in_one_trace` now asserts, and passes against, a
+real captured trace: `roots() == [customer-ui: claim.submit]`,
+`orphans() == []`, `services() == {customer-ui, claims-agent,
+settlement-agent, payments-mcp, payments-api}` — one trace, one root, zero
+orphans, all five services. **This is the M1.1 claim, stated plainly, as it
+holds today.** What does *not* propagate across the MCP hop, still, is the
+`northstar.claim.id` *attribute* (FastMCP never reads the `baggage` key out
+of `params._meta`) — a distinct, narrower, still-open gap, tracked in
+`docs/telemetry-contract.md` (Gap 4) and pinned by exactly one remaining test,
+`tests/e2e/test_claim_correlation.py::test_claim_id_is_on_every_mcp_hop_span`
+(a manual `pytest.xfail`, not a decorator — see that file's own docstring).
+Trace-joining and attribute-correlation are two different claims; the first
+is now fully closed, only the second remains open.
 
 ## 5. HTTP semconv opt-in — not applicable here
 

@@ -461,9 +461,9 @@ otherwise) was invented to fill it.
   (A17; the entry span's declared parent is the externally-injected span ID,
   which never itself lands in Jaeger). Verified against a real deployed
   trace via `tests/e2e/test_settlement_agent_trace.py`.
-- **settlement-agent → payments-mcp: does NOT propagate, unchanged, by
-  deliberate scope decision (coordinator's ruling on fix round 1):** for two
-  independent reasons that compound:
+- **settlement-agent → payments-mcp, as of this fix round (Task 4): does NOT
+  propagate, unchanged, by deliberate scope decision (coordinator's ruling on
+  fix round 1):** for two independent reasons that compound:
   1. `mcp_tools.py` uses `mcp==1.9.4`'s high-level `ClientSession.call_tool()`
      (per this task's explicit scope — production `_meta` injection is
      Task 7's job via the shared `correlation.py`, A6, because more than one
@@ -478,19 +478,35 @@ otherwise) was invented to fill it.
      reads it.
   Verified directly, post-fix: after a real settlement call with an injected
   `traceparent`, payments-mcp's `tools/call propose_payment`/`tools/call
-  execute_payment` spans still do **not** appear anywhere in settlement-agent's
-  trace — `trace.services() == {"settlement-agent"}` only. This is expected
-  and intentionally left as `xfail(strict=True)` in the e2e test (§9).
+  execute_payment` spans still did **not** appear anywhere in settlement-agent's
+  trace — `trace.services() == {"settlement-agent"}` only. This was expected
+  and intentionally left as `xfail(strict=True)` in the e2e test (§9), as of
+  this fix round.
+  **Superseded by Task 7 (final-review.md finding S2) — flagged here, not
+  left to read as current:** reason 1 above is Task 7's own fix:
+  `mcp_tools.py` now injects `params._meta` (traceparent + baggage) via the
+  lower-level `ClientSession.send_request()` API (§10 below). Combined with
+  reason 2 (already proven working server-side), the trace now *does* join
+  across this boundary. `trace.services()` for a real settlement call
+  includes `payments-mcp` and `payments-api` today, and none of §9's
+  MCP-hop assertions have been `xfail(strict=True)` since Task 7 landed — see
+  the correction in §9 below. The one thing that still does not cross this
+  boundary is the `northstar.claim.id` *attribute* (§11) — trace-joining and
+  attribute-correlation are different claims; only the second remains open.
 - **payments-mcp → payments-api: propagates correctly** (Task 3's own
   finding, unaffected by anything in this task — that hop is ordinary
   W3C-header-based httpx→otelhttp propagation and was already proven intact).
 
-**Net, after this fix round: trace context now propagates *into*
-settlement-agent from its A2A caller, but not *out* to payments-mcp.** The
-chain is connected from the browser/A2A-client side through settlement-agent,
-and breaks exactly once, at the MCP boundary — a single, precisely located,
-deliberately deferred gap rather than two compounding ones. Task 7's MCP
-client `_meta` injection is the one remaining piece.
+**Historical net, as of this fix round (Task 4): trace context propagated
+*into* settlement-agent from its A2A caller, but not *out* to payments-mcp.**
+The chain was connected from the browser/A2A-client side through
+settlement-agent, and broke exactly once, at the MCP boundary — a single,
+precisely located, deliberately deferred gap rather than two compounding
+ones. Task 7's MCP client `_meta` injection (§10) was the one remaining
+piece, and has since landed: **as of Task 7, reconfirmed at the final
+whole-branch review, the chain is unbroken all the way through payments-api**
+— one trace, no orphans beyond the expected synthetic root, five services.
+Only the claim-id attribute at the MCP boundary remains an open gap (§11).
 
 ## 6. Outbound HTTP semconv spelling (A13) — measured, not assumed
 
@@ -639,13 +655,19 @@ fallback:
   the entry span is an unavoidable orphan — excluded by *both* its operation
   name and its `parent_id`, not a count tolerance, so a genuine propagation
   defect anywhere else in the trace still fails this test.
-- The MCP-hop assertions (`test_all_four_services_are_in_one_trace`,
-  `test_mcp_tool_calls_are_present`, `test_settlement_agent_span_precedes_
-  the_payment`) remain `xfail(strict=True)`, per the coordinator's explicit
-  ruling to keep this hop as-is and defer to Task 7's shared
-  `correlation.py` (A6). `strict=True` still means the day that gap closes,
-  the corresponding test becomes an unexpected pass and fails the run,
-  forcing the marker's removal rather than a silent stale pass.
+- As of this fix round (Task 4), the MCP-hop assertions
+  (`test_all_four_services_are_in_one_trace`, `test_mcp_tool_calls_are_present`,
+  `test_settlement_agent_span_precedes_the_payment`) were `xfail(strict=True)`,
+  per the coordinator's explicit ruling to keep this hop as-is and defer to
+  Task 7's shared `correlation.py` (A6). `strict=True` meant the day that gap
+  closed, the corresponding test would become an unexpected pass and fail the
+  run, forcing the marker's removal rather than a silent stale pass. **That
+  day came with Task 7** (final-review.md finding S2): all three tests above
+  were flipped from `xfail(strict=True)` to plain passing assertions once
+  settlement-agent's MCP client started injecting `params._meta` (§10/§11) —
+  confirmed still passing at the final whole-branch review's gate run
+  (`55 passed, 1 xfailed`). They are not `xfail` today; do not read this
+  bullet as describing their current state.
 
 **Negative-control verification (this fix round):** before committing, the
 fixture's `traceparent=traceparent` argument was temporarily changed to

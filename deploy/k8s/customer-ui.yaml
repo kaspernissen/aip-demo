@@ -5,6 +5,14 @@ metadata:
   namespace: northstar-agents
   labels:
     app: customer-ui
+    # N9 (final-review.md): claims-agent/settlement-agent both carry
+    # northstar.io/plane, and customer-ui deploys into the same
+    # northstar-agents namespace but had been left out — spec §2 wants each
+    # component's platform configuration in exactly one consistent place so
+    # M6 is a collapse rather than a rewrite, which needs this label present
+    # everywhere from M1 onward, not just on the two agents that happened to
+    # add it first.
+    northstar.io/plane: agents
 spec:
   replicas: 1
   selector:
@@ -14,6 +22,7 @@ spec:
     metadata:
       labels:
         app: customer-ui
+        northstar.io/plane: agents
     spec:
       containers:
         - name: customer-ui
@@ -23,6 +32,14 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+          # S6 (final-review.md): see claims-agent.yaml for the general fix.
+          # nginx serves the built static export, so a 200 on / means the
+          # container is actually ready to serve.
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 2
           resources:
             requests:
               memory: 32Mi

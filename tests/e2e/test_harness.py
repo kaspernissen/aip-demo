@@ -4,7 +4,6 @@ This test intentionally does not touch application code. It exists so that
 every later task has a trustworthy way to assert on trace shape.
 """
 import os
-import uuid
 
 import pytest
 from opentelemetry import trace
@@ -28,9 +27,25 @@ OTLP_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:
 
 @pytest.fixture(scope="module")
 def synthetic_trace():
-    """Emit a two-span trace through the real collector, then read it back."""
-    marker = uuid.uuid4().hex
-    service_name = f"harness-probe-{marker}"
+    """Emit a two-span trace through the real collector, then read it back.
+
+    Review finding N7 (final-review.md): an earlier version of this fixture
+    minted a fresh `harness-probe-<uuid>` service name every run, so Jaeger's
+    service list accumulated one new entry per test run forever, polluting
+    the same on-stage service dropdown N6 complains about for a different
+    reason. Fixed with a fixed service name -- but that alone would have
+    reintroduced exactly the unsoundness A14 exists to prevent: a fixed
+    `service_name` looked up by `wait_for_trace(service=..., operation=...)`
+    (a positional/lookback search, `find_trace`'s `data[0]`) could return a
+    *previous* run's stale trace instead of this run's, on any sufficiently
+    fast rerun within the 1h default lookback -- silently testing nothing
+    about this run's actual spans. This fixture creates the spans itself, so
+    it already knows its own real trace ID the instant the `with` block
+    exits (the SDK's own random ID, not one this test injects); reading it
+    off `span.get_span_context().trace_id` and looking it up with
+    `wait_for_trace_id` (A14's own rule: "if your test originates the
+    request... assert with wait_for_trace_id") gets both fixes for free."""
+    service_name = "harness-probe"
 
     provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
     provider.add_span_processor(
@@ -38,7 +53,8 @@ def synthetic_trace():
     )
     tracer = provider.get_tracer("harness-probe")
 
-    with tracer.start_as_current_span("probe.parent", kind=SpanKind.SERVER):
+    with tracer.start_as_current_span("probe.parent", kind=SpanKind.SERVER) as parent:
+        trace_id = format(parent.get_span_context().trace_id, "032x")
         with tracer.start_as_current_span("probe.child", kind=SpanKind.CLIENT):
             pass
 
@@ -46,7 +62,7 @@ def synthetic_trace():
     provider.shutdown()
 
     client = JaegerClient(JAEGER_URL)
-    return client.wait_for_trace(service=service_name, operation="probe.parent", timeout=90)
+    return client.wait_for_trace_id(trace_id, operation="probe.parent", timeout=90)
 
 
 def test_harness_reads_back_a_synthetic_trace(synthetic_trace):

@@ -178,6 +178,18 @@ def test_claims_agent_and_settlement_agent_join_the_browsers_trace(browser_trace
     assert expected <= services, f"missing services: {sorted(expected - services)}"
 
 
+def test_root_span_carries_the_policy_number(browser_trace):
+    """N10 (final-review.md): northstar.policy.number is documented in
+    docs/telemetry-contract.md's owned-attribute table and set at
+    apps/customer-ui/src/app/page.tsx:39, but was asserted by no test —
+    northstar.claim.id is asserted five ways, this attribute zero. The
+    fixture only fills the claim-id input (page.fill("input >> nth=0", ...)),
+    leaving the policy number at its DEFAULT_CLAIM default, so this asserts
+    the exact known value rather than merely "is present"."""
+    root = browser_trace.trace.roots()[0]
+    assert root.attrs.get("northstar.policy.number") == "POL-77120"
+
+
 def test_trace_has_no_orphans(browser_trace):
     """A17: unweakened — this root is real, so no exception is carved out."""
     assert_no_orphans(browser_trace.trace)
@@ -194,7 +206,18 @@ def test_all_five_services_are_in_one_trace(browser_trace):
     ClientSession.send_request() API, closing the last broken hop. Confirmed
     by capture: all five services — customer-ui, claims-agent,
     settlement-agent, payments-mcp, payments-api — land in the one trace
-    rooted at the browser's own claim.submit span."""
+    rooted at the browser's own claim.submit span.
+
+    N14 (final-review.md): the fixture's own wait_for_trace_id(...,
+    services={...}) already blocks until this exact five-service set is
+    present, so — like test_browser_emits_the_claim_submit_span and
+    test_claims_agent_and_settlement_agent_join_the_browsers_trace above —
+    this assertion can only ever restate what the fixture enforced. Kept
+    anyway for the same reason those two are: a named, specific failure if
+    this ever regresses, not just a fixture-setup error shared across the
+    whole file. Task 7 added this test without this note; added now so the
+    file's own three redundant-by-construction assertions are documented
+    consistently."""
     expected = {
         "customer-ui",
         "claims-agent",

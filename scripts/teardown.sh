@@ -11,7 +11,14 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}--- Stopping this repo's port-forwards ---${NC}"
-pkill -f "port-forward.*northstar" 2>/dev/null || true
+# S1 (final-review.md): this pattern used to be "port-forward.*northstar",
+# which cannot match this repo's own commands ("kubectl -n northstar-<ns>
+# port-forward ..." — "northstar" precedes "port-forward"). The old pattern
+# made this line announce success and kill nothing. Verified directly:
+# `pgrep -f 'port-forward.*northstar'` finds nothing against live forwards
+# from this repo; `pgrep -f 'northstar.*port-forward'` finds them. See
+# scripts/setup-kind.sh for the matching fix.
+pkill -f "northstar.*port-forward" 2>/dev/null || true
 
 echo -e "${BLUE}--- Deleting cluster '${CLUSTER_NAME}' ---${NC}"
 if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then

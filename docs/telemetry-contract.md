@@ -55,12 +55,19 @@ A19 regression test for the traceparent-across-await fix described below
 one unit suite that pins a real, previously-silent defect in this project's
 own code, not only in a third-party library's behavior.
 
-The one remaining `xfail(strict=True)` in both runs is
+The one remaining xfail in both runs is
 `tests/e2e/test_claim_correlation.py::test_claim_id_is_on_every_mcp_hop_span`,
 documenting the FastMCP baggage gap below (Gap 4). It is deliberately narrow —
-pinned to that one assertion — and `strict=True` means the day that gap closes
-upstream, this test starts failing until the marker is removed, rather than
-staying silently green.
+pinned to that one assertion, via a manual `pytest.xfail()` inside a
+`try/except AssertionError`, not `@pytest.mark.xfail(strict=True)` (S3,
+final-review.md — a decorator on this test would also swallow a failure
+during the module-scoped fixture's own setup, e.g. the MCP hop dropping the
+trace connection entirely, as a quiet `xfailed` indistinguishable from this
+test's own documented condition; the manual form lets that surface as a loud
+`ERROR` instead). Its behaviour is `strict=True`-equivalent in the direction
+that matters: the `else` branch calls `pytest.fail` if the assertion ever
+stops failing, so the day this gap closes upstream, the run fails until the
+marker is removed, rather than staying silently green.
 
 ## Enabled instrumentation, as verified
 
@@ -88,6 +95,31 @@ splitting across languages — exactly the class of breakage A13 exists to
 catch. Any service added later without it would reintroduce a mixed-convention
 chain invisibly, since both spellings are individually well-formed telemetry.
 
+**OTel library version skew, flagged as a decision, not an accident (N2/N3,
+final-review.md):** the table above pins each service's own OTel version
+independently, and they do not agree. On the Python side, payments-mcp runs
+`opentelemetry-sdk==1.29.0`/`opentelemetry-instrumentation-httpx==0.50b0`
+while both agents run `1.44.0`/`0.65b0`, and the repo-root `tests/`
+harness pins `1.29.0` — three Python processes on two OTel generations, in a
+milestone whose whole product is the telemetry these libraries emit. On the
+browser side, `@opentelemetry/context-zone` sits at `1.30.0` alongside
+`sdk-trace-web`/`resources` at `2.8.0`, and the top-level
+`@opentelemetry/semantic-conventions` pin (`1.28.0`) differs from what
+transitives resolve (`1.43.0`). Neither skew is a live defect today: A13
+requires measuring each service's own emitted spelling independently rather
+than assuming one service's pin carries over, which is exactly why the skew
+hasn't silently broken anything; and the lockfile carries exactly one
+`@opentelemetry/core` (`2.8.0`, confirmed by `package-lock.json`), so no
+vulnerable 1.x `core` rides along the browser's `context-zone` pin (A21a
+holds). Left unreconciled deliberately in this fix round rather than bumped:
+harmonizing three services' dependency pins this late, with no A21-style
+published-CVE forcing function, carries real regression risk for zero
+measured benefit, and would need the same re-verification discipline A21/A21a
+already require for a version bump (rebuild every affected service, re-run
+the full suite, re-capture a live trace to confirm span shape is unchanged).
+Recorded here so M1.2's planner inherits an explicit, considered choice
+rather than rediscovering the skew as an accident.
+
 **Architectural fact, applying to every component above:** none of them creates
 a span of its own. Every span in this milestone comes from library
 instrumentation — `StarletteInstrumentor`, `a2a-sdk`'s own `@trace_class`/
@@ -98,11 +130,15 @@ could have created it instead). Besides that one exception's own two files
 (`apps/customer-ui/src/telemetry.ts`, `apps/customer-ui/src/app/page.tsx`)
 and one docstring mention in `tools/payments-mcp/bootstrap.py`, there is no
 `get_tracer`/`start_span`/`start_as_current_span` anywhere in this project's
-own `agents/`, `tools/`, or `systems/` source; the only other hit anywhere in
-the repo is a harness test probe (`tests/e2e/test_harness.py`). This predicts
-where M1.2 changes shape: PydanticAI is expected to be the first library
-that gives this project's own code spans to open directly, rather than only
-ever wrapping calls from the outside.
+own `agents/`, `tools/`, or `systems/` source; the only other hits anywhere in
+the repo are both test files — a harness test probe
+(`tests/e2e/test_harness.py`) and customer-ui's own regression test for the
+A19 traceparent-across-await fix (`apps/customer-ui/src/a2a.test.ts`, which
+opens a real span to drive the same code path `page.tsx` uses — N8,
+final-review.md, an earlier version of this sentence named only the harness
+probe). This predicts where M1.2 changes shape: PydanticAI is expected to be
+the first library that gives this project's own code spans to open directly,
+rather than only ever wrapping calls from the outside.
 
 ## Conventions adopted
 
@@ -172,12 +208,24 @@ services at all, because FastMCP 4.0.3 never reads the `baggage` key out of
 MCP's `params._meta` — the trace still joins correctly (traceparent crosses
 the MCP boundary intact), only the domain attribute doesn't. Trace-ID
 correlation is intact regardless of this attribute's absence; see Gap 4 for
-the full evidence.
+the full evidence. **payments-api is not without an enrichment mechanism of
+its own** (N8, final-review.md — an earlier version of this section read as
+if it had none): `systems/payments-api/handlers.go`'s `withClaimID`
+middleware is the Go equivalent of `ClaimIdSpanProcessor` — Go's SDK has no
+baggage span processor, so this project's own middleware reads
+`baggage.FromContext(r.Context())` and sets the span attribute explicitly,
+correct per spec §8's rule that our own spans set the attribute rather than
+relying on a library to do it. It is currently dormant for the same reason
+`ClaimIdSpanProcessor` finds nothing on payments-mcp: baggage never crosses
+the MCP boundary at all (Gap 4), so there is nothing in `r.Context()`'s
+baggage for `withClaimID` to read. The mechanism is correct and in place;
+only its input never arrives.
 
 `tests/e2e/test_claim_correlation.py` asserts this real, capture-verified
 boundary precisely — customer-ui, claims-agent's 2 spans, and settlement-agent's
-32 spans, positively; payments-mcp/payments-api's absence via a narrow
-`xfail(strict=True)` — not a blanket "every span in every service" claim.
+32 spans, positively; payments-mcp/payments-api's absence via a narrow manual
+xfail (see "What the default suite proves" above, S3) — not a blanket "every
+span in every service" claim.
 
 **Enrichment boundary:** the baggage span processor runs only in our own service
 processes. Nothing is injected into telemetry emitted by infrastructure we do not
@@ -235,11 +283,19 @@ For each: the evidence, whether upstream already has work in flight, and what we
   populated when an identifier is readily available, and explicitly forbids
   falling back to a UUID, trace ID or content hash. A2A supplies exactly such
   identifiers in `contextId` and `taskId`.
-- **Action:** Not filed by this project. The semconv-side proposals above are
-  already upstream and already argue our position; we have not opened a new
-  one, and have not filed anything against `a2a-python` for the
-  zero-attribute finding specifically. No `a2a.*`/`gen_ai.*` attribute was
-  invented anywhere in this repo to fill the gap in the meantime.
+- **Action:** Not filed by this project — why, stated plainly (S4,
+  final-review.md): filing an upstream issue is a decision this project
+  reserves for its maintainers, not one any implementation task makes
+  unilaterally; this section exists so that decision can be made from
+  complete, precisely-scoped evidence, not to make the decision itself. For
+  the semconv-side half specifically, filing would also be low-value even if
+  it were this project's call: the proposals above are already upstream and
+  already argue our exact position, so a new issue would duplicate rather
+  than add. The `a2a-python` zero-attribute finding and the extraction gap
+  are not covered by any open issue on that exact point (searched, see
+  above) and remain filing-ready whenever that decision is made. No
+  `a2a.*`/`gen_ai.*` attribute was invented anywhere in this repo to fill the
+  gap in the meantime.
 
 ### Gap 2: human-in-the-loop approval spans
 
@@ -290,17 +346,28 @@ For each: the evidence, whether upstream already has work in flight, and what we
   calls a server makes*, not about a server reading `baggage` out of `_meta`
   into its own OTel context in the first place — adjacent motivation,
   different gap.
-- **Action:** Not filed by this project. Recorded here as upstream-contribution
-  evidence (`tools/payments-mcp/NOTES.md` §6, `agents/settlement-agent/NOTES.md`
+- **Action:** Not filed by this project — same reason as Gap 1 (S4,
+  final-review.md): filing upstream is a decision this project reserves for
+  its maintainers, not one an implementation task makes unilaterally. Unlike
+  Gap 1's semconv half, filing here would not be low-value if it were this
+  project's call — this is a precisely-scoped, previously-unreported gap
+  (the client-side half is independently corroborated by #3998, but no open
+  issue covers the server-side omission this project found) — so it is
+  recorded complete and filing-ready: installed version, exact file and
+  function, what is read versus not, and how it differs from #3998's and
+  #4358's adjacent territory. Recorded here as upstream-contribution evidence
+  (`tools/payments-mcp/NOTES.md` §6, `agents/settlement-agent/NOTES.md`
   §11). A natural upstream fix would add a `baggage` key to both
   `extract_trace_context()` and `inject_trace_context()`, symmetric with how
   they already handle `traceparent`/`tracestate` — the same fix #3998 is
   already asking for on the client side. Not worked around: no code in this
   repo reaches into FastMCP's own `_meta` handling to bridge this gap. Pinned
   by `tests/e2e/test_claim_correlation.py::
-  test_claim_id_is_on_every_mcp_hop_span` (`xfail(strict=True)`, narrowed to
-  this one assertion per a review finding — a fixture-setup failure upstream
-  of it now surfaces as an ordinary `ERROR`, not a false-quiet `xfailed`).
+  test_claim_id_is_on_every_mcp_hop_span` — a manual `pytest.xfail()`, not
+  `@pytest.mark.xfail(strict=True)` (S3; see "What the default suite proves"
+  above for why), narrowed to this one assertion per a review finding — a
+  fixture-setup failure upstream of it now surfaces as an ordinary `ERROR`,
+  not a false-quiet `xfailed`.
 
 ### Gap 5: FastMCP never emits `gen_ai.operation.name` on tool-call spans
 
@@ -318,3 +385,45 @@ For each: the evidence, whether upstream already has work in flight, and what we
 - **Action:** No action needed from this project — the gap is already
   upstream, filed by someone else, and open. No bespoke `gen_ai.operation.name`
   was added to `server.py` to paper over it while waiting.
+
+### Gap 6: `mcp==1.9.4`'s high-level client has no route to attach `params._meta`
+
+- **Evidence:** this project's own finding, previously recorded only in
+  `agents/settlement-agent/NOTES.md` §10 and omitted from this list until now
+  (S4, final-review.md). `mcp==1.9.4`'s `ClientSession.call_tool(name,
+  arguments, read_timeout_seconds, progress_callback)` has no `_meta`
+  parameter at all and always builds `CallToolRequestParams(name=name,
+  arguments=arguments)` internally with no way to set `params._meta`
+  (verified by reading `mcp/client/session.py`'s signature directly). The
+  only way to attach `_meta` to a tool call on this version is to hand-build
+  a `CallToolRequestParams(..., _meta=types.RequestParams.Meta(**carrier))`
+  and call the lower-level `send_request(ClientRequest(CallToolRequest(...)),
+  CallToolResult)` instead — duplicating `call_tool()`'s own
+  name/arguments/result-type/timeout/progress-callback plumbing. This is
+  exactly the technique `agents/settlement-agent/mcp_tools.py` (Task 7) and
+  `tests/e2e/test_payments_mcp_trace.py` (A14a) both use for the same reason.
+- **Upstream check (searched the tracker directly, not assumed):**
+  [`modelcontextprotocol/python-sdk#1216` "Expose `_meta` in `ClientSession`
+  methods"](https://github.com/modelcontextprotocol/python-sdk/issues/1216)
+  proposes exactly this — an optional `meta: dict | None` parameter on
+  `call_tool()`, mirroring what `CallToolRequestParams` already supports
+  internally, which is precisely the natural fix this project's own finding
+  would have asked for. **It is already resolved**: closed
+  2025-10-17 (`stateReason: COMPLETED`) via
+  [`#1231` "Expose `RequestParams._meta` in
+  `ClientSession.call_tool`"](https://github.com/modelcontextprotocol/python-sdk/pull/1231),
+  merged the same day. That fix landed in an `mcp` release newer than
+  `1.9.4` — this project's pin (`tests/requirements.txt`,
+  `agents/settlement-agent/requirements.txt`) — so the gap this project found
+  independently is real for the version actually running here, and already
+  fixed for anyone on a current `mcp` release.
+- **Action:** Nothing to file — the fix already exists upstream and merged
+  before this section was written. No workaround was added to route around
+  it: `mcp_tools.py`'s `send_request()` approach is the documented, correct
+  way to reach `params._meta` on `mcp==1.9.4`, not a patch over a bug. Bumping
+  the `mcp` pin to pick up `#1231`'s simpler `call_tool(meta=...)` interface
+  is a real, available simplification but is deliberately out of scope for
+  this documentation-accuracy pass — verifying a new `mcp` version against
+  the rest of this project's pin set is A21 territory (a version bump with
+  its own re-verification), not something to fold unexplained into a
+  contract-wording fix.

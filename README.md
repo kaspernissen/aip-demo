@@ -18,12 +18,34 @@ the rest of the demo argues against.
 
 ## Quick start
 
+**Divergence from the spec's exported-env-var flow, noted explicitly (amendment
+A2):** the spec's original acceptance criterion for this step was `git clone`
+→ `export ANTHROPIC_API_KEY=...` → one command, no `.env` file. A2 replaced
+that with a sourced, git-ignored `.env` (better for a repo with several
+optional credentials), but no document had said so until now — a cold reader
+following only the spec would hit `setup-kind.sh`'s very first failure. This
+is that missing step:
+
 ```bash
-export ANTHROPIC_API_KEY=...        # not used until M1.2
-export DASH0_AUTH_TOKEN=...         # optional; adds a second OTLP exporter
+cp .env.template .env
+# edit .env: ANTHROPIC_API_KEY unused until M1.2 but sourced regardless (A2);
+# DASH0_AUTH_TOKEN and its three DASH0_* siblings are optional — see the
+# comments in .env.template for exactly which variables are required.
 
 ./scripts/setup-kind.sh --stage 1
 ./scripts/smoke-test.sh
+```
+
+`smoke-test.sh` additionally requires a repo-root Python venv, a venv per
+Python service, and a Playwright Chromium install — see the actionable error
+message it prints for each, or run the four commands it lists yourself
+ahead of time:
+
+```bash
+uv venv --python 3.13 .venv && uv pip install -r tests/requirements.txt && .venv/bin/playwright install chromium
+for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent; do
+  (cd "$svc" && uv venv --python 3.13 .venv && uv pip install -r requirements.txt)
+done
 ```
 
 Then open:

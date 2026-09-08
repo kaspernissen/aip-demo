@@ -276,21 +276,37 @@ Jaeger query window.
   hop, and the answer to question 1. `HTTPXClientInstrumentor`'s ordinary
   ambient-context injection is sufficient; no hand-rolled injection was
   needed or added.
-- **settlement-agent → payments-mcp: still does not propagate** (Task 4's
-  finding, unaffected by anything in this task — see
-  `agents/settlement-agent/NOTES.md` §5). This stays Task 7's job via the
+- **settlement-agent → payments-mcp, as of this task (Task 5): still does not
+  propagate** (Task 4's finding, unaffected by anything in this task — see
+  `agents/settlement-agent/NOTES.md` §5). This stayed Task 7's job via the
   shared `correlation.py` (A6), per the coordinator's explicit ruling not to
-  fix that hop here. `tests/e2e/test_claims_chain_trace.py`'s
+  fix that hop here. As of this task, `tests/e2e/test_claims_chain_trace.py`'s
   `test_all_four_backend_services_are_in_one_trace` and
-  `test_payment_was_executed_with_no_governance` remain `xfail(strict=True)`,
+  `test_payment_was_executed_with_no_governance` were `xfail(strict=True)`,
   citing this one gap.
+  **Superseded by Task 7 (final-review.md finding S2) — flagged here, not
+  left to read as current:** settlement-agent's MCP client now injects
+  `params._meta` (traceparent + baggage) via the low-level request API, and
+  FastMCP's server-side extraction joins the trace. Both tests named above
+  have not been `xfail(strict=True)` since Task 7 landed — they are plain
+  passing assertions today, confirmed at the final whole-branch review
+  (`55 passed, 1 xfailed` gate run). The one remaining gap at this boundary
+  is narrower than "does not propagate": the trace joins fully; only the
+  `northstar.claim.id` *attribute* still does not cross it (FastMCP never
+  reads `baggage` out of `params._meta` — see `tools/payments-mcp/NOTES.md`
+  §6, `agents/settlement-agent/NOTES.md` §11, and
+  `docs/telemetry-contract.md` Gap 4), pinned by exactly one remaining test,
+  `tests/e2e/test_claim_correlation.py::test_claim_id_is_on_every_mcp_hop_span`.
 - **payments-mcp → payments-api: propagates** (Task 3's finding, untouched).
 
-**Net result of this task:** the trace now connects continuously from the
-test client through claims-agent and into settlement-agent — two full A2A
-hops, not one — and breaks at exactly the same single, already-known point
-(the MCP boundary) as before. No new gap was introduced or found on the A2A
-side.
+**Net result of this task (Task 5):** the trace now connects continuously
+from the test client through claims-agent and into settlement-agent — two
+full A2A hops, not one — and, as of this task, broke at exactly the same
+single, already-known point (the MCP boundary) as before. No new gap was
+introduced or found on the A2A side. **That MCP-boundary trace-joining gap is
+closed as of Task 7** (see the correction above) — the chain is five services
+in one trace today, not four; only the claim-id attribute gap at that same
+boundary remains open.
 
 ## 6. Question 2 (task brief): what does `a2a-sdk` emit on the client side?
 

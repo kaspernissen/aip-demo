@@ -18,9 +18,24 @@ extraction of `params._meta.traceparent` works (see the parent-ID assertion
 below and NOTES.md), not that our production MCP client (settlement-agent)
 injects it — that remains Task 7's job. No HTTP-header workaround is used
 anywhere.
+
+**S5 (final-review.md):** `contracts/mcp/payments-mcp.json` — spec §7's
+"source of truth" for this tool's schema — had drifted from what the live
+server actually serves: it claimed `amount: {minimum: 0}`, `currency:
+{enum: ["EUR"]}`, and no `additionalProperties`, none of which FastMCP's
+auto-generated schema (from the plain Python type hints in `server.py`)
+actually produces, and nothing compared them. A one-time correction to the
+file would only prevent today's drift, not tomorrow's — the agent-card half
+of `contracts/` is already diffed against the live server this way
+(`test_claims_chain_trace.py`/`test_settlement_agent_trace.py`), and the MCP
+tool schema deserved the same guard, not a one-off fix. `test_tool_schema_matches_the_committed_contract`
+below does that: it diffs the *whole* served `list_tools()` document against
+the committed file, the same pattern the agent-card tests already use.
 """
+import json
 import os
 import uuid
+from pathlib import Path
 
 import pytest
 import mcp.types as types
@@ -31,6 +46,9 @@ from tests.harness.jaeger import JaegerClient, assert_span_kind
 
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 MCP_URL = os.environ.get("PAYMENTS_MCP_URL", "http://localhost:18000/mcp")
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+MCP_CONTRACT = REPO_ROOT / "contracts" / "mcp" / "payments-mcp.json"
 
 
 async def _call_tools(claim_id: str, traceparent: str) -> dict:
@@ -203,3 +221,50 @@ def test_trace_has_no_unexpected_orphans(mcp_trace, executed_call):
 
 def test_span_kinds_are_correct(mcp_trace):
     assert_span_kind(mcp_trace, "tools/call execute_payment", "server")
+
+
+def test_tool_schema_matches_the_committed_contract():
+    """S5 (final-review.md): diffs the whole served tool list against
+    contracts/mcp/payments-mcp.json, so a served/contract drift (a changed
+    type hint, a new/removed parameter, an annotation flip) fails here
+    instead of shipping silently — mirroring the agent-card diff tests
+    (test_claims_chain_trace.py/test_settlement_agent_trace.py) rather than
+    leaving this file's schema as a one-time, unguarded correction."""
+    import anyio
+
+    async def _list_tools():
+        async with streamablehttp_client(MCP_URL) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.list_tools()
+                return [
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "inputSchema": tool.inputSchema,
+                        "annotations": (
+                            tool.annotations.model_dump(by_alias=True, exclude_none=True)
+                            if tool.annotations
+                            else None
+                        ),
+                    }
+                    for tool in result.tools
+                ]
+
+    served = anyio.run(_list_tools)
+    contract = json.loads(MCP_CONTRACT.read_text())
+    served_by_name = {t["name"]: t for t in served}
+    contract_by_name = {t["name"]: t for t in contract["tools"]}
+
+    assert served_by_name.keys() == contract_by_name.keys(), (
+        f"tool set drifted: served {sorted(served_by_name)}, "
+        f"contract {sorted(contract_by_name)}"
+    )
+    for name, contract_tool in contract_by_name.items():
+        served_tool = served_by_name[name]
+        for field in ("description", "inputSchema", "annotations"):
+            assert served_tool[field] == contract_tool[field], (
+                f"{name}.{field} drifted from the committed contract "
+                f"({MCP_CONTRACT}):\nserved:   {served_tool[field]!r}\n"
+                f"contract: {contract_tool[field]!r}"
+            )

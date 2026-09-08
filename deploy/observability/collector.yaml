@@ -12,9 +12,6 @@ spec:
     metadata:
       labels:
         app: otel-collector
-      annotations:
-        # Forces a rollout when the ConfigMap changes; the script patches this.
-        northstar.io/config-revision: "0"
     spec:
       containers:
         - name: collector

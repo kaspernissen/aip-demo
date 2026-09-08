@@ -27,9 +27,11 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
-// claimIDFromBaggage annotates the current span with the claim id carried in
-// W3C baggage. The Go SDK has no baggage span processor, so our own middleware
-// does the same job explicitly.
+// withClaimID annotates the current span with the claim id carried in W3C
+// baggage. The Go SDK has no baggage span processor, so our own middleware
+// does the same job explicitly. (N5, final-review.md: this doc comment used
+// to name a function called claimIDFromBaggage, which this file has never
+// had -- fixed to name the function it actually documents.)
 func withClaimID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if member := baggage.FromContext(r.Context()).Member("northstar.claim.id"); member.Value() != "" {
@@ -51,7 +53,17 @@ func newRouter(s *store) http.Handler {
 		mux.Handle(pattern, otelhttp.NewHandler(withClaimID(h), spanName))
 	}
 
-	handle("GET /healthz", "GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	// N6 (final-review.md): the readiness probe added in deploy/k8s/*.yaml
+	// (S6) polls this endpoint every few seconds, and it used to be wrapped
+	// in otelhttp like every other route -- 162 GET /healthz traces against
+	// 44 POST /payments/propose traces in one measured hour, ~79% probe
+	// noise in Jaeger's own view of this service, plus every one of those
+	// spans printed in full by the debug exporter's `verbosity: normal`.
+	// This route carries no domain telemetry of its own (no claim id, no
+	// business outcome), so it is wired directly, with no otelhttp span and
+	// no withClaimID wrapper -- the fix for probe-noise pollution is not
+	// tracing the probe, not filtering it out downstream after the fact.
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 

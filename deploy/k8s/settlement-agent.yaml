@@ -46,6 +46,13 @@ spec:
           ports:
             - name: http
               containerPort: 9002
+          # S6 (final-review.md): see claims-agent.yaml for the same fix and
+          # reasoning — this endpoint is read from disk at build_app() time.
+          readinessProbe:
+            httpGet:
+              path: /.well-known/agent-card.json
+              port: 9002
+            initialDelaySeconds: 2
           resources:
             requests:
               memory: 128Mi

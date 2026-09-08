@@ -67,9 +67,7 @@ component_spec() {
 }
 
 targets=("$@")
-explicit=true
 if [[ ${#targets[@]} -eq 0 ]]; then
-  explicit=false
   targets=()
   while IFS= read -r name; do
     targets+=("$name")
@@ -79,7 +77,6 @@ fi
 total=${#targets[@]}
 step=0
 deployed=()
-skipped=()
 
 for component in "${targets[@]}"; do
   step=$((step + 1))
@@ -92,19 +89,17 @@ for component in "${targets[@]}"; do
   namespace="${spec##*:}"
   image="localhost:${REGISTRY_PORT}/northstar/${component}:dev"
 
-  # A15: until all five build contexts exist (by end of M1.1), a default
-  # no-argument run must skip a component whose context directory doesn't
-  # exist yet rather than dying on `docker build`. A component named
-  # explicitly on the command line is a hard error instead — the user asked
-  # for it by name, so silently doing nothing would be worse than failing.
+  # A15a: A15's original skip branch is retired. All five build contexts have
+  # existed since Task 6 landed, so the skip branch was unreachable in a
+  # healthy tree and would have silently swallowed a missing build context
+  # the moment a later milestone adds a new component to COMPONENTS — the
+  # opposite of what A15 set out to achieve. A missing build context is now a
+  # hard error in every case, default run or explicitly named component
+  # alike; unlike a resolvable "unknown component" typo (checked above), this
+  # error can only mean a real, broken build context, so it always exits.
   if [[ ! -d "$ROOT/$context" ]]; then
-    if [[ "$explicit" == true ]]; then
-      echo -e "${RED}Error: ${component}'s build context ${context} does not exist${NC}" >&2
-      exit 1
-    fi
-    echo -e "${YELLOW}Skipping ${component} — ${context} does not exist yet${NC}"
-    skipped+=("$component")
-    continue
+    echo -e "${RED}Error: ${component}'s build context ${context} does not exist${NC}" >&2
+    exit 1
   fi
 
   echo -e "${BLUE}Step ${step}/${total}: Building ${image} from ${context}${NC}"
@@ -141,9 +136,6 @@ if [[ ${#deployed[@]} -gt 0 ]]; then
   echo -e "${GREEN}Rebuilt and deployed: ${deployed[*]}${NC}"
 else
   echo -e "${YELLOW}Nothing was deployed.${NC}"
-fi
-if [[ ${#skipped[@]} -gt 0 ]]; then
-  echo -e "${YELLOW}Skipped (build context does not exist yet): ${skipped[*]}${NC}"
 fi
 echo "Check status:  kubectl get pods -A"
 echo "Follow logs:   kubectl -n <namespace> logs -f deployment/<component>"

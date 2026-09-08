@@ -72,11 +72,23 @@ command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1
 : "${OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE:?OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE not set in .env}"
 
 echo -e "${BLUE}Step 1/9: Creating local registry '${REGISTRY_NAME}'...${NC}"
-if [ "$(docker inspect -f '{{.State.Running}}' "${REGISTRY_NAME}" 2>/dev/null || true)" != 'true' ]; then
+# N12 (final-review.md): a container can exist but be stopped (e.g. after a
+# `docker system prune` or a host restart with restart policies not yet
+# applied) without `docker inspect -f '{{.State.Running}}'` ever being
+# 'true'. The old two-branch check ran `docker run --name kind-registry`
+# whenever it wasn't running, which fails on the name collision with an
+# existing-but-stopped container and kills this script under `set -e` — a
+# false "the registry is broken" failure when `docker start` would have
+# fixed it in one step. Distinguish "does not exist" from "exists but
+# stopped" and only ever `docker run` in the former case.
+if ! docker inspect "${REGISTRY_NAME}" >/dev/null 2>&1; then
   docker run \
     -d --restart=always -p "127.0.0.1:${REGISTRY_PORT}:5000" --network bridge --name "${REGISTRY_NAME}" \
     registry:2
   echo -e "${GREEN}Local registry started on port ${REGISTRY_PORT}${NC}"
+elif [ "$(docker inspect -f '{{.State.Running}}' "${REGISTRY_NAME}")" != 'true' ]; then
+  docker start "${REGISTRY_NAME}"
+  echo -e "${GREEN}Local registry existed but was stopped; started it.${NC}"
 else
   echo -e "${GREEN}Local registry already running${NC}"
 fi
@@ -160,7 +172,16 @@ echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then startin
 # `capybara`) has silently shadowed a host port before, twice. This only ever
 # kills forwards matching this repo's own pattern, never blanket-kills
 # another cluster's forwards — see scripts/teardown.sh for the same rule.
-pkill -f "port-forward.*northstar" 2>/dev/null || true
+#
+# S1 (final-review.md): the pattern used to be "port-forward.*northstar",
+# which cannot match anything this script itself launches — every command
+# below reads "kubectl -n northstar-<ns> port-forward ...", i.e. "northstar"
+# precedes "port-forward", not the other way round. Verified directly:
+# `pgrep -f 'port-forward.*northstar'` finds nothing even with these
+# port-forwards running; `pgrep -f 'northstar.*port-forward'` finds them.
+# The old pattern's only practical effect was a silent no-op here, and (in
+# teardown.sh) an announced cleanup that stopped nothing.
+pkill -f "northstar.*port-forward" 2>/dev/null || true
 kubectl -n northstar-agents port-forward svc/claims-agent 19001:9001 >/dev/null 2>&1 &
 CLAIMS_PF_PID=$!
 kubectl -n northstar-agents port-forward svc/settlement-agent 19002:9002 >/dev/null 2>&1 &

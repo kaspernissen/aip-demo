@@ -14,42 +14,22 @@ from __future__ import annotations
 
 import os
 
-from opentelemetry import baggage, trace
+from opentelemetry import trace
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
-from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.propagate import set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import Span, SpanProcessor, TracerProvider
+from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-from correlation import CLAIM_ID_KEY
-
-
-class ClaimIdSpanProcessor(SpanProcessor):
-    """Copies northstar.claim.id from baggage onto every span in this process.
-
-    Standard OTel enrichment: it adds a domain fact to spans this process
-    produces. It does not invent a convention, and it never touches telemetry
-    emitted by infrastructure we do not run in-process.
-    """
-
-    def on_start(self, span: Span, parent_context: Context | None = None) -> None:
-        claim_id = baggage.get_baggage(CLAIM_ID_KEY, parent_context)
-        if claim_id is not None:
-            span.set_attribute(CLAIM_ID_KEY, str(claim_id))
-
-    def on_end(self, span) -> None:  # noqa: D102
-        pass
-
-    def shutdown(self) -> None:  # noqa: D102
-        pass
-
-    def force_flush(self, timeout_millis: int = 30_000) -> bool:  # noqa: D102
-        return True
+# N1 (final-review.md): ClaimIdSpanProcessor lives in correlation.py now, not
+# here — it is the mechanism that implements that file's own correlation
+# rule, and a reader told "correlation.py is the shared file" (A18) should
+# find it there.
+from correlation import ClaimIdSpanProcessor
 
 
 def configure() -> None:
