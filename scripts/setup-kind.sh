@@ -71,7 +71,7 @@ command_exists kind || { echo -e "${RED}kind is required: brew install kind${NC}
 command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1; }
 : "${OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE:?OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE not set in .env}"
 
-echo -e "${BLUE}Step 1/8: Creating local registry '${REGISTRY_NAME}'...${NC}"
+echo -e "${BLUE}Step 1/9: Creating local registry '${REGISTRY_NAME}'...${NC}"
 if [ "$(docker inspect -f '{{.State.Running}}' "${REGISTRY_NAME}" 2>/dev/null || true)" != 'true' ]; then
   docker run \
     -d --restart=always -p "127.0.0.1:${REGISTRY_PORT}:5000" --network bridge --name "${REGISTRY_NAME}" \
@@ -81,7 +81,7 @@ else
   echo -e "${GREEN}Local registry already running${NC}"
 fi
 
-echo -e "${BLUE}Step 2/8: Creating kind cluster '${CLUSTER_NAME}'...${NC}"
+echo -e "${BLUE}Step 2/9: Creating kind cluster '${CLUSTER_NAME}'...${NC}"
 if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
   echo -e "${YELLOW}Cluster already exists, skipping creation.${NC}"
 else
@@ -89,7 +89,7 @@ else
 fi
 kubectl cluster-info --context "kind-${CLUSTER_NAME}"
 
-echo -e "${BLUE}Step 3/8: Configuring registry access on cluster nodes...${NC}"
+echo -e "${BLUE}Step 3/9: Configuring registry access on cluster nodes...${NC}"
 REGISTRY_DIR="/etc/containerd/certs.d/localhost:${REGISTRY_PORT}"
 for node in $(kind get nodes --name="${CLUSTER_NAME}"); do
   docker exec "${node}" mkdir -p "${REGISTRY_DIR}"
@@ -98,12 +98,12 @@ for node in $(kind get nodes --name="${CLUSTER_NAME}"); do
 EOF
 done
 
-echo -e "${BLUE}Step 4/8: Connecting registry to cluster network...${NC}"
+echo -e "${BLUE}Step 4/9: Connecting registry to cluster network...${NC}"
 if [ "$(docker inspect -f='{{json .NetworkSettings.Networks.kind}}' "${REGISTRY_NAME}")" = 'null' ]; then
   docker network connect "kind" "${REGISTRY_NAME}"
 fi
 
-echo -e "${BLUE}Step 5/8: Documenting local registry...${NC}"
+echo -e "${BLUE}Step 5/9: Documenting local registry...${NC}"
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: ConfigMap
@@ -116,10 +116,10 @@ data:
     help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
 EOF
 
-echo -e "${BLUE}Step 6/8: Creating namespaces...${NC}"
+echo -e "${BLUE}Step 6/9: Creating namespaces...${NC}"
 kubectl apply -f "$ROOT/deploy/k8s/namespaces.yaml"
 
-echo -e "${BLUE}Step 7/8: Installing observability backbone...${NC}"
+echo -e "${BLUE}Step 7/9: Installing observability backbone...${NC}"
 COLLECTOR_CONFIG="$ROOT/deploy/observability/collector-config.yaml"
 if [[ -n "${DASH0_AUTH_TOKEN:-}" ]]; then
   echo -e "${GREEN}DASH0_AUTH_TOKEN present: enabling the Dash0 exporter alongside Jaeger.${NC}"
@@ -147,15 +147,33 @@ kubectl apply -f "$ROOT/deploy/observability/collector.yaml"
 kubectl -n observability set image deployment/otel-collector \
   collector="${OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE}"
 
-echo -e "${BLUE}Step 8/8: Rolling out observability workloads...${NC}"
+echo -e "${BLUE}Step 8/9: Rolling out observability workloads...${NC}"
 kubectl -n observability rollout restart deployment/otel-collector
 kubectl -n observability rollout status deployment/jaeger --timeout=180s
 kubectl -n observability rollout status deployment/otel-collector --timeout=180s
 
+echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads...${NC}"
+"$ROOT/scripts/rebuild-and-deploy.sh" \
+  payments-api payments-mcp settlement-agent claims-agent customer-ui
+
+echo -e "${BLUE}Starting port-forwards...${NC}"
+# A9: a stray port-forward from another cluster on this machine (e.g.
+# `capybara`) has silently shadowed a host port before. This only ever kills
+# forwards matching this repo's own pattern, never blanket-kills another
+# cluster's forwards — see scripts/teardown.sh for the same rule.
+pkill -f "port-forward.*northstar" 2>/dev/null || true
+kubectl -n northstar-agents port-forward svc/claims-agent 19001:9001 >/dev/null 2>&1 &
+kubectl -n northstar-agents port-forward svc/settlement-agent 19002:9002 >/dev/null 2>&1 &
+kubectl -n northstar-tools port-forward svc/payments-mcp 18000:8000 >/dev/null 2>&1 &
+kubectl -n northstar-systems port-forward svc/payments-api 18080:8080 >/dev/null 2>&1 &
+sleep 4
+
 echo ""
-echo -e "${GREEN}Stage 1 observability is up.${NC}"
+echo -e "${GREEN}Stage 1 (Connected) is up.${NC}"
+echo "  Customer UI:         http://localhost:8080"
 echo "  Jaeger UI:           http://localhost:16686"
 echo "  Collector OTLP/HTTP: http://localhost:4318"
+echo "  claims-agent (A2A):  http://localhost:19001"
 echo "  Local registry:      localhost:${REGISTRY_PORT}"
 echo ""
-echo "Next: python -m pytest tests/e2e/test_harness.py -v"
+echo "Next: ./scripts/smoke-test.sh"
