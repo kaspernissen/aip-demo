@@ -36,8 +36,8 @@ Measured counts, from a clean cluster (`./scripts/teardown.sh &&
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `57 passed, 16 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `73 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `57 passed, 17 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `74 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -55,7 +55,10 @@ it, while the gate (which sets that flag unconditionally) always does. Task 5
 grew it again, 15 to 16: `tests/e2e/test_browser_root_span.py` gained one
 test (`test_the_browser_path_settles_the_expected_amount`, asserting the
 €6,200 outcome through the browser path specifically — Task 4 review,
-Finding 2), and that file shares the same gate. **These are counts only;
+Finding 2), and that file shares the same gate. Task 5's fix round 1 grew it
+once more, 16 to 17: `tests/e2e/test_settlement_llm_trace.py` gained
+`test_tool_call_arguments_carries_the_settled_amount`, pinning
+`gen_ai.tool.call.arguments` (fix-round Finding 2). **These are counts only;
 M1.2 Task 5 also revises this document's substantive content** — including
 what content capture does and does not redact now that it is configuration
 rather than a hardcoded constant, which
@@ -293,19 +296,81 @@ not a redaction target. Separately, and regardless of either setting,
 `gen_ai.tool.definitions` is emitted on every `chat` span unconditionally —
 it is not gated by `include_model_request_parameters` at all.
 
-**Measured shape, both directions** (`tests/e2e/test_settlement_llm_trace.py`,
-live capture, three chat turns): `gen_ai.input.messages` /
-`gen_ai.output.messages` and the `invoke_agent` span's own
-`pydantic_ai.all_messages` always carry message *shape* — `role`,
-`parts[].type`, tool-call ids/names/arguments — at either setting. Only
-`text`/`thinking` parts additionally carry a `content` key, present (the
+**Measured shape** (`tests/e2e/test_settlement_llm_trace.py`, live capture,
+three chat turns, ON only — the OFF-direction claims in this paragraph are
+confirmed from library source below, not a second paid live run):
+`gen_ai.input.messages` / `gen_ai.output.messages` and the `invoke_agent`
+span's own `pydantic_ai.all_messages` always carry message *shape* — `role`,
+`parts[].type`, and on a `tool_call` part, `id`/`name` — regardless of
+`NORTHSTAR_CAPTURE_CONTENT`.
+
+**Correction (Task 5 fix round 1, Finding 1): `arguments` on a `tool_call`
+part is not shape, it is content, and an earlier revision of this paragraph
+wrongly claimed it was present "at either setting."** It is gated by
+`include_content` exactly like the `content` key on `text`/`thinking` parts.
+Source (`pydantic_ai/messages.py`'s `_tool_call_otel_part`, installed
+`pydantic-ai-slim` 2.41.0, the line the review cited):
+```python
+if settings.include_content and part.args is not None:
+    ...
+    call_part['arguments'] = ...
+```
+So with capture OFF, a `tool_call` part reduces to exactly `{"type":
+"tool_call", "id": ..., "name": ...}` — no `arguments` key at all. With
+capture ON (measured live), it carries the real call arguments, e.g.
+`{"amount": 6200, "currency": "EUR"}` for this run's `propose_payment` call.
+
+Only `text`/`thinking` parts carry a `content` key at all — present (the
 model's actual prose, or an empty string for a `thinking` part with no
 visible extended thinking) when capture is ON, absent entirely when OFF.
 `tool_call` parts never carry a `content` key at either setting — they carry
-`id`/`name`/`arguments` instead — so a chat turn that is purely a tool call
-(e.g. the turn that calls `execute_payment`) carries no content-bearing part
-in its output message regardless of the setting; that is not a leak or a gap,
-just a turn with no prose to capture.
+`id`/`name`, plus `arguments` when ON — so a chat turn that is purely a tool
+call (e.g. the turn that calls `execute_payment`) carries no content-bearing
+part in its output message regardless of the setting; that is not a leak or
+a gap, just a turn with no prose to capture.
+
+**`gen_ai.tool.call.arguments` (Task 5 fix round 1, Finding 2) — the single
+strongest argument for defaulting capture ON.** Set on the `execute_tool
+<name>` INTERNAL span in settlement-agent, not on the `chat` span
+(`pydantic_ai/capabilities/instrumentation.py`'s `_tool_span_attributes`;
+`InstrumentationNames.for_version(5).tool_arguments_attr ==
+'gen_ai.tool.call.arguments'`, `_instrumentation.py:751`), gated by the same
+`include_content` flag:
+```python
+**({names.tool_arguments_attr: call.args_as_json_str()} if include_content else {})
+```
+Measured live, ON: the `execute_tool propose_payment` span carries
+`gen_ai.tool.call.arguments = {"amount":6200,"currency":"EUR"}` — the literal
+answer to "why that amount, on what stated grounds" that motivates this
+task's default flip (see above). The sibling `gen_ai.tool.call.result`
+(same span, same gating) carries the ledger's own record back — measured
+live: `{"paymentId":"PAY-000104","claimId":"...","amount":6200,"currency":"EUR","status":"proposed"}`
+on the `propose_payment` span, `status:"executed"` on `execute_payment`'s.
+Pinned by `test_tool_call_arguments_carries_the_settled_amount` (ON-only;
+the OFF-mode absence of both attributes follows from the same source-level
+`include_content` gating just measured above and is not re-measured
+span-by-span).
+
+**`gen_ai.system_instructions`** is set on every `chat` span and on the
+`invoke_agent` span (`pydantic_ai/models/instrumented.py`'s
+`system_instructions_attributes()`), carrying the exact same static
+instructions text as `model_request_parameters` (`"You settle motor
+insurance claims for Northstar Insurance.\nYou are given a claim that has
+already been assessed as covered...\n"`) — but, unlike
+`model_request_parameters`, gated by `include_content`:
+```python
+def system_instructions_attributes(self, instructions):
+    if instructions and self.include_content:
+        return {'gen_ai.system_instructions': ...}
+    return {}
+```
+So it disappears entirely when `NORTHSTAR_CAPTURE_CONTENT` is OFF;
+`model_request_parameters` does not, because that one is controlled by the
+separate `include_model_request_parameters` setting this project
+deliberately leaves at `True` regardless (see above). Both carry the
+identical instructions text when capture is ON; only `model_request_parameters`
+carries it when OFF — which is the fact `test_content_capture_matches_the_deployed_mode`'s
+OFF-mode needle margin depends on (see that test's own comment).
 
 ## Confirmed convention gaps
 
@@ -508,10 +573,20 @@ that ON is correct for every deployment. The open question this milestone
 leaves for M2/M3 to answer with more than a demo's worth of evidence:
 
 - Whether a real insurer would run this ON by default in production, given
-  that `gen_ai.input.messages`/`gen_ai.output.messages` and
-  `pydantic_ai.all_messages` (with capture ON) carry the full claim narrative
-  the model was given and the full text it produced — plaintext, in a
-  telemetry backend, for however long that backend retains spans.
+  what capture ON actually puts in a telemetry backend as plaintext, for
+  however long that backend retains spans:
+  - the one templated settlement sentence the model is actually given
+    (`settlement.py:122`, built only from `{claimId, amount, currency}` —
+    **not** "the full claim narrative": the claim's free-text description
+    never reaches the model at all, a fact `test_content_capture_matches_the_deployed_mode`'s
+    own docstring relies on and an earlier revision of this paragraph
+    contradicted, corrected in Task 5 fix round 1, Finding 3),
+  - the full text the model produced, and
+  - **the strongest item on this list**: `gen_ai.tool.call.arguments` on
+    every `execute_tool` span — the literal payment amount and currency the
+    model chose to propose and execute (see "Content capture" above), which
+    is the concrete answer to "why that amount?" that this task's whole
+    default-flip argument rests on.
 - Whether a narrower middle ground exists — e.g. redacting only fields a
   policy engine (M2's Policy Decision Service) marks as sensitive, rather
   than an all-or-nothing switch — that this milestone's one env var

@@ -107,9 +107,14 @@ def browser_trace():
         page.wait_for_selector("text=Outcome", timeout=120_000)
         # The Outcome <pre> renders JSON.stringify(result, null, 2) of the
         # exact ClaimResult apps/customer-ui/src/a2a.ts extracted from the A2A
-        # reply — the "Progress" <pre> above it is the first of the two, so
-        # this is the second.
-        outcome["raw"] = page.locator("pre").nth(1).inner_text()
+        # reply. Located explicitly by its preceding <h2>Outcome</h2> sibling
+        # (Task 5 fix round 1, Finding 5) rather than a positional
+        # `page.locator("pre").nth(1)` — page.tsx renders both an <h2> and
+        # this <pre> as siblings of the same Fragment, so the CSS adjacent-
+        # sibling combinator finds it directly instead of assuming it is
+        # "the second <pre> on the page," which would silently break if the
+        # page ever gained another <pre> before this one.
+        outcome["raw"] = page.locator("h2:text-is('Outcome') + pre").inner_text()
         # The browser's own WebTracerProvider uses a BatchSpanProcessor with
         # the OTel SDK's default 5s scheduled export delay (telemetry.ts sets
         # no override, same as every other service — A20a). The claim.submit

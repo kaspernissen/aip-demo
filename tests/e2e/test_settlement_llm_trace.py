@@ -334,14 +334,33 @@ def test_mcp_hop_still_carries_the_trace(llm_settlement):
 
 
 def _deployed_capture_mode() -> bool:
-    """Read the mode off the running deployment, not from a local guess."""
+    """Read the mode off the actual serving pod, not the Deployment spec.
+
+    Task 5 fix round 1, Finding 4: `kubectl apply` updates the Deployment's
+    own spec the instant it runs, before the new ReplicaSet's pod exists or
+    has finished starting — reading `deploy/settlement-agent` mid-rollout
+    could report a mode the pod actually answering requests is not yet
+    running. A Pod's spec is copied from the Deployment's template at that
+    Pod's creation time and never changes afterward, so reading it from the
+    Running pod reports what is *actually* serving, not what the manifest
+    says it should eventually be.
+    """
+    pod_name = subprocess.run(
+        ["kubectl", "-n", "northstar-agents", "get", "pod",
+         "-l", "app=settlement-agent",
+         "--field-selector=status.phase=Running",
+         "-o", "jsonpath={.items[0].metadata.name}"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert pod_name, "no Running settlement-agent pod found"
+
     jsonpath = (
-        "{.spec.template.spec.containers[0].env"
+        "{.spec.containers[0].env"
         "[?(@.name=='NORTHSTAR_CAPTURE_CONTENT')].value}"
     )
     out = subprocess.run(
-        ["kubectl", "-n", "northstar-agents", "get", "deploy",
-         "settlement-agent", "-o", f"jsonpath={jsonpath}"],
+        ["kubectl", "-n", "northstar-agents", "get", "pod", pod_name,
+         "-o", f"jsonpath={jsonpath}"],
         capture_output=True, text=True, check=True,
     ).stdout.strip()
     return out.lower() not in {"false", "0", "no", "off"}
@@ -367,6 +386,23 @@ def test_content_capture_matches_the_deployed_mode(llm_settlement):
     """
     trace = llm_settlement.trace
     reply = llm_settlement.reply
+    # HAZARD (Task 5 fix round 1): "is assessed as covered" — the run
+    # prompt's exact wording (settlement.py:122) — sits one word away from
+    # colliding with `model_request_parameters`'s static instructions text,
+    # "has already **been** assessed as covered" (settlement.py's
+    # `instructions=`). `model_request_parameters` is present regardless of
+    # NORTHSTAR_CAPTURE_CONTENT (gated by the separate
+    # `include_model_request_parameters`, always True — see
+    # docs/telemetry-contract.md's "Content capture"), so in the OFF branch
+    # it is the one span attribute in this trace still holding this fragment
+    # of English. Confirmed empirically: "is assessed as covered" is NOT a
+    # substring of "has already been assessed as covered" — "been" is the
+    # entire margin. If a later prompt or instructions edit ever removes that
+    # one word of difference, this needle starts matching
+    # model_request_parameters even with capture OFF: a spurious OFF-mode
+    # failure with nothing wrong with NORTHSTAR_CAPTURE_CONTENT itself. Watch
+    # this margin whenever either string changes; it is not re-verified by
+    # any assertion below.
     needles = [n for n in ("is assessed as covered", reply["narrative"][:40]) if n]
     hits = [
         (s.service, s.operation, k, needle)
@@ -472,6 +508,49 @@ def test_message_shape_is_recorded(llm_settlement):
     assert checked_any_content_bearing_part, (
         "no chat span's messages contained a text/thinking part in this run "
         "— nothing to check the content-capture mode against"
+    )
+
+
+def test_tool_call_arguments_carries_the_settled_amount(llm_settlement):
+    """Pins `gen_ai.tool.call.arguments` — the single strongest argument for
+    defaulting capture ON (Task 5 fix round 1, Finding 2).
+
+    A span proving *that* €6,200 was executed says nothing about *why that
+    amount* or on what stated grounds. `gen_ai.tool.call.arguments` on the
+    `execute_tool propose_payment` span is what actually answers that: it is
+    the literal amount and currency the model chose to propose. Before this
+    fix round, that attribute — the one that justifies the whole default
+    flip — appeared in no test and no doc.
+
+    Measured (`pydantic_ai/capabilities/instrumentation.py`'s
+    `_tool_span_attributes`, `InstrumentationNames.for_version(5)`):
+    `gen_ai.tool.call.arguments` is `call.args_as_json_str()`, included only
+    `if include_content` — the same `NORTHSTAR_CAPTURE_CONTENT` switch every
+    other mode-aware assertion in this file reads, not a separate mechanism.
+    So this test only runs its positive assertion when the deployment is ON;
+    the OFF-mode absence of this same attribute is established by that
+    shared source-level gating (see docs/telemetry-contract.md's "Content
+    capture") rather than re-measured span-by-span here.
+    """
+    if not _deployed_capture_mode():
+        pytest.skip(
+            "gen_ai.tool.call.arguments is only expected present when capture is ON "
+            "(see docs/telemetry-contract.md's include_content gating)"
+        )
+
+    span = llm_settlement.trace.span(
+        "execute_tool propose_payment", service="settlement-agent"
+    )
+    raw = span.attrs.get("gen_ai.tool.call.arguments")
+    assert raw, (
+        f"{span.operation!r} has no gen_ai.tool.call.arguments even though "
+        f"capture is ON; all its gen_ai.* keys: "
+        f"{sorted(k for k in span.attrs if k.startswith('gen_ai.'))}"
+    )
+    arguments = json.loads(raw)
+    assert arguments.get("amount") == llm_settlement.settled_amount, (
+        f"gen_ai.tool.call.arguments={arguments!r} does not carry the "
+        f"settled amount {llm_settlement.settled_amount!r}"
     )
 
 
