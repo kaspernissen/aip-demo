@@ -3,4 +3,12 @@ httpx==0.28.1
 opentelemetry-sdk==1.29.0
 opentelemetry-exporter-otlp-proto-http==1.29.0
 opentelemetry-instrumentation-httpx==0.50b0
-pytest==8.3.4
+# Fix round (final-review.md SF-2): pytest 8.3.4 -> 9.0.3, clearing
+# PYSEC-2026-1845 (pip-audit). This file's runtime image installs the whole
+# requirements.txt (Dockerfile), so the advisory was shipping in the running
+# payments-mcp pod, not just a dev venv. No pytest-asyncio pin here: this
+# tree's async calls all go through synchronous anyio.run(), not
+# @pytest.mark.asyncio (verified: `grep -rn "async def test_\|pytest.mark.asyncio"
+# tools/payments-mcp/tests/` finds none), so there is no paired plugin bump to
+# make.
+pytest==9.0.3
