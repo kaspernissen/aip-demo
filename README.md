@@ -88,6 +88,8 @@ report the gaps we find. See [`docs/telemetry-contract.md`](docs/telemetry-contr
 
 ## Documentation
 
+- [`docs/architecture.md`](docs/architecture.md) — components, hops, protocols, and the trace, walked end to end
 - [`docs/telemetry-contract.md`](docs/telemetry-contract.md) — verified instrumentation and convention gaps
+- [`docs/upstream-findings.md`](docs/upstream-findings.md) — the four convention gaps, consolidated as filing-ready findings (not yet filed)
 - [`docs/superpowers/specs/`](docs/superpowers/specs/) — designs
 - [`docs/superpowers/plans/`](docs/superpowers/plans/) — implementation plans
