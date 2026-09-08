@@ -643,8 +643,22 @@ attributes an httpx span would.
 re-run against a rebuilt and redeployed settlement-agent. Each of the three
 `chat claude-sonnet-5` spans in a three-turn conversation now has exactly
 one httpx-instrumented CLIENT span nested directly under it — three such
-spans total, one per model turn, no duplicates (confirmed by diffing a
-before-fix trace dump against an after-fix one, span for span). Reading a
+spans total, one per model turn, no duplicates.
+
+The evidence for that is a before/after comparison of live trace dumps, and
+it is worth being precise about what such a comparison can and cannot show
+here, because this trace is **not** deterministic. Across eight
+identically-shaped runs, the a2a-sdk's internal
+`a2a.server.events.event_queue.EventQueue.dequeue_event` polling span
+varies between **11 and 13** occurrences, so whole-trace totals differ
+run to run for reasons unrelated to any change — the same variance this
+project already documents when it declines to publish an exact span total.
+What holds steady across every one of those runs is the part this finding
+actually claims: the anthropic-bound httpx CLIENT count is exactly **3**,
+and the service's total httpx CLIENT count exactly **15**, every time. So
+the before/after evidence is a comparison of those stable counts, not a
+span-for-span identity between two runs, and a raw total-span delta should
+not be read as the effect of this fix. Reading a
 full attribute dump directly, rather than assuming the spelling: the
 settlement-agent deployment sets `OTEL_SEMCONV_STABILITY_OPT_IN=http`, so
 this new span carries the **stable** HTTP semconv spelling, matching every
