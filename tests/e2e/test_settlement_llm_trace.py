@@ -67,23 +67,34 @@ differences are worth knowing before reading further:
    verbatim with its two arguments unpacked from that one fixture instead of
    introducing two new fixture names for a single live model run to share.
 
-4. **The model's own HTTP hop has no CLIENT span.** `anthropic==1.4.0`
-   speaks `httpx2`, not `httpx`; `bootstrap.py` instruments
-   `HTTPXClientInstrumentor` (`_module_name = "httpx"`), and the separate
-   `HTTPX2ClientInstrumentor` in the same package is not applied. So the
-   MCP hop gets httpx CLIENT spans and the `api.anthropic.com` request does
-   not — pydantic-ai's own `chat` CLIENT span is the only span representing
-   it. Recorded, pinned, not fixed here (`bootstrap.py` is out of scope for
-   this task).
+4. **The model's own HTTP hop now has a CLIENT span (Task 8; this was a gap
+   at the time this file was written).** `anthropic==1.4.0` speaks `httpx2`,
+   not `httpx`; `bootstrap.py` originally instrumented only
+   `HTTPXClientInstrumentor` (`_module_name = "httpx"`), so the MCP hop got
+   httpx CLIENT spans and the `api.anthropic.com` request did not —
+   pydantic-ai's own `chat` span was the only span representing it. Recorded
+   and pinned here at the time (`bootstrap.py` was out of scope for this
+   task), then closed by Task 8 adding `HTTPX2ClientInstrumentor().instrument()`
+   alongside the existing call — see
+   `test_anthropic_client_span_exists_and_is_parented_to_chat` below, which
+   asserts the span exists and is correctly parented.
 
-**Cost gate.** Every test in this file shares one module-scoped live model
-run, and the whole file is gated behind `RUN_BROWSER_TESTS=1` — the same
-convention `test_browser_root_span.py` uses, and the only skip convention
-this suite has. That keeps a bare `pytest tests/` free of both a cluster
-dependency and a token bill, while `scripts/smoke-test.sh` (which sets the
-variable unconditionally) always runs it. Prose is asserted nowhere: the
-model's wording varies run to run, so only structure, names and numbers are
-checked.
+**Cost gate — scoped to this file, not to the suite.** Every test in this
+file shares one module-scoped live model run, and the whole file is gated
+behind `RUN_BROWSER_TESTS=1` — the same convention `test_browser_root_span.py`
+uses, and the only skip convention this suite has. That keeps *this file's*
+model run out of a bare `pytest tests/`. Fix round (final-review.md SF-8):
+this used to claim that gating this one file "keeps a bare `pytest tests/`
+free of both a cluster dependency and a token bill" for the suite as a
+whole — false. `test_settlement_agent_trace.py` and `test_claims_chain_trace.py`
+are pre-existing, deliberately ungated M1.1 files (by design: the default
+suite is supposed to prove the backend chain against the live cluster, see
+`docs/telemetry-contract.md`'s "What the default suite proves" section), and
+Tasks 2-3 made the settlement they each drive a real three-turn model call —
+so a bare `pytest tests/` today needs the live cluster and spends real
+tokens on two live settlements, regardless of this file's own gate. Prose is
+asserted nowhere in this file: the model's wording varies run to run, so
+only structure, names and numbers are checked.
 """
 import json
 import os
@@ -667,7 +678,16 @@ def test_anthropic_client_span_exists_and_is_parented_to_chat(llm_settlement):
     One CLIENT span is expected per model request (three, in this fixture's
     three-turn conversation) — but the exact turn count is not this test's
     concern, so it asserts "at least one, and every one well-formed and
-    correctly parented" rather than a hardcoded turn count.
+    correctly parented" rather than a hardcoded turn count. A single turn can
+    also produce *more* than one such span: `anthropic`'s own SDK retries
+    (`DEFAULT_MAX_RETRIES = 2`) by re-entering the transport the instrumentor
+    wraps, so a 429/529 that succeeds on retry is one CLIENT span per HTTP
+    attempt, not per turn. Fix round (final-review.md SF-1): the assertion
+    below no longer requires every attempt to be `200` — only that every
+    attempt is a well-formed span and that each turn got a `200` on *some*
+    attempt — because the all-attempts-200 version failed a healthy,
+    retried-then-succeeded settlement on stage, which is precisely the
+    scenario this span exists to make visible rather than to forbid.
     """
     trace = llm_settlement.trace
     httpx_spans = [
@@ -687,16 +707,57 @@ def test_anthropic_client_span_exists_and_is_parented_to_chat(llm_settlement):
     chat_span_ids = {s.span_id for s in chat_spans}
     assert chat_span_ids, "no chat span in the trace to parent the CLIENT span to"
 
+    # Fix round (final-review.md SF-1): this used to assert
+    # `http.response.status_code == 200` on *every* anthropic-bound span.
+    # That is wrong. `anthropic` retries (`DEFAULT_MAX_RETRIES = 2`,
+    # `anthropic/_constants.py`) by re-entering its own transport per
+    # attempt, and the installed instrumentor wraps
+    # `AsyncHTTPTransport.handle_async_request` -- a per-attempt wrap point,
+    # not a per-logical-request one (`opentelemetry/instrumentation/httpx/
+    # __init__.py:1295-1299`) -- so a retried call produces one CLIENT span
+    # *per HTTP attempt*, each with its own status. A 429 or 529 that
+    # succeeds on retry is exactly the signal Task 8 was built to surface
+    # (docs/telemetry-contract.md's Gap 7 rationale names "a 429 that
+    # succeeded on retry" outright), so asserting every attempt is 200 would
+    # fail a *healthy* demo -- the settlement completes, the amount is
+    # executed, and this test reports `assert 429 == 200` on stage. The
+    # replacement below pins two properties instead: every attempt is a
+    # well-formed CLIENT span (an int status code, correctly parented), and
+    # each model turn -- attempts grouped by the chat span they are parented
+    # to -- got a 200 on *some* attempt. A turn where every attempt failed
+    # still fails this loudly; only a turn that failed then succeeded is now
+    # tolerated.
+    by_chat_parent: dict[str, list] = {}
     for span in to_model:
         assert span.kind == "client", (span.operation, span.kind)
         assert span.attrs.get("http.request.method") == "POST", span.attrs
-        assert span.attrs.get("http.response.status_code") == 200, span.attrs
+        status = span.attrs.get("http.response.status_code")
+        assert isinstance(status, int), (
+            f"CLIENT span {span.span_id!r} (parent {span.parent_id!r}) has no "
+            f"integer http.response.status_code ({status!r}) -- a genuine "
+            "connection-level failure, not a retried-then-succeeded attempt"
+        )
         assert span.parent_id in chat_span_ids, (
             f"CLIENT span {span.span_id!r} (parent {span.parent_id!r}) is not "
             f"parented to any of the chat spans {sorted(chat_span_ids)!r}"
         )
+        by_chat_parent.setdefault(span.parent_id, []).append(status)
+
+    for parent_id, statuses in by_chat_parent.items():
+        assert 200 in statuses, (
+            f"chat span {parent_id!r}: none of its {len(statuses)} anthropic "
+            f"CLIENT span attempt(s) succeeded (statuses={statuses}) -- every "
+            "attempt for this model turn failed"
+        )
 
     # The positive half kept from the predecessor test: pydantic-ai's own
     # chat span still names the hop too (it wraps the httpx CLIENT span).
-    addresses = {s.attrs.get("server.address") for s in chat_spans}
+    # Restricted to chat spans that actually carry a server.address: an
+    # errored turn can lack it entirely, and that is not the same failure as
+    # a turn that reached the wrong host (the thing this assertion exists to
+    # catch) -- exact set equality over the *full* `chat_spans` list turned
+    # one into the other (`{None, "api.anthropic.com"}` != `{"api.anthropic.com"}`).
+    addresses = {
+        s.attrs.get("server.address") for s in chat_spans if s.attrs.get("server.address") is not None
+    }
     assert addresses == {"api.anthropic.com"}, addresses

@@ -94,7 +94,17 @@ def send_message(text: str, traceparent: str | None = None) -> dict:
         },
     }
     headers = {"traceparent": traceparent} if traceparent else None
-    response = httpx.post(f"{SETTLEMENT_URL}/", json=payload, headers=headers, timeout=60)
+    # Fix round (final-review.md SF-9): this was `timeout=60`, sized for the
+    # deterministic stub this test predates M1.2's model call. Measured
+    # settlement latency is 2.6-7.9s (Jaeger, 10 model-driven runs), so 60s
+    # was never close to firing -- but this call runs inside a
+    # module-scoped fixture, so a timeout here reports all of this file's
+    # tests as ERROR with a traceback rather than one named failure. Aligned
+    # on the same reasoned value test_settlement_llm_trace.py already uses:
+    # a settlement is now three sequential model turns plus two MCP round
+    # trips, not one hardcoded function call, so a 529-triggered backoff on
+    # a slow uplink deserves real headroom.
+    response = httpx.post(f"{SETTLEMENT_URL}/", json=payload, headers=headers, timeout=180)
     response.raise_for_status()
     return response.json()
 

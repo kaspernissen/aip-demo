@@ -67,7 +67,16 @@ def send_message(text: str, traceparent: str | None = None) -> dict:
         },
     }
     headers = {"traceparent": traceparent} if traceparent else None
-    response = httpx.post(f"{CLAIMS_URL}/", json=payload, headers=headers, timeout=120)
+    # Fix round (final-review.md SF-9): aligned on the same reasoned timeout
+    # test_settlement_llm_trace.py and test_settlement_agent_trace.py now
+    # both use, rather than a third, narrower value for the same underlying
+    # operation (settlement-agent's settlement, one extra A2A hop away from
+    # here) -- a settlement is now three sequential model turns plus two MCP
+    # round trips, not one hardcoded function call, so a 529-triggered
+    # backoff on a slow uplink deserves real headroom. This call also runs
+    # inside a module-scoped fixture, so a timeout here would report all of
+    # this file's tests as ERROR rather than one named failure.
+    response = httpx.post(f"{CLAIMS_URL}/", json=payload, headers=headers, timeout=180)
     response.raise_for_status()
     return response.json()
 
