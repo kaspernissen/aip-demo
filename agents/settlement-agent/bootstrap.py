@@ -71,6 +71,20 @@ def configure() -> None:
     _instrument_pydantic_ai()
 
 
+def capture_content_enabled() -> bool:
+    """Whether to record prompts, completions and tool arguments in spans.
+
+    Defaults to ON. Redacting is not a free safety win: with content off, a
+    span still proves *that* a payment was executed and by which tool, but not
+    why that amount or on what stated grounds. The trade-off is the subject of
+    OQ-1 in docs/telemetry-contract.md.
+    """
+    raw = os.environ.get("NORTHSTAR_CAPTURE_CONTENT")
+    if raw is None:
+        return True
+    return raw.strip().lower() not in {"false", "0", "no", "off"}
+
+
 def _instrument_pydantic_ai() -> None:
     """Turn on PydanticAI's own OTel instrumentation.
 
@@ -78,10 +92,16 @@ def _instrument_pydantic_ai() -> None:
       * `Agent(..., instrument=True)` does NOT exist at this version — it
         raises TypeError. `Agent.instrument_all()` is a staticmethod setting a
         process-wide default, which is what we want: one call, every agent.
-      * `include_content=False` keeps message *shape* in the spans
-        (role, parts[].type) but drops prompts, completions and tool
-        arguments/results. Recording everything a model was told is itself a
-        compliance problem in insurance — see docs/telemetry-contract.md.
+      * `include_content` gates whether prompts, completions and tool
+        arguments/results are recorded, or only message *shape* (role,
+        parts[].type). This is now `NORTHSTAR_CAPTURE_CONTENT`, defaulting to
+        ON — see `capture_content_enabled()` and
+        docs/telemetry-contract.md's "Content capture" section for why the
+        earlier hardcoded `False` was reversed.
+      * `include_model_request_parameters` is left at its library default
+        (`True`), deliberately — it carries the agent's static system
+        instructions and tool JSON schemas, which contain no claim-specific
+        data and are an audit asset, not a redaction target.
       * `version` is Literal[2,3,4,5,6], default 5. Pinned explicitly so a
         library default change cannot silently reshape our spans.
     """
@@ -89,7 +109,7 @@ def _instrument_pydantic_ai() -> None:
     from pydantic_ai.models.instrumented import InstrumentationSettings
 
     Agent.instrument_all(
-        InstrumentationSettings(include_content=False, version=5)
+        InstrumentationSettings(include_content=capture_content_enabled(), version=5)
     )
 
 

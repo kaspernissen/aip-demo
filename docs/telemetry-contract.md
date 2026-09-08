@@ -36,8 +36,8 @@ Measured counts, from a clean cluster (`./scripts/teardown.sh &&
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `57 passed, 15 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `72 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `57 passed, 16 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `73 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -47,14 +47,19 @@ whose entire purpose is stating these numbers.
 `pytest --collect-only` and fails loudly if either row's sum ever again
 diverges from what pytest actually collects.)
 
-M1.2 note: the skip count in the default row grew from 7 to 15 because
-`tests/e2e/test_settlement_llm_trace.py` (8 tests) is gated behind the same
-`RUN_BROWSER_TESTS=1` flag — it needs the live cluster and spends real model
-tokens on every run, so a bare `pytest tests/` must not trigger it, while the
-gate (which sets that flag unconditionally) always does. **These are counts
-only; M1.2 Task 5 revises this document's substantive content** — including
-what `include_content=False` does and does not redact, which
-`tests/e2e/test_settlement_llm_trace.py` now measures rather than assumes.
+M1.2 note: the skip count in the default row grew from 7 to 15 (Task 4)
+because `tests/e2e/test_settlement_llm_trace.py` (8 tests) is gated behind
+the same `RUN_BROWSER_TESTS=1` flag — it needs the live cluster and spends
+real model tokens on every run, so a bare `pytest tests/` must not trigger
+it, while the gate (which sets that flag unconditionally) always does. Task 5
+grew it again, 15 to 16: `tests/e2e/test_browser_root_span.py` gained one
+test (`test_the_browser_path_settles_the_expected_amount`, asserting the
+€6,200 outcome through the browser path specifically — Task 4 review,
+Finding 2), and that file shares the same gate. **These are counts only;
+M1.2 Task 5 also revises this document's substantive content** — including
+what content capture does and does not redact now that it is configuration
+rather than a hardcoded constant, which
+`tests/e2e/test_settlement_llm_trace.py` measures rather than assumes.
 
 `tests/unit/test_smoke_test_gate.py` (2 tests, counted in both rows above)
 pins this distinction directly: it reads `scripts/smoke-test.sh`'s own source
@@ -65,8 +70,14 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (also run by `smoke-test.sh`, before any e2e test):
-claims-agent 14, settlement-agent 19, payments-mcp 7, payments-api (Go) 7,
-customer-ui (vitest) 6 — all passing. customer-ui's suite includes its own
+claims-agent 14, settlement-agent 31, payments-mcp 7, payments-api (Go) 7,
+customer-ui (vitest) 6 — all passing. (This row was stale at 19 for
+settlement-agent from before M1.2 Tasks 1-4 added the PydanticAI agent's own
+tests — `tests/unit/test_telemetry_contract_counts.py` cannot see per-service
+rows, only the whole-tree total, so nothing caught the drift until Task 5
+re-measured it directly: `cd agents/settlement-agent && .venv/bin/python -m
+pytest tests -q` → 31 passed, including this task's own 7-test
+`tests/test_instrumentation_settings.py`.) customer-ui's suite includes its own
 A19 regression test for the traceparent-across-await fix described below
 (`apps/customer-ui/NOTES.md` §2) — worth naming explicitly, since it's the
 one unit suite that pins a real, previously-silent defect in this project's
@@ -251,10 +262,50 @@ ID, not enriched.
 
 ## Content capture
 
-Off. In M1.1 there is no model to capture. From M1.2, PydanticAI runs with
-`InstrumentationSettings(include_content=False)` — recording everything a model
-was told is itself a compliance problem in insurance. The setting is flipped
-deliberately and visibly on stage, for one consequential tool.
+**On by default, as of M1.2 Task 5** — reversed from the M1.1 spec's original
+`include_content=False` default. In M1.1 there was no model to capture. The
+M1.1 spec and this document both committed to `False` as the shipped default,
+reasoning that "recording everything a model was told is itself a compliance
+problem in insurance". That reasoning is sound but answers only half the
+question: every attribute redacted is diagnostic capability spent. With
+content off, a span still proves *that* €6,200 was executed and by which
+tool, but not *why that amount*, on what stated grounds, or what the model
+was told about the claim. Redaction is a trade, not a free safety win — so
+this milestone shows the trade rather than asserting redaction is correct by
+default.
+
+`NORTHSTAR_CAPTURE_CONTENT` (`agents/settlement-agent/bootstrap.py`'s
+`capture_content_enabled()`, read at `configure()` time and handed to
+PydanticAI's `InstrumentationSettings(include_content=...)`) is the single
+switch, an env var rather than a hardcoded constant — deployed at `"true"`
+(`deploy/k8s/settlement-agent.yaml`) and meant to be flipped deliberately and
+visibly on stage, for one consequential tool. Unset defaults to ON; the
+values `"false"`/`"0"`/`"no"`/`"off"` (case-insensitively) turn it OFF;
+anything else is ON.
+
+`InstrumentationSettings`'s separate `include_model_request_parameters`
+setting is left at its library default (`True`) regardless of
+`NORTHSTAR_CAPTURE_CONTENT` — a deliberate ruling, not an oversight: it
+carries the agent's static system instructions and the full tool JSON
+schemas, verified byte-identical (1974 bytes) across all three `chat` spans
+in a live run, and containing no claim-specific data. It is an audit asset,
+not a redaction target. Separately, and regardless of either setting,
+`gen_ai.tool.definitions` is emitted on every `chat` span unconditionally —
+it is not gated by `include_model_request_parameters` at all.
+
+**Measured shape, both directions** (`tests/e2e/test_settlement_llm_trace.py`,
+live capture, three chat turns): `gen_ai.input.messages` /
+`gen_ai.output.messages` and the `invoke_agent` span's own
+`pydantic_ai.all_messages` always carry message *shape* — `role`,
+`parts[].type`, tool-call ids/names/arguments — at either setting. Only
+`text`/`thinking` parts additionally carry a `content` key, present (the
+model's actual prose, or an empty string for a `thinking` part with no
+visible extended thinking) when capture is ON, absent entirely when OFF.
+`tool_call` parts never carry a `content` key at either setting — they carry
+`id`/`name`/`arguments` instead — so a chat turn that is purely a tool call
+(e.g. the turn that calls `execute_payment`) carries no content-bearing part
+in its output message regardless of the setting; that is not a leak or a gap,
+just a turn with no prose to capture.
 
 ## Confirmed convention gaps
 
@@ -444,3 +495,29 @@ For each: the evidence, whether upstream already has work in flight, and what we
   the rest of this project's pin set is A21 territory (a version bump with
   its own re-verification), not something to fold unexplained into a
   contract-wording fix.
+
+## Open questions
+
+### OQ-1: Content capture is a trade, not a settled answer
+
+Task 5 flips the default to ON (see "Content capture" above), on the
+reasoning that every attribute redacted is diagnostic capability spent. That
+reasoning is not the end of the discussion — it is the honest statement of
+one side of a trade this project makes deliberately and visibly, not a claim
+that ON is correct for every deployment. The open question this milestone
+leaves for M2/M3 to answer with more than a demo's worth of evidence:
+
+- Whether a real insurer would run this ON by default in production, given
+  that `gen_ai.input.messages`/`gen_ai.output.messages` and
+  `pydantic_ai.all_messages` (with capture ON) carry the full claim narrative
+  the model was given and the full text it produced — plaintext, in a
+  telemetry backend, for however long that backend retains spans.
+- Whether a narrower middle ground exists — e.g. redacting only fields a
+  policy engine (M2's Policy Decision Service) marks as sensitive, rather
+  than an all-or-nothing switch — that this milestone's one env var
+  deliberately does not attempt to build.
+
+Recorded here, rather than resolved, because resolving it needs a governance
+model this milestone does not yet have (see settlement.py's own "no €5,000
+check" note — M1 is ungoverned by design, and this switch inherits that same
+honesty: it is a lever, not a policy).

@@ -48,6 +48,14 @@ spec:
             # it straight to PydanticAI's Agent.
             - name: NORTHSTAR_SETTLEMENT_MODEL
               value: "anthropic:claude-sonnet-5"
+            # M1.2 Task 5: prompt/completion capture is configuration, not a
+            # hardcoded constant. bootstrap.capture_content_enabled() reads
+            # this (defaulting to ON if unset) and hands it straight to
+            # PydanticAI's InstrumentationSettings(include_content=...). See
+            # docs/telemetry-contract.md's "Content capture" section for why
+            # the default is ON, not OFF.
+            - name: NORTHSTAR_CAPTURE_CONTENT
+              value: "true"
             # Created by scripts/setup-kind.sh from the sourced .env.
             # `optional: true` deliberately, matching how the repo treats its
             # other degradable secret (dash0-secrets): with no key present the

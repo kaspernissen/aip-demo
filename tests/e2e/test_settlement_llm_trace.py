@@ -7,16 +7,25 @@ M1.1 proved one trace spans a *deterministic* chain. M1.2 replaced
 settlement-agent's hardcoded decision with a real PydanticAI agent on Claude
 that chooses and calls the MCP payment tools itself (`settlement.py`). The
 only question this file exists to answer is whether the chain is still *one*
-trace once a model sits in the middle of it — and, second, whether
-`include_content=False` (bootstrap.py:91) genuinely redacts, so the
-telemetry contract's content-capture claim is testable rather than
-aspirational.
+trace once a model sits in the middle of it — and, second, whether prompt/
+completion capture (`NORTHSTAR_CAPTURE_CONTENT`, `bootstrap.py`) genuinely
+behaves as configured, so the telemetry contract's content-capture claim is
+testable rather than aspirational.
+
+**Task 5 reverses the earlier default.** `include_content=False` was
+hardcoded; it is now `NORTHSTAR_CAPTURE_CONTENT`, an env var defaulting to
+ON (see `bootstrap.capture_content_enabled()` and docs/telemetry-contract.md's
+"Content capture" section for why). A test that only ever asserted absence
+would now be trivially false and the tempting move would be to delete it —
+instead `test_content_capture_matches_the_deployed_mode` reads the mode off
+the *running* deployment and asserts presence when ON, absence when OFF, so
+it has teeth in both directions and can never pass by asserting nothing.
 
 Everything asserted below was measured from a live capture first and only
 then written down. Where this task's brief predicted an attribute name or a
 trace shape and the measurement disagreed, the measurement won and the
 difference is recorded — in the docstrings here and in
-`.superpowers/sdd/2026-09-08-m1.2-intelligence/task-4-report.md`. Four such
+`.superpowers/sdd/2026-09-08-m1.2-intelligence/task-4-report.md`. Five such
 differences are worth knowing before reading further:
 
 1. **`assert_single_root`/`assert_no_orphans` cannot apply to this fixture.**
@@ -35,17 +44,28 @@ differences are worth knowing before reading further:
    so the brief's `{"payments-mcp", ...} <= trace.services` would have
    compared a set against a bound method. Called as `trace.services()` here.
 
-3. **`include_content=False` redacts the messages but not
-   `model_request_parameters`.** Measured: `gen_ai.input.messages` and
-   `gen_ai.output.messages` carry message *shape* only — role,
-   `parts[].type`, tool-call ids and tool names, no `content` key anywhere.
-   But pydantic-ai 2.41.0 additionally sets a non-semconv
+3. **`model_request_parameters` is governed by a different setting than
+   `NORTHSTAR_CAPTURE_CONTENT`.** `gen_ai.input.messages` and
+   `gen_ai.output.messages` carry message *shape* — role, `parts[].type`,
+   tool-call ids and tool names — plus a `content` key exactly when capture
+   is ON, absent when OFF (Task 5, measured both directions). But
+   pydantic-ai 2.41.0 additionally sets a non-semconv
    `model_request_parameters` attribute on every `chat` span that contains
-   the agent's system instructions verbatim plus the full tool JSON schemas.
-   That is a real content-capture gap, pinned by
-   `test_include_content_false_does_not_redact_model_request_parameters` so
-   it cannot be forgotten, and left for the telemetry contract to state
-   rather than papered over here.
+   the agent's system instructions verbatim plus the full tool JSON schemas,
+   gated by the separate `include_model_request_parameters` setting
+   (`bootstrap.py` leaves it at its library default, `True`, deliberately —
+   no claim-specific data reaches it). Pinned unconditionally by
+   `test_model_request_parameters_carries_instructions_regardless_of_capture_mode`
+   so a change to that gating cannot be forgotten, and left for the
+   telemetry contract to state rather than papered over here.
+
+5. **The brief's `test_content_capture_matches_the_deployed_mode(trace,
+   reply)` sketch names two separate fixtures.** This file has one
+   module-scoped fixture, `llm_settlement`, carrying both as attributes
+   (`llm_settlement.trace`, `llm_settlement.reply`) — the same pattern every
+   other test in this file already uses, so the sketch's body is used
+   verbatim with its two arguments unpacked from that one fixture instead of
+   introducing two new fixture names for a single live model run to share.
 
 4. **The model's own HTTP hop has no CLIENT span.** `anthropic==1.4.0`
    speaks `httpx2`, not `httpx`; `bootstrap.py` instruments
@@ -67,6 +87,7 @@ checked.
 """
 import json
 import os
+import subprocess
 import uuid
 from types import SimpleNamespace
 
@@ -312,85 +333,103 @@ def test_mcp_hop_still_carries_the_trace(llm_settlement):
         )
 
 
-def test_no_prompt_or_completion_text_appears_in_any_span_attribute(llm_settlement):
-    """`include_content=False`, asserted as a compliance property.
+def _deployed_capture_mode() -> bool:
+    """Read the mode off the running deployment, not from a local guess."""
+    jsonpath = (
+        "{.spec.template.spec.containers[0].env"
+        "[?(@.name=='NORTHSTAR_CAPTURE_CONTENT')].value}"
+    )
+    out = subprocess.run(
+        ["kubectl", "-n", "northstar-agents", "get", "deploy",
+         "settlement-agent", "-o", f"jsonpath={jsonpath}"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    return out.lower() not in {"false", "0", "no", "off"}
 
-    This is what makes the telemetry contract's content-capture claim
-    testable rather than aspirational. Verified able to fail: flipping
-    `include_content=True` in `bootstrap.py` and redeploying turns this test
-    RED (both message needles then appear inside `gen_ai.input.messages` /
-    `gen_ai.output.messages`); the flip was reverted. See the task report.
 
-    Every needle genuinely traverses the model:
+def test_content_capture_matches_the_deployed_mode(llm_settlement):
+    """Proves the configured behaviour in whichever direction it is set.
 
-      * the exact prompt `settlement.py` builds for this run, and the
-        distinctive fragment ``is assessed as covered`` from it. Note the
-        agent's *static* instructions say "has already **been** assessed as
-        covered" — the wording differs by one word, so this fragment can only
-        match the run prompt, never the instruction text that
-        `model_request_parameters` is separately known to leak (see
-        `test_include_content_false_does_not_redact_model_request_parameters`).
-        That is why the whole prompt is a needle too: it removes any doubt
-        that the needle is prompt-specific.
-      * the head of the narrative the model actually returned, read back from
-        the A2A reply — a string that exists only because the model produced
-        it, and only in this run.
+    Task 5 replaced the earlier, one-directional `include_content=False`
+    assertion (which would now be trivially false with capture defaulting
+    ON) with this mode-aware one: it reads `NORTHSTAR_CAPTURE_CONTENT` off
+    the *running* settlement-agent deployment and asserts presence when ON,
+    absence when OFF — so it can never pass by asserting nothing. Verified
+    both directions live (see the task report): with the deployment at
+    `true`, the needles below are found inside `gen_ai.input.messages` /
+    `gen_ai.output.messages`; flipped to `false` and redeployed, the same
+    test asserts their absence and still passes.
 
-    Deliberately NOT used as a needle: the claim's free-text description.
-    settlement-agent is only ever sent `{claimId, amount, currency}`, so the
-    description never reaches the model at all — asserting its absence would
-    pass trivially while proving nothing about redaction.
+    Needles must be things that genuinely traverse the model: a fragment of
+    the prompt settlement.py builds, and the narrative the model returned.
+    Do NOT use the claim's free-text description — settlement-agent is only
+    ever sent {claimId, amount, currency}, so its absence would prove nothing.
     """
-    needles = [
-        n
-        for n in (
-            llm_settlement.prompt,
-            "is assessed as covered",
-            llm_settlement.reply["narrative"][:40],
-        )
-        if n
-    ]
-    offenders = [
+    trace = llm_settlement.trace
+    reply = llm_settlement.reply
+    needles = [n for n in ("is assessed as covered", reply["narrative"][:40]) if n]
+    hits = [
         (s.service, s.operation, k, needle)
         for needle in needles
-        for s in llm_settlement.trace.spans
+        for s in trace.spans
         for k, v in s.attrs.items()
         if isinstance(v, str) and needle in v
     ]
-    assert not offenders, f"include_content=False leaked model content: {offenders}"
+    if _deployed_capture_mode():
+        assert hits, (
+            "capture is ON but no span carries any model content — "
+            "the trade-off this milestone documents is not actually being made"
+        )
+    else:
+        assert not hits, f"capture is OFF but model content leaked: {hits}"
 
 
-def test_message_shape_is_recorded_without_content(llm_settlement):
-    """The positive half of the redaction claim: shape is kept, content is not.
+def test_message_shape_is_recorded(llm_settlement):
+    """Message *shape* is always present, mode-aware on whether content is too.
 
-    A redaction test that only asserts absence would also pass if the
-    instrumentation had emitted nothing at all — which would be a telemetry
-    regression dressed up as a compliance win. Measured behaviour at
-    pydantic-ai 2.41.0 with `include_content=False`: every `chat` span
-    carries `gen_ai.input.messages` and `gen_ai.output.messages` as JSON
-    arrays of `{"role": ..., "parts": [{"type": ...}]}`, with tool-call ids
-    and tool names retained and no `content` key at any depth. Both
-    properties are asserted here.
+    Independent of `NORTHSTAR_CAPTURE_CONTENT`: every `chat` span carries
+    `gen_ai.input.messages` and `gen_ai.output.messages` as JSON arrays of
+    `{"role": ..., "parts": [{"type": ...}]}`, with tool-call ids and tool
+    names retained — shape survives either way, which matters because a
+    redaction test that only ever asserted absence would also pass if the
+    instrumentation had emitted nothing at all (a telemetry regression
+    dressed up as a compliance win).
+
+    Whether a `content` key exists *inside* that shape is what actually
+    depends on the deployed mode (Task 5) — but only for `text`/`thinking`
+    parts. Measured live (this run had three chat turns): a `text` part
+    carries `content` set to the model's prose, a `thinking` part carries
+    `content` (empty string here, since the model did no visible extended
+    thinking) — both present with capture ON, both keys absent with it OFF.
+    A `tool_call` part carries `id`/`name`/`arguments` instead and has no
+    `content` key at either setting — one whole chat turn in this run
+    (`execute_payment`'s own call) produced an output message that was
+    *only* a `tool_call` part, so asserting `content` on every single
+    (span, key) surface regardless of what part types it holds would be
+    wrong; measurement, not the brief's original sketch, settled this.
 
     The `invoke_agent` span's own `pydantic_ai.all_messages` — a non-semconv
     attribute holding the whole conversation, and therefore the single
     highest-risk surface in this trace — is checked the same way, because
-    "the messages are redacted" is worth nothing if it only holds for the
-    per-turn copies and not the full transcript.
+    "content capture behaves as configured" is worth nothing if it only
+    holds for the per-turn copies and not the full transcript.
     """
     chat_spans = _chat_spans(llm_settlement.trace)
     assert chat_spans, "no span with gen_ai.operation.name == 'chat' in the trace"
 
-    def content_keys(node, path="") -> list[str]:
+    def content_bearing_parts(node) -> list[dict]:
+        """`text`/`thinking` parts — the only part types measured to carry a
+        `content` key at all (with capture ON); `tool_call` parts never do,
+        at either setting, so they are not evidence either way."""
         found = []
         if isinstance(node, dict):
-            for key, value in node.items():
-                if key == "content":
-                    found.append(f"{path}.{key}")
-                found += content_keys(value, f"{path}.{key}")
+            if node.get("type") in ("text", "thinking"):
+                found.append(node)
+            for value in node.values():
+                found += content_bearing_parts(value)
         elif isinstance(node, list):
-            for index, value in enumerate(node):
-                found += content_keys(value, f"{path}[{index}]")
+            for value in node:
+                found += content_bearing_parts(value)
         return found
 
     agent_span = llm_settlement.trace.span(
@@ -402,6 +441,7 @@ def test_message_shape_is_recorded_without_content(llm_settlement):
         for key in ("gen_ai.input.messages", "gen_ai.output.messages")
     ] + [(agent_span, "pydantic_ai.all_messages")]
 
+    checked_any_content_bearing_part = False
     for span, key in surfaces:
         assert key in span.attrs, f"{span.operation!r} has no {key}"
         messages = json.loads(span.attrs[key])
@@ -411,11 +451,28 @@ def test_message_shape_is_recorded_without_content(llm_settlement):
             assert "parts" in message, message
             for part in message["parts"]:
                 assert "type" in part, part
-        leaks = content_keys(messages)
-        assert not leaks, (
-            f"{span.operation!r}'s {key} contains 'content' key(s) "
-            f"{leaks} — include_content=False is not in effect"
-        )
+
+        parts = content_bearing_parts(messages)
+        if not parts:
+            continue  # this surface's turn(s) were tool-call-only; no evidence here either way
+        checked_any_content_bearing_part = True
+        has_content = [p for p in parts if "content" in p]
+        if _deployed_capture_mode():
+            assert has_content == parts, (
+                f"{span.operation!r}'s {key} has text/thinking part(s) with "
+                f"no 'content' key — capture is ON but content is not "
+                f"actually being recorded: {parts}"
+            )
+        else:
+            assert not has_content, (
+                f"{span.operation!r}'s {key} has 'content' key(s) on "
+                f"text/thinking part(s) — capture is OFF but content is not "
+                f"actually redacted: {has_content}"
+            )
+    assert checked_any_content_bearing_part, (
+        "no chat span's messages contained a text/thinking part in this run "
+        "— nothing to check the content-capture mode against"
+    )
 
 
 def test_token_usage_is_recorded(llm_settlement):
@@ -453,26 +510,31 @@ def test_token_usage_is_recorded(llm_settlement):
     )
 
 
-def test_include_content_false_does_not_redact_model_request_parameters(llm_settlement):
-    """A measured content-capture gap, pinned so it cannot be forgotten.
+def test_model_request_parameters_carries_instructions_regardless_of_capture_mode(
+    llm_settlement,
+):
+    """`model_request_parameters` is gated by a *different* setting entirely.
 
-    `include_content=False` redacts `gen_ai.input.messages` and
-    `gen_ai.output.messages` (asserted above). It does **not** touch
-    `model_request_parameters`, a non-semconv attribute pydantic-ai 2.41.0
-    sets on every `chat` span, which carries the agent's system instructions
-    verbatim together with the full JSON schema and docstring of every
-    registered tool.
+    Task 5 makes `NORTHSTAR_CAPTURE_CONTENT` (`include_content`) configurable,
+    defaulting ON. `model_request_parameters` — a non-semconv attribute
+    pydantic-ai 2.41.0 sets on every `chat` span, carrying the agent's system
+    instructions verbatim together with the full JSON schema and docstring of
+    every registered tool — is governed by the separate
+    `include_model_request_parameters` setting, which stays at its library
+    default (`True`) regardless of the capture-content mode. So this
+    attribute's presence is asserted unconditionally here, in both directions
+    of `NORTHSTAR_CAPTURE_CONTENT`; it is not part of the mode-aware
+    assertions above.
 
     Nothing claimant-specific reaches it — the instructions are static text
     this repo wrote, and the schemas are our own function signatures — so
-    this is not a data-subject leak. It is still content that a reader of
-    `include_content=False` would reasonably expect to be absent, and for an
-    insurer it is the operative policy text sitting in a telemetry backend.
-    The gap is asserted as *present* on purpose, in the same spirit as
-    `tests/e2e/test_claim_correlation.py`'s treatment of the FastMCP baggage
-    gap: if a later pydantic-ai version starts redacting this, or if the
-    instructions move, this test fails loudly and the telemetry contract gets
-    updated deliberately instead of drifting.
+    this is not a data-subject leak. It is a deliberate ruling (not a gap):
+    those instructions and schemas contain no claim-specific data and are an
+    audit asset — see docs/telemetry-contract.md. Pinned in the same spirit
+    as `tests/e2e/test_claim_correlation.py`'s treatment of the FastMCP
+    baggage gap: if a later pydantic-ai version starts gating this
+    differently, or the instructions move, this test fails loudly and the
+    telemetry contract gets updated deliberately instead of drifting.
     """
     chat_spans = _chat_spans(llm_settlement.trace)
     assert chat_spans, "no chat span in the trace"

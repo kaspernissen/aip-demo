@@ -29,10 +29,25 @@ tests/e2e/test_claim_correlation.py for what does and does not cross that
 hop: the trace joins fully; the northstar.claim.id attribute does not).
 
 Requires a real browser. Skipped unless RUN_BROWSER_TESTS=1.
+
+**Task 5 (Task 4 review, Finding 2):** earlier revisions of this fixture
+submitted a random `CLM-TEST-*` claim id and never read the reply payload, so
+the browser path — the one actually driven on stage — asserted nothing about
+the settlement outcome. `CLM-1842` is customer-ui's own pre-filled
+`DEFAULT_CLAIM` (`apps/customer-ui/src/app/page.tsx`, amount 6200 EUR); this
+fixture now submits the form untouched rather than overwriting the claim id,
+reads the "Outcome" `<pre>` block the page renders
+(`JSON.stringify(result, null, 2)`, the same `ClaimResult` shape
+`apps/customer-ui/src/a2a.ts` extracts from the A2A reply), and hands the
+parsed payload to the tests below. This is a test assertion, not a guard
+rail: nothing in `settlement.py` checks or clamps the amount — M1 is
+deliberately ungoverned — so if a live model run ever settles a different
+amount, the resulting assertion failure is the finding, not something to be
+worked around here.
 """
+import json
 import os
 import re
-import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -55,8 +70,13 @@ TRACEPARENT_RE = re.compile(r"^00-([0-9a-f]{32})-([0-9a-f]{16})-\d{2}$")
 def browser_trace():
     from playwright.sync_api import sync_playwright
 
-    claim_id = f"CLM-TEST-{uuid.uuid4().hex[:8]}"
+    # CLM-1842 is customer-ui's own pre-filled DEFAULT_CLAIM
+    # (apps/customer-ui/src/app/page.tsx) — submitted as-is, not overwritten
+    # with a random id, so the outcome payload below can be asserted against
+    # a known amount (Task 4 review, Finding 2).
+    claim_id = "CLM-1842"
     captured: dict[str, str] = {}
+    outcome: dict[str, str] = {}
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
@@ -80,9 +100,16 @@ def browser_trace():
         page.on("request", on_request)
 
         page.goto(UI_URL)
-        page.fill("input >> nth=0", claim_id)
+        # Submit the form untouched: CLM-1842 / POL-77120 / 6200 EUR are
+        # already DEFAULT_CLAIM's values, so this is genuinely "the pre-filled
+        # claim", not a value this test happens to also set.
         page.click("button[type=submit]")
         page.wait_for_selector("text=Outcome", timeout=120_000)
+        # The Outcome <pre> renders JSON.stringify(result, null, 2) of the
+        # exact ClaimResult apps/customer-ui/src/a2a.ts extracted from the A2A
+        # reply — the "Progress" <pre> above it is the first of the two, so
+        # this is the second.
+        outcome["raw"] = page.locator("pre").nth(1).inner_text()
         # The browser's own WebTracerProvider uses a BatchSpanProcessor with
         # the OTel SDK's default 5s scheduled export delay (telemetry.ts sets
         # no override, same as every other service — A20a). The claim.submit
@@ -130,7 +157,11 @@ def browser_trace():
         },
     )
 
-    return SimpleNamespace(trace=trace, trace_id=trace_id, span_id=span_id, claim_id=claim_id)
+    reply = json.loads(outcome["raw"])
+
+    return SimpleNamespace(
+        trace=trace, trace_id=trace_id, span_id=span_id, claim_id=claim_id, reply=reply
+    )
 
 
 def test_browser_emits_the_claim_submit_span(browser_trace):
@@ -227,3 +258,22 @@ def test_all_five_services_are_in_one_trace(browser_trace):
     }
     services = browser_trace.trace.services()
     assert expected <= services, f"missing services: {sorted(expected - services)}"
+
+
+def test_the_browser_path_settles_the_expected_amount(browser_trace):
+    """Task 5 (Task 4 review, Finding 2): the browser path — the one actually
+    driven on stage — is now checked against the outcome, not just the trace
+    shape. CLM-1842 is the exact claim `test_settlement_agent_trace.py:219`
+    and `test_claims_chain_trace.py:219` already assert settles at €6,200
+    through the A2A and MCP paths respectively; this is the same claim, same
+    amount, now proven through the browser too.
+
+    This is a test assertion, not a guard rail: `settlement.py` has no amount
+    check, clamp or threshold anywhere — M1 is deliberately ungoverned, the
+    model can propose any amount and nothing stops it. If a live model run
+    ever settles a different amount, this assertion fails and that is the
+    finding to record; nothing here works around it.
+    """
+    reply = browser_trace.reply
+    assert reply.get("status") == "executed", reply
+    assert reply.get("amount") == 6200.0, reply
