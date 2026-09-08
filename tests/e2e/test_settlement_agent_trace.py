@@ -238,11 +238,30 @@ def test_settlement_agent_outbound_mcp_calls_are_traced(settlement_trace):
     settlement-agent's own spans is what keeps this test's assertion (every
     one of *this* service's outbound calls targets payments-mcp) precise
     rather than accidentally also asserting something false about a
-    different service's own outbound hop."""
+    different service's own outbound hop.
+
+    **M1.2 Task 4 update — narrowed from `kind == "client"` to the httpx
+    instrumentation's own scope.** Now that the settlement decision is a real
+    model call, settlement-agent also emits pydantic-ai's `chat <model>`
+    spans, and those are CLIENT-kind too. They carry `server.address =
+    "api.anthropic.com"` and no `url.full` at all, so the old `kind ==
+    "client" and service == "settlement-agent"` filter swept them in and the
+    `"payments-mcp" in url.full` assertion failed against a
+    correctly-behaving deployment (measured, M1.2 task-4-report.md). The fix
+    is to say what this test always meant: the spans *this service's HTTP
+    client instrumentation* produces.
+    `otel.scope.name == "opentelemetry.instrumentation.httpx"` is exactly
+    that, and measurably so — it is not a tolerance, and a genuinely
+    misdirected outbound HTTP call would still fail here. It also does not
+    quietly shrink coverage of the model hop, because there was never an
+    httpx span for that hop to begin with: `anthropic==1.4.0` speaks
+    `httpx2`, which `HTTPXClientInstrumentor` does not instrument. That gap
+    is measured and pinned in tests/e2e/test_settlement_llm_trace.py."""
     client_spans = [
         s
         for s in settlement_trace.trace.spans
-        if s.kind == "client" and s.service == "settlement-agent"
+        if s.service == "settlement-agent"
+        and s.attrs.get("otel.scope.name") == "opentelemetry.instrumentation.httpx"
     ]
     assert client_spans, "no outbound CLIENT spans found for the MCP transport"
     for span in client_spans:

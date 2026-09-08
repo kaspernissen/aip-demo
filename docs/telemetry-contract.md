@@ -36,8 +36,8 @@ Measured counts, from a clean cluster (`./scripts/teardown.sh &&
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `57 passed, 7 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `64 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `57 passed, 15 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `72 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -46,6 +46,15 @@ whose entire purpose is stating these numbers.
 `tests/unit/test_telemetry_contract_counts.py` now guards this: it runs
 `pytest --collect-only` and fails loudly if either row's sum ever again
 diverges from what pytest actually collects.)
+
+M1.2 note: the skip count in the default row grew from 7 to 15 because
+`tests/e2e/test_settlement_llm_trace.py` (8 tests) is gated behind the same
+`RUN_BROWSER_TESTS=1` flag — it needs the live cluster and spends real model
+tokens on every run, so a bare `pytest tests/` must not trigger it, while the
+gate (which sets that flag unconditionally) always does. **These are counts
+only; M1.2 Task 5 revises this document's substantive content** — including
+what `include_content=False` does and does not redact, which
+`tests/e2e/test_settlement_llm_trace.py` now measures rather than assumes.
 
 `tests/unit/test_smoke_test_gate.py` (2 tests, counted in both rows above)
 pins this distinction directly: it reads `scripts/smoke-test.sh`'s own source

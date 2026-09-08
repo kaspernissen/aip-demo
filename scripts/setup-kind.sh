@@ -131,6 +131,29 @@ EOF
 echo -e "${BLUE}Step 6/9: Creating namespaces...${NC}"
 kubectl apply -f "$ROOT/deploy/k8s/namespaces.yaml"
 
+# M1.2: settlement-agent's decision is a real model call, so it needs a model
+# credential in-cluster. Same idempotent shape as the dash0-secrets block
+# below (`--dry-run=client -o yaml | kubectl apply -f -`), so re-running this
+# script updates the secret in place rather than failing on "already exists".
+#
+# The value is handed to kubectl and never printed — this block reports SET /
+# EMPTY only, and nothing anywhere near it enables `set -x`. A missing key
+# degrades rather than aborting: deploy/k8s/settlement-agent.yaml marks the
+# secretKeyRef `optional: true` (matching the convention used for degradable
+# secrets elsewhere), so stage 1 still comes up fully traced and every hop
+# below the model still works; only the settlement decision itself fails, at
+# its first model call, with a clear credential error.
+echo -e "${BLUE}Step 6/9: Creating the model secret...${NC}"
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  kubectl create secret generic northstar-model \
+    --namespace northstar-agents \
+    --from-literal=ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  echo -e "${GREEN}  ANTHROPIC_API_KEY: SET${NC}"
+else
+  echo -e "${YELLOW}  ANTHROPIC_API_KEY: EMPTY — settlement-agent will fail on its first model call${NC}"
+fi
+
 echo -e "${BLUE}Step 7/9: Installing observability backbone...${NC}"
 COLLECTOR_CONFIG="$ROOT/deploy/observability/collector-config.yaml"
 if [[ -n "${DASH0_AUTH_TOKEN:-}" ]]; then
