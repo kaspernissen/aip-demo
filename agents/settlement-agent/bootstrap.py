@@ -19,7 +19,10 @@ import os
 
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.instrumentation.httpx import (
+    HTTPX2ClientInstrumentor,
+    HTTPXClientInstrumentor,
+)
 from opentelemetry.propagate import set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
 from opentelemetry.sdk.resources import Resource
@@ -67,6 +70,15 @@ def configure() -> None:
     # OTEL_SEMCONV_STABILITY_OPT_IN=http is set on the deployment manifest to
     # converge it onto the stable spelling.
     HTTPXClientInstrumentor().instrument()
+    # anthropic==1.4.0 depends on httpx2, a distribution separate from
+    # httpx. HTTPXClientInstrumentor's _module_name is "httpx", so without
+    # this the model's outbound HTTP hop has no CLIENT span at all: the
+    # request to api.anthropic.com is only ever represented by pydantic-ai's
+    # own "chat" span, which carries no HTTP status, retry or wire-latency
+    # detail. httpx2 is present in this venv because anthropic requires it
+    # (agents/settlement-agent/requirements.txt pins httpx2==2.12.0), so
+    # instrument() cannot raise ModuleNotFoundError here.
+    HTTPX2ClientInstrumentor().instrument()
 
     _instrument_pydantic_ai()
 

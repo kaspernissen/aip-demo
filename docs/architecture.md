@@ -394,6 +394,24 @@ genuinely the model's own words about a decision the model itself made —
 the trajectory a reader follows in Jaeger now really did happen the way it
 reads, not merely look like it did.
 
+**M1.2 Task 8: each `chat claude-sonnet-5` span now has its own HTTP CLIENT
+child.** Tasks 1–7 left the model's own outbound hop untraced below the
+`chat` span — `anthropic==1.4.0` speaks `httpx2`, a distribution
+`HTTPXClientInstrumentor` does not cover, so the request to
+`api.anthropic.com` produced no HTTP status, retry count or wire-latency
+detail of its own (`docs/telemetry-contract.md`'s former Gap 7). Task 8
+closed this by additionally instrumenting `HTTPX2ClientInstrumentor`
+(`bootstrap.py`) — the sibling class already present in the same installed
+`opentelemetry-instrumentation-httpx==0.65b0` package. A reader now sees, per
+model turn, a `POST` CLIENT span nested directly under that turn's `chat`
+span, carrying the same stable HTTP semconv attributes every other outbound
+hop in this project carries (`http.request.method`, `http.response.status_code`,
+`server.address`, `url.full`) — measured at `POST` / `200` /
+`api.anthropic.com` / `https://api.anthropic.com/v1/messages?beta=true`.
+Exactly one such span appears per `chat` span, confirmed by diffing a live
+capture taken before this change against one taken after
+(`tests/e2e/test_settlement_llm_trace.py::test_anthropic_client_span_exists_and_is_parented_to_chat`).
+
 **No amount check, clamp, threshold or guard rail exists anywhere in this
 path**, confirmed by reading `settlement.py`, `executor.py`, `mcp_tools.py`,
 `tools/payments-mcp/*.py` and `systems/payments-api/*.go` — the only numeric

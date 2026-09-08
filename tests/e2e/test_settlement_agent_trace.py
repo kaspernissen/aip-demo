@@ -252,16 +252,26 @@ def test_settlement_agent_outbound_mcp_calls_are_traced(settlement_trace):
     client instrumentation* produces.
     `otel.scope.name == "opentelemetry.instrumentation.httpx"` is exactly
     that, and measurably so — it is not a tolerance, and a genuinely
-    misdirected outbound HTTP call would still fail here. It also does not
-    quietly shrink coverage of the model hop, because there was never an
-    httpx span for that hop to begin with: `anthropic==1.4.0` speaks
-    `httpx2`, which `HTTPXClientInstrumentor` does not instrument. That gap
-    is measured and pinned in tests/e2e/test_settlement_llm_trace.py."""
+    misdirected outbound HTTP call would still fail here.
+
+    **M1.2 Task 8 update — the model hop now has its own httpx-scoped span
+    too.** `HTTPX2ClientInstrumentor` (`bootstrap.py`) closed the gap noted
+    above: `anthropic==1.4.0`'s `httpx2` traffic to `api.anthropic.com` now
+    also produces a CLIENT span under `otel.scope.name ==
+    "opentelemetry.instrumentation.httpx"`, nested under the `chat` span,
+    with its own `url.full` (`https://api.anthropic.com/v1/messages...`).
+    That is a real, separate outbound target for this service and belongs in
+    this trace — it is asserted for and pinned by
+    `tests/e2e/test_settlement_llm_trace.py::test_anthropic_client_span_exists_and_is_parented_to_chat`.
+    It is excluded here (`server.address != "api.anthropic.com"`) because
+    this test's job is specifically the MCP transport's own spans, not every
+    outbound hop this service makes."""
     client_spans = [
         s
         for s in settlement_trace.trace.spans
         if s.service == "settlement-agent"
         and s.attrs.get("otel.scope.name") == "opentelemetry.instrumentation.httpx"
+        and s.attrs.get("server.address") != "api.anthropic.com"
     ]
     assert client_spans, "no outbound CLIENT spans found for the MCP transport"
     for span in client_spans:

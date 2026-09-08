@@ -46,15 +46,17 @@ Task 4 and re-verified, including a fresh tracker search, for this document —
 this document consolidates and re-verifies it into one filing-ready list; it
 does not re-derive it.
 
-**Finding 5 is not filing-ready the way Findings 1–4 are, and that is itself
-the finding.** It was first suspected as a genuine upstream gap (a library
-not supporting a newer HTTP client). A tracker search shows the opposite: the
-fix is already merged and already shipped in the exact library version this
-project has installed. What remains is a one-line change in this project's
-own code, not an upstream ask. It is included here anyway, in the same
-format as the other four, because "we searched and there is nothing to file
-because it is already fixed" is exactly the kind of claim this document
-exists to state precisely rather than assume.
+**Finding 5 was never filing-ready the way Findings 1–4 are, and that was
+itself the finding.** It was first suspected as a genuine upstream gap (a
+library not supporting a newer HTTP client). A tracker search showed the
+opposite: the fix was already merged and already shipped in the exact
+library version this project has installed. What remained was a one-line
+change in this project's own code — and M1.2 Task 8 made that change,
+closing Gap 7. It stays in this document anyway, in the same format as the
+other four, because "we searched and there was nothing to file because it
+was already fixed" is exactly the kind of claim this document exists to
+state precisely rather than assume — a closed finding is not a finding worth
+deleting.
 
 ---
 
@@ -578,7 +580,7 @@ task with its own re-verification obligation, not decided here.
 
 ---
 
-## Finding 5: the model's own outbound HTTP hop has no CLIENT span — and, unlike Findings 1–4, the fix is already shipped
+## Finding 5 (closed, Task 8): the model's own outbound HTTP hop had no CLIENT span — and, unlike Findings 1–4, the fix was already shipped upstream
 
 **The problem, plainly:** the settlement agent's calls to the Anthropic model
 travel over a distribution named `httpx2`, not the `httpx` this project
@@ -625,17 +627,40 @@ against a codebase that also uses `httpx2`; the two instrumentors are
 independent, opt-in calls, and using only one is a valid but incomplete
 configuration.
 
-**What we observed instead:** capturing a real settlement end to end and
-reading every httpx-instrumented CLIENT span back from Jaeger: 12 spans, all
-of them settlement-agent's or payments-mcp's calls to payments-mcp or
-payments-api (`POST`/`GET`/`DELETE` against
+**What we observed instead, before the fix:** capturing a real settlement end
+to end and reading every httpx-instrumented CLIENT span back from Jaeger: 12
+spans, all of them settlement-agent's or payments-mcp's calls to
+payments-mcp or payments-api (`POST`/`GET`/`DELETE` against
 `payments-mcp...svc.cluster.local:8000` and
-`payments-api...svc.cluster.local:8080`). **Zero** spans target
+`payments-api...svc.cluster.local:8080`). **Zero** spans targeted
 `api.anthropic.com`. The only trace of the Anthropic call anywhere in the
-captured spans is `server.address=api.anthropic.com`, appearing as an
+captured spans was `server.address=api.anthropic.com`, appearing as an
 attribute on pydantic-ai's own `chat claude-sonnet-5` span — a real, useful
 span, but not an HTTP CLIENT span, and carrying none of the HTTP-layer
 attributes an httpx span would.
+
+**What we observed after the fix (Task 8):** the same live-capture method,
+re-run against a rebuilt and redeployed settlement-agent. Each of the three
+`chat claude-sonnet-5` spans in a three-turn conversation now has exactly
+one httpx-instrumented CLIENT span nested directly under it — three such
+spans total, one per model turn, no duplicates (confirmed by diffing a
+before-fix trace dump against an after-fix one, span for span). Reading a
+full attribute dump directly, rather than assuming the spelling: the
+settlement-agent deployment sets `OTEL_SEMCONV_STABILITY_OPT_IN=http`, so
+this new span carries the **stable** HTTP semconv spelling, matching every
+other outbound hop this service makes —
+`http.request.method=POST`, `http.response.status_code=200`,
+`server.address=api.anthropic.com`,
+`url.full=https://api.anthropic.com/v1/messages?beta=true`,
+`network.peer.address=api.anthropic.com`, `network.protocol.version=1.1` —
+not the legacy `http.method`/`http.url`/`http.status_code` spelling. Both
+`HTTPXClientInstrumentor` and `HTTPX2ClientInstrumentor` share one
+`get_tracer(__name__, ...)` call in the same
+`opentelemetry.instrumentation.httpx` module, so `otel.scope.name` alone
+cannot distinguish the two — the model-bound span is identified by
+`server.address == "api.anthropic.com"` instead, which is how
+`tests/e2e/test_settlement_llm_trace.py::test_anthropic_client_span_exists_and_is_parented_to_chat`
+finds it.
 
 **Why it matters, beyond this project:** any integrator instrumenting
 `httpx` in the ordinary way, and depending — directly or, as here,
@@ -652,20 +677,25 @@ a dependency tree that includes even one such library needs to know both
 instrumentors exist and apply both — the library's own docstring says so,
 but nothing forces or checks it.
 
-**What a fix needs:** for this project specifically, one line —
-`HTTPX2ClientInstrumentor().instrument()` alongside the existing
+**What the fix needed, and what Task 8 did:** for this project specifically,
+one line — `HTTPX2ClientInstrumentor().instrument()` alongside the existing
 `HTTPXClientInstrumentor().instrument()` call in `bootstrap.py`. No
-dependency bump, no waiting on anyone: the class needed is already installed.
+dependency bump, no waiting on anyone: the class needed was already
+installed. Task 8 added exactly that line, rebuilt and redeployed
+settlement-agent, and confirmed via the before/after diff above that it
+produces one CLIENT span per model turn, correctly parented to that turn's
+`chat` span, with no duplicate.
 
-**How we worked around it, and whether it should be adopted upstream:** we
-did not work around it, and there is no upstream action to recommend —
-unlike Findings 1–4, upstream already did the work. This project's own
-`bootstrap.py` is deliberately unchanged this milestone (out of scope per
-the plan), and the gap is pinned rather than silently left to rot:
+**How we fixed it, and whether it should be adopted upstream:** there is no
+upstream action to recommend — unlike Findings 1–4, upstream already did the
+work; this project's own omission was the only thing missing. Before the
+fix, the gap was pinned rather than silently left to rot:
 `tests/e2e/test_settlement_llm_trace.py::test_the_models_own_http_hop_has_no_client_span`
-asserts the absence directly and is written to fail loudly the day someone
-adds the missing instrumentor call — the intended signal that the fix
-landed, not a regression to chase.
+asserted the absence directly and was written to fail loudly the day someone
+added the missing instrumentor call. Task 8 added that call; that test was
+retired (per its own docstring's instruction) and replaced by
+`test_anthropic_client_span_exists_and_is_parented_to_chat`, which asserts
+the positive shape instead.
 
 **Existing upstream activity (verified live against the real repositories,
 read-only, via `gh issue`/`gh pr`, 2026-09-08 — no comment or issue was
@@ -716,17 +746,20 @@ posted anywhere as part of writing this):**
   "apply the instrumentor you already have," which is this project's own
   homework, not upstream's.
 
-**Status: not filed by this project — and, unlike every other finding in
-this document, there is no upstream action left to file.** The fix exists,
-is merged, and is already installed in this repository's own dependency
-tree. The only remaining step — applying `HTTPX2ClientInstrumentor()` in
-`agents/settlement-agent/bootstrap.py` — is this project's own deliberately
-deferred work (`bootstrap.py` is out of scope for this milestone), not an
-upstream gap. Recording this here in full, in the same format as Findings
-1–4, rather than silently dropping it once the search came back negative for
-"a gap worth filing," because the accurate statement — "we suspected an
-upstream defect, searched, and found it already fixed" — is itself a
-correction to how this milestone's own working notes had framed the finding
-before this document was written, and the project's governing rule is to
-correct a telemetry claim the moment it is found to be wrong, not to quietly
-let the more interesting-sounding version stand.
+**Status: closed by Task 8 — not filed by this project, and, unlike every
+other finding in this document, there was never any upstream action to
+file.** The fix existed, merged, already installed in this repository's own
+dependency tree, before this milestone ever measured the gap. The one
+remaining step — applying `HTTPX2ClientInstrumentor()` in
+`agents/settlement-agent/bootstrap.py` — was this project's own deferred
+work, not an upstream gap, and Task 8 did it: one line added alongside the
+existing `HTTPXClientInstrumentor()` call, verified by a before/after trace
+diff to produce exactly one CLIENT span per model turn with no duplicate.
+Recording this here in full, in the same format as Findings 1–4, rather than
+silently dropping it once the search came back negative for "a gap worth
+filing," because the accurate statement — "we suspected an upstream defect,
+searched, and found it already fixed" — is itself a correction to how this
+milestone's own working notes had framed the finding before this document
+was written, and the project's governing rule is to correct a telemetry
+claim the moment it is found to be wrong, not to quietly let the
+more-interesting-sounding version stand.

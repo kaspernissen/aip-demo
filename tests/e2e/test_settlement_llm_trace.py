@@ -635,22 +635,39 @@ def test_model_request_parameters_carries_instructions_regardless_of_capture_mod
             assert name in raw, f"{name!r} absent from model_request_parameters"
 
 
-def test_the_models_own_http_hop_has_no_client_span(llm_settlement):
-    """Another measured gap: the request to api.anthropic.com is untraced.
+def test_anthropic_client_span_exists_and_is_parented_to_chat(llm_settlement):
+    """Task 8: the model's own HTTP hop now has a CLIENT span.
 
-    `anthropic==1.4.0` speaks `httpx2`. `bootstrap.py` applies
-    `HTTPXClientInstrumentor`, whose `_module_name` is `"httpx"`; the
-    separate `HTTPX2ClientInstrumentor` shipped in the same
-    `opentelemetry-instrumentation-httpx` package is not applied. Measured
-    consequence: settlement-agent's six MCP round trips each get an httpx
-    CLIENT span, and the model's own HTTPS request gets none — pydantic-ai's
-    `chat` CLIENT span (which does carry `server.address =
-    "api.anthropic.com"`) is the only span representing that hop, so its
-    status code, retries and latency-on-the-wire are invisible.
+    History: `anthropic==1.4.0` speaks `httpx2`, a distribution separate from
+    `httpx`. `bootstrap.py` applied only `HTTPXClientInstrumentor`, whose
+    `_module_name` is `"httpx"` — so settlement-agent's MCP round trips each
+    got an httpx CLIENT span, and the model's own HTTPS request to
+    `api.anthropic.com` got none. That gap was pinned by this test's
+    predecessor (`test_the_models_own_http_hop_has_no_client_span`, see
+    git history) and closed here by adding `HTTPX2ClientInstrumentor()
+    .instrument()` alongside the existing call in `bootstrap.py`.
 
-    Pinned as measured rather than fixed: `bootstrap.py` is explicitly out of
-    scope for this task. Closing it is a one-line addition there, and this
-    test turning RED is the signal that it happened.
+    Both `HTTPXClientInstrumentor` and `HTTPX2ClientInstrumentor` live in the
+    same `opentelemetry.instrumentation.httpx` module and share its
+    `get_tracer(__name__, ...)` call, so `otel.scope.name` is identical for
+    both (`"opentelemetry.instrumentation.httpx"`) — the new span is
+    identified by `server.address == "api.anthropic.com"`, not by scope name.
+
+    Attribute names measured live, not recalled: this deployment sets
+    `OTEL_SEMCONV_STABILITY_OPT_IN=http` (`deploy/k8s/settlement-agent.yaml`),
+    and a full attribute dump of an existing MCP-bound httpx CLIENT span in
+    this same trace confirmed the **stable** HTTP semconv spelling is what
+    this instrumentation actually emits here: `http.request.method`,
+    `http.response.status_code`, `server.address`, `server.port`,
+    `url.full`, `network.peer.address`, `network.peer.port`,
+    `network.protocol.version` — not the legacy `http.method` / `http.url` /
+    `http.status_code`. The new anthropic-bound span is asserted on that same
+    measured set.
+
+    One CLIENT span is expected per model request (three, in this fixture's
+    three-turn conversation) — but the exact turn count is not this test's
+    concern, so it asserts "at least one, and every one well-formed and
+    correctly parented" rather than a hardcoded turn count.
     """
     trace = llm_settlement.trace
     httpx_spans = [
@@ -660,19 +677,26 @@ def test_the_models_own_http_hop_has_no_client_span(llm_settlement):
     ]
     assert httpx_spans, "no httpx-instrumented CLIENT spans at all in this trace"
 
-    to_model = [
-        (s.service, s.operation, s.attrs.get("server.address"))
-        for s in httpx_spans
-        if "anthropic" in (s.attrs.get("server.address") or "")
-        or "anthropic" in (s.attrs.get("url.full") or "")
-    ]
-    assert not to_model, (
-        "an httpx CLIENT span for the model call now exists: "
-        f"{to_model}. HTTPX2ClientInstrumentor was presumably added to "
-        "bootstrap.py — good; re-measure and update "
-        "docs/telemetry-contract.md, then retire this test"
+    to_model = [s for s in httpx_spans if s.attrs.get("server.address") == "api.anthropic.com"]
+    assert to_model, (
+        "no httpx CLIENT span targets api.anthropic.com; HTTPX2ClientInstrumentor "
+        "is presumably not instrumented in bootstrap.py"
     )
 
-    # The positive half: pydantic-ai's own chat span is what names the hop.
-    addresses = {s.attrs.get("server.address") for s in _chat_spans(trace)}
+    chat_spans = _chat_spans(trace)
+    chat_span_ids = {s.span_id for s in chat_spans}
+    assert chat_span_ids, "no chat span in the trace to parent the CLIENT span to"
+
+    for span in to_model:
+        assert span.kind == "client", (span.operation, span.kind)
+        assert span.attrs.get("http.request.method") == "POST", span.attrs
+        assert span.attrs.get("http.response.status_code") == 200, span.attrs
+        assert span.parent_id in chat_span_ids, (
+            f"CLIENT span {span.span_id!r} (parent {span.parent_id!r}) is not "
+            f"parented to any of the chat spans {sorted(chat_span_ids)!r}"
+        )
+
+    # The positive half kept from the predecessor test: pydantic-ai's own
+    # chat span still names the hop too (it wraps the httpx CLIENT span).
+    addresses = {s.attrs.get("server.address") for s in chat_spans}
     assert addresses == {"api.anthropic.com"}, addresses

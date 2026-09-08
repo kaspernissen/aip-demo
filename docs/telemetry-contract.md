@@ -144,7 +144,7 @@ marker is removed, rather than staying silently green.
 |---|---|---|---|---|
 | customer-ui | OpenTelemetry JS web, manual root span | `@opentelemetry/sdk-trace-web` 2.8.0, `@opentelemetry/context-zone` 1.30.0, `@opentelemetry/exporter-trace-otlp-http` 0.219.0, `@opentelemetry/resources` 2.8.0 | `claim.submit` | Owns the trace root. Requires `traceparent`/`tracestate`/`baggage` in claims-agent's own CORS `allow_headers` (`agents/claims-agent/main.py`) so the browser's request survives preflight — the collector's own CORS requirement is different: it needs `http://localhost:8080` in `allowed_origins` (its `allowed_headers` is already wildcarded), since the browser's OTLP export to the collector carries no `traceparent` header of its own. Requires a *static* import of the injection helper — a dynamic `import()` (or any other `await`) before reading the active span loses it under `ZoneContextManager` (`apps/customer-ui/NOTES.md` §2; pinned by that service's own vitest regression test). |
 | claims-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` | `a2a-sdk[telemetry]==0.3.7`, `opentelemetry-instrumentation-starlette==0.65b0` | ASGI entry span `POST /`; `a2a.server.request_handlers.jsonrpc_handler.JSONRPCHandler.on_message_send` and the rest of the `a2a.server.*` call-graph spans (`DefaultRequestHandler.on_message_send`, `EventQueue.enqueue_event`/`.dequeue_event`/`.close`, `EventConsumer.consume_all`, etc.) | `DISABLE_OTEL_INSTRUMENTATION` must remain unset; `bootstrap.configure()` raises if it is `true`. Inbound W3C trace-context extraction comes from `StarletteInstrumentor` wrapping the built ASGI app (A18) — `a2a-sdk` itself extracts nothing (see Gap 1). **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/claims-agent.yaml`) — OTel Python's HTTP instrumentation defaults to the legacy spelling (`http.method`/`http.url`/`http.status_code`) on both the ASGI entry span and the outbound httpx span; without this, this service alone would mix conventions with the Go hop (`agents/claims-agent/NOTES.md` §7, which also records a measurement mistake made while proving the opt-in was genuinely needed, not assumed). |
-| settlement-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` + `mcp` client | `a2a-sdk[telemetry]==0.3.7`, `mcp==1.28.1` (Task 7; was `1.9.4`), `opentelemetry-instrumentation-starlette==0.65b0` | Same shape as claims-agent (`POST /` ASGI entry span, `a2a.server.*` call-graph spans), plus outbound `httpx` CLIENT spans (`POST`) to payments-mcp | Only agent permitted to reach payments-mcp. Same `StarletteInstrumentor` fix as claims-agent for inbound extraction. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/settlement-agent.yaml`), same reason as claims-agent — measured legacy-by-default, confirmed stable after the opt-in (`agents/settlement-agent/NOTES.md` §6). |
+| settlement-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` + `mcp` client | `a2a-sdk[telemetry]==0.3.7`, `mcp==1.28.1` (Task 7; was `1.9.4`), `opentelemetry-instrumentation-starlette==0.65b0` | Same shape as claims-agent (`POST /` ASGI entry span, `a2a.server.*` call-graph spans), plus outbound `httpx` CLIENT spans (`POST`/`GET`/`DELETE`) to payments-mcp, plus — as of Task 8 — outbound `httpx2` CLIENT spans (`POST`) to `api.anthropic.com`, nested under each `chat` span | Only agent permitted to reach payments-mcp. Same `StarletteInstrumentor` fix as claims-agent for inbound extraction. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/settlement-agent.yaml`), same reason as claims-agent — measured legacy-by-default, confirmed stable after the opt-in (`agents/settlement-agent/NOTES.md` §6); the same opt-in applies to both `HTTPXClientInstrumentor` and `HTTPX2ClientInstrumentor`, since both share one `get_tracer` call in the same module. |
 | settlement-agent (model) | PydanticAI `Agent.instrument_all(InstrumentationSettings(...))` (`bootstrap.py`) | `pydantic-ai-slim==2.41.0`, `version=5` (the library default, pinned explicitly) | `invoke_agent settlement_agent` (internal, ×1/request), `chat claude-sonnet-5` (client, ×3/request — one per model turn: propose, execute, final narrative), `execute_tool propose_payment`, `execute_tool execute_payment` (internal, ×1 each) | As of M1.2: the settlement decision itself, not only its transport. **25 distinct `gen_ai.*` attribute names measured** across these four span shapes — full inventory and per-span breakdown below. `include_content` is **not** hardcoded — it reads `NORTHSTAR_CAPTURE_CONTENT` (default ON; see "Content capture" below) — and `include_model_request_parameters` is left at its library default (`True`), never passed explicitly. |
 | payments-mcp | FastMCP native | `fastmcp==4.0.3` | `tools/call propose_payment`, `tools/call execute_payment` | TracerProvider does **not** need to be installed before importing fastmcp on this version — `fastmcp.telemetry.get_tracer()` calls `get_tracer_provider()` fresh on every span, not once at import (measured; the brief's premise here was wrong for 4.0.3 — kept as a code convention anyway, not a correctness requirement). `FASTMCP_TELEMETRY_MODE=native` is set explicitly even though it is already the default. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is also set** (`deploy/k8s/payments-mcp.yaml`) — this governs only the *outbound httpx* span to payments-api (FastMCP's own native MCP spans are unaffected; this knob is httpx-instrumentation-specific), measured legacy-by-default, confirmed stable after (`tools/payments-mcp/NOTES.md` §3). |
 | payments-api | `otelhttp` | `otelhttp v0.66.0`, otel core `v1.41.0` | `POST /payments/propose`, `POST /payments/{paymentId}/execute`, `GET /payments/{paymentId}` | HTTP attribute spelling as emitted by the pinned version: **stable** — `http.request.method` / `http.response.status_code` / `http.route`, not the legacy `http.method`/`http.status_code`. `network.protocol.name` is **not** emitted by this otelhttp version (only `network.protocol.version` is); do not assert its presence. No `OTEL_SEMCONV_STABILITY_OPT_IN` is set or needed — this version emits the stable spelling by default (A12), unlike every Python service in this table. |
@@ -336,7 +336,7 @@ M1.1, unaffected by any of this):
 | Span | Kind | Count/request | Carries |
 |---|---|---|---|
 | `invoke_agent settlement_agent` | internal | 1 | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=invoke_agent`, the five `gen_ai.aggregated_usage.*` roll-ups. Also the non-`gen_ai` `agent_name`, `model_name`, `logfire.msg`, `logfire.json_schema`, and `pydantic_ai.all_messages` (the full conversation, redacted to shape only unless capture is ON). |
-| `chat claude-sonnet-5` | client | 3 (one per model turn: propose, execute, final narrative) | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=chat`, `gen_ai.provider.name`/`gen_ai.system` (both `anthropic` — `gen_ai.system` is the deprecated spelling; `version=5` emits both), `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.response.id`, `gen_ai.response.finish_reasons`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.definitions`, the five `gen_ai.usage.*` fields (`details.thinking_tokens` only on turns where the model actually thought — deliberately not asserted, since that is the model's behaviour, not our wiring). Also `server.address=api.anthropic.com`, `operation.cost` (e.g. `0.002894`), and `model_request_parameters` (see "Content capture"). |
+| `chat claude-sonnet-5` | client | 3 (one per model turn: propose, execute, final narrative) | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=chat`, `gen_ai.provider.name`/`gen_ai.system` (both `anthropic` — `gen_ai.system` is the deprecated spelling; `version=5` emits both), `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.response.id`, `gen_ai.response.finish_reasons`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.definitions`, the five `gen_ai.usage.*` fields (`details.thinking_tokens` only on turns where the model actually thought — deliberately not asserted, since that is the model's behaviour, not our wiring). Also `server.address=api.anthropic.com`, `operation.cost` (e.g. `0.002894`), and `model_request_parameters` (see "Content capture"). **As of Task 8**, each of these three spans has exactly one httpx-instrumented CLIENT child (`otel.scope.name=opentelemetry.instrumentation.httpx`, `POST`, stable HTTP semconv — see Gap 7 below), the model's own wire-level hop. |
 | `execute_tool propose_payment` / `execute_tool execute_payment` | internal | 1 each | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=execute_tool`, `gen_ai.tool.call.id`, `gen_ai.tool.name`, plus `gen_ai.tool.call.arguments`/`gen_ai.tool.call.result` when capture is ON. |
 | `tools/call propose_payment` / `tools/call execute_payment` (payments-mcp) | server | 1 each | `gen_ai.tool.name` only — pre-existing FastMCP behaviour from M1.1 (Gap 5 below covers what's still missing from it). |
 
@@ -806,7 +806,7 @@ For each: the evidence, whether upstream already has work in flight, and what we
   the pin: adopting the simpler call path is still available future work,
   now recorded in `docs/upstream-findings.md` Finding 4, not decided here.
 
-### Gap 7: the model's own outbound HTTP hop has no CLIENT span — already fixed upstream, not yet applied here
+### Gap 7 (closed, Task 8): the model's own outbound HTTP hop had no CLIENT span — already fixed upstream, and now applied here too
 
 - **Evidence:** `anthropic==1.4.0` requires `httpx2<3,>=2.0.0` — a distribution
   genuinely separate from `httpx` — confirmed by reading the installed
@@ -854,17 +854,45 @@ For each: the evidence, whether upstream already has work in flight, and what we
   directly: "When instrumenting `httpx2` clients, use `HTTPX2ClientInstrumentor`."
   So there is no upstream gap to report here at all — the fix shipped before
   this milestone ever measured the absence.
-- **Where the actual gap lives:** entirely in this project's own
-  `bootstrap.py`, which calls `HTTPXClientInstrumentor()` and not also
-  `HTTPX2ClientInstrumentor()`. A one-line addition
-  (`HTTPX2ClientInstrumentor().instrument()`, alongside the existing call)
-  would close it completely with the version already installed — no
-  dependency bump, no upstream wait. Left unfixed this task, deliberately:
-  `bootstrap.py` is out of scope for this milestone's plan, and the gap is
-  pinned rather than silently fixed —
-  `tests/e2e/test_settlement_llm_trace.py::test_the_models_own_http_hop_has_no_client_span`
-  is written to fail loudly the day someone adds that line, which is the
-  intended signal of the fix landing, not a regression.
+- **Where the actual gap lived:** entirely in this project's own
+  `bootstrap.py`, which called `HTTPXClientInstrumentor()` and not also
+  `HTTPX2ClientInstrumentor()`. **Closed by Task 8**: `bootstrap.py` now also
+  calls `HTTPX2ClientInstrumentor().instrument()` alongside the existing
+  `HTTPXClientInstrumentor()` call — the one-line addition this section
+  originally predicted, with the version already installed, no dependency
+  bump, no upstream wait.
+- **Measured after the fix (Task 8, live capture, before/after diff against a
+  saved pre-fix trace dump):** each `chat claude-sonnet-5` span now has
+  exactly one httpx-instrumented CLIENT span nested directly under it — three
+  such spans in a three-turn conversation, matching the three `chat` spans
+  one-for-one, no duplicates. This project's httpx instrumentation runs with
+  `OTEL_SEMCONV_STABILITY_OPT_IN=http`
+  (`deploy/k8s/settlement-agent.yaml`), so the new span carries the
+  **stable** HTTP semconv spelling already used for this service's MCP-bound
+  httpx spans, not the legacy one — read from a live attribute dump, not
+  assumed: `http.request.method=POST`, `http.response.status_code=200`,
+  `server.address=api.anthropic.com`, `server.port` absent (HTTPS, no
+  explicit port in the URL), `url.full=https://api.anthropic.com/v1/messages?beta=true`,
+  `network.peer.address=api.anthropic.com`,
+  `network.protocol.version=1.1`, `otel.scope.name=opentelemetry.instrumentation.httpx`,
+  `otel.scope.version=0.65b0`. `HTTPXClientInstrumentor` and
+  `HTTPX2ClientInstrumentor` are two classes in the same
+  `opentelemetry.instrumentation.httpx` module and share its
+  `get_tracer(__name__, ...)` call, so `otel.scope.name` alone cannot
+  distinguish an httpx span from an httpx2 span — the model-bound span is
+  identified by `server.address == "api.anthropic.com"` instead. Pinned by
+  `tests/e2e/test_settlement_llm_trace.py::test_anthropic_client_span_exists_and_is_parented_to_chat`,
+  which replaces the predecessor test named below (retired, per its own
+  docstring's instruction, the day this fix landed).
+- **No duplicate span.** The concern going in was that pydantic-ai's own
+  `chat` span might already be the raw HTTP request, and adding
+  `HTTPX2ClientInstrumentor` would double-count that hop's latency. Measured:
+  it is not — `chat` is a separate, outer CLIENT span (pydantic-ai's logical
+  "call the model" operation, carrying `gen_ai.*` attributes) with the new
+  httpx CLIENT span nested one level inside it (carrying `http.*`
+  attributes). Two CLIENT-kind spans at two different nesting depths,
+  representing two different things, is the expected and desired shape, not
+  a duplicate.
 - **Existing upstream activity (verified live, read-only, 2026-09-08, `gh`
   against the real repositories — no comment or issue posted anywhere):**
   the httpx2-instrumentation gap itself is closed and merged, as above. Two
@@ -891,14 +919,14 @@ For each: the evidence, whether upstream already has work in flight, and what we
   Anthropic client's own transport hop to gain a CLIENT span — this
   project's specific instance of the gap is unreported, because the generic
   fix that would close it is already shipped and merely unapplied here.
-- **Status: not filed by this project, and there is nothing to file.**
-  Unlike Findings 1 and 3 in `docs/upstream-findings.md`, this is not
-  filing-ready material — filing would ask upstream to do something it
-  already did. The only remaining action is local: apply
-  `HTTPX2ClientInstrumentor()` in this project's own `bootstrap.py`, which is
-  out of scope for this milestone by the plan's own boundary, not by any
-  upstream limitation. See `docs/upstream-findings.md` Finding 5 for the
-  full write-up in that document's format.
+- **Status: closed (Task 8), and there was never anything to file.** Unlike
+  Findings 1 and 3 in `docs/upstream-findings.md`, this was never
+  filing-ready material — filing would have asked upstream to do something it
+  already did. The one remaining action was local — apply
+  `HTTPX2ClientInstrumentor()` in this project's own `bootstrap.py` — and
+  Task 8 did exactly that; the omission was this project's, never an
+  upstream gap. See `docs/upstream-findings.md` Finding 5 for the full
+  write-up in that document's format, updated to match.
 
 ## Open questions
 
