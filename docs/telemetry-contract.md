@@ -64,8 +64,8 @@ it was actually run:
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `119 passed, 23 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `142 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `120 passed, 23 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `143 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -195,10 +195,22 @@ count of how many attribute counts it publishes, the number that was wrong at
 "nine" for two milestones with nothing asserting it. Net +3, since the four
 replace one.
 
-- **Measured (M2.1 Task 5 fix round 1):** `.venv/bin/python -m pytest
-  --collect-only -q tests/` → `143 tests collected`. The two previous
-  figures, `140` (Task 5) and `134` (Task 4 fix round 1), were measured the
-  same way.
+Task 5's fix round 2 grew it once more, 143 → 144: a single always-run unit
+test, `test_every_agentgateway_vocabulary_claim_names_the_pinned_version`, in
+the same module. It exists because the version-scoping fix of round 1 landed at
+three of the **ten** sites that assert agentgateway's attribute vocabulary
+diverges from semconv — the enumeration is in the task report — and because an
+unqualified one of those does not merely go stale when the image is bumped past
+v1.5.0: upstream PR #3182 is already merged, so it becomes *false*, and
+`test_gateway_trace.py`'s set equality would fail on the attribute names while
+saying nothing about the prose describing them. The new test requires every
+such claim to name the pinned version in its own paragraph or in the heading it
+sits under, whitespace-normalised so a hard-wrapped claim is still found.
+
+- **Measured (M2.1 Task 5 fix round 2):** `.venv/bin/python -m pytest
+  --collect-only -q tests/` → `144 tests collected`. The three previous
+  figures, `143` (fix round 1), `140` (Task 5) and `134` (Task 4 fix round 1),
+  were measured the same way.
 - **Measured (M2.1 Task 5):** the three `RUN_BROWSER_TESTS`-gated modules,
   `tests/e2e/test_browser_root_span.py` (8),
   `tests/e2e/test_settlement_llm_trace.py` (9) and
@@ -212,16 +224,22 @@ replace one.
   gateway config restored to its committed state after that task's mutation
   testing. A direct observation of the whole gate, including the per-service
   suites and the count guards that check this very table.
-- **Derived (M2.1 Task 5 fix round 1), gate row, components shown:**
-  139 + 3 = **`142 passed, 1 xfailed`**. The `+ 3` is the fix round's three
-  net-new always-run unit tests, run directly and passing; they touch no
-  cluster, no browser and no model. The gate was **not** re-run, because the
-  round changed only guards and documents — no service code, no manifest, no
-  cluster state — and the gate drives live model-driven settlements. It
-  cross-checks against the collected total by a second route: 143 collected −
-  0 skipped − 1 xfailed = 142.
-- **Derived (M2.1 Task 5 fix round 1), default row, components shown:** 143
-  collected − 23 skipped − 1 xfailed = **`119 passed, 23 skipped, 1
+- **Derived (M2.1 Task 5 fix rounds 1–2), gate row, components shown:**
+  139 + 3 + 1 = **`143 passed, 1 xfailed`**. The `+ 3` is round 1's net-new
+  always-run unit tests and the `+ 1` is round 2's; all four were run directly
+  and pass, and they touch no cluster, no browser and no model. The gate was
+  **not** re-run in either round, because both changed only guards and
+  documents — no service code, no manifest, no cluster state — and the gate
+  drives live model-driven settlements. It cross-checks against the collected
+  total by a second route: 144 collected − 0 skipped − 1 xfailed = 143.
+- **Measured (M2.1 Task 5 fix round 1), default row:** a bare
+  `.venv/bin/python -m pytest tests/ -q` was in fact run once during round 1's
+  verification and returned exactly the row published at the time,
+  `119 passed, 23 skipped, 1 xfailed`, in 83.54s. That is recorded here because
+  it means the derivation below has been checked against a real observation of
+  this row at least once, rather than only against arithmetic.
+- **Derived (M2.1 Task 5 fix round 2), default row, components shown:** 144
+  collected − 23 skipped − 1 xfailed = **`120 passed, 23 skipped, 1
   xfailed`**. Every component is itself measured above. Labelled derived
   rather than measured for a reason worth being explicit about: a bare
   `pytest tests/` is **not free** — it skips the three gated modules but still
@@ -373,10 +391,15 @@ chain invisibly, since both spellings are individually well-formed telemetry.
 this project has no lever that would make it so.** Until the gateway was
 interposed, "five services agree" described the whole trace. It now describes
 the five services this project *builds*. agentgateway is a sixth participant
-this project only configures, and it emits `http.method` / `http.path` /
+this project only configures, and **in the pinned `v1.5.0`, and only there,** it
+emits `http.method` / `http.path` /
 `http.status` / `http.host` / `http.version` — measured off live spans, not
 inferred — which is neither the stable spelling the other five converge on nor
-OTel's legacy spelling (that one is `http.status_code` / `http.url`). There is
+OTel's legacy spelling (that one is `http.status_code` / `http.url`). The
+version qualifier is load-bearing, not pedantry: upstream PR #3182 is already
+merged and moves the access log — and these span attributes with it — onto
+stable semconv behind an opt-in, so this sentence becomes **false** at the next
+image bump rather than merely stale. There is
 no `OTEL_SEMCONV_STABILITY_OPT_IN` equivalent to set: those are raw string keys
 in its own Rust source, not routed through a semconv layer that could be
 switched. So this is stated as a measured property of the deployed system

@@ -995,7 +995,7 @@ shared cause — it splits the two sinks apart, which is the only thing that
 *could* fix them together — while addressing just the HTTP half and leaving
 `jwt.sub` where it is.
 
-**The problem, plainly:** agentgateway's spans carry `http.method`,
+**The problem, plainly:** agentgateway v1.5.0's spans carry `http.method`,
 `http.path`, `http.status`, `http.host` and `http.version`. That set matches
 neither the current *stable* HTTP semantic conventions nor the *legacy*
 pre-stabilisation spelling — `http.path` and `http.status` belong to neither
@@ -1044,7 +1044,9 @@ spelling (`http.request.method`, `http.response.status_code`,
 `OTEL_SEMCONV_STABILITY_OPT_IN=http` forces them onto it, and payments-api's
 `otelhttp v0.66.0` emits it by default. So a single trace in this system
 contains three HTTP attribute vocabularies, one of which is not an OTel
-vocabulary at all.
+vocabulary at all — again a property of the pinned v1.5.0 specifically, and the
+count drops to two once a release carrying PR #3182 is adopted with its opt-in
+enabled.
 
 **Why it matters, beyond this project — and the honest version of the claim
 is the stronger one.** The tempting thing to say about this system is "one
