@@ -11,6 +11,35 @@ receivers:
           allowed_headers:
             - "*"
 
+  # M2.1 Task 4: SPIRE's own telemetry.
+  #
+  # SPIRE 1.15.3 has no OpenTelemetry support at all -- no OTLP exporter and no
+  # tracing (its telemetry block offers Prometheus, DogStatsD, Statsd, M3 and
+  # an in-memory sink and nothing else; see deploy/platform/spire/values.yaml).
+  # Prometheus metrics are therefore the only real telemetry it emits, and
+  # without this receiver they would be exposed on :9988 and thrown away --
+  # exactly the "component with no telemetry configured is invisible" hole
+  # M2.1 Task 3 found in agentgateway.
+  #
+  # Two jobs rather than one with two targets, so the receiver stamps a
+  # distinguishable `service.name` (it derives it from job_name) on each side
+  # instead of merging the server's and the agent's series under one identity.
+  #
+  # Scrape targets are the Services in deploy/platform/spire/metrics.yaml; the
+  # chart publishes no Service for either metrics port itself. That file records
+  # the single-node assumption these static_configs rest on.
+  prometheus/spire:
+    config:
+      scrape_configs:
+        - job_name: spire-server
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["spire-server-metrics.northstar-platform.svc.cluster.local:9988"]
+        - job_name: spire-agent
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["spire-agent-metrics.northstar-platform.svc.cluster.local:9988"]
+
 processors:
   batch:
     timeout: 1s
@@ -33,7 +62,7 @@ service:
       processors: [resource_detection, batch]
       exporters: [otlp_grpc/jaeger, debug]
     metrics:
-      receivers: [otlp]
+      receivers: [otlp, prometheus/spire]
       processors: [batch]
       exporters: [debug]
     logs:
