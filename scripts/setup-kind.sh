@@ -5,6 +5,12 @@ CLUSTER_NAME="northstar"
 REGISTRY_NAME="kind-registry"
 REGISTRY_PORT="5001"
 STAGE=1
+# Nothing floats. Resolved from `helm search repo cilium/cilium --versions`:
+# newest stable 1.x, appVersion 1.20.1 (previous minor 1.19.7). The same
+# version is recorded in deploy/platform/cilium-values.yaml's header and
+# pinned by tests/unit/test_stage2_cilium_config.py so the two cannot drift.
+CILIUM_CHART_VERSION="1.20.1"
+CILIUM_HELM_REPO="https://helm.cilium.io/"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -49,8 +55,8 @@ if ! [[ "$STAGE" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-if [[ "$STAGE" -gt 1 ]]; then
-  echo "Stage $STAGE is not implemented yet. M1.1 and M1.2 implement stage 1 only; Cilium arrives at stage 2 via a cluster recreate." >&2
+if [[ "${STAGE}" -gt 2 ]]; then
+  echo "Stage $STAGE is not implemented yet. Stages 1 (Connected) and 2 (Governed: Cilium) are implemented; stages 3-6 arrive in later milestones." >&2
   exit 1
 fi
 
@@ -69,6 +75,9 @@ echo -e "${BLUE}--- Checking prerequisites ---${NC}"
 command_exists docker || { echo -e "${RED}docker is required${NC}" >&2; exit 1; }
 command_exists kind || { echo -e "${RED}kind is required: brew install kind${NC}" >&2; exit 1; }
 command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1; }
+if [[ "${STAGE}" -ge 2 ]]; then
+  command_exists helm || { echo -e "${RED}helm is required for stage 2 (Cilium): brew install helm${NC}" >&2; exit 1; }
+fi
 : "${OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE:?OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE not set in .env}"
 
 echo -e "${BLUE}Step 1/9: Creating local registry '${REGISTRY_NAME}'...${NC}"
@@ -94,12 +103,63 @@ else
 fi
 
 echo -e "${BLUE}Step 2/9: Creating kind cluster '${CLUSTER_NAME}'...${NC}"
+# Each stage brings its own kind config. Stage 2's only difference from stage
+# 1's is `networking.disableDefaultCNI: true`, which is a **create-time** flag
+# — see deploy/kind/stage2.yaml's header.
+KIND_CONFIG="$ROOT/deploy/kind/stage${STAGE}.yaml"
+[[ -f "$KIND_CONFIG" ]] || { echo -e "${RED}Error: ${KIND_CONFIG} not found.${NC}" >&2; exit 1; }
+
 if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
+  # `disableDefaultCNI` cannot be applied to a cluster that already exists, so
+  # re-running `--stage 2` over a stage-1 cluster would install Cilium on top
+  # of a live kindnet — two CNIs, and a script that reports success. That is
+  # the worst outcome available here precisely because it looks like it
+  # worked, so detect it and refuse. The check reads the cluster rather than
+  # trusting a marker file: kindnet's DaemonSet is present if and only if kind
+  # installed the default CNI.
+  if [[ "${STAGE}" -ge 2 ]] \
+    && kubectl --context "kind-${CLUSTER_NAME}" -n kube-system get daemonset kindnet >/dev/null 2>&1; then
+    echo -e "${RED}Error: cluster '${CLUSTER_NAME}' already exists and is still running the default CNI (the kube-system/kindnet DaemonSet is present).${NC}" >&2
+    echo "networking.disableDefaultCNI is a create-time kind flag, so stage 2 cannot be applied to this cluster." >&2
+    echo "Recreate it deliberately:" >&2
+    echo "  kind delete cluster --name ${CLUSTER_NAME} && ./scripts/setup-kind.sh --stage ${STAGE}" >&2
+    exit 1
+  fi
   echo -e "${YELLOW}Cluster already exists, skipping creation.${NC}"
 else
-  kind create cluster --config "$ROOT/deploy/kind/stage1.yaml"
+  kind create cluster --config "$KIND_CONFIG"
 fi
 kubectl cluster-info --context "kind-${CLUSTER_NAME}"
+
+if [[ "${STAGE}" -ge 2 ]]; then
+  echo -e "${BLUE}Step 2b/9 (stage 2+): Installing Cilium ${CILIUM_CHART_VERSION}...${NC}"
+  # With disableDefaultCNI the node stays NotReady and coredns stays Pending
+  # until a CNI arrives, so this must run before anything is scheduled. The
+  # API server itself is host-networked and already reachable above.
+  helm repo add cilium "${CILIUM_HELM_REPO}" --force-update >/dev/null
+  helm repo update cilium >/dev/null
+  helm upgrade --install cilium cilium/cilium \
+    --version "${CILIUM_CHART_VERSION}" \
+    --namespace kube-system \
+    --kube-context "kind-${CLUSTER_NAME}" \
+    --values "$ROOT/deploy/platform/cilium-values.yaml" \
+    --wait --timeout 10m
+
+  # Cilium must be *ready*, not merely installed, before any workload is
+  # applied: a pod scheduled while cilium-agent is still starting comes up
+  # without networking, which presents as a broken demo rather than a failed
+  # install. Ordering asserted by
+  # tests/unit/test_stage2_cilium_config.py::test_cilium_is_ready_before_any_workload_is_deployed.
+  kubectl --context "kind-${CLUSTER_NAME}" -n kube-system rollout status daemonset/cilium --timeout=300s
+  kubectl --context "kind-${CLUSTER_NAME}" -n kube-system rollout status deployment/cilium-operator --timeout=300s
+  kubectl --context "kind-${CLUSTER_NAME}" wait --for=condition=Ready nodes --all --timeout=300s
+  # coredns was created before the CNI existed and sat Pending; it only
+  # schedules once Cilium is up. Wait for it too — every service in this repo
+  # resolves its peers by DNS name, so a workload deployed while coredns is
+  # still coming up fails on name resolution, not on networking.
+  kubectl --context "kind-${CLUSTER_NAME}" -n kube-system rollout status deployment/coredns --timeout=300s
+  echo -e "${GREEN}Cilium ${CILIUM_CHART_VERSION} is ready.${NC}"
+fi
 
 echo -e "${BLUE}Step 3/9: Configuring registry access on cluster nodes...${NC}"
 REGISTRY_DIR="/etc/containerd/certs.d/localhost:${REGISTRY_PORT}"
@@ -130,6 +190,21 @@ EOF
 
 echo -e "${BLUE}Step 6/9: Creating namespaces...${NC}"
 kubectl apply -f "$ROOT/deploy/k8s/namespaces.yaml"
+
+if [[ "${STAGE}" -ge 2 ]]; then
+  # Checked deploy/ first, as the plan asks: deploy/k8s/namespaces.yaml creates
+  # four namespaces — observability, northstar-agents, northstar-tools,
+  # northstar-systems — and no `northstar-platform`. It is NOT added to that
+  # shared file, because that file is stage 1's and stage 1 has nothing to put
+  # in this namespace; creating it here keeps stage 1 unchanged. M2.1 Tasks 2
+  # and 4 both need it.
+  kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: northstar-platform
+EOF
+fi
 
 # M1.2: settlement-agent's decision is a real model call, so it needs a model
 # credential in-cluster. Same idempotent shape as the dash0-secrets block
@@ -248,7 +323,11 @@ verify_port_forward 18080 "${API_PF_PID}" payments-api
 echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payments-mcp, payments-api.${NC}"
 
 echo ""
-echo -e "${GREEN}Stage 1 (Connected) is up.${NC}"
+if [[ "${STAGE}" -ge 2 ]]; then
+  echo -e "${GREEN}Stage 2 (Governed) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane.${NC}"
+else
+  echo -e "${GREEN}Stage 1 (Connected) is up.${NC}"
+fi
 echo "  Customer UI:         http://localhost:8080"
 echo "  Jaeger UI:           http://localhost:16686"
 echo "  Collector OTLP/HTTP: http://localhost:4318"

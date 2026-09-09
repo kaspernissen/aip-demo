@@ -55,8 +55,8 @@ Measured counts, from a clean cluster (`./scripts/teardown.sh &&
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `58 passed, 17 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `75 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `74 passed, 17 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `91 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -86,6 +86,21 @@ Task 6 grew the **passed** count in both rows by one, 74→75 and 57→58: it
 strengthened `tests/unit/test_telemetry_contract_counts.py` with a second
 test (see below) that needs no cluster and no browser, so it runs — and
 passes — in a bare `pytest tests/` too, not only behind the gate's flag.
+
+M2.1 Task 1 grew the **passed** count in both rows by sixteen, 75→91 and
+58→74, and left the skip count at 17: `tests/unit/test_stage2_cilium_config.py`
+(16 tests) guards the stage-2 Cilium configuration — the create-time
+`disableDefaultCNI` flag, the pinned chart version, the two schema defects the
+plan's own values sketch contained, and the ordering that keeps Cilium ready
+before any workload is scheduled. Like every other `tests/unit/` module it
+reads files rather than a cluster, so it needs no cluster, no browser and no
+model tokens, and runs in both rows. The gate row here is measured from the
+post-recreate run recorded in this milestone's Task 1 report; the default row
+is **derived** from it, not separately measured — the 17 skips are exactly
+`tests/e2e/test_browser_root_span.py` (8 tests) plus
+`tests/e2e/test_settlement_llm_trace.py` (9 tests), the only two
+`RUN_BROWSER_TESTS`-gated modules in the tree, neither of which this task
+touched.
 
 `tests/unit/test_smoke_test_gate.py` (2 tests, counted in both rows above)
 pins this distinction directly: it reads `scripts/smoke-test.sh`'s own source
