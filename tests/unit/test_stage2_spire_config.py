@@ -1,0 +1,953 @@
+"""Guards the M2.1 Task 4 workload-identity configuration.
+
+Identity in this system is one string repeated in four files. The gateway's
+SPIFFE ID is what SPIRE's template renders, what settlement-agent asks SPIRE to
+mint a token *for*, and what the gateway checks the `aud` claim against. Change
+it in three places out of four and nothing fails to start: SPIRE mints happily,
+the gateway verifies happily, and every MCP call gets a 401 whose cause is
+invisible in the token itself. So the cross-file agreements are asserted here,
+not left to a comment in each file promising the others say the same thing.
+
+The same goes for the trust domain. `global.spire.trustDomain` defaults to
+`example.org` in the pinned chart, and every SPIFFE ID in this system is built
+from it, so an install that lost the override would still come up, still mint
+SVIDs, and still verify them -- against `spiffe://example.org/...`. That is a
+system that passes its own tests while proving nothing about this platform.
+
+**Written against the failure modes the M2.1 Task 1 guard round documented**
+(see `tests/unit/test_stage2_cilium_config.py`'s module docstring for the full
+account of five guards that shipped inert):
+
+1. **No assertion here can be satisfied by a comment.** Every check either
+   parses structure (`yaml.safe_load`, which discards comments before anything
+   is asserted) or runs against `_effective_script()`, which is
+   `setup-kind.sh` with the shebang and every whole-line comment removed. The
+   version-pin checks additionally require *exactly one* assignment each, so a
+   stale second assignment cannot satisfy them either.
+2. **The load-bearing orderings are proven behaviourally**, by running the real
+   script against fake `helm`/`kubectl`/`kind`/`docker` and asserting on what
+   it actually invoked. Nothing written in the file -- comment, string literal
+   or echo -- can satisfy those.
+3. **Enumerations normalise whitespace before matching.** `deploy/` YAML and
+   this repo's docs both hard-wrap, and a hard-wrapped claim has already
+   defeated two independent enumerations in this project.
+
+Every check below was proven RED by breaking its input: 78 mutations, each
+applied to the real file and reverted, enumerated over the *checkers' decision
+paths* rather than over plausible document edits (the distinction that let a
+previous guard survive twelve mutations without covering the branch it existed
+for). Seven of those mutations are expected to leave the suite GREEN -- a
+hard-wrapped header, doubled spaces inside a Go template, a commented-out
+second version assignment, a comment merely mentioning cert-manager, and a
+value moved consistently across every file that names it -- because a guard
+that fires on those would be a guard nobody can edit around.
+
+Two real weaknesses surfaced that way and are fixed here rather than noted:
+a bare `"1.15.3" in header` was satisfiable by an unrelated sentence elsewhere
+in the same file (so the appVersion is now asserted adjacent to the chart
+version it belongs to), and a blanket ban on the string `cert-manager` in
+`setup-kind.sh` would have forbidden `--help` from honestly saying it is not
+installed (so that check is scoped to invocations, with a behavioural
+counterpart).
+
+Two deliberate non-goals. This module does not talk to a cluster, mint a token,
+or read a trace: the live evidence for those is the task report's captures and
+`tests/e2e/test_gateway_trace.py`. And it does not assert that SPIRE *works* --
+it asserts that the configuration says what the rest of the repo believes it
+says.
+"""
+import os
+import re
+import shutil
+import stat
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SETUP_KIND = REPO_ROOT / "scripts" / "setup-kind.sh"
+SPIRE_VALUES = REPO_ROOT / "deploy" / "platform" / "spire" / "values.yaml"
+SPIRE_REGISTRATION = REPO_ROOT / "deploy" / "platform" / "spire" / "registration.yaml"
+SPIRE_METRICS = REPO_ROOT / "deploy" / "platform" / "spire" / "metrics.yaml"
+GATEWAY_CONFIG = REPO_ROOT / "deploy" / "platform" / "agentgateway" / "config.yaml"
+GATEWAY_DEPLOYMENT = REPO_ROOT / "deploy" / "platform" / "agentgateway" / "deployment.yaml"
+SETTLEMENT_MANIFEST = REPO_ROOT / "deploy" / "k8s" / "settlement-agent.yaml"
+SVID_MODULE = REPO_ROOT / "agents" / "settlement-agent" / "svid.py"
+MCP_TOOLS_MODULE = REPO_ROOT / "agents" / "settlement-agent" / "mcp_tools.py"
+COLLECTOR_CONFIGS = (
+    REPO_ROOT / "deploy" / "observability" / "collector-config.yaml",
+    REPO_ROOT / "deploy" / "observability" / "collector-config-dash0.yaml",
+)
+
+# Resolved from `helm search repo spiffe/spire --versions` against the HARDENED
+# charts repo, and cross-checked against that repo's upstream releases API
+# (which tags per chart, so these two version series are independent):
+# spire 0.30.1 (appVersion SPIRE 1.15.3) and spire-crds 0.6.1 are each the
+# newest.
+PINNED_SPIRE_CHART_VERSION = "0.30.1"
+PINNED_SPIRE_CRDS_CHART_VERSION = "0.6.1"
+PINNED_SPIRE_APP_VERSION = "1.15.3"
+HARDENED_CHARTS_REPO = "https://spiffe.github.io/helm-charts-hardened/"
+
+TRUST_DOMAIN = "northstar.local"
+CLUSTER_NAME = "northstar"
+JWT_ISSUER = (
+    "http://spire-spiffe-oidc-discovery-provider.northstar-platform.svc.cluster.local"
+)
+SETTLEMENT_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/settlement-agent"
+GATEWAY_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-platform/sa/agentgateway"
+# The workload-facing Workload API socket, as READ from the pinned chart's
+# rendered output rather than assumed: `helm template spire spiffe/spire
+# --version 0.30.1` renders the spiffe-oidc-discovery-provider (the chart's own
+# Workload API consumer) with `workload_api.socket_path:
+# /spiffe-workload-api/spire-agent.sock`, a `mountPath: /spiffe-workload-api`,
+# and a `csi.spiffe.io` volume.
+WORKLOAD_API_DIR = "/spiffe-workload-api"
+WORKLOAD_API_SOCKET = f"{WORKLOAD_API_DIR}/spire-agent.sock"
+CSI_DRIVER_NAME = "csi.spiffe.io"
+
+
+def _yaml_docs(path: Path) -> list:
+    return [d for d in yaml.safe_load_all(path.read_text()) if d]
+
+
+def _yaml(path: Path) -> dict:
+    return yaml.safe_load(path.read_text())
+
+
+def _effective_script() -> str:
+    """`setup-kind.sh` with the shebang and every whole-line comment removed.
+
+    Trailing (end-of-line) comments are deliberately left in place -- stripping
+    those safely needs a shell parser, since `#` is an ordinary character
+    inside strings -- so every assertion below is additionally written
+    specifically enough that a trailing comment cannot supply it.
+    """
+    return "\n".join(
+        line
+        for line in SETUP_KIND.read_text().splitlines()
+        if not line.lstrip().startswith("#")
+    )
+
+
+def _squash(text: str) -> str:
+    """Collapse all whitespace runs to single spaces.
+
+    Every enumeration over this repo's YAML and docs goes through this. Two
+    independent parties have already under-counted the same document because a
+    claim was hard-wrapped across a newline; matching on squashed text removes
+    that whole failure mode rather than hoping the next claim fits on one line.
+    """
+    return re.sub(r"\s+", " ", text)
+
+
+def _prose(path: Path) -> str:
+    """A YAML file's comment prose as one squashed line.
+
+    Leading `#` markers are stripped *before* squashing, because a
+    hard-wrapped comment puts a `#` in the middle of the sentence -- so
+    squashing alone would turn "spiffe/spire-crds 0.6.1" wrapped across two
+    comment lines into "spiffe/spire-crds # 0.6.1" and miss it. This is the
+    same under-count that has already defeated two enumerations of
+    docs/telemetry-contract.md, one level meaner.
+    """
+    return _squash(
+        " ".join(
+            re.sub(r"^\s*#\s?", "", line)
+            for line in path.read_text().splitlines()
+            if line.lstrip().startswith("#")
+        )
+    )
+
+
+def _find_by_kind(docs: list, kind: str, name: str) -> dict:
+    for doc in docs:
+        if doc.get("kind") == kind and doc.get("metadata", {}).get("name") == name:
+            return doc
+    raise AssertionError(
+        f"no {kind}/{name} in the manifest; found "
+        f"{[(d.get('kind'), d.get('metadata', {}).get('name')) for d in docs]}"
+    )
+
+
+# --- The Helm values -------------------------------------------------------
+
+
+def test_the_trust_domain_cluster_name_and_issuer_are_nested_not_flat():
+    """The chart is an umbrella: values must nest under per-sub-chart keys.
+
+    A flat `trustDomain:` at the document root is not a key any sub-chart
+    reads, Helm does not warn about unknown top-level values, and the install
+    then silently uses the chart default `example.org`. That failure mode looks
+    exactly like success, which is why both halves are asserted: the nested
+    keys are present *and* the flat spellings are absent.
+    """
+    values = _yaml(SPIRE_VALUES)
+    spire = values.get("global", {}).get("spire", {})
+    assert spire.get("trustDomain") == TRUST_DOMAIN, (
+        f"global.spire.trustDomain must be {TRUST_DOMAIN!r} (the chart default "
+        f"is 'example.org'); got {spire.get('trustDomain')!r}"
+    )
+    assert spire.get("clusterName") == CLUSTER_NAME, (
+        f"global.spire.clusterName must be {CLUSTER_NAME!r} (the chart default "
+        f"is 'example-cluster'); got {spire.get('clusterName')!r}"
+    )
+    assert spire.get("jwtIssuer") == JWT_ISSUER, (
+        "global.spire.jwtIssuer must be set explicitly, not left to derive to "
+        f"oidc-discovery.$trustDomain; expected {JWT_ISSUER!r}, got "
+        f"{spire.get('jwtIssuer')!r}"
+    )
+    for flat in ("trustDomain", "clusterName", "jwtIssuer"):
+        assert flat not in values, (
+            f"a top-level {flat!r} in this umbrella chart's values is silently "
+            "ignored -- Helm does not warn, and the chart default applies "
+            "instead. It must live under global.spire."
+        )
+
+
+def test_the_values_header_records_both_pinned_chart_versions():
+    """Nothing floats: the versions setup-kind.sh installs must be stated in
+    the values file too, so the two cannot drift apart silently.
+
+    Read through `_prose`, because this file hard-wraps its header and the
+    version and the chart name it belongs to can land on different lines --
+    with a comment marker between them.
+    """
+    text = _prose(SPIRE_VALUES)
+    assert f"spiffe/spire-crds {PINNED_SPIRE_CRDS_CHART_VERSION}" in text, (
+        "the values header must state the pinned spire-crds chart version as "
+        f"'spiffe/spire-crds {PINNED_SPIRE_CRDS_CHART_VERSION}'"
+    )
+    assert f"spiffe/spire {PINNED_SPIRE_CHART_VERSION}" in text, (
+        "the values header must state the pinned spire chart version as "
+        f"'spiffe/spire {PINNED_SPIRE_CHART_VERSION}'"
+    )
+    # Deliberately not a bare `"1.15.3" in text`: this file mentions the SPIRE
+    # release in prose elsewhere, so a bare containment check was satisfiable
+    # by that unrelated sentence -- a mutation that changed the header's
+    # appVersion escaped exactly that way. The appVersion has to be stated
+    # next to the chart version it belongs to, which is the only place the
+    # pairing is load-bearing.
+    assert (
+        f"spiffe/spire {PINNED_SPIRE_CHART_VERSION} "
+        f"(appVersion {PINNED_SPIRE_APP_VERSION}" in text
+    ), (
+        f"the values header must state the SPIRE appVersion "
+        f"({PINNED_SPIRE_APP_VERSION}) alongside the chart version "
+        f"({PINNED_SPIRE_CHART_VERSION}), so a chart bump that changes SPIRE "
+        "itself is visible"
+    )
+    assert HARDENED_CHARTS_REPO in text, (
+        "the values header must name the hardened charts repo explicitly -- "
+        "the older spiffe/helm-charts location does not carry these charts, "
+        "and that is the wrong turn this pin exists to prevent"
+    )
+
+
+def test_spires_own_prometheus_telemetry_is_enabled_on_both_server_and_agent():
+    """SPIRE 1.15.3 emits no OTLP and no spans; Prometheus is its only real
+    telemetry surface. Left at the chart default (`enabled: false`) SPIRE is
+    invisible -- the same hole M2.1 Task 3 found in agentgateway, which is why
+    this is asserted rather than assumed."""
+    values = _yaml(SPIRE_VALUES)
+    for chart in ("spire-server", "spire-agent"):
+        prom = values.get(chart, {}).get("telemetry", {}).get("prometheus", {})
+        assert prom.get("enabled") is True, (
+            f"{chart}.telemetry.prometheus.enabled must be true; got "
+            f"{prom.get('enabled')!r}"
+        )
+        assert prom.get("podMonitor", {}).get("enabled") is False, (
+            f"{chart}.telemetry.prometheus.podMonitor must stay disabled -- it "
+            "needs the Prometheus Operator CRD, which this cluster does not "
+            "have (Prometheus is stage 4). The collector scrapes directly."
+        )
+
+
+def test_cert_manager_is_not_installed_anywhere():
+    """The M2 spec includes cert-manager "only to the extent SPIRE actually
+    needs it". The pinned chart needs it for nothing this install enables --
+    the OIDC provider's ingress TLS, spire-server federation TLS, and the
+    `certManager` upstreamAuthority, all off -- so it is not installed.
+
+    Asserted as an absence so a later reader cannot "restore" it from the
+    roadmap: a component installed because a document named it, rather than
+    because something needs it, is exactly what this project's stage profiling
+    exists to avoid.
+
+    Scoped to *invocations* rather than to any mention of the string, on
+    purpose. `setup-kind.sh --help` says out loud that cert-manager is not
+    installed and not needed, and that sentence is the kind of honest operator
+    text this repo wants to keep; a guard that forbade the word would forbid
+    saying so. The counterpart behavioural check
+    (`test_stage_two_installs_no_cert_manager`) is the one nothing textual can
+    satisfy.
+    """
+    values_text = SPIRE_VALUES.read_text()
+    assert "certManager" not in values_text, (
+        "the SPIRE values must not enable any certManager-backed feature"
+    )
+    installs = [
+        line
+        for line in _effective_script().splitlines()
+        if re.search(r"cert-?[Mm]anager", line)
+        and re.search(r"\b(helm|kubectl|jetstack)\b", line)
+    ]
+    assert not installs, (
+        "setup-kind.sh must not install cert-manager: nothing in this install "
+        "needs it. If a future task genuinely needs it, install it pinned and "
+        "record why, then update this guard. Offending lines:\n  "
+        + "\n  ".join(line.strip() for line in installs)
+    )
+
+
+# --- The registration entries ---------------------------------------------
+
+
+def test_every_cluster_spiffeid_sets_the_controller_managers_class_name():
+    """The single silent-failure mode in this file.
+
+    The chart renders its controller-manager with `className:
+    "northstar-platform-spire"` and `watchClassless: false`, so a
+    ClusterSPIFFEID carrying no `className` is ignored outright: `kubectl
+    apply` succeeds, the CR's status stays empty, no entry is created, and the
+    only symptom is a workload that cannot fetch an SVID. The chart's own
+    install NOTES say so in as many words.
+    """
+    docs = _yaml_docs(SPIRE_REGISTRATION)
+    crs = [d for d in docs if d.get("kind") == "ClusterSPIFFEID"]
+    assert len(crs) == 2, (
+        f"expected exactly two ClusterSPIFFEID resources (settlement-agent and "
+        f"agentgateway); found {len(crs)}"
+    )
+    for cr in crs:
+        name = cr["metadata"]["name"]
+        assert cr["spec"].get("className") == "northstar-platform-spire", (
+            f"ClusterSPIFFEID/{name} must set spec.className to "
+            f"'northstar-platform-spire'; got "
+            f"{cr['spec'].get('className')!r}. With the chart's "
+            "watchClassless: false, a classless CR is silently never "
+            "reconciled into a registration entry."
+        )
+
+
+def test_both_workloads_are_attested_on_namespace_and_service_account():
+    """The service account must be an attestation *constraint*, not decoration
+    in the ID string. Without the `k8s:sa:` workload selector the entry's only
+    selectors are whatever the controller-manager derives, and the identity
+    would name a service account SPIRE never checked."""
+    crs = [d for d in _yaml_docs(SPIRE_REGISTRATION) if d.get("kind") == "ClusterSPIFFEID"]
+    for cr in crs:
+        name = cr["metadata"]["name"]
+        selectors = cr["spec"].get("workloadSelectorTemplates") or []
+        squashed = [_squash(s) for s in selectors]
+        assert "k8s:ns:{{ .PodMeta.Namespace }}" in squashed, (
+            f"ClusterSPIFFEID/{name} must constrain on namespace; got "
+            f"{selectors!r}"
+        )
+        assert "k8s:sa:{{ .PodSpec.ServiceAccountName }}" in squashed, (
+            f"ClusterSPIFFEID/{name} must constrain on service account; got "
+            f"{selectors!r}"
+        )
+        assert cr["spec"].get("fallback") is False, (
+            f"ClusterSPIFFEID/{name} must not be a fallback -- the chart ships "
+            "a catch-all `default` CR with fallback: true that matches the "
+            "same pods, and a fallback CR applies only when no non-fallback "
+            "one matches"
+        )
+
+
+def test_the_registered_spiffe_ids_are_built_from_this_projects_trust_domain():
+    """The ID template must render the two IDs the rest of the repo names.
+
+    Rendered by substitution here rather than asserted as a literal, so the
+    guard fails if the *template* changes shape (say to `/sa/{{...}}/ns/{{...}}`)
+    as well as if the trust domain drifts.
+    """
+    crs = {
+        d["metadata"]["name"]: d["spec"]
+        for d in _yaml_docs(SPIRE_REGISTRATION)
+        if d.get("kind") == "ClusterSPIFFEID"
+    }
+    expected = {
+        "northstar-settlement-agent": ("northstar-agents", "settlement-agent", SETTLEMENT_SPIFFE_ID),
+        "northstar-agentgateway": ("northstar-platform", "agentgateway", GATEWAY_SPIFFE_ID),
+    }
+    assert set(crs) == set(expected), (
+        f"unexpected ClusterSPIFFEID names: {sorted(crs)} vs {sorted(expected)}"
+    )
+    for cr_name, (namespace, service_account, spiffe_id) in expected.items():
+        template = _squash(crs[cr_name]["spiffeIDTemplate"])
+        rendered = (
+            template.replace("{{ .TrustDomain }}", TRUST_DOMAIN)
+            .replace("{{ .PodMeta.Namespace }}", namespace)
+            .replace("{{ .PodSpec.ServiceAccountName }}", service_account)
+        )
+        assert rendered == spiffe_id, (
+            f"ClusterSPIFFEID/{cr_name}'s template renders {rendered!r} for a "
+            f"pod in {namespace} under service account {service_account}, but "
+            f"the rest of the repo names {spiffe_id!r}"
+        )
+        # The pod selector must actually select that workload, or the CR
+        # matches nothing and the ID above is hypothetical.
+        assert crs[cr_name]["podSelector"]["matchLabels"]["app"] == service_account
+        assert (
+            crs[cr_name]["namespaceSelector"]["matchLabels"][
+                "kubernetes.io/metadata.name"
+            ]
+            == namespace
+        )
+
+
+# --- The workloads' own manifests -----------------------------------------
+
+
+def test_settlement_agent_has_its_own_service_account_and_uses_it():
+    """Both halves matter. A ServiceAccount that exists but is not referenced
+    leaves the pod on `default`, and the SPIFFE ID then reads
+    `.../sa/default` -- measured, not hypothetical: that is the ID SPIRE minted
+    for this pod before the ServiceAccount was wired in."""
+    docs = _yaml_docs(SETTLEMENT_MANIFEST)
+    _find_by_kind(docs, "ServiceAccount", "settlement-agent")
+    deployment = _find_by_kind(docs, "Deployment", "settlement-agent")
+    pod = deployment["spec"]["template"]["spec"]
+    assert pod.get("serviceAccountName") == "settlement-agent", (
+        "the pod must reference its own ServiceAccount; got "
+        f"{pod.get('serviceAccountName')!r}. Unreferenced, the pod runs as "
+        "`default` and attests as .../sa/default."
+    )
+
+
+def test_agentgateway_has_its_own_service_account_and_uses_it():
+    docs = _yaml_docs(GATEWAY_DEPLOYMENT)
+    _find_by_kind(docs, "ServiceAccount", "agentgateway")
+    deployment = _find_by_kind(docs, "Deployment", "agentgateway")
+    pod = deployment["spec"]["template"]["spec"]
+    assert pod.get("serviceAccountName") == "agentgateway", (
+        "the gateway's SPIFFE ID is the JWT audience both ends of this hop "
+        "agree on, so it must not attest as .../sa/default; got "
+        f"{pod.get('serviceAccountName')!r}"
+    )
+
+
+def test_settlement_agent_mounts_the_spiffe_csi_volume_at_the_socket_path():
+    """The mount and the configured socket path must agree.
+
+    The directory half of the Workload API path is chosen by whoever mounts the
+    CSI volume and the filename half is the driver's, so these are two
+    independent settings that must describe one file. They are compared here
+    rather than each being asserted against a literal, so moving the mount
+    without moving the env var fails.
+    """
+    deployment = _find_by_kind(_yaml_docs(SETTLEMENT_MANIFEST), "Deployment", "settlement-agent")
+    pod = deployment["spec"]["template"]["spec"]
+
+    volumes = {v["name"]: v for v in pod.get("volumes", [])}
+    csi_volumes = {
+        name: v for name, v in volumes.items() if v.get("csi", {}).get("driver")
+    }
+    assert len(csi_volumes) == 1, (
+        f"expected exactly one CSI volume on this pod; found {sorted(csi_volumes)}"
+    )
+    volume_name, volume = next(iter(csi_volumes.items()))
+    assert volume["csi"]["driver"] == CSI_DRIVER_NAME, (
+        f"the CSI driver must be {CSI_DRIVER_NAME!r} (the plugin name the "
+        "pinned chart registers); the nested-mode variant registers "
+        f"'upstream.{CSI_DRIVER_NAME}' and is not installed. Got "
+        f"{volume['csi']['driver']!r}"
+    )
+    assert volume["csi"].get("readOnly") is True, (
+        "the Workload API mount must be read-only"
+    )
+
+    container = pod["containers"][0]
+    mounts = {m["name"]: m for m in container.get("volumeMounts", [])}
+    assert volume_name in mounts, (
+        f"volume {volume_name!r} is declared but never mounted into the "
+        "container, so the socket is not visible to svid.py"
+    )
+    mount_path = mounts[volume_name]["mountPath"].rstrip("/")
+
+    env = {e["name"]: e.get("value") for e in container.get("env", [])}
+    endpoint = env.get("SPIFFE_ENDPOINT_SOCKET")
+    assert endpoint, "SPIFFE_ENDPOINT_SOCKET must be set on the container"
+    assert endpoint.startswith("unix://"), (
+        f"SPIFFE_ENDPOINT_SOCKET must carry the unix:// scheme; got {endpoint!r}"
+    )
+    socket_path = endpoint[len("unix://") :]
+    assert socket_path == WORKLOAD_API_SOCKET, (
+        f"SPIFFE_ENDPOINT_SOCKET points at {socket_path!r}; the path read from "
+        f"the pinned chart's own rendered output is {WORKLOAD_API_SOCKET!r}"
+    )
+    assert os.path.dirname(socket_path) == mount_path, (
+        f"the CSI volume is mounted at {mount_path!r} but "
+        f"SPIFFE_ENDPOINT_SOCKET names a socket in "
+        f"{os.path.dirname(socket_path)!r} -- the mount and the configured "
+        "path must describe one file"
+    )
+
+
+# --- The one string, in four places ---------------------------------------
+
+
+def test_the_gateway_audience_is_the_same_string_everywhere_it_appears():
+    """The highest-value check in this file.
+
+    The gateway's SPIFFE ID appears as: the ID the SPIRE template renders, the
+    audience settlement-agent's deployment asks for, the fallback baked into
+    `mcp_tools.py` for when that variable is unset, and the `aud` value the
+    gateway's own jwtAuth accepts. Three out of four agreeing is a silent 401
+    on every call.
+    """
+    env = {
+        e["name"]: e.get("value")
+        for e in _find_by_kind(
+            _yaml_docs(SETTLEMENT_MANIFEST), "Deployment", "settlement-agent"
+        )["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    deployment_audience = env.get("NORTHSTAR_GATEWAY_AUDIENCE")
+
+    # Parsed out of the module source rather than imported: this test runs in
+    # the root .venv, which deliberately does not have settlement-agent's
+    # dependencies (importing mcp_tools would pull in mcp, spiffe and
+    # pydantic-ai).
+    source = _squash(MCP_TOOLS_MODULE.read_text())
+    literals = re.findall(r'"(spiffe://[^"]+)"', source)
+    assert literals, (
+        "no spiffe:// literal found in mcp_tools.py -- expected the fallback "
+        "audience for NORTHSTAR_GATEWAY_AUDIENCE"
+    )
+
+    gateway_audiences = _jwt_auth(_yaml(GATEWAY_CONFIG))["audiences"]
+
+    sites = {
+        "deploy/platform/spire/registration.yaml (rendered ID template)": GATEWAY_SPIFFE_ID,
+        "deploy/k8s/settlement-agent.yaml (NORTHSTAR_GATEWAY_AUDIENCE)": deployment_audience,
+        "agents/settlement-agent/mcp_tools.py (fallback literal)": literals[0],
+        "deploy/platform/agentgateway/config.yaml (jwtAuth.audiences[0])": gateway_audiences[0],
+    }
+    distinct = set(sites.values())
+    assert distinct == {GATEWAY_SPIFFE_ID}, (
+        "the gateway's SPIFFE ID must be one identical string at every site; "
+        "found:\n  "
+        + "\n  ".join(f"{where}: {what!r}" for where, what in sites.items())
+    )
+    assert gateway_audiences == [GATEWAY_SPIFFE_ID], (
+        "jwtAuth.audiences must contain exactly the gateway's own SPIFFE ID; "
+        f"got {gateway_audiences!r}. A second audience widens what this "
+        "gateway accepts without anything else in the repo saying so."
+    )
+    # The registration CR must actually be the source of that ID, not a
+    # coincidence -- cross-checked against the template test above.
+    assert deployment_audience != SETTLEMENT_SPIFFE_ID, (
+        "the audience must be the *gateway's* identity, not the caller's -- a "
+        "token minted for its own subject would verify against nothing"
+    )
+
+
+# --- The gateway's verification policy ------------------------------------
+
+
+def _jwt_auth(config: dict) -> dict:
+    routes = config["binds"][0]["listeners"][0]["routes"]
+    assert len(routes) == 1, f"expected one route; found {len(routes)}"
+    policies = routes[0].get("policies")
+    assert policies, (
+        "the route carries no `policies` block, so no JWT verification is "
+        "configured at all"
+    )
+    jwt_auth = policies.get("jwtAuth")
+    assert jwt_auth, f"the route's policies carry no jwtAuth: {sorted(policies)}"
+    return jwt_auth
+
+
+def test_the_gateway_requires_a_valid_jwt_rather_than_merely_validating_one():
+    """`mode: strict` is the one setting in that block that changes behaviour.
+
+    agentgateway v1.5.0's `Mode` enum marks `Optional` as `#[default]`,
+    documented as "Validate the JWT when present. Warning: this allows requests
+    without a JWT." At the default, a caller that sent no credential at all
+    would sail through and this task's claim would hold only for callers that
+    volunteered one. Both accidental spellings that mean "allow anonymous"
+    (`optional`, `permissive`) are named in the failure message so the fix is
+    unambiguous.
+    """
+    jwt_auth = _jwt_auth(_yaml(GATEWAY_CONFIG))
+    assert jwt_auth.get("mode") == "strict", (
+        f"jwtAuth.mode must be 'strict'; got {jwt_auth.get('mode')!r}. "
+        "'optional' (the agentgateway default) and 'permissive' both admit "
+        "requests with a missing or invalid JWT, which would make every "
+        "identity assertion in this milestone conditional on the caller's "
+        "goodwill."
+    )
+
+
+def test_the_gateway_trusts_exactly_the_issuer_spire_is_configured_to_mint():
+    """One value, `global.spire.jwtIssuer`, feeds both the `iss` claim SPIRE
+    mints and the `issuer` the gateway checks. Derived independently they
+    become two guesses at the same string, and a mismatch is a 401 with nothing
+    visibly wrong in the token."""
+    jwt_auth = _jwt_auth(_yaml(GATEWAY_CONFIG))
+    configured_issuer = _yaml(SPIRE_VALUES)["global"]["spire"]["jwtIssuer"]
+    assert jwt_auth.get("issuer") == configured_issuer, (
+        f"the gateway trusts issuer {jwt_auth.get('issuer')!r} but SPIRE is "
+        f"configured to mint {configured_issuer!r}"
+    )
+    jwks_url = jwt_auth.get("jwks", {}).get("url")
+    assert jwks_url == f"{configured_issuer}/keys", (
+        f"the JWKS URL must be the issuer's own /keys endpoint (the `jwks_uri` "
+        f"the discovery document advertises); got {jwks_url!r}"
+    )
+    assert "file" not in (jwt_auth.get("jwks") or {}), (
+        "a `jwks.file` goes stale the first time SPIRE rotates its JWT signing "
+        "key; the key set must be fetched"
+    )
+
+
+def test_the_gateway_carries_no_authorization_policy_yet():
+    """M2.1 makes identity real; a later milestone decides what to do with it.
+
+    Structural, over the parsed document, so a comment discussing
+    `mcpAuthorization` cannot trip it and an actual rule block cannot hide from
+    it.
+    """
+    config = _yaml(GATEWAY_CONFIG)
+    routes = config["binds"][0]["listeners"][0]["routes"]
+    forbidden = ("mcpAuthorization", "authorization", "extAuthz", "mcpGuardrails")
+    for route in routes:
+        policies = route.get("policies") or {}
+        present = [key for key in forbidden if key in policies]
+        assert not present, (
+            f"M2.1 adds JWT verification only; found authorization policy "
+            f"{present} on a route. The denial is a later milestone."
+        )
+    listeners = config["binds"][0]["listeners"]
+    for listener in listeners:
+        policies = listener.get("policies") or {}
+        present = [key for key in forbidden if key in policies]
+        assert not present, (
+            f"found authorization policy {present} at listener level"
+        )
+
+
+def test_the_gateway_config_contains_no_dollar_sign_at_all():
+    """agentgateway v1.5.0 expands environment variables in this file's raw
+    text BEFORE parsing it as YAML -- comments included -- and an unset name is
+    a hard startup failure ("error looking key 'PWD' up: environment variable
+    not found"). This was hit twice while writing the file, once by a comment
+    that quoted a shell command and once by the comment fixing it.
+
+    Asserted over the whole file rather than over the parsed document,
+    deliberately: the parsed document is exactly where a comment does not
+    appear, and a comment is what broke it.
+    """
+    text = GATEWAY_CONFIG.read_text()
+    offenders = [
+        f"line {i + 1}: {line.strip()}"
+        for i, line in enumerate(text.splitlines())
+        if "$" in line
+    ]
+    assert not offenders, (
+        "this file must contain no dollar signs: the gateway substitutes "
+        "environment variables into its raw text before parsing, comments "
+        "included, and an unset name aborts startup:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
+# --- SPIRE's telemetry reaches the collector ------------------------------
+
+
+def test_both_collector_configs_scrape_spires_metrics_services():
+    """SPIRE has no OTLP exporter, so the only way its telemetry joins this
+    system's pipeline is a Prometheus scrape. The chart publishes no Service
+    for either metrics port, so `deploy/platform/spire/metrics.yaml` provides
+    them; if those two files stop agreeing, the scrape silently returns
+    nothing.
+
+    Both collector configs are checked, because `setup-kind.sh` picks one
+    wholesale depending on whether a Dash0 token is present -- editing one is
+    the drift `test_collector_configs_in_sync.py` exists for, and this is the
+    same class of check one level down.
+    """
+    services = [
+        (doc["metadata"]["name"], doc["spec"]["ports"][0]["port"])
+        for doc in _yaml_docs(SPIRE_METRICS)
+        if doc.get("kind") == "Service"
+    ]
+    assert len(services) == 2, f"expected two metrics Services; found {services}"
+    expected_targets = {
+        f"{name}.northstar-platform.svc.cluster.local:{port}"
+        for name, port in services
+    }
+
+    for path in COLLECTOR_CONFIGS:
+        config = _yaml(path)
+        receiver = config["receivers"].get("prometheus/spire")
+        assert receiver, (
+            f"{path.relative_to(REPO_ROOT)} has no `prometheus/spire` "
+            "receiver, so SPIRE's metrics are exposed and thrown away"
+        )
+        scraped = {
+            target
+            for job in receiver["config"]["scrape_configs"]
+            for static in job["static_configs"]
+            for target in static["targets"]
+        }
+        assert scraped == expected_targets, (
+            f"{path.relative_to(REPO_ROOT)} scrapes {sorted(scraped)}, but "
+            f"deploy/platform/spire/metrics.yaml publishes "
+            f"{sorted(expected_targets)}"
+        )
+        pipeline = config["service"]["pipelines"]["metrics"]["receivers"]
+        assert "prometheus/spire" in pipeline, (
+            f"{path.relative_to(REPO_ROOT)}'s metrics pipeline does not list "
+            f"the prometheus/spire receiver; got {pipeline}"
+        )
+
+
+# --- setup-kind.sh (text, comment-stripped) -------------------------------
+
+
+@pytest.mark.parametrize(
+    "variable,expected",
+    [
+        ("SPIRE_CHART_VERSION", PINNED_SPIRE_CHART_VERSION),
+        ("SPIRE_CRDS_CHART_VERSION", PINNED_SPIRE_CRDS_CHART_VERSION),
+    ],
+)
+def test_setup_kind_pins_each_spire_chart_version_exactly_once(variable, expected):
+    """Comment-stripped, and requires exactly one assignment, so neither a
+    comment nor a leftover second assignment can satisfy it."""
+    text = _effective_script()
+    assignments = re.findall(rf'\b{variable}="([^"]+)"', text)
+    assert len(assignments) == 1, (
+        f"expected exactly one effective {variable} assignment, found "
+        f"{len(assignments)}: {assignments}"
+    )
+    assert assignments[0] == expected, (
+        f"setup-kind.sh pins {variable}={assignments[0]}, this guard says "
+        f"{expected}"
+    )
+    assert f'--version "${{{variable}}}"' in text, (
+        f"the helm install must pass ${{{variable}}} explicitly; an unpinned "
+        "`helm install` floats to whatever the repo cache holds"
+    )
+
+
+def test_setup_kind_uses_the_hardened_charts_repo():
+    text = _effective_script()
+    assignments = re.findall(r'\bSPIFFE_HELM_REPO="([^"]+)"', text)
+    assert assignments == [HARDENED_CHARTS_REPO], (
+        f"expected exactly one SPIFFE_HELM_REPO assignment naming the hardened "
+        f"charts repo {HARDENED_CHARTS_REPO!r}; found {assignments!r}. The "
+        "older spiffe/helm-charts location does not carry these charts."
+    )
+
+
+# --- Behavioural: run the real script against fakes ----------------------
+#
+# Stronger than any text assertion, because nothing written in the file --
+# comment, string literal or echo -- can satisfy these. Each builds a throwaway
+# tree containing the real `setup-kind.sh`, runs it with fake
+# `kind`/`kubectl`/`docker`/`helm` ahead of it on PATH, and asserts on what it
+# actually invoked.
+#
+# These fakes differ from `test_stage2_cilium_config.py`'s in one deliberate
+# way: `kubectl cluster-info` SUCCEEDS here, so the script runs on past cluster
+# creation and reaches the SPIRE step this module is about. It then dies at
+# Step 9, because `scripts/rebuild-and-deploy.sh` is not copied into the
+# throwaway tree -- which is also what makes the ordering assertion below
+# meaningful: anything logged before the script died necessarily ran before the
+# workloads would have been deployed.
+#
+# Nothing here touches a real cluster, a real registry, Docker, the network, or
+# the repo's own `.env`.
+
+FAKES = {
+    "docker": r"""#!/usr/bin/env bash
+echo "docker $*" >> "$FAKE_LOG"
+case "$1" in
+  inspect) echo "true"; exit 0 ;;
+esac
+exit 0
+""",
+    "kind": r"""#!/usr/bin/env bash
+echo "kind $*" >> "$FAKE_LOG"
+if [[ "$1 $2" == "get clusters" ]]; then exit 0; fi
+if [[ "$1 $2" == "get nodes" ]]; then echo northstar-control-plane; exit 0; fi
+exit 0
+""",
+    # Succeeds on everything, including `cluster-info`, so the script proceeds
+    # to the SPIRE step. The kindnet probe fails (exit 1), i.e. "no default CNI
+    # present", which is the stage-2 path.
+    "kubectl": r"""#!/usr/bin/env bash
+echo "kubectl $*" >> "$FAKE_LOG"
+if [[ "$*" == *"get daemonset kindnet"* ]]; then exit 1; fi
+cat >/dev/null 2>&1 || true
+exit 0
+""",
+    "helm": r"""#!/usr/bin/env bash
+echo "helm $*" >> "$FAKE_LOG"
+exit 0
+""",
+}
+
+_COPIED = [
+    Path("scripts/setup-kind.sh"),
+    Path("deploy/kind/stage1.yaml"),
+    Path("deploy/kind/stage2.yaml"),
+    Path("deploy/k8s/namespaces.yaml"),
+    Path("deploy/platform/cilium-values.yaml"),
+    Path("deploy/platform/spire/values.yaml"),
+    Path("deploy/platform/spire/registration.yaml"),
+    Path("deploy/platform/spire/metrics.yaml"),
+]
+
+
+def _run_setup_kind(stage, tmp_path):
+    """Copy the real script into a throwaway tree and run it against fakes.
+
+    Returns (returncode, combined_output, invocations).
+    """
+    tree = tmp_path / "tree"
+    for relative in _COPIED:
+        destination = tree / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO_ROOT / relative, destination)
+    # A fake .env with only the one variable the script requires. The repo's
+    # real .env is never read, and no secret is involved.
+    (tree / ".env").write_text(
+        "OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE=fake/collector:0\n"
+    )
+
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    for name, body in FAKES.items():
+        path = bindir / name
+        path.write_text(body)
+        path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    log = tmp_path / "invocations.log"
+    log.write_text("")
+    env = dict(os.environ)
+    env["PATH"] = f"{bindir}:{env['PATH']}"
+    env["FAKE_LOG"] = str(log)
+    # Never let a real credential reach the subprocess.
+    env.pop("ANTHROPIC_API_KEY", None)
+    env.pop("DASH0_AUTH_TOKEN", None)
+
+    proc = subprocess.run(
+        ["bash", str(tree / "scripts" / "setup-kind.sh"), "--stage", stage],
+        capture_output=True, text=True, env=env, timeout=180,
+    )
+    return proc.returncode, proc.stdout + proc.stderr, log.read_text().splitlines()
+
+
+_bash_only = pytest.mark.skipif(sys.platform == "win32", reason="bash-only harness")
+
+
+def _helm_installs(calls):
+    return [c for c in calls if c.startswith("helm upgrade --install")]
+
+
+@_bash_only
+def test_stage_two_installs_the_crds_chart_before_the_spire_chart(tmp_path):
+    """The ordering the chart itself requires: `spiffe/spire` on its own fails
+    on the missing spire.spiffe.io CRDs, which its own bundled
+    spire-controller-manager needs before it can reconcile a single
+    ClusterSPIFFEID. Proven by what the script invoked, not by reading it."""
+    _, out, calls = _run_setup_kind("2", tmp_path)
+    installs = _helm_installs(calls)
+    crds = [i for i, c in enumerate(installs) if "spiffe/spire-crds" in c]
+    spire = [
+        i
+        for i, c in enumerate(installs)
+        if "spiffe/spire " in c or c.rstrip().endswith("spiffe/spire")
+    ]
+    assert crds, f"`spiffe/spire-crds` was never installed. Invocations:\n{installs}\n{out}"
+    assert spire, f"`spiffe/spire` was never installed. Invocations:\n{installs}\n{out}"
+    assert max(crds) < min(spire), (
+        "the CRDs chart must be installed before the spire chart; got, in "
+        f"order:\n" + "\n".join(installs)
+    )
+
+
+@_bash_only
+def test_stage_two_installs_spire_with_the_pinned_versions_and_values(tmp_path):
+    """Pins reach `helm` as arguments, not merely as shell variables."""
+    _, out, calls = _run_setup_kind("2", tmp_path)
+    installs = _helm_installs(calls)
+    crds = next((c for c in installs if "spiffe/spire-crds" in c), None)
+    spire = next(
+        (c for c in installs if "spiffe/spire " in c and "spire-crds" not in c), None
+    )
+    assert crds and spire, f"missing a SPIRE install:\n{installs}\n{out}"
+    assert f"--version {PINNED_SPIRE_CRDS_CHART_VERSION}" in crds, crds
+    assert f"--version {PINNED_SPIRE_CHART_VERSION}" in spire, spire
+    assert "deploy/platform/spire/values.yaml" in spire, (
+        "the spire install must be handed this repo's values file; without it "
+        "the chart's own defaults apply and the trust domain is example.org: "
+        f"{spire}"
+    )
+    assert "--namespace northstar-platform" in spire, spire
+
+
+@_bash_only
+def test_spire_is_installed_before_the_workloads_that_mount_its_socket(tmp_path):
+    """A pod requesting a CSI volume whose driver is not registered stays in
+    ContainerCreating rather than failing fast, so installing SPIRE after the
+    workloads would wedge settlement-agent and block the script on `rollout
+    status`. The behavioural proof is that the script died at Step 9 with the
+    SPIRE install already logged."""
+    rc, out, calls = _run_setup_kind("2", tmp_path)
+    assert rc != 0, (
+        "this harness expects the run to stop at Step 9 (rebuild-and-deploy.sh "
+        f"is not copied into the throwaway tree); it exited 0 instead:\n{out}"
+    )
+    assert "rebuild-and-deploy.sh" in out, (
+        f"expected the run to reach and fail at Step 9; got:\n{out[-2000:]}"
+    )
+    assert _helm_installs(calls), (
+        "SPIRE was not installed before the script reached Step 9, so it would "
+        f"be installed after the workloads that mount its socket:\n{out}"
+    )
+    assert any("spiffe/spire" in c for c in _helm_installs(calls))
+    applies = [c for c in calls if c.startswith("kubectl") and "registration.yaml" in c]
+    assert applies, (
+        "the registration entries must be applied as part of the stage-2 "
+        f"install; kubectl was invoked as:\n" + "\n".join(
+            c for c in calls if c.startswith("kubectl")
+        )
+    )
+
+
+@_bash_only
+def test_stage_two_installs_no_cert_manager(tmp_path):
+    """The behavioural half of `test_cert_manager_is_not_installed_anywhere`.
+
+    That one reads the script and so could in principle be satisfied by
+    something textual; this one asserts on what the script actually invoked,
+    which nothing written in a comment or a `--help` heredoc can supply.
+    """
+    _, out, calls = _run_setup_kind("2", tmp_path)
+    offenders = [c for c in calls if re.search(r"cert-?manager|jetstack", c)]
+    assert not offenders, (
+        "`--stage 2` invoked cert-manager tooling:\n"
+        + "\n".join(offenders)
+        + f"\n{out}"
+    )
+
+
+@_bash_only
+def test_stage_one_installs_no_spire_at_all(tmp_path):
+    """Stage 1 must stay bring-up-able without any of this: the whole point of
+    the stage profiling is that a laptop runs exactly one stage's worth of
+    components."""
+    _, out, calls = _run_setup_kind("1", tmp_path)
+    spire_calls = [c for c in calls if "spiffe" in c or "spire" in c]
+    assert not spire_calls, (
+        f"`--stage 1` touched SPIRE:\n" + "\n".join(spire_calls) + f"\n{out}"
+    )
