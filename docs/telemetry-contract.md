@@ -64,8 +64,8 @@ it was actually run:
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `107 passed, 23 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `130 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `110 passed, 23 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `133 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -148,33 +148,54 @@ caller's attested SPIFFE ID as `jwt.sub` on its SERVER spans and does not carry
 it onto the CLIENT ones; it shares the same `RUN_BROWSER_TESTS=1` gate as the
 rest of that file, which is the whole of the skip-count change.
 
+Task 4's fix round 1 grew the collected total 131 → 134, leaving the skip count
+at 23. All three are always-run unit tests, and all three exist because review
+found the same defect class in a third disguise: a guard narrower than its own
+name. Two close index-narrowness in the module above (a gateway check that read
+`binds[0].listeners[0]`, so a second listener with no `jwtAuth` left the suite
+green; and an audience check that read module text and took the first match, so
+a comment quoting the old value kept it green). The third guards this
+document's own published `jwt.sub` value, which had nothing checking it —
+swapping it to `.../sa/default` kept the suite green, and `.../sa/default` is
+precisely the identity SPIRE minted for that pod before it was given a
+ServiceAccount of its own. A regression to the failure the task exists to
+prevent would have shipped green, with the document that would have exposed it
+already rewritten to agree.
+
 **Provenance of these numbers, precisely.** Where a component is derived it says
 so, and says what it is derived from:
 
-- **Measured (M2.1 Task 4):** `.venv/bin/python -m pytest --collect-only -q
-  tests/` → `131 tests collected`.
+- **Measured (M2.1 Task 4 fix round 1):** `.venv/bin/python -m pytest
+  --collect-only -q tests/` → `134 tests collected`.
 - **Measured (M2.1 Task 4):** the three `RUN_BROWSER_TESTS`-gated modules,
   `tests/e2e/test_browser_root_span.py` (8),
   `tests/e2e/test_settlement_llm_trace.py` (9) and
   `tests/e2e/test_gateway_trace.py` (6), run with no env var → `23 skipped`.
   They are the only gated modules in the tree.
-- **Measured (M2.1 Task 4), gate row:** the gate itself,
+- **Measured (M2.1 Task 4):** the gate itself,
   `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` →
   `1 failed, 129 passed, 1 xfailed` in 152s, 0 skipped, on the SPIRE-issuing,
   JWT-verifying deployment. The one failure was this very row: the guard
   comparing the published numbers against the suite, failing because the row
-  still said 106 while the tree had grown to 131. Fixing it is this edit, and
-  that test was then re-run on its own and passes — so **`130 passed, 1
-  xfailed`** is 129 measured in the gate plus one measured immediately after,
-  not a number typed by hand. The gate was **not** re-run afterwards: it drives
-  live model-driven settlements, and the only change between the two states is
-  the two integers in the table above.
-- **Measured (M2.1 Task 4), default row:** `.venv/bin/python -m pytest tests/
-  -q` → `1 failed, 106 passed, 23 skipped, 1 xfailed` in 89s — the same
-  count-row failure, the same fix, so **`107 passed, 23 skipped, 1 xfailed`**.
-  Stated as 106 + 1 for the same reason, and it agrees with 131 − 23 − 1. The
-  one xfail is the same FastMCP-baggage one described below, and it is not
-  gated, so it appears in both rows.
+  still said 106 while the tree had grown to 131.
+- **Derived, and the gate row is the one derivation here:** gate row =
+  129 + 1 + 3 = **133 passed, 1 xfailed**. The `+ 1` is the count row above,
+  fixed by this edit and re-run on its own to confirm it passes. The `+ 3` is
+  fix round 1's three always-run unit tests
+  (`test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures`,
+  parametrised over the two documents, and
+  `test_the_documented_jwt_sub_value_is_the_callers_attested_identity`), run
+  directly and passing. The gate was **not** re-run for the fix round: it
+  drives five live model-driven settlements, and the round changed only tests,
+  documents and the report — no service code, no manifest, no cluster state.
+  It cross-checks against the collected total by a second route: 134 collected
+  − 0 skipped − 1 xfailed = 133.
+- **Measured (M2.1 Task 4 fix round 1), default row:** `.venv/bin/python -m
+  pytest tests/ -q` → `1 failed, 109 passed, 23 skipped, 1 xfailed` in 100s —
+  the same count-row failure, the same fix, so **`110 passed, 23 skipped, 1
+  xfailed`**. It agrees with 134 − 23 − 1. The one xfail is the same
+  FastMCP-baggage one described below, and it is not gated, so it appears in
+  both rows.
 
 Historical note, kept because it explains why this section is written the way
 it is: before M2.1 Task 3 the gate row (`97 passed, 1 xfailed`) was itself
@@ -814,15 +835,27 @@ agentgateway, which had tracing available and unconfigured for a whole task.
 
 **How the metrics arrive, read off the collector's own debug exporter.** The
 `job_name` becomes `service.name`, which is what puts SPIRE in the same service
-vocabulary as everything else here:
+vocabulary as everything else here. Four consecutive lines of
+`kubectl -n observability logs deployment/otel-collector`, at the committed
+`exporters.debug.verbosity: normal`, with the tab separators the collector
+writes rendered as spaces and nothing else altered:
 
 ```
-ResourceMetrics #0 service.name=spire-agent server.address=spire-agent-metrics.northstar-platform.svc.cluster.local service.instance.id=spire-agent-metrics.northstar-platform.svc.cluster.local:9988 server.port=9988 url.scheme=http
+2026-09-09T14:25:02.633Z  info  Metrics  {"resource": {"service.instance.id": "b9237a32-4649-4154-b0c2-bdd49f2b040f", "service.name": "otelcol-contrib", "service.version": "0.158.0"}, "otelcol.component.id": "debug", "otelcol.component.kind": "exporter", "otelcol.signal": "metrics", "resource metrics": 1, "metrics": 91, "data points": 95}
+2026-09-09T14:25:02.633Z  info  ResourceMetrics #0 service.name=spire-agent server.address=spire-agent-metrics.northstar-platform.svc.cluster.local service.instance.id=spire-agent-metrics.northstar-platform.svc.cluster.local:9988 server.port=9988 url.scheme=http
 ScopeMetrics #0 github.com/open-telemetry/opentelemetry-collector-contrib/receiver/prometheusreceiver@0.158.0
+spire_agent_runtime_total_gc_pause_ns{host=northstar-control-plane} 7.2153768e+07
 ```
 
-and the same shape with `service.name=spire-server`. The scope is the
-Prometheus receiver's, not SPIRE's — SPIRE has no OTel SDK in it at all.
+An earlier revision of this block showed only the two middle lines with the
+timestamps stripped, which made it not reproducible from the command that
+produced it. Two details of the full form are the collector's rather than
+SPIRE's and are worth naming so it is not misread: the `"resource"` object on
+the first line describes the **collector** (`service.name: otelcol-contrib`) —
+it is the logger's own context, not the scraped target's, whose resource is the
+`ResourceMetrics #0` line below it — and `ScopeMetrics #0` names the Prometheus
+receiver, because SPIRE carries no OTel SDK to name a scope of its own. The
+same four-line shape appears with `service.name=spire-server`.
 
 **The series that make this task's mechanism visible**, quoted verbatim from
 `/metrics` on the running pods rather than paraphrased. From spire-agent, the

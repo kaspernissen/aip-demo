@@ -19,36 +19,58 @@ system that passes its own tests while proving nothing about this platform.
 account of five guards that shipped inert):
 
 1. **No assertion here can be satisfied by a comment.** Every check either
-   parses structure (`yaml.safe_load`, which discards comments before anything
-   is asserted) or runs against `_effective_script()`, which is
-   `setup-kind.sh` with the shebang and every whole-line comment removed. The
-   version-pin checks additionally require *exactly one* assignment each, so a
-   stale second assignment cannot satisfy them either.
-2. **The load-bearing orderings are proven behaviourally**, by running the real
+   parses structure -- `yaml.safe_load` and `ast.parse`, both of which discard
+   comments before anything is asserted -- or runs against
+   `_effective_script()`, which is `setup-kind.sh` with the shebang and every
+   whole-line comment removed. The version-pin checks additionally require
+   *exactly one* assignment each and match a whole stripped line, so neither a
+   stale second assignment nor a trailing comment can satisfy them.
+2. **No assertion reads only the first element of a list the schema allows to
+   be longer.** Fix round 1's whole subject. Every gateway check walks all
+   binds, all listeners and all routes; every pod check walks
+   `initContainers + containers`; every Service check walks all ports; the
+   behavioural checks assert on *every* matching `helm` invocation, not the
+   first. The inversion that makes this hold as the config grows: the rule is
+   not "there is one route and it is authenticated" but "every route that
+   exists is authenticated".
+3. **The load-bearing orderings are proven behaviourally**, by running the real
    script against fake `helm`/`kubectl`/`kind`/`docker` and asserting on what
    it actually invoked. Nothing written in the file -- comment, string literal
    or echo -- can satisfy those.
-3. **Enumerations normalise whitespace before matching.** `deploy/` YAML and
+4. **Enumerations normalise whitespace before matching.** `deploy/` YAML and
    this repo's docs both hard-wrap, and a hard-wrapped claim has already
    defeated two independent enumerations in this project.
+5. **Published measurements are guarded too.** The SPIFFE IDs
+   `docs/telemetry-contract.md` and `docs/architecture.md` publish are checked
+   against the two this repo registers. A document that has been quietly
+   rewritten to agree with a regression is worse than a stale one, and the
+   specific stale value available here -- `.../sa/default` -- is exactly the
+   failure the dedicated ServiceAccounts exist to prevent.
 
-Every check below was proven RED by breaking its input: 78 mutations, each
-applied to the real file and reverted, enumerated over the *checkers' decision
-paths* rather than over plausible document edits (the distinction that let a
-previous guard survive twelve mutations without covering the branch it existed
-for). Seven of those mutations are expected to leave the suite GREEN -- a
-hard-wrapped header, doubled spaces inside a Go template, a commented-out
-second version assignment, a comment merely mentioning cert-manager, and a
-value moved consistently across every file that names it -- because a guard
-that fires on those would be a guard nobody can edit around.
+Every check below was proven RED by breaking its input, twice: 78 mutations in
+the first round and 25 more in fix round 1, each applied to the real file and
+reverted, enumerated over the *checkers' decision paths* rather than over
+plausible document edits (the distinction that let a previous guard survive
+twelve mutations without covering the branch it existed for). Some of those
+mutations are expected to leave the suite GREEN -- a hard-wrapped header,
+doubled spaces inside a Go template, a commented-out second version
+assignment, a comment merely mentioning cert-manager, a value moved
+consistently across every file that names it, and a *correctly* authenticated
+second listener -- because a guard that fires on those would be a guard nobody
+can edit around.
 
-Two real weaknesses surfaced that way and are fixed here rather than noted:
-a bare `"1.15.3" in header` was satisfiable by an unrelated sentence elsewhere
-in the same file (so the appVersion is now asserted adjacent to the chart
-version it belongs to), and a blanket ban on the string `cert-manager` in
-`setup-kind.sh` would have forbidden `--help` from honestly saying it is not
-installed (so that check is scoped to invocations, with a behavioural
-counterpart).
+Four real weaknesses surfaced that way and are fixed here rather than noted.
+Two from round one: a bare `"1.15.3" in header` was satisfiable by an unrelated
+sentence elsewhere in the same file, and a blanket ban on the string
+`cert-manager` in `setup-kind.sh` would have forbidden `--help` from honestly
+saying it is not installed. Two from fix round 1, both found by review: the
+`mcp_tools.py` audience check read text and took `literals[0]`, so a comment
+quoting the old value kept it green; and every gateway check read
+`binds[0].listeners[0]`, so a second listener with no `jwtAuth` at all left the
+suite green. A fifth was found while enumerating for those two and had not been
+reported: with the pod check widened to all containers, a mount and env var
+present only on an *init* container would have satisfied "at least one
+container is wired" while being unreachable at request time.
 
 Two deliberate non-goals. This module does not talk to a cluster, mint a token,
 or read a trace: the live evidence for those is the task report's captures and
@@ -56,6 +78,7 @@ or read a trace: the live evidence for those is the task report's captures and
 it asserts that the configuration says what the rest of the repo believes it
 says.
 """
+import ast
 import os
 import re
 import shutil
@@ -80,6 +103,15 @@ MCP_TOOLS_MODULE = REPO_ROOT / "agents" / "settlement-agent" / "mcp_tools.py"
 COLLECTOR_CONFIGS = (
     REPO_ROOT / "deploy" / "observability" / "collector-config.yaml",
     REPO_ROOT / "deploy" / "observability" / "collector-config-dash0.yaml",
+)
+# Documents that publish a SPIFFE ID as a measured value. Guarded because a
+# published measurement nothing checks is a published measurement that can go
+# stale -- and for this particular value the stale form is `.../sa/default`,
+# which is precisely the silent failure the dedicated ServiceAccounts exist to
+# prevent. A regression back to it would otherwise ship with a green suite.
+DOCS_PUBLISHING_SPIFFE_IDS = (
+    REPO_ROOT / "docs" / "telemetry-contract.md",
+    REPO_ROOT / "docs" / "architecture.md",
 )
 
 # Resolved from `helm search repo spiffe/spire --versions` against the HARDENED
@@ -161,6 +193,94 @@ def _prose(path: Path) -> str:
             if line.lstrip().startswith("#")
         )
     )
+
+
+def _python_spiffe_literals(path: Path) -> list[str]:
+    """Every `spiffe://…` string *constant* in a Python module, via `ast`.
+
+    Regex over the file text was the first version of this, and review's
+    mutation R1 defeated it: changing the real literal while leaving a comment
+    that quoted the old one kept `literals[0]` correct and all 24 tests green.
+    That is this project's sixth instance of a guard satisfiable by a comment,
+    so this one does not read the file as text at all -- `ast.parse` has
+    discarded every comment before anything here can look at one.
+
+    Docstrings are excluded as well. They are not comments, so the parser keeps
+    them, and a module that *documents* the audience in prose would otherwise
+    supply the literal the code is supposed to contain.
+    """
+    tree = ast.parse(path.read_text())
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(
+            node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+        ):
+            first = node.body[0] if node.body else None
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                docstrings.add(id(first.value))
+    return [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docstrings
+        and node.value.startswith("spiffe://")
+    ]
+
+
+def _all_routes(config: dict) -> list[tuple[str, dict]]:
+    """Every route in the gateway config, with a readable path to each.
+
+    Enumerates all binds, all listeners and all routes rather than
+    `binds[0].listeners[0].routes[0]`. Review found that narrowness: a second
+    listener carrying no `jwtAuth` at all left every test in this file green --
+    an unauthenticated way into the same gateway, invisible to the guard for
+    authentication. The schema permits a list at all three levels, so the guard
+    walks all three.
+    """
+    routes = []
+    for bind_index, bind in enumerate(config.get("binds") or []):
+        for listener_index, listener in enumerate(bind.get("listeners") or []):
+            for route_index, route in enumerate(listener.get("routes") or []):
+                routes.append(
+                    (
+                        f"binds[{bind_index}].listeners[{listener_index}]"
+                        f".routes[{route_index}]",
+                        route,
+                    )
+                )
+    assert routes, "the gateway config declares no routes at all"
+    return routes
+
+
+def _all_listeners(config: dict) -> list[tuple[str, dict]]:
+    listeners = []
+    for bind_index, bind in enumerate(config.get("binds") or []):
+        for listener_index, listener in enumerate(bind.get("listeners") or []):
+            listeners.append(
+                (f"binds[{bind_index}].listeners[{listener_index}]", listener)
+            )
+    assert listeners, "the gateway config declares no listeners at all"
+    return listeners
+
+
+def _pod_containers(pod: dict) -> list[tuple[str, dict]]:
+    """Every container in a pod spec, init containers included.
+
+    The unit enumerated over is `initContainers + containers`, because that is
+    the complete set of places an image, an env var or a volume mount can
+    appear in a pod spec. It is the same correction review applied to this
+    task's image enumeration, which read `containerStatuses` and so missed two
+    init containers: the unit has to be the class, not the convenient subset.
+    """
+    return [
+        (f"initContainers[{i}]", c)
+        for i, c in enumerate(pod.get("initContainers") or [])
+    ] + [(f"containers[{i}]", c) for i, c in enumerate(pod.get("containers") or [])]
 
 
 def _find_by_kind(docs: list, kind: str, name: str) -> dict:
@@ -285,9 +405,25 @@ def test_cert_manager_is_not_installed_anywhere():
     (`test_stage_two_installs_no_cert_manager`) is the one nothing textual can
     satisfy.
     """
-    values_text = SPIRE_VALUES.read_text()
-    assert "certManager" not in values_text, (
-        "the SPIRE values must not enable any certManager-backed feature"
+    # Walked over the parsed values rather than searched for in the file text.
+    # As a text search this was defeatable in the harmless direction and
+    # trippable in the annoying one: a comment explaining why cert-manager is
+    # not needed would have failed it, which is the same mistake as banning the
+    # word in the script (below).
+    def _cert_manager_keys(node, path="values"):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "certManager":
+                    yield f"{path}.{key}"
+                yield from _cert_manager_keys(value, f"{path}.{key}")
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                yield from _cert_manager_keys(value, f"{path}[{index}]")
+
+    enabled = sorted(_cert_manager_keys(_yaml(SPIRE_VALUES)))
+    assert not enabled, (
+        "the SPIRE values must not configure any certManager-backed feature; "
+        f"found {enabled}"
     )
     installs = [
         line
@@ -440,6 +576,16 @@ def test_settlement_agent_mounts_the_spiffe_csi_volume_at_the_socket_path():
     independent settings that must describe one file. They are compared here
     rather than each being asserted against a literal, so moving the mount
     without moving the env var fails.
+
+    Enumerated over every container in the pod, init containers included,
+    rather than `containers[0]`. The rule has two halves. **No** container may
+    have the mount without the env var or the env var without the mount --
+    checked across init and regular containers alike, since either is a
+    half-wired container. And at least one **long-running** container must have
+    both: an init container has exited by the time the agent serves a request,
+    so a Workload API socket reachable only from an init container is a socket
+    nothing can use. Both halves were invisible when this read
+    `containers[0]`.
     """
     deployment = _find_by_kind(_yaml_docs(SETTLEMENT_MANIFEST), "Deployment", "settlement-agent")
     pod = deployment["spec"]["template"]["spec"]
@@ -462,30 +608,57 @@ def test_settlement_agent_mounts_the_spiffe_csi_volume_at_the_socket_path():
         "the Workload API mount must be read-only"
     )
 
-    container = pod["containers"][0]
-    mounts = {m["name"]: m for m in container.get("volumeMounts", [])}
-    assert volume_name in mounts, (
-        f"volume {volume_name!r} is declared but never mounted into the "
-        "container, so the socket is not visible to svid.py"
-    )
-    mount_path = mounts[volume_name]["mountPath"].rstrip("/")
+    wired, half_wired = [], []
+    for where, container in _pod_containers(pod):
+        mounts = {m["name"]: m for m in container.get("volumeMounts") or []}
+        env = {e["name"]: e.get("value") for e in container.get("env") or []}
+        has_mount = volume_name in mounts
+        endpoint = env.get("SPIFFE_ENDPOINT_SOCKET")
+        if has_mount and not endpoint:
+            half_wired.append(
+                f"{where} mounts {volume_name!r} but sets no "
+                "SPIFFE_ENDPOINT_SOCKET, so nothing in it can find the socket"
+            )
+            continue
+        if endpoint and not has_mount:
+            half_wired.append(
+                f"{where} sets SPIFFE_ENDPOINT_SOCKET={endpoint!r} but does "
+                f"not mount {volume_name!r}, so that path does not exist in it"
+            )
+            continue
+        if not has_mount:
+            continue
 
-    env = {e["name"]: e.get("value") for e in container.get("env", [])}
-    endpoint = env.get("SPIFFE_ENDPOINT_SOCKET")
-    assert endpoint, "SPIFFE_ENDPOINT_SOCKET must be set on the container"
-    assert endpoint.startswith("unix://"), (
-        f"SPIFFE_ENDPOINT_SOCKET must carry the unix:// scheme; got {endpoint!r}"
+        assert endpoint.startswith("unix://"), (
+            f"{where}'s SPIFFE_ENDPOINT_SOCKET must carry the unix:// scheme; "
+            f"got {endpoint!r}"
+        )
+        socket_path = endpoint[len("unix://") :]
+        assert socket_path == WORKLOAD_API_SOCKET, (
+            f"{where}'s SPIFFE_ENDPOINT_SOCKET points at {socket_path!r}; the "
+            f"path read from the pinned chart's own rendered output is "
+            f"{WORKLOAD_API_SOCKET!r}"
+        )
+        mount_path = mounts[volume_name]["mountPath"].rstrip("/")
+        assert os.path.dirname(socket_path) == mount_path, (
+            f"{where} mounts the CSI volume at {mount_path!r} but its "
+            f"SPIFFE_ENDPOINT_SOCKET names a socket in "
+            f"{os.path.dirname(socket_path)!r} -- the mount and the configured "
+            "path must describe one file"
+        )
+        if not where.startswith("initContainers["):
+            wired.append(where)
+
+    assert not half_wired, (
+        "the Workload API mount and SPIFFE_ENDPOINT_SOCKET must travel "
+        "together; these containers have one without the other:\n  "
+        + "\n  ".join(half_wired)
     )
-    socket_path = endpoint[len("unix://") :]
-    assert socket_path == WORKLOAD_API_SOCKET, (
-        f"SPIFFE_ENDPOINT_SOCKET points at {socket_path!r}; the path read from "
-        f"the pinned chart's own rendered output is {WORKLOAD_API_SOCKET!r}"
-    )
-    assert os.path.dirname(socket_path) == mount_path, (
-        f"the CSI volume is mounted at {mount_path!r} but "
-        f"SPIFFE_ENDPOINT_SOCKET names a socket in "
-        f"{os.path.dirname(socket_path)!r} -- the mount and the configured "
-        "path must describe one file"
+    assert wired, (
+        f"no long-running container in this pod both mounts {volume_name!r} "
+        "and sets SPIFFE_ENDPOINT_SOCKET. An init container carrying them is "
+        "not enough -- it has exited before the agent serves a request, so the "
+        "socket is unreachable when svid.py needs it."
     )
 
 
@@ -500,67 +673,201 @@ def test_the_gateway_audience_is_the_same_string_everywhere_it_appears():
     `mcp_tools.py` for when that variable is unset, and the `aud` value the
     gateway's own jwtAuth accepts. Three out of four agreeing is a silent 401
     on every call.
-    """
-    env = {
-        e["name"]: e.get("value")
-        for e in _find_by_kind(
-            _yaml_docs(SETTLEMENT_MANIFEST), "Deployment", "settlement-agent"
-        )["spec"]["template"]["spec"]["containers"][0]["env"]
-    }
-    deployment_audience = env.get("NORTHSTAR_GATEWAY_AUDIENCE")
 
-    # Parsed out of the module source rather than imported: this test runs in
-    # the root .venv, which deliberately does not have settlement-agent's
+    **Both narrowness modes were found here by review and are closed.** The
+    `mcp_tools.py` side read the file as text and took `literals[0]`, so a
+    comment quoting the old value kept it green while the code had moved; it
+    now goes through `ast` and asserts on *every* SPIFFE literal in the module,
+    not the first. The manifest side read `containers[0]`; it now enumerates
+    every container in the pod, init containers included, and requires the ones
+    that declare the audience to agree.
+    """
+    pod = _find_by_kind(
+        _yaml_docs(SETTLEMENT_MANIFEST), "Deployment", "settlement-agent"
+    )["spec"]["template"]["spec"]
+    declared = {}
+    for where, container in _pod_containers(pod):
+        for entry in container.get("env") or []:
+            if entry.get("name") == "NORTHSTAR_GATEWAY_AUDIENCE":
+                declared[where] = entry.get("value")
+    assert declared, (
+        "no container in the settlement-agent pod sets "
+        "NORTHSTAR_GATEWAY_AUDIENCE; the audience would then come from "
+        "mcp_tools.py's fallback alone, unstated in the manifest"
+    )
+
+    # Parsed out of the module with `ast` rather than imported: this test runs
+    # in the root .venv, which deliberately does not have settlement-agent's
     # dependencies (importing mcp_tools would pull in mcp, spiffe and
     # pydantic-ai).
-    source = _squash(MCP_TOOLS_MODULE.read_text())
-    literals = re.findall(r'"(spiffe://[^"]+)"', source)
-    assert literals, (
-        "no spiffe:// literal found in mcp_tools.py -- expected the fallback "
-        "audience for NORTHSTAR_GATEWAY_AUDIENCE"
+    module_literals = _python_spiffe_literals(MCP_TOOLS_MODULE)
+    assert module_literals, (
+        "no spiffe:// literal found in mcp_tools.py's code -- expected the "
+        "fallback audience for NORTHSTAR_GATEWAY_AUDIENCE. A comment or "
+        "docstring naming it does not count and is not looked at."
     )
 
-    gateway_audiences = _jwt_auth(_yaml(GATEWAY_CONFIG))["audiences"]
+    audience_lists = {
+        where: block["audiences"]
+        for where, block in _jwt_auth_blocks(_yaml(GATEWAY_CONFIG))
+    }
 
     sites = {
-        "deploy/platform/spire/registration.yaml (rendered ID template)": GATEWAY_SPIFFE_ID,
-        "deploy/k8s/settlement-agent.yaml (NORTHSTAR_GATEWAY_AUDIENCE)": deployment_audience,
-        "agents/settlement-agent/mcp_tools.py (fallback literal)": literals[0],
-        "deploy/platform/agentgateway/config.yaml (jwtAuth.audiences[0])": gateway_audiences[0],
+        "deploy/platform/spire/registration.yaml (rendered ID template)": [
+            GATEWAY_SPIFFE_ID
+        ],
+        "agents/settlement-agent/mcp_tools.py (every SPIFFE literal in the code)":
+            module_literals,
     }
-    distinct = set(sites.values())
+    for where, value in declared.items():
+        sites[f"deploy/k8s/settlement-agent.yaml ({where} env)"] = [value]
+    for where, audiences in audience_lists.items():
+        sites[f"deploy/platform/agentgateway/config.yaml ({where}.jwtAuth)"] = audiences
+
+    distinct = {value for values in sites.values() for value in values}
     assert distinct == {GATEWAY_SPIFFE_ID}, (
-        "the gateway's SPIFFE ID must be one identical string at every site; "
-        "found:\n  "
+        "the gateway's SPIFFE ID must be one identical string at every site, "
+        "and no site may name a second one; found:\n  "
         + "\n  ".join(f"{where}: {what!r}" for where, what in sites.items())
     )
-    assert gateway_audiences == [GATEWAY_SPIFFE_ID], (
-        "jwtAuth.audiences must contain exactly the gateway's own SPIFFE ID; "
-        f"got {gateway_audiences!r}. A second audience widens what this "
-        "gateway accepts without anything else in the repo saying so."
-    )
+    for where, audiences in audience_lists.items():
+        assert audiences == [GATEWAY_SPIFFE_ID], (
+            f"{where}.jwtAuth.audiences must contain exactly the gateway's own "
+            f"SPIFFE ID; got {audiences!r}. A second audience widens what this "
+            "gateway accepts without anything else in the repo saying so."
+        )
     # The registration CR must actually be the source of that ID, not a
     # coincidence -- cross-checked against the template test above.
-    assert deployment_audience != SETTLEMENT_SPIFFE_ID, (
+    assert SETTLEMENT_SPIFFE_ID not in distinct, (
         "the audience must be the *gateway's* identity, not the caller's -- a "
         "token minted for its own subject would verify against nothing"
     )
 
 
+_DOC_SPIFFE_ID_RE = re.compile(r"spiffe://[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+")
+
+
+@pytest.mark.parametrize(
+    "doc", DOCS_PUBLISHING_SPIFFE_IDS, ids=lambda p: p.name
+)
+def test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures(doc):
+    """The published identity is a measurement, so it gets a guard.
+
+    Review's finding, and the one that matters most out of proportion to its
+    label: `docs/telemetry-contract.md` publishes
+    `jwt.sub = spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent`
+    as read off a live span, and nothing checked it. Swapping it to
+    `.../sa/default` left the whole suite green -- and `.../sa/default` is not
+    an arbitrary wrong value, it is exactly what SPIRE minted for this pod
+    before it was given a ServiceAccount of its own. A regression to the one
+    failure this task exists to prevent would have shipped with a passing
+    suite, having also quietly rewritten the document that would have exposed
+    it.
+
+    Two things follow from that about the shape of this check.
+
+    It is an **allow-list over every occurrence**, not an equality check on the
+    one line review happened to name. The value appears in three places in that
+    file today and two in `architecture.md`; a check pinned to a line number,
+    or to the attribute block alone, would leave the others exactly as
+    unguarded as they were. So the enumeration unit is "every SPIFFE ID
+    anywhere in the document", and the permitted set is the two IDs this repo
+    actually registers -- which makes a wrong trust domain, a wrong namespace
+    and a wrong service account all fail, not only `sa/default`.
+
+    And it enumerates over the **raw text**, deliberately including prose,
+    tables and fenced blocks. A published measurement is wrong wherever it
+    appears; there is no part of these documents where a stale SPIFFE ID is
+    acceptable.
+    """
+    text = doc.read_text()
+    found = _DOC_SPIFFE_ID_RE.findall(text)
+    assert found, (
+        f"{doc.relative_to(REPO_ROOT)} publishes no SPIFFE ID at all, so this "
+        "guard would be checking nothing. If the identity documentation moved, "
+        "point this at where it went rather than deleting the check."
+    )
+    permitted = {SETTLEMENT_SPIFFE_ID, GATEWAY_SPIFFE_ID}
+    offenders = sorted({one for one in found if one not in permitted})
+    assert not offenders, (
+        f"{doc.relative_to(REPO_ROOT)} publishes SPIFFE ID(s) this repo does "
+        f"not configure: {offenders}. The registered IDs are "
+        f"{sorted(permitted)}.\n"
+        "A subject ending '/sa/default' means the document has been rewritten "
+        "to match a pod running as the default ServiceAccount -- the exact "
+        "regression the dedicated ServiceAccounts prevent. A different trust "
+        "domain means the chart's `example.org` default came back. Either way "
+        "the document and the cluster now disagree, and the document is not "
+        "the thing to change first."
+    )
+
+
+def test_the_documented_jwt_sub_value_is_the_callers_attested_identity():
+    """The specific site review named, checked structurally rather than by line.
+
+    The allow-list above catches a swap to any unregistered ID. This one
+    additionally pins *which* of the two registered IDs belongs in the
+    `jwt.sub` row of the gateway's SERVER attribute block -- because swapping
+    it for the gateway's own SPIFFE ID would pass an allow-list while
+    describing a token minted for its own subject, which verifies against
+    nothing and proves nothing about who called.
+    """
+    text = (REPO_ROOT / "docs" / "telemetry-contract.md").read_text()
+    rows = [
+        line.split(None, 1)
+        for line in text.splitlines()
+        if line.startswith("jwt.sub")
+    ]
+    assert rows, (
+        "no `jwt.sub <value>` row found in docs/telemetry-contract.md's "
+        "agentgateway attribute block -- that block is where the measured "
+        "value is published, and this guard cannot check it without it"
+    )
+    for row in rows:
+        assert len(row) == 2, f"jwt.sub row publishes no value: {row!r}"
+        published = row[1].strip().strip('"')
+        assert published == SETTLEMENT_SPIFFE_ID, (
+            f"the documented jwt.sub value is {published!r}; the gateway "
+            f"records the *caller's* attested identity, "
+            f"{SETTLEMENT_SPIFFE_ID!r}. "
+            f"{GATEWAY_SPIFFE_ID!r} is the audience, not the subject."
+        )
+
+
 # --- The gateway's verification policy ------------------------------------
 
 
-def _jwt_auth(config: dict) -> dict:
-    routes = config["binds"][0]["listeners"][0]["routes"]
-    assert len(routes) == 1, f"expected one route; found {len(routes)}"
-    policies = routes[0].get("policies")
-    assert policies, (
-        "the route carries no `policies` block, so no JWT verification is "
-        "configured at all"
+def _jwt_auth_blocks(config: dict) -> list[tuple[str, dict]]:
+    """The `jwtAuth` block of **every** route, and every route must have one.
+
+    Previously this read `binds[0].listeners[0].routes[0]` and additionally
+    asserted `len(routes) == 1`. Review showed why that is not the same thing:
+    a *second listener* with no `jwtAuth` satisfied every assertion in this
+    file, because nothing looked past the first one. The route count assertion
+    was load-bearing for exactly one level of a three-level structure.
+
+    So the shape of the check is inverted. Instead of "there is one route and
+    it is authenticated", it is "every route that exists is authenticated" --
+    which stays true when a route or a listener is legitimately added, and goes
+    red the moment one of them is anonymous.
+    """
+    blocks = []
+    unauthenticated = []
+    for where, route in _all_routes(config):
+        policies = route.get("policies") or {}
+        jwt_auth = policies.get("jwtAuth")
+        if not jwt_auth:
+            unauthenticated.append(
+                f"{where}: policies={sorted(policies) or 'none at all'}"
+            )
+            continue
+        blocks.append((where, jwt_auth))
+    assert not unauthenticated, (
+        "every route on this gateway must carry a jwtAuth policy; these do "
+        "not, and are an unauthenticated way in:\n  "
+        + "\n  ".join(unauthenticated)
     )
-    jwt_auth = policies.get("jwtAuth")
-    assert jwt_auth, f"the route's policies carry no jwtAuth: {sorted(policies)}"
-    return jwt_auth
+    return blocks
 
 
 def test_the_gateway_requires_a_valid_jwt_rather_than_merely_validating_one():
@@ -573,37 +880,41 @@ def test_the_gateway_requires_a_valid_jwt_rather_than_merely_validating_one():
     volunteered one. Both accidental spellings that mean "allow anonymous"
     (`optional`, `permissive`) are named in the failure message so the fix is
     unambiguous.
+
+    Checked on every route, not the first one: a route left at the default is
+    an anonymous entrance whether it is the only route or the second.
     """
-    jwt_auth = _jwt_auth(_yaml(GATEWAY_CONFIG))
-    assert jwt_auth.get("mode") == "strict", (
-        f"jwtAuth.mode must be 'strict'; got {jwt_auth.get('mode')!r}. "
-        "'optional' (the agentgateway default) and 'permissive' both admit "
-        "requests with a missing or invalid JWT, which would make every "
-        "identity assertion in this milestone conditional on the caller's "
-        "goodwill."
-    )
+    for where, jwt_auth in _jwt_auth_blocks(_yaml(GATEWAY_CONFIG)):
+        assert jwt_auth.get("mode") == "strict", (
+            f"{where}.jwtAuth.mode must be 'strict'; got "
+            f"{jwt_auth.get('mode')!r}. 'optional' (the agentgateway default) "
+            "and 'permissive' both admit requests with a missing or invalid "
+            "JWT, which would make every identity assertion in this milestone "
+            "conditional on the caller's goodwill."
+        )
 
 
 def test_the_gateway_trusts_exactly_the_issuer_spire_is_configured_to_mint():
     """One value, `global.spire.jwtIssuer`, feeds both the `iss` claim SPIRE
     mints and the `issuer` the gateway checks. Derived independently they
     become two guesses at the same string, and a mismatch is a 401 with nothing
-    visibly wrong in the token."""
-    jwt_auth = _jwt_auth(_yaml(GATEWAY_CONFIG))
+    visibly wrong in the token. Checked on every route's block, not the
+    first."""
     configured_issuer = _yaml(SPIRE_VALUES)["global"]["spire"]["jwtIssuer"]
-    assert jwt_auth.get("issuer") == configured_issuer, (
-        f"the gateway trusts issuer {jwt_auth.get('issuer')!r} but SPIRE is "
-        f"configured to mint {configured_issuer!r}"
-    )
-    jwks_url = jwt_auth.get("jwks", {}).get("url")
-    assert jwks_url == f"{configured_issuer}/keys", (
-        f"the JWKS URL must be the issuer's own /keys endpoint (the `jwks_uri` "
-        f"the discovery document advertises); got {jwks_url!r}"
-    )
-    assert "file" not in (jwt_auth.get("jwks") or {}), (
-        "a `jwks.file` goes stale the first time SPIRE rotates its JWT signing "
-        "key; the key set must be fetched"
-    )
+    for where, jwt_auth in _jwt_auth_blocks(_yaml(GATEWAY_CONFIG)):
+        assert jwt_auth.get("issuer") == configured_issuer, (
+            f"{where} trusts issuer {jwt_auth.get('issuer')!r} but SPIRE is "
+            f"configured to mint {configured_issuer!r}"
+        )
+        jwks_url = (jwt_auth.get("jwks") or {}).get("url")
+        assert jwks_url == f"{configured_issuer}/keys", (
+            f"{where}'s JWKS URL must be the issuer's own /keys endpoint (the "
+            f"`jwks_uri` the discovery document advertises); got {jwks_url!r}"
+        )
+        assert "file" not in (jwt_auth.get("jwks") or {}), (
+            f"{where} uses a `jwks.file`, which goes stale the first time "
+            "SPIRE rotates its JWT signing key; the key set must be fetched"
+        )
 
 
 def test_the_gateway_carries_no_authorization_policy_yet():
@@ -611,25 +922,28 @@ def test_the_gateway_carries_no_authorization_policy_yet():
 
     Structural, over the parsed document, so a comment discussing
     `mcpAuthorization` cannot trip it and an actual rule block cannot hide from
-    it.
+    it. Enumerated over every bind, listener and route rather than the first of
+    each: a policy on a second listener is just as much a policy.
     """
     config = _yaml(GATEWAY_CONFIG)
-    routes = config["binds"][0]["listeners"][0]["routes"]
     forbidden = ("mcpAuthorization", "authorization", "extAuthz", "mcpGuardrails")
-    for route in routes:
-        policies = route.get("policies") or {}
+    offenders = []
+    for where, node in _all_routes(config) + _all_listeners(config):
+        policies = node.get("policies") or {}
         present = [key for key in forbidden if key in policies]
-        assert not present, (
-            f"M2.1 adds JWT verification only; found authorization policy "
-            f"{present} on a route. The denial is a later milestone."
-        )
-    listeners = config["binds"][0]["listeners"]
-    for listener in listeners:
-        policies = listener.get("policies") or {}
-        present = [key for key in forbidden if key in policies]
-        assert not present, (
-            f"found authorization policy {present} at listener level"
-        )
+        if present:
+            offenders.append(f"{where}: {present}")
+    # `frontendPolicies` is a document-level block (Task 3's tracing lives
+    # there), so it is a third place a policy can hide.
+    frontend = config.get("frontendPolicies") or {}
+    present = [key for key in forbidden if key in frontend]
+    if present:
+        offenders.append(f"frontendPolicies: {present}")
+    assert not offenders, (
+        "M2.1 adds JWT verification only; found authorization policy at:\n  "
+        + "\n  ".join(offenders)
+        + "\nThe denial is a later milestone."
+    )
 
 
 def test_the_gateway_config_contains_no_dollar_sign_at_all():
@@ -671,13 +985,21 @@ def test_both_collector_configs_scrape_spires_metrics_services():
     wholesale depending on whether a Dash0 token is present -- editing one is
     the drift `test_collector_configs_in_sync.py` exists for, and this is the
     same class of check one level down.
+
+    Every port of every Service is enumerated, not `ports[0]`: a Service may
+    declare several, and with first-port-only indexing a second port would be
+    unscraped and invisible, while merely *reordering* the list would silently
+    change which port the assertion was about.
     """
     services = [
-        (doc["metadata"]["name"], doc["spec"]["ports"][0]["port"])
+        (doc["metadata"]["name"], port["port"])
         for doc in _yaml_docs(SPIRE_METRICS)
         if doc.get("kind") == "Service"
+        for port in doc["spec"]["ports"]
     ]
-    assert len(services) == 2, f"expected two metrics Services; found {services}"
+    assert len(services) == 2, (
+        f"expected two metrics Services with one port each; found {services}"
+    )
     expected_targets = {
         f"{name}.northstar-platform.svc.cluster.local:{port}"
         for name, port in services
@@ -731,9 +1053,18 @@ def test_setup_kind_pins_each_spire_chart_version_exactly_once(variable, expecte
         f"setup-kind.sh pins {variable}={assignments[0]}, this guard says "
         f"{expected}"
     )
-    assert f'--version "${{{variable}}}"' in text, (
-        f"the helm install must pass ${{{variable}}} explicitly; an unpinned "
-        "`helm install` floats to whatever the repo cache holds"
+    # Asserted as a whole stripped line, not as a substring of the file. A
+    # substring check was satisfiable by a *trailing* comment quoting the flag
+    # (whole-line comments are already stripped, trailing ones are not); a line
+    # that is exactly `--version "${VAR}" \` cannot be a comment, because the
+    # continuation backslash would be inside it.
+    wanted = f'--version "${{{variable}}}" \\'
+    lines = [line.strip() for line in text.splitlines()]
+    assert lines.count(wanted) == 1, (
+        f"expected exactly one line reading `{wanted}` -- the helm install must "
+        f"pass ${{{variable}}} explicitly, as its own continued argument; an "
+        "unpinned `helm install` floats to whatever the repo cache holds. "
+        f"Found {lines.count(wanted)}."
     )
 
 
@@ -877,22 +1208,29 @@ def test_stage_two_installs_the_crds_chart_before_the_spire_chart(tmp_path):
 
 @_bash_only
 def test_stage_two_installs_spire_with_the_pinned_versions_and_values(tmp_path):
-    """Pins reach `helm` as arguments, not merely as shell variables."""
+    """Pins reach `helm` as arguments, not merely as shell variables.
+
+    Checks **every** matching invocation rather than the first. `next(...)` was
+    the same first-element narrowness as the config walk: a second, unpinned
+    `helm upgrade --install spire` later in the script would have been the one
+    that actually determined the installed version, and the assertion would
+    have been about the earlier one.
+    """
     _, out, calls = _run_setup_kind("2", tmp_path)
     installs = _helm_installs(calls)
-    crds = next((c for c in installs if "spiffe/spire-crds" in c), None)
-    spire = next(
-        (c for c in installs if "spiffe/spire " in c and "spire-crds" not in c), None
-    )
+    crds = [c for c in installs if "spiffe/spire-crds" in c]
+    spire = [c for c in installs if "spiffe/spire " in c and "spire-crds" not in c]
     assert crds and spire, f"missing a SPIRE install:\n{installs}\n{out}"
-    assert f"--version {PINNED_SPIRE_CRDS_CHART_VERSION}" in crds, crds
-    assert f"--version {PINNED_SPIRE_CHART_VERSION}" in spire, spire
-    assert "deploy/platform/spire/values.yaml" in spire, (
-        "the spire install must be handed this repo's values file; without it "
-        "the chart's own defaults apply and the trust domain is example.org: "
-        f"{spire}"
-    )
-    assert "--namespace northstar-platform" in spire, spire
+    for call in crds:
+        assert f"--version {PINNED_SPIRE_CRDS_CHART_VERSION}" in call, call
+    for call in spire:
+        assert f"--version {PINNED_SPIRE_CHART_VERSION}" in call, call
+        assert "deploy/platform/spire/values.yaml" in call, (
+            "every spire install must be handed this repo's values file; "
+            "without it the chart's own defaults apply and the trust domain is "
+            f"example.org: {call}"
+        )
+        assert "--namespace northstar-platform" in call, call
 
 
 @_bash_only
