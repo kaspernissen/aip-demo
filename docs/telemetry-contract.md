@@ -64,8 +64,8 @@ it was actually run:
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `110 passed, 23 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `133 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `116 passed, 23 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `139 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -162,40 +162,60 @@ ServiceAccount of its own. A regression to the failure the task exists to
 prevent would have shipped green, with the document that would have exposed it
 already rewritten to agree.
 
+M2.1 Task 5 grew the collected total 134 → 140 and left the skip count at 23.
+All six are `tests/e2e/test_caller_identity.py`, which proves the JWT
+verification on Hop 3a is load-bearing: one accepted-path control that really
+executes `propose_payment` through the gateway, and five refusals — no token,
+a non-JWT bearer value, two crafted well-formed tokens from an untrusted
+issuer, and a genuine SPIRE-minted JWT-SVID whose only defect is a wrong
+`aud`. **It is deliberately not behind `RUN_BROWSER_TESTS=1`, which is why
+the skip count did not move.** That gate exists for tests that spend real
+model tokens, and this file spends none: it speaks MCP to the gateway
+directly instead of driving `settlement-agent`, which is both free and the
+stronger test, since routing through the agent would exercise the agent's
+error handling rather than the gateway's verification. It does need the live
+cluster, and like `tests/e2e/test_payments_api_trace.py` it fails rather than
+skips without one — so all six land in the passed count of *both* rows.
+
 **Provenance of these numbers, precisely.** Where a component is derived it says
 so, and says what it is derived from:
 
-- **Measured (M2.1 Task 4 fix round 1):** `.venv/bin/python -m pytest
-  --collect-only -q tests/` → `134 tests collected`.
-- **Measured (M2.1 Task 4):** the three `RUN_BROWSER_TESTS`-gated modules,
+- **Measured (M2.1 Task 5):** `.venv/bin/python -m pytest --collect-only -q
+  tests/` → `140 tests collected`. The previous figure, `134`, was measured
+  the same way in M2.1 Task 4's fix round 1.
+- **Measured (M2.1 Task 5):** the three `RUN_BROWSER_TESTS`-gated modules,
   `tests/e2e/test_browser_root_span.py` (8),
   `tests/e2e/test_settlement_llm_trace.py` (9) and
-  `tests/e2e/test_gateway_trace.py` (6), run with no env var → `23 skipped`.
-  They are the only gated modules in the tree.
-- **Measured (M2.1 Task 4):** the gate itself,
-  `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` →
-  `1 failed, 129 passed, 1 xfailed` in 152s, 0 skipped, on the SPIRE-issuing,
-  JWT-verifying deployment. The one failure was this very row: the guard
-  comparing the published numbers against the suite, failing because the row
-  still said 106 while the tree had grown to 131.
-- **Derived, and the gate row is the one derivation here:** gate row =
-  129 + 1 + 3 = **133 passed, 1 xfailed**. The `+ 1` is the count row above,
-  fixed by this edit and re-run on its own to confirm it passes. The `+ 3` is
-  fix round 1's three always-run unit tests
-  (`test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures`,
-  parametrised over the two documents, and
-  `test_the_documented_jwt_sub_value_is_the_callers_attested_identity`), run
-  directly and passing. The gate was **not** re-run for the fix round: it
-  drives five live model-driven settlements, and the round changed only tests,
-  documents and the report — no service code, no manifest, no cluster state.
-  It cross-checks against the collected total by a second route: 134 collected
-  − 0 skipped − 1 xfailed = 133.
-- **Measured (M2.1 Task 4 fix round 1), default row:** `.venv/bin/python -m
-  pytest tests/ -q` → `1 failed, 109 passed, 23 skipped, 1 xfailed` in 100s —
-  the same count-row failure, the same fix, so **`110 passed, 23 skipped, 1
-  xfailed`**. It agrees with 134 − 23 − 1. The one xfail is the same
-  FastMCP-baggage one described below, and it is not gated, so it appears in
-  both rows.
+  `tests/e2e/test_gateway_trace.py` (6), collected → `23`. They are still the
+  only gated modules in the tree; `tests/e2e/test_caller_identity.py` is
+  deliberately not one of them (see above), which is why this figure did not
+  move when six tests were added.
+- **Measured (M2.1 Task 5), the gate row directly:**
+  `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` → **`139 passed, 1 xfailed`**
+  in 146.75s, 0 skipped, on the SPIRE-issuing, JWT-verifying deployment with
+  the gateway config restored to its committed state after Task 5's mutation
+  testing. No derivation: this row is a direct observation of the whole gate,
+  including the two per-service suites and the count guards that check this
+  very table. It cross-checks against the collected total by a second route:
+  140 collected − 0 skipped − 1 xfailed = 139.
+- **Derived (M2.1 Task 5), default row, with its components shown:** 140
+  collected − 23 skipped − 1 xfailed = **`116 passed, 23 skipped, 1
+  xfailed`**. Every component is itself measured above, and the gate run just
+  demonstrated that all 140 non-skipped tests pass, of which a bare run's 116
+  are a subset. It is labelled derived rather than measured for one reason
+  worth being explicit about: a bare `pytest tests/` is **not free**. It skips
+  the three gated modules but still runs the ungated e2e files, which drive
+  real settlements through the model, so re-running it to re-observe a number
+  three measured figures already determine would spend Anthropic tokens for
+  no additional evidence. The one xfail is the same FastMCP-baggage one
+  described below; it is not gated, so it appears in both rows.
+- **Historical, kept for the audit trail:** the previous gate figure,
+  `133 passed, 1 xfailed`, was itself derived (`129 + 1 + 3`) from an M2.1
+  Task 4 gate run that reported `1 failed, 129 passed, 1 xfailed` in 152s —
+  the one failure being this very row, stale at 106 while the tree had grown
+  to 131 — plus three always-run unit tests added afterwards. That derivation
+  was labelled as such at the time. This revision replaces it with a direct
+  observation.
 
 Historical note, kept because it explains why this section is written the way
 it is: before M2.1 Task 3 the gate row (`97 passed, 1 xfailed`) was itself
@@ -708,6 +728,71 @@ mcp.method.name                 "tools/call"
 mcp.target                      "payments-mcp"
 otel.scope.name                 "agentgateway"
 ```
+
+### Attributes on a *refused* call's SERVER span (M2.1 Task 5)
+
+Every span above comes from a call the gateway **accepted**. A refused call
+produces a span too, and it is a different shape — worth publishing because
+"can you see the refusal in the trace?" is the question this whole project
+exists to answer, and here the answer is yes.
+
+Measured by sending an MCP `initialize` with **no** `Authorization` header
+and a hand-minted `traceparent`, then looking the trace up by that exact id
+(`38d4634f1ae44908bbb75a06c6198086`). The gateway joined that trace rather
+than starting one of its own, and emitted exactly one span. Its attribute
+set, with Jaeger's own two excluded as described below —
+20 keys, the complete set, nothing omitted:
+
+```
+duration                        "0ms"
+error                           true
+gateway                         "default/default"
+http.host                       "127.0.0.1"
+http.method                     "POST"
+http.path                       "/mcp"
+http.status                     401
+http.version                    "HTTP/1.1"
+listener                        "listener0"
+network.protocol.version        "1.1"
+otel.scope.name                 "agentgateway"
+otel.status_code                "ERROR"
+otel.status_description         "authentication failure: no bearer token found"
+protocol                        "http"
+reason                          "JwtAuth"
+route                           "default/route0"
+span.id                         "bcdaf74f718bd242"
+src.addr                        "127.0.0.1:46138"
+trace.id                        "38d4634f1ae44908bbb75a06c6198086"
+url.scheme                      "http"
+```
+
+Four things differ from the accepted path, and each matters diagnostically:
+
+- **The span is named `POST /*`, not `initialize`.** The `jwtAuth` policy runs
+  as an HTTP filter before the MCP backend is consulted, so the request is
+  never parsed as JSON-RPC and there is no method name to name the span
+  after. Consequently **there are no `mcp.*` attributes at all** — no
+  `mcp.method.name`, no `mcp.session.id`, no `mcp.target`, no
+  `gen_ai.tool.name`. An operator cannot tell *which tool* was refused from
+  this span, only that a POST to `/mcp` was rejected.
+- **No `jwt.sub`.** Nothing was verified, so there is no subject to attribute,
+  and a refused call is correctly anonymous in the trace. That is the honest
+  behaviour and also a real limitation: the trace shows *that* an
+  unauthenticated caller was refused, never *who* tried.
+- **`otel.status_code = ERROR`, with `otel.status_description` carrying the
+  reason verbatim** — the same `TokenError` text the HTTP response body
+  returns. This is the one place the refusal reason is machine-readable from
+  telemetry alone.
+- **`reason = "JwtAuth"`**, a coarse category naming the policy that refused,
+  and **`error = true`**. Neither appears on any accepted span.
+
+There is **no CLIENT span**, which is the trace-level evidence that the
+refusal was a refusal rather than a failed forward.
+`tests/e2e/test_caller_identity.py` asserts the behavioural half of this (no
+tool result comes back); this section records the telemetry half. Deliberately
+*not* asserted by a test: pinning `otel.status_description` would pin an
+upstream error string with no added safety, since the behavioural assertions
+already cover the property.
 
 ### What this project does *not* claim about those spans
 
