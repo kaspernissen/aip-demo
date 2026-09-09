@@ -745,6 +745,15 @@ otel.scope.name                 "agentgateway"
    proxy incidentally closes a correlation gap this project had. Note the
    asymmetry that makes it work: agentgateway *writes* SEP-414 `_meta` on
    egress but only *reads* HTTP headers on ingress (see below).
+6. **`jwt.sub` is not a semconv attribute name** (M2.1 Task 4). The
+   authenticated principal has a stable spelling — `user.id` — and the
+   gateway does not use it; it names the attribute after the JWT claim it read.
+   This is the same class of divergence as finding 1, one attribute wide, and
+   is recorded rather than worked around for the same reason: nothing in this
+   repo rewrites the gateway's attributes, and inventing a `user.id` alias
+   would make this document describe telemetry that does not exist. It also
+   means a query written against `user.id` finds every service here except the
+   one that actually authenticates anything.
 
 ### Why the trace survives this hop, stated so the two mechanisms are not conflated
 
