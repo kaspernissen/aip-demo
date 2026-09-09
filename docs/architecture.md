@@ -52,7 +52,7 @@ are measurably false.**
    non-deterministic: the `a2a-sdk`'s
    `a2a.server.events.event_queue.EventQueue.dequeue_event` polling span was
    measured varying **10–16** across identically-shaped runs. The "62 spans"
-   figures further down are M1.1-era captures, kept with their own stated
+   figures further down are M1.2-era captures, kept with their own stated
    provenance rather than restated as current. What is stable, and therefore
    what gets published and asserted, is trace **shape** — service, operation,
    kind, parent.
@@ -181,16 +181,22 @@ Namespaces, ports, and service DNS names below are read directly from
 |---|---|---|---|---|---|
 | `customer-ui` | TypeScript, Next.js 15.5.21 (`output: "export"`, static, served by nginx 1.27) | `northstar-agents` (**not** its own namespace — see note below) | `customer-ui.northstar-agents.svc.cluster.local:8080`, exposed as a `NodePort` (30080) mapped to host `8080` by kind's `extraPortMappings` | `localhost:5001/northstar/customer-ui:dev` | Owns the trace root. The only component a human touches directly. |
 | `claims-agent` | Python 3.13, `a2a-sdk[telemetry]==0.3.7` + Starlette | `northstar-agents` | `claims-agent.northstar-agents.svc.cluster.local:9001` | `localhost:5001/northstar/claims-agent:dev` | A2A server (inbound, from the browser) and A2A client (outbound, to settlement-agent). Parses the claim, delegates, returns settlement-agent's JSON verbatim. |
-| `settlement-agent` | Python 3.13, `a2a-sdk[telemetry]==0.3.7` + Starlette + `mcp==1.9.4` client + `pydantic-ai-slim==2.41.0` (M1.2) | `northstar-agents` | `settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` | A2A server; MCP client. As of M1.2, the settlement decision itself is a real model call (see "The decision logic" below) — the model chooses whether and how to propose and execute the payment via payments-mcp. |
+| `settlement-agent` | Python 3.13, `a2a-sdk[telemetry]==0.3.7` + Starlette + `mcp==1.28.1` client (Task 7; was `1.9.4`) + `pydantic-ai-slim==2.41.0` (M1.2) | `northstar-agents` | `settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` | A2A server; MCP client. As of M1.2, the settlement decision itself is a real model call (see "The decision logic" below) — the model chooses whether and how to propose and execute the payment via payments-mcp. |
 | `payments-mcp` | Python 3.13, FastMCP 4.0.3 | `northstar-tools` | `payments-mcp.northstar-tools.svc.cluster.local:8000`, MCP endpoint at `/mcp` | `localhost:5001/northstar/payments-mcp:dev` | MCP server exposing two tools. An adapter over payments-api — it owns no state of its own (`server.py`'s own docstring: "This is an adapter over payments-api, not a system of record."). |
 | `payments-api` | Go 1.24, `otelhttp v0.66.0` / otel core `v1.41.0` | `northstar-systems` | `payments-api.northstar-systems.svc.cluster.local:8080` | `localhost:5001/northstar/payments-api:dev` | The system of record for payments. In-memory store, sequential IDs, no persistence. |
 
 **Namespace note, worth stating plainly:** `customer-ui` deploys into
 `northstar-agents` — the same namespace as `claims-agent` and
 `settlement-agent` — not a namespace of its own (confirmed in
-`deploy/k8s/customer-ui.yaml`, `deploy/k8s/namespaces.yaml`; only four
-namespaces exist: `observability`, `northstar-agents`, `northstar-tools`,
-`northstar-systems`). A reader expecting one namespace per component (the
+`deploy/k8s/customer-ui.yaml`, `deploy/k8s/namespaces.yaml`, which
+declares four: `observability`, `northstar-agents`, `northstar-tools`,
+`northstar-systems`). **Five namespaces exist in the cluster** (`kubectl get
+ns` confirms it): `scripts/setup-kind.sh` creates a fifth,
+`northstar-platform`, at stage 2 for M2.1's platform components —
+deliberately outside `namespaces.yaml`, since it holds infrastructure this
+project configures but does not own (see "The platform components M2.1
+adds" below, which lives there). A reader expecting one namespace per
+component (the
 plane labels — `northstar.io/plane: agents/tools/systems` — encourage that
 reading) would be wrong about `customer-ui` specifically; it shares the
 agents' namespace even though it isn't itself an agent.
@@ -938,8 +944,9 @@ presents a credential, and it is the one on Hop 3a.
 Submitting the default form (`CLM-1842`, `€6,200`) moves €6,200 through a
 real Go system of record because a JSON-RPC message asked for it. This is
 the deliberate argument the rest of the demo builds against, not an
-oversight — `README.md`'s own Status line says so, and the code bears it
-out exactly.
+oversight — `README.md`'s own Status line says so ("authenticated but not
+authorized", matching this document's own "What the system deliberately does
+not do" above), and the code bears it out exactly.
 
 ## Determinism worth knowing: payment IDs
 
@@ -1002,7 +1009,7 @@ propagation table itself is current.
 | claims-agent (inbound) | ASGI/Starlette instrumentation (`opentelemetry-instrumentation-starlette`, wrapping the built app) extracts it. **`a2a-sdk` 0.3.7 itself extracts nothing** — an injected `traceparent` is ignored by the SDK on its own; this is the fix this project applied (A18), not something the SDK does natively. | Yes (via the fix) | Not yet — the claim id is minted inside the executor, after this extraction has already happened |
 | claims-agent → settlement-agent (outbound) | `HTTPXClientInstrumentor`, instrumenting the plain `httpx.AsyncClient` `delegation.py` uses — free, no hand-written injection code | Yes | Yes, for the two claims-agent spans created after intake (see coverage below) |
 | settlement-agent (inbound) | Same ASGI/Starlette instrumentation as claims-agent | Yes | Yes — extracted at the ASGI boundary, before any of settlement-agent's internal tasks spawn, so it reaches every subsequent span in that process |
-| settlement-agent → agentgateway (**Hop 3a**, M2.1) | **Two independent carriers, both present, neither redundant.** (i) JSON-RPC `params._meta` (SEP-414, unprefixed `traceparent`/`tracestate`/`baggage`): `mcp==1.9.4`'s high-level client (`ClientSession.call_tool()`) has no way to set `_meta`, so `mcp_tools.py` drops to `ClientSession.send_request()` and hand-builds the request, injecting via `opentelemetry.propagate.inject(carrier)`. (ii) An HTTP `traceparent` **header**, auto-injected by `HTTPXClientInstrumentor` because the transport is httpx-based | Yes, twice over | Yes in `_meta`; yes in the `baggage` header |
+| settlement-agent → agentgateway (**Hop 3a**, M2.1) | **Two independent carriers, both present, neither redundant.** (i) JSON-RPC `params._meta` (SEP-414, unprefixed `traceparent`/`tracestate`/`baggage`): on `mcp==1.9.4` (this project's original pin), the high-level client's `ClientSession.call_tool()` had no way to set `_meta` at all, so `mcp_tools.py` (Task 7) drops to `ClientSession.send_request()` and hand-builds the request, injecting via `opentelemetry.propagate.inject(carrier)`. **The pin is now `mcp==1.28.1`** (cleared four pip-audit advisories; `docs/telemetry-contract.md`'s Gap 6), whose `call_tool()` gained a `meta=` kwarg upstream (`modelcontextprotocol/python-sdk#1231`) — but `mcp_tools.py`'s mechanism was deliberately left unchanged at the bump, so the hand-built `send_request()` path above is still what actually runs; adopting the simpler call is open future work (`docs/upstream-findings.md` Finding 4). (ii) An HTTP `traceparent` **header**, auto-injected by `HTTPXClientInstrumentor` because the transport is httpx-based | Yes, twice over | Yes in `_meta`; yes in the `baggage` header |
 | agentgateway (inbound) | **The HTTP header, and only that.** `TraceParent::from_request` (v1.5.0, `crates/agentgateway/src/telemetry/trc.rs:690-696`) reads the `traceparent` header and never inspects the request body. It does **not** read `params._meta` — Finding 6. With no header it would mint a new trace root | Yes (via the header) | Not consumed as baggage — the gateway has no baggage concept and its spans carry no `northstar.claim.id`, which is the intended enrichment boundary and is asserted as a negative in `tests/e2e/test_gateway_trace.py` |
 | agentgateway → payments-mcp (**Hop 3b**, M2.1) | The gateway starts its own outbound CLIENT span, injects that span into the outbound **headers**, and then copies the three W3C keys from those headers into `params._meta` (`crates/agentgateway/src/mcp/upstream/mod.rs:146` then `:110-122`). So `_meta` reaching payments-mcp names the *gateway's* span, not settlement-agent's — which is why payments-mcp parents under the gateway and not under the agent | Yes (re-stamped) | The `baggage` key is copied too, if the header is present |
 | payments-mcp (inbound) | FastMCP 4.0.3's own `extract_trace_context()` (`fastmcp/telemetry.py`) reads `traceparent`/`tracestate` out of `params._meta` | Yes | **No — FastMCP never reads the `baggage` key out of `_meta` at all.** This is the one place `northstar.claim.id` stops, and interposing the gateway did not change that. |
@@ -1130,5 +1137,9 @@ calling the tracer directly.
    That file port-forwards to the gateway itself (on an ephemeral local port
    it asks `kubectl` for, so it cannot collide with the four repo-managed
    forwards), mints real JWT-SVIDs from SPIRE, and asserts both that a valid
-   one executes a tool end to end and that four invalid ones are refused.
+   one executes a tool end to end and that invalid ones are refused: **5
+   refusal cases from 4 refusal functions** (one, the untrusted-issuer check,
+   is parametrised ×2 for `own_kid` and `spire_kid` — `pytest --collect-only`
+   confirms 6 cases collected in total, the 5 refusals plus the 1 accepted
+   control).
    See "Identity with teeth" above for the exact wire shape of each refusal.
