@@ -322,25 +322,50 @@ def test_mcp_hop_still_carries_the_trace(llm_settlement):
     """The model choosing the call did not detach the MCP boundary.
 
     Beyond the service list, this asserts the measured parentage: each
-    `tools/call <name>` SERVER span in payments-mcp is a *direct child* of
-    the matching `execute_tool <name>` span in settlement-agent. That is the
+    `tools/call <name>` SERVER span in payments-mcp *descends from* the
+    matching `execute_tool <name>` span in settlement-agent. That is the
     strongest available statement that the model's tool choice is what
     caused the downstream call — `mcp_tools.py` injects `params._meta` from
     the context active inside pydantic-ai's tool span, so if the model's
     instrumentation and the MCP client ever stopped sharing a context, this
     parentage would break while a bare service-list check still passed.
+
+    **M2.1 Task 3 update — this said "direct child" and asserted
+    `mcp_span.parent_id == tool_span.span_id` until the gateway was
+    interposed.** With `PAYMENTS_MCP_URL` now pointing at agentgateway, the
+    measured chain has two proxy spans between those two:
+    `settlement-agent:execute_tool propose_payment` ->
+    `settlement-agent:POST` (httpx CLIENT) -> `agentgateway:tools/call`
+    (SERVER) -> `agentgateway:tools/call payments-mcp_propose_payment`
+    (CLIENT) -> `payments-mcp:tools/call propose_payment` (SERVER). So the
+    direct-parent form failed against a correctly-behaving deployment.
+    Relaxing to ancestry is deliberately paired with a *new* assertion that
+    the immediate parent is an agentgateway span, so the total strictness
+    does not drop: this test still fails if the causal chain from the
+    model's tool choice to the MCP server span is broken anywhere, and it now
+    additionally fails if that chain stops running through the gateway.
     """
     trace = llm_settlement.trace
     services = trace.services()
     assert {"payments-mcp", "payments-api"} <= services, sorted(services)
 
+    by_id = {s.span_id: s for s in trace.spans}
     for name in sorted(TOOL_NAMES):
         tool_span = trace.span(f"execute_tool {name}", service="settlement-agent")
         mcp_span = trace.span(f"tools/call {name}", service="payments-mcp")
-        assert mcp_span.parent_id == tool_span.span_id, (
+        assert _descends_from(trace, mcp_span, tool_span.span_id), (
+            f"payments-mcp's {mcp_span.operation!r} span does not descend "
+            f"from settlement-agent's {tool_span.operation!r} span "
+            f"({tool_span.span_id!r}); its own parent is "
+            f"{mcp_span.parent_id!r}"
+        )
+        parent = by_id.get(mcp_span.parent_id)
+        assert parent is not None and parent.service == "agentgateway", (
             f"payments-mcp's {mcp_span.operation!r} span is parented to "
-            f"{mcp_span.parent_id!r}, not to settlement-agent's "
-            f"{tool_span.operation!r} span ({tool_span.span_id!r})"
+            f"{(parent.service, parent.operation) if parent else mcp_span.parent_id!r}, "
+            "not to an agentgateway span -- the MCP hop is no longer going "
+            "through the interposed gateway (see deploy/k8s/settlement-agent.yaml's "
+            "PAYMENTS_MCP_URL and tests/e2e/test_gateway_trace.py)"
         )
 
 

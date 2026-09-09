@@ -37,8 +37,30 @@ spec:
             # empirically — see NOTES.md.
             - name: OTEL_SEMCONV_STABILITY_OPT_IN
               value: http
+            # M2.1 Task 3: interposed. This pointed straight at
+            # payments-mcp.northstar-tools.svc.cluster.local:8000/mcp through
+            # M1.1, M1.2 and M2.1 Task 2 (which deployed the gateway but
+            # deliberately left it out of the path). It now names agentgateway
+            # in northstar-platform, which proxies to that same payments-mcp
+            # Service -- the gateway's own
+            # `deploy/platform/agentgateway/config.yaml` carries the old value
+            # verbatim as its single MCP backend target, so the wire
+            # destination is unchanged; only the number of hops is.
+            #
+            # Port 3000 and path /mcp are the gateway's, not payments-mcp's:
+            # read off `deploy/platform/agentgateway/deployment.yaml`'s Service
+            # (port 3000, targetPort 3000) and that config's `binds[0].port`
+            # (3000), with /mcp being agentgateway's streamable-HTTP MCP
+            # endpoint.
+            #
+            # The trace survives this hop -- `tests/e2e/test_gateway_trace.py`
+            # is what actually proves it, and that file's module docstring
+            # records *why*: an HTTP `traceparent` header injected by
+            # HTTPXClientInstrumentor, which is a different carrier from this
+            # repo's SEP-414 `params._meta` convention. agentgateway reads only
+            # the header.
             - name: PAYMENTS_MCP_URL
-              value: http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp
+              value: http://agentgateway.northstar-platform.svc.cluster.local:3000/mcp
             - name: AGENT_CARD_PATH
               value: /app/agent-card.json
             - name: PORT

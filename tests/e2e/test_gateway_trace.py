@@ -218,3 +218,254 @@ def test_the_gateway_is_the_only_route_into_payments_mcp(gateway_settlement):
         f"(operation, calling service): {direct} -- PAYMENTS_MCP_URL should "
         "point at agentgateway, not at payments-mcp"
     )
+
+
+# --- The gateway's own telemetry, exactly as measured -----------------------
+#
+# Every name below was read off a live span in Jaeger (post-reroute trace
+# `a227b3e224e6407e9846e014476456e2`, recorded in this task's report as
+# provenance) and dumped in full before being written here. None was predicted
+# from agentgateway's source or documentation, and none was invented:
+# agentgateway is not our component, so the no-invented-telemetry rule applies
+# to it without exception. These sets exist so that a version bump silently
+# changing the gateway's span vocabulary fails loudly here instead of quietly
+# rotting `docs/telemetry-contract.md`.
+#
+# **Two keys are deliberately excluded, and the exclusion was measured, not
+# assumed.** `internal.span.format` and `span.kind` appear on agentgateway's
+# spans but are not agentgateway's: in that same trace they appear on 20/20
+# agentgateway spans *and* 52/52 settlement-agent, 6/6 payments-mcp and 2/2
+# payments-api spans -- i.e. on every span from every service. They are
+# Jaeger's own representation of the OTLP payload (`internal.span.format`) and
+# of the span's OTel `SpanKind` (`span.kind`, which this harness surfaces as
+# `Span.kind`), so attributing either to agentgateway would be wrong.
+JAEGER_ADDED_TAGS = {"internal.span.format", "span.kind"}
+
+# The gateway emits a *pair* of spans per MCP message: a SERVER span for the
+# request it received, and a CLIENT span for the request it made to the
+# upstream target. The CLIENT span's name carries the target and, for
+# tools/call, the tool -- prefixed `<target>_<tool>`, which is agentgateway's
+# own multiplexing convention (see `mcp-multiplex` in its examples/), not a
+# tool name payments-mcp would recognise: payments-mcp's own span for the same
+# call is named `tools/call propose_payment`.
+GATEWAY_TOOLS_CALL_SERVER_ATTRS = {
+    "duration",
+    "gateway",
+    "gen_ai.tool.name",
+    "http.host",
+    "http.method",
+    "http.path",
+    "http.status",
+    "http.version",
+    "listener",
+    "mcp.method.name",
+    "mcp.resource.type",
+    "mcp.session.id",
+    "mcp.target",
+    "network.protocol.version",
+    "otel.scope.name",
+    "protocol",
+    "route",
+    "span.id",
+    "src.addr",
+    "trace.id",
+    "url.scheme",
+}
+
+GATEWAY_TOOLS_CALL_CLIENT_ATTRS = {
+    "agentgateway.outbound.kind",
+    "agentgateway.outbound.subtype",
+    "gen_ai.tool.name",
+    "mcp.method.name",
+    "mcp.target",
+    "otel.scope.name",
+}
+
+
+def _gateway_spans(trace):
+    return [s for s in trace.spans if s.service == "agentgateway"]
+
+
+def _keys(span):
+    return set(span.attrs) - JAEGER_ADDED_TAGS
+
+
+def test_gateway_span_names_kinds_and_parentage_are_as_measured(gateway_settlement):
+    """Pins the measured span *shape* of the interposed hop.
+
+    Measured, for each of the two tools the model calls: a SERVER span named
+    exactly `tools/call` (the JSON-RPC method, with no tool name in it), whose
+    single MCP child is a CLIENT span named `tools/call payments-mcp_<tool>`,
+    whose own child is payments-mcp's `tools/call <tool>` SERVER span. The
+    tool name is not in the SERVER span's *name* — it is in that span's
+    `gen_ai.tool.name` attribute, which is a real difference worth pinning:
+    an operator filtering Jaeger by operation name sees two identically-named
+    `tools/call` spans per settlement and has to read an attribute to tell
+    them apart.
+
+    `otel.scope.name` is asserted across every gateway span because it is the
+    only scope identifier the gateway sets — measured: it emits
+    `otel.scope.name = "agentgateway"` and **no `otel.scope.version` at all**,
+    unlike every other service in this trace (settlement-agent 49/52,
+    payments-mcp 2/6, payments-api 2/2 carry a version; agentgateway 0/20).
+    The version *is* available on the span's Resource
+    (`service.version = "1.5.0"`), just not on the scope.
+    """
+    trace = gateway_settlement.trace
+    gateway_spans = _gateway_spans(trace)
+    assert gateway_spans, "no agentgateway spans in the trace -- is it in the path?"
+
+    for span in gateway_spans:
+        assert span.attrs.get("otel.scope.name") == "agentgateway", (
+            span.operation,
+            span.attrs.get("otel.scope.name"),
+        )
+        assert "otel.scope.version" not in span.attrs, (
+            f"{span.operation!r} now carries otel.scope.version="
+            f"{span.attrs['otel.scope.version']!r}; agentgateway v1.5.0 emitted "
+            "none, so this measurement (and docs/telemetry-contract.md) is stale"
+        )
+
+    by_id = {s.span_id: s for s in trace.spans}
+    servers = [s for s in gateway_spans if s.operation == "tools/call"]
+    assert servers, (
+        "no agentgateway span named exactly 'tools/call'; gateway operations "
+        f"seen: {sorted({s.operation for s in gateway_spans})}"
+    )
+    for server in servers:
+        assert server.kind == "server", (server.operation, server.kind)
+        tool = server.attrs.get("gen_ai.tool.name")
+        assert tool in {"propose_payment", "execute_payment"}, (
+            f"agentgateway's 'tools/call' SERVER span carries "
+            f"gen_ai.tool.name={tool!r}"
+        )
+        children = [s for s in gateway_spans if s.parent_id == server.span_id]
+        assert [c.operation for c in children] == [f"tools/call payments-mcp_{tool}"], (
+            f"agentgateway's 'tools/call' SERVER span for {tool!r} has gateway "
+            f"children {[c.operation for c in children]!r}, expected exactly "
+            f"['tools/call payments-mcp_{tool}']"
+        )
+        client = children[0]
+        assert client.kind == "client", (client.operation, client.kind)
+
+        mcp_children = [
+            s
+            for s in trace.spans
+            if s.parent_id == client.span_id and s.service == "payments-mcp"
+        ]
+        assert [s.operation for s in mcp_children] == [f"tools/call {tool}"], (
+            f"{client.operation!r}'s payments-mcp children are "
+            f"{[s.operation for s in mcp_children]!r}, expected exactly "
+            f"['tools/call {tool}']"
+        )
+
+        # The gateway is a hop in *this* trace, not a new one.
+        assert by_id[client.parent_id].service == "agentgateway"
+        assert server.parent_id in by_id, (server.operation, server.parent_id)
+        assert by_id[server.parent_id].service == "settlement-agent", (
+            f"agentgateway's 'tools/call' SERVER span is parented to "
+            f"{by_id[server.parent_id].service!r}, not settlement-agent"
+        )
+
+
+def test_gateway_span_attributes_are_exactly_what_was_measured(gateway_settlement):
+    """Pins the gateway's attribute vocabulary on the two tools/call spans.
+
+    Exact set equality in both directions, deliberately: an attribute
+    *appearing* matters as much as one disappearing, because this project
+    publishes agentgateway's vocabulary in `docs/telemetry-contract.md` and a
+    published list that silently gained a member is the defect class this repo
+    has already had to correct three times.
+
+    **The finding this test makes non-optional: agentgateway v1.5.0 does not
+    speak either HTTP semantic convention.** It emits `http.method`,
+    `http.path`, `http.status`, `http.host` and `http.version` — not the
+    stable spelling (`http.request.method`, `url.path`,
+    `http.response.status_code`, `server.address`) that this project's Go
+    service emits by default and that all three of its Python services are
+    forced onto with `OTEL_SEMCONV_STABILITY_OPT_IN=http`, and not the OTel
+    *legacy* spelling either: legacy is `http.status_code` and `http.url`,
+    while the gateway emits `http.status` and no URL attribute at all. It is a
+    third vocabulary. Two attributes are the exception and are correct stable
+    semconv — `url.scheme` and `network.protocol.version` — which is exactly
+    what the v1.5.0 source predicts, since those two are the only keys it
+    routes through its own `semconv` module
+    (`crates/agentgateway/src/telemetry/trc.rs`); everything else is a raw
+    string key. Asserted here so the day this changes upstream, this project
+    finds out from a red test rather than from a stale document.
+    """
+    trace = gateway_settlement.trace
+    gateway_spans = _gateway_spans(trace)
+
+    servers = [s for s in gateway_spans if s.operation == "tools/call"]
+    clients = [
+        s for s in gateway_spans if s.operation.startswith("tools/call payments-mcp_")
+    ]
+    assert servers and clients, (
+        f"gateway operations seen: {sorted({s.operation for s in gateway_spans})}"
+    )
+
+    for span in servers:
+        assert _keys(span) == GATEWAY_TOOLS_CALL_SERVER_ATTRS, (
+            f"{span.operation!r} (SERVER) attribute keys have drifted from what "
+            "was measured; update docs/telemetry-contract.md too.\n"
+            f"  unexpected: {sorted(_keys(span) - GATEWAY_TOOLS_CALL_SERVER_ATTRS)}\n"
+            f"  missing:    {sorted(GATEWAY_TOOLS_CALL_SERVER_ATTRS - _keys(span))}"
+        )
+        # Stated separately from the set equality above so the failure message
+        # names the convention rather than just a set difference.
+        assert "http.request.method" not in span.attrs, (
+            "agentgateway now emits the stable HTTP semconv spelling; the "
+            "third-vocabulary finding in docs/telemetry-contract.md is stale"
+        )
+        assert "http.status_code" not in span.attrs and "http.url" not in span.attrs, (
+            "agentgateway now emits the OTel legacy HTTP spelling; the "
+            "third-vocabulary finding in docs/telemetry-contract.md is stale"
+        )
+
+    for span in clients:
+        assert _keys(span) == GATEWAY_TOOLS_CALL_CLIENT_ATTRS, (
+            f"{span.operation!r} (CLIENT) attribute keys have drifted from what "
+            "was measured; update docs/telemetry-contract.md too.\n"
+            f"  unexpected: {sorted(_keys(span) - GATEWAY_TOOLS_CALL_CLIENT_ATTRS)}\n"
+            f"  missing:    {sorted(GATEWAY_TOOLS_CALL_CLIENT_ATTRS - _keys(span))}"
+        )
+
+
+def test_the_gateway_carries_no_northstar_claim_id(gateway_settlement):
+    """The enrichment boundary, asserted rather than only asserted-in-prose.
+
+    `docs/telemetry-contract.md`'s "Enrichment boundary" section has said
+    since M1.1 that "in M2 that means agentgateway's own spans are correlated
+    by trace ID, not enriched" — a prediction, until M2.1 Task 3 put the
+    gateway in the path. Measured: it holds. `ClaimIdSpanProcessor` runs only
+    inside this project's own Python processes and nothing reaches into
+    agentgateway's telemetry to add anything, so all 20 of its spans in the
+    measured trace carry no `northstar.claim.id`.
+
+    This is the *desired* behaviour, not a gap to close — the negative form is
+    the point. If a future task ever starts injecting this project's domain
+    attributes into third-party infrastructure telemetry, this test fails and
+    that becomes a deliberate decision instead of a quiet one.
+    """
+    gateway_spans = _gateway_spans(gateway_settlement.trace)
+    # Without this, the whole test passes vacuously on a trace containing no
+    # gateway spans at all -- i.e. it would report green on precisely the
+    # regression the rest of this file exists to catch. Verified: against a
+    # pre-reroute trace this assertion is what fails, not the one below.
+    assert gateway_spans, (
+        "no agentgateway spans in the trace, so this test's negative claim "
+        "would hold vacuously -- is the gateway in the path?"
+    )
+    offenders = [
+        (s.operation, s.attrs["northstar.claim.id"])
+        for s in gateway_spans
+        if "northstar.claim.id" in s.attrs
+    ]
+    assert not offenders, (
+        "agentgateway spans now carry northstar.claim.id: "
+        f"{offenders} -- either baggage started crossing into the gateway's "
+        "own telemetry, or this project started enriching infrastructure it "
+        "does not run in-process. Both need a deliberate decision and a "
+        "docs/telemetry-contract.md update, not a silent pass."
+    )

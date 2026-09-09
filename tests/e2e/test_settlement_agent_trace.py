@@ -275,7 +275,22 @@ def test_settlement_agent_outbound_mcp_calls_are_traced(settlement_trace):
     `tests/e2e/test_settlement_llm_trace.py::test_anthropic_client_span_exists_and_is_parented_to_chat`.
     It is excluded here (`server.address != "api.anthropic.com"`) because
     this test's job is specifically the MCP transport's own spans, not every
-    outbound hop this service makes."""
+    outbound hop this service makes.
+
+    **M2.1 Task 3 update — the target is now the gateway, not payments-mcp.**
+    This asserted `"payments-mcp" in target` from M1.1 until the gateway was
+    interposed. `deploy/k8s/settlement-agent.yaml`'s `PAYMENTS_MCP_URL` now
+    names `agentgateway.northstar-platform.svc.cluster.local:3000/mcp`, and
+    the measured value on every one of these spans is exactly that
+    (`url.full=http://agentgateway.northstar-platform.svc.cluster.local:3000/mcp`,
+    `server.address=agentgateway.northstar-platform.svc.cluster.local`) — so
+    the old assertion failed against a correctly-behaving deployment. The
+    needle is updated, not loosened: this still fails if this service's MCP
+    transport ever calls anything other than its configured MCP endpoint.
+    What it no longer claims on its own is that the call *reaches*
+    payments-mcp — that is now a statement about the hop below, proven by
+    `tests/e2e/test_gateway_trace.py`, which asserts payments-mcp's tool
+    spans descend from agentgateway's inside this same one trace."""
     client_spans = [
         s
         for s in settlement_trace.trace.spans
@@ -286,7 +301,7 @@ def test_settlement_agent_outbound_mcp_calls_are_traced(settlement_trace):
     assert client_spans, "no outbound CLIENT spans found for the MCP transport"
     for span in client_spans:
         target = span.attrs.get("url.full") or ""
-        assert "payments-mcp" in target, f"unexpected outbound target: {span.attrs}"
+        assert "agentgateway" in target, f"unexpected outbound target: {span.attrs}"
         # Stable HTTP semconv spelling (A13): OTEL_SEMCONV_STABILITY_OPT_IN=http
         # is set on the deployment manifest specifically so these come out
         # this way rather than the legacy http.method/http.url/http.status_code.
