@@ -16,19 +16,35 @@ sibling, and the first time the sibling was in the same file.
 **What this guard asserts, and why each check is shaped the way it is.**
 
 1. `test_every_published_attribute_count_names_its_mode_and_matches_the_inventory`
-   — the direct guard for the defect above. It finds every site in the document
-   that publishes a count of `gen_ai.*` attributes and requires two things of
-   each: that the **sentence** it sits in names a capture mode, and that the
-   number is the right one **for that mode**. The mode set is derived from the
-   document's own inventory, never hardcoded here: ON is however many names the
-   inventory block lists, OFF is that minus however many the document's own
-   delta table marks as content-gated.
+   — the direct guard for the defect above. It parses each sentence that
+   publishes a `gen_ai.*` attribute count into **(mode, number) pairs** and
+   requires every pair to be right: the number governed by "at ON" must be the
+   ON figure, the number governed by "at OFF" must be the OFF figure, and a
+   sentence that names a mode must actually assign that mode a number. The two
+   figures are derived from the document's own inventory, never hardcoded here:
+   ON is however many names the inventory block lists, OFF is that minus however
+   many the document's own delta table marks as content-gated.
 
    *Sentence*-scoped, not paragraph-scoped, deliberately. The stale row was a
    single table cell that **did** contain the words "default ON" — a
    paragraph-scoped check would have passed it, because the mode marker and the
    wrong number were 40 words apart in the same cell. Scoping to the sentence is
    what makes "25 distinct names" with no adjacent mode read as unqualified.
+
+   **Pairs, not a set of numbers — this was a real gap, found in review.** The
+   first version of this check tested only that a both-modes sentence *contained*
+   the set `{28, 25}` somewhere in scope. Rewriting `28 at ON, 25 at OFF` as
+   `25 at ON, 28 at OFF` left that set unchanged, so the swap stayed green: a
+   set-membership check wearing an assignment check's name. It caught an
+   unqualified number and a number wrong for a single-mode sentence — the
+   original defect — and not the interchange, which is the other half of what
+   this file promises. `_governing_mode()` and `_assignments()` below exist to
+   close that, and the mutation set that proves this guard is now derived from
+   *these functions' branches* rather than from edits a human might plausibly
+   make to the document (see the task report's fix-round-2 branch table). The
+   lesson worth keeping: mutation-testing a guard catches guards that **do not
+   run**; it does not catch a guard that runs, asserts, and asserts the wrong
+   proposition. Only branch coverage of the checker finds those.
 
 2. `test_the_content_gated_delta_table_agrees_with_the_inventory` — the two
    places in the document that between them define ON and OFF must agree: every
@@ -78,6 +94,10 @@ OFF_MARKERS = (
     "OFF mode",
     "`NORTHSTAR_CAPTURE_CONTENT` OFF",
     "include_content=False",
+)
+
+MODE_MARKERS = tuple((m, "ON") for m in ON_MARKERS) + tuple(
+    (m, "OFF") for m in OFF_MARKERS
 )
 
 # The two phrasings this document uses to publish a gen_ai.* attribute count.
@@ -182,76 +202,150 @@ def _sentences(text: str) -> list[str]:
 
 
 def _modes(sentence: str) -> set[str]:
-    modes = set()
-    if any(m in sentence for m in ON_MARKERS):
-        modes.add("ON")
-    if any(m in sentence for m in OFF_MARKERS):
-        modes.add("OFF")
-    return modes
+    """Which capture modes this sentence names at all (order ignored)."""
+    return {mode for marker, mode in MODE_MARKERS if marker in sentence}
+
+
+def _marker_spans(sentence: str) -> list[tuple[int, int, str]]:
+    """Every mode-marker occurrence as `(start, end, mode)`, left to right.
+
+    Overlapping markers of the same mode (`"ON default"` inside
+    `"shipped ON default"`) both appear; that is harmless, because they agree.
+    """
+    spans = []
+    for marker, mode in MODE_MARKERS:
+        start = 0
+        while (index := sentence.find(marker, start)) != -1:
+            spans.append((index, index + len(marker), mode))
+            start = index + 1
+    spans.sort()
+    return spans
+
+
+def _governing_mode(
+    spans: list[tuple[int, int, str]], num_start: int, num_end: int
+) -> str | None:
+    """Which mode marker governs the number occupying `[num_start, num_end)`.
+
+    **The rule, and why it is this rule.** This document writes the number
+    first and the mode after it — "28 distinct `gen_ai.*` keys at ON, 25 at
+    OFF", "28 ... measured at ON (25 at OFF)" — so the *first marker after the
+    number* governs it. Where the document puts the mode first instead —
+    "(`NORTHSTAR_CAPTURE_CONTENT` ON) — 28 names", "the **OFF-mode** figure ...
+    \\"25 names\\"" — there is no marker after the number, and the *last marker
+    before it* governs.
+
+    Nearest-marker-in-either-direction was tried and rejected: in "28 ... at
+    ON, 25 at OFF" the distance from `25` to "at ON" and to "at OFF" differs by
+    one character, so a distance rule decides that sentence on a comma. Reading
+    direction is the actual convention in the text, so the rule follows it.
+    """
+    after = [span for span in spans if span[0] >= num_end]
+    if after:
+        return after[0][2]
+    before = [span for span in spans if span[1] <= num_start]
+    if before:
+        return before[-1][2]
+    return None
+
+
+def _assignments(
+    sentence: str, on_count: int, off_count: int
+) -> list[tuple[str | None, int, str, bool]]:
+    """Parse a sentence into `(mode, number, quoted, is_primary)` assignments.
+
+    Two kinds of number are picked up:
+
+    * **primary** — matched by `COUNT_PATTERNS`, i.e. anchored on `gen_ai.*` or
+      on the word "names". These are the published counts.
+    * **secondary** — a bare integer that happens to equal one of the two mode
+      figures. This is what makes the *second* half of "28 at ON, 25 at OFF"
+      checkable: `25` there is anchored on nothing, so no count pattern sees
+      it, yet it is exactly the number a swap moves. Restricting secondaries to
+      `{on_count, off_count}` is what keeps the check from firing on the
+      document's other mode-qualified numbers — "from **1599** characters at ON
+      ... to **657** at OFF" is a real sentence in this file and is none of
+      this guard's business.
+
+    Keyed by the digits' offset so a number matched by both a count pattern and
+    the bare-integer sweep is one assignment, not two.
+    """
+    spans = _marker_spans(sentence)
+    found: dict[int, tuple[int, str, bool]] = {}
+    for pattern in COUNT_PATTERNS:
+        for match in pattern.finditer(sentence):
+            found[match.start(1)] = (int(match.group(1)), match.group(0), True)
+    for match in re.finditer(r"\b(\d+)\b", sentence):
+        start = match.start(1)
+        number = int(match.group(1))
+        if start not in found and number in (on_count, off_count):
+            found[start] = (number, match.group(0), False)
+
+    assignments = []
+    for start, (number, quoted, is_primary) in sorted(found.items()):
+        end = start + len(str(number))
+        assignments.append(
+            (_governing_mode(spans, start, end), number, quoted, is_primary)
+        )
+    return assignments
 
 
 def test_every_published_attribute_count_names_its_mode_and_matches_the_inventory():
     text = _contract_text()
     on_count = len(_on_inventory(text))
     off_count = on_count - len(_content_gated_keys(text))
+    expected = {"ON": on_count, "OFF": off_count}
 
-    sites = []
+    problems = []
+    primary_sites = 0
     for sentence in _sentences(text):
-        for pattern in COUNT_PATTERNS:
-            for match in pattern.finditer(sentence):
-                sites.append((int(match.group(1)), match.group(0), sentence))
+        pairs = _assignments(sentence, on_count, off_count)
+        if not any(is_primary for _, _, _, is_primary in pairs):
+            continue  # not a sentence that publishes an attribute count
+        primary_sites += sum(1 for *_, is_primary in pairs if is_primary)
+        excerpt = sentence.strip()[:180]
 
-    assert sites, (
+        for mode, number, quoted, is_primary in pairs:
+            if mode is None:
+                problems.append(
+                    f"UNQUALIFIED: {quoted!r} names no capture mode in its own "
+                    f"sentence, so a reader cannot tell whether {number} is the "
+                    f"ON figure ({on_count}) or the OFF figure ({off_count}). "
+                    f"This is the exact defect M2.1 Task 3's review found. "
+                    f"In: {excerpt!r}"
+                )
+            elif number != expected[mode]:
+                problems.append(
+                    f"WRONG FOR {mode}: {quoted!r} is governed by a {mode} "
+                    f"marker, but the {mode} figure is {expected[mode]} "
+                    f"(ON = {on_count} inventory names; OFF = that minus "
+                    f"{on_count - off_count} content-gated). If the two figures "
+                    f"have been interchanged, that is what this says. "
+                    f"In: {excerpt!r}"
+                )
+
+        named = _modes(sentence)
+        assigned = {mode for mode, *_ in pairs if mode is not None}
+        unassigned = named - assigned
+        if unassigned:
+            problems.append(
+                f"AMBIGUOUS: this sentence names {sorted(named)} but gives a "
+                f"number to only {sorted(assigned)} -- {sorted(unassigned)} is "
+                f"left to inherit the other mode's figure by implication. State "
+                f"both {on_count} (ON) and {off_count} (OFF). In: {excerpt!r}"
+            )
+
+    assert primary_sites, (
         "found no published `gen_ai.*` attribute count in "
         f"{CONTRACT_PATH.relative_to(REPO_ROOT)} at all -- this guard would "
         "then be checking nothing. If the phrasing changed, teach "
         "COUNT_PATTERNS the new one rather than deleting this assertion"
     )
-
-    problems = []
-    for number, quoted, sentence in sites:
-        modes = _modes(sentence)
-        excerpt = sentence.strip()[:180]
-        if not modes:
-            problems.append(
-                f"UNQUALIFIED: {quoted!r} names no capture mode in its own "
-                f"sentence, so a reader cannot tell whether {number} is the ON "
-                f"figure ({on_count}) or the OFF figure ({off_count}). This is "
-                f"the exact defect M2.1 Task 3's review found. In: {excerpt!r}"
-            )
-        elif modes == {"ON"} and number != on_count:
-            problems.append(
-                f"WRONG FOR ON: {quoted!r} is in an ON-mode sentence but the "
-                f"inventory lists {on_count} names. In: {excerpt!r}"
-            )
-        elif modes == {"OFF"} and number != off_count:
-            problems.append(
-                f"WRONG FOR OFF: {quoted!r} is in an OFF-mode sentence but the "
-                f"OFF figure is {off_count} ({on_count} inventory names minus "
-                f"{on_count - off_count} content-gated). In: {excerpt!r}"
-            )
-        elif modes == {"ON", "OFF"}:
-            # A sentence that names both modes must state both numbers, so
-            # neither mode is left carrying the other's figure by implication.
-            present = {int(n) for n in re.findall(r"\b(\d+)\b", sentence)}
-            if number not in {on_count, off_count}:
-                problems.append(
-                    f"WRONG: {quoted!r} matches neither the ON figure "
-                    f"({on_count}) nor the OFF figure ({off_count}). "
-                    f"In: {excerpt!r}"
-                )
-            elif not {on_count, off_count} <= present:
-                problems.append(
-                    f"AMBIGUOUS: {quoted!r} sits in a sentence naming both "
-                    f"modes but stating only {sorted(present)} -- it must give "
-                    f"both {on_count} (ON) and {off_count} (OFF) so neither "
-                    f"mode inherits the other's number. In: {excerpt!r}"
-                )
-
     assert not problems, (
-        f"docs/telemetry-contract.md publishes {len(sites)} `gen_ai.*` "
+        f"docs/telemetry-contract.md publishes {primary_sites} `gen_ai.*` "
         "attribute count(s); the following disagree with the document's own "
-        "inventory or fail to name their capture mode:\n  " + "\n  ".join(problems)
+        "inventory, are assigned to the wrong capture mode, or fail to name a "
+        "mode at all:\n  " + "\n  ".join(problems)
     )
 
 
