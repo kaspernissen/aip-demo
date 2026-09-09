@@ -64,8 +64,8 @@ it was actually run:
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `80 passed, 22 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `102 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `83 passed, 22 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `105 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -120,21 +120,36 @@ same `RUN_BROWSER_TESTS=1` gate as the other two live-model files — it drives 
 real settlement — so all five of its tests land in the skip count of a bare
 `pytest tests/` and in the passed count of the gate.
 
-**Provenance of these two numbers, precisely.** Both rows are stated as
-measured; where a component is derived, it says so:
+M2.1 Task 3 fix round 1 grew the collected total 103 → 106, leaving the skip
+count at 22: `tests/unit/test_telemetry_contract_attribute_counts.py` (3 tests)
+guards this document's published *attribute* counts, the blind spot that let a
+stale `gen_ai.*` count survive a whole milestone (see the settlement-agent
+model row in the instrumentation table for the full history). Like every other
+`tests/unit/` module it reads a file and needs no cluster, no browser and no
+model tokens, so it runs in both rows.
 
-- **Measured (M2.1 Task 3):** `.venv/bin/python -m pytest --collect-only -q
-  tests/` → `103 tests collected`.
-- **Measured (M2.1 Task 3):** the three `RUN_BROWSER_TESTS`-gated modules,
+**Provenance of these numbers, precisely.** Where a component is derived it says
+so, and says what it is derived from:
+
+- **Measured (fix round 1):** `.venv/bin/python -m pytest --collect-only -q
+  tests/` → `106 tests collected`.
+- **Measured (fix round 1):** the three `RUN_BROWSER_TESTS`-gated modules,
   `tests/e2e/test_browser_root_span.py` (8),
   `tests/e2e/test_settlement_llm_trace.py` (9) and
   `tests/e2e/test_gateway_trace.py` (5), run with no env var → `22 skipped`.
   They are the only gated modules in the tree.
 - **Measured (M2.1 Task 3):** the gate itself,
   `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` → `102 passed, 1 xfailed`,
-  0 skipped, on the interposed-gateway deployment. This is the gate row,
-  observed, not arithmetic.
-- **Derived:** default row = 103 − 22 − 1 = **80 passed, 22 skipped, 1
+  0 skipped, on the interposed-gateway deployment.
+- **Derived, and this row is the one derivation here:** gate row =
+  102 + 3 = **105 passed, 1 xfailed** (= 106 collected, 0 skipped). The gate was
+  deliberately **not** re-run for the fix round — it drives five live
+  model-driven settlements, and the fix round added three always-run unit tests
+  and changed only documentation and one comment, no service code and no cluster
+  state. Those three were run directly and pass
+  (`.venv/bin/python -m pytest tests/unit -q` → `47 passed`), which is what the
+  `+ 3` rests on.
+- **Derived:** default row = 106 − 22 − 1 = **83 passed, 22 skipped, 1
   xfailed**. The one xfail is the same FastMCP-baggage one described below, and
   it is not gated, so it appears in both rows.
 
@@ -236,7 +251,7 @@ marker is removed, rather than staying silently green.
 | customer-ui | OpenTelemetry JS web, manual root span | `@opentelemetry/sdk-trace-web` 2.8.0, `@opentelemetry/context-zone` 1.30.0, `@opentelemetry/exporter-trace-otlp-http` 0.219.0, `@opentelemetry/resources` 2.8.0 | `claim.submit` | Owns the trace root. Requires `traceparent`/`tracestate`/`baggage` in claims-agent's own CORS `allow_headers` (`agents/claims-agent/main.py`) so the browser's request survives preflight — the collector's own CORS requirement is different: it needs `http://localhost:8080` in `allowed_origins` (its `allowed_headers` is already wildcarded), since the browser's OTLP export to the collector carries no `traceparent` header of its own. Requires a *static* import of the injection helper — a dynamic `import()` (or any other `await`) before reading the active span loses it under `ZoneContextManager` (`apps/customer-ui/NOTES.md` §2; pinned by that service's own vitest regression test). |
 | claims-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` | `a2a-sdk[telemetry]==0.3.7`, `opentelemetry-instrumentation-starlette==0.65b0` | ASGI entry span `POST /`; `a2a.server.request_handlers.jsonrpc_handler.JSONRPCHandler.on_message_send` and the rest of the `a2a.server.*` call-graph spans (`DefaultRequestHandler.on_message_send`, `EventQueue.enqueue_event`/`.dequeue_event`/`.close`, `EventConsumer.consume_all`, etc.) | `DISABLE_OTEL_INSTRUMENTATION` must remain unset; `bootstrap.configure()` raises if it is `true`. Inbound W3C trace-context extraction comes from `StarletteInstrumentor` wrapping the built ASGI app (A18) — `a2a-sdk` itself extracts nothing (see Gap 1). **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/claims-agent.yaml`) — OTel Python's HTTP instrumentation defaults to the legacy spelling (`http.method`/`http.url`/`http.status_code`) on both the ASGI entry span and the outbound httpx span; without this, this service alone would mix conventions with the Go hop (`agents/claims-agent/NOTES.md` §7, which also records a measurement mistake made while proving the opt-in was genuinely needed, not assumed). |
 | settlement-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` + `mcp` client | `a2a-sdk[telemetry]==0.3.7`, `mcp==1.28.1` (Task 7; was `1.9.4`), `opentelemetry-instrumentation-starlette==0.65b0` | Same shape as claims-agent (`POST /` ASGI entry span, `a2a.server.*` call-graph spans), plus outbound `httpx` CLIENT spans (`POST`/`GET`/`DELETE`) to payments-mcp, plus — as of Task 8 — outbound `httpx2` CLIENT spans (`POST`) to `api.anthropic.com`, nested under each `chat` span | Only agent permitted to reach payments-mcp. Same `StarletteInstrumentor` fix as claims-agent for inbound extraction. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/settlement-agent.yaml`), same reason as claims-agent — measured legacy-by-default, confirmed stable after the opt-in (`agents/settlement-agent/NOTES.md` §6); the same opt-in applies to both `HTTPXClientInstrumentor` and `HTTPX2ClientInstrumentor`, since both share one `get_tracer` call in the same module. |
-| settlement-agent (model) | PydanticAI `Agent.instrument_all(InstrumentationSettings(...))` (`bootstrap.py`) | `pydantic-ai-slim==2.41.0`, `version=5` (the library default, pinned explicitly) | `invoke_agent settlement_agent` (internal, ×1/request), `chat claude-sonnet-5` (client, ×3/request — one per model turn: propose, execute, final narrative), `execute_tool propose_payment`, `execute_tool execute_payment` (internal, ×1 each) | As of M1.2: the settlement decision itself, not only its transport. **25 distinct `gen_ai.*` attribute names measured** across these four span shapes — full inventory and per-span breakdown below. `include_content` is **not** hardcoded — it reads `NORTHSTAR_CAPTURE_CONTENT` (default ON; see "Content capture" below) — and `include_model_request_parameters` is left at its library default (`True`), never passed explicitly. |
+| settlement-agent (model) | PydanticAI `Agent.instrument_all(InstrumentationSettings(...))` (`bootstrap.py`) | `pydantic-ai-slim==2.41.0`, `version=5` (the library default, pinned explicitly) | `invoke_agent settlement_agent` (internal, ×1/request), `chat claude-sonnet-5` (client, ×3/request — one per model turn: propose, execute, final narrative), `execute_tool propose_payment`, `execute_tool execute_payment` (internal, ×1 each) | As of M1.2: the settlement decision itself, not only its transport. **28 distinct `gen_ai.*` attribute names measured at ON (25 at OFF)** across these four span shapes — full inventory and per-span breakdown below. (This cell read a bare "25 distinct" from M1.2 until M2.1 Task 3 fix round 1: the OFF-mode figure, in a cell whose own next clause states the default is ON. M1.2's SF-3 fix round corrected the inventory 165 lines below to 28 and never touched this summary — the fifth time in this project that fixing an instance missed a sibling, and the first with the sibling in the same file. Every attribute count in this document now carries its mode, and `tests/unit/test_telemetry_contract_attribute_counts.py` fails if any of them is unqualified or disagrees with the inventory it summarises.) `include_content` is **not** hardcoded — it reads `NORTHSTAR_CAPTURE_CONTENT` (default ON; see "Content capture" below) — and `include_model_request_parameters` is left at its library default (`True`), never passed explicitly. |
 | agentgateway | native, `frontendPolicies.tracing` in its own config | `cr.agentgateway.dev/agentgateway:v1.5.0` (Resource `service.version=1.5.0`; scope `agentgateway` with **no** `otel.scope.version`; Resource `telemetry.sdk.language=rust`, `telemetry.sdk.name=opentelemetry`, `telemetry.sdk.version=0.32.1`) | Two spans per MCP message: a SERVER span named after the JSON-RPC method (`initialize`, `notifications/initialized`, `tools/call`) or, for non-JSON-RPC HTTP, after method-and-route (`GET /*`, `DELETE /*`); and a CLIENT span named `<method> <target>` (`initialize payments-mcp`), which for tool calls becomes `tools/call <target>_<tool>` (`tools/call payments-mcp_propose_payment`) | Interposed by M2.1 Task 3; permits everything, no policy (that is M2.2). Emits **a third HTTP attribute vocabulary**, neither stable nor OTel-legacy — see "agentgateway instrumentation, as measured" below, which is the one place this document's HTTP-convention claim has an exception. Exports OTLP/**gRPC** to the collector on 4317, the only component here that does not use OTLP/HTTP on 4318. Task 2 shipped it with no `tracing` block at all, i.e. emitting nothing; Task 3 added one, which is why this row did not exist before. |
 | payments-mcp | FastMCP native | `fastmcp==4.0.3` | `tools/call propose_payment`, `tools/call execute_payment` | TracerProvider does **not** need to be installed before importing fastmcp on this version — `fastmcp.telemetry.get_tracer()` calls `get_tracer_provider()` fresh on every span, not once at import (measured; the brief's premise here was wrong for 4.0.3 — kept as a code convention anyway, not a correctness requirement). `FASTMCP_TELEMETRY_MODE=native` is set explicitly even though it is already the default. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is also set** (`deploy/k8s/payments-mcp.yaml`) — this governs only the *outbound httpx* span to payments-api (FastMCP's own native MCP spans are unaffected; this knob is httpx-instrumentation-specific), measured legacy-by-default, confirmed stable after (`tools/payments-mcp/NOTES.md` §3). |
 | payments-api | `otelhttp` | `otelhttp v0.66.0`, otel core `v1.41.0` | `POST /payments/propose`, `POST /payments/{paymentId}/execute`, `GET /payments/{paymentId}` | HTTP attribute spelling as emitted by the pinned version: **stable** — `http.request.method` / `http.response.status_code` / `http.route`, not the legacy `http.method`/`http.status_code`. `network.protocol.name` is **not** emitted by this otelhttp version (only `network.protocol.version` is); do not assert its presence. No `OTEL_SEMCONV_STABILITY_OPT_IN` is set or needed — this version emits the stable spelling by default (A12), unlike every Python service in this table. |
@@ -401,8 +416,9 @@ capture" below for exactly what each of those two independent settings gates.
 The emitting library is `pydantic-ai-slim==2.41.0`
 (`agents/settlement-agent/requirements.txt`).
 
-**Fix round (final-review.md SF-3): this inventory previously said "25
-names... complete" and "two further attributes are content-gated."** Both
+**Fix round (final-review.md SF-3): this inventory previously published the
+OFF-mode figure as though it were the whole vocabulary — "25 names...
+complete" — and said "two further attributes are content-gated."** Both
 halves were wrong. The 25 were measured under Task 4's `include_content=False`
 default; Task 5 flipped the shipped default to ON and nobody re-derived the
 set, so the document contradicted itself 30-odd lines later (`gen_ai.system_
@@ -584,7 +600,7 @@ get wrong from the outside:
 
 ### Attributes on the `tools/call` SERVER span
 
-Read off a live span; the complete set, nothing omitted:
+Read off a live span; 21 keys, the complete set, nothing omitted:
 
 ```
 duration                     e.g. "3ms"  (a string; see the note below)
@@ -1353,9 +1369,30 @@ the back of a live run this task already paid for: **the same successful
 scenario twice, once at the shipped default `true` and once at `false`,
 comparing which `gen_ai.*` attribute keys survive.**
 
-Both runs were the same A2A settlement of €6,200, both post-reroute (through
-agentgateway), both `status: executed`. Mode read back off the *running* pod
-with `jsonpath`, not off the Deployment spec, before each run.
+**The two runs this section quotes, named once so every figure below has one
+owner** (fix round 1, Finding 2 — an earlier revision of this section mixed
+figures from three traces while claiming two, which is this project's signature
+defect: the measurements were real and the labels on them were not):
+
+| Mode | Trace | Services in it |
+|---|---|---|
+| ON (`NORTHSTAR_CAPTURE_CONTENT=true`, the shipped default) | `a227b3e224e6407e9846e014476456e2` | agentgateway, payments-api, payments-mcp, settlement-agent |
+| OFF (`=false`, temporary, reverted) | `d52806ff6e6147df9609d5fc6265be0d` | agentgateway, payments-api, payments-mcp, settlement-agent |
+
+Both are the same A2A settlement of €6,200, both post-reroute (through
+agentgateway — verified by the service lists above, not assumed), both
+`status: executed`. Mode read back off the *running* pod with `jsonpath`, not
+off the Deployment spec, before each run. **Every ON-vs-OFF figure below comes
+from one of those two traces**, and every figure states which.
+
+One other trace appears further down, named at each mention and used only to
+corroborate the ON key count — it never supplies half of a comparison:
+`ebccbc73929c42b195e4d778a053e61b`, the **pre-reroute** run that
+proved `tests/e2e/test_gateway_trace.py` RED, also measures 28 distinct
+`gen_ai.*` keys at ON. It contains no agentgateway spans, so it is deliberately
+not the ON trace named above — the gateway is irrelevant to what
+`NORTHSTAR_CAPTURE_CONTENT` gates, but a like-for-like ON/OFF pair should differ
+in exactly one variable, and this one differs in two.
 
 **Measured: 28 distinct `gen_ai.*` keys at ON, 25 at OFF. Exactly three
 disappear:**
@@ -1385,11 +1422,33 @@ gutted in place:
   and still carry every part type (`text`, `thinking`, `tool_call`,
   `tool_call_response`), but at OFF **no part carries a `content` key and no
   `tool_call` part carries an `arguments` key** — measured across all three
-  chat turns in each run.
+  chat turns of each run, on the two traces named above:
+
+  | Surface | ON (`a227b3e2…`) | OFF (`d52806ff…`) |
+  |---|---|---|
+  | `gen_ai.input.messages`, `text`/`thinking` parts carrying `content` | 8 of 8 | **0 of 5** |
+  | `gen_ai.input.messages`, `tool_call` parts carrying `arguments` | 3 of 3 | **0 of 3** |
+  | `gen_ai.output.messages`, `text`/`thinking` parts carrying `content` | 4 of 4 | **0 of 2** |
+  | `gen_ai.output.messages`, `tool_call` parts carrying `arguments` | 2 of 2 | **0 of 2** |
+  | `pydantic_ai.all_messages`, `text`/`thinking` parts carrying `content` | 5 of 5 | **0 of 3** |
+  | `pydantic_ai.all_messages`, `tool_call` parts carrying `arguments` | 2 of 2 | **0 of 2** |
+
+  The denominators differ between the two columns because the model produced a
+  different number of parts on each run — these are two live runs of one
+  scenario, not one run replayed. That is why the load-bearing statement is
+  "every one at ON, none at OFF" rather than a ratio comparison. Denominators
+  count only the part types that can carry the key at all: `text`/`thinking`
+  for `content`, `tool_call` for `arguments` (a `tool_call` part never carries
+  `content` at either setting, so counting it in that denominator would
+  understate ON).
 - `pydantic_ai.all_messages` on the `invoke_agent` span — the full transcript,
   and the single highest-risk surface in the trace — survives too, and shrank
-  from 1599 characters at ON to 657 at OFF for the same shape of run. Same
-  part types, no content.
+  from **1599** characters at ON (`a227b3e2…`) to **657** at OFF
+  (`d52806ff…`). Same part types, no content. (For completeness, since the
+  corroborating pre-reroute ON trace is a different run: on `ebccbc73…` the
+  same attribute is 1318 characters. Run-to-run variation in how much the model
+  wrote — not a mode effect, which is exactly why the ON figure published here
+  is the one from the named ON trace.)
 
 So a reader who checks only "which keys are present" would conclude that
 redaction removed 3 of 28 attributes, roughly a tenth. What it actually removed
