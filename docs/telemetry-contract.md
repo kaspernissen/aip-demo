@@ -1,7 +1,8 @@
 # Northstar Telemetry Contract
 
 Status: M1.1, revised through M1.2 for the settlement-agent's model-driven
-decision logic. Revised at every milestone.
+decision logic, and through M2.1 for agentgateway's interposition and SPIRE's
+workload identity. Revised at every milestone.
 
 ## The governing rule
 
@@ -617,7 +618,10 @@ complete redaction switch.
 `CallDeferred`/`ApprovalRequired` from marking their span `ERROR` — treated
 as control flow instead of a failure, per the installed library's own
 `version` docstring (verified against `pydantic_ai/_instrumentation.py`;
-cross-checked in `.superpowers/research/m1.2-pydanticai-verification.md`).
+cross-checked in this project's own working notes, dated 2026-09-08
+("m1.2-pydanticai-verification") — git-ignored working history, not a file
+distributed with this repository, so cite it as the dated note it is rather
+than a path a reader can necessarily open).
 This matters directly to the human-approval milestone: an approval step that
 pauses execution should not read as a span-level error in this project's
 trace, and pinning `version=5` (rather than a later default drifting under
@@ -650,23 +654,33 @@ constraint, so net strictness is unchanged. The rest of this section's shape
 claims are unaffected: still one root through the browser path, still zero
 orphans beyond A17's known synthetic one, and still no published span total.
 
-**The trace's shape, with a model in the path** — verified independently
-twice, by the implementer and by the reviewer, on two different live runs
-(task-4-report.md §7, task-4-review.md §7): **5 services**
-(`customer-ui`, `claims-agent`, `settlement-agent`, `payments-mcp`,
-`payments-api`), **1 root** (`customer-ui:claim.submit`, matching the span id
-observed in the browser's own `traceparent` header), **0 orphans**,
-containing `invoke_agent settlement_agent` ×1, `chat claude-sonnet-5` ×3,
-both `execute_tool` spans, both `tools/call` spans, and payments-api's
-propose (`201`) and execute (`200`). **No exact span count is published
-here, deliberately:** the implementer measured 88 spans on the browser
-exit-criterion run; the reviewer, running the identical scenario
-independently, measured 86. Same shape both times, different total — real
-per-run variance (whether a given turn produced a `thinking` part, MCP
-session bookkeeping), not a defect, and not a number this document commits
-to. The shape above — which services, which operations, one root, zero
-orphans — is the property this project actually tests and guarantees; a
-specific span total is not, and publishing one here would only become the
+**The trace's shape, with a model in the path.** This paragraph's original
+figures (M1.2, verified independently twice, by the implementer and by the
+reviewer, on two different live runs — task-4-report.md §7 and
+task-4-review.md §7 **of M1.2's own working history**, not M2.1's) were **5
+services** (`customer-ui`, `claims-agent`, `settlement-agent`, `payments-mcp`,
+`payments-api`), before the gateway existed. **M2.1 correction, re-derived
+live rather than carried forward:** querying Jaeger directly
+(`GET /api/traces?service=customer-ui&operation=claim.submit&lookback=48h`)
+returns 4 browser-rooted traces; the 3 post-reroute ones each show **6
+services** (`agentgateway` interposed between `settlement-agent` and
+`payments-mcp`, matching the "sixth service" correction above), **1 root**
+(`customer-ui:claim.submit`, matching the span id observed in the browser's
+own `traceparent` header), **0 orphans**, and 20 `agentgateway` spans; the one
+remaining pre-reroute trace still shows the original 5-service, 0-gateway-span
+shape. Both shapes contain `invoke_agent settlement_agent` ×1,
+`chat claude-sonnet-5` ×3, both `execute_tool` spans, both `tools/call` spans,
+and payments-api's propose (`201`) and execute (`200`). **No exact span count
+is published here, deliberately:** the M1.2 implementer measured 88 spans on
+the browser exit-criterion run and the M1.2 reviewer measured 86 on an
+identical scenario; re-derived for M2.1 across the three post-reroute traces
+above, the whole-trace totals were 111, 117 and 113. Same shape every time,
+different total — real per-run variance (whether a given turn produced a
+`thinking` part, MCP session bookkeeping, the `a2a-sdk` polling span), not a
+defect, and not a number this document commits to. The shape above — which
+services, which operations, one root, zero orphans — is the property this
+project actually tests and guarantees; a specific span total is not, and
+publishing one here would only become the
 next stale number this contract has already had to correct twice.
 
 ## agentgateway instrumentation, as measured (M2.1 Task 3)
