@@ -125,11 +125,85 @@ COUNT_PATTERNS = (
     re.compile(r"(\d+)\s+names\b"),
 )
 
+# English number words are a *closed* class, so this parses them rather than
+# looking them up in a hand-maintained subset. That distinction is the M2.1
+# fix-round-2 finding F-5: the previous `_WORD_NUMBERS` dict held an arbitrary
+# 15 forms, and a claim written with any other word form was **silently
+# dropped** from the claim list -- so the guard reported success on a claim it
+# had never examined, which is the same shape as every other guard defect in
+# this milestone. A parser over the whole class cannot have that gap, and
+# `_read_number_word` below distinguishes the three cases the old lookup
+# collapsed into one.
+_NUMBER_UNITS = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
+    "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+}
+_NUMBER_TENS = {
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+    "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+}
+
+
+def _read_number_word(token: str) -> tuple[str, int | None]:
+    """Read one word as a count, returning `(kind, value)`.
+
+    `kind` is deliberately three-valued, because the two failure modes must be
+    treated differently and the old dict lookup could not tell them apart:
+
+    * `"number"` -- a count this parser read; `value` is the integer.
+    * `"not-a-number"` -- an ordinary English word that legitimately sits in
+      front of "keys" without being a count at all. The document really does
+      contain "attribute keys", "string keys", "only keys", "which keys",
+      "label keys" and "unprefixed keys"; those must be skipped, and skipping
+      them is correct rather than a gap.
+    * `"unreadable"` -- built out of number morphemes yet not a number this
+      parser can read ("twenty-twenty"). This is the case that must make the
+      guard **fail loudly**: it looks exactly like a count, so silently
+      dropping it would hide a real claim.
+
+    Splitting on that distinction is what lets the guard fail on an unparseable
+    count without also failing on every adjective in the document -- a guard
+    that cried wolf on ordinary prose would be a padlock and would be deleted.
+    """
+    word = token.lower().strip()
+    if word in _NUMBER_UNITS:
+        return "number", _NUMBER_UNITS[word]
+    if word in _NUMBER_TENS:
+        return "number", _NUMBER_TENS[word]
+
+    parts = word.split("-")
+    if len(parts) > 1 and all(
+        part in _NUMBER_UNITS or part in _NUMBER_TENS for part in parts
+    ):
+        # "twenty-eight" is the only shape that means anything here; anything
+        # else assembled from number words ("twenty-twenty") is unreadable.
+        if (
+            len(parts) == 2
+            and parts[0] in _NUMBER_TENS
+            and parts[1] in _NUMBER_UNITS
+            and 1 <= _NUMBER_UNITS[parts[1]] <= 9
+        ):
+            return "number", _NUMBER_TENS[parts[0]] + _NUMBER_UNITS[parts[1]]
+        return "unreadable", None
+
+    return "not-a-number", None
+
+
+# Retained under its original name because two other checkers in this file read
+# it, but now *derived* from the parser above rather than hand-listed, so the
+# file holds one notion of "number word" instead of two that could drift. It is
+# a strict superset of the 15 forms it replaced.
 _WORD_NUMBERS = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
-    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
-    "twelve": 12, "twenty": 20, "twenty-one": 21, "twenty-five": 25,
-    "twenty-eight": 28,
+    **_NUMBER_UNITS,
+    **_NUMBER_TENS,
+    **{
+        f"{tens}-{unit}": tens_value + unit_value
+        for tens, tens_value in _NUMBER_TENS.items()
+        for unit, unit_value in _NUMBER_UNITS.items()
+        if 1 <= unit_value <= 9
+    },
 }
 
 
@@ -495,19 +569,24 @@ def _attribute_sections(text: str) -> list[dict]:
             ):
                 blocks.append((match.start(), [line.split()[0] for line in lines]))
 
-        claims: list[int | None] = []
+        claims: list[int] = []
+        unreadable: list[str] = []
         if blocks:
             prose_before_fence = _normalise(body[: blocks[0][0]])
             for match in _KEY_COUNT_CLAIM_RE.finditer(prose_before_fence):
                 digits, word = match.group(1), match.group(2)
                 if digits:
                     claims.append(int(digits))
-                else:
-                    # A word that is not a number ("no keys", "these keys") is
-                    # not a claim; only recognised number words count.
-                    number = _WORD_NUMBERS.get(word.lower())
-                    if number is not None:
-                        claims.append(number)
+                    continue
+                kind, number = _read_number_word(word)
+                if kind == "number":
+                    claims.append(number)
+                elif kind == "unreadable":
+                    # Looks like a count but could not be read. Recorded rather
+                    # than dropped, so the test can fail loudly naming it (F-5).
+                    unreadable.append(word)
+                # "not-a-number" ("attribute keys", "which keys") is genuinely
+                # not a claim and is skipped on purpose.
 
         sections.append(
             {
@@ -515,6 +594,7 @@ def _attribute_sections(text: str) -> list[dict]:
                 "blocks": len(blocks),
                 "keys": blocks[0][1] if blocks else [],
                 "claims": claims,
+                "unreadable": unreadable,
             }
         )
     return sections
@@ -564,7 +644,20 @@ def test_every_attribute_block_agrees_with_its_own_stated_key_count():
 
         keys = section["keys"]
         claims = section["claims"]
-        if not claims:
+
+        # F-5: a claim this guard cannot read is a failure, never a skip. The
+        # old code dropped an unrecognised word form silently, which meant the
+        # guard passed on a claim it had never compared to anything.
+        for token in section["unreadable"]:
+            problems.append(
+                f"{where!r} states {token!r} keys, which looks like a count but "
+                "could not be read as a number, so this guard cannot check it. "
+                "Write the count as digits, or teach _read_number_word the "
+                "form -- do not leave it unreadable, because an unchecked "
+                "claim is how every count in this document has drifted before."
+            )
+
+        if not claims and not section["unreadable"]:
             problems.append(
                 f"{where!r} publishes a block of {len(keys)} keys but its prose "
                 "states no '<N> keys' count anywhere before the fence, so "
@@ -750,4 +843,131 @@ def test_the_documents_own_count_of_its_attribute_count_sites_is_right():
     assert published_assignments == assignments, (
         f"docs/telemetry-contract.md says {published_assignments} "
         f"assignments in total, but this guard checks {assignments}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# M2.1 fix-round-2 finding F-6: every claim that agentgateway's HTTP attribute
+# vocabulary diverges from semconv must name the pinned version.
+#
+# Why this needs a guard at all, rather than a careful edit. Upstream PR #3182
+# is *already merged* and moves the access log -- and these span attributes
+# with it -- onto stable semconv behind an opt-in. It landed 2026-09-01, after
+# v1.5.0 shipped 2026-08-27. So an unqualified "agentgateway matches neither
+# convention" does not merely go stale at the next image bump: it becomes
+# **false**, and nothing in the suite would have said so, because
+# `test_gateway_trace.py`'s set equality fails on the *attribute names* while
+# saying nothing about the prose describing them.
+#
+# Enumerated rather than spot-fixed: the round-1 attempt qualified three sites
+# and missed the rest, which is the same one-instance-not-the-class mistake
+# this file's header documents twice. The check is whitespace-normalised per
+# paragraph so a hard-wrapped claim is found, which is how the missed site
+# escaped a grep in the first place.
+
+VOCABULARY_CLAIM_DOCS = (
+    REPO_ROOT / "docs" / "architecture.md",
+    CONTRACT_PATH,
+    REPO_ROOT / "docs" / "upstream-findings.md",
+    REPO_ROOT / "tests" / "e2e" / "test_gateway_trace.py",
+)
+
+PINNED_GATEWAY_VERSION = "1.5.0"
+
+# The assertion being guarded, in the forms this project actually writes it:
+# "a third vocabulary", "matches neither", "belongs to neither", "not stable
+# semconv", "three HTTP attribute vocabularies".
+_VOCABULARY_CLAIM_RE = re.compile(
+    r"(third (?:HTTP )?(?:attribute )?vocabular\w*"
+    r"|match(?:ing|es)? neither"
+    r"|belong(?:s)? to neither"
+    r"|not stable semconv"
+    r"|neither the stable"
+    r"|three HTTP attribute vocabular\w*)",
+    re.I,
+)
+
+_HEADING_LINE_RE = re.compile(r"^\s*#{1,6}\s+\S")
+
+
+def _prose_paragraphs(text: str) -> list[tuple[int, str, str]]:
+    """Blank-line-separated paragraphs as `(line number, prose, heading)`.
+
+    `prose` is whitespace-normalised, so a claim hard-wrapped across lines
+    reads exactly like one that is not. Leading `#`, `//` and `*` are stripped
+    so the same splitter works on Markdown, comments and docstrings. `heading`
+    is the nearest preceding Markdown heading, because a claim sitting under
+    "Finding 7: agentgateway v1.5.0's span attributes ..." is already scoped by
+    that heading and should not be forced to repeat the version inline.
+    """
+    lines = text.splitlines()
+    paragraphs = []
+    heading = ""
+    index = 0
+    while index < len(lines):
+        if not lines[index].strip():
+            index += 1
+            continue
+        if _HEADING_LINE_RE.match(lines[index]):
+            heading = lines[index].strip()
+            index += 1
+            continue
+        start = index
+        buffer = []
+        while index < len(lines) and lines[index].strip():
+            if _HEADING_LINE_RE.match(lines[index]):
+                break
+            buffer.append(re.sub(r"^\s*(?:#|//|\*)?\s*", "", lines[index]))
+            index += 1
+        paragraphs.append((start + 1, _normalise(" ".join(buffer)), heading))
+    return paragraphs
+
+
+def test_every_agentgateway_vocabulary_claim_names_the_pinned_version():
+    """No divergence claim may be stated version-free.
+
+    A claim counts as scoped if its own paragraph names the pinned version, or
+    if the heading it sits under does. Anything else is a sentence that turns
+    false on the next image bump with nothing to catch it.
+    """
+    bare = []
+    found_per_doc = {}
+
+    for path in VOCABULARY_CLAIM_DOCS:
+        assert path.exists(), f"{path} is missing; this guard cannot check it"
+        hits = 0
+        for line_number, prose, heading in _prose_paragraphs(path.read_text()):
+            if not _VOCABULARY_CLAIM_RE.search(prose):
+                continue
+            hits += 1
+            scoped = (
+                PINNED_GATEWAY_VERSION in prose
+                or PINNED_GATEWAY_VERSION in heading
+            )
+            if not scoped:
+                claim = _VOCABULARY_CLAIM_RE.search(prose).group(0)
+                bare.append(
+                    f"{path.relative_to(REPO_ROOT)}:{line_number} asserts "
+                    f"{claim!r} without naming v{PINNED_GATEWAY_VERSION} in the "
+                    "paragraph or its heading"
+                )
+        found_per_doc[str(path.relative_to(REPO_ROOT))] = hits
+
+    # Floor per document, so the guard cannot pass by finding nothing. If the
+    # prose is reworded past this pattern the check goes quiet, which is the
+    # "reports success on input it never examined" failure this milestone kept
+    # hitting -- so make that state loud instead.
+    empty = [doc for doc, hits in found_per_doc.items() if hits == 0]
+    assert not empty, (
+        f"found no agentgateway vocabulary claim in {empty}, so this guard is "
+        "checking nothing there. Each of these documents states the divergence; "
+        "if the wording changed, teach _VOCABULARY_CLAIM_RE the new form rather "
+        f"than deleting this assertion. Counts: {found_per_doc}"
+    )
+
+    assert not bare, (
+        "agentgateway's attribute-vocabulary divergence is stated without a "
+        "version qualifier. Upstream PR #3182 is merged, so each of these "
+        "becomes false -- not merely stale -- at the next image bump:\n  "
+        + "\n  ".join(bare)
     )
