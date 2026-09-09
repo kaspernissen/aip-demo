@@ -65,8 +65,8 @@ it was actually run:
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `120 passed, 23 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `143 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `121 passed, 23 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `144 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -210,10 +210,26 @@ saying nothing about the prose describing them. The new test requires every
 such claim to name the pinned version in its own paragraph or in the heading it
 sits under, whitespace-normalised so a hard-wrapped claim is still found.
 
-- **Measured (M2.1 Task 5 fix round 2):** `.venv/bin/python -m pytest
-  --collect-only -q tests/` → `144 tests collected`. The three previous
-  figures, `143` (fix round 1), `140` (Task 5) and `134` (Task 4 fix round 1),
-  were measured the same way.
+The final-review fix round grew it once more, 144 → 145: a single always-run
+unit test, `test_no_unqualified_service_count_undercuts_the_documents_own_ordinal_claim`,
+in the same module. It exists because final review's finding 1 (HIGH) found
+this document's "trace shape" paragraph publishing a stale total — five
+services, unqualified — eleven lines below its own claim that agentgateway
+was added as a sixth participant, and the only existing guard covering that
+trace (`test_all_five_services_are_in_one_trace`) asserts a *subset*, so it
+stays green whether the trace has five services or six. The new test is a
+hermetic self-consistency check: it reads this
+document's own highest ordinal service/participant claim as a floor and fails
+if any unqualified "N services" total elsewhere falls below it. Same round's
+fix to `test_every_agentgateway_vocabulary_claim_names_the_pinned_version`
+(closing a substring escape — see the mutation table in that guard's own
+docstring) modified an existing test rather than adding one, so it does not
+move this count.
+
+- **Measured (final-review fix round):** `.venv/bin/python -m pytest
+  --collect-only -q tests/` → `145 tests collected`. The four previous
+  figures, `144` (Task 5 fix round 2), `143` (fix round 1), `140` (Task 5) and
+  `134` (Task 4 fix round 1), were measured the same way.
 - **Measured (M2.1 Task 5):** the three `RUN_BROWSER_TESTS`-gated modules,
   `tests/e2e/test_browser_root_span.py` (8),
   `tests/e2e/test_settlement_llm_trace.py` (9) and
@@ -235,14 +251,20 @@ sits under, whitespace-normalised so a hard-wrapped claim is still found.
   documents — no service code, no manifest, no cluster state — and the gate
   drives live model-driven settlements. It cross-checks against the collected
   total by a second route: 144 collected − 0 skipped − 1 xfailed = 143.
+- **Derived (final-review fix round), gate row, components shown:** 143 + 1 =
+  **`144 passed, 1 xfailed`**. The `+ 1` is the new service-count guard,
+  run directly and passing; it touches no cluster, no browser and no model.
+  The gate was **not** re-run, for the same reason as the two rounds above —
+  only a guard and three documents changed. Cross-checks by the same second
+  route: 145 collected − 0 skipped − 1 xfailed = 144.
 - **Measured (M2.1 Task 5 fix round 1), default row:** a bare
   `.venv/bin/python -m pytest tests/ -q` was in fact run once during round 1's
   verification and returned exactly the row published at the time,
   `119 passed, 23 skipped, 1 xfailed`, in 83.54s. That is recorded here because
   it means the derivation below has been checked against a real observation of
   this row at least once, rather than only against arithmetic.
-- **Derived (M2.1 Task 5 fix round 2), default row, components shown:** 144
-  collected − 23 skipped − 1 xfailed = **`120 passed, 23 skipped, 1
+- **Derived (final-review fix round), default row, components shown:** 145
+  collected − 23 skipped − 1 xfailed = **`121 passed, 23 skipped, 1
   xfailed`**. Every component is itself measured above. Labelled derived
   rather than measured for a reason worth being explicit about: a bare
   `pytest tests/` is **not free** — it skips the three gated modules but still
