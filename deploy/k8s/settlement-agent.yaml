@@ -1,3 +1,21 @@
+# M2.1 Task 4: a dedicated ServiceAccount, purely so this workload's SPIFFE ID
+# names it. SPIRE's ID template is
+# spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}
+# (deploy/platform/spire/registration.yaml), so without this the pod attests as
+# `spiffe://northstar.local/ns/northstar-agents/sa/default` -- measured, not
+# hypothetical: that is the ID SPIRE actually minted for this pod before this
+# ServiceAccount existed. An identity whose service-account component reads
+# "default" is not something a policy can decide on. It grants no RBAC; this
+# pod makes no Kubernetes API calls.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: settlement-agent
+  namespace: northstar-agents
+  labels:
+    app: settlement-agent
+    northstar.io/plane: agents
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,6 +37,7 @@ spec:
         northstar.io/plane: agents
         northstar.io/owner: claims-team
     spec:
+      serviceAccountName: settlement-agent
       containers:
         - name: settlement-agent
           image: localhost:5001/northstar/settlement-agent:dev
@@ -78,6 +97,45 @@ spec:
             # the default is ON, not OFF.
             - name: NORTHSTAR_CAPTURE_CONTENT
               value: "true"
+            # M2.1 Task 4: the SPIFFE Workload API endpoint svid.py talks to.
+            #
+            # `SPIFFE_ENDPOINT_SOCKET` is not this repo's invention -- it is the
+            # variable the pinned `spiffe==0.3.1` client reads when no
+            # socket_path is passed (`spiffe/config.py`:
+            # `_SPIFFE_ENDPOINT_SOCKET = 'SPIFFE_ENDPOINT_SOCKET'`). svid.py
+            # passes it explicitly anyway, so the value is visible here rather
+            # than depending on library defaulting.
+            #
+            # The path is READ from the chart's rendered output, not assumed:
+            # `helm template spire spiffe/spire --version 0.30.1` renders the
+            # spiffe-oidc-discovery-provider -- the chart's OWN Workload API
+            # consumer -- with `workload_api.socket_path:
+            # /spiffe-workload-api/spire-agent.sock`, a volumeMount at
+            # `mountPath: /spiffe-workload-api`, and a `csi.spiffe.io` volume.
+            # The directory half is chosen by whoever mounts the CSI volume
+            # (below), the `spire-agent.sock` filename is the driver's; this
+            # matches the chart's own convention so there is one path in the
+            # cluster, not two.
+            #
+            # Do NOT confuse this with the chart's
+            # `upstream-spire-agent.socketPath`
+            # (/run/spire/agent-sockets-upstream/spire-agent.sock) or
+            # `spire-agent.socketPath`
+            # (/run/spire/agent-sockets/spire-agent.sock): the first belongs to
+            # nested mode, which this install does not use, and the second is
+            # the HOST path the CSI driver reads from, not a path any workload
+            # container can see.
+            - name: SPIFFE_ENDPOINT_SOCKET
+              value: unix:///spiffe-workload-api/spire-agent.sock
+            # The audience every JWT-SVID this agent mints is scoped to. It is
+            # agentgateway's own registered SPIFFE ID (see
+            # deploy/platform/spire/registration.yaml), which is also what
+            # `deploy/platform/agentgateway/config.yaml`'s jwtAuth `audiences`
+            # list carries -- one string, two ends of the same check. A token
+            # minted for this audience is useless anywhere else, which is the
+            # whole point of scoping it.
+            - name: NORTHSTAR_GATEWAY_AUDIENCE
+              value: spiffe://northstar.local/ns/northstar-platform/sa/agentgateway
             # Created by scripts/setup-kind.sh from the sourced .env.
             # `optional: true` deliberately, matching how the repo treats its
             # other degradable secret (dash0-secrets): with no key present the
@@ -108,6 +166,27 @@ spec:
               cpu: 50m
             limits:
               memory: 256Mi
+          volumeMounts:
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+              readOnly: true
+      volumes:
+        # The SPIFFE CSI driver, installed by the `spiffe/spire` 0.30.1 chart
+        # (`spiffe-csi-driver.enabled`, default true). It bind-mounts the
+        # spire-agent's Workload API socket into this pod, so the agent's
+        # kubelet-based workload attestor can identify the calling container
+        # -- which is what makes the SVID this pod receives an attested
+        # identity rather than a shared secret. There is no token, key or
+        # credential in this pod spec.
+        #
+        # `driver: csi.spiffe.io` is the plugin name the chart registers (read
+        # from the rendered CSIDriver object, `name: "csi.spiffe.io"`); the
+        # upstream/nested variant registers `upstream.csi.spiffe.io` instead
+        # and is not installed here.
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true
 ---
 apiVersion: v1
 kind: Service

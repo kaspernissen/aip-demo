@@ -1,0 +1,119 @@
+# SPIRE (SPIFFE Runtime Environment) Helm values for the northstar cluster.
+#
+# Charts, pinned exactly (house style: nothing floats). Both come from the
+# *hardened* charts repo, https://spiffe.github.io/helm-charts-hardened/ --
+# NOT the older spiffe/helm-charts location, which does not carry these:
+#
+#   spiffe/spire-crds  0.6.1   (appVersion 0.0.1)
+#   spiffe/spire       0.30.1  (appVersion 1.15.3 -- the SPIRE release itself)
+#
+# Installed in that order and no other. `spiffe/spire` alone fails on the
+# missing spire.spiffe.io CRDs, which the umbrella chart's own
+# spire-controller-manager needs before it can reconcile anything. The
+# ordering is enforced in scripts/setup-kind.sh and asserted by
+# tests/unit/test_stage2_spire_config.py.
+#
+# The repo tags PER CHART (`spire-0.30.1`, `spire-crds-0.6.1` are independent
+# tag series on github.com/spiffe/helm-charts-hardened), so the two version
+# numbers are unrelated to each other and must be resolved separately.
+#
+# `spire-nested` exists at the same 0.30.1 version and is a DIFFERENT topology
+# (a root server with downstream nested servers). This demo wants the flat
+# single-server topology, i.e. `spire`.
+#
+# ---------------------------------------------------------------------------
+# Values nest under per-sub-chart top-level keys, never flat.
+#
+# This chart is an umbrella over spire-server, spire-agent, spiffe-csi-driver,
+# spiffe-oidc-discovery-provider and others (see the chart's Chart.yaml
+# `dependencies`). A `trustDomain:` at the document root is SILENTLY IGNORED:
+# it is not a key any sub-chart reads, Helm does not warn about unknown
+# top-level values, and the install then quietly uses the chart default
+# `example.org`. That failure mode looks exactly like success, which is why
+# this file is written with the nesting spelled out and guarded by a test.
+# ---------------------------------------------------------------------------
+global:
+  spire:
+    # Chart default is `example.org`. Overriding it is not cosmetic: every
+    # SPIFFE ID in this system is built from it, so the assertions that the
+    # next task makes about `spiffe://northstar.local/...` subjects would
+    # match `spiffe://example.org/...` instead -- tests that pass while
+    # proving nothing about this platform.
+    trustDomain: northstar.local
+    # Chart default is `example-cluster`. This feeds the k8s node attestor's
+    # `cluster` name on both server and agent; the two must agree or no node
+    # attests. Named for the cluster scripts/setup-kind.sh actually creates.
+    clusterName: northstar
+    # Set EXPLICITLY, not left to derive. The chart documents this single
+    # value as feeding BOTH sides of the same string:
+    #   * spire-server's `jwt_issuer`, i.e. the `iss` claim minted into every
+    #     JWT-SVID (rendered into the spire-server ConfigMap), and
+    #   * the `issuer` field the OIDC discovery document advertises, plus the
+    #     `domains` allowlist the discovery provider matches the Host header
+    #     against (rendered into the spiffe-oidc-discovery-provider
+    #     ConfigMap).
+    # It defaults to `oidc-discovery.$trustDomain` when blank. Leaving it
+    # derived would make agentgateway's configured `issuer` and the token's
+    # actual `iss` two independent guesses at the same string -- and a
+    # mismatch there is a 401 whose cause is invisible in the token. It is
+    # the in-cluster URL of the discovery provider's own Service so that the
+    # issuer, the discovery document and the JWKS endpoint are all the same
+    # origin.
+    jwtIssuer: http://spire-spiffe-oidc-discovery-provider.northstar-platform.svc.cluster.local
+
+## spire-server -----------------------------------------------------------
+spire-server:
+  # SPIRE's own telemetry, turned on deliberately.
+  #
+  # Task 3 found agentgateway deployed with no tracing configured at all,
+  # which made the gateway a silent hop in the one demo whose whole point is
+  # that you can trace it. Same seam checked here, and the honest answer for
+  # SPIRE 1.15.3 is narrower than it was for the gateway: SPIRE has NO
+  # OpenTelemetry support of any kind. Its telemetry block (see the
+  # sub-charts' own `telemetry:` values, and the `telemetry` stanza the
+  # server/agent ConfigMap templates render) offers Prometheus, DogStatsD,
+  # Statsd, M3 and an in-memory sink -- no OTLP exporter and no tracing at
+  # all. So there are no SPIRE spans to join this system's trace, and none
+  # are invented here. What SPIRE does emit is Prometheus metrics, on
+  # 0.0.0.0:9988, and those are enabled here and scraped by the collector
+  # (deploy/observability/collector-config.yaml's `prometheus/spire`
+  # receiver) so they reach the same pipeline as everything else rather than
+  # being exposed and thrown away.
+  telemetry:
+    prometheus:
+      enabled: true
+      # podMonitor stays off: it needs the Prometheus Operator's CRD, which
+      # this cluster does not have (Prometheus is stage 4). The collector
+      # scrapes directly instead.
+      podMonitor:
+        enabled: false
+
+## spire-agent ------------------------------------------------------------
+spire-agent:
+  telemetry:
+    prometheus:
+      enabled: true
+      podMonitor:
+        enabled: false
+
+## spiffe-oidc-discovery-provider -----------------------------------------
+#
+# This is what publishes SPIRE's JWT signing keys as a JWKS, which is the
+# only way agentgateway can verify a JWT-SVID's signature: the gateway has no
+# SPIFFE client, it fetches keys over HTTP (`jwks.url`, see
+# deploy/platform/agentgateway/config.yaml). It is enabled by default in this
+# chart; it is named here only to turn its TLS off.
+spiffe-oidc-discovery-provider:
+  tls:
+    spire:
+      # Chart default is `true`, which makes the Service HTTPS-only on 443
+      # with a SPIRE-issued serving certificate. agentgateway would then need
+      # to be taught to trust the SPIRE CA just to fetch a *public* key set,
+      # which is real work for no security gain inside this demo cluster.
+      # With TLS off the chart runs its own supported insecure path (an nginx
+      # sidecar) and the Service serves plain HTTP on port 80.
+      #
+      # This is a demo-cluster tradeoff and it is recorded as such, not
+      # hidden: see docs/architecture.md, "Workload identity: what is real
+      # and what is deferred".
+      enabled: false

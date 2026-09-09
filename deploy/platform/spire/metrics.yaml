@@ -1,0 +1,66 @@
+# Scrape targets for SPIRE's own Prometheus telemetry.
+#
+# Why these exist at all: SPIRE 1.15.3 has no OpenTelemetry support -- no OTLP
+# exporter, no tracing (see deploy/platform/spire/values.yaml's telemetry
+# comment for where that was read from). Prometheus metrics on :9988 are the
+# only real telemetry it emits, and `spiffe/spire` 0.30.1 exposes them on the
+# pods' containerPort but gives them no Service: the chart's own
+# `spire-server` Service publishes only grpc/443, and the spire-agent
+# DaemonSet has no Service at all. Without something addressable, the
+# collector has nothing to scrape and SPIRE stays invisible -- the same
+# "component with no telemetry configured" hole Task 3 found in agentgateway.
+#
+# Both Services are metrics-only and deliberately separate from the chart's
+# own Services, so a chart upgrade cannot silently drop the scrape target or
+# widen an existing Service.
+#
+# Single-node assumption, stated rather than hidden: these are ClusterIP
+# Services, so a scrape hits one endpoint. spire-server runs one replica, and
+# the northstar kind cluster has one node, so the spire-agent DaemonSet has
+# one pod. On a multi-node cluster the agent scrape would need
+# per-pod discovery (a PodMonitor, or the collector's kubernetes_sd) instead.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spire-server-metrics
+  namespace: northstar-platform
+  labels:
+    northstar.io/plane: platform
+spec:
+  # Selector read off the rendered spire-server StatefulSet's pod template
+  # (`helm template spire spiffe/spire --version 0.30.1`), not guessed: the
+  # chart sets nameOverride `server`, so the pod label is
+  # app.kubernetes.io/name: server -- NOT "spire-server".
+  selector:
+    app.kubernetes.io/name: server
+    app.kubernetes.io/instance: spire
+  ports:
+    - name: metrics
+      port: 9988
+      targetPort: 9988
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spire-agent-metrics
+  namespace: northstar-platform
+  labels:
+    northstar.io/plane: platform
+spec:
+  # Same source for this selector: the rendered spire-agent DaemonSet's pod
+  # template labels app.kubernetes.io/name: "agent".
+  #
+  # That DaemonSet runs with `hostNetwork: true`, so :9988 is bound in the
+  # node's network namespace and this Service's endpoint is the node IP. That
+  # is why the port cannot be remapped here -- targetPort must be the host
+  # port the agent actually bound.
+  selector:
+    app.kubernetes.io/name: agent
+    app.kubernetes.io/instance: spire
+  ports:
+    - name: metrics
+      port: 9988
+      targetPort: 9988
+      protocol: TCP

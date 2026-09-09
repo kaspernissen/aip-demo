@@ -11,6 +11,24 @@ STAGE=1
 # pinned by tests/unit/test_stage2_cilium_config.py so the two cannot drift.
 CILIUM_CHART_VERSION="1.20.1"
 CILIUM_HELM_REPO="https://helm.cilium.io/"
+# M2.1 Task 4: SPIRE. Two charts, and the ORDER MATTERS -- `spiffe/spire`
+# installed on its own fails on the missing spire.spiffe.io CRDs, which its own
+# bundled spire-controller-manager needs before it can reconcile a single
+# ClusterSPIFFEID. The hardened charts repo ships them separately for exactly
+# that reason (CRDs outlive releases; Helm will not upgrade them in place).
+#
+# This is the HARDENED charts repo, https://spiffe.github.io/helm-charts-hardened/
+# -- not the older spiffe/helm-charts location, which does not carry these
+# charts at all. Resolved from `helm search repo spiffe/spire --versions` and
+# cross-checked against the upstream releases API: the repo tags PER CHART
+# (`spire-0.30.1` and `spire-crds-0.6.1` are independent tag series), so these
+# two numbers are unrelated to each other. `spire` 0.30.1's appVersion is SPIRE
+# 1.15.3. Both versions are also recorded in
+# deploy/platform/spire/values.yaml's header and pinned by
+# tests/unit/test_stage2_spire_config.py so the two cannot drift.
+SPIRE_CRDS_CHART_VERSION="0.6.1"
+SPIRE_CHART_VERSION="0.30.1"
+SPIFFE_HELM_REPO="https://spiffe.github.io/helm-charts-hardened/"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -33,12 +51,17 @@ Usage: setup-kind.sh [--stage N]
                           [installs]
   --stage 2   Governed:   stage 1, on a Cilium dataplane -- the cluster is
                           created with kind's default CNI disabled
-                          [installs Cilium and agentgateway -- the gateway is
-                          in the MCP path as of M2.1 Task 3, permitting
-                          everything, no policy yet; SPIFFE/SPIRE, Kyverno,
-                          cert-manager and the Policy Decision Service are
-                          part of this stage in the design but are NOT
-                          installed yet]
+                          [installs Cilium, SPIFFE/SPIRE and agentgateway.
+                          The gateway is in the MCP path as of M2.1 Task 3
+                          and verifies a SPIRE-issued JWT-SVID on every MCP
+                          call as of Task 4; it still carries no
+                          authorization policy. Kyverno and the Policy
+                          Decision Service are part of this stage in the
+                          design but are NOT installed yet. cert-manager is
+                          NOT installed and is not needed: the pinned SPIRE
+                          chart only uses it for optional features this
+                          install does not enable -- see
+                          deploy/platform/spire/values.yaml]
   --stage 3   Supervised:           + Dapr, Keycloak, reviewer UI, Postgres
                           [not implemented -- exits]
   --stage 4   Observable:           + OpenSearch, Prometheus
@@ -281,6 +304,46 @@ kubectl -n observability rollout restart deployment/otel-collector
 kubectl -n observability rollout status deployment/jaeger --timeout=180s
 kubectl -n observability rollout status deployment/otel-collector --timeout=180s
 
+if [[ "${STAGE}" -ge 2 ]]; then
+  echo -e "${BLUE}Step 8b/9 (stage 2+): Installing SPIRE (crds ${SPIRE_CRDS_CHART_VERSION}, then spire ${SPIRE_CHART_VERSION})...${NC}"
+  # This runs BEFORE Step 9, not after it, and that is load-bearing:
+  # deploy/k8s/settlement-agent.yaml mounts a `csi.spiffe.io` volume, and a pod
+  # requesting a CSI volume whose driver is not registered stays in
+  # ContainerCreating rather than failing fast. Installing SPIRE after the
+  # workloads would leave settlement-agent wedged and the script blocked on
+  # `rollout status`.
+  helm repo add spiffe "${SPIFFE_HELM_REPO}" --force-update >/dev/null
+  helm repo update spiffe >/dev/null
+  helm upgrade --install spire-crds spiffe/spire-crds \
+    --version "${SPIRE_CRDS_CHART_VERSION}" \
+    --namespace northstar-platform \
+    --kube-context "kind-${CLUSTER_NAME}" \
+    --wait --timeout 5m
+  helm upgrade --install spire spiffe/spire \
+    --version "${SPIRE_CHART_VERSION}" \
+    --namespace northstar-platform \
+    --kube-context "kind-${CLUSTER_NAME}" \
+    --values "$ROOT/deploy/platform/spire/values.yaml" \
+    --wait --timeout 10m
+
+  # The registration entries, and the Services that make SPIRE's own
+  # Prometheus telemetry scrapable. Both are declarative and idempotent, so
+  # re-running this script re-applies them without error.
+  kubectl --context "kind-${CLUSTER_NAME}" apply \
+    -f "$ROOT/deploy/platform/spire/registration.yaml" \
+    -f "$ROOT/deploy/platform/spire/metrics.yaml"
+
+  # SPIRE must be *ready*, not merely installed, before the workloads that
+  # mount its socket are applied -- same rule Cilium follows above, for the
+  # same reason. `helm --wait` already waited on the server and the CSI
+  # driver, but the spire-agent DaemonSet has to have attested to its node
+  # before it can answer a single Workload API call, and that happens after
+  # the pod is Running.
+  kubectl --context "kind-${CLUSTER_NAME}" -n northstar-platform rollout status daemonset/spire-agent --timeout=300s
+  kubectl --context "kind-${CLUSTER_NAME}" -n northstar-platform rollout status daemonset/spire-spiffe-csi-driver --timeout=300s
+  echo -e "${GREEN}SPIRE ${SPIRE_CHART_VERSION} is ready (trust domain northstar.local).${NC}"
+fi
+
 echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then starting port-forwards...${NC}"
 "$ROOT/scripts/rebuild-and-deploy.sh" \
   payments-api payments-mcp settlement-agent claims-agent customer-ui
@@ -367,7 +430,7 @@ echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payment
 
 echo ""
 if [[ "${STAGE}" -ge 2 ]]; then
-  echo -e "${GREEN}Stage 2 (Governed) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane.${NC}"
+  echo -e "${GREEN}Stage 2 (Governed) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity.${NC}"
 else
   echo -e "${GREEN}Stage 1 (Connected) is up.${NC}"
 fi

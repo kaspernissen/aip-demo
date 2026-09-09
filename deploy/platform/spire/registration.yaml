@@ -1,0 +1,91 @@
+# SPIRE registration entries for the two workloads M2.1 gives an identity.
+#
+# These are `ClusterSPIFFEID` custom resources, reconciled into real SPIRE
+# registration entries by the spire-controller-manager that ships inside the
+# `spiffe/spire` 0.30.1 chart (`spire-server.controllerManager.enabled`,
+# default true). They are declarative and idempotent, which is what lets
+# scripts/setup-kind.sh apply them on every run; `spire-server entry create`
+# is neither, and its entries live only in the server's datastore where
+# nothing in this repo can review them.
+#
+# ---------------------------------------------------------------------------
+# `className` is NOT optional here, and getting it wrong fails silently.
+#
+# The chart renders its controller-manager config with
+#   className: "northstar-platform-spire"     (release-namespace + release name)
+#   watchClassless: false
+# -- read from the rendered `spire-controller-manager` ConfigMap, not guessed.
+# With `watchClassless: false`, a ClusterSPIFFEID carrying no className is
+# ignored outright: `kubectl apply` succeeds, the CR sits there with an empty
+# status, no entry is ever created, and the only symptom is a workload that
+# cannot fetch an SVID. Both CRs below set it explicitly.
+# ---------------------------------------------------------------------------
+#
+# Why these two and not more: the chart's own `default` ClusterSPIFFEID is a
+# catch-all with `fallback: true` -- it hands every pod an ID of the same
+# ns/sa shape, but its namespaceSelector *excludes* northstar-platform (again,
+# read from the rendered output), so agentgateway would get no identity at all
+# from it. Naming both workloads explicitly, non-fallback, means the two
+# identities this milestone asserts on are in-tree and reviewable rather than
+# an emergent property of a chart default.
+---
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: northstar-settlement-agent
+spec:
+  className: northstar-platform-spire
+  # The same template the chart's own identities use, so settlement-agent's ID
+  # is the conventional ns/sa form rather than a bespoke one:
+  #   spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
+  # `.PodMeta` / `.PodSpec` are the template context the CRD documents
+  # ("The node and pod spec are made available to the template under
+  # .NodeSpec, .PodSpec respectively").
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  podSelector:
+    matchLabels:
+      app: settlement-agent
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: northstar-agents
+  # The actual attestation constraint: SPIRE will only hand this SVID to a
+  # workload the agent's k8s WorkloadAttestor has attested as running in this
+  # namespace under this service account. Without these, the entry's selectors
+  # are only whatever the controller-manager derives, and the service-account
+  # part of the identity would be decoration in the ID string rather than
+  # something SPIRE checks.
+  workloadSelectorTemplates:
+    - "k8s:ns:{{ .PodMeta.Namespace }}"
+    - "k8s:sa:{{ .PodSpec.ServiceAccountName }}"
+  # Not a fallback: this must win over the chart's catch-all `default` CR,
+  # which matches the same pod (fallback CRs apply only when no non-fallback
+  # ClusterSPIFFEID matches).
+  fallback: false
+---
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: northstar-agentgateway
+spec:
+  className: northstar-platform-spire
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  podSelector:
+    matchLabels:
+      app: agentgateway
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: northstar-platform
+  workloadSelectorTemplates:
+    - "k8s:ns:{{ .PodMeta.Namespace }}"
+    - "k8s:sa:{{ .PodSpec.ServiceAccountName }}"
+  fallback: false
+# NOTE on the gateway entry specifically: agentgateway does NOT fetch this
+# SVID in M2.1 and its pod deliberately carries no Workload API mount. It
+# verifies JWT-SVIDs by fetching a JWKS over HTTP; it never presents one.
+# The entry exists because the gateway's SPIFFE ID is the *audience*
+# settlement-agent's token is minted for
+# (deploy/platform/agentgateway/config.yaml `audiences`), so the string has to
+# be a real registered identity rather than an invented label -- and because
+# M2.2's Policy Decision Service is expected to need the gateway's own
+# identity when it starts making decisions on this hop. Recorded here rather
+# than left as an unexplained resource.
