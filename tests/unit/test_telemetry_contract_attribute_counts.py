@@ -874,6 +874,22 @@ VOCABULARY_CLAIM_DOCS = (
 
 PINNED_GATEWAY_VERSION = "1.5.0"
 
+# A genuine version qualifier, not a bare digit-substring. Final review
+# finding 10: `PINNED_GATEWAY_VERSION in prose` is satisfied by *any*
+# occurrence of "1.5.0" in the paragraph, including one that has nothing to
+# do with the gateway (mutation-proved: "the customer-ui form library is at
+# 1.5.0" made a version-free claim read as scoped). Every genuine citation in
+# this project writes the tag with its leading `v` -- `architecture.md:234`
+# even states why: "the tag `1.5.0` does not exist on that registry" for
+# agentgateway's own image, only `v1.5.0` does. Requiring `v1.5.0` as a
+# word-bounded token is therefore a qualifier tied to the actual pin, not a
+# coincidence of digits.
+_VERSION_QUALIFIER_RE = re.compile(r"\bv1\.5\.0\b")
+
+
+def _names_pinned_version(text: str) -> bool:
+    return bool(_VERSION_QUALIFIER_RE.search(text))
+
 # The assertion being guarded, in the forms this project actually writes it:
 # "a third vocabulary", "matches neither", "belongs to neither", "not stable
 # semconv", "three HTTP attribute vocabularies".
@@ -927,8 +943,10 @@ def test_every_agentgateway_vocabulary_claim_names_the_pinned_version():
     """No divergence claim may be stated version-free.
 
     A claim counts as scoped if its own paragraph names the pinned version, or
-    if the heading it sits under does. Anything else is a sentence that turns
-    false on the next image bump with nothing to catch it.
+    if the heading it sits under does -- "names" meaning a genuine `v1.5.0`
+    token (`_names_pinned_version`), not any occurrence of the substring
+    "1.5.0". Anything else is a sentence that turns false on the next image
+    bump with nothing to catch it.
     """
     bare = []
     found_per_doc = {}
@@ -940,10 +958,7 @@ def test_every_agentgateway_vocabulary_claim_names_the_pinned_version():
             if not _VOCABULARY_CLAIM_RE.search(prose):
                 continue
             hits += 1
-            scoped = (
-                PINNED_GATEWAY_VERSION in prose
-                or PINNED_GATEWAY_VERSION in heading
-            )
+            scoped = _names_pinned_version(prose) or _names_pinned_version(heading)
             if not scoped:
                 claim = _VOCABULARY_CLAIM_RE.search(prose).group(0)
                 bare.append(
@@ -970,4 +985,117 @@ def test_every_agentgateway_vocabulary_claim_names_the_pinned_version():
         "version qualifier. Upstream PR #3182 is merged, so each of these "
         "becomes false -- not merely stale -- at the next image bump:\n  "
         + "\n  ".join(bare)
+    )
+
+
+# Final review finding 1 (HIGH): `docs/telemetry-contract.md:653-656` published
+# "5 services" as the *current* trace shape eleven lines below the same
+# document saying "agentgateway added as a **sixth service**" -- a
+# self-contradiction the existing e2e guard structurally cannot see.
+# `test_all_five_services_are_in_one_trace`
+# (tests/e2e/test_browser_root_span.py:239) asserts a *subset*
+# (`expected <= services`), which stays green whether the trace has five
+# services or six, so it can never catch a stale total. And no `tests/unit`
+# guard read this document's non-attribute counts at all -- every guard in
+# this file until now was built in response to a *telemetry-attribute*
+# defect.
+#
+# This guard cross-checks the document against itself rather than against a
+# live cluster, on purpose: a hermetic `tests/unit` test cannot depend on a
+# kind cluster or Jaeger being up, so it cannot re-measure "how many services
+# are actually in the trace today". What it *can* check is internal
+# consistency -- if this document asserts, anywhere, that agentgateway was
+# "added as a sixth service" (a claim about the current system), no
+# unqualified "N services" total elsewhere in the same document may still say
+# five, because those two sentences cannot both be true of the same trace.
+
+_SERVICE_ORDINAL_VALUES = {
+    "third": 3,
+    "fourth": 4,
+    "fifth": 5,
+    "sixth": 6,
+    "seventh": 7,
+    "eighth": 8,
+}
+_SERVICE_ORDINAL_RE = re.compile(
+    r"\b(third|fourth|fifth|sixth|seventh|eighth)\s+(?:HTTP\s+)?"
+    r"(?:service|participant)s?\b",
+    re.I,
+)
+_SERVICE_TOTAL_RE = re.compile(r"\b(\d+)\s+services\b")
+
+# A total is exempt from the floor only if its own paragraph labels itself as
+# describing a past state rather than the current system -- the same
+# labelling `docs/architecture.md:983-997` uses to keep its superseded "62
+# spans" figures ("Treat the counts as an M1.2-era illustration ... not as a
+# measurement of the deployed system today"), and the shape this document's
+# own M2.1 correction now uses for its kept M1.2-era "5 services" figure.
+_HISTORICAL_MARKERS = (
+    "m1.1",
+    "m1.2",
+    "before the gateway",
+    "pre-reroute",
+    "original figures",
+)
+
+
+def test_no_unqualified_service_count_undercuts_the_documents_own_ordinal_claim():
+    """A "N services" total may not sit below this document's own claim about
+    how many services the trace currently has.
+
+    Deliberately a self-consistency check, not a re-measurement: this is a
+    `tests/unit` guard and must stay hermetic. It reads two things out of the
+    same document -- the highest ordinal service/participant claim (e.g.
+    "added as a **sixth service**", which asserts the current total is at
+    least 6) as a floor, and every unqualified "N services" total -- and
+    fails if any unqualified total sits below that floor. A total counts as
+    qualified, and is exempt, only if its own paragraph names itself
+    historical (see `_HISTORICAL_MARKERS`).
+
+    Mutation-proved (see the task/final-fix report for the RED run): reverting
+    `docs/telemetry-contract.md`'s M2.1 correction back to its original,
+    unlabelled "5 services" sentence -- the exact finding-1 defect -- makes
+    this guard fail, because that sentence carries no historical marker and 5
+    is below the floor of 6 set by "sixth service" eleven lines above it.
+    """
+    text = CONTRACT_PATH.read_text()
+    paragraphs = _prose_paragraphs(text)
+
+    floor = 0
+    floor_site = None
+    for line_number, prose, _heading in paragraphs:
+        for match in _SERVICE_ORDINAL_RE.finditer(prose):
+            value = _SERVICE_ORDINAL_VALUES[match.group(1).lower()]
+            if value > floor:
+                floor = value
+                floor_site = (
+                    f"{CONTRACT_PATH.relative_to(REPO_ROOT)}:{line_number} "
+                    f"({match.group(0)!r})"
+                )
+
+    assert floor, (
+        f"{CONTRACT_PATH.relative_to(REPO_ROOT)} states no ordinal "
+        "service/participant claim (e.g. 'added as a sixth service') for "
+        "this guard to check a total against -- if the wording changed, "
+        "teach _SERVICE_ORDINAL_RE the new form rather than deleting this "
+        "assertion."
+    )
+
+    stale = []
+    for line_number, prose, _heading in paragraphs:
+        lowered = prose.lower()
+        historical = any(marker in lowered for marker in _HISTORICAL_MARKERS)
+        for match in _SERVICE_TOTAL_RE.finditer(prose):
+            total = int(match.group(1))
+            if total >= floor or historical:
+                continue
+            stale.append(
+                f"{CONTRACT_PATH.relative_to(REPO_ROOT)}:{line_number} states "
+                f"'{total} services' with no historical label, below the "
+                f"floor of {floor} set by {floor_site}"
+            )
+
+    assert not stale, (
+        "a service-count total contradicts this document's own claim about "
+        "the trace's current shape:\n  " + "\n  ".join(stale)
     )
