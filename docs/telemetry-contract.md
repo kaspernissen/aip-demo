@@ -199,7 +199,9 @@ Task 5's fix round 2 grew it once more, 143 → 144: a single always-run unit
 test, `test_every_agentgateway_vocabulary_claim_names_the_pinned_version`, in
 the same module. It exists because the version-scoping fix of round 1 landed at
 three of the **ten** sites that assert agentgateway's attribute vocabulary
-diverges from semconv — the enumeration is in the task report — and because an
+diverges from semconv — nine prose paragraphs across three documents and one
+test docstring, plus Finding 7's own heading; six were already qualified and
+four were not, and the full enumeration is in the task report — and because an
 unqualified one of those does not merely go stale when the image is bumped past
 v1.5.0: upstream PR #3182 is already merged, so it becomes *false*, and
 `test_gateway_trace.py`'s set equality would fail on the attribute names while
