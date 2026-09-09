@@ -33,8 +33,9 @@ Usage: setup-kind.sh [--stage N]
                           [installs]
   --stage 2   Governed:   stage 1, on a Cilium dataplane -- the cluster is
                           created with kind's default CNI disabled
-                          [installs Cilium and agentgateway (permitting
-                          everything, not yet in the path); SPIFFE/SPIRE,
+                          [installs Cilium and agentgateway (in the MCP path
+                          as of Task 3, permitting everything -- no policy
+                          yet); SPIFFE/SPIRE,
                           Kyverno, cert-manager and the Policy Decision
                           Service are part of this stage in the design but
                           are NOT installed yet]
@@ -285,10 +286,19 @@ echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then startin
   payments-api payments-mcp settlement-agent claims-agent customer-ui
 
 if [[ "${STAGE}" -ge 2 ]]; then
-  # M2.1 Task 2: agentgateway, deployed permitting everything, not yet in the
-  # path -- nothing routes through it yet (that is Task 3). Applied after the
-  # workloads it fronts so `payments-mcp` already exists when the gateway
-  # starts proxying to it.
+  # M2.1 Task 2 deployed agentgateway permitting everything but out of the
+  # path; Task 3 put it IN the path -- settlement-agent's PAYMENTS_MCP_URL
+  # now names it (deploy/k8s/settlement-agent.yaml). It still carries no
+  # policy: M2.2 adds the decision.
+  #
+  # Still applied after the workloads it fronts, so `payments-mcp` already
+  # exists when the gateway starts proxying to it. Task 3 checked whether this
+  # now needs to move *above* Step 9 (settlement-agent is deployed pointing at
+  # a gateway that does not exist yet) and deliberately left it: the pod's
+  # readinessProbe is its agent card, not an MCP call, and nothing between here
+  # and the `rollout status` wait below drives a settlement -- so the gateway is
+  # up before any request can reach it. If a future step ever drives traffic
+  # between those two points, this block has to move.
   echo -e "${BLUE}Step 9b/9 (stage 2+): Installing agentgateway...${NC}"
   kubectl create configmap agentgateway-config \
     --namespace northstar-platform \
@@ -296,7 +306,7 @@ if [[ "${STAGE}" -ge 2 ]]; then
     --dry-run=client -o yaml | kubectl apply -f -
   kubectl apply -f "$ROOT/deploy/platform/agentgateway/deployment.yaml"
   kubectl -n northstar-platform rollout status deployment/agentgateway --timeout=120s
-  echo -e "${GREEN}agentgateway is up (permitting everything, not yet in the path).${NC}"
+  echo -e "${GREEN}agentgateway is up (in the MCP path, permitting everything -- no policy yet).${NC}"
 fi
 
 # A9: a stray port-forward from another cluster on this machine (e.g.

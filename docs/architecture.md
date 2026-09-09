@@ -20,6 +20,24 @@ re-run a fresh verification pass over every claim in this document against
 the current worktree HEAD (`8e1f030`) — see "See it yourself" for how to
 reproduce each capture yourself if you want to check further.
 
+**M2.1 has since changed the deployed system in two ways this M1.1-scoped
+document does not describe, and a reader following "See it yourself" below
+against the live cluster will notice both.** Recorded here rather than folded
+into the hop-by-hop text, which is deliberately a record of M1.1's shape:
+
+1. **Task 1** replaced kind's default CNI with Cilium 1.20.1. It sits underneath
+   every hop below and changes none of them; the trace was verified span-by-span
+   against a pre-Cilium baseline.
+2. **Task 3** interposed `agentgateway` (v1.5.0, `northstar-platform`) on Hop 3.
+   `settlement-agent`'s `PAYMENTS_MCP_URL` now names the gateway, which proxies
+   to the same `payments-mcp` Service, so Hop 3 below is now
+   settlement-agent → agentgateway → payments-mcp. It still carries no policy —
+   it permits everything; M2.2 adds the decision. The chain remains one
+   distributed trace, with the gateway as a visible node in it rather than a
+   fracture: see [`docs/telemetry-contract.md`](telemetry-contract.md)'s
+   "agentgateway instrumentation, as measured" for the measured span shape and
+   `tests/e2e/test_gateway_trace.py` for the runnable evidence.
+
 This document does not duplicate [`docs/telemetry-contract.md`](telemetry-contract.md),
 which is the authority on exactly what instrumentation is enabled, what it
 emits, and the convention gaps found in it. This document is about the

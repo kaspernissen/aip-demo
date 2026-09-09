@@ -64,8 +64,8 @@ it was actually run:
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `80 passed, 17 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `97 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `80 passed, 22 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `102 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -112,30 +112,40 @@ comment), and one pins that no operator-facing script or doc still instructs
 script with fakes rather than touching a cluster, so they need no cluster, no
 browser and no model tokens, and they run in both rows.
 
-**Provenance of these two numbers, precisely.** Neither row was measured by a
-single command; both are derived from measurements, and this note exists so no
-reader takes them for direct observations:
+M2.1 Task 3 grew the collected total 98 → 103, and the skip count 17 → 22:
+`tests/e2e/test_gateway_trace.py` (5 tests) proves the MCP hop now traverses
+the interposed agentgateway inside one trace, and pins the gateway's own
+measured span names, kinds, parentage and attribute vocabulary. It shares the
+same `RUN_BROWSER_TESTS=1` gate as the other two live-model files — it drives a
+real settlement — so all five of its tests land in the skip count of a bare
+`pytest tests/` and in the passed count of the gate.
 
-- **Measured:** `pytest --collect-only -q tests/` → `98 tests collected`.
-- **Measured:** the two `RUN_BROWSER_TESTS`-gated modules,
-  `tests/e2e/test_browser_root_span.py` (8) and
-  `tests/e2e/test_settlement_llm_trace.py` (9), run with no env var →
-  `17 skipped`. They are the only gated modules in the tree.
-- **Measured:** the last full gate run, on 92 collected tests, →
-  `91 passed, 1 xfailed` (0 skipped). Recorded in this milestone's Task 1
-  report.
-- **Measured:** `pytest tests/unit -q` after the fix round → all unit tests
-  pass, including the six net-new ones.
-- **Derived:** gate row = 91 + 6 = **97 passed, 1 xfailed** (= 98 collected,
-  0 skipped). The fix round added six always-run unit tests and changed no e2e
-  test.
-- **Derived:** default row = 98 − 17 − 1 = **80 passed, 17 skipped, 1
-  xfailed**.
+**Provenance of these two numbers, precisely.** Both rows are stated as
+measured; where a component is derived, it says so:
 
-The gate was **not** re-run for the fix round: it drives live model-driven
-settlements, and the fix round changed only test and doc files, no service code
-and no cluster. A bare `pytest tests/` was not run either, for the same reason
-(see the note above on that run costing two live model calls).
+- **Measured (M2.1 Task 3):** `.venv/bin/python -m pytest --collect-only -q
+  tests/` → `103 tests collected`.
+- **Measured (M2.1 Task 3):** the three `RUN_BROWSER_TESTS`-gated modules,
+  `tests/e2e/test_browser_root_span.py` (8),
+  `tests/e2e/test_settlement_llm_trace.py` (9) and
+  `tests/e2e/test_gateway_trace.py` (5), run with no env var → `22 skipped`.
+  They are the only gated modules in the tree.
+- **Measured (M2.1 Task 3):** the gate itself,
+  `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` → `102 passed, 1 xfailed`,
+  0 skipped, on the interposed-gateway deployment. This is the gate row,
+  observed, not arithmetic.
+- **Derived:** default row = 103 − 22 − 1 = **80 passed, 22 skipped, 1
+  xfailed**. The one xfail is the same FastMCP-baggage one described below, and
+  it is not gated, so it appears in both rows.
+
+Historical note, kept because it explains why this section is written the way
+it is: before M2.1 Task 3 the gate row (`97 passed, 1 xfailed`) was itself
+*derived* — `91 + 6`, from a gate run on 92 collected tests plus six always-run
+unit tests added afterwards, because the gate drives live model-driven
+settlements and a fix round touching only tests and docs did not justify
+re-running it. That derivation was labelled as such. This revision replaces it
+with a direct observation because Task 3 changes service configuration
+(`PAYMENTS_MCP_URL`), so the gate genuinely had to be re-run anyway.
 
 `tests/unit/test_smoke_test_gate.py` (2 tests, counted in both rows above)
 pins this distinction directly: it reads `scripts/smoke-test.sh`'s own source
@@ -227,10 +237,12 @@ marker is removed, rather than staying silently green.
 | claims-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` | `a2a-sdk[telemetry]==0.3.7`, `opentelemetry-instrumentation-starlette==0.65b0` | ASGI entry span `POST /`; `a2a.server.request_handlers.jsonrpc_handler.JSONRPCHandler.on_message_send` and the rest of the `a2a.server.*` call-graph spans (`DefaultRequestHandler.on_message_send`, `EventQueue.enqueue_event`/`.dequeue_event`/`.close`, `EventConsumer.consume_all`, etc.) | `DISABLE_OTEL_INSTRUMENTATION` must remain unset; `bootstrap.configure()` raises if it is `true`. Inbound W3C trace-context extraction comes from `StarletteInstrumentor` wrapping the built ASGI app (A18) — `a2a-sdk` itself extracts nothing (see Gap 1). **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/claims-agent.yaml`) — OTel Python's HTTP instrumentation defaults to the legacy spelling (`http.method`/`http.url`/`http.status_code`) on both the ASGI entry span and the outbound httpx span; without this, this service alone would mix conventions with the Go hop (`agents/claims-agent/NOTES.md` §7, which also records a measurement mistake made while proving the opt-in was genuinely needed, not assumed). |
 | settlement-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` + `mcp` client | `a2a-sdk[telemetry]==0.3.7`, `mcp==1.28.1` (Task 7; was `1.9.4`), `opentelemetry-instrumentation-starlette==0.65b0` | Same shape as claims-agent (`POST /` ASGI entry span, `a2a.server.*` call-graph spans), plus outbound `httpx` CLIENT spans (`POST`/`GET`/`DELETE`) to payments-mcp, plus — as of Task 8 — outbound `httpx2` CLIENT spans (`POST`) to `api.anthropic.com`, nested under each `chat` span | Only agent permitted to reach payments-mcp. Same `StarletteInstrumentor` fix as claims-agent for inbound extraction. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/settlement-agent.yaml`), same reason as claims-agent — measured legacy-by-default, confirmed stable after the opt-in (`agents/settlement-agent/NOTES.md` §6); the same opt-in applies to both `HTTPXClientInstrumentor` and `HTTPX2ClientInstrumentor`, since both share one `get_tracer` call in the same module. |
 | settlement-agent (model) | PydanticAI `Agent.instrument_all(InstrumentationSettings(...))` (`bootstrap.py`) | `pydantic-ai-slim==2.41.0`, `version=5` (the library default, pinned explicitly) | `invoke_agent settlement_agent` (internal, ×1/request), `chat claude-sonnet-5` (client, ×3/request — one per model turn: propose, execute, final narrative), `execute_tool propose_payment`, `execute_tool execute_payment` (internal, ×1 each) | As of M1.2: the settlement decision itself, not only its transport. **25 distinct `gen_ai.*` attribute names measured** across these four span shapes — full inventory and per-span breakdown below. `include_content` is **not** hardcoded — it reads `NORTHSTAR_CAPTURE_CONTENT` (default ON; see "Content capture" below) — and `include_model_request_parameters` is left at its library default (`True`), never passed explicitly. |
+| agentgateway | native, `frontendPolicies.tracing` in its own config | `cr.agentgateway.dev/agentgateway:v1.5.0` (Resource `service.version=1.5.0`; scope `agentgateway` with **no** `otel.scope.version`; Resource `telemetry.sdk.language=rust`, `telemetry.sdk.name=opentelemetry`, `telemetry.sdk.version=0.32.1`) | Two spans per MCP message: a SERVER span named after the JSON-RPC method (`initialize`, `notifications/initialized`, `tools/call`) or, for non-JSON-RPC HTTP, after method-and-route (`GET /*`, `DELETE /*`); and a CLIENT span named `<method> <target>` (`initialize payments-mcp`), which for tool calls becomes `tools/call <target>_<tool>` (`tools/call payments-mcp_propose_payment`) | Interposed by M2.1 Task 3; permits everything, no policy (that is M2.2). Emits **a third HTTP attribute vocabulary**, neither stable nor OTel-legacy — see "agentgateway instrumentation, as measured" below, which is the one place this document's HTTP-convention claim has an exception. Exports OTLP/**gRPC** to the collector on 4317, the only component here that does not use OTLP/HTTP on 4318. Task 2 shipped it with no `tracing` block at all, i.e. emitting nothing; Task 3 added one, which is why this row did not exist before. |
 | payments-mcp | FastMCP native | `fastmcp==4.0.3` | `tools/call propose_payment`, `tools/call execute_payment` | TracerProvider does **not** need to be installed before importing fastmcp on this version — `fastmcp.telemetry.get_tracer()` calls `get_tracer_provider()` fresh on every span, not once at import (measured; the brief's premise here was wrong for 4.0.3 — kept as a code convention anyway, not a correctness requirement). `FASTMCP_TELEMETRY_MODE=native` is set explicitly even though it is already the default. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is also set** (`deploy/k8s/payments-mcp.yaml`) — this governs only the *outbound httpx* span to payments-api (FastMCP's own native MCP spans are unaffected; this knob is httpx-instrumentation-specific), measured legacy-by-default, confirmed stable after (`tools/payments-mcp/NOTES.md` §3). |
 | payments-api | `otelhttp` | `otelhttp v0.66.0`, otel core `v1.41.0` | `POST /payments/propose`, `POST /payments/{paymentId}/execute`, `GET /payments/{paymentId}` | HTTP attribute spelling as emitted by the pinned version: **stable** — `http.request.method` / `http.response.status_code` / `http.route`, not the legacy `http.method`/`http.status_code`. `network.protocol.name` is **not** emitted by this otelhttp version (only `network.protocol.version` is); do not assert its presence. No `OTEL_SEMCONV_STABILITY_OPT_IN` is set or needed — this version emits the stable spelling by default (A12), unlike every Python service in this table. |
 
-**Operational fact that keeps the chain on one HTTP convention:**
+**Operational fact that keeps *this project's own services* on one HTTP
+convention — and, as of M2.1 Task 3, the one component it cannot reach:**
 `OTEL_SEMCONV_STABILITY_OPT_IN=http` is set on all three Python services
 (claims-agent, settlement-agent, payments-mcp) and on none of the others.
 Without it, OTel Python's HTTP instrumentation defaults to the legacy
@@ -240,11 +252,27 @@ with no opt-in available to change that — measured, not assumed, for each
 service independently (`agents/claims-agent/NOTES.md` §7,
 `agents/settlement-agent/NOTES.md` §6, `tools/payments-mcp/NOTES.md` §3),
 each showing the legacy capture before the opt-in and the stable capture
-after. This single non-default env var is the only reason this milestone's
-five services agree on one HTTP semantic convention instead of silently
+after. This single non-default env var is the only reason this project's
+five own services agree on one HTTP semantic convention instead of silently
 splitting across languages — exactly the class of breakage A13 exists to
 catch. Any service added later without it would reintroduce a mixed-convention
 chain invisibly, since both spellings are individually well-formed telemetry.
+
+**M2.1 Task 3 correction: the chain is no longer all one HTTP convention, and
+this project has no lever that would make it so.** Until the gateway was
+interposed, "five services agree" described the whole trace. It now describes
+the five services this project *builds*. agentgateway is a sixth participant
+this project only configures, and it emits `http.method` / `http.path` /
+`http.status` / `http.host` / `http.version` — measured off live spans, not
+inferred — which is neither the stable spelling the other five converge on nor
+OTel's legacy spelling (that one is `http.status_code` / `http.url`). There is
+no `OTEL_SEMCONV_STABILITY_OPT_IN` equivalent to set: those are raw string keys
+in its own Rust source, not routed through a semconv layer that could be
+switched. So this is stated as a measured property of the deployed system
+rather than fixed, and it is pinned by
+`tests/e2e/test_gateway_trace.py::test_gateway_span_attributes_are_exactly_what_was_measured`
+so the day it changes upstream, a test says so. Full detail in the section
+below.
 
 **OTel library version skew, flagged as a decision, not an accident (N2/N3,
 final-review.md):** the table above pins each service's own OTel version
@@ -460,6 +488,31 @@ us) already buys that for free, with no code of our own needed. `version=6`
 would additionally emit tool results as `role='tool'` messages instead of
 `role='user'` — opt-in, not adopted here, and not needed for M3's purposes.
 
+**M2.1 Task 3: the shape below now has a proxy hop in the middle of it.**
+`payments-mcp`'s `tools/call <tool>` SERVER span is no longer a direct child of
+settlement-agent's `execute_tool <tool>` span. The measured chain is:
+
+```
+settlement-agent  execute_tool propose_payment            internal
+  settlement-agent  POST                                  client   (httpx, to agentgateway)
+    agentgateway    tools/call                             server
+      agentgateway  tools/call payments-mcp_propose_payment client
+        payments-mcp  tools/call propose_payment            server
+          payments-mcp  POST                                client
+            payments-api  POST /payments/propose            server
+```
+
+One trace id throughout, every span parented on the one directly above it,
+`agentgateway` added as a **sixth service**. Two pre-existing e2e assertions
+were made true again rather than loosened for this:
+`test_settlement_agent_trace.py`'s outbound-target needle now names the
+gateway, and `test_settlement_llm_trace.py::test_mcp_hop_still_carries_the_trace`
+moved from "direct child of `execute_tool`" to "descends from `execute_tool`
+**and** its immediate parent is an agentgateway span" — ancestry plus a new
+constraint, so net strictness is unchanged. The rest of this section's shape
+claims are unaffected: still one root through the browser path, still zero
+orphans beyond A17's known synthetic one, and still no published span total.
+
 **The trace's shape, with a model in the path** — verified independently
 twice, by the implementer and by the reviewer, on two different live runs
 (task-4-report.md §7, task-4-review.md §7): **5 services**
@@ -478,6 +531,190 @@ to. The shape above — which services, which operations, one root, zero
 orphans — is the property this project actually tests and guarantees; a
 specific span total is not, and publishing one here would only become the
 next stale number this contract has already had to correct twice.
+
+## agentgateway instrumentation, as measured (M2.1 Task 3)
+
+`cr.agentgateway.dev/agentgateway:v1.5.0`, standalone (ConfigMap + Deployment +
+Service, not the Helm chart), in `northstar-platform`, with
+`deploy/platform/agentgateway/config.yaml`'s `frontendPolicies.tracing`
+exporting OTLP/gRPC to `otel-collector.observability.svc.cluster.local:4317`.
+`settlement-agent`'s `PAYMENTS_MCP_URL` names it, so every MCP call the model
+makes crosses it.
+
+**Every name in this section was read off a live span in Jaeger and dumped in
+full before being written down. None was predicted from agentgateway's source
+or its documentation.** agentgateway is not this project's component, so the
+no-invented-telemetry rule applies to it without exception. In-tree evidence:
+`tests/e2e/test_gateway_trace.py`, which asserts exact set equality on the
+attribute keys below in both directions — a key appearing is a failure as much
+as a key disappearing.
+
+### Span shape
+
+Two spans per MCP message — one for the request received, one for the request
+made upstream:
+
+| Span | Kind | Parent | Count/request |
+|---|---|---|---|
+| `initialize` | server | settlement-agent's httpx `POST` CLIENT span | 2 (one MCP session per tool call) |
+| `initialize payments-mcp` | client | agentgateway `initialize` | 2 |
+| `notifications/initialized` | server | settlement-agent's httpx `POST` | 2 |
+| `notifications/initialized payments-mcp` | client | agentgateway `notifications/initialized` | 2 |
+| `GET /*` | server | settlement-agent's httpx `GET` | 2 |
+| `GET payments-mcp` | client | agentgateway `GET /*` | 2 |
+| `tools/call` | server | settlement-agent's httpx `POST` | 2 (one per tool the model called) |
+| `tools/call payments-mcp_<tool>` | client | agentgateway `tools/call` | 1 each for `propose_payment`, `execute_payment` |
+| `DELETE /*` | server | settlement-agent's httpx `DELETE` | 2 |
+| `DELETE payments-mcp` | client | agentgateway `DELETE /*` | 2 |
+
+Three things in that table are worth stating outright because they are easy to
+get wrong from the outside:
+
+- **The SERVER span for a tool call is named just `tools/call`** — the JSON-RPC
+  method, with no tool name in it. An operator filtering Jaeger by operation
+  name therefore sees two identically-named `tools/call` spans per settlement
+  and must read `gen_ai.tool.name` to tell `propose_payment` from
+  `execute_payment`. Only the CLIENT span carries the tool in its name.
+- **`payments-mcp_<tool>` is agentgateway's own multiplexing prefix**
+  (`<target>_<tool>`), not a name payments-mcp would recognise. payments-mcp's
+  own span for the same call is `tools/call propose_payment`.
+- **`GET /*` and `DELETE /*` fall back to method-and-route naming** because
+  those two HTTP verbs of the streamable-HTTP transport carry no JSON-RPC
+  method to name the span after; `/*` is the configured route's match pattern.
+
+### Attributes on the `tools/call` SERVER span
+
+Read off a live span; the complete set, nothing omitted:
+
+```
+duration                     e.g. "3ms"  (a string; see the note below)
+gateway                      "default/default"
+gen_ai.tool.name             "propose_payment" | "execute_payment"
+http.host                    "agentgateway.northstar-platform.svc.cluster.local"
+http.method                  "POST"
+http.path                    "/mcp"
+http.status                  200
+http.version                 "HTTP/1.1"
+listener                     "listener0"
+mcp.method.name              "tools/call"
+mcp.resource.type            "tool"
+mcp.session.id               (base64 JSON, see the note below)
+mcp.target                   "payments-mcp"
+network.protocol.version     "1.1"
+otel.scope.name              "agentgateway"
+protocol                     "mcp"
+route                        "default/route0"
+span.id                      the span's own id, repeated as an attribute
+src.addr                     e.g. "10.244.0.138:56988"
+trace.id                     the trace's own id, repeated as an attribute
+url.scheme                   "http"
+```
+
+### Attributes on the `tools/call payments-mcp_<tool>` CLIENT span
+
+Six keys, and that is all — no HTTP attributes, no duration, no session id:
+
+```
+agentgateway.outbound.kind      "Primary"
+agentgateway.outbound.subtype   "Mcp"
+gen_ai.tool.name                "propose_payment" | "execute_payment"
+mcp.method.name                 "tools/call"
+mcp.target                      "payments-mcp"
+otel.scope.name                 "agentgateway"
+```
+
+### What this project does *not* claim about those spans
+
+- **`internal.span.format` and `span.kind` are Jaeger's, not
+  agentgateway's**, and this was measured rather than assumed: in the
+  reference trace they appear on 20/20 agentgateway spans *and* on 52/52
+  settlement-agent, 6/6 payments-mcp and 2/2 payments-api spans — every span
+  from every service. The first is Jaeger's record of the receive format; the
+  second is its representation of the OTel `SpanKind` this document's Kind
+  column already states. Neither is listed above.
+- **The gateway sets no `otel.scope.version`** — 0 of 20 spans, against
+  settlement-agent 49/52, payments-mcp 2/6, payments-api 2/2. The version is on
+  the Resource (`service.version=1.5.0`), not the scope.
+
+### Findings, in the same shape as Finding 1 (`a2a-sdk`)
+
+1. **A third HTTP attribute vocabulary.** `http.method`, `http.path`,
+   `http.status`, `http.host`, `http.version` — not stable semconv
+   (`http.request.method`, `url.path`, `http.response.status_code`,
+   `server.address`), and not OTel legacy either (`http.status_code`,
+   `http.url`). There is no URL attribute at all. Two keys *are* correct stable
+   semconv, `url.scheme` and `network.protocol.version`, and that is exactly
+   what v1.5.0's source predicts: those two are the only keys it routes through
+   its own `semconv` module
+   (`crates/agentgateway/src/telemetry/trc.rs` — the `PROTOCOL_VERSION` and
+   `URL_SCHEME` `Key` constants); everything else is a raw string key. Not
+   worked around: nothing in this repo rewrites the gateway's attributes.
+2. **`span.id`, `trace.id` and `duration` are emitted as span attributes**,
+   duplicating information the span already carries structurally, and `duration`
+   as a human-formatted string (`"3ms"`) rather than a number. Measured on 10 of
+   20 spans — the SERVER spans only. Harmless, but it is per-span payload spent
+   restating the envelope.
+3. **`mcp.session.id` changes format mid-session.** On the `initialize` span it
+   is a plain UUID (`0ef21c0f-8a03-4ec8-92f3-78073ae2b74c`); on every later span
+   in the same session it is a base64-encoded JSON object naming the target and
+   an upstream session id
+   (`eyJ0IjoibWNwIiwicyI6W3sidCI6InBheW1lbnRzLW1jcCIsInMiOiI5MjRhYWUxOWFlY2E0NTQyOTc0NTBjMWM0NzdlY2NjYSJ9XX0`,
+   which decodes to `{"t":"mcp","s":[{"t":"payments-mcp","s":"924aae19…"}]}`).
+   So the same attribute key does not join the `initialize` span to the rest of
+   its own session. Recorded, not worked around.
+4. **`host.name` on the Resource is `default.default.svc.cluster.local`** — not
+   the pod's hostname and not a name that resolves to anything in this cluster.
+   It is the gateway's own default identity string, unset by our config.
+   Cosmetic here (Jaeger keys on `service.name`), but it would misattribute the
+   gateway's spans in any view that groups by host.
+5. **A benign gain, and the only unexpected one: payments-mcp's `initialize`
+   spans now join the trace, and did not before.** Pre-reroute traces contain
+   no `payments-mcp:initialize` span at all;
+   `agents/settlement-agent/mcp_tools.py` injects `params._meta` only on the
+   tool call, so FastMCP had no context to extract on `initialize`.
+   Post-reroute there are two, parented under
+   `agentgateway:initialize payments-mcp` — because agentgateway's
+   `stamp_trace_context` (`crates/agentgateway/src/mcp/upstream/mod.rs`, added
+   by its PR #2520 for SEP-414) copies `traceparent` into the outbound `_meta`
+   of **every** MCP message it forwards, not just tool calls. The interposed
+   proxy incidentally closes a correlation gap this project had. Note the
+   asymmetry that makes it work: agentgateway *writes* SEP-414 `_meta` on
+   egress but only *reads* HTTP headers on ingress (see below).
+
+### Why the trace survives this hop, stated so the two mechanisms are not conflated
+
+This is the load-bearing mechanism of M2.1 and it is genuinely two independent
+carriers, not one:
+
+- This repo's own MCP trace-context convention is **SEP-414**: `traceparent` /
+  `tracestate` / `baggage` as unprefixed keys inside JSON-RPC `params._meta`,
+  never HTTP headers (see "Conventions adopted"). `mcp_tools.py` injects that
+  by hand.
+- **agentgateway does not read that.** v1.5.0's `TraceParent::from_request`
+  (`crates/agentgateway/src/telemetry/trc.rs`) reads the HTTP `traceparent`
+  header and nothing else — it never inspects the request body. Read in
+  isolation that predicts a fractured trace, and the M2 spike's first pass
+  concluded exactly that, wrongly.
+- It survives because `bootstrap.py` runs
+  `HTTPXClientInstrumentor().instrument()` and the MCP streamable-HTTP
+  transport is httpx-based, so every outbound MCP request **also** carries an
+  auto-injected `traceparent` HTTP header. Measured against an echo server:
+  `00-df60a027741941a16675b35edbcf0a32-5675a787e51b87e6-03`, with no manual
+  injection anywhere in the call path.
+
+So nothing here should be read as agentgateway supporting SEP-414 on ingress.
+It does not, and a future MCP client carrying context in `_meta` *alone* — a
+stdio transport with no HTTP layer, or a client library that does not
+auto-instrument httpx — would fragment at this hop. settlement-agent is not
+that client, which is the entire reason this works.
+
+One measured sampling consequence of the same header-only design, from
+v1.5.0's `TraceSampler::trace_sampled`
+(`crates/agentgateway/src/telemetry/log.rs`): a request arriving **with** an
+incoming `traceparent` is sampled by default, and a request arriving
+**without** one is dropped by default. `randomSampling: true` is set in our
+config so a headerless caller is visible too rather than silently untraced;
+it changes nothing for settlement-agent's own path.
 
 ## Conventions adopted
 
@@ -571,6 +808,18 @@ span in every service" claim.
 processes. Nothing is injected into telemetry emitted by infrastructure we do not
 run in-process. In M2 that means agentgateway's own spans are correlated by trace
 ID, not enriched.
+
+**M2.1 Task 3: that last sentence stopped being a prediction and is now a
+measurement.** With the gateway in the path, all 20 of its spans in the
+reference trace carry no `northstar.claim.id` — `ClaimIdSpanProcessor` runs only
+inside this project's own Python processes, and nothing reaches into
+agentgateway's telemetry to add anything. This is the desired behaviour, not a
+gap to close, and it is now asserted rather than only written down:
+`tests/e2e/test_gateway_trace.py::test_the_gateway_carries_no_northstar_claim_id`
+fails if a future task ever starts enriching third-party infrastructure
+telemetry, so that becomes a deliberate decision instead of a quiet one. (The
+test also asserts gateway spans exist first, so it cannot pass vacuously on a
+trace where the gateway dropped out of the path — verified by mutation.)
 
 ## Content capture
 
@@ -1092,6 +1341,109 @@ project owner's own framing, preserved verbatim as the shape of the test):
    answerable only by retaining data a regulated insurer would rather not
    keep. That difference is the argument, not an assertion that ON or OFF is
    simply correct.
+
+#### What M2.1 Task 3 measured, and what it deliberately did not decide
+
+**OQ-1 stays open. `NORTHSTAR_CAPTURE_CONTENT` still defaults to `true`
+(`deploy/k8s/settlement-agent.yaml`) and nothing below changes it.** What
+follows sizes the trade; it does not resolve it. The four-step experiment above
+is still unrun — steps 1 and 2 need an *induced failure*, and nothing here
+induced one. What was run is the narrower, cheaper half that was worth doing on
+the back of a live run this task already paid for: **the same successful
+scenario twice, once at the shipped default `true` and once at `false`,
+comparing which `gen_ai.*` attribute keys survive.**
+
+Both runs were the same A2A settlement of €6,200, both post-reroute (through
+agentgateway), both `status: executed`. Mode read back off the *running* pod
+with `jsonpath`, not off the Deployment spec, before each run.
+
+**Measured: 28 distinct `gen_ai.*` keys at ON, 25 at OFF. Exactly three
+disappear:**
+
+| Key | ON | OFF | Span(s) it lives on |
+|---|---|---|---|
+| `gen_ai.system_instructions` | present | **absent** | `chat claude-sonnet-5` ×3, `invoke_agent settlement_agent` |
+| `gen_ai.tool.call.arguments` | present | **absent** | `execute_tool propose_payment`, `execute_tool execute_payment` |
+| `gen_ai.tool.call.result` | present | **absent** | `execute_tool propose_payment`, `execute_tool execute_payment` |
+
+That is exactly the three this document's own inventory section above already
+listed as content-gated, now confirmed by direct OFF-mode measurement rather
+than from library source alone. The other 25 are the identical set in both
+modes: `gen_ai.agent.call.id`,
+`gen_ai.agent.name`, the five `gen_ai.aggregated_usage.*`, `gen_ai.conversation.id`,
+`gen_ai.input.messages`, `gen_ai.operation.name`, `gen_ai.output.messages`,
+`gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.finish_reasons`,
+`gen_ai.response.id`, `gen_ai.response.model`, `gen_ai.system`,
+`gen_ai.tool.call.id`, `gen_ai.tool.definitions`, `gen_ai.tool.name`, and the
+five `gen_ai.usage.*`.
+
+**Key-level survival understates the redaction, and that is the most important
+thing this measurement found.** Three keys vanish, but two of the survivors are
+gutted in place:
+
+- `gen_ai.input.messages` / `gen_ai.output.messages` survive at both settings
+  and still carry every part type (`text`, `thinking`, `tool_call`,
+  `tool_call_response`), but at OFF **no part carries a `content` key and no
+  `tool_call` part carries an `arguments` key** — measured across all three
+  chat turns in each run.
+- `pydantic_ai.all_messages` on the `invoke_agent` span — the full transcript,
+  and the single highest-risk surface in the trace — survives too, and shrank
+  from 1599 characters at ON to 657 at OFF for the same shape of run. Same
+  part types, no content.
+
+So a reader who checks only "which keys are present" would conclude that
+redaction removed 3 of 28 attributes, roughly a tenth. What it actually removed
+is every piece of model-authored and model-received prose plus every tool
+argument and result, while leaving the skeleton that proves the calls happened.
+
+**`model_request_parameters` is the floor, and its name is not what the
+prediction said it was.** This task was handed a falsifiable prediction derived
+from reading pydantic-ai 2.41.0's source, and recording where it was wrong
+matters more than where it was right:
+
+- ✅ **Right:** `gen_ai.tool.call.arguments` is `include_content`-gated.
+  Confirmed — absent at OFF.
+- ✅ **Right:** `gen_ai.system_instructions` is `include_content`-gated.
+  Confirmed — absent at OFF.
+- ✅ **Right:** `gen_ai.tool.definitions` is emitted regardless. Confirmed —
+  present in both sets.
+- ✅ **Right:** 28 distinct `gen_ai.*` keys at the shipped default. Confirmed
+  independently on this milestone's own live run, matching the previous
+  milestone's count.
+- ❌ **Wrong on the name.** The prediction called it
+  `gen_ai.model_request_parameters`. The attribute pydantic-ai actually emits is
+  `model_request_parameters`, with **no `gen_ai.` prefix** — so it appears in
+  neither the ON set nor the OFF set, because it is not a `gen_ai.*` key at all.
+  (This document's own earlier sections already used the unprefixed spelling;
+  the prediction's prefixed form does not exist anywhere in a live trace.)
+- ❌ **Wrong on "the sole OFF-mode survivor of the content-bearing keys."**
+  Measured: `model_request_parameters` does survive OFF — 1974 characters on
+  every `chat` span, identical in both modes, which is the same figure this
+  document already records — so the *gating* half of that bullet holds. But it
+  is not the sole survivor. `gen_ai.tool.definitions` survives fully, and
+  `gen_ai.input.messages`, `gen_ai.output.messages` and
+  `pydantic_ai.all_messages` all survive in redacted form. Calling it the sole
+  survivor would have made OFF mode sound emptier than it is.
+- ➕ **Missed by the prediction:** `gen_ai.tool.call.result` is content-gated
+  too. The prediction named two content-gated keys; there are three. (This
+  document's inventory section above already had all three, from the previous
+  milestone — so the gap was in the prediction handed to this task, not in the
+  project's own record. Worth stating because the missed one is the attribute
+  carrying the ledger's record back, e.g.
+  `{"paymentId":"PAY-…","amount":6200,…}`: at OFF, *neither* what the model
+  proposed nor what the ledger recorded survives on the `execute_tool` spans.)
+
+**What this does and does not settle.** It sizes the trade precisely: at maximum
+redaction this project still retains what the agent was *told it could do*
+(`model_request_parameters`, `gen_ai.tool.definitions`), that it called both
+tools and in what order (`gen_ai.tool.name`, `gen_ai.tool.call.id`, message
+shape), what it cost (`gen_ai.usage.*`, `operation.cost`), and the full trace
+topology. It retains nothing about *this claim* or *this amount*. The
+diagnostic question "why €6,200?" is, as this section already said,
+unanswerable rather than merely harder — now confirmed by measurement in both
+directions rather than from source reading alone. Whether that trade is
+acceptable for a regulated insurer is still a decision this project's owner
+makes, not one a measurement makes, and it is still open.
 
 This is not academic bookkeeping: M2's Policy Decision Service and a later
 reviewer UI both need to know *what the agent was told* to do their own

@@ -93,7 +93,7 @@ the laptop runs one stage at a time.
 | Stage | Name | Adds |
 |---|---|---|
 | 1 | Connected | agents, MCP servers, systems of record, customer UI, collector, Jaeger |
-| 2 | Governed | agentgateway, SPIFFE/SPIRE, Policy Decision Service, Kyverno, Cilium — **partly built: as of M2.1 Task 2 `--stage 2` installs Cilium and agentgateway (permitting everything, not yet in the path)**, on a cluster created with kind's default CNI disabled |
+| 2 | Governed | agentgateway, SPIFFE/SPIRE, Policy Decision Service, Kyverno, Cilium — **partly built: as of M2.1 Task 3 `--stage 2` installs Cilium and agentgateway, with agentgateway in the MCP path between settlement-agent and payments-mcp, permitting everything — no policy yet**, on a cluster created with kind's default CNI disabled |
 | 3 | Supervised | Dapr Workflow, reviewer UI, Keycloak |
 | 4 | Observable | OpenSearch + Agent Evals, Prometheus |
 | 5 | Progressive autonomy | OpenFeature / flagd |
@@ -101,13 +101,16 @@ the laptop runs one stage at a time.
 
 ## Architecture (stage 1 workloads, now on the stage-2 dataplane)
 
-The request chain below is unchanged by M2.1 Task 1 — Cilium sits underneath every
-hop of it, and the trace was verified span-by-span against a pre-Cilium baseline to
-confirm that.
+M2.1 Task 1 left this chain unchanged — Cilium sits underneath every hop of it,
+and the trace was verified span-by-span against a pre-Cilium baseline to confirm
+that. **M2.1 Task 3 added one hop**: agentgateway is now interposed on the MCP
+call, and the whole chain is still one distributed trace (measured — see
+`tests/e2e/test_gateway_trace.py` and `docs/telemetry-contract.md`'s
+"agentgateway instrumentation, as measured").
 
 ```text
-browser ──A2A──► claims-agent ──A2A──► settlement-agent ──MCP──► payments-mcp ──HTTP──► payments-api
-  (TS)              (Python)              (Python)                 (Python)              (Go)
+browser ──A2A──► claims-agent ──A2A──► settlement-agent ──MCP──► agentgateway ──MCP──► payments-mcp ──HTTP──► payments-api
+  (TS)              (Python)              (Python)                 (Rust)               (Python)              (Go)
 ```
 
 ## Telemetry
