@@ -257,6 +257,15 @@ GATEWAY_TOOLS_CALL_SERVER_ATTRS = {
     "http.path",
     "http.status",
     "http.version",
+    # M2.1 Task 4. agentgateway's own attribute, not ours and not Jaeger's: it
+    # appears once the route carries a `jwtAuth` policy, and it carries the
+    # verified token's `sub` claim -- which for a SPIRE-minted JWT-SVID is the
+    # caller's SPIFFE ID. Measured on live SERVER spans; measured *absent* from
+    # the CLIENT spans below, which is why only this set grew. Its value is
+    # asserted separately (see the jwt.sub test), because a key that is present
+    # but carrying the wrong identity is the failure this whole task exists to
+    # rule out.
+    "jwt.sub",
     "listener",
     "mcp.method.name",
     "mcp.resource.type",
@@ -271,6 +280,15 @@ GATEWAY_TOOLS_CALL_SERVER_ATTRS = {
     "trace.id",
     "url.scheme",
 }
+
+# M2.1 Task 4. The caller's attested identity, as SPIRE mints it from
+# `deploy/platform/spire/registration.yaml`'s ID template: trust domain,
+# namespace, service account. `tests/unit/test_stage2_spire_config.py` pins
+# that the configuration renders this; this file pins that the gateway
+# actually *observed* it on the wire.
+SETTLEMENT_AGENT_SPIFFE_ID = (
+    "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
+)
 
 GATEWAY_TOOLS_CALL_CLIENT_ATTRS = {
     "agentgateway.outbound.kind",
@@ -468,4 +486,73 @@ def test_the_gateway_carries_no_northstar_claim_id(gateway_settlement):
         "own telemetry, or this project started enriching infrastructure it "
         "does not run in-process. Both need a deliberate decision and a "
         "docs/telemetry-contract.md update, not a silent pass."
+    )
+
+
+def test_the_gateway_records_the_callers_attested_spiffe_id_on_its_server_spans(
+    gateway_settlement,
+):
+    """M2.1 Task 4: the identity is *in the trace*, not only in a 401.
+
+    This is the assertion that makes workload identity observable rather than
+    merely enforced. The gateway verifies a SPIRE-minted JWT-SVID and records
+    the verified `sub` claim as `jwt.sub` on the SERVER span for the request it
+    checked — so an operator reading this trace can see which attested
+    workload asked for the payment, from the same span tree that shows the
+    payment being proposed. Nothing in this project sets that attribute:
+    agentgateway derives it from the token it validated.
+
+    Three things are pinned, and the third is the one that matters:
+
+    1. `jwt.sub` is present on every gateway SERVER span. Its presence at all
+       depends on the route carrying a `jwtAuth` policy — before Task 4 there
+       was no such attribute on any span in this trace.
+    2. It is absent from the CLIENT spans. Measured, and consistent with the
+       gateway's own behaviour on the outbound leg: it does not forward the
+       credential (`if !self.preserve_token { self.location.remove(req)?; }` in
+       `crates/agentgateway/src/http/jwt.rs`), so there is no verified token on
+       that side to attribute anything to. Recorded here so the day the
+       gateway starts propagating identity onward, this project finds out.
+    3. The value is the *caller's* SPIFFE ID, not the audience and not
+       `.../sa/default`. That distinction is the whole task: a token whose
+       subject were the gateway's own ID, or an identity minted for the
+       `default` service account because the pod never got its own, would both
+       verify successfully and prove nothing about who called. `.../sa/default`
+       is not hypothetical — it is the identity this pod actually attested as
+       before it was given a ServiceAccount of its own.
+    """
+    gateway_spans = _gateway_spans(gateway_settlement.trace)
+    servers = [s for s in gateway_spans if s.kind == "server"]
+    clients = [s for s in gateway_spans if s.kind == "client"]
+    assert servers, (
+        "no agentgateway SERVER spans in the trace, so every claim below would "
+        "hold vacuously -- is the gateway in the path?"
+    )
+
+    missing = [s.operation for s in servers if "jwt.sub" not in s.attrs]
+    assert not missing, (
+        f"{len(missing)} of {len(servers)} agentgateway SERVER spans carry no "
+        f"jwt.sub ({sorted(set(missing))}) -- either the route lost its "
+        "jwtAuth policy, or the gateway stopped recording the verified "
+        "subject. Identity is then unobservable in the trace even if it is "
+        "still enforced."
+    )
+
+    subjects = {s.attrs["jwt.sub"] for s in servers}
+    assert subjects == {SETTLEMENT_AGENT_SPIFFE_ID}, (
+        f"agentgateway attributed these calls to {sorted(subjects)}, expected "
+        f"exactly {{{SETTLEMENT_AGENT_SPIFFE_ID!r}}}. A subject ending "
+        "'/sa/default' means the calling pod is running as the default "
+        "ServiceAccount and its SVID names an identity SPIRE never "
+        "constrained on; a subject naming the gateway itself means the "
+        "audience was minted as the subject."
+    )
+
+    leaked = [(s.operation, s.attrs["jwt.sub"]) for s in clients if "jwt.sub" in s.attrs]
+    assert not leaked, (
+        f"agentgateway CLIENT spans now carry jwt.sub: {leaked}. Measured "
+        "absent in M2.1 Task 4, consistent with the gateway stripping the "
+        "credential on the outbound leg; if it now forwards identity upstream, "
+        "GATEWAY_TOOLS_CALL_CLIENT_ATTRS and docs/telemetry-contract.md are "
+        "both stale and payments-mcp can start checking who called it."
     )
