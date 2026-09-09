@@ -516,7 +516,8 @@ def test_a_valid_svid_is_accepted_and_the_tool_really_runs(gateway_url, valid_sv
     assert result.claims.get("iss") == SPIRE_ISSUER, result.claims
 
 
-# --- the three refusals -----------------------------------------------------
+# --- the five refusals (4 functions; the untrusted-issuer one is
+# parametrised x2, for own_kid and spire_kid) ---------------------------------
 
 
 def test_gateway_refuses_a_call_with_no_svid_at_all(gateway_url):
