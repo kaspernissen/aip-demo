@@ -63,7 +63,89 @@ binds:
 - port: 3000
   listeners:
   - routes:
-    - backends:
+    # M2.1 Task 4 added this `policies` block, and nothing else in this file.
+    #
+    # It is JWT *verification*, not authorization. There is deliberately no
+    # `mcpAuthorization` and no `authorization` here: this task makes identity
+    # real and checkable, and a later milestone decides what to do with it. The
+    # gateway still permits every tool call it can authenticate.
+    #
+    # Schema source: the pinned v1.5.0 image's own `examples/`, cross-read
+    # against the Rust types, NOT the documentation site (Task 2 found the docs
+    # thin and the examples exact). `jwtAuth` is a field of
+    # `LocalGatewayPolicy`/`FilterOrPolicy` in
+    # crates/agentgateway/src/types/local.rs, typed
+    # `crate::http::jwt::LocalJwtConfig`; the single-issuer shape used here is
+    # that enum's `Single` variant (crates/agentgateway/src/http/jwt.rs), whose
+    # own Deserialize impl selects `Multi` if and only if a `providers` key is
+    # present -- so `issuer`/`audiences`/`jwks` at this level is the
+    # single-issuer form, unambiguously. `examples/mcp-authorization/config.yaml`
+    # at v1.5.0 shows the same keys (there with `jwks.file`).
+    #
+    # Validated against the pinned image before deploying, from this directory:
+    #   docker run --rm -v .:/w cr.agentgateway.dev/agentgateway:v1.5.0 \
+    #     -f /w/config.yaml --validate-only
+    #
+    # Note the literal `.` rather than the shell's usual current-directory
+    # variable in that command: agentgateway v1.5.0 expands environment
+    # variables in this file's raw text BEFORE parsing it as YAML, comments
+    # included, and an unset name is a hard error -- "Error: error looking key
+    # 'PWD' up: environment variable not found", which is exactly what the
+    # first draft of this comment produced (and then, once, again: the fix
+    # mentioned a dollar-prefixed placeholder name and hit the same wall). That
+    # is a live constraint on this whole file, not a quirk of one command line:
+    # a dollar-sign reference anywhere in here, even inside a comment, must
+    # resolve in the gateway container's environment or the gateway refuses to
+    # start. Which is why this file contains no dollar signs at all, and why
+    # tests/unit/test_stage2_spire_config.py asserts that.
+    - policies:
+        jwtAuth:
+          # `strict` is a DELIBERATE override of the chart-free default, and it
+          # is the one value here that changes behaviour rather than describing
+          # it. The `Mode` enum in crates/agentgateway/src/http/jwt.rs marks
+          # `Optional` as `#[default]`, documented as "Validate the JWT when
+          # present. Warning: this allows requests without a JWT." Left at the
+          # default, a caller that sent no credential at all would sail
+          # through, and this task's whole claim -- that the platform knows who
+          # is calling -- would hold only for callers that volunteered. `strict`
+          # is "Require a valid JWT from a configured issuer."
+          #
+          # This is still not authorization: strict mode decides whether the
+          # caller is *authenticated*, not whether it may do what it asked.
+          mode: strict
+          # Must equal the token's `iss` exactly. Both sides come from ONE
+          # value, `global.spire.jwtIssuer` in deploy/platform/spire/values.yaml,
+          # which the chart renders into spire-server's `jwt_issuer` (the claim
+          # it mints) and into the discovery provider's `jwt_issuer` (the
+          # `issuer` it advertises). Measured from a real minted token:
+          #   iss = http://spire-spiffe-oidc-discovery-provider.northstar-platform.svc.cluster.local
+          issuer: http://spire-spiffe-oidc-discovery-provider.northstar-platform.svc.cluster.local
+          # A non-empty list makes a matching `aud` claim mandatory (that
+          # struct's own doc comment). This is the gateway's own registered
+          # SPIFFE ID, which is what settlement-agent asks SPIRE to mint for
+          # (NORTHSTAR_GATEWAY_AUDIENCE in deploy/k8s/settlement-agent.yaml).
+          # Scoping the audience to this one verifier is what stops a token
+          # captured here from being replayed at any other SPIFFE service in
+          # the trust domain.
+          audiences:
+          - spiffe://northstar.local/ns/northstar-platform/sa/agentgateway
+          # SPIRE's JWT signing keys, published as a JWKS by the chart's
+          # spiffe-oidc-discovery-provider. `{url: ...}` is the `Remote`
+          # variant of `serdes::FileInlineOrRemote`; a `{file: ...}` here would
+          # go stale the first time SPIRE rotates its JWT signing key, which it
+          # does on its own schedule.
+          #
+          # `/keys` is not a guess: it is the `jwks_uri` the provider's own
+          # discovery document advertises, fetched live from the running
+          # service.
+          #
+          # Plain HTTP inside the cluster, recorded as a tradeoff in
+          # docs/architecture.md rather than hidden: serving this over the
+          # chart's default HTTPS would mean teaching agentgateway to trust the
+          # SPIRE CA in order to fetch a public key set.
+          jwks:
+            url: http://spire-spiffe-oidc-discovery-provider.northstar-platform.svc.cluster.local/keys
+      backends:
       - mcp:
           targets:
           - name: payments-mcp
