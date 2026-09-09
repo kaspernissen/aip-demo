@@ -53,10 +53,26 @@ sibling, and the first time the sibling was in the same file.
    table has. This is what makes it impossible to "fix" one site by editing the
    inventory while leaving the delta table describing a different set.
 
-3. `test_the_agentgateway_attribute_blocks_match_their_own_stated_counts` —
-   generalises the guard past `gen_ai.*` to the other attribute sets this
-   document publishes (agentgateway's two `tools/call` span attribute lists,
-   added by M2.1 Task 3). Same failure mode, different vocabulary.
+3. `test_every_attribute_block_agrees_with_its_own_stated_key_count`,
+   `test_no_published_attribute_block_has_gone_missing` and
+   `test_every_attribute_shaped_block_sits_in_a_section_this_guard_checks` —
+   generalise the guard past `gen_ai.*` to the other attribute sets this
+   document publishes (agentgateway's two `tools/call` span attribute lists
+   from M2.1 Task 3, and the refused-call span from Task 5). Same failure
+   mode, different vocabulary. These three replace a single earlier check
+   whose two defects — a claim locatable only on the line adjacent to its
+   fence, and a `>= 2` floor that could not see a block deleted — are
+   documented in full at their definition below, because both were
+   *demonstrated* rather than argued and the second was found by a reviewer
+   making the old guard green with a wrong published number.
+
+4. `test_the_documents_own_count_of_its_attribute_count_sites_is_right` — the
+   meta-count. The document states how many attribute-count sites it has, and
+   that sentence was wrong ("nine"; measured six) and unguarded for two
+   milestones, from where it propagated into four task briefs. Guarding a
+   count *of* claims is different from guarding the claims, and the absence of
+   the former is exactly how this one drifted while every count it described
+   stayed correct.
 
 **On guard inertness, which this repo has been bitten by five times in one
 task.** Nothing here greps for a magic string and passes if it finds it. Every
@@ -391,58 +407,347 @@ def test_the_content_gated_delta_table_agrees_with_the_inventory():
     )
 
 
-def test_the_agentgateway_attribute_blocks_match_their_own_stated_counts():
-    """The same class of claim, for agentgateway's two attribute sets.
+# --- Attribute blocks: located by section, never by line adjacency ----------
+#
+# **Why this was rewritten (M2.1 Task 5 fix round 1, review Finding 1).** The
+# first version of this check found a block's key count with one regex that
+# required the claim to sit on the line *immediately* before the fence:
+#
+#     ([^\n]*\b(\d+|[A-Za-z-]+)\s+keys\b[^\n]*)\n+^```...
+#
+# Two defects followed from that, and both were demonstrated rather than
+# argued. (a) This document hard-wraps prose, so a claim that wrapped onto an
+# earlier line was simply *not matched* -- the pattern found no pair, the block
+# went unchecked, and the guard stayed green. Task 5 hit this while adding the
+# refused-call block and caught it by mutation; the instance was fixed by
+# rewording, and the class survived, which is why the reviewer could then make
+# the guard green with a published 19 against a measured 20. (b) The old
+# `len(matches) >= 2` floor could not notice a block being *deleted* -- a guard
+# that cannot see something missing is not guarding presence.
+#
+# Both are fixed by changing the unit of enumeration. The old unit was
+# "(claim, fence) pairs that happen to be adjacent". The new unit is **the
+# section**: every `### Attributes on ...` heading owns exactly one
+# attribute-shaped fenced block, and its claim may sit anywhere in that
+# section's prose before the fence, hard-wrapped or not, because the prose is
+# whitespace-normalised before being searched. That matches the class of claim
+# being guarded -- "this published block holds N keys" is a property of a
+# section, not of a line.
 
-    Each of the two blocks is introduced by a sentence stating how many keys it
-    holds ("21 keys, the complete set", "Six keys, and that is all"). Those
-    counts get stale exactly the way the `gen_ai.*` one did, and
-    `tests/e2e/test_gateway_trace.py` -- which asserts the *same* two sets by
-    exact bidirectional equality against live spans -- cannot see the document
-    at all. This is the join between them.
+ATTRIBUTE_SECTION_RE = re.compile(r"^(#{2,})\s+(Attributes on .+?)\s*$", re.M)
+ANY_HEADING_RE = re.compile(r"^#{1,6}\s+\S", re.M)
+
+# A fenced block is "attribute-shaped" when every non-empty line is
+# `<key><whitespace><value>` and at least one key is a dotted attribute name.
+# Deliberately shape-based: it survives the sections being retitled or moved,
+# and it excludes the `gen_ai.*` inventory block (bare names, no values), which
+# `_on_inventory` guards by its own different shape.
+_KEY_VALUE_LINE_RE = re.compile(r"^[a-z][a-z0-9_.]*\s+\S")
+
+# The attribute blocks this document is known to publish, pinned by a
+# distinguishing substring of their headings. This list is what makes a
+# *deleted* block detectable: dropping a block, or dropping its whole section,
+# removes the heading that matches one of these. Adding a new attribute block
+# is deliberately fine -- it must simply carry a correct claim like the rest.
+REQUIRED_ATTRIBUTE_SECTIONS = (
+    "`tools/call` SERVER span",
+    "CLIENT span",
+    "refused",
+)
+
+_KEY_COUNT_CLAIM_RE = re.compile(r"\b(?:(\d+)|([A-Za-z][A-Za-z-]*))\s+keys\b")
+
+
+def _normalise(prose: str) -> str:
+    """Collapse every whitespace run to one space.
+
+    This single line is what closes defect (a) above: after it, a claim
+    hard-wrapped across a newline reads exactly like one that is not, so where
+    the claim happens to sit relative to its fence stops mattering.
+    """
+    return re.sub(r"\s+", " ", prose)
+
+
+def _attribute_sections(text: str) -> list[dict]:
+    """Every `### Attributes on ...` section, with its block and its claims.
+
+    Returns one dict per section: `heading`, `keys` (the block's attribute
+    names, in order), `claims` (every `<N> keys` number stated in the prose
+    before the fence), and `blocks` (how many attribute-shaped blocks the
+    section holds, so "exactly one" can be asserted rather than assumed).
+    """
+    starts = [(m.start(), m.group(2)) for m in ATTRIBUTE_SECTION_RE.finditer(text)]
+    sections = []
+    for index, (start, heading) in enumerate(starts):
+        # The section runs to the next heading of any level, or to EOF.
+        body_start = text.index("\n", start) + 1
+        following = ANY_HEADING_RE.search(text, body_start)
+        end = following.start() if following else len(text)
+        body = text[body_start:end]
+
+        blocks = []
+        for match in re.finditer(r"^```[^\n]*\n(.*?)^```", body, re.S | re.M):
+            lines = [line for line in match.group(1).splitlines() if line.strip()]
+            if not lines:
+                continue
+            if all(_KEY_VALUE_LINE_RE.match(line) for line in lines) and any(
+                "." in line.split()[0] for line in lines
+            ):
+                blocks.append((match.start(), [line.split()[0] for line in lines]))
+
+        claims: list[int | None] = []
+        if blocks:
+            prose_before_fence = _normalise(body[: blocks[0][0]])
+            for match in _KEY_COUNT_CLAIM_RE.finditer(prose_before_fence):
+                digits, word = match.group(1), match.group(2)
+                if digits:
+                    claims.append(int(digits))
+                else:
+                    # A word that is not a number ("no keys", "these keys") is
+                    # not a claim; only recognised number words count.
+                    number = _WORD_NUMBERS.get(word.lower())
+                    if number is not None:
+                        claims.append(number)
+
+        sections.append(
+            {
+                "heading": heading,
+                "blocks": len(blocks),
+                "keys": blocks[0][1] if blocks else [],
+                "claims": claims,
+            }
+        )
+    return sections
+
+
+def test_every_attribute_block_agrees_with_its_own_stated_key_count():
+    """Each published attribute block must hold exactly as many keys as claimed.
+
+    `tests/e2e/test_gateway_trace.py` asserts the same two agentgateway sets by
+    exact bidirectional equality against live spans but cannot see this
+    document at all; this is the join between them. The refused-call block
+    (M2.1 Task 5) has no e2e counterpart at all, so this is the only guard on
+    it.
+
+    **Every claim in the section's prose is checked, not just the nearest
+    one.** A section that states one number and then restates a different one
+    later is exactly as broken as a section that states one wrong number, and
+    picking "the closest to the fence" would silently tolerate the stale twin
+    -- which is this repository's single most-repeated defect.
     """
     text = _contract_text()
+    sections = _attribute_sections(text)
 
-    # Each block is a fenced body of `<key><whitespace><value>` lines whose keys
-    # are dotted attribute names; identified by shape, then tied to the count in
-    # the prose immediately above its own fence.
-    pattern = re.compile(
-        r"([^\n]*\b(?:(\d+)|([A-Za-z-]+))\s+keys\b[^\n]*)\n+^```[^\n]*\n(.*?)^```",
-        re.S | re.M,
-    )
-    matches = pattern.findall(text)
-    assert len(matches) >= 2, (
-        "expected at least two '<N> keys' claims immediately above a fenced "
-        f"attribute block in {CONTRACT_PATH.relative_to(REPO_ROOT)}; found "
-        f"{len(matches)}. The agentgateway SERVER and CLIENT attribute sets are "
-        "both published that way -- if the phrasing changed, update this guard "
-        "rather than dropping the check"
+    assert sections, (
+        "found no '### Attributes on ...' section in "
+        f"{CONTRACT_PATH.relative_to(REPO_ROOT)} at all, so this guard would be "
+        "checking nothing. If the headings were retitled, teach "
+        "ATTRIBUTE_SECTION_RE the new form rather than deleting this assertion."
     )
 
     problems = []
-    for intro, digits, word, body in matches:
-        claimed = int(digits) if digits else _WORD_NUMBERS.get(word.lower())
-        if claimed is None:
-            continue  # not a number we can read; e.g. "the keys below"
-        keys = [
-            line.split()[0]
-            for line in body.splitlines()
-            if line.strip() and re.match(r"^[a-z][a-z0-9_.]*\s", line)
-        ]
-        if not keys:
+    for section in sections:
+        where = section["heading"][:70]
+        if section["blocks"] == 0:
             problems.append(
-                f"{intro.strip()[:90]!r} introduces a block this guard read as "
-                "holding no attribute keys at all"
+                f"{where!r} states it publishes attributes but contains no "
+                "attribute-shaped fenced block at all"
             )
-        elif len(keys) != claimed:
+            continue
+        if section["blocks"] > 1:
             problems.append(
-                f"{intro.strip()[:90]!r} claims {claimed} keys but its block "
-                f"lists {len(keys)}: {keys}"
+                f"{where!r} contains {section['blocks']} attribute-shaped "
+                "blocks; this guard pairs one claim with one block, so a "
+                "second block would go unchecked"
             )
-        elif len(set(keys)) != len(keys):
-            problems.append(f"{intro.strip()[:90]!r}'s block lists a key twice: {keys}")
+            continue
+
+        keys = section["keys"]
+        claims = section["claims"]
+        if not claims:
+            problems.append(
+                f"{where!r} publishes a block of {len(keys)} keys but its prose "
+                "states no '<N> keys' count anywhere before the fence, so "
+                "nothing pins the block's size. State one."
+            )
+        for claimed in claims:
+            if claimed != len(keys):
+                problems.append(
+                    f"{where!r} claims {claimed} keys but its block lists "
+                    f"{len(keys)}: {keys}"
+                )
+        if len(set(keys)) != len(keys):
+            duplicated = sorted({k for k in keys if keys.count(k) > 1})
+            problems.append(f"{where!r}'s block lists a key twice: {duplicated}")
 
     assert not problems, (
-        "docs/telemetry-contract.md's agentgateway attribute blocks disagree "
-        "with their own stated key counts:\n  " + "\n  ".join(problems)
+        "docs/telemetry-contract.md's published attribute blocks disagree with "
+        "their own stated key counts:\n  " + "\n  ".join(problems)
+    )
+
+
+def test_no_published_attribute_block_has_gone_missing():
+    """A deleted block must fail, which counting to a floor cannot achieve.
+
+    The check this replaces asserted `len(matches) >= 2`. With three blocks
+    published that floor was satisfied by any two of them, so removing one was
+    invisible -- and a guard that cannot notice something missing is not
+    guarding presence, whatever its name says.
+
+    Pinning the sections by a distinguishing substring rather than by a count
+    keeps the two directions correctly asymmetric: **adding** a new attribute
+    block stays green (it is held to the same claim rule as the others by the
+    test above), while **removing** one of these three is a deliberate act that
+    has to come here and say so.
+    """
+    text = _contract_text()
+    headings = [section["heading"] for section in _attribute_sections(text)]
+
+    problems = []
+    for marker in REQUIRED_ATTRIBUTE_SECTIONS:
+        matched = [heading for heading in headings if marker in heading]
+        if not matched:
+            problems.append(
+                f"no '### Attributes on ...' section heading contains "
+                f"{marker!r} -- a published attribute block has been removed or "
+                f"retitled. Headings present: {headings}"
+            )
+        elif len(matched) > 1:
+            problems.append(
+                f"{marker!r} matches {len(matched)} headings ({matched}), so it "
+                "no longer identifies one block; make the markers in "
+                "REQUIRED_ATTRIBUTE_SECTIONS distinguishing again"
+            )
+
+    assert not problems, (
+        "docs/telemetry-contract.md's inventory of published attribute blocks "
+        "has changed:\n  " + "\n  ".join(problems)
+    )
+
+
+def test_every_attribute_shaped_block_sits_in_a_section_this_guard_checks():
+    """No attribute block may hide outside the sections checked above.
+
+    Without this, the two tests above are only as complete as the headings
+    happen to be: a block added anywhere else in the document -- under a `##`
+    of its own, or inside a section not named "Attributes on ..." -- would be
+    published with no claim pinning it and nothing would notice. This counts
+    attribute-shaped blocks **document-wide** and requires the total to equal
+    what the sections account for, so the two enumerations cannot drift apart.
+    """
+    text = _contract_text()
+
+    document_wide = 0
+    for match in re.finditer(r"^```[^\n]*\n(.*?)^```", text, re.S | re.M):
+        lines = [line for line in match.group(1).splitlines() if line.strip()]
+        if not lines:
+            continue
+        if all(_KEY_VALUE_LINE_RE.match(line) for line in lines) and any(
+            "." in line.split()[0] for line in lines
+        ):
+            document_wide += 1
+
+    accounted = sum(section["blocks"] for section in _attribute_sections(text))
+    assert document_wide == accounted, (
+        f"{document_wide} attribute-shaped fenced block(s) exist in "
+        f"docs/telemetry-contract.md, but only {accounted} sit inside an "
+        "'### Attributes on ...' section. The unaccounted-for block(s) are "
+        "published with nothing pinning their key count. Either move them under "
+        "such a heading or extend this guard deliberately."
+    )
+
+
+# --- The document's own count of how many attribute counts it publishes -----
+#
+# Review Finding 2. `docs/telemetry-contract.md` claimed "there are nine of
+# them", and the measured figure is six mode-carrying sites (eight
+# assignments). The number was wrong, unguarded, and -- because it is the
+# sentence that tells a reader how much of the document this guard covers -- it
+# propagated into four separate task briefs before anyone measured it. The
+# counts it describes were all correct the whole time; only the count *of* them
+# drifted, precisely because nothing checked it.
+
+
+def test_the_documents_own_count_of_its_attribute_count_sites_is_right():
+    """The meta-count: how many attribute counts this document publishes.
+
+    **The unit matters and is stated in the document, because two defensible
+    numbers exist here and they differ.** `_assignments()` yields two kinds of
+    number: *primary* ones, anchored on `gen_ai.*` or on the word "names",
+    which are the published counts a reader would call a "site"; and
+    *secondary* ones, bare integers that merely equal one of the two mode
+    figures, which the guard also holds to the right mode so that the second
+    half of "28 at ON, 25 at OFF" is checkable. Counting sites gives six;
+    counting every assignment the guard checks gives eight.
+
+    "Site" is the right unit for the sentence in question -- it is telling a
+    reader how many places state a count -- so six is the published number,
+    with eight stated alongside it so neither figure can be mistaken for the
+    other later. Both are derived here from the checker's own functions rather
+    than hardcoded, so the assertion cannot drift from what the guard actually
+    does.
+    """
+    text = _contract_text()
+    on_count = len(_on_inventory(text))
+    off_count = on_count - len(_content_gated_keys(text))
+
+    sites = 0
+    assignments = 0
+    unqualified = 0
+    for sentence in _sentences(text):
+        pairs = _assignments(sentence, on_count, off_count)
+        if not any(is_primary for *_, is_primary in pairs):
+            continue
+        for mode, _number, _quoted, is_primary in pairs:
+            assignments += 1
+            if is_primary:
+                sites += 1
+                if mode is None:
+                    unqualified += 1
+
+    # Sanity: the sibling test already forbids an unqualified primary count, so
+    # every site here must be mode-carrying. Asserted rather than assumed, so
+    # "mode-carrying sites" in the document cannot quietly become a different
+    # quantity from "sites".
+    assert unqualified == 0, (
+        f"{unqualified} published attribute count(s) name no capture mode; "
+        "test_every_published_attribute_count_names_its_mode_and_matches_the_"
+        "inventory reports which"
+    )
+
+    # Optional `**` on either number so the markdown emphasis the document
+    # actually uses is tolerated without the pattern depending on it.
+    claim = re.search(
+        r"there are \*{0,2}(\w+(?:-\w+)?)\*{0,2} mode-carrying such sites "
+        r"\(\*{0,2}(\w+(?:-\w+)?)\*{0,2} assignments in total\)",
+        text,
+    )
+    assert claim, (
+        "expected docs/telemetry-contract.md to state its own attribute-count "
+        "site total as 'there are <N> mode-carrying such sites ... (<M> "
+        "assignments in total)'. Review Finding 2 replaced an unguarded, and "
+        "wrong, 'there are nine of them' with that phrasing precisely so this "
+        "guard could check it; if the wording must change, change it here too "
+        "rather than dropping the check."
+    )
+
+    def _as_number(token: str) -> int:
+        number = _WORD_NUMBERS.get(token.lower())
+        if number is None:
+            assert token.isdigit(), f"could not read {token!r} as a number"
+            return int(token)
+        return number
+
+    published_sites = _as_number(claim.group(1))
+    published_assignments = _as_number(claim.group(2))
+
+    assert published_sites == sites, (
+        f"docs/telemetry-contract.md says there are {published_sites} "
+        f"mode-carrying attribute-count sites, but this guard finds {sites}. "
+        "This is the number that was wrong at 'nine' and unguarded for two "
+        "milestones -- re-measure rather than re-typing it."
+    )
+    assert published_assignments == assignments, (
+        f"docs/telemetry-contract.md says {published_assignments} "
+        f"assignments in total, but this guard checks {assignments}."
     )
