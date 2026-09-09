@@ -33,12 +33,12 @@ Usage: setup-kind.sh [--stage N]
                           [installs]
   --stage 2   Governed:   stage 1, on a Cilium dataplane -- the cluster is
                           created with kind's default CNI disabled
-                          [installs Cilium and agentgateway (in the MCP path
-                          as of Task 3, permitting everything -- no policy
-                          yet); SPIFFE/SPIRE,
-                          Kyverno, cert-manager and the Policy Decision
-                          Service are part of this stage in the design but
-                          are NOT installed yet]
+                          [installs Cilium and agentgateway -- the gateway is
+                          in the MCP path as of M2.1 Task 3, permitting
+                          everything, no policy yet; SPIFFE/SPIRE, Kyverno,
+                          cert-manager and the Policy Decision Service are
+                          part of this stage in the design but are NOT
+                          installed yet]
   --stage 3   Supervised:           + Dapr, Keycloak, reviewer UI, Postgres
                           [not implemented -- exits]
   --stage 4   Observable:           + OpenSearch, Prometheus
