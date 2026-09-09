@@ -18,6 +18,46 @@
 # record here. Source of truth for this schema is the agentgateway repo's
 # examples/ directory, NOT its documentation site -- the docs were found thin
 # and unreliable; the examples matched real behaviour exactly.
+#
+# M2.1 Task 3 added the `frontendPolicies.tracing` block below. Task 2 shipped
+# this file with no tracing configuration at all, which meant the gateway
+# emitted no spans whatsoever -- correct for Task 2 (nothing routed through it)
+# but a hard blocker for Task 3, whose whole job is measuring the gateway's
+# real spans. Without this block the gateway is a silent hop: MCP calls pass
+# through it and the trace shows settlement-agent talking directly to
+# payments-mcp, with the proxy invisible.
+#
+# Schema source: the agentgateway repo's own `examples/mcp-telemetry/config.yaml`
+# at tag v1.5.0 (which is exactly `frontendPolicies.tracing.{host,randomSampling}`),
+# cross-read against the v1.5.0 `TracingConfig` struct in
+# `crates/agentgateway/src/types/agent.rs:2454-2495`. `host` comes from the
+# flattened `SimpleBackendReferenceWithPolicies`.
+#
+# `protocol: grpc` is stated explicitly rather than left to the default, for a
+# specific reason: the field's own doc comment in that struct reads "OTLP
+# protocol used to export traces. Defaults to HTTP", but the `TracingProtocol`
+# enum three lines below marks `Grpc` as `#[default]`
+# (`agent.rs:2514-2521`) -- the comment and the code disagree. Rather than
+# depend on which one wins, this says which one we want. gRPC on 4317 is the
+# collector's own OTLP/gRPC receiver (`deploy/observability/collector-config.yaml`);
+# note that this makes the gateway the one component in this system exporting
+# over gRPC -- every Python/Go service here uses OTLP/HTTP on 4318.
+#
+# `randomSampling: true` matches the upstream example. It is not needed for
+# this system's own path and is set for a caller we do not have yet: measured
+# in v1.5.0's `TraceSampler::trace_sampled`
+# (`crates/agentgateway/src/telemetry/log.rs:469-494`), a request that arrives
+# *with* an incoming `traceparent` is sampled by default ("If client_sampling
+# is not set, default to include it"), while a request arriving *without* one
+# is dropped by default ("If random_sampling is not set, default to NOT include
+# it"). settlement-agent always sends the header (HTTPXClientInstrumentor), so
+# our spans would appear either way; this makes a headerless caller visible
+# too, instead of silently untraced.
+frontendPolicies:
+  tracing:
+    host: otel-collector.observability.svc.cluster.local:4317
+    protocol: grpc
+    randomSampling: true
 binds:
 - port: 3000
   listeners:
