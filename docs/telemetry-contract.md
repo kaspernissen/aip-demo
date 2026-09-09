@@ -96,7 +96,7 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (also run by `smoke-test.sh`, before any e2e test):
-claims-agent 14, settlement-agent 33, payments-mcp 7, payments-api (Go) 7,
+claims-agent 16, settlement-agent 33, payments-mcp 8, payments-api (Go) 7,
 customer-ui (vitest) 6 — all passing. (This row was stale at 19 for
 settlement-agent from before M1.2 Tasks 1-4 added the PydanticAI agent's own
 tests — `tests/unit/test_telemetry_contract_counts.py` cannot see per-service
@@ -106,7 +106,16 @@ pytest tests -q` → 31 passed, including this task's own 7-test
 `tests/test_instrumentation_settings.py`. Grown again to 33 by the M1.2 final
 fix round: SF-2 added two pin assertions to `tests/test_pins.py`, pinning
 `pytest`/`pytest-asyncio` themselves against the silent-downgrade gap the
-final review found — re-measured the same way, not typed by hand.)
+final review found — re-measured the same way, not typed by hand. Grown
+again by M2.1 Task 6, spec §11: claims-agent 14→16 and payments-mcp 7→8,
+both from adding that same service's own `tests/test_pins.py` -- the pin
+guard this row's settlement-agent history already carried, now closed for
+the two services that carried M1.2's advisory-gate gap instead. Every count
+in this row, including the three left unchanged, was re-measured for this
+edit by invoking each service's own runner directly -- `.venv/bin/python -m
+pytest --collect-only -q tests` for the three Python services, `GOTOOLCHAIN=local
+GOPROXY=off go test ./... -list '.*'` for payments-api, `node_modules/.bin/vitest
+list` for customer-ui -- not re-typed from memory of the prior row.)
 customer-ui's suite includes its own
 A19 regression test for the traceparent-across-await fix described below
 (`apps/customer-ui/NOTES.md` §2) — worth naming explicitly, since it's the
@@ -1039,3 +1048,47 @@ and a human reviewer cannot approve or reject what they were never shown.
 Whichever way this trade is eventually resolved constrains how those two
 components get designed, not only how this milestone's one env var happens
 to default.
+
+### Ruling 5: retired (M2.1 Task 6), not applied a second milestone running
+
+M1.2's final review recorded, as observation O-1, that Ruling 5 — settling on
+one asyncio test style rather than mixing explicit `@pytest.mark.asyncio`
+markers with `pytest.ini`'s `asyncio_mode = auto` inside the same service —
+was decided and never carried out. M2's own design spec broadened that same
+open item to the repo-wide shape it actually has today: two genuinely
+different asyncio test styles coexist, not just mixed markers within one
+suite. Measured directly (`grep -rln "async def test_\|pytest.mark.asyncio"`
+vs. a suite-by-suite check for the absence of `async def test_` alongside
+the presence of `anyio.run`/`asyncio.run`):
+
+- **`async def test_*` under `asyncio_mode = auto`** — `agents/claims-agent/tests/test_delegation.py`,
+  `agents/settlement-agent/tests/test_executor_reply.py`,
+  `agents/settlement-agent/tests/test_mcp_tools.py` (no explicit markers,
+  relying on `auto` alone — the exact O-1 shape), and
+  `agents/settlement-agent/tests/test_settlement.py` (explicit markers,
+  also the O-1 shape).
+- **Synchronous tests wrapping `anyio.run()`/`asyncio.run()`** —
+  `tests/e2e/test_payments_mcp_trace.py` and every test in
+  `tools/payments-mcp/tests/`. Neither directory defines any `async def
+  test_*` function and neither carries a `pytest.ini`/`pyproject.toml`
+  `asyncio_mode` setting — `pytest-asyncio` is not in the execution path for
+  either at all.
+
+**Retired rather than applied**, for the reason the M1.2 Task 7 review
+already established and this task did not need to re-derive: converting the
+synchronous-wrapper suites to `async def test_*` would buy nothing but
+cosmetic consistency, while the wrapper style already has zero exposure to a
+`pytest-asyncio` version bump — Task 7's own review confirmed pytest-asyncio
+is not on `tests/requirements.txt`'s or `tools/payments-mcp/requirements.txt`'s
+dependency list at all, so bumping `pytest-asyncio` anywhere else in this
+repo "carries zero risk for these suites regardless" (verbatim from that
+review). That is a genuine argument in the mixed styles' favour, not a
+defect papered over: the two styles exist along exactly the boundary between
+"a service with its own `pytest-asyncio` plugin already in its dependency
+closure" and "a suite with no such plugin, driving its async calls by hand."
+Converting either direction crosses that boundary for no functional gain and
+real risk of breaking a suite that currently has none of pytest-asyncio's
+own version-compatibility surface to worry about. A decision recorded twice
+and applied never is worse than a decision withdrawn once, cleanly, with the
+reasoning attached — this is that withdrawal. No further action is expected
+of a future milestone on this point.
