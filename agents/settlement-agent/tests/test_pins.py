@@ -49,3 +49,31 @@ def test_pytest_is_still_pinned_to_the_version_that_cleared_pysec_2026_1845():
 
 def test_pytest_asyncio_is_still_pinned_to_the_version_pytest_9_requires():
     assert md.version("pytest-asyncio") == "1.4.0"
+
+
+# M2.1 Task 4 adds the SPIFFE Workload API client. Same rationale as the pytest
+# pair above: this is a tripwire against a silent drift, not a general
+# advisory scanner. `spiffe` is what makes svid.py's identity real rather than
+# mocked, and grpcio/pem arrived only as its transitives -- if `spiffe` ever
+# disappears from this venv, svid.py's one un-faked code path
+# (`_fetch_from_workload_api`) stops existing and nothing else here would say
+# so, because every svid.py test replaces exactly that seam.
+def test_spiffe_is_still_pinned_to_the_version_svid_py_was_written_against():
+    assert md.version("spiffe") == "0.3.1"
+
+
+def test_spiffes_new_transitives_are_pinned():
+    # Pinned in requirements.txt because spiffe declares them as ranges
+    # (grpcio<2,>=1.78.0 and pem<24,>=23), and this repo does not float.
+    assert md.version("grpcio") == "1.83.1"
+    assert md.version("pem") == "23.1.0"
+
+
+def test_the_workload_api_client_svid_py_imports_is_actually_importable():
+    # A version string in .dist-info is not a working import: `spiffe` builds
+    # on grpcio, which ships compiled wheels, so a platform/ABI mismatch would
+    # present here and nowhere else in this suite (svid.py's own tests replace
+    # the seam that touches it).
+    from spiffe import WorkloadApiClient
+
+    assert hasattr(WorkloadApiClient, "fetch_jwt_svid")

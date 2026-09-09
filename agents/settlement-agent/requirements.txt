@@ -31,6 +31,32 @@ opentelemetry-instrumentation-starlette==0.65b0
 pytest==9.0.3
 pytest-asyncio==1.4.0
 
+# M2.1 Task 4: workload identity. `svid.py` needs this to fetch a JWT-SVID
+# from the SPIFFE Workload API socket the spiffe-csi-driver mounts into this
+# pod (deploy/k8s/settlement-agent.yaml). It is the SPIFFE project's own
+# Python Workload API client; 0.3.1 is its latest release (upstream tag
+# `spiffe-v0.3.1`, published 2026-08-08 — verified against
+# github.com/HewlettPackard/py-spiffe's releases API, which is where the
+# `spiffe` distribution is actually developed; github.com/spiffe/py-spiffe
+# 404s).
+#
+# It resolves cleanly against this file's existing pins — checked, not
+# assumed: its declared dependencies are grpcio<2,>=1.78.0, cryptography>=46,
+# pyjwt[crypto]<2.14,>=2, pyasn1<0.7.0,>=0.6.0, pyasn1-modules<0.5.0,>=0.4.0,
+# pem<24,>=23 and protobuf<8,>=6.31.1, and the cryptography==50.0.1,
+# pyjwt==2.13.0, pyasn1==0.6.4, pyasn1-modules==0.4.2 and protobuf==7.36.1
+# already pinned below all satisfy them. Nothing already pinned had to move,
+# and in particular the mcp==1.28.1 / pydantic-ai-slim==2.41.0 pair is
+# untouched. The only new transitives are the two pinned immediately below.
+spiffe==0.3.1
+# New transitives brought in by spiffe==0.3.1 and nothing else, pinned exactly
+# as resolved by `uv pip install -r requirements.txt spiffe==0.3.1` into a
+# clean venv. Both are the latest upstream stable releases: grpcio 1.83.1
+# (grpc/grpc tag v1.83.1, 2026-08-27 — v1.84.0-pre1 is a prerelease and is not
+# taken) and pem 23.1.0 (hynek/pem, its newest release).
+grpcio==1.83.1
+pem==23.1.0
+
 # M1.2: the settlement decision becomes a real model call.
 # `pydantic-ai-slim[anthropic]`, NOT `pydantic-ai` and NOT the [mcp] extra:
 # the [mcp] extra requires fastmcp-slim[client]<5,>=3.3.0 -> mcp<3.0.0,>=2.0.0,

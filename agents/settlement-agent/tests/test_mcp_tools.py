@@ -23,6 +23,11 @@ and `test_call_injects_params_meta_baggage_from_the_ambient_context`: reverting
 `_call` to `session.call_tool(tool, arguments)` (the pre-Task-7 shape) makes
 both fail, since `call_tool` has no way to set `_meta` at all (see
 NOTES.md and mcp_tools.py's own module docstring).
+
+M2.1 Task 4 adds the identity half, at the bottom of this file, and changes
+every `_call` test's transport fake: the old `lambda url:
+_FakeReadWriteContext()` accepted no `headers` argument, so it could not have
+observed a credential even if one were sent. See `_capturing_transport`.
 """
 from __future__ import annotations
 
@@ -33,6 +38,7 @@ from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
 import mcp_tools
 from correlation import set_claim_id
 from mcp_tools import PaymentsTools, ToolCallError, _leaf_exception, _unwrap
+from svid import SvidUnavailable
 
 
 class _FakeTextBlock:
@@ -111,13 +117,50 @@ def test_leaf_exception_prefers_a_tool_call_error_over_other_siblings():
 
 
 class _FakeReadWriteContext:
-    """Stands in for streamablehttp_client(url)'s async context manager."""
+    """Stands in for streamablehttp_client(url, headers=...)'s async context
+    manager."""
 
     async def __aenter__(self):
         return (None, None, None)
 
     async def __aexit__(self, exc_type, exc, tb):
         return False
+
+
+# ---------------------------------------------------------------------------
+# M2.1 Task 4: identity on the wire.
+# ---------------------------------------------------------------------------
+_FAKE_SVID = "fake.jwt.svid"
+
+
+def _fake_svid_fetcher(audiences: list):
+    """Stands in for svid.fetch_jwt_svid, recording the audience it was asked
+    for. `_call` awaits this before it opens any transport, so without a
+    stand-in every `_call` test would try to reach a real Workload API
+    socket."""
+
+    async def _fetch(audience: str) -> str:
+        audiences.append(audience)
+        return _FAKE_SVID
+
+    return _fetch
+
+
+def _capturing_transport(captured: dict):
+    """Stands in for mcp_tools.streamablehttp_client, recording the url and
+    headers it was called with.
+
+    The old fakes were `lambda url: _FakeReadWriteContext()` -- positional-only
+    and header-blind, so a `_call` that forgot the credential entirely would
+    still have passed every test in this file. Capturing both means the
+    Authorization header is asserted on rather than assumed."""
+
+    def _factory(url, headers=None):
+        captured["url"] = url
+        captured["headers"] = headers
+        return _FakeReadWriteContext()
+
+    return _factory
 
 
 class _FakeSessionRaisingNestedGroup:
@@ -162,7 +205,10 @@ class _FakeSessionRaisingNestedGroup:
 
 
 async def test_call_unwraps_a_doubly_nested_exception_group_to_the_tool_call_error(monkeypatch):
-    monkeypatch.setattr(mcp_tools, "streamablehttp_client", lambda url: _FakeReadWriteContext())
+    monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
+    monkeypatch.setattr(
+        mcp_tools, "streamablehttp_client", _capturing_transport({})
+    )
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionRaisingNestedGroup)
 
     tools = PaymentsTools("http://fake-mcp/mcp")
@@ -222,7 +268,10 @@ async def test_call_injects_params_meta_traceparent_from_the_ambient_context(mon
     This test proves the *production* client does the injection, which is
     Task 7's job specifically (that e2e test's injection does not pre-empt
     it)."""
-    monkeypatch.setattr(mcp_tools, "streamablehttp_client", lambda url: _FakeReadWriteContext())
+    monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
+    monkeypatch.setattr(
+        mcp_tools, "streamablehttp_client", _capturing_transport({})
+    )
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
     _FakeSessionCapturingRequest.captured = {}
 
@@ -247,7 +296,10 @@ async def test_call_injects_params_meta_baggage_from_the_ambient_context(monkeyp
     (SEP-414's unprefixed `baggage` key): whatever propagate.inject() puts in
     the carrier from the ambient context — including northstar.claim.id, set
     via correlation.set_claim_id — must reach params._meta.baggage."""
-    monkeypatch.setattr(mcp_tools, "streamablehttp_client", lambda url: _FakeReadWriteContext())
+    monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
+    monkeypatch.setattr(
+        mcp_tools, "streamablehttp_client", _capturing_transport({})
+    )
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
     _FakeSessionCapturingRequest.captured = {}
 
@@ -270,7 +322,10 @@ async def test_call_omits_meta_entirely_when_context_is_empty(monkeypatch):
     carrier, and _meta should be omitted (None) rather than sent as an empty
     object — matching the pre-Task-7 wire shape for a caller with nothing to
     propagate."""
-    monkeypatch.setattr(mcp_tools, "streamablehttp_client", lambda url: _FakeReadWriteContext())
+    monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
+    monkeypatch.setattr(
+        mcp_tools, "streamablehttp_client", _capturing_transport({})
+    )
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
     _FakeSessionCapturingRequest.captured = {}
 
@@ -283,3 +338,118 @@ async def test_call_omits_meta_entirely_when_context_is_empty(monkeypatch):
 
     request = _FakeSessionCapturingRequest.captured["request"]
     assert request.root.params.meta is None
+
+
+# ---------------------------------------------------------------------------
+# M2.1 Task 4: the JWT-SVID rides in an HTTP header, the trace context rides
+# in params._meta, and the two carriers stay separate.
+#
+# Concrete regression checks:
+# - Drop `headers=` from the streamablehttp_client call ->
+#   test_call_sends_the_jwt_svid_as_an_authorization_bearer_header fails
+#   (headers is None, so no credential reaches the gateway at all).
+# - Drop the `Bearer ` prefix -> the same test fails on the exact value.
+#   agentgateway strips exactly `"Bearer "` before validating
+#   (AuthorizationLocation::bearer_header()), so a bare token is not a
+#   cosmetic difference: the gateway would try to verify the string
+#   "eyJ...".
+# - Change the audience `_call` asks for -> test_call_mints_the_svid_for_the
+#   _gateway_audience fails. A token minted for the wrong audience is
+#   rejected by the gateway's `audiences` check, which presents as a 401 with
+#   nothing wrong in the token's signature.
+# - Move `fetch_jwt_svid` inside the `async with` ->
+#   test_call_opens_no_transport_when_no_svid_is_available fails (a transport
+#   is opened for a call this workload cannot prove it may make).
+# - Fold the SVID into params._meta, or the traceparent into the headers ->
+#   test_the_identity_and_trace_carriers_do_not_bleed_into_each_other fails.
+# ---------------------------------------------------------------------------
+
+
+async def test_call_sends_the_jwt_svid_as_an_authorization_bearer_header(monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
+    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport(captured))
+    monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
+    _FakeSessionCapturingRequest.captured = {}
+
+    tools = PaymentsTools("http://fake-mcp/mcp")
+    await tools.propose("CLM-1842", 6200, "EUR")
+
+    assert captured["headers"] == {"Authorization": f"Bearer {_FAKE_SVID}"}
+
+
+async def test_call_mints_the_svid_for_the_gateway_audience(monkeypatch):
+    audiences: list[str] = []
+    monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher(audiences))
+    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport({}))
+    monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
+    _FakeSessionCapturingRequest.captured = {}
+
+    tools = PaymentsTools("http://fake-mcp/mcp")
+    await tools.execute("PAY-000001")
+
+    assert audiences == [mcp_tools._GATEWAY_AUDIENCE]
+    # And that audience is the gateway's SPIFFE ID, not a bare label: the same
+    # string appears in deploy/platform/agentgateway/config.yaml's jwtAuth
+    # `audiences` and in deploy/platform/spire/registration.yaml's ID
+    # template. Asserted as a full SPIFFE URI so a drift to something like
+    # "agentgateway" cannot pass.
+    assert mcp_tools._GATEWAY_AUDIENCE.startswith("spiffe://northstar.local/")
+
+
+async def test_call_opens_no_transport_when_no_svid_is_available(monkeypatch):
+    """SvidUnavailable must reach the caller, and no MCP traffic may be sent.
+
+    A call whose identity cannot be proven should never arrive at the gateway
+    in the first place -- not arrive unauthenticated and get refused there.
+    """
+    captured: dict = {}
+
+    async def boom(audience):
+        raise SvidUnavailable("no socket")
+
+    monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", boom)
+    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport(captured))
+    monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
+
+    tools = PaymentsTools("http://fake-mcp/mcp")
+    with pytest.raises(SvidUnavailable):
+        await tools.propose("CLM-1842", 6200, "EUR")
+    assert captured == {}, "a transport was opened despite having no identity"
+
+
+async def test_the_identity_and_trace_carriers_do_not_bleed_into_each_other(monkeypatch):
+    """The header carries identity only; params._meta carries context only.
+
+    Both are populated on the same call here, so this fails if either one
+    starts carrying the other's payload -- the specific confusion
+    mcp_tools.py's module docstring warns about.
+    """
+    captured: dict = {}
+    monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
+    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport(captured))
+    monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
+    _FakeSessionCapturingRequest.captured = {}
+
+    ctx = trace.set_span_in_context(NonRecordingSpan(_remote_span_context()))
+    token = context.attach(ctx)
+    try:
+        tools = PaymentsTools("http://fake-mcp/mcp")
+        await tools.propose("CLM-1842", 6200, "EUR")
+    finally:
+        context.detach(token)
+
+    headers = captured["headers"]
+    meta = _FakeSessionCapturingRequest.captured["request"].root.params.meta
+
+    # Identity is in the header and nowhere else.
+    assert headers["Authorization"] == f"Bearer {_FAKE_SVID}"
+    assert _FAKE_SVID not in repr(meta), "the SVID leaked into params._meta"
+
+    # Trace context is in params._meta. This client does not hand-inject
+    # traceparent into headers -- HTTPXClientInstrumentor does that, one layer
+    # down, for every outbound request -- so it must not appear here.
+    assert meta.traceparent == "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+    assert {k.lower() for k in headers} == {"authorization"}, (
+        f"the identity header carrier grew beyond Authorization: {sorted(headers)}"
+    )

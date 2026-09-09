@@ -3,8 +3,29 @@
 settlement-agent is the only agent permitted to reach payments-mcp. That
 boundary is configuration here and enforcement at the gateway in M2.
 
-Trace context crosses this boundary in the JSON-RPC params._meta bag, handled
-by the MCP SDK. Nothing is injected into HTTP headers by hand.
+Two different things cross this boundary, in two different carriers, and they
+are separate concerns that happen to share a hop:
+
+  * Trace context rides in the JSON-RPC `params._meta` bag (SEP-414), injected
+    below via the standard propagator. It is about *correlation* -- it says
+    which trace this call belongs to and nothing about who is calling.
+  * Identity rides in an HTTP `Authorization: Bearer` header, as a JWT-SVID
+    fetched from svid.py (M2.1 Task 4). It is about *authentication* -- it
+    says who is calling and nothing about the trace.
+
+Neither substitutes for the other, and neither may be folded into the other.
+Trace context is not a credential (it is attacker-supplied, and treating it as
+identity would be the security bug this milestone exists to avoid); the SVID
+is not correlation (it says nothing about the call). agentgateway happens to
+read both -- the header for JWT verification, and, separately, the
+`traceparent` HTTP header that HTTPXClientInstrumentor injects for the trace
+-- but as two independent mechanisms.
+
+Note what is *not* claimed here: this file does not hand-inject `traceparent`
+into an HTTP header. That is HTTPXClientInstrumentor's job, done for every
+outbound httpx request in this process, and it is what carries the trace
+across the gateway (tests/e2e/test_gateway_trace.py). `params._meta` is a
+second, MCP-native carrier for the same context.
 
 Task 7: mcp==1.9.4's high-level ClientSession.call_tool() (used until this
 task) has no way to set params._meta, and does not inject one automatically
@@ -20,12 +41,27 @@ report for whether that gap is upstream-contribution evidence.
 """
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import mcp.types as types
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from opentelemetry import propagate
+
+from svid import fetch_jwt_svid
+
+# The audience every JWT-SVID this client presents is minted for: the
+# gateway's own registered SPIFFE ID. Read from the environment
+# (deploy/k8s/settlement-agent.yaml sets it) with the same literal as the
+# fallback, matching how this service treats its other deployment-time
+# configuration. It must equal agentgateway's jwtAuth `audiences` entry in
+# deploy/platform/agentgateway/config.yaml -- one string, two ends of the
+# same check.
+_GATEWAY_AUDIENCE = os.getenv(
+    "NORTHSTAR_GATEWAY_AUDIENCE",
+    "spiffe://northstar.local/ns/northstar-platform/sa/agentgateway",
+)
 
 
 class ToolCallError(RuntimeError):
@@ -85,8 +121,45 @@ class PaymentsTools:
         self._mcp_url = mcp_url
 
     async def _call(self, tool: str, arguments: dict) -> dict:
+        # Identity first: a SPIRE-issued JWT-SVID for the gateway audience,
+        # presented as an HTTP bearer token. Raises SvidUnavailable if the
+        # Workload API is unreachable, and does so BEFORE any MCP traffic --
+        # a call this workload cannot prove it is entitled to make should not
+        # reach the gateway at all.
+        #
+        # `Authorization: Bearer <token>` is not a guess: it is
+        # agentgateway v1.5.0's default credential location for jwtAuth,
+        # `AuthorizationLocation::bearer_header()` -- header
+        # `http::header::AUTHORIZATION`, prefix `"Bearer "` --
+        # in crates/agentgateway/src/http/auth/mod.rs, which
+        # crates/agentgateway/src/http/jwt.rs uses as the `location` default.
+        svid = await fetch_jwt_svid(_GATEWAY_AUDIENCE)
         try:
-            async with streamablehttp_client(self._mcp_url) as (read, write, _):
+            # `headers=` on this function IS live in mcp==1.28.1, despite two
+            # same-named parameters nearby that are not -- checked against the
+            # installed source, because getting this wrong would mean sending
+            # no credential at all while every test still passed:
+            #   * `streamablehttp_client(url, headers=...)` forwards headers
+            #     straight to `httpx_client_factory(headers=headers, ...)`
+            #     (streamable_http.py:709-713), which sets them as the
+            #     httpx.AsyncClient's default headers. Per-request headers
+            #     come from `_prepare_headers()`, which sets only accept,
+            #     content-type, mcp-session-id and mcp-protocol-version, so
+            #     Authorization is not overwritten.
+            #   * `StreamableHTTPTransport.__init__`'s `headers` is explicitly
+            #     deprecated-and-ignored ("Parameters ... are deprecated and
+            #     will be ignored", streamable_http.py:95-99/127-139), and so
+            #     is `RequestContext.headers` ("Deprecated - no longer used",
+            #     line 84). Neither is the one used here.
+            # `streamablehttp_client` itself carries
+            # `@deprecated("Use `streamable_http_client` instead.")` at
+            # 1.28.1 (line 685) -- pre-existing, unrelated to this change, and
+            # migrating the transport is separate work: this call site is what
+            # Task 3's surviving trace was measured against.
+            async with streamablehttp_client(
+                self._mcp_url,
+                headers={"Authorization": f"Bearer {svid}"},
+            ) as (read, write, _):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
 
@@ -97,9 +170,18 @@ class PaymentsTools:
                     # HTTPXClientInstrumentor does for ordinary HTTP headers
                     # elsewhere in this repo. The only difference here is the
                     # carrier: params._meta (SEP-414's unprefixed
-                    # traceparent/tracestate/baggage keys), not an HTTP
-                    # header, because there is no HTTP header across an MCP
-                    # JSON-RPC boundary.
+                    # traceparent/tracestate/baggage keys) rather than an HTTP
+                    # header, because a JSON-RPC message can be relayed over
+                    # transports that have no headers at all (stdio, a
+                    # multiplexed stream), so the context has to travel with
+                    # the message.
+                    #
+                    # M2.1 Task 4 note: this is emphatically NOT the carrier
+                    # the JWT-SVID uses. The SVID goes in the HTTP
+                    # Authorization header set above, one level down at the
+                    # transport, and the two never mix -- see this module's
+                    # docstring for why folding one into the other would be a
+                    # security bug rather than a simplification.
                     carrier: dict[str, str] = {}
                     propagate.inject(carrier)
 
