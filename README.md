@@ -11,10 +11,15 @@ Built from open standards and existing open-source projects, not a proprietary
 
 ## Status
 
-**M1.1 — Connected (walking skeleton).** The claim flows end to end and produces
-one correlated trace. There is no governance of any kind: a €6,200 payment
-executes because a message asked for it. That is deliberate — it is the system
-the rest of the demo argues against.
+**M2.1 — Interposed.** The claim flows end to end and produces one correlated
+trace. agentgateway now sits in the MCP path and verifies a SPIRE-minted
+JWT-SVID on every call. The position is **authenticated but not
+authorized**: one hop knows who is calling and refuses a caller it cannot
+verify, but no hop anywhere decides whether the caller may do what it asked
+— a €6,200 payment still executes because a message asked for it, and the
+gateway permits every tool call it can authenticate. The policy denial and
+the `toFQDNs` egress denial are M2.2. That remaining gap is deliberate — it
+is the system the rest of the demo argues against.
 
 ## Quick start
 
@@ -93,7 +98,7 @@ the laptop runs one stage at a time.
 | Stage | Name | Adds |
 |---|---|---|
 | 1 | Connected | agents, MCP servers, systems of record, customer UI, collector, Jaeger |
-| 2 | Governed | agentgateway, SPIFFE/SPIRE, Policy Decision Service, Kyverno, Cilium — **partly built: as of M2.1 Task 3 `--stage 2` installs Cilium and agentgateway, with agentgateway in the MCP path between settlement-agent and payments-mcp, permitting everything — no policy yet**, on a cluster created with kind's default CNI disabled |
+| 2 | Governed | agentgateway, SPIFFE/SPIRE, Policy Decision Service, Kyverno, Cilium — **partly built: as of M2.1 `--stage 2` installs Cilium (Task 3), agentgateway (Task 3, in the MCP path between settlement-agent and payments-mcp, permitting everything — no policy yet) and SPIRE (Task 4, verifying a JWT-SVID at the gateway) — Policy Decision Service and Kyverno are NOT installed yet**, on a cluster created with kind's default CNI disabled |
 | 3 | Supervised | Dapr Workflow, reviewer UI, Keycloak |
 | 4 | Observable | OpenSearch + Agent Evals, Prometheus |
 | 5 | Progressive autonomy | OpenFeature / flagd |
@@ -125,6 +130,6 @@ report the gaps we find. See [`docs/telemetry-contract.md`](docs/telemetry-contr
 
 - [`docs/architecture.md`](docs/architecture.md) — components, hops, protocols, and the trace, walked end to end
 - [`docs/telemetry-contract.md`](docs/telemetry-contract.md) — verified instrumentation and convention gaps
-- [`docs/upstream-findings.md`](docs/upstream-findings.md) — the four convention gaps, consolidated as filing-ready findings (not yet filed)
+- [`docs/upstream-findings.md`](docs/upstream-findings.md) — the six open convention gaps (one further finding closed), consolidated as filing-ready findings (not yet filed)
 - [`docs/superpowers/specs/`](docs/superpowers/specs/) — designs
 - [`docs/superpowers/plans/`](docs/superpowers/plans/) — implementation plans
