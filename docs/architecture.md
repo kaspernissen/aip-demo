@@ -37,6 +37,12 @@ into the hop-by-hop text, which is deliberately a record of M1.1's shape:
    fracture: see [`docs/telemetry-contract.md`](telemetry-contract.md)'s
    "agentgateway instrumentation, as measured" for the measured span shape and
    `tests/e2e/test_gateway_trace.py` for the runnable evidence.
+3. **Task 4** made workload identity real on Hop 3. SPIRE (chart
+   `spiffe/spire` 0.30.1, SPIRE 1.15.3) now issues `settlement-agent` a
+   JWT-SVID and the gateway refuses any MCP call that does not carry a valid
+   one. The claim at Hop 2 below that "SPIFFE/SPIRE arrives in M2" is now true
+   for this one hop and still pending for the others. See "Workload identity:
+   what is real and what is deferred" below.
 
 This document does not duplicate [`docs/telemetry-contract.md`](telemetry-contract.md),
 which is the authority on exactly what instrumentation is enabled, what it
@@ -454,6 +460,106 @@ Service fills."* Three independent live runs (a direct A2A measurement, the
 gate's own assertions, and a real browser submission) all settled exactly
 the assessed €6,200 — a fact about this model on this prompt, not a property
 anything in this chain enforces.
+
+## Workload identity: what is real and what is deferred
+
+**M2.1 Task 4.** One hop in this system now authenticates its caller
+cryptographically. Hop 3 — settlement-agent → agentgateway — carries a
+SPIFFE JWT-SVID issued by SPIRE, and the gateway refuses the call without one.
+
+What is installed, pinned (`deploy/platform/spire/`):
+
+| Piece | Version | Role |
+|---|---|---|
+| `spiffe/spire-crds` chart | 0.6.1 | the `spire.spiffe.io` CRDs, installed first |
+| `spiffe/spire` chart | 0.30.1 (appVersion SPIRE 1.15.3) | server, agent, CSI driver, controller-manager, OIDC discovery provider |
+| trust domain | `northstar.local` | every SPIFFE ID in this system |
+| cluster name | `northstar` | the k8s node attestor's cluster |
+
+Two identities are registered, declaratively, as `ClusterSPIFFEID` resources:
+
+```
+spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
+spiffe://northstar.local/ns/northstar-platform/sa/agentgateway
+```
+
+Both are attested on namespace **and** Kubernetes service account
+(`k8s:ns:...` plus `k8s:sa:...` selectors on the entry, alongside the
+controller-manager's own `k8s:pod-uid:`), which is why each workload got a
+dedicated ServiceAccount in this task: without one, both attested as
+`.../sa/default`, and an identity whose service-account component reads
+"default" is not something a policy can decide on.
+
+**How the credential gets into the pod.** No secret, key or token is in any
+manifest. The `spiffe-csi-driver` bind-mounts the spire-agent's Workload API
+socket into settlement-agent's pod at `/spiffe-workload-api/spire-agent.sock`,
+and the agent's Kubernetes workload attestor identifies the calling container
+via kubelet before answering. `agents/settlement-agent/svid.py` asks that
+socket for a JWT-SVID scoped to one audience, caches it until 30s before
+expiry, and `mcp_tools.py` presents it as `Authorization: Bearer` on the MCP
+transport.
+
+**What the gateway checks.** `jwtAuth` in `mode: strict` — issuer, audience,
+signature (against SPIRE's JWKS, fetched from the OIDC discovery provider) and
+`exp`. Verification only: there is no `mcpAuthorization` and no `authorization`
+rule in the gateway's config, so every call it can authenticate it still
+permits. Deciding what an authenticated caller may do is a later milestone;
+this task's job was to make the "who" real so there is something to decide on.
+
+**Why a bearer token and not mTLS.** The spec permits either, and mTLS is the
+stronger choice: an mTLS peer certificate cannot be replayed by whoever
+obtains a copy of it, and a JWT-SVID can. It was not taken here because it
+would mean threading a SPIFFE TLS context through `streamablehttp_client`'s
+transport — real risk inside the one file M2 is allowed to modify, and the file
+the surviving Task 3 trace was measured against. A JWT-SVID keeps the identity
+genuinely SPIFFE-issued (a `spiffe://` subject, signed by SPIRE, verified via
+JWKS) at the cost of one HTTP header. The weakness is bounded rather than
+eliminated: the audience scopes each token to this one gateway, and the TTL is
+one hour (SPIRE's `default_jwt_svid_ttl`).
+
+**Recorded as later hardening, in order of how much they matter:**
+
+1. **mTLS instead of (or under) the bearer token**, per the above. This is the
+   real fix, and it is deferred rather than declined.
+2. **The other hops are still unauthenticated.** Hop 1 (browser →
+   claims-agent), Hop 2 (claims-agent → settlement-agent) and Hop 4
+   (payments-mcp → payments-api) carry no SVID at all. Hop 2's allow-list
+   still checks a *name*, exactly as described at Hop 2 above. Anything in the
+   cluster can still call settlement-agent's Service directly.
+3. **The JWKS endpoint is plain HTTP inside the cluster.**
+   `spiffe-oidc-discovery-provider.tls.spire.enabled` is set to `false`, so the
+   provider serves the key set over HTTP on port 80 via the chart's own nginx
+   sidecar. The chart's default is HTTPS with a SPIRE-issued serving
+   certificate, which agentgateway would have to be taught to trust in order
+   to fetch a *public* key set. Signature verification does not depend on
+   transport security here — the keys are public and the tokens are signed —
+   but an attacker able to intercept that fetch could serve a key set of their
+   own choosing, so this is a genuine gap on a real network.
+4. **`payments-mcp` does not check anything.** The gateway removes the
+   credential from its original location after validating it — agentgateway
+   v1.5.0's `preserveToken` defaults to false, and
+   `crates/agentgateway/src/http/jwt.rs` acts on it directly
+   (`if !self.preserve_token { self.location.remove(req)?; }`) — so the MCP
+   server behind it sees no identity, and would accept a direct call that
+   skipped the gateway entirely. Removing it is the right default; the gap is
+   that nothing re-establishes identity on the second leg.
+
+**Why the trace is unaffected.** Identity and trace context cross this
+boundary in two different carriers, deliberately: the SVID in an HTTP
+`Authorization` header, the trace context in the JSON-RPC `params._meta` bag
+(plus the `traceparent` header `HTTPXClientInstrumentor` injects, which is
+what the gateway actually reads). Neither substitutes for the other — trace
+context is attacker-supplied and is not a credential; an SVID says nothing
+about which trace a call belongs to.
+
+**What SPIRE itself contributes to the telemetry: metrics only, no spans.**
+SPIRE 1.15.3 has no OpenTelemetry support of any kind — no OTLP exporter and
+no tracing. Its telemetry configuration offers Prometheus, DogStatsD, Statsd,
+M3 and an in-memory sink and nothing else. So SPIRE adds no spans to the
+trace, and none are invented for it. Its Prometheus metrics *are* enabled and
+scraped into the collector; see
+[`docs/telemetry-contract.md`](telemetry-contract.md)'s "SPIRE
+instrumentation, as measured".
 
 ## What the system deliberately does not do
 
