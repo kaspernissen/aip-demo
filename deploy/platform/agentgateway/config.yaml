@@ -1,0 +1,32 @@
+# agentgateway v1.5.0 standalone config. Image:
+# cr.agentgateway.dev/agentgateway:v1.5.0 (note the leading `v` — the tag
+# `1.5.0` with no `v` does not exist on cr.agentgateway.dev; confirmed by a
+# failed `docker pull` against that exact string. `agentgateway --version`
+# reports the bare "1.5.0" as its internal version string, but the pullable
+# image tag carries the `v` prefix. Recorded here because the M2.1 brief's
+# literal image string was wrong on this one point).
+#
+# M2.1 deliberately carries NO policy. Both policy mechanisms this project
+# examined (native CEL `mcpAuthorization`, and the external `ExtMCP` gRPC hook)
+# are absent here on purpose: M2.1 proves the proxy does not break the trace,
+# M2.2 adds the decision. See the M2 spec.
+#
+# Schema verified directly against the pinned image: `docker run --rm
+# cr.agentgateway.dev/agentgateway:v1.5.0 -f config.yaml --validate-only`
+# returned "Configuration is valid!" for exactly the shape below, with no
+# changes needed from the brief's reconstructed version -- no divergence to
+# record here. Source of truth for this schema is the agentgateway repo's
+# examples/ directory, NOT its documentation site -- the docs were found thin
+# and unreliable; the examples matched real behaviour exactly.
+binds:
+- port: 3000
+  listeners:
+  - routes:
+    - backends:
+      - mcp:
+          targets:
+          - name: payments-mcp
+            mcp:
+              host: payments-mcp.northstar-tools.svc.cluster.local
+              port: 8000
+              path: /mcp

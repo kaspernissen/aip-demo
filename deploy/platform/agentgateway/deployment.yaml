@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentgateway
+  namespace: northstar-platform
+  labels:
+    app: agentgateway
+    northstar.io/plane: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agentgateway
+  template:
+    metadata:
+      labels:
+        app: agentgateway
+        northstar.io/plane: platform
+    spec:
+      containers:
+        - name: agentgateway
+          image: cr.agentgateway.dev/agentgateway:v1.5.0
+          args: ["-f", "/etc/agentgateway/config.yaml"]
+          ports:
+            - name: mcp
+              containerPort: 3000
+            - name: readiness
+              containerPort: 15021
+          # Confirmed against the running image (not guessed): agentgateway
+          # serves its own readiness endpoint on 15021, returning HTTP 200
+          # with body "ready" once the config is loaded and the bind is up
+          # -- more precise than a bare TCP-connect probe against the MCP
+          # port itself.
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: 15021
+            initialDelaySeconds: 2
+          volumeMounts:
+            - name: config
+              mountPath: /etc/agentgateway
+          # Measured idle RSS for this image is 11.2 MiB (M2 spike). 64Mi
+          # request / 128Mi limit is generous headroom, not copied from a
+          # larger service's values.
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 25m
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: config
+          configMap:
+            name: agentgateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentgateway
+  namespace: northstar-platform
+spec:
+  selector:
+    app: agentgateway
+  ports:
+    - name: mcp
+      port: 3000
+      targetPort: 3000

@@ -93,7 +93,7 @@ the laptop runs one stage at a time.
 | Stage | Name | Adds |
 |---|---|---|
 | 1 | Connected | agents, MCP servers, systems of record, customer UI, collector, Jaeger |
-| 2 | Governed | agentgateway, SPIFFE/SPIRE, Policy Decision Service, Kyverno, Cilium — **partly built: as of M2.1 Task 1 `--stage 2` installs Cilium only**, on a cluster created with kind's default CNI disabled |
+| 2 | Governed | agentgateway, SPIFFE/SPIRE, Policy Decision Service, Kyverno, Cilium — **partly built: as of M2.1 Task 2 `--stage 2` installs Cilium and agentgateway (permitting everything, not yet in the path)**, on a cluster created with kind's default CNI disabled |
 | 3 | Supervised | Dapr Workflow, reviewer UI, Keycloak |
 | 4 | Observable | OpenSearch + Agent Evals, Prometheus |
 | 5 | Progressive autonomy | OpenFeature / flagd |

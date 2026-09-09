@@ -33,9 +33,11 @@ Usage: setup-kind.sh [--stage N]
                           [installs]
   --stage 2   Governed:   stage 1, on a Cilium dataplane -- the cluster is
                           created with kind's default CNI disabled
-                          [installs Cilium; agentgateway, SPIFFE/SPIRE, Kyverno,
-                          cert-manager and the Policy Decision Service are part
-                          of this stage in the design but are NOT installed yet]
+                          [installs Cilium and agentgateway (permitting
+                          everything, not yet in the path); SPIFFE/SPIRE,
+                          Kyverno, cert-manager and the Policy Decision
+                          Service are part of this stage in the design but
+                          are NOT installed yet]
   --stage 3   Supervised:           + Dapr, Keycloak, reviewer UI, Postgres
                           [not implemented -- exits]
   --stage 4   Observable:           + OpenSearch, Prometheus
@@ -281,6 +283,21 @@ kubectl -n observability rollout status deployment/otel-collector --timeout=180s
 echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then starting port-forwards...${NC}"
 "$ROOT/scripts/rebuild-and-deploy.sh" \
   payments-api payments-mcp settlement-agent claims-agent customer-ui
+
+if [[ "${STAGE}" -ge 2 ]]; then
+  # M2.1 Task 2: agentgateway, deployed permitting everything, not yet in the
+  # path -- nothing routes through it yet (that is Task 3). Applied after the
+  # workloads it fronts so `payments-mcp` already exists when the gateway
+  # starts proxying to it.
+  echo -e "${BLUE}Step 9b/9 (stage 2+): Installing agentgateway...${NC}"
+  kubectl create configmap agentgateway-config \
+    --namespace northstar-platform \
+    --from-file=config.yaml="$ROOT/deploy/platform/agentgateway/config.yaml" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  kubectl apply -f "$ROOT/deploy/platform/agentgateway/deployment.yaml"
+  kubectl -n northstar-platform rollout status deployment/agentgateway --timeout=120s
+  echo -e "${GREEN}agentgateway is up (permitting everything, not yet in the path).${NC}"
+fi
 
 # A9: a stray port-forward from another cluster on this machine (e.g.
 # `capybara`) has silently shadowed a host port before, twice. This only ever
