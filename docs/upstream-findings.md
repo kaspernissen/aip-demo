@@ -1,7 +1,10 @@
 # Upstream findings — held locally, not filed
 
 Status: M1.1, revised through M1.2 for the settlement-agent's model-driven
-decision logic. No upstream repository exists for this project yet, and filing
+decision logic, and through **M2.1 (Interposed)** for the two findings the
+interposed proxy produced — Findings 6 and 7, both against `agentgateway`
+v1.5.0, added by M2.1 Task 5 and checked against commit `27a32df`.
+No upstream repository exists for this project yet, and filing
 these upstream is a deliberate decision this project defers to its
 maintainers rather than one any implementation task makes unilaterally. The
 standard held here is the honest one: *we found this, here is the evidence,
@@ -37,7 +40,20 @@ to check. They are recorded in the contract as open questions this project
 will need to resolve itself, not as upstream defects. This document covers
 the remaining five contract items — Gaps 1, 4, 5, 6, and 7 — renumbered below
 as Findings 1–5 in the order a reader would hit them walking the chain from
-the A2A hop down to the model's own outbound call. The evidence for Findings
+the A2A hop down to the model's own outbound call.
+
+**Findings 6 and 7 do not come from that list at all**, and the numbering
+would mislead a reader who assumed they did. They are M2.1 findings, both
+against `agentgateway` v1.5.0, about a component that did not exist in this
+system when Gaps 1–7 were enumerated: there was no proxy in the path to have
+a finding about. They continue the numbering because that is what a reader
+scanning this document expects, not because they map onto a contract gap.
+Findings 6 and 7 are also the only two here whose subject is a **Linux
+Foundation** project rather than an independent Python package — worth
+stating because "agentgateway is CNCF" is an easy and wrong assumption, and
+this document is the wrong place to launder it.
+
+The evidence for Findings
 1–4 was originally gathered as A8 upstream-contribution material and lives,
 in full, in `docs/telemetry-contract.md` and the per-component `NOTES.md`
 files (`agents/claims-agent/NOTES.md`, `agents/settlement-agent/NOTES.md`,
@@ -815,3 +831,318 @@ milestone's own working notes had framed the finding before this document
 was written, and the project's governing rule is to correct a telemetry
 claim the moment it is found to be wrong, not to quietly let the
 more-interesting-sounding version stand.
+
+---
+
+## Finding 6: agentgateway v1.5.0 reads trace context from HTTP headers only, never from JSON-RPC `params._meta`, and mints a new trace root when no header is present
+
+**The problem, plainly:** MCP carries W3C trace context inside the JSON-RPC
+message, in `params._meta`. agentgateway is an MCP proxy, and it *writes*
+that carrier correctly on the way out — but it never *reads* it on the way
+in. Inbound trace context is taken from the HTTP `traceparent` header and
+from nowhere else. A proxied MCP request that carries context only in
+`_meta` — which is the protocol's own carrier, and the only one a stdio
+client has — is treated as having no parent, and the gateway starts a fresh
+trace of its own.
+
+**Project and version:** `agentgateway` v1.5.0 (image
+`cr.agentgateway.dev/agentgateway:v1.5.0`; the binary reports its internal
+version as the bare `1.5.0`). A **Linux Foundation** project — *not* a CNCF
+one.
+
+**Where the behaviour lives**, read from the v1.5.0 source, not inferred
+from behaviour:
+
+- **Ingress.** `TraceParent::from_request`
+  (`crates/agentgateway/src/telemetry/trc.rs:690-696`) is four chained calls
+  on `req.headers()`: get `traceparent`, to a `str`, `try_from`. The request
+  body is never touched, and there is no other extraction site.
+- **Egress.** `IncomingRequestContext::stamp_trace_context`
+  (`crates/agentgateway/src/mcp/upstream/mod.rs:110-122`) copies the three
+  W3C keys out of the outbound *headers* into `_meta`, unprefixed, and its
+  own comment states the intent: *"SEP-414: copy W3C trace context into the
+  message's `_meta` (un-prefixed keys, per spec). The only trace carrier for
+  stdio upstreams, which have no request headers."* It is called from the
+  outbound send paths (`mod.rs:338`, `mod.rs:395`), immediately after
+  `start_mcp_outbound_span` has injected the gateway's own CLIENT-span
+  context into those headers (`mod.rs:146`) — which is why the value that
+  lands in `_meta` is the gateway's outbound span, correctly parenting the
+  upstream MCP server's spans under it.
+
+So the two directions are asymmetric by construction: `_meta` is an output
+format, chosen for a transport that has no headers, and there is no
+corresponding input path.
+
+**What the convention says should happen:** MCP's SEP-414 defines
+`traceparent`, `tracestate` and `baggage` as unprefixed keys inside the
+JSON-RPC `params._meta` object — the three exceptions to `_meta`'s usual
+reverse-DNS prefixing rule. It is the protocol-level carrier, deliberately
+transport-independent, and an intermediary that both consumes and produces
+MCP messages would be expected to honour it in both directions. agentgateway
+already agrees with that on the write side; the read side is where it stops.
+
+**A second-order detail, stated precisely because the obvious phrasing
+overstates it:** the write-out *overwrites* any inbound `_meta.traceparent`
+without ever having read it — `meta.0.insert(...)`, not an
+insert-if-absent — but only when the corresponding header is present.
+Upstream's own unit test `stamp_trace_context_noop_without_trace_headers`
+(`mod.rs:867-873`) pins the no-header case as a no-op. With tracing enabled
+the gateway always injects its own header first, so in practice the
+overwrite is unconditional; with tracing disabled a client's `_meta` passes
+through untouched.
+
+**What we observed instead:** this project's MCP hop
+(`settlement-agent → agentgateway → payments-mcp`) stays a single trace, and
+the reason is not that the gateway understands `_meta`. Two independent
+carriers happen to both be present:
+
+```
+settlement-agent  --  Authorization: Bearer <JWT-SVID>   (identity)
+                  --  traceparent: HTTP header           <- the gateway reads THIS
+                  --  params._meta.traceparent           <- payments-mcp reads this
+```
+
+`agents/settlement-agent/mcp_tools.py` injects `_meta` by hand for FastMCP's
+benefit, and *separately*, `HTTPXClientInstrumentor` auto-injects a
+`traceparent` **header** because the MCP streamable-HTTP transport is
+httpx-based. The gateway reads the header; the `_meta` bag rides along for
+payments-mcp. Both were measured live, and
+`tests/e2e/test_gateway_trace.py`'s module docstring records the same
+distinction so that a reader of the test does not conclude agentgateway
+supports SEP-414 on ingress. It does not.
+
+**Blast radius — and this is where an earlier draft of this finding
+overstated the case: it does not affect us.** `settlement-agent` always
+sends the header, so the trace holds, and nothing in this project needs a
+fix. The failure mode belongs to a *header-less* MCP client: a pure stdio
+transport, or a client library whose HTTP layer is not auto-instrumented. In
+that case the split is specific rather than total — the gateway mints its own
+root for its own SERVER/CLIENT span pair, while the untouched
+`_meta.traceparent` still carries the client's context through to the MCP
+server behind it. The result is two traces where there should be one, with
+the proxy hop in neither of them alongside its own caller.
+
+**Why it matters, beyond this project:** this is the seam where an
+observability claim about an agentic platform is won or lost. A proxy exists
+partly to be the place you look when a tool call misbehaves, and a proxy that
+silently re-roots a trace is worse than an untraced one — the spans exist,
+they look healthy, and the causal link to the caller that made the request is
+gone. Anyone adopting agentgateway in front of stdio-transport MCP servers,
+or in front of a client that does not auto-instrument httpx, will get exactly
+that, and the symptom (an orphan trace per proxied call) does not obviously
+point at trace-context extraction as the cause.
+
+**What a fix would need to do:** extract inbound trace context from
+`params._meta` when no HTTP `traceparent` header is present — the mirror of
+`stamp_trace_context`, using the same three unprefixed SEP-414 keys — and
+prefer the header when both are present, so today's behaviour is unchanged
+for HTTP clients. It would also make the existing overwrite honest rather
+than lossy: the value being replaced would have been read first.
+
+**How we worked around it, and whether it should be adopted upstream:** we
+did not work around it, and there is nothing here to recommend upstream
+adopt. The header this project already sends is not a workaround — it is
+`HTTPXClientInstrumentor` doing its ordinary job, and it was present before
+the gateway was interposed. Adding a bespoke second carrier to compensate
+would be the invented-convention risk this project's governing rule exists to
+avoid.
+
+**Existing upstream activity (verified live, read-only, 2026-09-09).**
+
+- Searched the tracker for `_meta traceparent extract`, `SEP-414` and
+  `stdio trace context` and found **nothing asking for ingress extraction from
+  `_meta`**. This half appears unreported.
+- The closest neighbour, and it is close enough to be worth reading before
+  anyone acts on this finding, is
+  [`agentgateway/agentgateway#2904`](https://github.com/agentgateway/agentgateway/issues/2904)
+  ("Tracing: MCP backends forward the inbound traceparent, so the upstream
+  span parents to the caller instead of the gateway") — filed by a third party
+  (`suren-khatana`) against **v1.4.1** and **closed as completed** on
+  2026-08-17. It is the *write*-side sibling of this finding, in the same
+  file: on `mcp:` backends the gateway forwarded the stale inbound
+  `traceparent` verbatim, so the upstream MCP server's span came out a
+  *sibling* of the gateway's rather than its child, and — the issue notes this
+  explicitly — *"the same snapshot feeds `stamp_trace_context`, so the SEP-414
+  `_meta` carrier gets the stale value too."*
+- That fix is present in the pinned v1.5.0 and this project depends on it:
+  `start_mcp_outbound_span` injects the gateway's own outbound span into the
+  headers (`mod.rs:146`) *before* `stamp_trace_context` copies them into
+  `_meta` (`mod.rs:338`, `:395`), which is why payments-mcp's spans correctly
+  parent under the gateway's CLIENT span in this project's measured traces
+  rather than under settlement-agent. Worth recording because it means the
+  write side was actively worked on one release ago and the read side still
+  was not — the asymmetry is current, not ancient.
+
+**Status: not filed by this project.** No issue, comment, pull request or
+message of any kind was posted to any upstream repository or tracker as part
+of recording this — the tracker was read only, via `gh issue view` and
+`gh search issues`. The evidence above is a source read of the pinned release
+plus this project's own live measurements. Whether to raise it upstream is a
+decision for this project's maintainers.
+
+---
+
+## Finding 7: agentgateway v1.5.0's span attributes are its access-log field schema, so they match neither HTTP semantic convention — and identity lands on `jwt.sub` where semconv has `user.id`
+
+**Why these two are one finding.** They look like two unrelated naming
+complaints and are in fact the same defect with the same single cause, in the
+same list of code, which is why they are not numbered separately: the
+gateway's OTel span attributes are literally its structured access-log
+fields, reused verbatim. A log field vocabulary is not a semantic-convention
+vocabulary, and every divergence below follows from that one decision.
+Upstream's own merged fix (see "Existing upstream activity") confirms that
+shared cause — it splits the two sinks apart, which is the only thing that
+*could* fix them together — while addressing just the HTTP half and leaving
+`jwt.sub` where it is.
+
+**The problem, plainly:** agentgateway's spans carry `http.method`,
+`http.path`, `http.status`, `http.host` and `http.version`. That set matches
+neither the current *stable* HTTP semantic conventions nor the *legacy*
+pre-stabilisation spelling — `http.path` and `http.status` belong to neither
+vocabulary. Separately, the verified JWT subject is recorded as `jwt.sub`,
+where the semantic conventions have a registry attribute for exactly this
+(`user.id`).
+
+**Project and version:** `agentgateway` v1.5.0, as above. Linux Foundation,
+not CNCF.
+
+**Where the behaviour lives:** one `Vec` of `(&str, value)` pairs built in
+`crates/agentgateway/src/telemetry/log.rs` — `http.method` at :1514,
+`http.host` :1515, `http.path` :1516, `http.version` :1518, `http.status`
+:1520, `jwt.sub` :1534 — and then handed to three sinks from the same
+variable: the tracer (`t.send(&log, ..., kv.as_slice())`, :1793-1799), the
+OTLP logger (:1818-1834), and the access log (:1837 onward). The two keys
+that *are* correct stable semconv are the two that go through a different
+path: `crates/agentgateway/src/telemetry/trc.rs` has a `semconv` module
+(:159-164) whose entire contents are `network.protocol.version` and
+`url.scheme`, pushed at :306-313. Everything else is a raw string literal.
+
+**What the convention says should happen:**
+
+| What it is | Stable semconv | OTel legacy | agentgateway v1.5.0 |
+|---|---|---|---|
+| request method | `http.request.method` | `http.method` | `http.method` |
+| request path | `url.path` | `http.target` | `http.path` |
+| response status | `http.response.status_code` | `http.status_code` | `http.status` |
+| server host | `server.address` | `http.host` | `http.host` |
+| protocol version | `network.protocol.version` | `http.flavor` | `network.protocol.version` ✓ |
+| url scheme | `url.scheme` | — | `url.scheme` ✓ |
+| authenticated principal | `user.id` | `enduser.id` (deprecated in favour of `user.id`) | `jwt.sub` |
+
+**What we observed instead:** measured on live spans from the deployed
+gateway and pinned by exact set equality in
+`tests/e2e/test_gateway_trace.py` (`GATEWAY_TOOLS_CALL_SERVER_ATTRS`,
+`GATEWAY_TOOLS_CALL_CLIENT_ATTRS`), with the full attribute inventory in
+[`docs/telemetry-contract.md`](telemetry-contract.md)'s "agentgateway
+instrumentation, as measured". Every one of those names was read off a real
+span and none was predicted from the source; the source citations above
+explain names that were *already* measured, in that order.
+
+For contrast, in the same trace: the three Python services emit the stable
+spelling (`http.request.method`, `http.response.status_code`,
+`server.address`, `url.full`) because
+`OTEL_SEMCONV_STABILITY_OPT_IN=http` forces them onto it, and payments-api's
+`otelhttp v0.66.0` emits it by default. So a single trace in this system
+contains three HTTP attribute vocabularies, one of which is not an OTel
+vocabulary at all.
+
+**Why it matters, beyond this project — and the honest version of the claim
+is the stronger one.** The tempting thing to say about this system is "one
+convention end to end." That is measurably false, and the true statement is
+better: *the trace holds together end to end across components that do not
+agree on attribute names.* Trace context is what makes the chain one thing;
+attribute naming is what makes it queryable. Those are separable, and this
+finding is the demonstration. Concretely, an operator cannot write one
+`http.response.status_code` filter across this trace, and cannot group by
+authenticated principal across a fleet where one component says `user.id`
+and another says `jwt.sub` — while every span still sits in the right place
+in the right tree. Anyone building a dashboard over a mixed fleet pays this
+cost, and paying it at the query layer is a normalisation problem rather
+than a tracing one.
+
+**What a fix would need to do:** route the HTTP keys through the `semconv`
+mechanism that already exists in `trc.rs` and already holds two keys —
+emitting `http.request.method`, `url.path`, `http.response.status_code` and
+`server.address` on spans — and record the verified subject as `user.id`. It
+should *not* mean renaming the human-facing access-log fields: a log schema
+is legitimately its own thing, and the real fix is to stop having one list
+serve both purposes, so the OTel sinks can follow the convention while stdout
+stays readable.
+
+**Existing upstream activity (verified live, read-only, 2026-09-09).** This
+section changed the finding, and it is the reason this document requires one:
+the first draft of Finding 7 presented the HTTP half as an unnoticed defect.
+It is neither unnoticed nor, any longer, unfixed.
+
+- [`agentgateway/agentgateway#1151`](https://github.com/agentgateway/agentgateway/issues/1151)
+  ("fix(telemetry): HTTP span/log attributes use deprecated OTel semantic
+  conventions") — **closed as completed**, filed 2026-03 by a third party
+  (`AryanParashar24`), and it lists *exactly* the same six divergences this
+  project measured independently, plus one more we had not noted
+  (`src.addr` → `client.address`). Its own root-cause paragraph names the same
+  place: *"In `log.rs` inside `impl Drop for DropOnLog`, the `kv` vec hardcodes
+  old attribute string literals directly with no semconv package
+  dependency."* Independent confirmation, arrived at from the other end.
+- The discussion on that issue is worth reading rather than summarising away,
+  because a maintainer (`howardjohn`) initially argued *against* changing the
+  defaults — "I don't want to hurt users to appease a specification many users
+  do not care about at all" — and proposed a preset instead, which
+  `krisztianfekete` (contributor) supported after arguing the cross-signal
+  consistency case. So the divergence was a considered position for a while,
+  not an oversight. Our own "don't rename the human log" conclusion above was
+  reached separately and lands in the same place as theirs; the credit for it
+  is upstream's.
+- [`agentgateway/agentgateway#3182`](https://github.com/agentgateway/agentgateway/pull/3182)
+  ("fix(telemetry): align HTTP attributes with OTel semconv", by `harukz`,
+  approved by `howardjohn`) — **merged 2026-09-01**, which is **after
+  v1.5.0 was released (2026-08-27)**. That timing is the whole point and it
+  is easy to get wrong: the PR was *opened* on 2026-08-26, one day before the
+  release, so a glance at a PR list suggests it shipped. It did not. The
+  pinned v1.5.0 this project runs contains none of it — verified by reading
+  the release's own source, where `src.addr` is still a raw literal at
+  `log.rs:1504` and no `preset` or `semconv.rs` exists at all — which is
+  exactly why the measurements above are real rather than stale.
+- What that PR does, and it is essentially the fix proposed above: renames the
+  six keys for **request traces and OTLP access logs only**, adds a new
+  `crates/agentgateway/src/telemetry/semconv.rs`, deletes 21 lines from
+  `trc.rs`, keeps stdout's defaults for backward compatibility, and adds an
+  opt-in `accessLog.preset: Otel`. It also fixes value-level divergences we
+  had not looked at (`http.version` as `1.1` rather than `HTTP/1.1`, host and
+  port split, `url.query` separated).
+- **The `jwt.sub` half is not covered by any of it.** Checked directly against
+  the merge commit's own diff of `log.rs`: it touches neither `jwt.sub` nor
+  `user.id`. Searching the tracker for `user.id`, `enduser` and `jwt.sub`
+  turns up nothing asking for the authenticated principal to follow the
+  convention. So of this finding's two halves, one is fixed-and-unreleased and
+  one appears genuinely unreported.
+
+**What this means for the finding, stated plainly rather than quietly
+dropped.** The HTTP half is Finding-5-shaped: real in the version this project
+runs, already solved upstream, awaiting a release. It is kept here in full
+because "we measured a divergence, searched, and found the fix already merged
+but not yet released" is a different and more useful claim than either "we
+found a bug" or silence — and because the divergence is live in the pinned
+image, so this project's own documents and tests must describe it accurately
+today. When the next release lands, `tests/e2e/test_gateway_trace.py`'s exact
+set equality will fail on the rename, which is the intended way for this
+project to find out.
+
+**How we worked around it, and whether anything should be adopted upstream:**
+we did not rewrite or normalise agentgateway's attributes anywhere — not in
+the collector, not in the test harness, not in the contract. They are
+published under their real names, marked as a third vocabulary, and asserted
+by exact set equality so an upstream change fails a test here instead of
+quietly ageing a document. The no-invented-telemetry rule applies to
+third-party components without exception: a collector rename would make this
+project's telemetry disagree with what agentgateway actually emits, which is
+worse than the divergence it would hide. There is nothing to recommend
+upstream adopt for the HTTP half — the merged PR is better than anything we
+would have proposed.
+
+**Status: not filed by this project.** No issue, comment, pull request or
+message of any kind was posted to any upstream repository or tracker as part
+of recording this — the tracker was read only, via `gh issue view` /
+`gh pr view` / `gh search issues`. The HTTP half needs no filing (merged
+upstream already). The `jwt.sub` half is unreported and *remains* unfiled:
+whether to raise it is a decision for this project's maintainers, not one an
+implementation task takes unilaterally.
