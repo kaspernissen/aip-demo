@@ -26,13 +26,23 @@ are measurably false.**
 
 1. *"One convention end to end."* Not true, and the true statement is
    stronger: **the trace holds together end to end across components that do
-   not agree on attribute names.** agentgateway emits `http.method` /
-   `http.path` / `http.status` — matching neither the stable HTTP semconv set
+   not agree on attribute names.** **agentgateway v1.5.0 — the pinned
+   version, and this claim is scoped to it** — emits `http.method` /
+   `http.path` / `http.status`, matching neither the stable HTTP semconv set
    this project's own services emit (`http.request.method`,
    `http.response.status_code`, `server.address`, via
    `OTEL_SEMCONV_STABILITY_OPT_IN=http`) nor the OTel legacy spelling
    (`http.target`, `http.status_code`) — and `jwt.sub` where semconv has
-   `user.id`. Measured, pinned by `tests/e2e/test_gateway_trace.py` by exact
+   `user.id`. **The version qualifier is load-bearing, not pedantry:**
+   upstream PR
+   [`#3182`](https://github.com/agentgateway/agentgateway/pull/3182) fixes the
+   HTTP half and is **already merged** — but it merged 2026-09-01, after
+   v1.5.0 shipped on 2026-08-27, so it is absent from the image this system
+   runs. Stated version-free, the sentence becomes false at the next image
+   bump with nothing to catch it; scoped to v1.5.0 it stays true, and
+   `tests/e2e/test_gateway_trace.py`'s exact set equality is what goes red on
+   the bump. (`jwt.sub` → `user.id` is in neither that PR nor any upstream
+   issue.) Measured, pinned by `tests/e2e/test_gateway_trace.py` by exact
    set equality, and written up as Finding 7 in
    [`docs/upstream-findings.md`](upstream-findings.md). Trace context is what
    makes the chain one thing; attribute naming is what makes it queryable,
@@ -1096,8 +1106,11 @@ calling the tracer directly.
      and is set by the gateway from the token it verified, not by anything
      this project wrote; `gen_ai.tool.name`, which is where the tool name
      lives, because the span's *name* is just `tools/call` for both tools;
-     and `http.method` / `http.path` / `http.status`, which are the third
-     HTTP vocabulary described in the header and in Finding 7. Then look at
+     and `http.method` / `http.path` / `http.status`, which are **v1.5.0's**
+     third HTTP vocabulary described in the header and in Finding 7 — scoped
+     to the pinned version, because the upstream fix for it is merged but
+     unreleased, so a future image will show the stable spelling here
+     instead. Then look at
      its child CLIENT span, `tools/call payments-mcp_<tool>`, and note
      `jwt.sub` is **absent** there — the gateway strips the credential on
      the outbound leg, so there is no verified token to attribute.
