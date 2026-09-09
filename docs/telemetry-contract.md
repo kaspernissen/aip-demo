@@ -50,13 +50,22 @@ green has confirmed the browser hop; a reader who instead runs a bare
 `pytest tests/` by hand — bypassing the gate — gets the weaker, default
 result below, and should not conclude the top of the chain was checked.
 
-Measured counts, from a clean cluster (`./scripts/teardown.sh &&
-./scripts/setup-kind.sh --stage 1`):
+Measured counts. **Provenance, corrected in M2.1 Task 1 fix round 1:** the gate
+row below was measured on a freshly created **stage 2** cluster —
+`kind delete cluster --name northstar && ./scripts/setup-kind.sh --stage 2`,
+i.e. stage 1's workloads on a Cilium 1.20.1 dataplane — and `teardown.sh` was
+not run. This preamble previously read "from a clean cluster
+(`./scripts/teardown.sh && ./scripts/setup-kind.sh --stage 1`)", which was the
+provenance of the *earlier* numbers, not of these; a review caught the
+mismatch. The counts are CNI-independent (they count tests, not spans), so the
+numbers were not affected — but a published number carrying provenance it does
+not have is this repo's most-repeated defect class, so the command is stated as
+it was actually run:
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `74 passed, 17 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `91 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `80 passed, 17 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `97 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -88,19 +97,45 @@ test (see below) that needs no cluster and no browser, so it runs — and
 passes — in a bare `pytest tests/` too, not only behind the gate's flag.
 
 M2.1 Task 1 grew the **passed** count in both rows by sixteen, 75→91 and
-58→74, and left the skip count at 17: `tests/unit/test_stage2_cilium_config.py`
-(16 tests) guards the stage-2 Cilium configuration — the create-time
+58→74, and its fix round 1 grew them by six more, to 97 and 80, leaving the
+skip count at 17 throughout: `tests/unit/test_stage2_cilium_config.py`
+(22 tests) guards the stage-2 Cilium configuration — the create-time
 `disableDefaultCNI` flag, the pinned chart version, the two schema defects the
 plan's own values sketch contained, and the ordering that keeps Cilium ready
-before any workload is scheduled. Like every other `tests/unit/` module it
-reads files rather than a cluster, so it needs no cluster, no browser and no
-model tokens, and runs in both rows. The gate row here is measured from the
-post-recreate run recorded in this milestone's Task 1 report; the default row
-is **derived** from it, not separately measured — the 17 skips are exactly
-`tests/e2e/test_browser_root_span.py` (8 tests) plus
-`tests/e2e/test_settlement_llm_trace.py` (9 tests), the only two
-`RUN_BROWSER_TESTS`-gated modules in the tree, neither of which this task
-touched.
+before any workload is scheduled. Six of those twenty-two arrived in the fix
+round: five run the real `setup-kind.sh` against fake `kind`/`kubectl` binaries
+on `PATH` and assert on what it actually invoked (a review's mutation testing
+found three of the original text-grep guards stayed green while the behaviour
+they named was deleted, because the string each searched for also appeared in a
+comment), and one pins that no operator-facing script or doc still instructs
+`--stage 1`. Like every other `tests/unit/` module they read files or run a
+script with fakes rather than touching a cluster, so they need no cluster, no
+browser and no model tokens, and they run in both rows.
+
+**Provenance of these two numbers, precisely.** Neither row was measured by a
+single command; both are derived from measurements, and this note exists so no
+reader takes them for direct observations:
+
+- **Measured:** `pytest --collect-only -q tests/` → `98 tests collected`.
+- **Measured:** the two `RUN_BROWSER_TESTS`-gated modules,
+  `tests/e2e/test_browser_root_span.py` (8) and
+  `tests/e2e/test_settlement_llm_trace.py` (9), run with no env var →
+  `17 skipped`. They are the only gated modules in the tree.
+- **Measured:** the last full gate run, on 92 collected tests, →
+  `91 passed, 1 xfailed` (0 skipped). Recorded in this milestone's Task 1
+  report.
+- **Measured:** `pytest tests/unit -q` after the fix round → all unit tests
+  pass, including the six net-new ones.
+- **Derived:** gate row = 91 + 6 = **97 passed, 1 xfailed** (= 98 collected,
+  0 skipped). The fix round added six always-run unit tests and changed no e2e
+  test.
+- **Derived:** default row = 98 − 17 − 1 = **80 passed, 17 skipped, 1
+  xfailed**.
+
+The gate was **not** re-run for the fix round: it drives live model-driven
+settlements, and the fix round changed only test and doc files, no service code
+and no cluster. A bare `pytest tests/` was not run either, for the same reason
+(see the note above on that run costing two live model calls).
 
 `tests/unit/test_smoke_test_gate.py` (2 tests, counted in both rows above)
 pins this distinction directly: it reads `scripts/smoke-test.sh`'s own source
@@ -265,9 +300,11 @@ not a network call our code happened to make.
 
 This has been live and correct since before M1.2 started, and was previously
 undocumented — recorded here rather than changed, because nothing about it
-needed changing. `scripts/setup-kind.sh` (around line 159, "Step 7/9:
-Installing observability backbone") switches the collector's own config on
-whether `DASH0_AUTH_TOKEN` is present:
+needed changing. `scripts/setup-kind.sh`'s "Step 7/9: Installing observability
+backbone" switches the collector's own config on whether `DASH0_AUTH_TOKEN` is
+present (this used to cite "around line 159" as well; M2.1 Task 1 inserted the
+Cilium install above it and moved that line, so the fragile line number is
+dropped in favour of the step label, which is stable):
 
 ```bash
 if [[ -n "${DASH0_AUTH_TOKEN:-}" ]]; then

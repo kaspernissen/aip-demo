@@ -29,15 +29,31 @@ usage() {
   cat <<'EOF'
 Usage: setup-kind.sh [--stage N]
 
-  --stage 1   Connected:            agents, tools, systems, customer UI, collector, Jaeger
-  --stage 2   Governed:             + agentgateway, SPIRE, Kyverno, Cilium, cert-manager, PDS
+  --stage 1   Connected:  agents, tools, systems, customer UI, collector, Jaeger
+                          [installs]
+  --stage 2   Governed:   stage 1, on a Cilium dataplane -- the cluster is
+                          created with kind's default CNI disabled
+                          [installs Cilium; agentgateway, SPIFFE/SPIRE, Kyverno,
+                          cert-manager and the Policy Decision Service are part
+                          of this stage in the design but are NOT installed yet]
   --stage 3   Supervised:           + Dapr, Keycloak, reviewer UI, Postgres
+                          [not implemented -- exits]
   --stage 4   Observable:           + OpenSearch, Prometheus
+                          [not implemented -- exits]
   --stage 5   Progressive autonomy: + flagd
+                          [not implemented -- exits]
   --stage 6   Golden path:          + Crossplane, Argo CD, Backstage
+                          [not implemented -- exits]
 
 Each stage installs only what that stage of the demo needs, so the laptop
 runs exactly one stage at a time.
+
+Stage 2 is the current cluster. It must be created FROM deploy/kind/stage2.yaml:
+`networking.disableDefaultCNI` is a create-time kind flag, so it cannot be
+applied to a cluster that already exists, and this script refuses rather than
+layering Cilium on a running default CNI. Note that --stage defaults to 1, so a
+bare `./scripts/setup-kind.sh` builds a stage-1 (kindnet) cluster -- pass
+--stage 2 explicitly for the M2.1 dataplane.
 EOF
 }
 

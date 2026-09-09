@@ -36,7 +36,13 @@ done
 command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1; }
 kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
   echo -e "${RED}Error: cannot reach the 'kind-northstar' cluster.${NC}" >&2
-  echo "Run ./scripts/setup-kind.sh --stage 1 first." >&2
+  # M2.1 Task 1: this said `--stage 1` until Cilium arrived. Following that
+  # after a cluster loss rebuilds on kindnet, silently reverting the CNI this
+  # gate's own trace assertions exist to verify — and the stage-2 kindnet
+  # guard would then refuse, but only after a second delete. Stage 2 is the
+  # current cluster; `--stage 1` is still supported, it is just no longer what
+  # this repo's own instructions should point a reader at.
+  echo "Run ./scripts/setup-kind.sh --stage 2 first." >&2
   exit 1
 }
 # The e2e/browser assertions below need all four port-forwards up. They die
@@ -48,7 +54,7 @@ for port_name in "19001:claims-agent" "19002:settlement-agent" "18000:payments-m
   name="${port_name##*:}"
   lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1 || {
     echo -e "${RED}Error: nothing is listening on port ${port} (${name}).${NC}" >&2
-    echo "Port-forwards die after a redeploy and need re-establishing: kubectl -n <namespace> port-forward svc/${name} ${port}:<container-port> (or re-run ./scripts/setup-kind.sh --stage 1)." >&2
+    echo "Port-forwards die after a redeploy and need re-establishing: kubectl -n <namespace> port-forward svc/${name} ${port}:<container-port> (or re-run ./scripts/setup-kind.sh --stage 2)." >&2
     exit 1
   }
 done

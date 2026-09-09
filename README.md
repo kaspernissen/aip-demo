@@ -38,7 +38,7 @@ cp .env.template .env
 # three DASH0_* siblings are optional — see the comments in .env.template for
 # exactly which variables are required.
 
-./scripts/setup-kind.sh --stage 1
+./scripts/setup-kind.sh --stage 2
 ./scripts/smoke-test.sh
 ```
 
@@ -93,13 +93,17 @@ the laptop runs one stage at a time.
 | Stage | Name | Adds |
 |---|---|---|
 | 1 | Connected | agents, MCP servers, systems of record, customer UI, collector, Jaeger |
-| 2 | Governed | agentgateway, SPIFFE/SPIRE, Policy Decision Service, Kyverno, Cilium |
+| 2 | Governed | agentgateway, SPIFFE/SPIRE, Policy Decision Service, Kyverno, Cilium — **partly built: as of M2.1 Task 1 `--stage 2` installs Cilium only**, on a cluster created with kind's default CNI disabled |
 | 3 | Supervised | Dapr Workflow, reviewer UI, Keycloak |
 | 4 | Observable | OpenSearch + Agent Evals, Prometheus |
 | 5 | Progressive autonomy | OpenFeature / flagd |
 | 6 | Golden path | Crossplane `Agent` CRD, Argo CD, Backstage |
 
-## Architecture (stage 1)
+## Architecture (stage 1 workloads, now on the stage-2 dataplane)
+
+The request chain below is unchanged by M2.1 Task 1 — Cilium sits underneath every
+hop of it, and the trace was verified span-by-span against a pre-Cilium baseline to
+confirm that.
 
 ```text
 browser ──A2A──► claims-agent ──A2A──► settlement-agent ──MCP──► payments-mcp ──HTTP──► payments-api
