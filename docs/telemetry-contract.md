@@ -427,7 +427,7 @@ the plan defect described two paragraphs up).
 
 Per-service unit suites (all six run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 79, payments-mcp 9, payments-api (Go) 20,
-customer-ui (vitest) 6, policy-decision-service 96 — all passing. (The sixth
+customer-ui (vitest) 6, policy-decision-service 97 — all passing. (The sixth
 entry arrived in the M2.2 final-review fix round: `policy-decision-service` was
 in neither the gate's loop nor this row until finding 1 showed both already
 *depended* on that component's generated stubs while collecting none of its
@@ -526,7 +526,14 @@ service's own runner, the same way, and none of them moved** — every test M2.2
 added after that fix round went under the repo-root `tests/` tree, so Task 5's
 fix round 1 remains the last change to this row. Re-measuring rather than
 reasoning that nothing can have changed is the point: this row's entire history
-is a number that stayed correct until the moment nobody checked it.)
+is a number that stayed correct until the moment nobody checked it. Grown again
+by M3 Task 1 Part A: `platform/policy-decision-service/tests/test_pins.py` (1)
+closes the same "no advisory gate" mechanism gap for the fourth and last Python
+service, pinning `pytest==9.0.3` via `importlib.metadata` the same way the
+other three already do (settlement-agent directly, claims-agent and
+payments-mcp since M2.1 Task 6) — policy-decision-service 96→97, re-measured
+with `.venv/bin/python -m pytest --collect-only -q tests` the same way as
+every prior entry in this history, not carried forward from the row above.)
 customer-ui's suite includes its own
 A19 regression test for the traceparent-across-await fix described below
 (`apps/customer-ui/NOTES.md` §2) — worth naming explicitly, since it's the

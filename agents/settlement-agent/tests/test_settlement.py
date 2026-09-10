@@ -103,14 +103,12 @@ async def _run(claim, payments, model):
         return await decide_settlement(claim, payments)
 
 
-@pytest.mark.asyncio
 async def test_model_calls_propose_then_execute_in_that_order():
     payments = FakePayments()
     await _run(CLAIM, payments, _script())
     assert [c[0] for c in payments.calls] == ["propose", "execute"]
 
 
-@pytest.mark.asyncio
 async def test_execute_passes_the_amount_through_to_the_payments_tool():
     """The execute call states what it is paying, not just which id.
 
@@ -126,7 +124,6 @@ async def test_execute_passes_the_amount_through_to_the_payments_tool():
     assert ("execute", "PAY-000001", 6200.0, "EUR") in payments.calls
 
 
-@pytest.mark.asyncio
 async def test_reply_amount_comes_from_the_ledger_not_from_the_model():
     """The model narrates; payments-api states the amount.
 
@@ -140,14 +137,12 @@ async def test_reply_amount_comes_from_the_ledger_not_from_the_model():
     assert result["paymentId"] == "PAY-000001"
 
 
-@pytest.mark.asyncio
 async def test_narrative_comes_from_the_model():
     payments = FakePayments()
     result = await _run(CLAIM, payments, _script(narrative="Rear-end collision, covered."))
     assert "Rear-end collision" in result["narrative"]
 
 
-@pytest.mark.asyncio
 async def test_tool_call_error_propagates_to_the_caller():
     """mcp_tools.ToolCallError must not be swallowed into a narrative.
 
@@ -159,7 +154,6 @@ async def test_tool_call_error_propagates_to_the_caller():
         await _run(CLAIM, payments, _script())
 
 
-@pytest.mark.asyncio
 async def test_missing_claim_id_is_rejected_before_the_model_runs():
     payments = FakePayments()
     with pytest.raises(ValueError, match="claimId"):
@@ -167,7 +161,6 @@ async def test_missing_claim_id_is_rejected_before_the_model_runs():
     assert payments.calls == []
 
 
-@pytest.mark.asyncio
 async def test_missing_amount_is_rejected_before_the_model_runs():
     payments = FakePayments()
     with pytest.raises(ValueError, match="amount"):
@@ -175,7 +168,6 @@ async def test_missing_amount_is_rejected_before_the_model_runs():
     assert payments.calls == []
 
 
-@pytest.mark.asyncio
 async def test_negative_amount_is_rejected_before_the_model_runs():
     payments = FakePayments()
     with pytest.raises(ValueError, match="negative"):
@@ -183,7 +175,6 @@ async def test_negative_amount_is_rejected_before_the_model_runs():
     assert payments.calls == []
 
 
-@pytest.mark.asyncio
 async def test_model_finishing_without_executing_a_payment_raises():
     """A model that only narrates, never calling the tools, must not be
 
@@ -312,7 +303,6 @@ def _stubborn_model(narrative: str = "I could not complete this payment."):
     return FunctionModel(fake_model)
 
 
-@pytest.mark.asyncio
 async def test_the_agent_makes_exactly_one_execute_attempt_after_a_denial():
     """Counts calls. A test asserting only 'a denial happened' passes on a
     retry loop that eventually gives up, which is exactly the stage failure.
@@ -329,7 +319,6 @@ async def test_the_agent_makes_exactly_one_execute_attempt_after_a_denial():
     assert calls == ["propose", "execute"]
 
 
-@pytest.mark.asyncio
 async def test_a_second_execute_attempt_never_reaches_the_payment_system():
     """The model tries again anyway; the latch stops it at our boundary.
 
@@ -347,7 +336,6 @@ async def test_a_second_execute_attempt_never_reaches_the_payment_system():
     assert result["status"] == "refused"
 
 
-@pytest.mark.asyncio
 async def test_the_model_sees_the_denial_reason_and_can_narrate_it():
     """The refusal has to arrive as something the model reads.
 
@@ -390,7 +378,6 @@ async def test_the_model_sees_the_denial_reason_and_can_narrate_it():
     assert DENY_REASON in result["narrative"]
 
 
-@pytest.mark.asyncio
 async def test_a_refused_settlement_replies_instead_of_raising():
     """The demo's moment. status "refused", and the narrative survives.
 
@@ -416,7 +403,6 @@ async def test_a_refused_settlement_replies_instead_of_raising():
     assert result["currency"] == "EUR"
 
 
-@pytest.mark.asyncio
 async def test_a_refused_propose_is_reported_as_refused_too():
     """The denial path does not depend on which tool was refused.
 
@@ -434,7 +420,6 @@ async def test_a_refused_propose_is_reported_as_refused_too():
     assert result["narrative"] == "I cannot open this payment."
 
 
-@pytest.mark.asyncio
 async def test_a_transport_failure_still_propagates_rather_than_being_narrated():
     """Regression guard at the agent level.
 

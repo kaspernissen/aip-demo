@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 
 class RecordingQueue:
     def __init__(self) -> None:
@@ -14,7 +12,6 @@ class RecordingQueue:
         self.events.append(event)
 
 
-@pytest.mark.asyncio
 async def test_exactly_one_message_is_enqueued_and_it_carries_the_full_reply(monkeypatch):
     """One Message only: a2a-sdk 0.3.7 drops anything enqueued after the first."""
     import executor as executor_mod

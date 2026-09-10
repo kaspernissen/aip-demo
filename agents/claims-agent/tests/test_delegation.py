@@ -22,7 +22,6 @@ def test_allowed_agents_is_empty_when_unset():
     assert allowed_agents_from_env(None) == {}
 
 
-@pytest.mark.asyncio
 async def test_send_posts_a_jsonrpc_message_send():
     seen = {}
 
@@ -59,7 +58,6 @@ async def test_send_posts_a_jsonrpc_message_send():
     assert result == {"status": "executed"}
 
 
-@pytest.mark.asyncio
 async def test_send_raises_on_a_jsonrpc_error():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
