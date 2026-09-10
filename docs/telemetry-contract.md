@@ -315,7 +315,7 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (also run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 52, payments-mcp 9, payments-api (Go) 20,
+claims-agent 16, settlement-agent 73, payments-mcp 9, payments-api (Go) 20,
 customer-ui (vitest) 6 — all passing. (This row was stale at 19 for
 settlement-agent from before M1.2 Tasks 1-4 added the PydanticAI agent's own
 tests — `tests/unit/test_telemetry_contract_counts.py` cannot see per-service
@@ -375,7 +375,21 @@ in-memory `tracetest.SpanRecorder` rather than trusting the call site, and
 cover: each of the two causes recorded correctly, the two values being
 distinct at all, the attribute being ABSENT on a successful execution (so its
 presence means 'refused here'), and the `northstar.` prefix that marks it as
-ours rather than a semantic convention. Re-measured the same way → 20.)
+ours rather than a semantic convention. Re-measured the same way → 20.
+Grown again by M2.2 Task 5, settlement-agent 52→73, re-measured with that
+service's own runner as above (`tests/test_mcp_tools.py` 18→33,
+`tests/test_settlement.py` 9→15). That task makes a policy denial terminal at
+the agent: `mcp_tools.PolicyDenial` is a `pydantic_ai.ToolFailed`, so the model
+sees the refusal and narrates it, and is deliberately *not* a
+`pydantic_ai.ModelRetry`, which the framework would hand back to the model as
+"try again". The 21 tests are weighted towards the two properties a
+"a deny happened" assertion would not catch: that the denial is recognised by
+the structured marker `data.decision == "deny"` and never by the reason prose,
+that a transport failure and a denial-shaped message with no marker both stay
+transport failures, and that exactly one execute attempt reaches the payment
+system — counted, with a reactive `FunctionModel` that retries if and only if
+the framework asks it to, so making `PolicyDenial` a `ModelRetry` turns that
+test red rather than leaving it green on a loop that eventually gives up.)
 customer-ui's suite includes its own
 A19 regression test for the traceparent-across-await fix described below
 (`apps/customer-ui/NOTES.md` §2) — worth naming explicitly, since it's the

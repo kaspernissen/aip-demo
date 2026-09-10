@@ -2,15 +2,36 @@
 
 FunctionModel drives an exact tool-call script for every case below,
 including the happy path. It never touches Anthropic.
+
+M2.2 Task 5's tests are the exception to "an exact tool-call script", and
+deliberately so: the property under test is whether the *framework* asks the
+model to retry a policy denial, and a script that makes one execute call
+whatever the code does would assert nothing about that. `_obedient_model`
+reacts to the parts it is handed instead -- it retries if and only if a
+`RetryPromptPart` arrives -- and `_stubborn_model` retries unbidden. See that
+section's own header.
 """
 from __future__ import annotations
 
 import pytest
-from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
+from mcp.shared.exceptions import McpError
+from mcp.types import ErrorData
+from pydantic_ai.messages import (
+    ModelResponse,
+    RetryPromptPart,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models.function import FunctionModel
 
-from mcp_tools import ToolCallError
+from mcp_tools import PolicyDenial, ToolCallError, _policy_denial
 from settlement import decide_settlement, settlement_agent
+
+# The denial fixtures live next to the code that parses them. Importable by
+# module name because pytest's default `prepend` import mode puts this
+# directory on sys.path (there is no __init__.py here).
+from test_mcp_tools import DENY_REASON, _denial_error
 
 CLAIM = {"claimId": "CLM-1842", "amount": 6200, "currency": "EUR"}
 
@@ -18,12 +39,20 @@ CLAIM = {"claimId": "CLM-1842", "amount": 6200, "currency": "EUR"}
 class FakePayments:
     """Stands in for PaymentsTools. Records calls; returns payments-api shapes."""
 
-    def __init__(self, *, execute_raises: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        execute_raises: Exception | None = None,
+        propose_raises: Exception | None = None,
+    ) -> None:
         self.calls: list[tuple] = []
         self._execute_raises = execute_raises
+        self._propose_raises = propose_raises
 
     async def propose(self, claim_id, amount, currency="EUR"):
         self.calls.append(("propose", claim_id, amount, currency))
+        if self._propose_raises:
+            raise self._propose_raises
         return {
             "paymentId": "PAY-000001",
             "claimId": claim_id,
@@ -171,3 +200,258 @@ async def test_model_finishing_without_executing_a_payment_raises():
     with pytest.raises(RuntimeError, match=r"CLM-1842.*executing a payment.*proposed=None"):
         await _run(CLAIM, payments, FunctionModel(fake_model))
     assert payments.calls == []
+
+
+# ---------------------------------------------------------------------------
+# M2.2 Task 5: the platform refuses, the agent explains, and it tries once.
+#
+# The spec's load-bearing hazard: "If a denial reads as a retryable tool
+# error, the agent can sit on stage retrying a payment it will never be
+# allowed to make. The implementation gets an explicit test for the absence of
+# a retry loop, not merely for the presence of a deny."
+#
+# The exception-shape fixtures live in test_mcp_tools.py, next to the code
+# that builds them. These tests are about the *agent*: what the model sees,
+# how many times the payment system is asked, and what the A2A caller gets.
+# ---------------------------------------------------------------------------
+
+
+def _denial() -> PolicyDenial:
+    """A PolicyDenial built by the production translator from the real
+    exception the deployed gateway produces -- not hand-constructed, so these
+    tests fail if the translation stops carrying the reason or the facts."""
+    denial = _policy_denial(_denial_error())
+    assert denial is not None, "the fixture stopped being recognised as a denial"
+    return denial
+
+
+def _obedient_model(narrative: str = "I could not complete this payment."):
+    """A model stand-in that does what the framework tells it to do.
+
+    This is the test that has to be genuine, so it is reactive rather than
+    scripted: it reads the request it was just handed and responds the way a
+    real model does.
+
+      * nothing yet -> propose
+      * the proposal came back -> execute
+      * **a RetryPromptPart came back -> execute again**, because that part is
+        the framework saying "your call failed, correct it and try again" and
+        an obedient model obeys
+      * anything else (including a failed ToolReturnPart) -> narrate
+
+    A step-counted script would assert nothing: it would make exactly one
+    execute call whatever the code under test did. This one loops if and only
+    if the framework asks it to loop, which is precisely the difference
+    between `ModelRetry` and `ToolFailed`.
+    """
+
+    def fake_model(messages, info):
+        parts = list(getattr(messages[-1], "parts", []))
+
+        if any(isinstance(p, RetryPromptPart) for p in parts):
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "execute_payment",
+                        {"payment_id": "PAY-000001", "amount": 6200.0, "currency": "EUR"},
+                    )
+                ]
+            )
+
+        returned = {
+            p.tool_name for p in parts if isinstance(p, ToolReturnPart)
+        }
+        if not returned:
+            return ModelResponse(
+                parts=[ToolCallPart("propose_payment", {"amount": 6200.0, "currency": "EUR"})]
+            )
+        if "propose_payment" in returned:
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "execute_payment",
+                        {"payment_id": "PAY-000001", "amount": 6200.0, "currency": "EUR"},
+                    )
+                ]
+            )
+        return ModelResponse(parts=[TextPart(content=narrative)])
+
+    return FunctionModel(fake_model)
+
+
+def _stubborn_model(narrative: str = "I could not complete this payment."):
+    """A model stand-in that tries the refused call a second time unbidden.
+
+    The framework does not ask it to -- `ToolFailed` carries no retry prompt --
+    it simply does, which is a thing a real model on a real stage can do. The
+    guarantee under test here is `settlement._latch`: the second attempt must
+    not reach the payment system.
+    """
+    state = {"executes": 0}
+
+    def fake_model(messages, info):
+        parts = list(getattr(messages[-1], "parts", []))
+        returned = {p.tool_name for p in parts if isinstance(p, ToolReturnPart)}
+
+        if not returned:
+            return ModelResponse(
+                parts=[ToolCallPart("propose_payment", {"amount": 6200.0, "currency": "EUR"})]
+            )
+        if state["executes"] < 2:
+            state["executes"] += 1
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "execute_payment",
+                        {"payment_id": "PAY-000001", "amount": 6200.0, "currency": "EUR"},
+                    )
+                ]
+            )
+        return ModelResponse(parts=[TextPart(content=narrative)])
+
+    return FunctionModel(fake_model)
+
+
+@pytest.mark.asyncio
+async def test_the_agent_makes_exactly_one_execute_attempt_after_a_denial():
+    """Counts calls. A test asserting only 'a denial happened' passes on a
+    retry loop that eventually gives up, which is exactly the stage failure.
+
+    Mutation-checked: making `PolicyDenial` a subclass of
+    `pydantic_ai.ModelRetry` instead of `ToolFailed` makes this fail, because
+    the framework then sends a RetryPromptPart and `_obedient_model` obeys it.
+    """
+    payments = FakePayments(execute_raises=_denial())
+    await _run(CLAIM, payments, _obedient_model())
+
+    calls = [c[0] for c in payments.calls]
+    assert calls.count("execute") == 1, f"expected one execute attempt, got {calls}"
+    assert calls == ["propose", "execute"]
+
+
+@pytest.mark.asyncio
+async def test_a_second_execute_attempt_never_reaches_the_payment_system():
+    """The model tries again anyway; the latch stops it at our boundary.
+
+    `ToolFailed` means the framework does not *ask* the model to retry. It
+    does not mean the model cannot. Delete `_latch` from `execute_payment` and
+    this test fails with two execute calls.
+    """
+    payments = FakePayments(execute_raises=_denial())
+    result = await _run(CLAIM, payments, _stubborn_model())
+
+    calls = [c[0] for c in payments.calls]
+    assert calls.count("execute") == 1, f"a refused payment was re-sent: {calls}"
+    # And the run still finishes as a refusal with the model's explanation,
+    # rather than dying on the second attempt.
+    assert result["status"] == "refused"
+
+
+@pytest.mark.asyncio
+async def test_the_model_sees_the_denial_reason_and_can_narrate_it():
+    """The refusal has to arrive as something the model reads.
+
+    Before this task it arrived as a bare McpError that propagated out of
+    Agent.run(), so the model was never told anything at all. Here the
+    scripted narrative is built from what the model was actually handed, so
+    the assertion is about the reason reaching it -- not about a string the
+    test itself chose.
+    """
+    seen: list[str] = []
+
+    def fake_model(messages, info):
+        parts = list(getattr(messages[-1], "parts", []))
+        returned = {p.tool_name for p in parts if isinstance(p, ToolReturnPart)}
+        for p in parts:
+            if isinstance(p, ToolReturnPart) and p.outcome == "failed":
+                seen.append(str(p.content))
+        if not returned:
+            return ModelResponse(
+                parts=[ToolCallPart("propose_payment", {"amount": 6200.0, "currency": "EUR"})]
+            )
+        if "propose_payment" in returned:
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "execute_payment",
+                        {"payment_id": "PAY-000001", "amount": 6200.0, "currency": "EUR"},
+                    )
+                ]
+            )
+        return ModelResponse(parts=[TextPart(content=f"Refused: {seen[-1]}")])
+
+    payments = FakePayments(execute_raises=_denial())
+    result = await _run(CLAIM, payments, FunctionModel(fake_model))
+
+    assert seen, "the model was never handed a failed tool result for the denial"
+    assert DENY_REASON in seen[0]
+    # PydanticAI marks it failed rather than retryable: no RetryPromptPart was
+    # ever produced, which is what `outcome == "failed"` above establishes.
+    assert DENY_REASON in result["narrative"]
+
+
+@pytest.mark.asyncio
+async def test_a_refused_settlement_replies_instead_of_raising():
+    """The demo's moment. status "refused", and the narrative survives.
+
+    Task 4 measured the pre-task behaviour: JSON-RPC -32603 with the reason
+    intact but no `result` at all, so nothing narrated the refusal. A demo
+    that shows an error envelope where a customer-facing explanation belongs
+    undercuts the whole milestone.
+    """
+    payments = FakePayments(execute_raises=_denial())
+    result = await _run(
+        CLAIM,
+        payments,
+        _obedient_model(narrative="I proposed the assessed amount but I am not authorised to pay it."),
+    )
+
+    assert result["status"] == "refused"
+    assert result["narrative"] == (
+        "I proposed the assessed amount but I am not authorised to pay it."
+    )
+    # Ledger truth for the rest: the proposal is what actually exists.
+    assert result["paymentId"] == "PAY-000001"
+    assert result["amount"] == 6200.0
+    assert result["currency"] == "EUR"
+
+
+@pytest.mark.asyncio
+async def test_a_refused_propose_is_reported_as_refused_too():
+    """The denial path does not depend on which tool was refused.
+
+    Only the execute limit is configured today, so this is the case a rule
+    change could reach without anyone revisiting this file: a refused propose
+    must still produce a refused reply, not the "finished without executing a
+    payment" RuntimeError.
+    """
+    payments = FakePayments(propose_raises=_denial())
+    result = await _run(CLAIM, payments, _obedient_model(narrative="I cannot open this payment."))
+
+    assert [c[0] for c in payments.calls] == ["propose"]
+    assert result["status"] == "refused"
+    assert result["paymentId"] is None
+    assert result["narrative"] == "I cannot open this payment."
+
+
+@pytest.mark.asyncio
+async def test_a_transport_failure_still_propagates_rather_than_being_narrated():
+    """Regression guard at the agent level.
+
+    The PDS being unreachable arrives as an McpError with no deny marker
+    (Task 4's failClosed measurement). It is an outage, not a decision: it
+    must reach the caller as an error, never as a refusal the model explains
+    away to a claimant.
+    """
+    outage = McpError(
+        ErrorData(
+            code=-32001,
+            message=(
+                "mcpGuardrails checkRequest failed: upstream call failed: "
+                "Connect: Connection refused (os error 111)"
+            ),
+        )
+    )
+    payments = FakePayments(execute_raises=outage)
+    with pytest.raises(McpError, match="Connection refused"):
+        await _run(CLAIM, payments, _obedient_model())

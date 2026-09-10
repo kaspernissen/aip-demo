@@ -47,7 +47,9 @@ from typing import Any
 import mcp.types as types
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from mcp.shared.exceptions import McpError
 from opentelemetry import propagate
+from pydantic_ai import ToolFailed
 
 from svid import fetch_jwt_svid
 
@@ -77,6 +79,135 @@ class ToolCallError(RuntimeError):
     empirically), so the caller sees the real reason, not a flattened
     "executed" status.
     """
+
+
+class PolicyDenial(ToolFailed):
+    """The platform refused this call, and no retry will change that.
+
+    This is the load-bearing type of M2.2. The hazard it exists to prevent:
+    "If a denial reads as a retryable tool error, the agent can sit on stage
+    retrying a payment it will never be allowed to make."
+
+    Three properties, each deliberate:
+
+      * **It is a `pydantic_ai.ToolFailed`, so the model sees it.** PydanticAI
+        turns a `ToolFailed` raised anywhere under a tool call into a
+        `ToolReturnPart(outcome='failed')` carrying `.message`
+        (`tool_manager.py::_wrap_error_as_failed`, read from the installed
+        2.41.0). The model therefore reads the refusal and can narrate it,
+        which is the whole point: before this, a denial left `_call` as a bare
+        `McpError`, propagated out of `Agent.run()`, and the A2A caller got a
+        JSON-RPC `-32603` where a customer-facing explanation belongs
+        (measured in Task 4, §11 concern 4).
+      * **It is emphatically NOT a `pydantic_ai.ModelRetry`.** `ModelRetry` is
+        handed back to the model *as a correction prompt* and consumes the
+        tool's retry budget (`_wrap_error_as_retry` -> `RetryPromptPart`) — the
+        model is actively told to try again, which is the retry loop. Unlike
+        `ModelRetry`, `ToolFailed` "does not prepend retry/correction
+        instructions and does not consume the tool's retry budget" (its own
+        docstring). `ModelRetry` and `ToolFailed` are siblings under
+        `Exception`, so this is not a subclass by construction — and
+        `test_a_policy_denial_is_not_a_ModelRetry` pins it anyway, because the
+        two names are one keystroke apart.
+      * **It carries the structured facts, not just prose.** `str(McpError)`
+        yields only `error.message` and silently drops `error.data`, so a
+        handler that re-raises the leaf loses the rule, the limit and the
+        requested amount. Those are read off `exc.error.data` here and kept as
+        attributes.
+
+    `retryable` is carried verbatim from the PDS rather than assumed: the PDS
+    emits `"retryable": false` unconditionally for a deny (its own
+    `_result()` comment says why), and a deny that claimed to be retryable
+    would be a contradiction at the source. What makes this exception terminal
+    is the type, not the flag; the flag is evidence.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        rule: str | None = None,
+        limit: float | None = None,
+        requested: float | None = None,
+        retryable: bool = False,
+        body: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.rule = rule
+        self.limit = limit
+        # `requested` is `None` when the PDS could not read an amount at all
+        # (a hostile or unparseable argument): it emits `"requested": null` and
+        # denies, keeping the body strictly valid JSON. Not an error here.
+        self.requested = requested
+        self.retryable = retryable
+        self.body = body if body is not None else {}
+
+
+def _deny_marker(exc: BaseException) -> dict[str, Any] | None:
+    """The PDS's structured deny payload, if `exc` carries one.
+
+    Recognition is by the structured marker `decision == "deny"` and never by
+    string-matching `error.message`. The message is prose written for a human
+    (and for the model to narrate); it will be reworded, and a reworded message
+    must not silently turn a terminal denial back into a retryable error.
+
+    Measured shape (Task 1 finding 1, Task 3's body): agentgateway parses the
+    PDS's `AuthorizationError.mcp_error` — itself a JSON-RPC error object —
+    whole into `error.data`, so the marker sits one level down at
+    `exc.error.data["data"]`. The un-nested position is accepted too, so this
+    still recognises a denial if the gateway ever stops double-wrapping;
+    both are structural checks for the same key, not a widening of what counts
+    as a denial.
+    """
+    error = getattr(exc, "error", None)
+    if error is None:
+        return None
+    data = getattr(error, "data", None)
+    if not isinstance(data, dict):
+        return None
+    for candidate in (data.get("data"), data):
+        if isinstance(candidate, dict) and candidate.get("decision") == "deny":
+            return candidate
+    return None
+
+
+def _policy_denial(exc: BaseException) -> PolicyDenial | None:
+    """Translate a policy refusal into a `PolicyDenial`, or return `None`.
+
+    `None` for everything else, which is the regression guard that matters
+    here: a transport error must stay a transport error. The PDS being
+    *unreachable* also arrives as an `McpError` ("mcpGuardrails checkRequest
+    failed: upstream call failed: Connect: Connection refused", measured in
+    Task 4's failClosed test) and carries no marker — that is an outage, not a
+    decision, and reporting it as "policy said no" would be a lie the model
+    would then narrate.
+    """
+    marker = _deny_marker(exc)
+    if marker is None:
+        return None
+
+    # The narration text. `error.message` is where the PDS puts the
+    # human-readable reason precisely because it is the one place
+    # `str(McpError)` preserves (R13); `str(exc)` is the same string, and is
+    # the fallback if some other carrier ever grows a marker.
+    reason = getattr(getattr(exc, "error", None), "message", None) or str(exc)
+    rule = marker.get("rule")
+
+    detail = f"policy refused this call: {reason}"
+    if rule:
+        detail += f" (rule {rule})"
+    detail += (
+        " — this refusal is final. Making the same call again will be refused "
+        "again. Explain to the claimant what happened instead."
+    )
+    return PolicyDenial(
+        detail,
+        rule=rule,
+        limit=marker.get("limit"),
+        requested=marker.get("requested"),
+        retryable=bool(marker.get("retryable", False)),
+        body=marker,
+    )
 
 
 def _leaf_exception(exc: BaseException) -> BaseException:
@@ -209,7 +340,29 @@ class PaymentsTools:
             # exception from inside an `except*` clause gets re-wrapped by
             # design (PEP 654) — so unwrap by hand instead and re-raise the
             # leaf exception the caller actually needs to see.
-            raise _leaf_exception(eg) from eg
+            #
+            # M2.2: and if that leaf is the platform refusing, translate it
+            # into a PolicyDenial first. The leaf is an
+            # `mcp.shared.exceptions.McpError` (measured — the gateway denies
+            # on HTTP 200 with a JSON-RPC error body, so `raise_for_status()`
+            # never fires and there is no `httpx.HTTPStatusError` anywhere on
+            # this path), whose `str()` keeps the reason but drops
+            # `error.data`. Re-raising the leaf unchanged is what lost the
+            # structure and left the A2A caller a bare `-32603`.
+            leaf = _leaf_exception(eg)
+            raise (_policy_denial(leaf) or leaf) from eg
+        except McpError as exc:
+            # Belt and braces. Every measurement so far shows the McpError
+            # arriving doubly wrapped by the two anyio TaskGroups, so the
+            # clause above is the live path. This one exists because the
+            # wrapping is anyio's business, not ours: if a future anyio or mcp
+            # stopped wrapping, a denial would silently stop being terminal
+            # and the failure mode would be a retry loop on stage — the exact
+            # hazard this module now guards. Cheaper to cover than to detect.
+            denial = _policy_denial(exc)
+            if denial is None:
+                raise
+            raise denial from exc
 
     async def propose(self, claim_id: str, amount: float, currency: str = "EUR") -> dict:
         return await self._call(

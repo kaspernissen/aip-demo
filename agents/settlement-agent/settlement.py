@@ -13,17 +13,26 @@ Two deliberate properties:
     amount/currency/status/paymentId come from what the ledger recorded, never
     from model output. See the plan's "the rule that makes this demo honest".
 
-There is no €5,000 check here, and that is the point: M1 is ungoverned on
-purpose. The model can propose any amount and nothing stops it. That hole is
-what M2's Policy Decision Service fills.
+There was no €5,000 check here in M1, and that was the point: M1 is ungoverned
+on purpose. The model could propose any amount and nothing stopped it. That
+hole is what M2's Policy Decision Service fills — and note where it is filled:
+still not here. There is no limit in this file in M2.2 either. The refusal
+comes from the platform, at a choke point the agent cannot reach around, and
+this file's only job on that path is to let the model *see* the refusal so it
+can explain it (M2.2 Task 5).
 """
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic_ai import Agent, RunContext
+
+from mcp_tools import PolicyDenial
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "anthropic:claude-sonnet-5"
 
@@ -34,6 +43,10 @@ class PaymentRecord:
 
     proposed: dict[str, Any] | None = None
     executed: dict[str, Any] | None = None
+    # The platform's refusal, if there was one. Set by the tools below and read
+    # by decide_settlement, which is how a refused settlement gets a reply
+    # carrying the model's explanation instead of a JSON-RPC error envelope.
+    refused: PolicyDenial | None = None
 
 
 @dataclass
@@ -72,12 +85,55 @@ settlement_agent = Agent(
 )
 
 
+def _latch(ctx: RunContext[SettlementDeps], tool: str) -> None:
+    """Once the platform has refused this settlement, send it nothing further.
+
+    `PolicyDenial` is a `pydantic_ai.ToolFailed`, so the framework already
+    declines to prompt the model to retry (see mcp_tools.PolicyDenial). But
+    "the framework does not ask it to" is not "it cannot": nothing stops a
+    model from calling execute_payment a second time on its own, and the spec's
+    hazard is an agent that "can sit on stage retrying a payment it will never
+    be allowed to make".
+
+    So the guarantee is made here rather than assumed of the model: after a
+    refusal, no further payment call leaves this process. The second attempt is
+    not hidden — it is logged, and the model gets the same terminal refusal
+    back, so it still knows to explain rather than keep trying.
+
+    This state lives on the per-run `PaymentRecord`, never on `PaymentsTools`:
+    that object is constructed once per process and shared by every settlement,
+    so a latch there would refuse the *next* claim too.
+    """
+    refused = ctx.deps.record.refused
+    if refused is None:
+        return
+    logger.warning(
+        "claim %s: %s called again after a policy refusal (rule %s); "
+        "not sent to the platform",
+        ctx.deps.claim["claimId"],
+        tool,
+        refused.rule,
+    )
+    raise refused
+
+
 @settlement_agent.tool
 async def propose_payment(
     ctx: RunContext[SettlementDeps], amount: float, currency: str = "EUR"
 ) -> dict[str, Any]:
     """Propose a payment against this claim. Returns the payment, including its paymentId."""
-    result = await ctx.deps.payments.propose(ctx.deps.claim["claimId"], amount, currency)
+    _latch(ctx, "propose_payment")
+    try:
+        result = await ctx.deps.payments.propose(
+            ctx.deps.claim["claimId"], amount, currency
+        )
+    except PolicyDenial as denial:
+        # Record, then re-raise unchanged. PydanticAI turns the ToolFailed into
+        # a failed tool result the model reads (and does not prepend a retry
+        # prompt to); decide_settlement reads the record to build a refused
+        # reply rather than raising past the model's explanation.
+        ctx.deps.record.refused = denial
+        raise
     ctx.deps.record.proposed = result
     return result
 
@@ -95,7 +151,12 @@ async def execute_payment(
     paying rather than naming an opaque id alone, so the payment system can
     confirm the instruction matches the proposal it recorded.
     """
-    result = await ctx.deps.payments.execute(payment_id, amount, currency)
+    _latch(ctx, "execute_payment")
+    try:
+        result = await ctx.deps.payments.execute(payment_id, amount, currency)
+    except PolicyDenial as denial:
+        ctx.deps.record.refused = denial
+        raise
     ctx.deps.record.executed = result
     return result
 
@@ -121,6 +182,14 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
     Lets mcp_tools.ToolCallError propagate: a2a-sdk turns it into a JSON-RPC
     error carrying str(exc). A model apologising in prose would hide a
     failed payment.
+
+    mcp_tools.PolicyDenial is the deliberate exception to that, and the two are
+    not the same kind of event. A ToolCallError is a *malfunction* -- the
+    payment system failed to do what it was asked -- and prose over the top of
+    it would hide a broken payout. A PolicyDenial is the platform working
+    exactly as designed: the answer is no, it is final, and the claimant is
+    owed an explanation rather than a stack trace. So it returns a reply with
+    status "refused" carrying the model's explanation.
     """
     claim_id, amount, currency = _validate(claim)
 
@@ -135,6 +204,36 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
     )
 
     executed = deps.record.executed
+    refused = deps.record.refused
+    if executed is None and refused is not None:
+        # The demo's moment: the platform refused, and the agent explains
+        # rather than erroring. Before M2.2 the PolicyDenial (then a bare
+        # McpError) propagated past this point and the A2A caller got a
+        # JSON-RPC -32603 with no `result` at all -- the reason was legible but
+        # nothing narrated it (Task 4 §11.4). The reply is a *reply*, and it
+        # says refused.
+        #
+        # The honesty rule is unchanged: nothing here comes from model output.
+        # `amount`, `currency` and `paymentId` are what the ledger recorded for
+        # the proposal -- which is exactly the state the ledger is in, since the
+        # execute never happened -- and `status` is the platform's decision, not
+        # the model's account of it. Only `narrative` is the model's.
+        proposed = deps.record.proposed or {}
+        logger.info(
+            "claim %s: refused by policy (rule %s, limit %s, requested %s)",
+            claim_id,
+            refused.rule,
+            refused.limit,
+            refused.requested,
+        )
+        return {
+            "amount": proposed.get("amount", amount),
+            "currency": proposed.get("currency", currency),
+            "status": "refused",
+            "paymentId": proposed.get("paymentId"),
+            "narrative": result.output,
+        }
+
     if executed is None:
         raise RuntimeError(
             f"claim {claim_id}: the model finished without executing a payment; "
