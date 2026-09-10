@@ -28,10 +28,12 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.trace import Link, SpanContext, TraceFlags
 from pydantic_ai import Agent, RunContext
 
+from correlation import set_claim_id
 from mcp_tools import PolicyDenial
 
 logger = logging.getLogger(__name__)
@@ -294,9 +296,10 @@ class UnverifiedApproval(RuntimeError):
 AMOUNT_EPSILON = 0.005
 
 
-async def _verify_refusal(payments: Any, payment_id: str, amount: float) -> None:
+async def _verify_refusal(payments: Any, payment_id: str, amount: float) -> dict[str, Any]:
     """Read the ledger back and refuse to proceed unless it shows a real,
-    matching refusal.
+    matching refusal. Returns the ledger record on success, so the caller can
+    read facts (the claim id, in particular) that only the ledger knows.
 
     Lets `mcp_tools.ToolCallError` propagate unchanged when the payment does
     not exist at all (payments-api's 404, surfaced the same way every other
@@ -324,6 +327,8 @@ async def _verify_refusal(payments: Any, payment_id: str, amount: float) -> None
             "two must agree within the ledger's own amountEpsilon"
         )
 
+    return ledger_record
+
 
 async def execute_approved(
     payment_id: str, amount: float, currency: str, approval: dict[str, Any],
@@ -346,22 +351,42 @@ async def execute_approved(
     and still fails loudly with `KeyError` on a malformed payload, exactly as
     before this fix, and before any payment-system call at all -- the ledger
     check is an additional gate, not a replacement for that one.
+
+    M3 Task 3 review, the question (R16): the approval payload carries no
+    claim id -- unlike a claim submission, which arrives with `northstar.claim.id`
+    already in inbound A2A baggage (set at claims-agent's intake) -- so this
+    is the flow's own point of "intake" for that fact. The ledger record
+    `_verify_refusal` already had to read carries `claimId`, so this sets it
+    as baggage on the context the span and `payments.execute` run under, and
+    detaches it again before returning, so it never bleeds into whatever
+    request this process handles next. Without this, a reviewer correlating
+    by claim id would see the refusal half of the story and not the approval
+    half.
     """
     reviewer_id = approval["reviewerId"]
 
-    await _verify_refusal(payments, payment_id, amount)
+    ledger_record = await _verify_refusal(payments, payment_id, amount)
 
-    tracer = trace.get_tracer(__name__)
-    with tracer.start_as_current_span(
-        "settlement.execute_approved",
-        links=_refusal_link(refused_trace_id, refused_span_id),
-        attributes={
-            "northstar.payment.id": payment_id,
-            "northstar.approval.reviewer_id": reviewer_id,
-        },
-    ):
-        # Straight to execute. No propose: the proposal is what was reviewed.
-        result = await payments.execute(payment_id, amount, currency)
+    claim_id = ledger_record.get("claimId")
+    token = None
+    if claim_id:
+        token = otel_context.attach(set_claim_id(str(claim_id)))
+    try:
+        tracer = trace.get_tracer(__name__)
+        with tracer.start_as_current_span(
+            "settlement.execute_approved",
+            links=_refusal_link(refused_trace_id, refused_span_id),
+            attributes={
+                "northstar.payment.id": payment_id,
+                "northstar.approval.reviewer_id": reviewer_id,
+            },
+        ):
+            # Straight to execute. No propose: the proposal is what was
+            # reviewed.
+            result = await payments.execute(payment_id, amount, currency)
+    finally:
+        if token is not None:
+            otel_context.detach(token)
     return result
 
 

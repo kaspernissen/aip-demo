@@ -18,11 +18,13 @@ return value merely looks like before it reaches a span.
 from __future__ import annotations
 
 import pytest
+from opentelemetry import baggage
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 import settlement
+from correlation import CLAIM_ID_KEY
 from mcp_tools import ToolCallError
 from settlement import UnverifiedApproval, _refusal_link, execute_approved
 
@@ -246,6 +248,45 @@ async def test_execute_approved_refuses_on_amount_mismatch():
         )
 
     assert [c[0] for c in payments.calls] == ["get"]
+
+
+# ---------------------------------------------------------------------------
+# M3 Task 3 review, the question (R16): correlation by claim id must not
+# break across the refusal -> approval pair. The approval payload itself
+# carries no claim id; the ledger record `_verify_refusal` reads does
+# (FakePayments' default ledger carries "claimId": "CLM-1842").
+# ---------------------------------------------------------------------------
+
+
+async def test_execute_approved_sets_claim_id_baggage_from_the_ledger_record(traced):
+    payments = FakePayments()
+    seen = {}
+    original_execute = payments.execute
+
+    async def capturing_execute(payment_id, amount, currency="EUR"):
+        seen["claim_id"] = baggage.get_baggage(CLAIM_ID_KEY)
+        return await original_execute(payment_id, amount, currency)
+
+    payments.execute = capturing_execute
+
+    await execute_approved(
+        "PAY-000001", 6200.0, "EUR", {"reviewerId": "alex.mercer"},
+        payments, REFUSED_TRACE_ID, REFUSED_SPAN_ID,
+    )
+
+    assert seen["claim_id"] == "CLM-1842"
+
+
+async def test_execute_approved_does_not_leak_claim_id_baggage_after_returning(traced):
+    payments = FakePayments()
+    assert baggage.get_baggage(CLAIM_ID_KEY) is None
+
+    await execute_approved(
+        "PAY-000001", 6200.0, "EUR", {"reviewerId": "alex.mercer"},
+        payments, REFUSED_TRACE_ID, REFUSED_SPAN_ID,
+    )
+
+    assert baggage.get_baggage(CLAIM_ID_KEY) is None
 
 
 async def test_execute_approved_permits_an_amount_within_epsilon(traced):

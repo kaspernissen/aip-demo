@@ -1,7 +1,14 @@
 # M3 Task 3: the colleague with higher approval authority settlement-agent's
 # own refusal narrates. This is settlement-agent.yaml with exactly four
 # strings changed -- the ServiceAccount name, the `app` label (everywhere it
-# appears), the Deployment name, and the Service name -- and nothing else.
+# appears), the Deployment name, and the Service name -- with the original
+# file's explanatory commentary elided rather than duplicated verbatim (this
+# file carries its own comments, scoped to what differs; see
+# settlement-agent.yaml for the reasoning behind each shared env var and
+# setting). The manifest *content* is genuinely identical to
+# settlement-agent.yaml under those four substitutions -- verified by a
+# normalised diff (M3 Task 3 review) -- so nothing here changes what gets
+# deployed; only the comments explaining it are shorter.
 #
 # Same image (`localhost:5001/northstar/settlement-agent:dev` -- there is no
 # separate senior-settlement-agent image to build), same agent-card, same

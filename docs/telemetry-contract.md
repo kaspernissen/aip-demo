@@ -426,7 +426,7 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (all six run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 106, payments-mcp 15, payments-api (Go) 31,
+claims-agent 16, settlement-agent 108, payments-mcp 15, payments-api (Go) 31,
 customer-ui (vitest) 6, policy-decision-service 105 — all passing. (The sixth
 entry arrived in the M2.2 final-review fix round: `policy-decision-service` was
 in neither the gate's loop nor this row until finding 1 showed both already
@@ -1633,6 +1633,70 @@ produces different numbers. What is stable, and what this section actually
 claims, is the *series* — the metric names and their label keys, which is the
 part a dashboard or an alert would be built on.
 
+## settlement-agent's own instrumentation: `execute_approved` (M3 Task 3)
+
+M3 Task 3 adds one span this repo owns outright -- not agentgateway's, not
+a2a-sdk's, not the Policy Decision Service's -- created by
+`agents/settlement-agent/settlement.py`'s `execute_approved` itself, around
+the human-approved execution. Named `settlement.execute_approved`, one per
+approved execution, on both settlement Deployments (the same code, run under
+two identities).
+
+### Attributes on the `settlement.execute_approved` span
+
+Two keys, both `northstar.`-prefixed because this is domain data no
+OpenTelemetry semantic convention covers, set only by this repo's own code
+and nowhere else:
+
+```
+northstar.payment.id             "PAY-000001"
+northstar.approval.reviewer_id   "alex.mercer"
+```
+
+`northstar.payment.id` is the ledger's own payment id, read off the approval
+payload -- not derived from a model call, because `execute_approved` makes
+none. `northstar.approval.reviewer_id` is the reviewer's identity exactly as
+the approval payload states it: a claim carried on the span, not a verified
+credential -- the M3 Task 3 review fix round's ledger check
+(`_verify_refusal`) constrains what this span's *execution* can cause; it
+does not turn this string into an authenticated identity, and this document
+does not claim otherwise.
+
+**This span also carries this project's first span link.** Every other span
+named in this document relates to its neighbours by parent/child alone.
+`execute_approved` additionally links to the settlement-agent span that was
+active in `decide_settlement` when the refusal was recorded -- read back off
+Task 2's ledger fields `refusedTraceId`/`refusedSpanId` and built into a real,
+valid remote `SpanContext` in `settlement.py`'s `_refusal_link` (see that
+function's own docstring for the measurement: a `SpanContext` built with
+`span_id=0` is silently dropped by the SDK's own validity check before an
+exporter ever sees it, which is why a real span id has to travel, not just a
+trace id). A link, not a parent: a human takes minutes to review a refusal,
+the original process is long gone by the time they act on it, and a span held
+open across that gap would misstate both the duration and what was executing.
+
+The linked span is **settlement-agent's own A2A server span**, active at the
+moment the refusal was recorded -- not the Policy Decision Service's
+`policy.decision` span, and not the denied `execute_payment` client span
+(M3 Task 3 review, finding 3 / R13; `systems/payments-api/store.go`'s
+`RefusedSpanID` doc comment and `agents/settlement-agent/mcp_tools.py`'s
+`refuse` doc comment previously overstated this as "the exact span that
+recorded the refusal", which reads as the PDS's own decision span). It is
+still the right span for a reviewer to land on for this milestone's stage
+demo -- clicking the link lands in the refusal's own trace -- and this
+document names it for what it actually is rather than for what would sound
+more impressive.
+
+Also new on this span (M3 Task 3 review, the question / R16): when the
+ledger record `execute_approved` reads carries a `claimId` -- it always does,
+propose always writes one -- this sets `northstar.claim.id` as W3C baggage on
+the context the span and the downstream `execute_payment` call run under,
+and detaches it again before returning. The approval payload itself carries
+no claim id (unlike a claim submission, which arrives with it already in
+inbound A2A baggage), so this is this flow's own point of intake for that
+fact -- without it, a reviewer correlating by claim id would see the refusal
+half of the story and not the approval half.
+
 ## Conventions adopted
 
 - **GenAI semconv** for model calls, exercised as of M1.2 — see "PydanticAI
@@ -1650,6 +1714,7 @@ part a dashboard or an alert would be built on.
 | `northstar.policy.number` | customer-ui root span | none | The root span only |
 | `policy.*` (nine keys, M2.2) | policy-decision-service, on its own `policy.decision` span | none — set locally, never propagated | That one span only. Keys declared in `platform/policy-decision-service/pds/telemetry.py`; measured inventory under "The policy decision, as measured (M2.2)" |
 | `northstar.payment.refusal_cause` (M2.2 Task 4) | payments-api, on its own server span for a refused execute; two closed values, `amount_mismatch` and `already_executed` (`systems/payments-api/handlers.go`) | none | payments-api's execute span, and **only when it refuses** — absent on success, so its presence means "refused here". Read off a real recorded span by that service's own Go tests via an in-memory `tracetest.SpanRecorder`; it appears on **none** of the six M2.2 traces named in this document, because neither the denied nor the permitted scenario reaches a 409 |
+| `northstar.payment.id`, `northstar.approval.reviewer_id` (M3 Task 3) | settlement-agent, on its own `settlement.execute_approved` span (`agents/settlement-agent/settlement.py`) | none | That span only, on the human-approved execution path. See "settlement-agent's own instrumentation" above, including this milestone's first span **link** and the same span's `northstar.claim.id` baggage (M3 Task 3 review, R16) |
 
 **Two M2.2 notes on this table, both measured rather than reasoned.** The
 `policy.*` family is prefixed `policy.` and not `northstar.` on purpose: it is

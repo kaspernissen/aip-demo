@@ -405,11 +405,14 @@ class PaymentsTools:
         path every other payments call in this repo takes -- not a new HTTP
         path from this agent to payments-api).
 
-        payments-api's refuse endpoint validates only that `rule` is
-        non-empty, so this client is the only caller and every field is sent,
-        always: `refused_span_id` travels alongside `refused_trace_id` so
-        `execute_approved` can link to the exact span that recorded the
-        refusal, not just to the trace as a whole (see settlement.py's
+        M3 Task 3 review fix round (R12) superseded validating only `rule`:
+        payments-api's refuse endpoint now also rejects an already-refused
+        payment and confirms `requested` against the recorded proposal.
+        `refused_span_id` travels alongside `refused_trace_id` so
+        `execute_approved` can link to the settlement-agent span active when
+        the refusal was recorded -- settlement-agent's own A2A server span,
+        not the Policy Decision Service's `policy.decision` span (finding 3 /
+        R13) -- rather than only to the trace as a whole (see settlement.py's
         `_refusal_link` and its measurement note).
         """
         return await self._call(
