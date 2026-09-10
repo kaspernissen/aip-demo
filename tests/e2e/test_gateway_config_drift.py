@@ -29,13 +29,25 @@ gateway actually consumes is equality of the *parsed* documents: comment drift
 stays legal, and any change that could reach the gateway fails. That is also
 the only version of this test that can be left switched on permanently.
 
-**Skips without a cluster, fails with one.** Same split, and the same reasons,
-as `tests/e2e/test_gateway_is_the_only_route.py::policy_present`: no cluster
-and no agentgateway ConfigMap at all is nothing to say, so skip — `tests/unit`
-still guards the committed file without any cluster. A reachable cluster whose
-ConfigMap parses differently from the committed file IS the regression, and it
-fails here, loudly. A skip that hides a live/committed divergence would be the
-defect this file exists to catch, wearing a green tick.
+**Skips without a cluster, fails with one — and never skips on the object under
+test.** Same split, and the same reasons, as
+`tests/e2e/test_gateway_is_the_only_route.py::policy_present`: the skip
+discriminates on a *different object* than the one being asserted. Whether this
+is a stage-2 cluster at all is decided by the `agentgateway` Deployment; the
+ConfigMap and its `config.yaml` key are the target, so their absence is a
+**failure**, never a skip. A missing or empty ConfigMap on a cluster that is
+running the gateway is itself a live/committed divergence — the gateway is
+serving a configuration this repository cannot see — which is precisely what
+this file exists to catch.
+
+The first version of this test got that wrong: it skipped when the ConfigMap or
+its key was missing, and the M2.2 fix-round re-review killed it by pointing the
+test at a key the live ConfigMap does not carry, which produced `1 skipped` and
+a skip reason that positively asserted a falsehood ("not a stage-2 cluster")
+about a cluster that was plainly stage 2. `policy_present` records the same
+defect in its own history, and `platform/policy-decision-service/tests/
+conftest.py` cites the same incident as its reason to raise rather than skip. A
+skip does not fail a run.
 
 **Why this is not behind `RUN_BROWSER_TESTS=1`.** Like the two files above, it
 spends no model tokens and starts no browser: two `kubectl get` calls and a
@@ -54,6 +66,9 @@ COMMITTED_CONFIG = REPO_ROOT / "deploy" / "platform" / "agentgateway" / "config.
 KUBE_CONTEXT = "kind-northstar"
 PLATFORM_NAMESPACE = "northstar-platform"
 CONFIGMAP_NAME = "agentgateway-config"
+# The stage-2 discriminator: a different object than the one under test, so a
+# missing ConfigMap can fail instead of silently skipping.
+GATEWAY_DEPLOYMENT = "agentgateway"
 # The key `scripts/setup-kind.sh` creates the ConfigMap under
 # (`--from-file=config.yaml=...`) and the file name the deployment mounts.
 CONFIGMAP_KEY = "config.yaml"
@@ -85,16 +100,37 @@ def live_gateway_config_text() -> str:
             "run ./scripts/setup-kind.sh --stage 2"
         )
 
+    # The stage-2 probe, deliberately NOT the object under test. If the gateway
+    # Deployment is absent there is no deployed gateway to have drifted and
+    # nothing to say; if it is present, everything below is an assertion.
+    deployment = _kubectl(
+        "-n", PLATFORM_NAMESPACE, "get", "deployment", GATEWAY_DEPLOYMENT,
+        "-o", "name",
+    )
+    if deployment.returncode != 0:
+        pytest.skip(
+            f"no {GATEWAY_DEPLOYMENT} Deployment in {PLATFORM_NAMESPACE}, so "
+            "this is not a stage-2 cluster and no gateway config is deployed "
+            f"({deployment.stderr.strip() or 'no output'}); "
+            "run ./scripts/setup-kind.sh --stage 2"
+        )
+
     proc = _kubectl(
         "-n", PLATFORM_NAMESPACE, "get", "configmap", CONFIGMAP_NAME,
         "-o", "jsonpath={.data." + CONFIGMAP_KEY.replace(".", r"\.") + "}",
     )
-    if proc.returncode != 0 or not proc.stdout.strip():
-        pytest.skip(
-            f"no {CONFIGMAP_NAME} ConfigMap in {PLATFORM_NAMESPACE}, so this "
-            "is not a stage-2 cluster and there is no deployed gateway config "
-            f"to compare ({proc.stderr.strip() or 'no output'})"
-        )
+    # Not a skip. The gateway Deployment exists, so a missing or empty
+    # ConfigMap key means the running gateway is serving a configuration this
+    # repository cannot read -- the divergence this file exists to catch.
+    assert proc.returncode == 0 and proc.stdout.strip(), (
+        f"THE DEPLOYED GATEWAY CONFIG CANNOT BE READ. {GATEWAY_DEPLOYMENT} is "
+        f"deployed in {PLATFORM_NAMESPACE}, so this IS a stage-2 cluster, but "
+        f"{CONFIGMAP_NAME} key {CONFIGMAP_KEY!r} is missing or empty. The "
+        "gateway reads its config once at startup, so it is enforcing "
+        "something -- and this repository has no way to see what. Re-run "
+        "./scripts/setup-kind.sh --stage 2 to recreate the ConfigMap from the "
+        f"committed file and restart the gateway ({proc.stderr.strip() or 'no output'})"
+    )
     return proc.stdout
 
 
