@@ -54,6 +54,24 @@ from an A2A client into settlement-agent, through the MCP hop into
 payments-mcp, and on into payments-api — one trace, no orphans beyond the
 expected synthetic root. The settlement reply's actual JSON payload, and the
 served agent card's parity with its committed contract, are both under test.
+
+**M2.2: this file's fixture stays at €6,200, which the platform now refuses.**
+The PDS denies `execute_payment` above the €6,000 allowance for this caller
+(`platform/policy-decision-service/pds/rules.py`), so two of the tests below
+changed to assert the new true behaviour rather than the old one:
+`test_message_send_returns_the_full_settlement_reply` asserts
+`status == "refused"` (every other field of the documented reply unchanged,
+including the €6,200 the ledger recorded for the proposal), and
+`test_mcp_tool_calls_are_present` asserts `tools/call propose_payment` present
+and `tools/call execute_payment` **absent**, paired with the model's own
+attempt so the absence cannot pass vacuously. The other six tests in this file
+are unaffected: `propose_payment` is permitted unconditionally
+(`UNLIMITED_TOOLS`) and alone lands spans in all four services, so the entry
+span's parentage, the orphan check, the outbound-MCP-span check, the
+four-service check and the ancestry check all still hold and still prove what
+they were written to prove. Note in particular that
+`test_settlement_agent_span_precedes_the_payment` does not filter payments-api
+spans for "execute" — the propose leg supplies the span it needs.
 """
 import json
 import os
@@ -183,13 +201,33 @@ def test_message_send_returns_the_full_settlement_reply(settlement_trace):
     the brief's three-message executor makes this test fail (verified, see
     task-4-report.md fix round 2), while the old `"error" not in result`
     assertion alone would not have caught it.
+
+    **M2.2: `status` is now `refused`, and every other field still holds.**
+    The fixture sends €6,200, which is above the €6,000 allowance the platform
+    enforces on `execute_payment` for this caller
+    (`platform/policy-decision-service/pds/rules.py`), so the platform stops
+    the execution. This test's intent is unchanged and is *not* about the
+    status value: it exists to prove the A2A wire reply is the documented
+    `{claimId, paymentId, amount, currency, status, narrative}` JSON object and
+    not narration text that a2a-sdk's first-message behaviour would have handed
+    back instead. That is still exactly what it asserts, field by field — the
+    brief's three-`enqueue_event` executor would still fail it.
+
+    Note that a refusal is a full, well-formed reply and not a degraded one,
+    which is why nothing here had to be relaxed to accommodate it:
+    `settlement.py::decide_settlement`'s refusal branch returns the amount,
+    currency and paymentId the **ledger recorded for the proposal** (the
+    propose leg is permitted unconditionally — `UNLIMITED_TOOLS` — so those are
+    real recorded values, not placeholders), the platform's own `status`, and
+    the model's `narrative`. A refusal that dropped `paymentId`, or reported an
+    amount other than the proposed one, would fail this test — and should.
     """
     payload = json.loads(settlement_trace.result["result"]["parts"][0]["text"])
     assert payload["claimId"] == settlement_trace.claim_id
     assert payload["paymentId"].startswith("PAY-")
     assert payload["amount"] == 6200
     assert payload["currency"] == "EUR"
-    assert payload["status"] == "executed"
+    assert payload["status"] == "refused"
     assert payload["narrative"], "narrative must be non-empty"
 
 
@@ -323,11 +361,73 @@ def test_all_four_services_are_in_one_trace(settlement_trace):
 
 
 def test_mcp_tool_calls_are_present(settlement_trace):
-    """Task 7 flips this from xfail(strict=True) — same fix as
-    test_all_four_services_are_in_one_trace above."""
-    operations = {s.operation for s in settlement_trace.trace.spans}
-    assert "tools/call propose_payment" in operations
-    assert "tools/call execute_payment" in operations
+    """Task 7 flipped this from xfail(strict=True) — same fix as
+    test_all_four_services_are_in_one_trace above. It exists to pin the MCP
+    hop's *tool-span vocabulary*: payments-mcp names its span per the MCP
+    semantic convention, `tools/call <tool>`, one span per tool the model
+    called, and those spans land in this same trace.
+
+    **M2.2: `tools/call execute_payment` is now absent, and its absence is
+    what this test asserts.** The fixture sends €6,200, above the €6,000
+    allowance the platform enforces on `execute_payment` for this caller, so
+    the gateway's policy hook denies the call before it is forwarded:
+    payments-mcp never receives it and emits no span for it. Re-pointing the
+    fixture under the allowance to make the old assertion pass again was the
+    alternative and was rejected — `tests/e2e/test_gateway_trace.py` and
+    `tests/e2e/test_settlement_llm_trace.py` are the files re-pointed to
+    €5,800, because their subject really is incidental to the amount; this
+    file's fixture is shared with
+    `test_message_send_returns_the_full_settlement_reply` above, whose whole
+    subject is the reply the canonical €6,200 claim produces.
+
+    **The absence is asserted together with the request, deliberately.** An
+    absence on its own is the defect class this project keeps naming: a test
+    reading only "no `tools/call execute_payment` span exists" would pass
+    identically against a model that never asked to execute anything, a
+    payments-mcp that stopped emitting spans, and a broken MCP hop — green and
+    red meaning the same thing. So the model's own attempt is asserted first,
+    from PydanticAI's `execute_tool execute_payment` span in settlement-agent
+    (this service, which the fixture waits for, so no new service dependency
+    is introduced), and only then the absence one hop further down. Together
+    they say the real thing: the model asked, and the request did not arrive.
+
+    What stopped it, and where, is asserted from the platform's own telemetry
+    by `tests/e2e/test_policy_denial.py` — the gateway's `tools/call` SERVER
+    span, the PDS's `policy.decision` span with the rule and the two amounts on
+    it, and the absent forward and payments-api execute spans. This test stays
+    a statement about the MCP hop's span vocabulary, which is what it was
+    written to be."""
+    trace = settlement_trace.trace
+    operations = {s.operation for s in trace.spans}
+
+    assert "tools/call propose_payment" in operations, (
+        "payments-mcp emitted no 'tools/call propose_payment' span; the "
+        "propose leg is permitted unconditionally (UNLIMITED_TOOLS), so this "
+        "is a broken MCP hop, not a policy decision. Operations present: "
+        f"{sorted(operations)}"
+    )
+
+    # The model really did ask to execute. PydanticAI's tool span, in
+    # settlement-agent's own process, one per tool call the model made.
+    attempts = trace.spans_named(
+        "execute_tool execute_payment", service="settlement-agent"
+    )
+    assert attempts, (
+        "the model never attempted execute_payment, so the absence asserted "
+        "below would hold for the wrong reason entirely -- it would say "
+        "nothing about the platform having refused anything. settlement-agent "
+        "operations present: "
+        f"{sorted({s.operation for s in trace.spans if s.service == 'settlement-agent'})}"
+    )
+
+    # ...and the request never reached payments-mcp.
+    assert "tools/call execute_payment" not in operations, (
+        "payments-mcp emitted a 'tools/call execute_payment' span, so the "
+        f"execution of EUR 6200 was forwarded and not refused -- either the "
+        "gateway lost its mcpGuardrails policy, or the PDS's allowance for "
+        "this caller changed. tests/e2e/test_policy_denial.py holds the "
+        "authoritative assertions on that decision."
+    )
 
 
 def test_settlement_agent_span_precedes_the_payment(settlement_trace):

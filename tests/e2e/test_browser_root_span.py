@@ -40,10 +40,19 @@ reads the "Outcome" `<pre>` block the page renders
 (`JSON.stringify(result, null, 2)`, the same `ClaimResult` shape
 `apps/customer-ui/src/a2a.ts` extracts from the A2A reply), and hands the
 parsed payload to the tests below. This is a test assertion, not a guard
-rail: nothing in `settlement.py` checks or clamps the amount — M1 is
-deliberately ungoverned — so if a live model run ever settles a different
-amount, the resulting assertion failure is the finding, not something to be
-worked around here.
+rail: nothing in `settlement.py` checks or clamps the amount, so if a live
+model run ever proposes a different amount, the resulting assertion failure is
+the finding, not something to be worked around here.
+
+**M2.2:** the outcome of that submission is now a refusal, not an execution —
+€6,200 is above the €6,000 allowance the platform enforces on
+`execute_payment` for this caller, so `test_the_browser_path_settles_the_expected_amount`
+below asserts `status == "refused"` with €6,200 as the *proposed* amount. The
+amount is unchanged and still asserted; only the status moved. Everything
+else in this file is about trace plumbing (root ownership, service presence,
+orphans, the policy-number attribute) and is unaffected: the propose leg is
+permitted unconditionally, so all five services still land in this one trace,
+and a denied `execute_payment` leaves no dangling parent reference behind.
 """
 import json
 import os
@@ -267,18 +276,42 @@ def test_all_five_services_are_in_one_trace(browser_trace):
 
 def test_the_browser_path_settles_the_expected_amount(browser_trace):
     """Task 5 (Task 4 review, Finding 2): the browser path — the one actually
-    driven on stage — is now checked against the outcome, not just the trace
-    shape. CLM-1842 is the exact claim `test_settlement_agent_trace.py:219`
-    and `test_claims_chain_trace.py:219` already assert settles at €6,200
-    through the A2A and MCP paths respectively; this is the same claim, same
-    amount, now proven through the browser too.
+    driven on stage — is checked against the outcome, not just the trace
+    shape. CLM-1842 at €6,200 is customer-ui's own pre-filled `DEFAULT_CLAIM`,
+    submitted untouched, so this is the outcome a visitor to the page actually
+    gets.
 
-    This is a test assertion, not a guard rail: `settlement.py` has no amount
-    check, clamp or threshold anywhere — M1 is deliberately ungoverned, the
-    model can propose any amount and nothing stops it. If a live model run
-    ever settles a different amount, this assertion fails and that is the
-    finding to record; nothing here works around it.
+    **M2.2 inverted that outcome, and this test now asserts the inversion.**
+    Until M2.2 this read `status == "executed"` and €6,200 left the company
+    unchallenged, which was M1's deliberate horror. The platform now denies
+    `execute_payment` above the €6,000 allowance for this caller
+    (`platform/policy-decision-service/pds/rules.py`), so the reply comes back
+    `refused`. The test's intent is unchanged — *what does the canonical
+    pre-filled claim actually do when a real browser submits it?* — and only
+    the answer has moved.
+
+    €6,200 is still asserted, and it is still the same number: on a refusal
+    `settlement.py::decide_settlement` returns the amount the **ledger
+    recorded for the proposal**, verbatim, not model output and not a
+    placeholder (the propose leg is permitted unconditionally —
+    `UNLIMITED_TOOLS` — so the proposal really is on the books; only the
+    execution was stopped). Asserting it here is therefore still a real
+    claim about the money, not a leftover: a refusal that reported a
+    different figure, or none, would fail this.
+
+    Still a test assertion, not a guard rail. Nothing in `settlement.py`
+    clamps the amount; the ceiling lives in the platform, one hop away. If a
+    live model run ever proposes a different amount, this assertion fails and
+    that is the finding to record; nothing here works around it.
+
+    Deliberately *not* asserted here: why it was refused. This test owns the
+    browser-visible outcome and nothing more. The decision itself — the PDS's
+    own `policy.decision` span, the rule name, the allowance and the requested
+    amount on it, and the absence of any execute span at payments-api — is
+    asserted from the platform's own telemetry by
+    `tests/e2e/test_policy_denial.py::test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes`,
+    which is where a claim that strong belongs.
     """
     reply = browser_trace.reply
-    assert reply.get("status") == "executed", reply
+    assert reply.get("status") == "refused", reply
     assert reply.get("amount") == 6200.0, reply

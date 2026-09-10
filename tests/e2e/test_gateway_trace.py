@@ -76,7 +76,21 @@ pytestmark = pytest.mark.skipif(
     ),
 )
 
-REQUESTED_AMOUNT = 6200
+# M2.2 re-point, 6200 -> 5800. This file is about trace *shape* through the
+# interposed proxy — is agentgateway a node in the one trace, or a fracture in
+# it — and the amount was always incidental to that question. It stopped being
+# incidental when M2.2 made €6,200 a refused execution: the PDS denies
+# `execute_payment` above the €6,000 allowance for this caller
+# (`platform/policy-decision-service/pds/rules.py`), the gateway then never
+# emits its `tools/call payments-mcp_execute_payment` CLIENT forward span and
+# payments-mcp never emits `tools/call execute_payment` at all, so half of the
+# propagation this file exists to prove would simply not be in the trace to
+# assert on. €5,800 is under the allowance, so both tools traverse the full
+# hop and every claim below is exercised end to end — which is the *stronger*
+# choice, not the convenient one: the refusal path's own trace shape is owned
+# by `tests/e2e/test_policy_denial.py` (criteria 1 and 3), at a level of
+# detail this file has no business duplicating.
+REQUESTED_AMOUNT = 5800
 
 
 def _send(text: str, traceparent: str) -> dict:
@@ -121,6 +135,16 @@ def gateway_settlement():
     that is covered by `JaegerClient.QUIET_WINDOW_S` (10s, comfortably past
     every exporter's batch delay in this system) and, if it ever were not,
     fails loudly rather than passing wrongly.
+
+    **M2.2: `policy-decision-service` is omitted for the same reason**, now
+    that `test_gateway_span_names_kinds_and_parentage_are_as_measured` asserts
+    the PDS's `policy.decision` span as a child of the gateway's `tools/call`
+    SERVER span. Naming the PDS here would turn a missing decision span into a
+    fixture `ERROR` shared by all six tests; leaving it out means that one
+    test fails by name, with a message that says which of the three expected
+    children was absent. Same 10s quiet window covers the straggling-batch
+    case, and the PDS uses the same default 5s BatchSpanProcessor delay as
+    every other service here.
     """
     trace_id = uuid.uuid4().hex
     span_id = uuid.uuid4().hex[:16]
@@ -313,13 +337,19 @@ def test_gateway_span_names_kinds_and_parentage_are_as_measured(gateway_settleme
 
     Measured, for each of the two tools the model calls: a SERVER span named
     exactly `tools/call` (the JSON-RPC method, with no tool name in it), whose
-    single MCP child is a CLIENT span named `tools/call payments-mcp_<tool>`,
+    MCP forward child is a CLIENT span named `tools/call payments-mcp_<tool>`,
     whose own child is payments-mcp's `tools/call <tool>` SERVER span. The
     tool name is not in the SERVER span's *name* — it is in that span's
     `gen_ai.tool.name` attribute, which is a real difference worth pinning:
     an operator filtering Jaeger by operation name sees two identically-named
     `tools/call` spans per settlement and has to read an attribute to tell
     them apart.
+
+    **M2.2 changed this shape, independently of the amount.** That forward
+    span is no longer the SERVER span's only child: the `mcpGuardrails` policy
+    interposes an `agentgateway` `Guardrail` CLIENT span and the PDS's own
+    `policy.decision` SERVER span as its siblings. The full measured child set
+    is asserted below, with the reasoning inline.
 
     `otel.scope.name` is asserted across every gateway span because it is the
     only scope identifier the gateway sets — measured: it emits
@@ -357,14 +387,62 @@ def test_gateway_span_names_kinds_and_parentage_are_as_measured(gateway_settleme
             f"agentgateway's 'tools/call' SERVER span carries "
             f"gen_ai.tool.name={tool!r}"
         )
-        children = [s for s in gateway_spans if s.parent_id == server.span_id]
-        assert [c.operation for c in children] == [f"tools/call payments-mcp_{tool}"], (
-            f"agentgateway's 'tools/call' SERVER span for {tool!r} has gateway "
-            f"children {[c.operation for c in children]!r}, expected exactly "
-            f"['tools/call payments-mcp_{tool}']"
+        # M2.2 structural update, and the one break in this file that a
+        # re-pointed amount does not fix. Until M2.2 this SERVER span had
+        # exactly one child; the `mcpGuardrails` policy in
+        # `deploy/platform/agentgateway/config.yaml` now makes it three, on
+        # *every* tools/call, propose and execute alike, permit or deny. The
+        # measured shape (all four of Task 6's browser-driven traces, and both
+        # of Task 5's reference traces):
+        #
+        #   agentgateway `tools/call` (SERVER)
+        #     |- agentgateway `Guardrail` (CLIENT)          -- the hook call
+        #     |- policy-decision-service `policy.decision` (SERVER)
+        #     `- agentgateway `tools/call payments-mcp_<tool>` (CLIENT)
+        #
+        # `policy.decision` is a *sibling* of `Guardrail`, not its child, and
+        # that is the interesting part: agentgateway propagates the context it
+        # received on the inbound request to the hook, not the context of its
+        # own `Guardrail` CLIENT span. So the PDS's server span attaches to the
+        # gateway's SERVER span, one level above the client span that actually
+        # made the call. Asserted as measured — inventing a
+        # `Guardrail -> policy.decision` edge would be inventing telemetry for
+        # a third-party tool.
+        #
+        # Asserted as a sorted list of (service, operation, kind) triples, not
+        # a set: a list pins multiplicity as well as membership (a second
+        # `Guardrail` span, or a duplicated forward, still fails), while
+        # sorting removes a dependence on Jaeger's arbitrary child ordering
+        # that a plain list comparison would have. This is exact equality in
+        # both directions, exactly as the single-child assertion it replaces
+        # was — not a count tolerance and not a name allowlist. The forward
+        # CLIENT span's `kind` is pinned by the triple, so it is not restated
+        # below.
+        children = [s for s in trace.spans if s.parent_id == server.span_id]
+        measured = sorted((c.service, c.operation, c.kind) for c in children)
+        expected = sorted(
+            [
+                ("agentgateway", "Guardrail", "client"),
+                ("policy-decision-service", "policy.decision", "server"),
+                ("agentgateway", f"tools/call payments-mcp_{tool}", "client"),
+            ]
         )
-        client = children[0]
-        assert client.kind == "client", (client.operation, client.kind)
+        assert measured == expected, (
+            f"agentgateway's 'tools/call' SERVER span for {tool!r} has children\n"
+            f"  measured: {measured}\n"
+            f"  expected: {expected}\n"
+            "A missing `tools/call payments-mcp_<tool>` forward means the call "
+            "was denied and never forwarded -- at EUR "
+            f"{REQUESTED_AMOUNT} it must be permitted, so check the PDS's "
+            "allowance. A missing `policy.decision` means either the "
+            "mcpGuardrails hook is no longer on this route, or the PDS's own "
+            "spans had not landed when the fixture judged the trace complete. "
+            "A missing `Guardrail` means the gateway is not calling the hook "
+            "at all."
+        )
+        client = next(
+            c for c in children if c.operation == f"tools/call payments-mcp_{tool}"
+        )
 
         mcp_children = [
             s

@@ -122,12 +122,37 @@ pytestmark = pytest.mark.skipif(
 )
 
 # The amount the A2A request asks for. Nothing below asserts the model
-# settled *this* number: M1 is ungoverned by design — the model can propose
-# any amount and nothing stops it — so a test that failed on a different
-# amount would be a guard rail smuggled into the suite. The amount actually
-# recorded by the ledger is surfaced on the fixture (and in this file's
-# failure messages) so a divergence is *reported*, never clamped.
-REQUESTED_AMOUNT = 6200
+# settled *this* number: the model chooses what to propose and this file does
+# not police it — so a test that failed on a different amount would be a guard
+# rail smuggled into the suite. The amount actually recorded by the ledger is
+# surfaced on the fixture (and in this file's failure messages) so a divergence
+# is *reported*, never clamped.
+#
+# **M2.2 re-point, 6200 -> 5800.** The original sentence here read "M1 is
+# ungoverned by design — the model can propose any amount and nothing stops
+# it", and that stopped being true: the platform now denies `execute_payment`
+# above the €6,000 allowance for this caller
+# (`platform/policy-decision-service/pds/rules.py`), so at €6,200 the
+# settlement comes back `refused` and the fixture's own `status == "executed"`
+# assertion fails before any test body runs. What is left true, and is what
+# this constant was always for, is that nothing in *this repo's agent* clamps
+# the amount — the ceiling lives in the platform, one hop away, and the model
+# is free to propose whatever it likes.
+#
+# €5,800 rather than a refusal, deliberately. Every one of this file's nine
+# tests is about the *model's* instrumentation — the `gen_ai.*` vocabulary,
+# content capture, message shape, token usage, the `anthropic` client's own
+# httpx span — and none of them is about governance or the threshold. The
+# amount is incidental to all nine, so re-pointing under the allowance keeps
+# each one exercising the full happy path it was written against, including
+# the `execute_payment` half of `test_the_model_called_both_payment_tools`
+# and `test_mcp_hop_still_carries_the_trace`, which have no spans to assert on
+# at all when the execution is denied. The refusal's own model-side shape is
+# owned by `tests/e2e/test_policy_denial.py` (criterion 2: the narration and
+# the no-retry count), which asserts it at the right level of detail;
+# duplicating it here would give this project two places to maintain the same
+# claim.
+REQUESTED_AMOUNT = 5800
 
 # Measured, not predicted. The `gen_ai.usage.*` names below are the ones
 # pydantic-ai 2.41.0 actually emitted in live capture; see the report for the
@@ -551,7 +576,7 @@ def test_tool_call_arguments_carries_the_settled_amount(llm_settlement):
     """Pins `gen_ai.tool.call.arguments` — the single strongest argument for
     defaulting capture ON (Task 5 fix round 1, Finding 2).
 
-    A span proving *that* €6,200 was executed says nothing about *why that
+    A span proving *that* €5,800 was executed says nothing about *why that
     amount* or on what stated grounds. `gen_ai.tool.call.arguments` on the
     `execute_tool propose_payment` span is what actually answers that: it is
     the literal amount and currency the model chose to propose. Before this

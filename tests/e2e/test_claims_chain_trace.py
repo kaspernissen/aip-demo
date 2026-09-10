@@ -19,13 +19,28 @@ closed.** settlement-agent's MCP client (`mcp_tools.py`) now injects
 `ClientSession.send_request()` API — `mcp==1.9.4`'s high-level `call_tool()`
 has no way to set `_meta` at all (see `agents/settlement-agent/NOTES.md`
 §10). FastMCP 4.0.3's server-side extraction joins the trace, so
-`test_all_four_backend_services_are_in_one_trace` and
-`test_payment_was_executed_with_no_governance` below are no longer
-`xfail(strict=True)` — they assert real, confirmed-by-capture behaviour: the
+`test_all_four_backend_services_are_in_one_trace` below is no longer
+`xfail(strict=True)` — it asserts real, confirmed-by-capture behaviour: the
 whole chain, from this test's injected root through claims-agent,
 settlement-agent, payments-mcp and payments-api, is one trace. (The
 `northstar.claim.id` *attribute* still does not cross the MCP hop — a
 separate, confirmed FastMCP gap; see `tests/e2e/test_claim_correlation.py`.)
+
+**M2.2: this file's fixture stays at €6,200, which the platform now refuses.**
+The PDS denies `execute_payment` above the €6,000 allowance for
+settlement-agent (`platform/policy-decision-service/pds/rules.py`), so
+`test_message_send_returns_the_settlement_json` below asserts
+`status == "refused"` — every other field of the documented reply unchanged,
+because a refusal is a full reply that claims-agent forwards field for field.
+`test_payment_was_executed_with_no_governance` was **retired** here in M2.2:
+its premise was the *absence* of governance, which no amount can restore, and
+`tests/e2e/test_policy_denial.py` supersedes it at both ends of the rule. The
+retirement note where it stood records what it asserted and why it went; do
+not re-add it under a different amount. The remaining five tests are
+unaffected — `propose_payment` is permitted unconditionally
+(`UNLIMITED_TOOLS`) and alone lands spans in all four services, so the
+parentage, delegation, orphan, four-service and error-propagation assertions
+all still hold and still prove what they were written to prove.
 """
 import json
 import os
@@ -220,14 +235,36 @@ def test_message_send_returns_the_settlement_json(chain_trace):
     narration is logged, not enqueued, and exactly one Message — the final
     JSON result — is enqueued. This test asserts the payload's substance, not
     merely that no error occurred, so restoring the brief's two-enqueue
-    executor makes it fail (verified — see task-5-report.md)."""
+    executor makes it fail (verified — see task-5-report.md).
+
+    **M2.2: `status` is now `refused`, and every other field still holds.**
+    The fixture files the claim at €6,200, above the €6,000 allowance the
+    platform enforces on `execute_payment` for settlement-agent
+    (`platform/policy-decision-service/pds/rules.py`), so the execution is
+    denied and settlement-agent replies `refused` — which claims-agent's
+    executor forwards outward unchanged, field for field, because a refusal is
+    a reply and not an error.
+
+    That forwarding is why nothing here had to be relaxed, and it is worth
+    being explicit about what this test therefore still catches. Its subject is
+    claims-agent's *wire contract*: two hops out from the ledger, a caller must
+    receive the documented
+    `{claimId, policyNumber, paymentId, amount, currency, status, narrative}`
+    JSON object, and not the "Claim ... received. Investigating." narration
+    a2a-sdk's first-message-wins behaviour would otherwise have handed back.
+    All seven fields are still asserted, including the €6,200 and the `PAY-`
+    payment id the **ledger really recorded for the proposal**
+    (`propose_payment` is permitted unconditionally — `UNLIMITED_TOOLS`) and
+    the `narrative` the model wrote about the refusal. A refusal that arrived
+    as a JSON-RPC error, or that lost a field crossing claims-agent, would fail
+    this test — and should."""
     payload = json.loads(chain_trace.result["result"]["parts"][0]["text"])
     assert payload["claimId"] == chain_trace.claim_id
     assert payload["policyNumber"] == "POL-77120"
     assert payload["paymentId"].startswith("PAY-")
     assert payload["amount"] == 6200
     assert payload["currency"] == "EUR"
-    assert payload["status"] == "executed"
+    assert payload["status"] == "refused"
     assert payload["narrative"], "narrative must be non-empty"
 
 
@@ -363,17 +400,58 @@ def test_all_four_backend_services_are_in_one_trace(chain_trace):
     )
 
 
-def test_payment_was_executed_with_no_governance(chain_trace):
-    """M1's deliberate horror: nothing stopped the payment.
-
-    Task 7 flips this from xfail(strict=True) — same fix as
-    test_all_four_backend_services_are_in_one_trace above. Now a real
-    assertion: payments-api's execute span is provably in the same trace as
-    the rest of the chain, and nothing in that chain is a policy check."""
-    operations = {s.operation for s in chain_trace.trace.spans}
-    assert "tools/call execute_payment" in operations
-    api_span = next(
-        s for s in chain_trace.trace.spans
-        if s.service == "payments-api" and "execute" in s.operation
-    )
-    assert api_span.attrs.get("http.response.status_code") == 200
+# --- RETIRED IN M2.2: test_payment_was_executed_with_no_governance ----------
+#
+# This is a milestone marker, not a cleanup. Read it before writing anything
+# like it again.
+#
+# **What it asserted.** Under the docstring "M1's deliberate horror: nothing
+# stopped the payment", against this file's own €6,200 `chain_trace` fixture:
+#
+#     operations = {s.operation for s in chain_trace.trace.spans}
+#     assert "tools/call execute_payment" in operations
+#     api_span = next(
+#         s for s in chain_trace.trace.spans
+#         if s.service == "payments-api" and "execute" in s.operation
+#     )
+#     assert api_span.attrs.get("http.response.status_code") == 200
+#
+# i.e. payments-mcp really received the execute call, payments-api really
+# executed it and answered 200, and nowhere in that chain was there a policy
+# check. It existed to *document*, in runnable form, that M1 had no governance
+# at all: a model's request alone moved €6,200 of somebody else's money, and
+# the suite was green about it. It was an honest record of a deliberate
+# absence.
+#
+# **M2.2 deliberately falsified it.** The PDS now denies `execute_payment`
+# above the €6,000 allowance for settlement-agent
+# (`platform/policy-decision-service/pds/rules.py`), the gateway's
+# `mcpGuardrails` hook enforces that decision on every `tools/call`, and at
+# €6,200 the execution never leaves the gateway: no `tools/call
+# execute_payment` span at payments-mcp, no `POST /payments/{paymentId}/execute`
+# at payments-api, no forward CLIENT span at agentgateway. Both assertions
+# above are now false, and the `next(...)` raises `StopIteration`.
+#
+# **Why it was retired rather than re-pointed.** Re-pointing the amount to
+# €5,800 would have turned it green again — and green for the opposite reason
+# to the one it was written for. The payment would go through *because a rule
+# permits it*, not because no rule exists, so the test would report the same
+# colour whether the platform had governance or had none: the "green and red
+# mean the same thing" defect class this suite keeps naming (see
+# `tests/e2e/test_policy_denial.py::test_criterion_5_...`'s design note). Its
+# premise — the absence of governance — is not a thing that can be re-pointed,
+# because M2.2's entire purpose was to remove it.
+#
+# **What supersedes it.** `tests/e2e/test_policy_denial.py`, which asserts the
+# new true behaviour at both ends of the same one rule: criterion 1, that
+# €6,200 is denied and no payment executes (the exact absences listed above,
+# read off the platform's own `policy.decision` span rather than off prose),
+# and criterion 6, that €5,800 still executes end to end under that same rule
+# name. Between them they cover everything this test covered and the thing it
+# structurally could not: that the platform is deciding, rather than either
+# permitting everything or refusing everything.
+#
+# `test_all_four_backend_services_are_in_one_trace` above keeps the trace-
+# completeness half of what this file proves, and still holds — the propose leg
+# alone lands spans in all four services.
+# -----------------------------------------------------------------------------
