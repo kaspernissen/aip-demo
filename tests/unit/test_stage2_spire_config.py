@@ -138,6 +138,23 @@ GATEWAY_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-platform/sa/agentgate
 PDS_SPIFFE_ID = (
     f"spiffe://{TRUST_DOMAIN}/ns/northstar-platform/sa/policy-decision-service"
 )
+# M3 Tasks 3 and 4: the fourth and fifth registered workloads. Both are real
+# ServiceAccounts in `deploy/k8s/`, so SPIRE's `spiffeIDTemplate` derives these
+# without any new registration.
+#
+# These two were added late, and the reason is worth keeping. The allow-list
+# below sat at three entries while Tasks 3 and 4 created two more identities,
+# so a document publishing either *correct* new ID was rejected as an offender
+# -- and both tasks did what this file's own comment predicts anyone would do:
+# they edited the document to match the test, substituting a placeholder for
+# the real SPIFFE ID. The guard was passing while both documents had been made
+# less true. That is the failure mode this comment already warned about, caught
+# happening twice, so: adding an identity to the cluster means adding it here,
+# in the same task.
+SENIOR_SETTLEMENT_SPIFFE_ID = (
+    f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/senior-settlement-agent"
+)
+REVIEWER_UI_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/reviewer-ui"
 # The workload-facing Workload API socket, as READ from the pinned chart's
 # rendered output rather than assumed: `helm template spire spiffe/spire
 # --version 0.30.1` renders the spiffe-oidc-discovery-provider (the chart's own
@@ -819,7 +836,13 @@ def test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures(doc):
     # have called a correct document an offender. A guard that fails on a
     # correct document is as harmful as one that passes a wrong one: both
     # teach a reader to edit the document to match the test.
-    permitted = {SETTLEMENT_SPIFFE_ID, GATEWAY_SPIFFE_ID, PDS_SPIFFE_ID}
+    permitted = {
+        SETTLEMENT_SPIFFE_ID,
+        GATEWAY_SPIFFE_ID,
+        PDS_SPIFFE_ID,
+        SENIOR_SETTLEMENT_SPIFFE_ID,
+        REVIEWER_UI_SPIFFE_ID,
+    }
     offenders = sorted({one for one in found if one not in permitted})
     assert not offenders, (
         f"{doc.relative_to(REPO_ROOT)} publishes SPIFFE ID(s) this repo does "

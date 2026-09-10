@@ -1719,7 +1719,7 @@ nowhere else:
 review.payment.id            "PAY-000053"
 review.decision               "approve"
 review.reviewer.id            "alex.mercer"
-review.reviewer.spiffe_id     "<reviewer-ui's own workload identity>"
+review.reviewer.spiffe_id     "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui"
 review.refused.trace_id       "331edba8cb21223e9de2f244360c42ef"
 review.elapsed_ms             312000
 ```
