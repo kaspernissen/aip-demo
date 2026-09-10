@@ -44,8 +44,26 @@ PROTECTED_HOST = "payments-mcp.northstar-tools.svc.cluster.local"
 PROTECTED_PORT = 8000
 # Reachable from the same pod and deliberately NOT covered by the policy, so a
 # blocked result here would mean the cluster is broken rather than protected.
-CONTROL_HOST = "payments-api.northstar-systems.svc.cluster.local"
-CONTROL_PORT = 8080
+#
+# This was `payments-api.northstar-systems.svc.cluster.local:8080` until M2.2
+# Task 7, which added egress allowlists to `northstar-agents`. That is not a
+# weakening of this control -- it is the control catching up with a cluster
+# where the prober no longer has unrestricted egress. `claims-agent` never had
+# any business calling `payments-api` (it holds no MCP client and no payments
+# URL; `deploy/k8s/claims-agent.yaml` configures exactly one peer), so that
+# destination is absent from `claims-agent-egress-allowlist` by design and now
+# times out. Keeping it here would have meant either a permanently red control
+# or -- much worse -- widening a security policy so a test's control could stay
+# green.
+#
+# `settlement-agent:9002` is the replacement because it is what this pod is
+# *for*: `NORTHSTAR_ALLOWED_AGENTS` names it as claims-agent's single
+# delegation target, so it is both ignored by the payments-mcp ingress policy
+# under test here and load-bearing for the demo. A blocked result on it is a
+# real outage rather than a stale test fixture, which is exactly what a control
+# should be.
+CONTROL_HOST = "settlement-agent.northstar-agents.svc.cluster.local"
+CONTROL_PORT = 9002
 
 # Long enough that a slow-but-allowed connection is not mistaken for a drop,
 # short enough that six probes do not dominate the suite. A Cilium drop

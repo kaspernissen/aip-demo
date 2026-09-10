@@ -1,5 +1,13 @@
 # Cilium network policy for stage 2.
 #
+# The file holds two kinds of policy, and the distinction matters when reading
+# it. The first two documents are *ingress* allowlists that make the gateway the
+# only way IN to a protected service (payments-mcp, the policy-decision
+# service). The last three are *egress* allowlists on the agent plane, which
+# make the gateway the only way OUT of an agent to a tool, and the model
+# provider reachable from exactly one workload. Task 7's section header, below
+# the second document, explains the egress half.
+#
 # WHY THIS FILE EXISTS
 #
 # M2.1 put agentgateway in the MCP path and made it verify a SPIRE-issued
@@ -151,3 +159,358 @@ spec:
     - fromEntities:
         - host
         - remote-node
+---
+# =============================================================================
+# M2.2 TASK 7 -- THE EGRESS HALF. Exit criterion 7, verbatim: "Direct egress
+# from `northstar-agents` to the model provider is **denied** by Cilium, with
+# the gateway as the only path."
+# =============================================================================
+#
+# WHAT WAS MEASURED BEFORE THIS EXISTED
+#
+# Every one of the three workloads in `northstar-agents` opened a TCP
+# connection to `api.anthropic.com:443` and to `example.com:443`. Not inferred
+# from the absence of a policy -- probed from inside each pod:
+#
+#   settlement-agent -> api.anthropic.com:443   reached
+#   settlement-agent -> example.com:443         reached
+#   claims-agent     -> api.anthropic.com:443   reached
+#   claims-agent     -> example.com:443         reached
+#   customer-ui      -> api.anthropic.com:443   reached   (nc -z, no python)
+#
+# So the criterion was false in three places, not one. The task brief scoped
+# this to `settlement-agent`, and a policy on that workload alone would have
+# left `claims-agent` and `customer-ui` -- neither of which has any business
+# near a model provider, and neither of which holds an API key -- with wholly
+# unrestricted outbound reachability. The criterion names the *namespace*, so
+# all three are policied here, one document each. See the task-7 report for
+# that decision recorded as a deviation from the brief's stated file scope.
+#
+# WHY ONE DOCUMENT PER WORKLOAD, RATHER THAN ONE FOR THE PLANE
+#
+# `endpointSelector: {matchLabels: {northstar.io/plane: agents}}` would select
+# all three in a single document, and every one of them carries that label
+# (deploy/k8s/{claims-agent,settlement-agent,customer-ui}.yaml). It was
+# rejected: Cilium composes policies by union of allows, so a shared baseline
+# would grant `customer-ui` reachability to agentgateway:3000 and
+# settlement-agent:9002, and `claims-agent` reachability to agentgateway:3000,
+# purely as a side effect of sharing a document. Each of those is an allowance
+# nothing measured asked for. Three documents cost more lines and grant less.
+#
+# THE HAZARD THIS FILE HAS TO GET RIGHT
+#
+# In Cilium, an endpoint selected by ANY egress rule becomes default-deny for
+# egress. There is no partial application: adding the `toFQDNs` allowance for
+# the model provider and nothing else would have severed every in-cluster call
+# these pods make -- MCP, OTLP, A2A and DNS -- and the demo would have stopped
+# working with a cause that reads as anything but a network policy. Each
+# document below therefore lists that workload's *complete* outbound
+# inventory, taken from its own manifest and source rather than from
+# observation of a running pod, so a destination that is configured but rarely
+# exercised is still present.
+#
+# Two things deliberately have no rule anywhere below:
+#
+#   * The SPIFFE Workload API. `SPIFFE_ENDPOINT_SOCKET` is
+#     `unix:///spiffe-workload-api/spire-agent.sock`, a CSI-mounted unix
+#     domain socket (deploy/k8s/settlement-agent.yaml:128-129,169-172). UDS
+#     IPC never enters the pod's network namespace, so Cilium policy does not
+#     govern it. A rule here would be decoration.
+#   * Outbound A2A from `settlement-agent`. It is an A2A *server* only;
+#     `claims-agent` calls it and it calls nobody back. The 9002 allowance
+#     below is on `claims-agent`, the caller -- and 9002 on settlement-agent
+#     itself is inbound, which no `egress` block affects.
+#
+# Reply traffic needs no rule either: Cilium tracks connections in conntrack,
+# so the response to an allowed egress connection is not itself re-evaluated.
+# Nor do the readiness probes -- kubelet dials those from the node, which is
+# ingress to these pods, and no document below carries an `ingress` block, so
+# these endpoints stay default-*allow* for ingress exactly as before.
+#
+# WHAT THIS DOES NOT CLAIM
+#
+# Cilium enforces reachability, not intent. `settlement-agent` may still reach
+# `api.anthropic.com:443`, because that is where its own model call goes --
+# the criterion's "gateway as the only path" clause is discharged for *tools*
+# (payments-mcp:8000 and the PDS:9100 are absent from every allowlist below,
+# so the only route to a tool is agentgateway:3000), and for the model
+# provider it is discharged as "one workload, not the namespace". A workload
+# that legitimately reaches the model provider can still misuse it; that is
+# the guardrail's job, not the dataplane's.
+#
+# Cilium reports its own behaviour as Prometheus metrics and Hubble flows, not
+# as OTLP spans, and Hubble is disabled in this install
+# (`enable-hubble: false` in kube-system/cilium-config, read live). Nothing
+# below appears in a trace, and no span is invented for it. The evidence for
+# these policies is the BPF policy map and probes from inside the pods.
+---
+# Task 7, document 1 of 3: settlement-agent. The only workload in the cluster
+# permitted to reach the model provider, and the reason this criterion exists.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: settlement-agent-egress-allowlist
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m2.2
+spec:
+  endpointSelector:
+    matchLabels:
+      app: settlement-agent
+  egress:
+    # 1. DNS -- and the rule the `toFQDNs` allowance in 4 silently depends on.
+    #
+    # Two separate things are happening here and conflating them is how a
+    # `toFQDNs` policy fails invisibly.
+    #
+    # The L3/L4 half (`toEndpoints` + 53/UDP+TCP) is what lets the pod resolve
+    # names at all. It selects CoreDNS by label -- `k8s-app: kube-dns`, the
+    # label the pods actually carry (read live: `k8s-app=kube-dns,
+    # pod-template-hash=...`) -- and NOT by the kube-dns Service ClusterIP.
+    # That ClusterIP is `10.96.0.10` on this cluster, but no manifest in this
+    # repo asserts that value: deploy/kind/stage2.yaml deliberately leaves
+    # serviceSubnet at kind's default, so `10.96.0.10` is a kubeadm allocation
+    # convention rather than a pin this repo owns. Hardcoding it here would
+    # invent a pin, and would break the moment the range changed with a
+    # symptom -- every name resolution failing -- that names neither this file
+    # nor the range.
+    #
+    # The L7 half (`rules.dns`) is what makes `toFQDNs` work. Cilium learns
+    # which IPs a name resolves to by watching DNS responses through its own
+    # DNS proxy, and the proxy is only interposed on traffic a `rules.dns`
+    # block selects. Without this five-line block, rule 4 below matches
+    # nothing, the connection to the model provider is dropped, and the
+    # policy still reports `VALID: True`. The proxy is gated on
+    # `enable-l7-proxy`, confirmed `true` in kube-system/cilium-config on this
+    # cluster rather than assumed from the chart default.
+    #
+    # `matchPattern: "*"` is a deliberate choice, not laziness. A narrower
+    # pattern would be a *name allowlist*, which is not what this rule is for
+    # -- enforcement happens on the connect (rule 4), not on the lookup. It
+    # would also be wrong in a way that is very hard to see: `ClusterFirst`
+    # DNS appends search domains, so resolving
+    # `agentgateway.northstar-platform.svc.cluster.local` also emits queries
+    # for that name suffixed with `northstar-agents.svc.cluster.local` and
+    # `svc.cluster.local`, and the DNS proxy DENIES a query no pattern
+    # matches. Restricting the pattern therefore breaks resolution through the
+    # search list while looking tighter.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+
+    # 2. agentgateway, on the MCP port -- and the whole of the "gateway as the
+    #    only path" clause, from the other side.
+    #
+    # `PAYMENTS_MCP_URL` is
+    # http://agentgateway.northstar-platform.svc.cluster.local:3000/mcp
+    # (deploy/k8s/settlement-agent.yaml:81-82). Note what is NOT in this
+    # document: `payments-mcp.northstar-tools.svc.cluster.local:8000`. The
+    # first document in this file already blocks that from the ingress side,
+    # so the two halves now agree -- and this half survives someone relaxing
+    # that one, because there is no rule here to relax. Namespace-pinned for
+    # the reason spelled out on the ingress rules above: a pod labelled
+    # `app: agentgateway` in some other namespace must not inherit the
+    # gateway's position in the path.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: northstar-platform
+            app: agentgateway
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+
+    # 3. The OTLP collector. THE RULE WHOSE ABSENCE IS WORST.
+    #
+    # `OTEL_EXPORTER_OTLP_ENDPOINT` is
+    # http://otel-collector.observability.svc.cluster.local:4318 with
+    # `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`
+    # (deploy/k8s/settlement-agent.yaml:48-51), so 4318 and not the 4317 gRPC
+    # port the same Service also exposes -- agentgateway uses that one, this
+    # agent does not.
+    #
+    # Dropping this rule would not break the demo. The BatchSpanProcessor
+    # exports on a background thread and swallows the failure, so settlements
+    # would keep succeeding while every span from this service silently
+    # vanished -- in a milestone whose entire claim is that the decision is
+    # visible in one trace. That is the failure mode most likely to be mistaken
+    # for success, which is why it is called out here rather than left as one
+    # of four look-alike rules.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            app: otel-collector
+      toPorts:
+        - ports:
+            - port: "4318"
+              protocol: TCP
+
+    # 4. The model provider, by name -- and nothing else outbound.
+    #
+    # `api.anthropic.com` is not configured anywhere in this repo. It is the
+    # pinned `anthropic` SDK's own default `base_url`
+    # (site-packages/anthropic/_client.py: `base_url = f"https://api.anthropic.com"`),
+    # reached because settlement.py hands PydanticAI the model
+    # `anthropic:claude-sonnet-5` (NORTHSTAR_SETTLEMENT_MODEL,
+    # deploy/k8s/settlement-agent.yaml:90-91). No `ANTHROPIC_BASE_URL`
+    # override exists in the repo, so this FQDN is the destination in fact,
+    # and a rule naming it is a rule about the SDK's behaviour rather than
+    # about a value this repo controls -- if that default ever moves, this
+    # rule breaks the model call rather than silently permitting a new host.
+    #
+    # `matchName`, not `matchPattern: "*.anthropic.com"`: exactly one host,
+    # so a subdomain that appears later is denied by default rather than
+    # inherited.
+    #
+    # `toFQDNs` is in a rule of its own because Cilium rejects combining it
+    # with other L3 selectors in the same rule -- it is not stylistic
+    # separation.
+    #
+    # This is the allowance that makes the criterion a statement about scope
+    # rather than about blanket denial. `settlement-agent` may reach this one
+    # external name on this one port; documents 2 and 3 below give
+    # `claims-agent` and `customer-ui` no external reachability at all; and
+    # nothing in the namespace may reach any other external host, which is
+    # asserted against `example.com:443` in
+    # tests/e2e/test_egress_policy.py rather than argued here.
+    - toFQDNs:
+        - matchName: api.anthropic.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# Task 7, document 2 of 3: claims-agent.
+#
+# This is the workload that makes the criterion's own sentence true. Measured
+# above: it reached `api.anthropic.com:443`. It holds no API key
+# (deploy/k8s/claims-agent.yaml sets no ANTHROPIC_API_KEY and no model
+# variable), makes no model call, and its only reason to talk to anything is
+# to delegate one A2A message and to export its spans. A policy that closed
+# the model-provider path on `settlement-agent` alone would have left this pod
+# as an unrestricted egress point sitting in the namespace the criterion
+# names.
+#
+# Its inventory is short and comes from its manifest and source, not from
+# watching it run: `delegation.py` builds one `httpx.AsyncClient` against the
+# base URL in `NORTHSTAR_ALLOWED_AGENTS` and holds no other peer;
+# `bootstrap.py` constructs an `OTLPSpanExporter()` from the OTEL env vars;
+# `main.py` only runs uvicorn. There is no Kubernetes API client, no gateway
+# call and no tool call anywhere in `agents/claims-agent/`.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: claims-agent-egress-allowlist
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m2.2
+spec:
+  endpointSelector:
+    matchLabels:
+      app: claims-agent
+  egress:
+    # 1. DNS -- L3/L4 only, with no `rules.dns` block.
+    #
+    # Deliberately unlike settlement-agent's rule 1, and the difference is the
+    # point: the L7 DNS block exists there to feed `toFQDNs`, and this
+    # workload has no `toFQDNs` rule to feed. Adding one here would interpose
+    # Cilium's DNS proxy on this pod's lookups to buy nothing, and would make
+    # the two documents look like they were doing the same job.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
+    # 2. The one A2A peer it is configured to delegate to.
+    #
+    # `NORTHSTAR_ALLOWED_AGENTS` is
+    # settlement-agent=http://settlement-agent.northstar-agents.svc.cluster.local:9002
+    # (deploy/k8s/claims-agent.yaml:43-44). Delegation in this repo is
+    # configured and never discovered, so the dataplane can be as narrow as
+    # the configuration -- one peer, one port. Same-namespace, and still
+    # namespace-pinned: a Cilium `toEndpoints` selector is not implicitly
+    # scoped to the policy's namespace the way a core NetworkPolicy's
+    # podSelector is.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: northstar-agents
+            app: settlement-agent
+      toPorts:
+        - ports:
+            - port: "9002"
+              protocol: TCP
+
+    # 3. The OTLP collector. Same endpoint and the same silent-failure
+    #    argument as settlement-agent's rule 3 --
+    #    deploy/k8s/claims-agent.yaml:29-32. This service owns the entry span
+    #    of the A2A chain, so losing its export would not empty the trace, it
+    #    would decapitate it.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            app: otel-collector
+      toPorts:
+        - ports:
+            - port: "4318"
+              protocol: TCP
+---
+# Task 7, document 3 of 3: customer-ui.
+#
+# The smallest document here and the one most likely to be questioned, so the
+# reasoning is explicit. `customer-ui` is nginx serving a static Next.js
+# export (`apps/customer-ui/nginx.conf`: one `server` block, `root
+# /usr/share/nginx/html`, a `try_files` and no `proxy_pass` anywhere), and the
+# browser talks to `claims-agent` directly from the page rather than through
+# this pod. Its outbound inventory is therefore genuinely empty.
+#
+# It is policied anyway because it was measured reaching
+# `api.anthropic.com:443`, it carries `northstar.io/plane: agents` in the
+# namespace the criterion names, and it runs an Alpine image with `nc` in it
+# -- so leaving it out would have left the namespace's easiest outbound path
+# open in the pod with a shell. "Needs nothing" is the argument for a policy
+# here, not against one.
+#
+# The DNS allowance is the whole document. Not because nginx needs it -- a
+# static server with no upstream resolves nothing -- but because an egress
+# block with no rule at all is a shape this file should not carry: it reads as
+# an oversight rather than as a decision, and any future addition here would
+# start by debugging name resolution. This grants the least that is still
+# recognisably a policy.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: customer-ui-egress-allowlist
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m2.2
+spec:
+  endpointSelector:
+    matchLabels:
+      app: customer-ui
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
