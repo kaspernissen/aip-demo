@@ -63,7 +63,8 @@ tests, so its 213 collected was the same 213 that commit carries), finished
 212 passed with 1 xfailed in 283.60s and exited 0. **The final-review fix round
 adds one test to the `tests/` tree** (`tests/e2e/test_gateway_config_drift.py`,
 adjudication 1) and adds the Policy Decision Service's own suite to the gate's
-per-service loop (finding 1), so both rows below moved by one. The arithmetic
+per-service loop (finding 1), so both rows below moved by one, and the gate was
+re-run in full: `213 passed, 1 xfailed` in 284.44s, exit 0. The arithmetic
 behind each row, and which of the two is measured and which is derived, is
 itemised in the bullet list further down this section — the same place it has
 always been stated. Two operational facts about
@@ -313,14 +314,17 @@ the default row and exactly the difference between the two rows.
   above sums to the same figure. This is the number both published rows are
   anchored on. It was `213` through M2.2 Task 8; the fix round added
   `tests/e2e/test_gateway_config_drift.py` (1).
-- **Derived, gate row, pending re-measurement later in this same fix round:**
-  214 collected − 0 skipped − 1 xfailed = **`213 passed, 1 xfailed`**. Labelled
-  derived, not measured, because at the moment this line was written the gate
-  had not yet been re-run against the fix round's tree — and this document does
-  not publish a run that has not happened. The last direct observation of the
-  gate is M2.2 Task 8's, which returned `212 passed, 1 xfailed` in 283.60s
-  against 213 collected. The fix round's own gate run replaces this bullet with
-  a measured one.
+- **Measured (final-review fix round), gate row:** `RUN_BROWSER_TESTS=1
+  ./scripts/smoke-test.sh` run once, in full, on the live stage-2
+  `kind-northstar` cluster — the whole `tests/` tree, real browser, real
+  settlements, all six per-service suites including the PDS's 96 —
+  returning `213 passed, 1 xfailed`, 0 skipped, in 284.44s, exit code 0, final
+  line "M2.2 smoke test passed." A direct observation of the whole gate,
+  including the two count guards that check this very table. It cross-checks
+  against the collected total by the second route this document has always
+  used: 214 collected − 0 skipped − 1 xfailed = 213. (M2.2 Task 8's run of the
+  same gate, against 213 collected and without the PDS suite in it, returned
+  212 passed with 1 xfailed in 283.60s.)
 - **Derived (final-review fix round), default row, components shown:** 214
   collected − 27 gated − 1 xfailed = **`186 passed, 27 skipped, 1 xfailed`**.
   Every component
@@ -421,9 +425,16 @@ the 19 other `tests/unit/` harness-correctness tests silently) or if
 environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
-Per-service unit suites (also run by `smoke-test.sh`, before any e2e test):
+Per-service unit suites (all six run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 79, payments-mcp 9, payments-api (Go) 20,
-customer-ui (vitest) 6 — all passing. (This row was stale at 19 for
+customer-ui (vitest) 6, policy-decision-service 96 — all passing. (The sixth
+entry arrived in the M2.2 final-review fix round: `policy-decision-service` was
+in neither the gate's loop nor this row until finding 1 showed both already
+*depended* on that component's generated stubs while collecting none of its
+tests. `scripts/smoke-test.sh` now runs `gen-stubs.sh` ahead of every suite and
+then runs the PDS's, and `_PER_SERVICE_SUITES` has a sixth row, so the 96 is
+measured by the same route as the other five rather than re-typed. See
+limitation 10 below for what remains open. This row was stale at 19 for
 settlement-agent from before M1.2 Tasks 1-4 added the PydanticAI agent's own
 tests — `tests/unit/test_telemetry_contract_counts.py` cannot see per-service
 rows, only the whole-tree total, so nothing caught the drift until Task 5
@@ -522,26 +533,39 @@ A19 regression test for the traceparent-across-await fix described below
 one unit suite that pins a real, previously-silent defect in this project's
 own code, not only in a third-party library's behavior.
 
-**A sixth per-service suite exists and is deliberately *outside* that row, so
-this is stated rather than left to be discovered.** M2.2 Task 4 added
-`platform/policy-decision-service/tests/` — **96 tests** (measured for this
-edit by `cd platform/policy-decision-service && .venv/bin/python -m pytest
-tests -q --collect-only` → `96 tests collected`, not carried forward from any
-task report; it was 95 through M2.2 Task 8, and the final-review fix round
-added `tests/test_proto_pin.py`, the sha256 guard on the vendored ExtMCP proto
-— finding 6, ruling R45). Two facts about it are true and neither is an
-oversight:
-`scripts/smoke-test.sh` does **not** run it (its per-service loop is the three
-services named above), and
-`test_per_service_counts_match_what_each_suites_own_runner_collects` does
-**not** guard it, because `_PER_SERVICE_SUITES` lists the same five. The
-reason it stays out of both is that the PDS suite needs generated gRPC stubs
-(`gen-stubs.sh`, git-ignored) present before it will even import, and both the
-gate's per-service loop and `tests/unit` are supposed to run without a
-generation step. So this count is **measured but unguarded** — the one number
-in this document with no automated check behind it — and it will drift the
-moment nobody re-measures it, which is precisely the failure mode the rest of
-this section documents. Recorded as limitation 10 below.
+**The sixth per-service suite was outside that row for the whole of M2.2, and
+the M2.2 final-review fix round brought it in. The reason it had been left out
+was false, which is why this paragraph is rewritten rather than deleted.**
+M2.2 Task 4 added `platform/policy-decision-service/tests/` — **96 tests**
+(measured for this edit by `cd platform/policy-decision-service &&
+.venv/bin/python -m pytest tests -q --collect-only` → `96 tests collected`, not
+carried forward from any task report; it was 95 through M2.2 Task 8, and the
+fix round added `tests/test_proto_pin.py`, the sha256 guard on the vendored
+ExtMCP proto — finding 6, ruling R45).
+
+Through M2.2 this document said the suite stayed out of both the gate and the
+count guard because it needs generated gRPC stubs (`gen-stubs.sh`,
+git-ignored), and neither `scripts/smoke-test.sh`'s per-service loop nor the
+hermetic `tests/unit` was willing to take on a generation step. **The final
+whole-branch review demonstrated that premise false.** Both already *required*
+those stubs: `agents/settlement-agent/tests/test_policy_deny_contract.py`
+imports `pds.rules` and `pds.server`, which import `ext_mcp_pb2`, so moving the
+stubs aside aborts the settlement-agent suite at collection (0 of 79 tests run)
+and reddens `test_per_service_counts_match_what_each_suites_own_runner_collects`
+itself (110 passed, 1 failed). The gate was paying the entire cost of the
+dependency and collecting none of the 96 tests in return, while `README.md`
+told a new operator the PDS setup was not needed for the gate — so a fresh
+clone following the README verbatim could not run `smoke-test.sh` at all.
+
+What the fix round changed, in three places and without committing the stubs
+(that is what ruling R22 exists to prevent): `scripts/smoke-test.sh` requires
+the PDS venv alongside the other three, runs `./gen-stubs.sh` **before any
+suite** — which is also what the settlement-agent suite has silently needed all
+along — and runs the PDS's own suite; `_PER_SERVICE_SUITES` gained a sixth row;
+and the published row above gained `policy-decision-service 96`. The count is
+now measured by exactly the same route as the other five, and the gate's real
+prerequisites match its documented ones. What remains open is narrower and is
+restated as limitation 10 below.
 
 **M1.2 Task 6 closed that blind spot rather than re-stating the number a
 fourth time.** The stale-at-19 defect above was the third recurrence of the
@@ -2331,26 +2355,57 @@ the pods. No Cilium telemetry is asserted as a span anywhere, and none was
 invented — which is the same rule this document applies to agentgateway and
 SPIRE, applied to a third component that also has no OTel story.
 
-**10. The Policy Decision Service's own 95-test suite is run by neither the
-gate nor any drift guard.** Found by Task 8's re-check, not carried in on the
-list it was handed — which is why the re-check exists. `scripts/smoke-test.sh`
-loops over three service directories (`tools/payments-mcp`,
-`agents/settlement-agent`, `agents/claims-agent`) and
-`test_per_service_counts_match_what_each_suites_own_runner_collects` guards
-the same five published counts, so `platform/policy-decision-service/tests/`
-— the suite covering the component that makes the decision this whole
-milestone is named for — is outside both. The cause is mechanical: that suite
-imports generated gRPC stubs produced by `gen-stubs.sh` and git-ignored, so
-running it needs a generation step that neither the gate's per-service loop
-nor the hermetic `tests/unit` subset is willing to take on. The decision it
-governs *is* covered end to end from the repo-root tree — `tests/e2e/test_policy_denial.py`
-drives a real denial through the deployed PDS, and
-`agents/settlement-agent/tests/test_policy_deny_contract.py` drives the real
-`decide`/`build_result` chain with a test-only PDS import — so this is a
-missing *unit-level* gate, not a missing assertion about behaviour. Fixing it
-means either committing the stubs or teaching the gate to generate them, both
-of which are real choices rather than oversights. Until one is made, the 95 is
-the one published count in this document with nothing automated behind it.
+**10. `tests/unit` is no longer self-sufficient on a fresh clone: it needs one
+generated artifact that only a script outside it produces.** Rewritten, not
+retired, in the M2.2 final-review fix round — and the rewrite is the point, so
+what it replaced is stated first.
+
+**What this item used to say, and why it was wrong.** Through M2.2 it read
+*"The Policy Decision Service's own 95-test suite is run by neither the gate
+nor any drift guard"*, and gave as the cause that running that suite *"needs a
+generation step that neither the gate's per-service loop nor the hermetic
+`tests/unit` subset is willing to take on"*. **That cause was false in its
+premise.** The final whole-branch review demonstrated (by moving the stubs
+aside) that both already *require* the generated stubs, because
+`agents/settlement-agent/tests/test_policy_deny_contract.py` imports
+`pds.server` — the settlement-agent suite aborts at collection, 0 of 79 tests
+run, and `tests/unit`'s own per-service count guard goes red. So the trade the
+item described had already been made and was collecting none of its benefit,
+and `README.md` compounded it by telling a new operator the PDS setup was
+*deliberately* not needed for the gate, which meant a fresh clone following the
+README verbatim could not run `scripts/smoke-test.sh` at all. That half is
+fixed: the gate now requires the PDS venv, runs `./gen-stubs.sh` ahead of every
+suite, and runs the PDS's 96 tests; `_PER_SERVICE_SUITES` has a sixth row; the
+README says what is actually true. The stubs were **not** committed — that
+re-opens the image/repo divergence ruling R22 exists to prevent.
+
+**The real remaining gap, which is narrower and worth keeping.** This document
+calls `tests/unit` "the hermetic subset: no cluster, no API key, no network",
+and that is still true of every resource it names — but it is not the same as
+self-sufficient. `pytest tests/unit` on a clone where `gen-stubs.sh` has never
+been run fails, because its per-service count guard shells out to the
+settlement-agent and policy-decision-service suites and both need
+`ext_mcp_pb2.py`, which is git-ignored. The failure is loud and actionable —
+the PDS's `conftest.py` raises rather than skipping and prints the exact
+command — and that is R22 working as designed rather than a defect. But it is a
+**precondition documented in prose rather than enforced by the thing that needs
+it**: nothing in `tests/unit` generates the stubs, and nothing warns before the
+subprocess fails. The gate no longer has this problem (it generates them
+itself); a developer running only the hermetic subset still does.
+
+Closing it properly means one of two things, both of which are choices rather
+than oversights: have the count guard invoke `gen-stubs.sh` itself, which makes
+a "no network, no side effects" test write files into a service directory; or
+have `tests/unit` skip the two Python suites that need stubs when the stubs are
+absent, which trades a loud failure for a silent hole in exactly the guard this
+project has already been burned by weakening. Neither is obviously right, so
+the precondition is recorded here instead.
+
+**Coverage was never the issue and still is not.** The decision this milestone
+is named for is covered end to end from the repo-root tree —
+`tests/e2e/test_policy_denial.py` drives a real denial through the deployed
+PDS, and `test_policy_deny_contract.py` drives the real `decide`/`build_result`
+chain with a test-only PDS import.
 
 **11. The deployed Policy Decision Service image carries its own build and test
 tooling.** Found by the final whole-branch review (finding 8), and a

@@ -111,10 +111,13 @@ def test_contracts_published_counts_match_what_pytest_actually_collects():
 
 # --- Per-service row (M1.2 Task 6) -----------------------------------------
 #
-# The row this guards reads, verbatim, as of this writing:
+# The row this guards reads, verbatim, as of this writing (M2.2 final-review
+# fix round; it read `claims-agent 14, settlement-agent 31, payments-mcp 7,
+# payments-api (Go) 7, customer-ui (vitest) 6` when this guard was written at
+# M1.2 Task 6, which is the drift it exists to catch):
 #
-#   claims-agent 14, settlement-agent 31, payments-mcp 7, payments-api (Go) 7,
-#   customer-ui (vitest) 6 -- all passing.
+#   claims-agent 16, settlement-agent 79, payments-mcp 9, payments-api (Go) 20,
+#   customer-ui (vitest) 6, policy-decision-service 96 -- all passing.
 #
 # Each service is checked with the *same command* `scripts/smoke-test.sh`
 # uses for it (Step 1/2), just in collect/list mode instead of run mode, so
@@ -247,6 +250,31 @@ _PER_SERVICE_SUITES = [
     ("payments-mcp", REPO_ROOT / "tools" / "payments-mcp", _pytest_collected_count),
     ("payments-api", REPO_ROOT / "systems" / "payments-api", _go_test_count),
     ("customer-ui", REPO_ROOT / "apps" / "customer-ui", _vitest_test_count),
+    # The sixth row, added in the M2.2 final-review fix round (finding 1,
+    # ruling R42). It was left out on the stated reasoning that the PDS suite
+    # needs a generation step (`gen-stubs.sh`) that a hermetic `tests/unit`
+    # should not take on -- but the review demonstrated that reasoning false in
+    # its premise: `tests/unit` ALREADY requires the generated stubs, because
+    # `agents/settlement-agent`'s own suite imports `pds.server` and the row
+    # three lines above collects that suite. Removing the stubs reddens this
+    # very test today. The cost was already being paid; only the tests were
+    # missing. `scripts/smoke-test.sh` now runs `gen-stubs.sh` ahead of every
+    # suite, which is what makes this row collectible in the gate as well as
+    # here.
+    #
+    # `_pytest_collected_count` needs no special case: the PDS suite runs with
+    # its own `.venv/bin/python` from its own directory, exactly like the three
+    # Python services above, and `gen-stubs.sh` leaves the stubs in that
+    # directory (flat, because protoc emits `import ext_mcp_pb2`), which the
+    # `cwd=service_dir` invocation puts on `sys.path`. If the stubs are
+    # missing, the PDS's `conftest.py` raises rather than skipping and this
+    # counter's `returncode == 0` assertion fails loudly carrying that message
+    # -- which is the intended behaviour, not a gap.
+    (
+        "policy-decision-service",
+        REPO_ROOT / "platform" / "policy-decision-service",
+        _pytest_collected_count,
+    ),
 ]
 
 

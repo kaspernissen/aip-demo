@@ -1250,7 +1250,73 @@ def _run_setup_kind(stage, tmp_path):
         ["bash", str(tree / "scripts" / "setup-kind.sh"), "--stage", stage],
         capture_output=True, text=True, env=env, timeout=180,
     )
-    return proc.returncode, proc.stdout + proc.stderr, log.read_text().splitlines()
+    combined = proc.stdout + proc.stderr
+    invocations = log.read_text().splitlines()
+    _write_capture(tmp_path, stage, proc.returncode, combined, invocations)
+    return proc.returncode, combined, invocations
+
+
+def _capture_path(tmp_path):
+    """Where `_run_setup_kind` leaves its evidence. Derived from `tmp_path`, so
+    an assertion can name the file without the harness having to hand it back
+    and without changing this module's long-standing 3-tuple return."""
+    return tmp_path / "setup-kind-capture.txt"
+
+
+def _write_capture(tmp_path, stage, returncode, combined, invocations):
+    """Persist the sandboxed run's whole output next to the test that caused it.
+
+    **Why this exists (M2.2 final review, adjudication 4 / ruling R38).**
+    `test_stage_two_installs_spire_with_the_pinned_versions_and_values` failed
+    once, mid-task, and not in ~90 further runs. Its assertion message already
+    interpolates this script's entire captured output, so the failing run
+    printed the reason it died — and the record kept only the line number. The
+    evidence was on screen and was discarded, and the ruling has now cost two
+    milestones' worth of re-runs precisely because nobody has that output.
+
+    So the output is written to a file as well as interpolated. `tmp_path` is
+    pytest's own per-test temporary directory, which pytest retains for the
+    last three runs, so this survives the re-run that usually clears the
+    intermittency — which is the whole problem: the natural response to a red
+    R38 is to re-run, and a re-run is exactly what destroys the terminal
+    scrollback.
+
+    Written on every run, not only on failure: the assertion has no way to know
+    a failure is coming, and a passing run's capture is the healthy baseline to
+    diff the next failure against. It is a few kilobytes in a temporary
+    directory.
+
+    Nothing secret is in it. `_run_setup_kind` pops `ANTHROPIC_API_KEY` and
+    `DASH0_AUTH_TOKEN` out of the subprocess environment and writes a
+    throwaway `.env` containing one non-secret variable, so the script under
+    test never sees a credential to print.
+    """
+    try:
+        _capture_path(tmp_path).write_text(
+            f"# scripts/setup-kind.sh --stage {stage}, sandboxed harness\n"
+            f"# returncode: {returncode}\n"
+            f"# {len(invocations)} faked tool invocations\n"
+            "\n--- invocations (docker/kind/kubectl/helm, in order) ---\n"
+            + "\n".join(invocations)
+            + "\n\n--- stdout + stderr ---\n"
+            + combined
+            + "\n"
+        )
+    except OSError:  # pragma: no cover - diagnostics must never fail a test
+        pass
+
+
+def _diagnostics(tmp_path) -> str:
+    """The tail every assertion in this harness carries, naming the capture
+    file. See `_write_capture` for why (adjudication 4 / R38)."""
+    return (
+        f"\n\nFull harness capture (invocations, stdout and stderr) written to:"
+        f"\n  {_capture_path(tmp_path)}\n"
+        "pytest keeps the last three temporary directories, so this file "
+        "survives the re-run that clears this failure. If R38 has recurred, "
+        "paste that file rather than re-running: the reason the sandboxed "
+        "script exited early is in it."
+    )
 
 
 _bash_only = pytest.mark.skipif(sys.platform == "win32", reason="bash-only harness")
@@ -1274,8 +1340,16 @@ def test_stage_two_installs_the_crds_chart_before_the_spire_chart(tmp_path):
         for i, c in enumerate(installs)
         if "spiffe/spire " in c or c.rstrip().endswith("spiffe/spire")
     ]
-    assert crds, f"`spiffe/spire-crds` was never installed. Invocations:\n{installs}\n{out}"
-    assert spire, f"`spiffe/spire` was never installed. Invocations:\n{installs}\n{out}"
+    # Same failure mode as the R38 assertion below, from the same harness, so
+    # it carries the same pointer at the capture file (adjudication 4).
+    assert crds, (
+        f"`spiffe/spire-crds` was never installed. Invocations:\n{installs}\n{out}"
+        + _diagnostics(tmp_path)
+    )
+    assert spire, (
+        f"`spiffe/spire` was never installed. Invocations:\n{installs}\n{out}"
+        + _diagnostics(tmp_path)
+    )
     assert max(crds) < min(spire), (
         "the CRDs chart must be installed before the spire chart; got, in "
         f"order:\n" + "\n".join(installs)
@@ -1296,7 +1370,14 @@ def test_stage_two_installs_spire_with_the_pinned_versions_and_values(tmp_path):
     installs = _helm_installs(calls)
     crds = [c for c in installs if "spiffe/spire-crds" in c]
     spire = [c for c in installs if "spiffe/spire " in c and "spire-crds" not in c]
-    assert crds and spire, f"missing a SPIRE install:\n{installs}\n{out}"
+    # THIS is the R38 assertion. When it fails, `installs` lacks the
+    # `helm upgrade --install spire` line, which means the sandboxed script
+    # exited before scripts/setup-kind.sh's SPIRE install -- so the reason is
+    # in the output below and in the capture file named at the end of this
+    # message. Do not re-run before reading it (adjudication 4).
+    assert crds and spire, (
+        f"missing a SPIRE install:\n{installs}\n{out}" + _diagnostics(tmp_path)
+    )
     for call in crds:
         assert f"--version {PINNED_SPIRE_CRDS_CHART_VERSION}" in call, call
     for call in spire:

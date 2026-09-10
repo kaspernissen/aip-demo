@@ -68,28 +68,37 @@ ahead of time:
 
 ```bash
 uv venv --python 3.13 .venv && uv pip install -r tests/requirements.txt && .venv/bin/playwright install chromium
-for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent; do
+for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service; do
   (cd "$svc" && uv venv --python 3.13 .venv && uv pip install -r requirements.txt)
 done
 ```
 
-The Policy Decision Service is deliberately not in that loop: `smoke-test.sh`
-does not run its suite, because that suite needs generated gRPC stubs and the
-gate does not generate anything. To run it, do the generation first — it fails
-loudly rather than skipping if the stubs are missing:
+**The Policy Decision Service is in that loop, and it is not optional.** An
+earlier version of this section said it was "deliberately not in that loop"
+because the gate does not run its suite. That was wrong, and wrong in the
+direction that breaks a fresh clone: `agents/settlement-agent`'s own suite
+imports `pds.server`, which imports the generated gRPC stubs, so
+`smoke-test.sh` has always needed the PDS set up — it simply needed it silently
+and got none of the PDS's 96 tests in return. As of the M2.2 final-review fix
+round the gate requires this venv like the other three, generates the stubs
+itself with `./gen-stubs.sh` before running any suite, and runs the PDS suite
+alongside the rest.
+
+The stubs stay git-ignored on purpose (ruling R22): committing them would let
+the image and the repo disagree about a contract whose only source of truth is
+the vendored `proto/ext_mcp.proto`, which the Dockerfile regenerates from at
+build time. So they have to be generated once per clone, and the venv has to
+come first, because `gen-stubs.sh` defaults to that venv's `python` for the
+pinned `grpc_tools.protoc`. `smoke-test.sh` does this for you. If you want to
+run the PDS suite on its own, or run `pytest tests/unit` from the repo root
+before ever running the gate, do the generation yourself first — everything
+that needs the stubs fails loudly rather than skipping when they are missing,
+and prints this command:
 
 ```bash
-(cd platform/policy-decision-service \
-  && uv venv --python 3.13 .venv && uv pip install -r requirements.txt \
-  && ./gen-stubs.sh \
-  && .venv/bin/python -m pytest tests -q)
+(cd platform/policy-decision-service && ./gen-stubs.sh)
+(cd platform/policy-decision-service && .venv/bin/python -m pytest tests -q)
 ```
-
-The venv comes first because `gen-stubs.sh` defaults to that venv's `python`
-for the pinned `grpc_tools.protoc`. The stubs are git-ignored on purpose
-(ruling R22): committing them would let the image and the repo disagree about
-a contract whose only source of truth is the vendored
-`proto/ext_mcp.proto`.
 
 Then open:
 
@@ -126,7 +135,13 @@ the other drives two direct MCP calls with different SPIFFE identities and no
 model call at all. Without a live cluster and port-forwards those e2e files
 fail rather than skip.
 
-`tests/unit` is the hermetic subset: no cluster, no API key, no network.
+`tests/unit` is the hermetic subset: no cluster, no API key, no network. It is
+not, however, self-sufficient on a fresh clone — its per-service count guard
+shells out to the settlement-agent and policy-decision-service suites, both of
+which need the generated ExtMCP stubs, so run `(cd
+platform/policy-decision-service && ./gen-stubs.sh)` once first. It fails
+loudly and names that command if you do not (limitation 10 in
+`docs/telemetry-contract.md`).
 
 ## Stages
 
