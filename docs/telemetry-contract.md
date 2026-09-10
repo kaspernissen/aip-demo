@@ -65,8 +65,8 @@ it was actually run:
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `121 passed, 23 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `144 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `135 passed, 23 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `158 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -273,6 +273,22 @@ move this count.
   determine would spend Anthropic tokens for no additional evidence. The one
   xfail is the same FastMCP-baggage one described below; it is not gated, so
   it appears in both rows.
+- **Measured (M2.2, network policy), default row:** a bare
+  `.venv/bin/python -m pytest tests/ -q` was run directly after adding the
+  fourteen network-policy tests and returned `134 passed, 23 skipped, 1
+  xfailed` in 88.12s, alongside the single expected failure of *this* guard,
+  which was stale at 145 while the tree had grown to 159. With that guard
+  itself fixed the row is **`135 passed, 23 skipped, 1 xfailed`**, and
+  `pytest --collect-only tests/` reports 159 collected, which is the sum.
+- **Derived (M2.2, network policy), gate row, components shown:** 159 collected
+  − 0 skipped − 1 xfailed = **`158 passed, 1 xfailed`**. The fourteen new tests
+  are ten unit guards over `deploy/platform/cilium-policies.yaml` and four e2e
+  checks that attempt the bypass against the live cluster; none of the fourteen
+  drives a settlement, so none changes the gate's cost. Labelled derived, not
+  measured: the gate was not re-run for this change, because a re-run spends
+  Anthropic tokens to re-observe a figure that the collected total and the
+  measured default row already determine. Cross-checks by the second route:
+  135 default-row passes + 23 that the gate un-skips = 158.
 - **Historical, kept for the audit trail:** the previous gate figure,
   `133 passed, 1 xfailed`, was itself derived (`129 + 1 + 3`) from an M2.1
   Task 4 gate run that reported `1 failed, 129 passed, 1 xfailed` in 152s —

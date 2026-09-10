@@ -1,0 +1,79 @@
+# Cilium network policy for stage 2.
+#
+# WHY THIS FILE EXISTS
+#
+# M2.1 put agentgateway in the MCP path and made it verify a SPIRE-issued
+# JWT-SVID on every `tools/call`. That established the choke point *by
+# convention*: `settlement-agent`'s PAYMENTS_MCP_URL names the gateway, so the
+# agent's calls go through it. It did NOT establish the choke point *by
+# enforcement* -- nothing stopped a workload from ignoring the gateway and
+# talking to `payments-mcp` directly.
+#
+# That gap was measured, not assumed. With no policy applied, `claims-agent` --
+# which holds no SVID and has no business touching payments -- POSTed an MCP
+# `initialize` straight at
+# `payments-mcp.northstar-tools.svc.cluster.local:8000/mcp` and got **HTTP
+# 200**. The milestone's own claim, "the platform decides if it becomes an
+# effect", was therefore true only for a cooperating caller.
+#
+# `tests/e2e/test_gateway_trace.py::test_the_gateway_is_the_only_route_into_payments_mcp`
+# does not catch this, and its docstring is careful about why: it asserts that
+# every `payments-mcp` span *in the observed trace* is parented to an
+# agentgateway span. That is a statement about the traffic that happened, not
+# about the traffic that is possible. Reachability needs the dataplane.
+#
+# This is also a gap in the M2 spec rather than merely in its implementation.
+# The spec's Cilium section (§7) and its acceptance criterion 7 are both about
+# **egress to the model provider** ("Direct egress from `northstar-agents` to
+# the model provider is denied by Cilium"). Neither says anything about ingress
+# to the tool. The architecture diagram's note "the gateway is the only path"
+# is attached to the `api.anthropic.com` arrow, not to `payments-mcp`.
+#
+# Cilium was installed in M2.1 precisely so there would be a dataplane to put
+# this on, and until now it carried no policy at all.
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: payments-mcp-gateway-only
+  namespace: northstar-tools
+  labels:
+    northstar.io/milestone: m2.2
+spec:
+  # Selects the tool being protected, not the callers. An endpointSelector with
+  # an `ingress` block makes this endpoint default-deny for ingress: anything
+  # not matched by a rule below is dropped. That is the point -- an allowlist
+  # that has to be added to, rather than a denylist that has to anticipate.
+  endpointSelector:
+    matchLabels:
+      app: payments-mcp
+  ingress:
+    # 1. The gateway, and nothing else in the mesh.
+    #
+    # Both labels are required and they do different jobs: `app: agentgateway`
+    # picks the workload, and the namespace label scopes it, so a pod that
+    # happens to label itself `app: agentgateway` in some other namespace does
+    # not inherit the gateway's reachability. `k8s:io.kubernetes.pod.namespace`
+    # is Cilium's own spelling for the namespace an endpoint lives in.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: northstar-platform
+            app: agentgateway
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+
+    # 2. The node itself, for the readiness probe.
+    #
+    # deploy/k8s/payments-mcp.yaml uses a `tcpSocket` readinessProbe on 8000,
+    # and kubelet dials that from the node, not from a pod. Cilium's
+    # `allow-localhost: auto` default would very likely cover it, but relying
+    # on a default here would mean a probe failure -- which presents as the pod
+    # never becoming Ready and `rollout status` hanging -- depends on a setting
+    # this repo does not pin. `remote-node` is included for the same reason on
+    # a multi-node cluster; this one has a single node today, and the rule
+    # costs nothing when there is no remote node to match.
+    - fromEntities:
+        - host
+        - remote-node

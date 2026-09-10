@@ -246,6 +246,21 @@ kind: Namespace
 metadata:
   name: northstar-platform
 EOF
+
+  # M2.2: the network policy that makes the choke point real rather than
+  # conventional -- only agentgateway may reach payments-mcp on 8000. See
+  # deploy/platform/cilium-policies.yaml for the measurement that motivated it
+  # (claims-agent reached the tool directly and got HTTP 200).
+  #
+  # Applied HERE, before Step 9 deploys any workload, and not next to the
+  # gateway install at Step 9b where it would read more naturally. A
+  # CiliumNetworkPolicy selects endpoints by label and does not require its
+  # targets to exist yet, so applying it early costs nothing and closes the
+  # window in which payments-mcp is running but unprotected. The CRD it needs
+  # was installed with Cilium at Step 2b, which is why this cannot move any
+  # earlier than this block.
+  kubectl --context "kind-${CLUSTER_NAME}" apply \
+    -f "$ROOT/deploy/platform/cilium-policies.yaml"
 fi
 
 # M1.2: settlement-agent's decision is a real model call, so it needs a model
