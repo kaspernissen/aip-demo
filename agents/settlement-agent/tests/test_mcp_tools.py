@@ -701,10 +701,36 @@ def test_a_denial_shaped_message_with_no_marker_is_not_a_denial():
 
 
 def test_a_permit_marker_is_not_a_denial():
+    """A body that says `permit` is not a denial, *even carrying deny prose*.
+
+    Fix round 1, finding F6: this test used the message `"fine"`, which made it
+    inert against the one mutation it should have caught. Swapping the
+    structural check for a prose one while still reading the facts out of the
+    body --
+
+        for candidate in (data.get("data"), data):
+            if isinstance(candidate, dict) and "exceeds the" in str(exc):
+                return candidate
+
+    -- passed all 73 tests, because no test ever handed the detector deny
+    prose together with a body that structurally says permit. That is the
+    realistic shape of the mistake: someone reaching for the message keeps
+    reading the body for the rule and the limit, so every test that asserts on
+    those still passes.
+
+    The two ways to get the detection wrong pull in opposite directions, so
+    both messages have to appear somewhere in this file: this test is
+    prose-that-must-be-ignored-because-the-structure-says-permit, and
+    `test_a_denial_shaped_message_with_no_marker_is_not_a_denial` is
+    prose-with-no-structure-at-all. Neither alone is sufficient.
+    """
     body = _denial_body()
     body["data"]["decision"] = "permit"
-    permitted = McpError(ErrorData(code=-32001, message="fine", data=body))
-    assert _policy_denial(permitted) is None
+    permitted = McpError(ErrorData(code=-32001, message=DENY_REASON, data=body))
+    assert _policy_denial(permitted) is None, (
+        "a permit was read as a denial -- the detector is keying on the "
+        "reason text rather than on data.decision"
+    )
 
 
 def test_an_ordinary_exception_carrying_no_error_attribute_is_not_a_denial():

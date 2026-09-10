@@ -315,7 +315,7 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (also run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 73, payments-mcp 9, payments-api (Go) 20,
+claims-agent 16, settlement-agent 79, payments-mcp 9, payments-api (Go) 20,
 customer-ui (vitest) 6 — all passing. (This row was stale at 19 for
 settlement-agent from before M1.2 Tasks 1-4 added the PydanticAI agent's own
 tests — `tests/unit/test_telemetry_contract_counts.py` cannot see per-service
@@ -389,7 +389,21 @@ that a transport failure and a denial-shaped message with no marker both stay
 transport failures, and that exactly one execute attempt reaches the payment
 system — counted, with a reactive `FunctionModel` that retries if and only if
 the framework asks it to, so making `PolicyDenial` a `ModelRetry` turns that
-test red rather than leaving it green on a loop that eventually gives up.)
+test red rather than leaving it green on a loop that eventually gives up.
+Grown again by that task's fix round 1, settlement-agent 73→79, re-measured
+the same way: the new `tests/test_policy_deny_contract.py` (6) closes a
+producer/consumer contract that had nothing asserting it. The deny marker was
+hand-duplicated -- written in `pds/server.py::build_result`, copied as a
+literal into `agents/settlement-agent/tests/test_mcp_tools.py` -- and it was
+measured that changing the PDS to emit `"denied"` instead of `"deny"`
+reddened two tests in the PDS suite and **zero** in the agent's, even though
+the agent is the thing that stops narrating a refusal when the marker moves.
+The new file copies nothing: it drives the real chain (`parse_call` ->
+`decide` -> `build_result` -> the gateway's measured error mapping -> a real
+`McpError` -> `mcp_tools._policy_denial`) with a **test-only** import of the
+PDS, guarded by a test that fails if any production module in the service ever
+grows a `pds` import. Same mutation now reddens four tests in
+`agents/settlement-agent`.)
 customer-ui's suite includes its own
 A19 regression test for the traceparent-across-await fix described below
 (`apps/customer-ui/NOTES.md` §2) — worth naming explicitly, since it's the
