@@ -37,11 +37,26 @@ type executeRequest struct {
 // amountEpsilon is the tolerance for the confirmation check, in units of the
 // currency: half a cent.
 //
-// The amount crosses two JSON hops as a float, so an exact `==` here is a
-// latent failure rather than a strictness. Half a cent is below the smallest
-// amount anyone can actually be paid, so it can never mask a real
-// disagreement, while comfortably absorbing float representation noise (at
-// €6,200 the float64 round-trip error is on the order of 1e-12).
+// The justification is a domain one, not a numerical one. Half a cent is below
+// the smallest amount anyone can actually be paid, so this tolerance cannot
+// mask a disagreement about money: any two amounts differing by something a
+// payee could actually receive are still refused, and handlers_test.go pins
+// that a one-cent difference is a 409.
+//
+// What it buys is that this stays a comparison of *quantities of money* rather
+// than an identity test on a bit pattern. The amount is a float that has been
+// through arithmetic somewhere upstream -- a sum of line items, a proportion
+// of an assessed total, an excess subtracted -- and two routes to the same
+// figure can land an ULP apart. Refusing a payment over the seventeenth
+// decimal place would be a bug, not rigour.
+//
+// Note what this epsilon is deliberately *not* claimed to fix: the JSON hops
+// themselves. Both Go's and Python's encoders emit the shortest
+// round-tripping representation of a float64, so an amount survives
+// encode/decode bit-exactly in both directions -- measured over this demo's
+// own figures, including 6200.0 and 6200.01. An earlier version of this
+// comment asserted a ~1e-12 round-trip error at EUR 6,200; that was false, and
+// the tolerance does not rest on it (fix round 1, F2).
 const amountEpsilon = 0.005
 
 // confirmsPayment reports whether a stated amount and currency match the

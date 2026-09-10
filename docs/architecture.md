@@ -518,18 +518,35 @@ all four endpoints (`systems/payments-api/handlers.go`,
 |---|---|---|---|
 | `GET /healthz` | — | `{"status":"ok"}` | `200` |
 | `POST /payments/propose` | `{"claimId","amount","currency"}` | `{"paymentId","claimId","amount","currency","status":"proposed"}` | `201` (created), `400` (malformed JSON, missing `claimId`, negative `amount`) |
-| `POST /payments/{paymentId}/execute` | — | `{"paymentId","claimId","amount","currency","status":"executed"}` or `{"error":"..."}` | `200` (executed), `404` (`{"error":"payment not found"}`, unknown id), `409` (`{"error":"payment already executed"}`, already executed) |
+| `POST /payments/{paymentId}/execute` | `{"amount","currency"}` — required; `amount` is mandatory, `currency` defaults to `EUR` | `{"paymentId","claimId","amount","currency","status":"executed"}` or `{"error":"..."}` | `200` (executed), `400` (`{"error":"execution must state the amount it is paying"}` for an absent or unparseable body; `{"error":"amount is required"}` for a body that omits the amount), `404` (`{"error":"payment not found"}`, unknown id), `409` — **two distinct causes**: `{"error":"stated amount does not match the proposal"}` (the confirmation-of-intent check refused it) and `{"error":"payment already executed"}` |
 | `GET /payments/{paymentId}` | — | Payment record, or `{"error":"payment not found"}` | `200`, `404` |
 
-Verbatim from a live capture against the deployed pod (port-forward, exact
-sequence: propose, execute, execute again, execute-unknown):
+Verbatim from a live capture against the deployed pod (port-forward, one
+sequence against a single freshly-proposed payment: propose, execute with no
+body, execute with a wrong amount, execute with a wrong currency, execute
+correctly, execute again, execute-unknown). Re-captured 2026-09-10 against the
+image built from `e062c10`, which added the confirmation-of-intent check —
+the previous capture here showed bodyless executes succeeding and every line
+of it would now return `400`:
 
 ```
-POST /payments/propose  -> 201  {"paymentId":"PAY-000060","claimId":"CLM-DOC-TEST","amount":100,"currency":"EUR","status":"proposed"}
-POST /payments/PAY-000060/execute -> 200  {"paymentId":"PAY-000060",...,"status":"executed"}
-POST /payments/PAY-000060/execute -> 409  {"error":"payment already executed"}
-POST /payments/PAY-999999/execute -> 404  {"error":"payment not found"}
+POST /payments/propose -> 201  {"paymentId":"PAY-000004","claimId":"CLM-DOC-TEST-3","amount":100,"currency":"EUR","status":"proposed"}
+POST /payments/PAY-000004/execute                                 (no body) -> 400  {"error":"execution must state the amount it is paying"}
+POST /payments/PAY-000004/execute  {"amount":250,"currency":"EUR"} -> 409  {"error":"stated amount does not match the proposal"}
+POST /payments/PAY-000004/execute  {"amount":100,"currency":"USD"} -> 409  {"error":"stated amount does not match the proposal"}
+POST /payments/PAY-000004/execute  {"amount":100,"currency":"EUR"} -> 200  {"paymentId":"PAY-000004","claimId":"CLM-DOC-TEST-3","amount":100,"currency":"EUR","status":"executed"}
+POST /payments/PAY-000004/execute  {"amount":100,"currency":"EUR"}  (again) -> 409  {"error":"payment already executed"}
+POST /payments/PAY-999999/execute  {"amount":100,"currency":"EUR"} -> 404  {"error":"payment not found"}
 ```
+
+Two things worth reading off that capture. The two 409s carry different
+messages and come from different checks — one is the confirmation of intent,
+one is the already-executed guard — and they are only both reachable because
+the request states what it is paying. And a mismatched *currency* is refused
+by the same comparison rather than by schema validation, which is why
+`contracts/openapi/payments-api.yaml` deliberately does not put `enum: [EUR]`
+on the execute body's `currency` (it does on propose): the field is a claim to
+be checked, not an instruction to be validated.
 
 Every route except `/healthz` is wrapped in `otelhttp.NewHandler(...)`
 individually so the span name is the route template (e.g.

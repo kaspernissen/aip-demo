@@ -238,21 +238,52 @@ func TestExecuteWithBodyOmittingTheAmountIsRejected(t *testing.T) {
 	}
 }
 
+// decodeFloat parses a float64 out of JSON at runtime.
+//
+// This exists to defeat constant folding, and that is not incidental -- it is
+// what makes the test below able to fail at all. Go evaluates constant
+// expressions in arbitrary precision and rounds once at the end, so the
+// literal `0.1 + 0.2` is a constant expression whose float64 result is
+// *bit-identical* to `0.3` (verified: both are 0x3fd3333333333333). Written
+// that way, this test passes just as happily against an exact `==` comparison
+// and asserts nothing about the tolerance -- which is exactly the defect fix
+// round 1 F1 found here. Values that arrive through a runtime decode cannot be
+// folded, and `0.1 + 0.2` computed on them is 0x3fd3333333333334: one ULP
+// away from 0.3, and genuinely `!=` it.
+func decodeFloat(t *testing.T, jsonNumber string) float64 {
+	t.Helper()
+	var v float64
+	if err := json.Unmarshal([]byte(jsonNumber), &v); err != nil {
+		t.Fatalf("decoding %s: %v", jsonNumber, err)
+	}
+	return v
+}
+
 func TestExecuteAmountIsComparedWithATolerance(t *testing.T) {
 	srv := newTestServer()
 
-	// A float that cannot be represented exactly, and a stated amount that
-	// differs from it only by accumulated representation noise. An exact `==`
-	// comparison here is a latent stage failure; the epsilon absorbs it.
-	proposed := 0.1 + 0.2 // 0.30000000000000004
-	payment := proposePayment(t, srv, "CLM-1842", proposed)
+	// Two values that are unequal in float64 but agree to far better than half
+	// a cent. The confirmation check must accept them: it is a tolerance on a
+	// quantity of money, not an identity test on a bit pattern.
+	proposed := decodeFloat(t, "0.1") + decodeFloat(t, "0.2")
+	const stated = 0.3
 
+	// Guard, so this test can never quietly go vacuous again. If a future
+	// compiler or a rewrite makes these two bit-equal, the test stops proving
+	// anything about the epsilon -- and it must say so rather than pass.
+	if proposed == stated {
+		t.Fatalf("this test is vacuous: proposed %v is bit-identical to %v, so "+
+			"an exact == comparison would satisfy it too", proposed, stated)
+	}
+
+	payment := proposePayment(t, srv, "CLM-1842", proposed)
 	rec := executePayment(srv, payment.PaymentID,
-		map[string]any{"amount": 0.3, "currency": "EUR"})
+		map[string]any{"amount": stated, "currency": "EUR"})
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("float noise was treated as a mismatch: got %d, want 200 (body: %s)",
-			rec.Code, rec.Body.String())
+		t.Fatalf("a sub-ULP difference was treated as a mismatch: got %d, want 200 "+
+			"(proposed %v, stated %v, body: %s)",
+			rec.Code, proposed, stated, rec.Body.String())
 	}
 }
 

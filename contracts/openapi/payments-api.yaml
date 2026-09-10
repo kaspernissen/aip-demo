@@ -50,10 +50,13 @@ paths:
       description: >
         Confirmation of intent. The caller states the amount and currency it
         believes it is paying, and this service checks that instruction against
-        the proposal it recorded, refusing if the two disagree. The amount is
-        compared with a tolerance of half a cent, since it crosses JSON as a
-        float. A request with no body, or with no stated amount, is refused: an
-        execution that cannot confirm what it is paying does not proceed.
+        the proposal it recorded, refusing with 409 if the two disagree. The
+        amount is compared with a tolerance of half a cent: below the smallest
+        amount anyone can be paid, so it cannot mask a disagreement about
+        money, while keeping this a comparison of quantities rather than of
+        float bit patterns. A request with no body, or with no stated amount,
+        is refused with 400: an execution that cannot confirm what it is paying
+        does not proceed.
       parameters:
         - name: paymentId
           in: path
@@ -72,10 +75,21 @@ paths:
                   type: number
                   minimum: 0
                   examples: [6200]
+                # Deliberately NOT `enum: [EUR]`, unlike the propose body
+                # above. There, the enum is a real constraint on what this
+                # API will create: the demo is EUR-only. Here the field is
+                # not an instruction but a *claim* about what the caller
+                # believes it is paying, and refusing a claim that disagrees
+                # with the recorded proposal is this operation's entire job.
+                # Restricting it to the one value that can ever match would
+                # declare a mismatched currency malformed, making the 409
+                # below unreachable by any request the contract permits --
+                # and payments-api does not reject a non-EUR currency as a
+                # schema violation; it compares it and returns 409.
                 currency:
                   type: string
                   default: EUR
-                  enum: [EUR]
+                  examples: ["EUR"]
       responses:
         "200":
           description: Payment executed. Money has moved.
