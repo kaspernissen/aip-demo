@@ -760,6 +760,91 @@ func TestRefuseWithMalformedBodyIsRejected(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// M3 Task 3 review fix round (finding 2 / R12, ledger-side half). The
+// reviewer's point: propose CREATES a record; refuse MUTATES the one a human
+// uses to release money. Before this, POST /payments/{id}/refuse validated
+// only that `rule` was non-empty, so a second refuse call could silently
+// replace an existing refusal's record -- including its refusedTraceId/
+// refusedSpanId, the exact link a reviewer follows into a trace -- and any
+// caller could refuse for any `requested` amount, whether or not it matched
+// what was actually proposed. This supersedes ruling R6.
+// ---------------------------------------------------------------------------
+
+func TestRefusingAnAlreadyRefusedPaymentIsRejected(t *testing.T) {
+	srv := newTestServer()
+	payment := proposePayment(t, srv, "CLM-1842", 6200)
+
+	first := refusePayment(srv, payment.PaymentID,
+		refusalBody("execute_limit", 6000.0, 6200.0, "first narrative",
+			"331edba8cb21223e9de2f244360c42ef", "b7997877797c1b27"))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first refuse: got status %d, want 200 (body: %s)", first.Code, first.Body.String())
+	}
+
+	second := refusePayment(srv, payment.PaymentID,
+		refusalBody("execute_limit", 6000.0, 6200.0, "attacker-authored narrative",
+			"attacker-trace-id", "attacker-span-id"))
+	if second.Code != http.StatusConflict {
+		t.Errorf("second refuse: got status %d, want 409 (body: %s)", second.Code, second.Body.String())
+	}
+
+	// The original refusal record must survive untouched -- this is the
+	// exact hole the review named: an unconditional refuse could overwrite
+	// refusedTraceId/refusedSpanId, repointing the audit link at a trace of
+	// the caller's choosing.
+	got := getPayment(t, srv, payment.PaymentID)
+	if got.Refusal == nil {
+		t.Fatalf("refusal record vanished after a rejected second refuse")
+	}
+	if got.Refusal.Narrative != "first narrative" {
+		t.Errorf("refusal record was overwritten: narrative is %q, want %q",
+			got.Refusal.Narrative, "first narrative")
+	}
+	if got.Refusal.RefusedTraceID != "331edba8cb21223e9de2f244360c42ef" {
+		t.Errorf("refusedTraceId was overwritten: got %q", got.Refusal.RefusedTraceID)
+	}
+	if got.Refusal.RefusedSpanID != "b7997877797c1b27" {
+		t.Errorf("refusedSpanId was overwritten: got %q", got.Refusal.RefusedSpanID)
+	}
+}
+
+func TestRefusingWithARequestedAmountThatDoesNotMatchTheProposalIsRejected(t *testing.T) {
+	srv := newTestServer()
+	payment := proposePayment(t, srv, "CLM-1842", 6200)
+
+	rec := refusePayment(srv, payment.PaymentID,
+		refusalBody("execute_limit", 6000.0, 9999.0, "narrative", "trace-id", "span-id"))
+
+	if rec.Code != http.StatusConflict {
+		t.Errorf("got status %d, want 409 (body: %s)", rec.Code, rec.Body.String())
+	}
+	got := getPayment(t, srv, payment.PaymentID)
+	if got.Status != StatusProposed {
+		t.Errorf("payment status is %q after a rejected refuse, want %q",
+			got.Status, StatusProposed)
+	}
+	if got.Refusal != nil {
+		t.Errorf("a rejected refuse must not write a refusal record: %+v", got.Refusal)
+	}
+}
+
+func TestRefusingWithARequestedAmountWithinEpsilonIsAccepted(t *testing.T) {
+	// The same half-cent tolerance the execute route already applies
+	// (confirmsPayment/amountEpsilon), applied here too: a requested amount
+	// that has been through arithmetic upstream may land a fraction of a
+	// cent off without being a real disagreement about money.
+	srv := newTestServer()
+	payment := proposePayment(t, srv, "CLM-1842", 6200)
+
+	rec := refusePayment(srv, payment.PaymentID,
+		refusalBody("execute_limit", 6000.0, 6200.001, "narrative", "trace-id", "span-id"))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got status %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+}
+
 func TestListPaymentsWithNoStatusReturnsEveryPayment(t *testing.T) {
 	srv := newTestServer()
 	proposePayment(t, srv, "CLM-1842", 6200)

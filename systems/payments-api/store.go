@@ -26,6 +26,11 @@ const (
 var (
 	ErrNotFound = errors.New("payment not found")
 	ErrExecuted = errors.New("payment already executed")
+	// ErrAlreadyRefused (M3 Task 3 review fix round, R12): a payment already
+	// in StatusRefused may not be refused a second time. See store.refuse's
+	// own doc comment for why this replaced the earlier "refusing an
+	// already-refused payment simply replaces the record" behaviour.
+	ErrAlreadyRefused = errors.New("payment already refused")
 )
 
 type Payment struct {
@@ -134,12 +139,18 @@ func (s *store) get(paymentID string) (Payment, error) {
 // It rejects an already-executed payment with ErrExecuted -- the same error
 // store.execute returns for its own already-executed case, and the handler
 // gives it the same 409 shape -- because the money has already moved once,
-// and a refusal record after that would misstate the ledger. It does not
-// otherwise gate on the payment's current status: refusing an already-
-// refused payment simply replaces the record (there is exactly one path to
-// StatusRefused, so this only re-runs the same transition with fresher
-// facts), and refusing a merely-proposed payment is the ordinary case this
-// method exists for.
+// and a refusal record after that would misstate the ledger.
+//
+// M3 Task 3 review fix round (finding 2 / R12, superseding the comment this
+// replaced): it also rejects an already-refused payment with
+// ErrAlreadyRefused. The earlier behaviour -- "refusing an already-refused
+// payment simply replaces the record" -- was the hole the reviewer named:
+// propose CREATES a record; refuse MUTATES the one a human reviewer reads
+// before releasing money, and an unconditional second refuse let any caller
+// overwrite refusedTraceId/refusedSpanId, repointing the audit link at a
+// trace of their own choosing. There is exactly one legitimate path to
+// StatusRefused (a payment that is merely `proposed`), so a second refuse
+// call is never the ordinary case; it is now refused rather than accepted.
 func (s *store) refuse(paymentID string, r refusal) (Payment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -150,6 +161,9 @@ func (s *store) refuse(paymentID string, r refusal) (Payment, error) {
 	}
 	if payment.Status == StatusExecuted {
 		return Payment{}, ErrExecuted
+	}
+	if payment.Status == StatusRefused {
+		return Payment{}, ErrAlreadyRefused
 	}
 	payment.Status = StatusRefused
 	payment.Refusal = &r

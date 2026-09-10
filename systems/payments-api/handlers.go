@@ -328,6 +328,29 @@ func newRouter(s *store) http.Handler {
 			}
 
 			paymentID := r.PathValue("paymentId")
+
+			// M3 Task 3 review fix round (finding 2 / R12, superseding R6):
+			// confirm the requested amount against the recorded proposal
+			// before writing anything, the same confirmation discipline the
+			// execute route already applies (confirmsPayment above). R6
+			// accepted validating only `rule`, reasoning that Task 3 was the
+			// only caller and always sent every field; the review found that
+			// reasoning insufficient once any caller with a valid SVID could
+			// reach this route and author whatever `requested` figure it
+			// liked. Currency is deliberately not checked here:
+			// refuseRequest carries no currency field, and this route's
+			// contract has never had one to confirm against.
+			proposal, err := s.get(paymentID)
+			if errors.Is(err, ErrNotFound) {
+				writeError(w, http.StatusNotFound, "payment not found")
+				return
+			}
+			if math.Abs(proposal.Amount-req.Requested) > amountEpsilon {
+				writeError(w, http.StatusConflict,
+					"requested amount does not match the proposal")
+				return
+			}
+
 			payment, err := s.refuse(paymentID, refusal{
 				Rule:           req.Rule,
 				Limit:          req.Limit,
@@ -353,6 +376,16 @@ func newRouter(s *store) http.Handler {
 				// this is a different route's conflict, not a third cause
 				// of the same one.
 				writeError(w, http.StatusConflict, "payment already executed")
+			case errors.Is(err, ErrAlreadyRefused):
+				// M3 Task 3 review fix round (finding 2 / R12): the record a
+				// human reviewer reads must not be silently replaceable by a
+				// second refuse call -- see store.refuse's own doc comment
+				// for the full reasoning. Same status code family as the
+				// already-executed conflict above and the same reason for
+				// not using the `refuse` helper: this is a third, distinct
+				// conflict cause, not one of the two the refusal_cause
+				// attribute is scoped to.
+				writeError(w, http.StatusConflict, "payment already refused")
 			case err != nil:
 				writeError(w, http.StatusInternalServerError, "unexpected error")
 			default:
