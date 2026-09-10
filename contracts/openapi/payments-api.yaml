@@ -47,12 +47,35 @@ paths:
   /payments/{paymentId}/execute:
     post:
       operationId: executePayment
+      description: >
+        Confirmation of intent. The caller states the amount and currency it
+        believes it is paying, and this service checks that instruction against
+        the proposal it recorded, refusing if the two disagree. The amount is
+        compared with a tolerance of half a cent, since it crosses JSON as a
+        float. A request with no body, or with no stated amount, is refused: an
+        execution that cannot confirm what it is paying does not proceed.
       parameters:
         - name: paymentId
           in: path
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount:
+                  type: number
+                  minimum: 0
+                  examples: [6200]
+                currency:
+                  type: string
+                  default: EUR
+                  enum: [EUR]
       responses:
         "200":
           description: Payment executed. Money has moved.
@@ -60,10 +83,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Payment"
+        "400":
+          description: Missing or unparseable body, or no stated amount
         "404":
           description: Unknown payment
         "409":
-          description: Payment already executed
+          description: >
+            Payment already executed, or the stated amount and currency do not
+            match the recorded proposal
   /payments/{paymentId}:
     get:
       operationId: getPayment

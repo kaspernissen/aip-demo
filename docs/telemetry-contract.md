@@ -315,7 +315,7 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (also run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 52, payments-mcp 9, payments-api (Go) 7,
+claims-agent 16, settlement-agent 52, payments-mcp 9, payments-api (Go) 15,
 customer-ui (vitest) 6 — all passing. (This row was stale at 19 for
 settlement-agent from before M1.2 Tasks 1-4 added the PydanticAI agent's own
 tests — `tests/unit/test_telemetry_contract_counts.py` cannot see per-service
@@ -355,7 +355,15 @@ reaches `PaymentsTools.execute` from the model's tool call, that it lands in the
 omitting it is a `TypeError` rather than a silent default; payments-mcp's new
 test pins `amount` as *required* in the advertised input schema, since an
 optional amount is one the model can leave out and both checks then quietly
-stop applying.)
+stop applying. payments-api 7→15 in that same task's second commit, the one
+that makes the threaded amount load-bearing: the execute handler now confirms
+the stated amount and currency against the recorded proposal and refuses on
+disagreement, so the new Go tests cover a matching amount executing, a
+mismatched amount and a mismatched currency each refused with 409 *and* leaving
+the payment proposed, a missing body and an amount-less body each refused with
+400, the half-cent epsilon absorbing float representation noise, and that same
+epsilon still refusing a one-cent difference. Re-measured with `GOTOOLCHAIN=local
+GOPROXY=off go test ./... -list '.*'` → 15, not counted by hand.)
 customer-ui's suite includes its own
 A19 regression test for the traceparent-across-await fix described below
 (`apps/customer-ui/NOTES.md` §2) — worth naming explicitly, since it's the

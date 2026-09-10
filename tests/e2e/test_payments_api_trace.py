@@ -46,6 +46,9 @@ def executed_payment():
 
     executed = requests.post(
         f"{PAYMENTS_API_URL}/payments/{payment_id}/execute",
+        # The execute call states what it is paying. payments-api confirms that
+        # against the proposal it recorded and refuses a bodyless execution.
+        json={"amount": 6200, "currency": "EUR"},
         headers={"traceparent": traceparent},
         timeout=10,
     )

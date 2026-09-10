@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
+	"strings"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
@@ -15,6 +17,44 @@ type proposeRequest struct {
 	ClaimID  string  `json:"claimId"`
 	Amount   float64 `json:"amount"`
 	Currency string  `json:"currency"`
+}
+
+// executeRequest is the confirmation of intent that accompanies an execution:
+// the caller states the amount and currency it believes it is paying, and this
+// service -- which holds the proposal -- checks that the instruction matches
+// what was authorised. This is the thing real payment rails do. The executing
+// party does not resolve an opaque reference and pay whatever it now resolves
+// to; it verifies that the instruction in front of it is the one that was
+// authorised, and refuses if the two disagree.
+//
+// Amount is a pointer so that "absent" is distinguishable from "0.00". A
+// missing amount is a rejected request, not a zero-euro payment.
+type executeRequest struct {
+	Amount   *float64 `json:"amount"`
+	Currency string   `json:"currency"`
+}
+
+// amountEpsilon is the tolerance for the confirmation check, in units of the
+// currency: half a cent.
+//
+// The amount crosses two JSON hops as a float, so an exact `==` here is a
+// latent failure rather than a strictness. Half a cent is below the smallest
+// amount anyone can actually be paid, so it can never mask a real
+// disagreement, while comfortably absorbing float representation noise (at
+// €6,200 the float64 round-trip error is on the order of 1e-12).
+const amountEpsilon = 0.005
+
+// confirmsPayment reports whether a stated amount and currency match the
+// proposal that was recorded.
+func confirmsPayment(payment Payment, statedAmount float64, statedCurrency string) bool {
+	if math.Abs(payment.Amount-statedAmount) > amountEpsilon {
+		return false
+	}
+	// Currency codes are ISO-4217 and case-insensitive in practice; the guard
+	// is against paying the right number in the wrong unit, not against
+	// spelling. An omitted currency defaults to EUR exactly as it does on
+	// propose, so the two ends of the check agree on the same default.
+	return strings.EqualFold(payment.Currency, statedCurrency)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
@@ -89,7 +129,56 @@ func newRouter(s *store) http.Handler {
 
 	handle("POST /payments/{paymentId}/execute", "POST /payments/{paymentId}/execute",
 		func(w http.ResponseWriter, r *http.Request) {
-			payment, err := s.execute(r.PathValue("paymentId"))
+			// A body that is absent or unparseable is rejected, not defaulted.
+			// A payment execution that cannot confirm what it is paying must
+			// not proceed: falling back to "no body means whatever the
+			// proposal says" would restore exactly the un-confirmable execute
+			// call this check exists to remove. 400, matching how propose
+			// already treats a malformed body -- this is a badly formed
+			// request, not a conflict with recorded state.
+			//
+			// http.Request.Body is never nil server-side, so an empty body
+			// reaches Decode and comes back as io.EOF -- the same rejection
+			// path as malformed JSON, which is the intent.
+			var req executeRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeError(w, http.StatusBadRequest,
+					"execution must state the amount it is paying")
+				return
+			}
+			if req.Amount == nil {
+				writeError(w, http.StatusBadRequest, "amount is required")
+				return
+			}
+			if req.Currency == "" {
+				req.Currency = "EUR"
+			}
+
+			paymentID := r.PathValue("paymentId")
+
+			// Read the proposal and confirm the instruction against it before
+			// moving any money. Reading here and executing below is safe
+			// without holding a lock across both: a record's amount and
+			// currency are set once by propose and never mutated, and the
+			// only state transition -- to executed -- is guarded inside
+			// s.execute, so a concurrent duplicate still gets 409 there.
+			proposal, err := s.get(paymentID)
+			if errors.Is(err, ErrNotFound) {
+				writeError(w, http.StatusNotFound, "payment not found")
+				return
+			}
+			if !confirmsPayment(proposal, *req.Amount, req.Currency) {
+				// 409, the status this handler already uses for "the recorded
+				// state will not allow this execution", and one of the two
+				// statuses settlement-agent's mcp_tools.py documents as
+				// surfacing meaningfully through the MCP layer. Nothing is
+				// mutated on this path: the payment stays proposed.
+				writeError(w, http.StatusConflict,
+					"stated amount does not match the proposal")
+				return
+			}
+
+			payment, err := s.execute(paymentID)
 			switch {
 			case errors.Is(err, ErrNotFound):
 				writeError(w, http.StatusNotFound, "payment not found")
