@@ -47,6 +47,15 @@ type Payment struct {
 // stamped by store.refuse at the moment it records the refusal, not supplied
 // by the caller.
 //
+// RefusedSpanID (M3 Task 3): the refusal's own span, not just its trace.
+// Added after Task 2 shipped `refusedTraceId` alone, once M3 Task 3 measured
+// that a span link needs a real span id to survive -- the OpenTelemetry SDK
+// silently drops a Link built from an invalid SpanContext (span_id=0, no
+// attributes) before it ever reaches an exporter. The trace id alone cannot
+// carry the approved-execution trace's link back to the exact span that
+// recorded the refusal, only to the trace as a whole, and untested. This
+// field is what makes that link real rather than assumed.
+//
 // Narrative is the one field on this whole struct that is model output, not
 // a ledger fact. It is stored verbatim as *what the model said* when it
 // explained the refusal to the claimant -- never rewritten, summarised, or
@@ -60,6 +69,7 @@ type refusal struct {
 	Requested      float64 `json:"requested"`
 	Narrative      string  `json:"narrative"`
 	RefusedTraceID string  `json:"refusedTraceId"`
+	RefusedSpanID  string  `json:"refusedSpanId"`
 	RefusedAt      string  `json:"refusedAt"`
 }
 

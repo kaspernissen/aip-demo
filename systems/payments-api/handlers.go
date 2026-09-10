@@ -41,15 +41,20 @@ type executeRequest struct {
 // that a human reviewer has something to read. Amount, currency and payment
 // id already live on the ledger record this refusal attaches to; this
 // request supplies only the PDS's own rule and limit, the amount that was
-// requested, the model's narrative, and the id of the trace that recorded
-// the decision. RefusedAt is not part of this request: the ledger stamps it
-// itself, at the moment it records the refusal (see store.refuse).
+// requested, the model's narrative, and the ids of the trace and span that
+// recorded the decision. RefusedAt is not part of this request: the ledger
+// stamps it itself, at the moment it records the refusal (see store.refuse).
+//
+// RefusedSpanID (M3 Task 3): added alongside RefusedTraceID once Task 3
+// measured that a span link needs a real span id to survive export -- see
+// store.go's refusal.RefusedSpanID doc comment for the measurement.
 type refuseRequest struct {
 	Rule           string  `json:"rule"`
 	Limit          float64 `json:"limit"`
 	Requested      float64 `json:"requested"`
 	Narrative      string  `json:"narrative"`
 	RefusedTraceID string  `json:"refusedTraceId"`
+	RefusedSpanID  string  `json:"refusedSpanId"`
 }
 
 // amountEpsilon is the tolerance for the confirmation check, in units of the
@@ -329,6 +334,7 @@ func newRouter(s *store) http.Handler {
 				Requested:      req.Requested,
 				Narrative:      req.Narrative,
 				RefusedTraceID: req.RefusedTraceID,
+				RefusedSpanID:  req.RefusedSpanID,
 				RefusedAt:      time.Now().UTC().Format(time.RFC3339),
 			})
 			switch {

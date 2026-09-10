@@ -49,6 +49,47 @@ def execute_payment(payment_id: str, amount: float, currency: str = "EUR") -> di
     return payments.execute(payment_id, amount, currency)
 
 
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        # Not destructive: this records a reason beside a payment that
+        # already did not execute. It moves no money and reverses nothing,
+        # the same argument propose_payment's annotation makes above -- and
+        # the Policy Decision Service reads this tool as unlimited for
+        # exactly that reason (platform/policy-decision-service/pds/rules.py,
+        # UNLIMITED_TOOLS).
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
+)
+def refuse_payment(
+    payment_id: str,
+    rule: str,
+    limit: float,
+    requested: float,
+    narrative: str,
+    refused_trace_id: str,
+    refused_span_id: str,
+) -> dict:
+    """Record why a payout was refused, beside the payout.
+
+    Called by settlement-agent's own decide_settlement, through the same
+    governed MCP path every other payments call in this repo takes -- not a
+    new HTTP path from the agent to payments-api. Moves no money; the
+    execute path stays exactly as guarded as it always was.
+    """
+    return payments.refuse(
+        payment_id,
+        rule=rule,
+        limit=limit,
+        requested=requested,
+        narrative=narrative,
+        refused_trace_id=refused_trace_id,
+        refused_span_id=refused_span_id,
+    )
+
+
 if __name__ == "__main__":
     mcp.run(
         transport="http",

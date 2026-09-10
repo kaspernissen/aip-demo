@@ -17,11 +17,22 @@ EXECUTE_LIMITS: dict[tuple[str, str], float] = {
      "assisted"): 6000.0,
     ("spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent",
      "autonomous"): 1_000_000.0,
+    # M3: the colleague with higher approval authority the agent already
+    # narrates. Higher limit, same rule, same code path. Approval changes who
+    # asks; it does not change what is allowed. `decide()` below is
+    # untouched -- this row is the entire M3 change to this file's policy.
+    ("spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent",
+     "assisted"): 25_000.0,
 }
 
 # Tools with no world-changing effect. Proposing is reversible; executing moves
 # money. Only the latter is limited.
-UNLIMITED_TOOLS = frozenset({"propose_payment"})
+#
+# M3: `refuse_payment` joins `propose_payment` here. It is settlement-agent
+# recording, through the same governed MCP path everything else in this repo
+# uses, the reason a payment already did not execute -- it moves no money and
+# reverses nothing, so it is unlimited for the same reason proposing is.
+UNLIMITED_TOOLS = frozenset({"propose_payment", "refuse_payment"})
 LIMITED_TOOLS = frozenset({"execute_payment"})
 
 

@@ -380,3 +380,39 @@ class PaymentsTools:
             "execute_payment",
             {"payment_id": payment_id, "amount": amount, "currency": currency},
         )
+
+    async def refuse(
+        self,
+        payment_id: str,
+        *,
+        rule: str,
+        limit: float,
+        requested: float,
+        narrative: str,
+        refused_trace_id: str,
+        refused_span_id: str,
+    ) -> dict:
+        """Record why a payout was refused, beside the payout (M3 Task 2's
+        `POST /payments/{id}/refuse`, reached through the same governed MCP
+        path every other payments call in this repo takes -- not a new HTTP
+        path from this agent to payments-api).
+
+        payments-api's refuse endpoint validates only that `rule` is
+        non-empty, so this client is the only caller and every field is sent,
+        always: `refused_span_id` travels alongside `refused_trace_id` so
+        `execute_approved` can link to the exact span that recorded the
+        refusal, not just to the trace as a whole (see settlement.py's
+        `_refusal_link` and its measurement note).
+        """
+        return await self._call(
+            "refuse_payment",
+            {
+                "payment_id": payment_id,
+                "rule": rule,
+                "limit": limit,
+                "requested": requested,
+                "narrative": narrative,
+                "refused_trace_id": refused_trace_id,
+                "refused_span_id": refused_span_id,
+            },
+        )

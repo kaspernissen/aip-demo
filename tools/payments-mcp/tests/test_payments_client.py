@@ -72,3 +72,61 @@ def test_http_errors_are_raised():
 
     with pytest.raises(httpx.HTTPStatusError):
         make_client(handler).execute("PAY-999999", 6200.0, "EUR")
+
+
+# ---------------------------------------------------------------------------
+# M3 Task 3: recording a refusal, through the same client that already talks
+# to payments-api -- not a new HTTP path, the plan's own words for it.
+# ---------------------------------------------------------------------------
+
+
+def test_refuse_posts_to_refuse_endpoint():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        seen["url"] = str(request.url)
+        seen["method"] = request.method
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "paymentId": "PAY-000001",
+                "claimId": "CLM-1842",
+                "amount": 6200,
+                "currency": "EUR",
+                "status": "refused",
+                "refusal": {
+                    "rule": "execute_limit",
+                    "limit": 6000.0,
+                    "requested": 6200.0,
+                    "narrative": "narrative",
+                    "refusedTraceId": "331edba8cb21223e9de2f244360c42ef",
+                    "refusedSpanId": "b7997877797c1b27",
+                    "refusedAt": "2026-09-10T00:00:00Z",
+                },
+            },
+        )
+
+    result = make_client(handler).refuse(
+        "PAY-000001",
+        rule="execute_limit",
+        limit=6000.0,
+        requested=6200.0,
+        narrative="narrative",
+        refused_trace_id="331edba8cb21223e9de2f244360c42ef",
+        refused_span_id="b7997877797c1b27",
+    )
+
+    assert seen["method"] == "POST"
+    assert seen["url"] == "http://payments-api:8080/payments/PAY-000001/refuse"
+    assert seen["body"] == {
+        "rule": "execute_limit",
+        "limit": 6000.0,
+        "requested": 6200.0,
+        "narrative": "narrative",
+        "refusedTraceId": "331edba8cb21223e9de2f244360c42ef",
+        "refusedSpanId": "b7997877797c1b27",
+    }
+    assert result["status"] == "refused"

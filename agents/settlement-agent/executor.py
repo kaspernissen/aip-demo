@@ -13,21 +13,69 @@ gateway's policy hook, deciding on the `tools/call` request itself. What
 changed in this file's neighbourhood is only the *reply*: a refused settlement
 comes back as a reply with `status: "refused"` carrying the model's
 explanation, not as a JSON-RPC error envelope (M2.2 Task 5).
+
+M3 Task 3: this same executor, in this same image, also runs as
+senior-settlement-agent -- a second Deployment, its own ServiceAccount, its
+own SPIFFE ID, nothing else different. So the one thing this file's `execute`
+method has to do that it didn't before is tell the two requests it can
+receive apart: a claim to settle (the shape above, routed to
+decide_settlement) and a human's approval of a payment already refused
+(routed to execute_approved). The two are distinguished structurally, by the
+presence of an `approval` key -- never by which workload is running, since
+both workloads run this exact code.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
+from typing import Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.utils import new_agent_text_message
 
 from mcp_tools import PaymentsTools
-from settlement import decide_settlement
+from settlement import decide_settlement, execute_approved
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_approval(
+    payload: dict[str, Any],
+) -> tuple[str, float, str, dict[str, Any], str, str]:
+    """Read an approval payload, or fail loudly.
+
+    Malformed approval payloads must never default to executing -- a missing
+    field is a `ValueError`, exactly the failure shape `decide_settlement`'s
+    own `_validate` already gives a malformed claim, and a2a-sdk turns an
+    unhandled exception here into a JSON-RPC error rather than a flattened
+    success.
+    """
+    payment_id = payload.get("paymentId")
+    if not payment_id:
+        raise ValueError("paymentId is required")
+
+    amount = payload.get("amount")
+    if amount is None:
+        raise ValueError("amount is required")
+
+    currency = payload.get("currency")
+    if not currency:
+        raise ValueError("currency is required")
+
+    approval = payload.get("approval")
+    if not isinstance(approval, dict) or not approval.get("reviewerId"):
+        raise ValueError("approval.reviewerId is required")
+
+    # The refusal's trace/span ids are optional on the wire (an approval for
+    # a refusal recorded before M3 Task 3 added refusedSpanId, say) --
+    # `execute_approved`/`_refusal_link` already treat an empty pair as "no
+    # link to draw", not as malformed.
+    refused_trace_id = payload.get("refusedTraceId") or ""
+    refused_span_id = payload.get("refusedSpanId") or ""
+
+    return payment_id, float(amount), currency, approval, refused_trace_id, refused_span_id
 
 
 class SettlementAgentExecutor(AgentExecutor):
@@ -42,7 +90,13 @@ class SettlementAgentExecutor(AgentExecutor):
         # Named request_context, not context: `context` shadows
         # opentelemetry.context, which Task 7 needs in the claims-agent
         # executor. Keeping the name consistent across agents avoids a rename.
-        claim = json.loads(request_context.get_user_input())
+        payload = json.loads(request_context.get_user_input())
+
+        if "approval" in payload:
+            await self._execute_approved(payload, event_queue)
+            return
+
+        claim = payload
 
         # decide_settlement raises mcp_tools.ToolCallError (payments-api's
         # 404/409 surfaced as the tool's own error text) or ValueError on a
@@ -90,6 +144,48 @@ class SettlementAgentExecutor(AgentExecutor):
                         "currency": decision["currency"],
                         "status": decision["status"],
                         "narrative": decision["narrative"],
+                    }
+                )
+            )
+        )
+
+    async def _execute_approved(
+        self, payload: dict, event_queue: EventQueue
+    ) -> None:
+        """The approval path: a human reviewed the refused run, and this
+        carries their instruction to the payment system. No model call --
+        `execute_approved` makes none -- and no propose: the proposal is what
+        was reviewed.
+
+        `_validate_approval` raises `ValueError` on anything malformed, before
+        any payment call, the same "fail loudly, never default to executing"
+        contract `decide_settlement`'s own `_validate` holds for a claim.
+        """
+        payment_id, amount, currency, approval, refused_trace_id, refused_span_id = (
+            _validate_approval(payload)
+        )
+
+        result = await execute_approved(
+            payment_id, amount, currency, approval, self._payments,
+            refused_trace_id, refused_span_id,
+        )
+        logger.info(
+            "payment %s: approved by %s -- %s",
+            payment_id, approval["reviewerId"], result.get("status"),
+        )
+
+        # Same single-message discipline as the claim path above: a2a-sdk's
+        # blocking message/send handler returns on the first Message-kind
+        # event and drops anything enqueued after it.
+        await event_queue.enqueue_event(
+            new_agent_text_message(
+                json.dumps(
+                    {
+                        "paymentId": result["paymentId"],
+                        "amount": result["amount"],
+                        "currency": result["currency"],
+                        "status": result["status"],
+                        "reviewerId": approval["reviewerId"],
                     }
                 )
             )

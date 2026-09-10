@@ -42,3 +42,36 @@ class PaymentsClient:
         response = self._client.get(f"/payments/{payment_id}")
         response.raise_for_status()
         return response.json()
+
+    def refuse(
+        self,
+        payment_id: str,
+        *,
+        rule: str,
+        limit: float,
+        requested: float,
+        narrative: str,
+        refused_trace_id: str,
+        refused_span_id: str,
+    ) -> dict:
+        """Record why a payout was refused, beside the payout (M3 Task 2's
+        `POST /payments/{id}/refuse`). Every field is sent, always -- this
+        client is the endpoint's only caller.
+
+        `refused_span_id` travels beside `refused_trace_id` (M3 Task 3): a
+        span link needs a real span id to survive the OpenTelemetry SDK's own
+        validity check, not just a trace id.
+        """
+        response = self._client.post(
+            f"/payments/{payment_id}/refuse",
+            json={
+                "rule": rule,
+                "limit": limit,
+                "requested": requested,
+                "narrative": narrative,
+                "refusedTraceId": refused_trace_id,
+                "refusedSpanId": refused_span_id,
+            },
+        )
+        response.raise_for_status()
+        return response.json()

@@ -44,10 +44,12 @@ class FakePayments:
         *,
         execute_raises: Exception | None = None,
         propose_raises: Exception | None = None,
+        refuse_raises: Exception | None = None,
     ) -> None:
         self.calls: list[tuple] = []
         self._execute_raises = execute_raises
         self._propose_raises = propose_raises
+        self._refuse_raises = refuse_raises
 
     async def propose(self, claim_id, amount, currency="EUR"):
         self.calls.append(("propose", claim_id, amount, currency))
@@ -72,6 +74,18 @@ class FakePayments:
             "currency": "EUR",
             "status": "EXECUTED",
         }
+
+    async def refuse(
+        self, payment_id, *, rule, limit, requested, narrative,
+        refused_trace_id, refused_span_id,
+    ):
+        self.calls.append((
+            "refuse", payment_id, rule, limit, requested, narrative,
+            refused_trace_id, refused_span_id,
+        ))
+        if self._refuse_raises:
+            raise self._refuse_raises
+        return {"paymentId": payment_id, "status": "refused"}
 
 
 def _script(*, amount: float = 6200.0, narrative: str = "Settled in full."):
@@ -316,7 +330,10 @@ async def test_the_agent_makes_exactly_one_execute_attempt_after_a_denial():
 
     calls = [c[0] for c in payments.calls]
     assert calls.count("execute") == 1, f"expected one execute attempt, got {calls}"
-    assert calls == ["propose", "execute"]
+    # M3 Task 3: a refused settlement now also records the refusal in the
+    # ledger, so the full sequence gains one call at the end -- the property
+    # this test guards (exactly one execute attempt) is unchanged.
+    assert calls == ["propose", "execute", "refuse"]
 
 
 async def test_a_second_execute_attempt_never_reaches_the_payment_system():
@@ -418,6 +435,96 @@ async def test_a_refused_propose_is_reported_as_refused_too():
     assert result["status"] == "refused"
     assert result["paymentId"] is None
     assert result["narrative"] == "I cannot open this payment."
+
+
+# ---------------------------------------------------------------------------
+# M3 Task 3 Step 5: the refusal is recorded in the ledger, from
+# decide_settlement's existing refused branch. Two rules: a recording failure
+# must not turn the refusal into an error the claimant sees, and the reply's
+# shape is unchanged (asserted above already; not repeated here).
+# ---------------------------------------------------------------------------
+
+
+def _traced_run(claim, payments, model):
+    """Runs decide_settlement inside a real span, so a real (trace_id,
+    span_id) pair is on the current context for the refused branch to read --
+    not the no-op INVALID_SPAN_CONTEXT a bare test process starts with."""
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+
+    tracer = TracerProvider().get_tracer("test")
+
+    async def _inner():
+        with tracer.start_as_current_span("test-run") as span:
+            with settlement_agent.override(model=model):
+                result = await decide_settlement(claim, payments)
+            return result, span.get_span_context()
+
+    return _inner()
+
+
+async def test_a_refusal_is_recorded_in_the_ledger_with_the_real_trace_and_span_ids():
+    payments = FakePayments(execute_raises=_denial())
+    result, span_ctx = await _traced_run(CLAIM, payments, _obedient_model())
+
+    refuse_calls = [c for c in payments.calls if c[0] == "refuse"]
+    assert len(refuse_calls) == 1, f"expected exactly one refuse call, got {payments.calls}"
+    (_, payment_id, rule, limit, requested, narrative, trace_id, span_id) = refuse_calls[0]
+
+    denial = _denial()
+    assert payment_id == "PAY-000001"
+    assert rule == denial.rule
+    assert limit == denial.limit
+    assert requested == denial.requested
+    assert narrative == result["narrative"]
+    # The ids captured off the current span, not placeholders: format(...,
+    # "032x")/"016x" of the real (trace_id, span_id) pair the span above was
+    # started with.
+    assert trace_id == format(span_ctx.trace_id, "032x")
+    assert span_id == format(span_ctx.span_id, "016x")
+    assert trace_id != "0" * 32 and span_id != "0" * 16
+
+
+async def test_a_refusal_with_no_active_span_records_empty_ids_rather_than_a_fake_zero():
+    """No real span active (the default no-op context): the ids must come
+    back empty, not as the all-zero hex a naive format() would produce --
+    an all-zero id is indistinguishable from a real, tiny one."""
+    payments = FakePayments(execute_raises=_denial())
+    await _run(CLAIM, payments, _obedient_model())
+
+    refuse_calls = [c for c in payments.calls if c[0] == "refuse"]
+    assert len(refuse_calls) == 1
+    _, _, _, _, _, _, trace_id, span_id = refuse_calls[0]
+    assert trace_id == ""
+    assert span_id == ""
+
+
+async def test_a_failure_to_record_the_refusal_does_not_reach_the_claimant():
+    """Log it loudly and still return the refused reply -- the ledger already
+    shows the payment unexecuted, which is the safe state."""
+    payments = FakePayments(
+        execute_raises=_denial(), refuse_raises=RuntimeError("ledger unreachable")
+    )
+    result = await _run(
+        CLAIM, payments,
+        _obedient_model(narrative="I am not authorised to pay this."),
+    )
+
+    assert result["status"] == "refused"
+    assert result["narrative"] == "I am not authorised to pay this."
+    assert result["paymentId"] == "PAY-000001"
+
+
+async def test_a_refused_propose_records_no_refusal_since_no_payment_exists_yet():
+    """A refused propose_payment never created a payment id to attach a
+    refusal record to -- there is nothing to call refuse on. This is the
+    existing refused-propose behaviour (test_a_refused_propose_is_reported_as_
+    refused_too), stated again from the recording side."""
+    payments = FakePayments(propose_raises=_denial())
+    result = await _run(CLAIM, payments, _obedient_model(narrative="I cannot open this payment."))
+
+    assert [c[0] for c in payments.calls] == ["propose"]
+    assert result["status"] == "refused"
 
 
 async def test_a_transport_failure_still_propagates_rather_than_being_narrated():

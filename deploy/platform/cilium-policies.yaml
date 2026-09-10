@@ -514,3 +514,108 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+---
+# =============================================================================
+# M3 Task 3 -- senior-settlement-agent's egress. Same image as
+# settlement-agent, same outbound inventory, because "senior-settlement-agent
+# needs exactly what settlement-agent has" is the design point (deploy/k8s/
+# senior-settlement-agent.yaml's own header): a second Deployment of the
+# identical container, not a variant with a different set of calls to make.
+#
+# THE MEASURED HAZARD, restated for this endpoint specifically: in Cilium,
+# ANY egress rule that selects an endpoint makes that endpoint default-deny
+# for egress -- there is no partial application. The moment this document's
+# `endpointSelector` matches senior-settlement-agent's pod, every outbound
+# connection that workload makes has to be listed here or it silently stops
+# working, with a symptom (a hung MCP call, a vanished span, a failed model
+# call) that names nothing about a network policy. So this is deliberately a
+# duplicate of settlement-agent-egress-allowlist's four rules -- DNS
+# (L3/L4 plus the `rules.dns` block toFQDNs depends on), agentgateway:3000,
+# the OTLP collector:4318, and api.anthropic.com:443 -- rather than a
+# `northstar.io/plane: agents`-wide document. A shared document would grant
+# settlement-agent's and claims-agent's endpoints reachability neither one
+# asked for, purely as a side effect of sharing a selector (the same
+# objection M2.2 Task 7's header already recorded against one document per
+# plane, applied again here).
+#
+# Behavioural probes are insufficient to prove this is right, only to prove
+# it is not obviously wrong: M2.2 measured that stripping the DNS proxy's
+# `rules.dns` block, and separately widening egress to payments-mcp directly,
+# both left every behavioural check green while the datapath had actually
+# changed. The datapath assertion for this document is
+# `cilium-dbg bpf policy get <senior-settlement-agent endpoint id>`, run
+# against the live cluster and recorded in this task's report -- not reasoned
+# about from the YAML alone.
+# =============================================================================
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: senior-settlement-agent-egress-allowlist
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m3
+spec:
+  endpointSelector:
+    matchLabels:
+      app: senior-settlement-agent
+  egress:
+    # 1. DNS -- L3/L4 to CoreDNS, plus the L7 `rules.dns` block rule 4's
+    # `toFQDNs` allowance depends on. See settlement-agent-egress-allowlist's
+    # rule 1 above for the full reasoning (CoreDNS selected by label, not
+    # ClusterIP; `matchPattern: "*"` because enforcement happens on the
+    # connect, not the lookup, and `ClusterFirst` DNS's search-domain
+    # expansion means more than one query shape crosses this proxy).
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+
+    # 2. agentgateway, on the MCP port. senior-settlement-agent's
+    # PAYMENTS_MCP_URL is the identical value settlement-agent's carries
+    # (deploy/k8s/senior-settlement-agent.yaml) -- same gateway, same "gateway
+    # as the only path" argument, from the same identity-agnostic dataplane
+    # rule.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: northstar-platform
+            app: agentgateway
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+
+    # 3. The OTLP collector. Dropping this would not break the demo -- spans
+    # would silently stop leaving this pod while settlements kept succeeding
+    # -- which is exactly the failure mode settlement-agent-egress-
+    # allowlist's own rule 3 calls out as the one most likely to be mistaken
+    # for success.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            app: otel-collector
+      toPorts:
+        - ports:
+            - port: "4318"
+              protocol: TCP
+
+    # 4. The model provider, by name. execute_approved makes no model call
+    # (settlement.py), but the same image's decide_settlement path does, and
+    # this Deployment runs that exact code -- so the allowance has to be
+    # present even though this milestone's approval flow does not exercise
+    # it. `matchName`, not a pattern: exactly the one host, same as
+    # settlement-agent's own rule 4.
+    - toFQDNs:
+        - matchName: api.anthropic.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

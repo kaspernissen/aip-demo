@@ -28,6 +28,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from opentelemetry import trace
+from opentelemetry.trace import Link, SpanContext, TraceFlags
 from pydantic_ai import Agent, RunContext
 
 from mcp_tools import PolicyDenial
@@ -176,6 +178,124 @@ def _validate(claim: dict[str, Any]) -> tuple[str, float, str]:
     return claim_id, float(amount), claim.get("currency") or "EUR"
 
 
+def _current_trace_and_span_ids() -> tuple[str, str]:
+    """The (trace_id, span_id) of whatever span is current, as lowercase hex
+    -- or a pair of empty strings if there is none.
+
+    `format(..., "032x")` on an invalid SpanContext's all-zero ids would
+    produce a string that *looks* like a real, tiny id (`"0"*32`), which is
+    indistinguishable from one that actually happened to be that small. So
+    the empty-string case is checked explicitly (`is_valid`) rather than
+    produced by formatting zero, and a caller that gets `("", "")` back knows
+    there was nothing to record, not that a very unlucky id was minted.
+    """
+    span_ctx = trace.get_current_span().get_span_context()
+    if not span_ctx.is_valid:
+        return "", ""
+    return format(span_ctx.trace_id, "032x"), format(span_ctx.span_id, "016x")
+
+
+async def _record_refusal(
+    payments: Any, payment_id: str, refused: PolicyDenial, *, narrative: str,
+) -> None:
+    """Call Task 2's `POST /payments/{id}/refuse`, through the existing
+    payments client -- not a new HTTP path. A failure here must not turn a
+    refusal into an error the claimant sees: it is logged loudly and
+    swallowed, because the ledger already shows the payment unexecuted, which
+    is the safe state regardless of whether this record was written.
+    """
+    refused_trace_id, refused_span_id = _current_trace_and_span_ids()
+    try:
+        await payments.refuse(
+            payment_id,
+            rule=refused.rule,
+            limit=refused.limit if refused.limit is not None else 0.0,
+            requested=refused.requested if refused.requested is not None else 0.0,
+            narrative=narrative,
+            refused_trace_id=refused_trace_id,
+            refused_span_id=refused_span_id,
+        )
+    except Exception:
+        logger.exception(
+            "payment %s: failed to record the refusal in the ledger (rule "
+            "%s); the claimant still sees the refusal -- the ledger just "
+            "does not carry the reviewer's facts for it",
+            payment_id, refused.rule,
+        )
+
+
+def _refusal_link(refused_trace_id: str, refused_span_id: str) -> list[Link]:
+    """A link, not a parent. A human takes minutes to review a refusal and
+    the original process is gone by the time they act on it; a span held
+    open across that gap would misstate both the duration and what was
+    executing.
+
+    **Measured, not assumed** (M3 Task 3): the plan's original sketch built
+    this link from a `SpanContext` carrying the refusal's trace id and an
+    explicit `span_id=0`, reasoning that Jaeger would render an invalid span
+    id as a trace-level link. Checked directly against the installed
+    opentelemetry-sdk (1.44.0): `Span._new_links` filters every link through
+    `_is_valid_link(context, attributes)`, which is
+    `bool(context and (context.is_valid or (attributes or context.trace_state)))`.
+    A `SpanContext(span_id=0)` has `is_valid == False`, and a `Link` built
+    with no `attributes` and no `trace_state` fails the OR entirely -- the
+    link is dropped by the SDK, before a span processor or an exporter ever
+    sees it. Confirmed by constructing exactly that span in-process and
+    reading `span.links` back: it comes back empty.
+    ('opentelemetry.sdk.trace' source, and a live TracerProvider probe --
+    see this task's report.)
+
+    So this carries the refusal's *span* id too (Task 2's `refusal` record
+    grew a `refusedSpanId` field for exactly this in M3 Task 3), and builds a
+    genuinely valid remote `SpanContext` -- both ids non-zero, so
+    `context.is_valid` is `True` and the link survives `_new_links` on its
+    own, no attribute workaround needed. Empty ids (no refusal to link to, or
+    one recorded before this field existed) mean no link at all, rather than
+    a link that would only be silently dropped.
+    """
+    if not refused_trace_id or not refused_span_id:
+        return []
+    return [
+        Link(
+            SpanContext(
+                trace_id=int(refused_trace_id, 16),
+                span_id=int(refused_span_id, 16),
+                is_remote=True,
+                trace_flags=TraceFlags(TraceFlags.SAMPLED),
+            )
+        )
+    ]
+
+
+async def execute_approved(
+    payment_id: str, amount: float, currency: str, approval: dict[str, Any],
+    payments: Any, refused_trace_id: str, refused_span_id: str,
+) -> dict[str, Any]:
+    """Execute a payment a human approved. Same tools, same gateway, different identity.
+
+    No model call and no new prompt: the reasoning happened in the refused
+    run, a human reviewed *that*, and re-deciding here would mean the human
+    approved something other than what executes. This function's whole job
+    is to carry an approved instruction to the payment system under an
+    identity the policy permits -- nothing more. The identity is not a
+    parameter here: it comes from which workload runs this process
+    (`senior-settlement-agent`'s own SPIFFE ID, via SPIRE), the same way it
+    always has for `execute_payment`.
+    """
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span(
+        "settlement.execute_approved",
+        links=_refusal_link(refused_trace_id, refused_span_id),
+        attributes={
+            "northstar.payment.id": payment_id,
+            "northstar.approval.reviewer_id": approval["reviewerId"],
+        },
+    ):
+        # Straight to execute. No propose: the proposal is what was reviewed.
+        result = await payments.execute(payment_id, amount, currency)
+    return result
+
+
 async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, Any]:
     """Settle a claim. Raises ValueError on a malformed claim, before any model call.
 
@@ -226,6 +346,32 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
             refused.limit,
             refused.requested,
         )
+
+        # M3 Task 3 Step 5: record the refusal in the ledger, so a human
+        # reviewer has something to read (Task 2's `POST
+        # /payments/{id}/refuse`, reached through the same governed MCP path
+        # this file already uses for propose/execute -- not a new HTTP path).
+        #
+        # Nothing writes this record until here, and there is nothing to
+        # attach it to if propose_payment itself was what got refused: no
+        # payment id exists yet in that case, so there is no record to write.
+        payment_id = proposed.get("paymentId")
+        if payment_id:
+            await _record_refusal(
+                payments, payment_id, refused, narrative=result.output,
+            )
+            # A failed recording attempt is logged inside _record_refusal and
+            # swallowed there, deliberately: the ledger already shows this
+            # payment unexecuted, which is the safe state, and a refusal the
+            # claimant reads is not the moment to surface a platform's own
+            # bookkeeping failure as their problem.
+        else:
+            logger.warning(
+                "claim %s: refused before a payment existed to attach the "
+                "refusal record to (rule %s); nothing was proposed",
+                claim_id, refused.rule,
+            )
+
         return {
             "amount": proposed.get("amount", amount),
             "currency": proposed.get("currency", currency),

@@ -426,8 +426,8 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (all six run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 79, payments-mcp 9, payments-api (Go) 28,
-customer-ui (vitest) 6, policy-decision-service 97 — all passing. (The sixth
+claims-agent 16, settlement-agent 101, payments-mcp 12, payments-api (Go) 28,
+customer-ui (vitest) 6, policy-decision-service 101 — all passing. (The sixth
 entry arrived in the M2.2 final-review fix round: `policy-decision-service` was
 in neither the gate's loop nor this row until finding 1 showed both already
 *depended* on that component's generated stubs while collecting none of its
@@ -552,6 +552,23 @@ terminal-until-approved rather than a dead end: nothing in this service's
 execute path was touched, so the same payment reaches `executed` afterwards
 exactly as it always could. Re-measured with `GOTOOLCHAIN=local GOPROXY=off
 go test ./... -list '.*'` → 28, not counted by hand.
+Grown again by M3 Task 3, the colleague with higher approval authority:
+policy-decision-service 97→101 (one `EXECUTE_LIMITS` row for
+`senior-settlement-agent`, and `refuse_payment` joining `propose_payment` in
+`UNLIMITED_TOOLS` — four new tests in `tests/test_rules.py`, `decide()` itself
+untouched); payments-mcp 9→12 (a `refuse_payment` MCP tool and
+`PaymentsClient.refuse()`, exercised in `tests/test_tools.py` and
+`tests/test_payments_client.py`); settlement-agent 79→101 (`mcp_tools.
+PaymentsTools.refuse()`; `decide_settlement`'s refused branch now records the
+refusal through it, with a recording failure logged and swallowed rather than
+surfaced to the claimant; the new `execute_approved()` entry point and its
+`_refusal_link()` helper, in the new `tests/test_execute_approved.py`; and
+`executor.py`'s approval dispatch in `tests/test_executor_reply.py`, which
+also fails loudly — never defaults to executing — on five shapes of malformed
+approval payload). Every count in this paragraph was re-measured the same way
+as every entry before it: `.venv/bin/python -m pytest --collect-only -q
+tests` from each service's own directory, not carried forward from memory of
+a prior figure.
 customer-ui's suite includes its own
 A19 regression test for the traceparent-across-await fix described below
 (`apps/customer-ui/NOTES.md` §2) — worth naming explicitly, since it's the

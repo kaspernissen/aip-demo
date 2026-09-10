@@ -542,13 +542,23 @@ func refusePayment(srv http.Handler, paymentID string, body any) *httptest.Respo
 // refusedTraceId is the id of the trace that recorded it. Values are literals
 // throughout these tests -- no arithmetic on them -- so there is no constant-
 // folding hazard to guard against here.
-func refusalBody(rule string, limit, requested float64, narrative, traceID string) map[string]any {
+//
+// M3 Task 3: refusedSpanId joins refusedTraceId. Measured against the
+// installed opentelemetry-sdk (1.44.0): a Link built from a SpanContext with
+// span_id=0 and no attributes is silently dropped by
+// Span._new_links'/_is_valid_link's is_valid check before it ever reaches an
+// exporter -- so linking the approved-execution trace back to the refusal
+// needs a real span id, not a placeholder. This is the ledger's only carrier
+// for it: settlement.py reads it off the current span when it records the
+// refusal, and execute_approved reads it back to build a real link.
+func refusalBody(rule string, limit, requested float64, narrative, traceID, spanID string) map[string]any {
 	return map[string]any{
 		"rule":           rule,
 		"limit":          limit,
 		"requested":      requested,
 		"narrative":      narrative,
 		"refusedTraceId": traceID,
+		"refusedSpanId":  spanID,
 	}
 }
 
@@ -578,7 +588,7 @@ func TestRefusingAProposedPaymentSetsRefusedAndStoresEveryField(t *testing.T) {
 	rec := refusePayment(srv, payment.PaymentID,
 		refusalBody("execute_limit", 6000.0, 6200.0,
 			"The requested amount exceeds the agreed settlement limit for this identity.",
-			"331edba8cb21223e9de2f244360c42ef"))
+			"331edba8cb21223e9de2f244360c42ef", "b7997877797c1b27"))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("refuse: got status %d, want 200 (body: %s)", rec.Code, rec.Body.String())
@@ -609,6 +619,10 @@ func TestRefusingAProposedPaymentSetsRefusedAndStoresEveryField(t *testing.T) {
 		t.Errorf("got refusedTraceId %q, want %q", refused.Refusal.RefusedTraceID,
 			"331edba8cb21223e9de2f244360c42ef")
 	}
+	if refused.Refusal.RefusedSpanID != "b7997877797c1b27" {
+		t.Errorf("got refusedSpanId %q, want %q", refused.Refusal.RefusedSpanID,
+			"b7997877797c1b27")
+	}
 	if refused.Refusal.RefusedAt == "" {
 		t.Errorf("refusedAt must be stamped by the ledger, got empty string")
 	}
@@ -629,7 +643,7 @@ func TestRefusingAnExecutedPaymentIsRejected(t *testing.T) {
 	}
 
 	rec := refusePayment(srv, payment.PaymentID,
-		refusalBody("execute_limit", 6000.0, 6200.0, "narrative", "trace-id"))
+		refusalBody("execute_limit", 6000.0, 6200.0, "narrative", "trace-id", "span-id"))
 
 	if rec.Code != http.StatusConflict {
 		t.Errorf("got status %d, want 409 (body: %s)", rec.Code, rec.Body.String())
@@ -645,7 +659,7 @@ func TestRefusingAnExecutedPaymentIsRejected(t *testing.T) {
 func TestRefusingAnUnknownPaymentReturns404(t *testing.T) {
 	srv := newTestServer()
 	rec := refusePayment(srv, "PAY-999999",
-		refusalBody("execute_limit", 6000.0, 6200.0, "narrative", "trace-id"))
+		refusalBody("execute_limit", 6000.0, 6200.0, "narrative", "trace-id", "span-id"))
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("got status %d, want 404", rec.Code)
@@ -659,7 +673,7 @@ func TestListPaymentsFiltersToRefusedStatus(t *testing.T) {
 	executedPayment := proposePayment(t, srv, "CLM-2010", 500)
 
 	if rec := refusePayment(srv, refusedPayment.PaymentID,
-		refusalBody("execute_limit", 6000.0, 6200.0, "narrative", "trace-id")); rec.Code != http.StatusOK {
+		refusalBody("execute_limit", 6000.0, 6200.0, "narrative", "trace-id", "span-id")); rec.Code != http.StatusOK {
 		t.Fatalf("refuse: got status %d, want 200 (body: %s)", rec.Code, rec.Body.String())
 	}
 	if rec := executePayment(srv, executedPayment.PaymentID,
@@ -694,7 +708,7 @@ func TestARefusedPaymentCanStillBeExecutedAfterwards(t *testing.T) {
 	payment := proposePayment(t, srv, "CLM-1842", 6200)
 
 	if rec := refusePayment(srv, payment.PaymentID,
-		refusalBody("execute_limit", 6000.0, 6200.0, "narrative", "trace-id")); rec.Code != http.StatusOK {
+		refusalBody("execute_limit", 6000.0, 6200.0, "narrative", "trace-id", "span-id")); rec.Code != http.StatusOK {
 		t.Fatalf("refuse: got status %d, want 200 (body: %s)", rec.Code, rec.Body.String())
 	}
 	if got := getPayment(t, srv, payment.PaymentID); got.Status != StatusRefused {

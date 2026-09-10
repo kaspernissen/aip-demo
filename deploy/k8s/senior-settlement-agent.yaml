@@ -1,0 +1,121 @@
+# M3 Task 3: the colleague with higher approval authority settlement-agent's
+# own refusal narrates. This is settlement-agent.yaml with exactly four
+# strings changed -- the ServiceAccount name, the `app` label (everywhere it
+# appears), the Deployment name, and the Service name -- and nothing else.
+#
+# Same image (`localhost:5001/northstar/settlement-agent:dev` -- there is no
+# separate senior-settlement-agent image to build), same agent-card, same
+# prompt, same env vars, same tools, same MCP path, same gateway,
+# NORTHSTAR_GATEWAY_AUDIENCE unchanged. SPIRE needs no new registration: the
+# `spiffeIDTemplate` in deploy/platform/spire/registration.yaml derives
+# `spiffe://northstar.local/ns/{namespace}/sa/{serviceaccount}` from the
+# namespace and ServiceAccount alone, so a new ServiceAccount is a new SPIFFE
+# ID with no chart change and no restart of SPIRE itself.
+#
+# `OTEL_SERVICE_NAME` is deliberately left at "settlement-agent" -- not
+# renamed to match this file -- because the demo's point is that the code is
+# byte-identical and the platform tells the two apart by *identity*, not by a
+# differently-labelled service: `policy.caller.spiffe_id` on the PDS's
+# `policy.decision` span is where the difference actually shows up, one span
+# attribute, exactly as the spec's architecture section says. Renaming
+# `OTEL_SERVICE_NAME` here would blur that argument rather than sharpen it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: senior-settlement-agent
+  namespace: northstar-agents
+  labels:
+    app: senior-settlement-agent
+    northstar.io/plane: agents
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: senior-settlement-agent
+  namespace: northstar-agents
+  labels:
+    app: senior-settlement-agent
+    northstar.io/plane: agents
+    northstar.io/owner: claims-team
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: senior-settlement-agent
+  template:
+    metadata:
+      labels:
+        app: senior-settlement-agent
+        northstar.io/plane: agents
+        northstar.io/owner: claims-team
+    spec:
+      serviceAccountName: senior-settlement-agent
+      containers:
+        - name: settlement-agent
+          image: localhost:5001/northstar/settlement-agent:dev
+          imagePullPolicy: Always
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: settlement-agent
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            - name: OTEL_SEMCONV_STABILITY_OPT_IN
+              value: http
+            - name: PAYMENTS_MCP_URL
+              value: http://agentgateway.northstar-platform.svc.cluster.local:3000/mcp
+            - name: AGENT_CARD_PATH
+              value: /app/agent-card.json
+            - name: PORT
+              value: "9002"
+            - name: NORTHSTAR_SETTLEMENT_MODEL
+              value: "anthropic:claude-sonnet-5"
+            - name: NORTHSTAR_CAPTURE_CONTENT
+              value: "true"
+            - name: SPIFFE_ENDPOINT_SOCKET
+              value: unix:///spiffe-workload-api/spire-agent.sock
+            - name: NORTHSTAR_GATEWAY_AUDIENCE
+              value: spiffe://northstar.local/ns/northstar-platform/sa/agentgateway
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: northstar-model
+                  key: ANTHROPIC_API_KEY
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 9002
+          readinessProbe:
+            httpGet:
+              path: /.well-known/agent-card.json
+              port: 9002
+            initialDelaySeconds: 2
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 50m
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+              readOnly: true
+      volumes:
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: senior-settlement-agent
+  namespace: northstar-agents
+spec:
+  selector:
+    app: senior-settlement-agent
+  ports:
+    - name: http
+      port: 9002
+      targetPort: 9002

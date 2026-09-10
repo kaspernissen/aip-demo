@@ -841,6 +841,40 @@ async def test_call_leaves_a_transport_failure_as_an_mcp_error(monkeypatch):
     assert "Connection refused" in str(excinfo.value)
 
 
+async def test_refuse_sends_every_field_in_the_tool_call_arguments(monkeypatch):
+    """M3 Task 3: recording a refusal through the same governed MCP path --
+    not a new HTTP path from this agent to payments-api. The refuse endpoint
+    validates only that `rule` is non-empty (M3 Task 2), so this client is
+    what has to send every field, always."""
+    monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
+    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport({}))
+    monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
+    _FakeSessionCapturingRequest.captured = {}
+
+    tools = PaymentsTools("http://fake-mcp/mcp")
+    await tools.refuse(
+        "PAY-000001",
+        rule="settlement-agent.assisted.execute_limit",
+        limit=6000.0,
+        requested=6200.0,
+        narrative="I proposed the assessed amount but I am not authorised to pay it.",
+        refused_trace_id="331edba8cb21223e9de2f244360c42ef",
+        refused_span_id="b7997877797c1b27",
+    )
+
+    params = _FakeSessionCapturingRequest.captured["request"].root.params
+    assert params.name == "refuse_payment"
+    assert params.arguments == {
+        "payment_id": "PAY-000001",
+        "rule": "settlement-agent.assisted.execute_limit",
+        "limit": 6000.0,
+        "requested": 6200.0,
+        "narrative": "I proposed the assessed amount but I am not authorised to pay it.",
+        "refused_trace_id": "331edba8cb21223e9de2f244360c42ef",
+        "refused_span_id": "b7997877797c1b27",
+    }
+
+
 async def test_call_still_unwraps_a_tool_call_error_after_the_denial_branch(
     monkeypatch,
 ):

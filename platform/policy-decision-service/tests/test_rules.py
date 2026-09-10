@@ -3,6 +3,7 @@ from pds.rules import Decision, PolicyInput, decide
 
 AGENT = "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
 OTHER = "spiffe://northstar.local/ns/northstar-agents/sa/claims-agent"
+SENIOR = "spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent"
 
 
 def _input(**kw):
@@ -141,3 +142,56 @@ def test_the_refusal_text_still_names_the_currency_when_one_was_sent():
 def test_the_permit_text_also_names_the_currency_once_each():
     assert decide(_input(amount=5800.0)).reason == \
         "5800 EUR is within the 6000 EUR limit"
+
+
+# ---------------------------------------------------------------------------
+# M3 Task 3: the colleague with higher approval authority.
+#
+# One new EXECUTE_LIMITS row, nothing else -- `decide()` itself is unchanged.
+# The rule name `settlement-agent.assisted.execute_limit` is a literal in
+# `decide()`, not derived from `req.caller`, so the senior identity's decision
+# -- permit or deny -- is reported under the exact same rule string as the
+# junior identity's. That is what "same rule, different principal" means in
+# practice, and it is asserted here rather than narrated.
+# ---------------------------------------------------------------------------
+
+
+def test_the_senior_identity_is_permitted_at_the_amount_the_junior_is_denied():
+    """Exit criterion 1: EUR 6,200 refused for one principal, permitted for the
+    other, same rule name."""
+    junior = decide(_input(caller=AGENT, amount=6200.0))
+    senior = decide(_input(caller=SENIOR, amount=6200.0))
+
+    assert junior.permit is False
+    assert senior.permit is True
+    assert junior.rule == senior.rule == "settlement-agent.assisted.execute_limit"
+
+
+def test_the_senior_identity_is_denied_above_its_own_higher_limit():
+    """More authority, not unlimited authority. The colleague still has a
+    ceiling, and going over it is refused under the same rule name."""
+    d = decide(_input(caller=SENIOR, amount=30_000.0))
+    assert d.permit is False
+    assert d.rule == "settlement-agent.assisted.execute_limit"
+    assert d.limit == 25_000.0
+
+
+def test_the_senior_limit_is_higher_than_the_junior_limit_not_equal_to_it():
+    junior = decide(_input(caller=AGENT, amount=6000.0))
+    senior = decide(_input(caller=SENIOR, amount=6000.0))
+    assert senior.limit is not None and junior.limit is not None
+    assert senior.limit > junior.limit
+
+
+# ---------------------------------------------------------------------------
+# M3 Task 3 Step 5's prerequisite: recording a refusal must itself be a policy
+# call the gateway will pass through (settlement-agent reaches payments-api
+# only through the same governed MCP path everything else in this repo uses).
+# `refuse_payment` moves no money -- it writes a reason beside a payment that
+# already did not execute -- so it belongs with `propose_payment` among the
+# tools that carry no effect to authorise, not with `execute_payment`.
+# ---------------------------------------------------------------------------
+
+
+def test_refusing_a_payment_is_unlimited_like_proposing():
+    assert decide(_input(tool="refuse_payment", amount=None, caller=None)).permit is True

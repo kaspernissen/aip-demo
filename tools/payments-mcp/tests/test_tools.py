@@ -52,6 +52,20 @@ class FakePayments:
             "status": "executed",
         }
 
+    def refuse(self, payment_id, *, rule, limit, requested, narrative,
+               refused_trace_id, refused_span_id):
+        self.calls.append((
+            "refuse", payment_id, rule, limit, requested, narrative,
+            refused_trace_id, refused_span_id,
+        ))
+        return {
+            "paymentId": payment_id,
+            "claimId": "CLM-1842",
+            "amount": requested,
+            "currency": "EUR",
+            "status": "refused",
+        }
+
 
 def test_propose_payment_delegates_to_the_system_of_record(server_module, monkeypatch):
     fake = FakePayments()
@@ -109,4 +123,38 @@ def test_execute_payment_is_advertised_as_destructive(server_module):
 
 def test_propose_payment_is_not_advertised_as_destructive(server_module):
     annotations = _tool_annotations(server_module, "propose_payment")
+    assert annotations.get("destructiveHint") is False
+
+
+# ---------------------------------------------------------------------------
+# M3 Task 3: refuse_payment records a decision the PDS already made; it moves
+# no money and reverses nothing, so it is advertised exactly like
+# propose_payment -- not destructive, and (asserted in test_rules.py on the
+# PDS side) unlimited.
+# ---------------------------------------------------------------------------
+
+
+def test_refuse_payment_delegates_to_the_system_of_record(server_module, monkeypatch):
+    fake = FakePayments()
+    monkeypatch.setattr(server_module, "payments", fake)
+
+    result = server_module.refuse_payment(
+        "PAY-000001",
+        rule="execute_limit",
+        limit=6000.0,
+        requested=6200.0,
+        narrative="narrative",
+        refused_trace_id="331edba8cb21223e9de2f244360c42ef",
+        refused_span_id="b7997877797c1b27",
+    )
+
+    assert fake.calls == [(
+        "refuse", "PAY-000001", "execute_limit", 6000.0, 6200.0, "narrative",
+        "331edba8cb21223e9de2f244360c42ef", "b7997877797c1b27",
+    )]
+    assert result["status"] == "refused"
+
+
+def test_refuse_payment_is_not_advertised_as_destructive(server_module):
+    annotations = _tool_annotations(server_module, "refuse_payment")
     assert annotations.get("destructiveHint") is False
