@@ -668,6 +668,7 @@ marker is removed, rather than staying silently green.
 | payments-mcp | FastMCP native | `fastmcp==4.0.3` | `tools/call propose_payment`, `tools/call execute_payment` | TracerProvider does **not** need to be installed before importing fastmcp on this version — `fastmcp.telemetry.get_tracer()` calls `get_tracer_provider()` fresh on every span, not once at import (measured; the brief's premise here was wrong for 4.0.3 — kept as a code convention anyway, not a correctness requirement). `FASTMCP_TELEMETRY_MODE=native` is set explicitly even though it is already the default. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is also set** (`deploy/k8s/payments-mcp.yaml`) — this governs only the *outbound httpx* span to payments-api (FastMCP's own native MCP spans are unaffected; this knob is httpx-instrumentation-specific), measured legacy-by-default, confirmed stable after (`tools/payments-mcp/NOTES.md` §3). |
 | policy-decision-service | OTel Python SDK, applied by this project's own `pds/telemetry.py` | `opentelemetry-sdk==1.44.0` (Resource carries `service.name`, `service.instance.id`, `telemetry.sdk.language=python`, `telemetry.sdk.name=opentelemetry`, `telemetry.sdk.version=1.44.0` — and **no** `service.version`; scope `northstar.policy-decision-service` with no `otel.scope.version`) | one span, `policy.decision`, SERVER kind, one per `tools/call` the gateway sends for a decision | **The one component in this system whose span is entirely this project's own** — no framework emits a policy decision, which is what Gap 3 below was about. It opens the span by hand because there is nothing wrapping it that would: the gRPC servicer is the top of its own call stack. Everything below that name is the real SDK — `TracerProvider`/`BatchSpanProcessor`/OTLP-HTTP exporter, endpoint and protocol from the standard `OTEL_EXPORTER_OTLP_*` env vars, and a `CompositePropagator(TraceContextTextMapPropagator, W3CBaggagePropagator)` registered explicitly. It joins the caller's trace because agentgateway forwards `traceparent` to the guardrail hook (measured, M2.2 Task 1 run C), so the decision span is a genuine **child of the gateway's `tools/call` SERVER span** — a sibling of the `Guardrail` CLIENT span, not its child, because the gateway propagates the context it received rather than its own client span's. **The span status stays `Unset` on a deny, deliberately:** a refusal is this service working, and an ERROR span for the one thing this milestone exists to do would read as a fault. Attribute inventory below. |
 | payments-api | `otelhttp` | `otelhttp v0.66.0`, otel core `v1.41.0` | `POST /payments/propose`, `POST /payments/{paymentId}/execute`, `GET /payments/{paymentId}` | HTTP attribute spelling as emitted by the pinned version: **stable** — `http.request.method` / `http.response.status_code` / `http.route`, not the legacy `http.method`/`http.status_code`. `network.protocol.name` is **not** emitted by this otelhttp version (only `network.protocol.version` is); do not assert its presence. No `OTEL_SEMCONV_STABILITY_OPT_IN` is set or needed — this version emits the stable spelling by default (A12), unlike every Python service in this table. |
+| reviewer-ui (M3 Task 4) | OTel Python SDK, applied by this project's own `bootstrap.py`; `HTTPXClientInstrumentor` for outbound calls | `opentelemetry-sdk==1.44.0` | `review.decision`, SERVER kind, one per submitted approve/reject decision | Deliberately the **only** span this service creates or instruments for. No `opentelemetry-instrumentation-fastapi`/`-starlette` is applied — `GET /` and `GET /healthz` produce no spans at all, the same way `policy-decision-service`'s own row above is "entirely this project's own": `review.decision` is hand-created in `review.py` and is this trace's root, matching apps/customer-ui's `claim.submit` pattern (a single owned root span, not a framework entry span with the owned span nested inside it) rather than PDS's pattern (a child of the caller's propagated context). `HTTPXClientInstrumentor` still runs, so the outbound calls to payments-api and to senior-settlement-agent's A2A endpoint get CLIENT spans and carry `traceparent`, which is what makes the approved-execution call's own inbound server span a child of `review.decision` rather than the start of an unrelated trace. Attribute inventory below. |
 
 **Operational fact that keeps *this project's own services* on one HTTP
 convention — and, as of M2.1 Task 3, the one component it cannot reach:**
@@ -1697,6 +1698,60 @@ inbound A2A baggage), so this is this flow's own point of intake for that
 fact -- without it, a reviewer correlating by claim id would see the refusal
 half of the story and not the approval half.
 
+## reviewer-ui's own instrumentation: `review.decision` (M3 Task 4)
+
+M3 Task 4 adds the second span this repo owns outright, created by
+`apps/reviewer-ui/review.py`'s `decide()` around a reviewer's submitted
+approve/reject decision. Named `review.decision`, SpanKind SERVER, one per
+submitted decision — and, unlike `settlement.execute_approved`, this is the
+actual **root** of a new trace: reviewer-ui applies no ASGI/Starlette
+auto-instrumentation (see the table row above), so there is no framework
+entry span for it to nest inside.
+
+### Attributes on the `review.decision` span
+
+Six keys, all `review.`-prefixed for the same reason `northstar.*` and
+`policy.*` are prefixed in this document's other rows — this is domain data
+no OpenTelemetry semantic convention covers, set only by this span and
+nowhere else:
+
+```
+review.payment.id            "PAY-000053"
+review.decision               "approve"
+review.reviewer.id            "alex.mercer"
+review.reviewer.spiffe_id     "<reviewer-ui's own workload identity>"
+review.refused.trace_id       "331edba8cb21223e9de2f244360c42ef"
+review.elapsed_ms             312000
+```
+
+Every value here is read off the ledger record `review.decide()` fetches
+fresh at decision time (`ledger.get(payment_id)`), except `review.decision`
+(the reviewer's own choice) and `review.reviewer.id` (the name typed into the
+form — a claim carried on the span, not a verified credential, the same
+qualification `settlement.execute_approved`'s `northstar.approval.reviewer_id`
+carries above). `review.reviewer.spiffe_id` is reviewer-ui's own workload
+identity, read from the SPIFFE Workload API (`apps/reviewer-ui/identity.py`)
+— not a JWT-SVID for any audience (this service calls no audience-gated
+service and holds no `EXECUTE_LIMITS` row), but the same X.509 SVID every
+workload in this mesh already carries, read back rather than assembled from
+the namespace/ServiceAccount strings this process merely believes it was
+deployed with.
+
+**`review.elapsed_ms` is computed from the ledger's own `refusedAt`, not from
+a timer started when the listing page loaded** — the property the spec calls
+out by name (§6, §7 criterion 5). `apps/reviewer-ui/review.py`'s `_elapsed_ms`
+takes no argument from the HTTP request at all; its only inputs are the
+ledger's `refusedAt` string and a `now`, so there is no code path by which a
+browser tab's dwell time could reach this attribute.
+
+This span carries **no span link of its own** — the link to the refusal trace
+lives one hop downstream, on settlement-agent's `settlement.execute_approved`
+span (documented above), which is where `refusedTraceId`/`refusedSpanId`
+travel to next inside the approval payload. `review.decision` is a *cause* of
+that call, connected to it by ordinary parent/child propagation (the outbound
+A2A POST carries `traceparent` while `review.decision` is current), not by a
+link of its own.
+
 ## Conventions adopted
 
 - **GenAI semconv** for model calls, exercised as of M1.2 — see "PydanticAI
@@ -1715,6 +1770,7 @@ half of the story and not the approval half.
 | `policy.*` (nine keys, M2.2) | policy-decision-service, on its own `policy.decision` span | none — set locally, never propagated | That one span only. Keys declared in `platform/policy-decision-service/pds/telemetry.py`; measured inventory under "The policy decision, as measured (M2.2)" |
 | `northstar.payment.refusal_cause` (M2.2 Task 4) | payments-api, on its own server span for a refused execute; two closed values, `amount_mismatch` and `already_executed` (`systems/payments-api/handlers.go`) | none | payments-api's execute span, and **only when it refuses** — absent on success, so its presence means "refused here". Read off a real recorded span by that service's own Go tests via an in-memory `tracetest.SpanRecorder`; it appears on **none** of the six M2.2 traces named in this document, because neither the denied nor the permitted scenario reaches a 409 |
 | `northstar.payment.id`, `northstar.approval.reviewer_id` (M3 Task 3) | settlement-agent, on its own `settlement.execute_approved` span (`agents/settlement-agent/settlement.py`) | none | That span only, on the human-approved execution path. See "settlement-agent's own instrumentation" above, including this milestone's first span **link** and the same span's `northstar.claim.id` baggage (M3 Task 3 review, R16) |
+| `review.*` (six keys, M3 Task 4) | reviewer-ui, on its own `review.decision` span (`apps/reviewer-ui/review.py`) | none | That span only, one per submitted approve/reject decision. See "reviewer-ui's own instrumentation" above |
 
 **Two M2.2 notes on this table, both measured rather than reasoned.** The
 `policy.*` family is prefixed `policy.` and not `northstar.` on purpose: it is
