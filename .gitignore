@@ -11,3 +11,9 @@ next-env.d.ts
 # Staged into the build context by scripts/rebuild-and-deploy.sh; canonical copy
 # lives in contracts/agent-cards/
 agents/*/agent-card.json
+# Generated from platform/policy-decision-service/proto/ext_mcp.proto by that
+# service's ./gen-stubs.sh, at dev time and again at Docker build time (M2.2
+# ruling R22). Committing them would let the image and the repo disagree about
+# a contract whose source of truth is the vendored proto.
+platform/policy-decision-service/ext_mcp_pb2.py
+platform/policy-decision-service/ext_mcp_pb2_grpc.py
