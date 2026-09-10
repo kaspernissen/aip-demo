@@ -426,7 +426,7 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (all six run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 79, payments-mcp 9, payments-api (Go) 20,
+claims-agent 16, settlement-agent 79, payments-mcp 9, payments-api (Go) 28,
 customer-ui (vitest) 6, policy-decision-service 97 — all passing. (The sixth
 entry arrived in the M2.2 final-review fix round: `policy-decision-service` was
 in neither the gate's loop nor this row until finding 1 showed both already
@@ -534,6 +534,24 @@ other three already do (settlement-agent directly, claims-agent and
 payments-mcp since M2.1 Task 6) — policy-decision-service 96→97, re-measured
 with `.venv/bin/python -m pytest --collect-only -q tests` the same way as
 every prior entry in this history, not carried forward from the row above.)
+Grown again by M3 Task 2, payments-api 20→28: the ledger side of a human
+reviewer seeing why a payout was refused. `store.go` gained `StatusRefused`
+and a `refusal` record (`rule`, `limit`, `requested`, `narrative`,
+`refusedTraceId`, and a `refusedAt` the ledger stamps itself, not supplied by
+the caller); `handlers.go` gained `POST /payments/{paymentId}/refuse` and
+`GET /payments?status=`. The eight new Go tests cover: a refused proposed
+payment reaching `refused` with every field stored and persisted; refusing an
+already-executed payment rejected with the same 409 shape as the execute
+handler's own already-executed conflict (both trace back to the store's one
+`ErrExecuted`); an unknown payment id refused with 404; the status-filtered
+list returning only the matching payments and none of the others; a missing
+`rule` and a malformed body each rejected with 400; an unfiltered list
+returning every payment; and — the property this task turns on —
+`TestARefusedPaymentCanStillBeExecutedAfterwards`, proving `refused` is
+terminal-until-approved rather than a dead end: nothing in this service's
+execute path was touched, so the same payment reaches `executed` afterwards
+exactly as it always could. Re-measured with `GOTOOLCHAIN=local GOPROXY=off
+go test ./... -list '.*'` → 28, not counted by hand.
 customer-ui's suite includes its own
 A19 regression test for the traceparent-across-await fix described below
 (`apps/customer-ui/NOTES.md` §2) — worth naming explicitly, since it's the

@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
@@ -33,6 +34,22 @@ type proposeRequest struct {
 type executeRequest struct {
 	Amount   *float64 `json:"amount"`
 	Currency string   `json:"currency"`
+}
+
+// refuseRequest is what Task 3's settlement agent reports about a refusal it
+// did not decide -- the Policy Decision Service decided it, upstream -- so
+// that a human reviewer has something to read. Amount, currency and payment
+// id already live on the ledger record this refusal attaches to; this
+// request supplies only the PDS's own rule and limit, the amount that was
+// requested, the model's narrative, and the id of the trace that recorded
+// the decision. RefusedAt is not part of this request: the ledger stamps it
+// itself, at the moment it records the refusal (see store.refuse).
+type refuseRequest struct {
+	Rule           string  `json:"rule"`
+	Limit          float64 `json:"limit"`
+	Requested      float64 `json:"requested"`
+	Narrative      string  `json:"narrative"`
+	RefusedTraceID string  `json:"refusedTraceId"`
 }
 
 // amountEpsilon is the tolerance for the confirmation check, in units of the
@@ -171,6 +188,17 @@ func newRouter(s *store) http.Handler {
 		mux.Handle(pattern, otelhttp.NewHandler(withClaimID(h), spanName))
 	}
 
+	// handleNoClaimID is `handle` without the claim-id baggage annotation, for
+	// a route that -- unlike propose/execute/refuse, each scoped to one claim
+	// mid-flow -- carries no claim id to read: GET /payments below lists
+	// across every claim, for the reviewer UI's own new trace, with no claim
+	// baggage propagated into it. It still gets an otelhttp span: this is a
+	// real domain request, not the probe traffic GET /healthz is wired to
+	// avoid entirely (see the comment there).
+	handleNoClaimID := func(pattern, spanName string, h http.HandlerFunc) {
+		mux.Handle(pattern, otelhttp.NewHandler(h, spanName))
+	}
+
 	// N6 (final-review.md): the readiness probe added in deploy/k8s/*.yaml
 	// (S6) polls this endpoint every few seconds, and it used to be wrapped
 	// in otelhttp like every other route -- 162 GET /healthz traces against
@@ -282,6 +310,50 @@ func newRouter(s *store) http.Handler {
 			}
 		})
 
+	handle("POST /payments/{paymentId}/refuse", "POST /payments/{paymentId}/refuse",
+		func(w http.ResponseWriter, r *http.Request) {
+			var req refuseRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeError(w, http.StatusBadRequest, "malformed JSON body")
+				return
+			}
+			if req.Rule == "" {
+				writeError(w, http.StatusBadRequest, "rule is required")
+				return
+			}
+
+			paymentID := r.PathValue("paymentId")
+			payment, err := s.refuse(paymentID, refusal{
+				Rule:           req.Rule,
+				Limit:          req.Limit,
+				Requested:      req.Requested,
+				Narrative:      req.Narrative,
+				RefusedTraceID: req.RefusedTraceID,
+				RefusedAt:      time.Now().UTC().Format(time.RFC3339),
+			})
+			switch {
+			case errors.Is(err, ErrNotFound):
+				writeError(w, http.StatusNotFound, "payment not found")
+			case errors.Is(err, ErrExecuted):
+				// Same shape as the execute handler's own already-executed
+				// conflict (store.refuse returns the same ErrExecuted): the
+				// money has moved, once, and a refusal record after that
+				// would misstate the ledger rather than describe it.
+				//
+				// This deliberately does not go through the `refuse` helper
+				// above or set northstar.payment.refusal_cause: that
+				// attribute's own doc comment scopes it to the execute
+				// route's two causes and states it is "set nowhere else" --
+				// this is a different route's conflict, not a third cause
+				// of the same one.
+				writeError(w, http.StatusConflict, "payment already executed")
+			case err != nil:
+				writeError(w, http.StatusInternalServerError, "unexpected error")
+			default:
+				writeJSON(w, http.StatusOK, payment)
+			}
+		})
+
 	handle("GET /payments/{paymentId}", "GET /payments/{paymentId}",
 		func(w http.ResponseWriter, r *http.Request) {
 			payment, err := s.get(r.PathValue("paymentId"))
@@ -291,6 +363,14 @@ func newRouter(s *store) http.Handler {
 			}
 			writeJSON(w, http.StatusOK, payment)
 		})
+
+	// GET /payments?status=refused is Task 4's reviewer UI listing what it
+	// needs to review. The query parameter is not part of the route pattern
+	// (Go's ServeMux does not match on it), so the span name below is still a
+	// template, not a raw path, exactly as it is for every other route.
+	handleNoClaimID("GET /payments", "GET /payments", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, s.list(r.URL.Query().Get("status")))
+	})
 
 	return mux
 }

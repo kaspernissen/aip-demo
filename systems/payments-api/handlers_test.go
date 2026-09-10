@@ -509,3 +509,250 @@ func TestTheRefusalCauseAttributeIsNorthstarPrefixed(t *testing.T) {
 		t.Errorf("attribute %q must carry the northstar. prefix", northstarRefusalCause)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// M3 Task 2: the refusal record in the ledger.
+//
+// This is the ledger side of "a human reviewer can see, and later approve,
+// the payout M2 refused." `refused` is terminal-until-approved, not a new
+// state machine: the execute path stays exactly as guarded as it always was,
+// so a refused payment must still be executable through it. These tests are
+// against the two consumers who are not written yet (Task 3's settlement
+// agent, Task 4's reviewer UI), so the request/response shape asserted here
+// is a contract, not a guess.
+// ---------------------------------------------------------------------------
+
+func refusePayment(srv http.Handler, paymentID string, body any) *httptest.ResponseRecorder {
+	var reader *bytes.Reader
+	if body == nil {
+		reader = bytes.NewReader(nil)
+	} else {
+		encoded, _ := json.Marshal(body)
+		reader = bytes.NewReader(encoded)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/payments/"+paymentID+"/refuse", reader)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	return rec
+}
+
+// refusalBody is the request/response shape both later tasks are written
+// against: rule, limit and requested come from the PDS's own denial, and
+// refusedTraceId is the id of the trace that recorded it. Values are literals
+// throughout these tests -- no arithmetic on them -- so there is no constant-
+// folding hazard to guard against here.
+func refusalBody(rule string, limit, requested float64, narrative, traceID string) map[string]any {
+	return map[string]any{
+		"rule":           rule,
+		"limit":          limit,
+		"requested":      requested,
+		"narrative":      narrative,
+		"refusedTraceId": traceID,
+	}
+}
+
+func listPayments(t *testing.T, srv http.Handler, status string) []Payment {
+	t.Helper()
+	path := "/payments"
+	if status != "" {
+		path += "?status=" + status
+	}
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list: got status %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var payments []Payment
+	if err := json.Unmarshal(rec.Body.Bytes(), &payments); err != nil {
+		t.Fatalf("list: decoding response: %v", err)
+	}
+	return payments
+}
+
+func TestRefusingAProposedPaymentSetsRefusedAndStoresEveryField(t *testing.T) {
+	srv := newTestServer()
+	payment := proposePayment(t, srv, "CLM-1842", 6200)
+
+	rec := refusePayment(srv, payment.PaymentID,
+		refusalBody("execute_limit", 6000.0, 6200.0,
+			"The requested amount exceeds the agreed settlement limit for this identity.",
+			"331edba8cb21223e9de2f244360c42ef"))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refuse: got status %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var refused Payment
+	if err := json.Unmarshal(rec.Body.Bytes(), &refused); err != nil {
+		t.Fatalf("refuse: decoding response: %v", err)
+	}
+	if refused.Status != StatusRefused {
+		t.Fatalf("got status %q, want %q", refused.Status, StatusRefused)
+	}
+	if refused.Refusal == nil {
+		t.Fatalf("refusal record is nil on the response")
+	}
+	if refused.Refusal.Rule != "execute_limit" {
+		t.Errorf("got rule %q, want %q", refused.Refusal.Rule, "execute_limit")
+	}
+	if refused.Refusal.Limit != 6000.0 {
+		t.Errorf("got limit %v, want 6000.0", refused.Refusal.Limit)
+	}
+	if refused.Refusal.Requested != 6200.0 {
+		t.Errorf("got requested %v, want 6200.0", refused.Refusal.Requested)
+	}
+	if refused.Refusal.Narrative != "The requested amount exceeds the agreed settlement limit for this identity." {
+		t.Errorf("narrative was not stored verbatim: %q", refused.Refusal.Narrative)
+	}
+	if refused.Refusal.RefusedTraceID != "331edba8cb21223e9de2f244360c42ef" {
+		t.Errorf("got refusedTraceId %q, want %q", refused.Refusal.RefusedTraceID,
+			"331edba8cb21223e9de2f244360c42ef")
+	}
+	if refused.Refusal.RefusedAt == "" {
+		t.Errorf("refusedAt must be stamped by the ledger, got empty string")
+	}
+
+	// And it is persisted, not just echoed in the response.
+	got := getPayment(t, srv, payment.PaymentID)
+	if got.Status != StatusRefused || got.Refusal == nil || got.Refusal.Rule != "execute_limit" {
+		t.Errorf("refusal record did not persist: %+v", got)
+	}
+}
+
+func TestRefusingAnExecutedPaymentIsRejected(t *testing.T) {
+	srv := newTestServer()
+	payment := proposePayment(t, srv, "CLM-1842", 6200)
+	if rec := executePayment(srv, payment.PaymentID,
+		map[string]any{"amount": 6200.0, "currency": "EUR"}); rec.Code != http.StatusOK {
+		t.Fatalf("execute: got status %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	rec := refusePayment(srv, payment.PaymentID,
+		refusalBody("execute_limit", 6000.0, 6200.0, "narrative", "trace-id"))
+
+	if rec.Code != http.StatusConflict {
+		t.Errorf("got status %d, want 409 (body: %s)", rec.Code, rec.Body.String())
+	}
+	// Same shape as the execute handler's own already-executed conflict: the
+	// money has moved, so nothing about the record changes underneath it.
+	if got := getPayment(t, srv, payment.PaymentID); got.Status != StatusExecuted {
+		t.Errorf("payment status is %q after a rejected refuse, want %q",
+			got.Status, StatusExecuted)
+	}
+}
+
+func TestRefusingAnUnknownPaymentReturns404(t *testing.T) {
+	srv := newTestServer()
+	rec := refusePayment(srv, "PAY-999999",
+		refusalBody("execute_limit", 6000.0, 6200.0, "narrative", "trace-id"))
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("got status %d, want 404", rec.Code)
+	}
+}
+
+func TestListPaymentsFiltersToRefusedStatus(t *testing.T) {
+	srv := newTestServer()
+	refusedPayment := proposePayment(t, srv, "CLM-1842", 6200)
+	proposedPayment := proposePayment(t, srv, "CLM-1901", 800)
+	executedPayment := proposePayment(t, srv, "CLM-2010", 500)
+
+	if rec := refusePayment(srv, refusedPayment.PaymentID,
+		refusalBody("execute_limit", 6000.0, 6200.0, "narrative", "trace-id")); rec.Code != http.StatusOK {
+		t.Fatalf("refuse: got status %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if rec := executePayment(srv, executedPayment.PaymentID,
+		map[string]any{"amount": 500.0, "currency": "EUR"}); rec.Code != http.StatusOK {
+		t.Fatalf("execute: got status %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	got := listPayments(t, srv, "refused")
+	if len(got) != 1 {
+		t.Fatalf("got %d refused payments, want 1: %+v", len(got), got)
+	}
+	if got[0].PaymentID != refusedPayment.PaymentID {
+		t.Errorf("got paymentId %q, want %q", got[0].PaymentID, refusedPayment.PaymentID)
+	}
+
+	// The other two statuses must not leak into the refused-only view.
+	for _, p := range got {
+		if p.PaymentID == proposedPayment.PaymentID || p.PaymentID == executedPayment.PaymentID {
+			t.Errorf("status=refused list leaked a non-refused payment: %+v", p)
+		}
+	}
+}
+
+func TestARefusedPaymentCanStillBeExecutedAfterwards(t *testing.T) {
+	// The design point this whole task turns on: `refused` is
+	// terminal-until-approved, not a dead end. Nothing in this service closes
+	// the execute path on a refusal -- the PDS is what guards it, and that
+	// guard lives entirely outside payments-api. This test proves the ledger
+	// side never forecloses the possibility of the same payment executing
+	// later under a different, more senior, identity's approval.
+	srv := newTestServer()
+	payment := proposePayment(t, srv, "CLM-1842", 6200)
+
+	if rec := refusePayment(srv, payment.PaymentID,
+		refusalBody("execute_limit", 6000.0, 6200.0, "narrative", "trace-id")); rec.Code != http.StatusOK {
+		t.Fatalf("refuse: got status %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if got := getPayment(t, srv, payment.PaymentID); got.Status != StatusRefused {
+		t.Fatalf("payment did not reach refused: got %q", got.Status)
+	}
+
+	rec := executePayment(srv, payment.PaymentID,
+		map[string]any{"amount": 6200.0, "currency": "EUR"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("execute after refuse: got status %d, want 200 (body: %s)",
+			rec.Code, rec.Body.String())
+	}
+	var executed Payment
+	if err := json.Unmarshal(rec.Body.Bytes(), &executed); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if executed.Status != StatusExecuted {
+		t.Errorf("got status %q, want %q", executed.Status, StatusExecuted)
+	}
+}
+
+func TestRefuseWithMissingRuleIsRejected(t *testing.T) {
+	srv := newTestServer()
+	payment := proposePayment(t, srv, "CLM-1842", 6200)
+
+	rec := refusePayment(srv, payment.PaymentID,
+		map[string]any{"limit": 6000.0, "requested": 6200.0, "narrative": "narrative"})
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("got status %d, want 400 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if got := getPayment(t, srv, payment.PaymentID); got.Status != StatusProposed {
+		t.Errorf("payment status is %q after a rejected refuse, want %q",
+			got.Status, StatusProposed)
+	}
+}
+
+func TestRefuseWithMalformedBodyIsRejected(t *testing.T) {
+	srv := newTestServer()
+	payment := proposePayment(t, srv, "CLM-1842", 6200)
+
+	req := httptest.NewRequest(http.MethodPost, "/payments/"+payment.PaymentID+"/refuse",
+		strings.NewReader("{not json"))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("got status %d, want 400 (body: %s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListPaymentsWithNoStatusReturnsEveryPayment(t *testing.T) {
+	srv := newTestServer()
+	proposePayment(t, srv, "CLM-1842", 6200)
+	proposePayment(t, srv, "CLM-1901", 800)
+
+	got := listPayments(t, srv, "")
+	if len(got) != 2 {
+		t.Fatalf("got %d payments, want 2: %+v", len(got), got)
+	}
+}
