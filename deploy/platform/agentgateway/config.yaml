@@ -6,10 +6,19 @@
 # image tag carries the `v` prefix. Recorded here because the M2.1 brief's
 # literal image string was wrong on this one point).
 #
-# M2.1 deliberately carries NO policy. Both policy mechanisms this project
+# M2.1 deliberately carried NO policy. Both policy mechanisms this project
 # examined (native CEL `mcpAuthorization`, and the external `ExtMCP` gRPC hook)
-# are absent here on purpose: M2.1 proves the proxy does not break the trace,
+# were absent on purpose while M2.1 proved the proxy does not break the trace;
 # M2.2 adds the decision. See the M2 spec.
+#
+# CORRECTION, M2.2 fix round (final-review finding 4). The paragraph above was
+# written in the present tense at M2.1 and survived M2.2 unread, so this file
+# opened by telling an auditor that the enforcement it now configures is not
+# here. What is true as of M2.2: the external `ExtMCP` gRPC hook IS configured
+# below, as `mcpGuardrails`, pointed at the Policy Decision Service and set to
+# `failureMode: failClosed`. Native CEL `mcpAuthorization` is still absent and
+# still deliberately so -- the decision belongs to the PDS, not to this file
+# (M2 spec §9 criterion 4).
 #
 # Schema verified directly against the pinned image: `docker run --rm
 # cr.agentgateway.dev/agentgateway:v1.5.0 -f config.yaml --validate-only`
@@ -65,10 +74,23 @@ binds:
   - routes:
     # M2.1 Task 4 added this `policies` block, and nothing else in this file.
     #
-    # It is JWT *verification*, not authorization. There is deliberately no
-    # `mcpAuthorization` and no `authorization` here: this task makes identity
-    # real and checkable, and a later milestone decides what to do with it. The
-    # gateway still permits every tool call it can authenticate.
+    # `jwtAuth` is JWT *verification*, not authorization: on its own it decides
+    # whether the caller is authenticated, never whether it may do what it
+    # asked. There is deliberately no `mcpAuthorization` and no `authorization`
+    # key here -- M2.1's Task 4 made identity real and checkable and left the
+    # decision to a later milestone.
+    #
+    # CORRECTION, M2.2 fix round (final-review finding 4). This paragraph used
+    # to end "The gateway still permits every tool call it can authenticate."
+    # That was true when it was written and became false 78 lines below it: the
+    # `mcpGuardrails` block in this same `policies` map sends every `tools/call`
+    # to the Policy Decision Service at the request phase and refuses the call
+    # when the PDS says deny (or cannot answer -- `failureMode: failClosed`).
+    # The absence of `mcpAuthorization` is what still holds; the absence of
+    # authorization is not. The sentence is replaced rather than annotated in
+    # place because, unlike the `failureMode` correction below, nobody ever
+    # acted on it -- there is no measurement to preserve, only a stale claim in
+    # the file an auditor reads first.
     #
     # Schema source: the pinned v1.5.0 image's own `examples/`, cross-read
     # against the Rust types, NOT the documentation site (Task 2 found the docs

@@ -2180,7 +2180,10 @@ property — against the live cluster, rather than transcribing the list it was
 handed. That re-check earned its keep twice: **one item on the list did not
 survive verification and is corrected in place below** (item 5, which had been
 attributed to the wrong service), and **item 10 is not on the list at all** —
-it was found by the re-check itself.
+it was found by the re-check itself. **Item 11 is later still**: it was found
+by the final whole-branch review, after Task 8 closed, and item 10 was rewritten
+in the same round because the review demonstrated that its stated cause was
+false.
 
 None of these is a telemetry-invention issue and none of them makes a
 published claim in this document false. They are the places a reader who
@@ -2333,6 +2336,35 @@ missing *unit-level* gate, not a missing assertion about behaviour. Fixing it
 means either committing the stubs or teaching the gate to generate them, both
 of which are real choices rather than oversights. Until one is made, the 95 is
 the one published count in this document with nothing automated behind it.
+
+**11. The deployed Policy Decision Service image carries its own build and test
+tooling.** Found by the final whole-branch review (finding 8), and a
+consequence of ruling R4 rather than an oversight in it.
+`platform/policy-decision-service/requirements.txt` is deliberately **one**
+file for runtime and test — R4 resolved a single transitive closure for Tasks 2
+and 3 together instead of two possibly-incompatible ones — and
+`platform/policy-decision-service/Dockerfile:4` installs that whole file with
+`pip install --no-cache-dir -r requirements.txt`. So the running image contains
+`grpcio-tools==1.83.1` (plus its `setuptools==84.0.0` build dependency) and
+`pytest==9.0.3` with its four-package closure, none of which `pds/server.py`
+imports: `grpcio-tools` is needed only at build time, by the `RUN
+./gen-stubs.sh python` layer six lines below, and `pytest` is needed only by a
+developer running the suite from the source tree. The service's ingress is
+otherwise carefully minimised — its own Cilium document admits exactly two
+sources to 9100, agentgateway and the node's kubelet probe (ruling R6), and
+nothing else in the cluster — so this is the one place the component is broader
+than it needs to be. It is recorded rather than fixed because every fix is a real
+restructuring with its own cost: a multi-stage build that generates the stubs
+in a builder image and copies them forward would re-open the image/repo
+divergence R22 exists to prevent unless the copy is provably from the same
+vendored proto, and splitting `requirements.txt` into runtime and test halves
+re-opens exactly the two-closures problem R4 closed. Neither is a five-line
+change, and neither belongs in a milestone whose subject is the decision. What
+is *not* claimed here: that this is exploitable. No measurement of that was
+made. What is measured: the image runs as a non-root uid
+(`useradd --uid 10001 app` / `USER app` in the same Dockerfile), and the
+serving path spawns no subprocess at all — `grep -rn 'subprocess\|os.system'
+platform/policy-decision-service/pds/` returns nothing.
 
 ## Open questions
 

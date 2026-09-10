@@ -300,6 +300,40 @@ The order is chosen so that each step has one suspect if it fails.
    well as refuses.
 7. Direct egress from `northstar-agents` to the model provider is **denied** by Cilium, with the
    gateway as the only path.
+
+   > **Correction, M2.2 fix round 2026-09-10 (ruling R43) — documented, not implemented.
+   > This criterion as written is NOT met, and this note is the record of that.**
+   > What shipped: `deploy/platform/cilium-policies.yaml` explicitly **allows**
+   > `settlement-agent → api.anthropic.com:443` by name (`toFQDNs.matchName`,
+   > one host, port 443, TCP). What *is* enforced, and asserted in the datapath
+   > by `tests/e2e/test_egress_policy.py` rather than argued: exactly **one**
+   > of the namespace's three workloads may reach the model provider at all —
+   > `claims-agent` and `customer-ui` are admitted to no external identity in
+   > their BPF policy maps, and both were measured reaching it before Task 7 —
+   > and no workload in the namespace may reach any other external host, which
+   > is asserted against two non-provider hosts on 443. So the shipped property
+   > is "one workload, not the namespace", not "denied".
+   >
+   > **What defers the criterion's own sentence.** "With the gateway as the only
+   > path" is not architecturally available in M2: agentgateway is deployed here
+   > as an MCP proxy on 3000 and carries no model traffic — `grep -ri anthropic
+   > deploy/platform/agentgateway/` returns nothing, and the model id and the
+   > API key both live on the agent (`deploy/k8s/settlement-agent.yaml`), not on
+   > the gateway. Denying the direct hop today would
+   > therefore leave no path to the model at all and no working demo. Meeting it
+   > literally requires routing the agent's model calls through agentgateway's
+   > own LLM path, which is a configuration this milestone does not build and
+   > has not measured.
+   >
+   > **To which milestone.** Deferred past M2 and **not yet owned by any spec**:
+   > §10 assigns M3 the reviewer UI and Dapr Workflow and no M3 spec exists at
+   > this date. It belongs in the M3 spec as carried debt — the same treatment
+   > §11 gives M1.2's — and the criterion should be restated there as the
+   > "one workload, not the namespace" property it actually is, or the LLM route
+   > built so the original wording becomes true. Left standing here with this
+   > note rather than rewritten, for the same reason criterion 4's note gives:
+   > the distance between what was specified and what shipped is the useful part
+   > of the record.
 8. Every telemetry attribute published in the contract was measured, not predicted.
 9. The full gate passes with browser tests enabled.
 

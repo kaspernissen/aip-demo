@@ -83,6 +83,12 @@ filter defaulting one way and documented accurately still cost this project
 its trace across the policy hop, because the first sensible edit to it is the
 one that breaks tracing.
 
+**There is also an "Open questions" section at the end of this document**, added
+in the M2.2 fix round (ruling R46). Entries there are deliberately *outside* the
+finding numbering: they name a behaviour nobody has demonstrated, record what
+was checked and what would settle it, and become findings only if a measurement
+turns them into one.
+
 The evidence for Findings
 1–4 was originally gathered as A8 upstream-contribution material and lives,
 in full, in `docs/telemetry-contract.md` and the per-component `NOTES.md`
@@ -1499,3 +1505,75 @@ only.
 **Status: not filed by this project.** No issue, comment or pull request was
 posted anywhere. Of the three M2.2 findings this is the one whose fix is most
 plausibly a one-line doc comment, and it is still the maintainers' call.
+
+---
+
+## Open questions — not findings, because nobody has demonstrated them
+
+An entry here is a question this project could not answer, written down so the
+next person does not have to rediscover that it is open. It is deliberately not
+numbered into the findings above: a finding names a behaviour and shows the
+evidence, and neither of these does.
+
+### OQ-U1: does `mcpGuardrails` evaluate every message inside a batched JSON-RPC array? (agentgateway v1.5.0)
+
+**The question.** JSON-RPC 2.0 allows a client to send an array of requests in
+one payload. If agentgateway v1.5.0 unpacks such an array but hands the
+`mcpGuardrails` processor only the first message — or the array as a single
+undecidable unit — then a batch containing a benign `tools/call` followed by a
+governed one could reach the upstream MCP server with no decision made about
+the second. That is the shape of a policy bypass, and in this project it would
+mean an `execute_payment` reaching `payments-mcp` unrefused.
+
+**Why it is recorded at all.** It is the one bypass shape the M2.2 final
+whole-branch review could not rule out from the source and configuration it
+read, in a milestone whose entire claim is that a specific call is refused. An
+unanswered question about the choke point is worth more written down than
+assumed away.
+
+**What was actually checked. [measured / read]**
+
+- **The wire contract can only carry one message per decision.**
+  `platform/policy-decision-service/proto/ext_mcp.proto` (vendored at v1.5.0,
+  digest pinned in its own header and now guarded by a test) defines
+  `McpRequest` with a **singular** `string method = 2` and a **singular**
+  `optional bytes mcp_request = 4` ("JSON-RPC `params` as raw JSON bytes").
+  There is no repeated-message field anywhere in `McpRequest`. So whatever the
+  gateway does with a batch, it cannot describe a batch to the policy server in
+  one call: it must either issue one `CheckRequest` per message, or describe
+  only one of them.
+- **The policy server refuses anything it cannot read as a single decidable
+  call.** `platform/policy-decision-service/pds/server.py:259` denies any
+  `method` other than `tools/call` under `undecidable_method`, and
+  `parse_call` refuses to build a `PolicyInput` from params it cannot read. So
+  if a batch arrived described as one non-`tools/call` unit, the PDS denies it.
+  This is the half of the question that *is* settled, and it is the half inside
+  this project's own code.
+- **The gateway config sends exactly one method for a decision**
+  (`deploy/platform/agentgateway/config.yaml`, `methods: {"tools/call":
+  request}`), so a batch is not something this configuration opts into
+  handling.
+
+**What was NOT established, precisely.** Whether the gateway's MCP layer
+accepts a JSON-RPC array on this transport at all; and if it does, whether it
+loops the guardrail over each element, evaluates only the first, or rejects the
+batch before the guardrail runs. None of that was read at the revision the
+running image reports, and none of it was probed live.
+
+**What would settle it, cheaply.** A live probe against the deployed gateway,
+which costs no model tokens: POST a JSON-RPC **array** of two `tools/call`
+messages — a `propose_payment` first, then an over-limit `execute_payment` —
+with a minted JWT-SVID, using the same direct-at-the-gateway machinery
+`tests/e2e/test_caller_identity.py` already has, and then count two things in
+the resulting trace: how many `policy.decision` spans the PDS emitted, and
+whether `payments-mcp` recorded a `tools/call execute_payment`. Two decisions
+and no tool span means per-message evaluation and no bypass. One decision plus
+a tool span is the bypass, and at that point it is a finding with evidence
+rather than a question. A rejected batch closes it a third way. Reading
+`crates/agentgateway/src/mcp/` at the image's own revision for the array case
+would narrow it further before any probe is run.
+
+**Status: nothing filed, nothing asked upstream.** No issue, comment, pull
+request or discussion post exists anywhere for this, and the question was not
+put to the maintainers. It is carried as this project's own open item, to be
+measured — and only then written up as a finding, if it turns out to be one.
