@@ -1,0 +1,67 @@
+# Task 2 (M2.2), Ruling R4: this file is resolved once, here, for Task 2
+# (pds/rules.py -- no dependencies of its own) AND Task 3 together
+# (pds/server.py, pds/identity.py, pds/telemetry.py), so the two tasks share
+# one transitive closure instead of resolving two incompatible ones.
+
+# gRPC: the wire protocol server.py (Task 3) speaks to agentgateway, plus
+# grpcio-tools to generate stubs from the vendored proto/ext_mcp.proto.
+# Version matched to agents/settlement-agent/requirements.txt, the only
+# other sibling service with a grpcio dependency (pulled in there via
+# spiffe==0.3.1): grpcio 1.83.1 is upstream's latest stable release at the
+# time that pin was made (grpc/grpc tag v1.83.1, 2026-08-27).
+grpcio==1.83.1
+grpcio-tools==1.83.1
+
+# OpenTelemetry: matched to agents/claims-agent and agents/settlement-agent's
+# requirements.txt (1.44.0 / 0.65b0) rather than tools/payments-mcp's older
+# 1.29.0 / 0.50b0 -- picking the newer of the two OTel lines already in this
+# repo rather than introducing a third one.
+opentelemetry-sdk==1.44.0
+opentelemetry-api==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0
+
+# Test path, matched to the pytest version already current across every
+# other requirements.txt in this repo (post the PYSEC-2026-1845 fix round).
+pytest==9.0.3
+
+# The rest of this file's transitive closure, pinned exactly as resolved by
+# `uv pip compile` against the seven direct dependencies above, into this
+# service's own clean `.venv` (house style: nothing floats).
+#
+# protobuf==7.36.1 is exactly what grpcio-tools==1.83.1 resolves to here, and
+# matches agents/settlement-agent/requirements.txt's own protobuf pin
+# (settlement-agent's grpcio==1.83.1 sibling dependency) -- not a fresh
+# choice. googleapis-common-protos, opentelemetry-exporter-otlp-proto-common,
+# opentelemetry-proto and opentelemetry-semantic-conventions are pulled in by
+# the OpenTelemetry pins above and match agents/claims-agent and
+# agents/settlement-agent's own pins for the same packages
+# (googleapis-common-protos==1.75.3, not tools/payments-mcp's older 1.75.0).
+# setuptools is new: grpcio-tools' own build-time dependency, with no sibling
+# service to match against, taken exactly as `uv pip compile` resolved it.
+googleapis-common-protos==1.75.3
+opentelemetry-exporter-otlp-proto-common==1.44.0
+opentelemetry-proto==1.44.0
+opentelemetry-semantic-conventions==0.65b0
+protobuf==7.36.1
+setuptools==84.0.0
+
+# pytest's own transitive closure, matched to what every other
+# requirements.txt in this repo already carries for these four packages.
+iniconfig==2.3.0
+packaging==26.3
+pluggy==1.6.0
+pygments==2.21.0
+
+# requests: opentelemetry-exporter-otlp-proto-http's HTTP client, and its own
+# transitive closure below -- matched to agents/claims-agent and
+# agents/settlement-agent/requirements.txt, which carry the identical pins
+# for all five of these packages.
+requests==2.34.2
+certifi==2026.7.22
+charset-normalizer==3.5.1
+idna==3.19
+urllib3==2.7.0
+
+# Pulled in by grpcio and by every opentelemetry-* package above; matched to
+# every other requirements.txt in this repo, which all pin the same version.
+typing-extensions==4.16.0
