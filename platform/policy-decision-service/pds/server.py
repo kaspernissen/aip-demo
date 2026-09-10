@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import signal
 import threading
@@ -79,6 +80,35 @@ class ToolCall:
     currency: str
 
 
+def _amount(value) -> float | None:
+    """The amount as a finite float, or None if it is not a number at all.
+
+    `bool` is excluded deliberately -- `isinstance(True, int)` is true in
+    Python, and `"amount": true` is not an amount.
+
+    Non-finite values are refused here so they never become a `PolicyInput`.
+    `rules.decide` refuses them too, and independently; this is the outer of
+    the two layers, and it earns its place twice over. Python's `json` module
+    accepts the non-standard literals `NaN`, `Infinity` and `-Infinity` by
+    default, and `1e309` overflows to `inf`, so a caller really can put one on
+    the wire. And `json.dumps` would happily write `NaN` back out into
+    `mcp_error.data.requested` -- which is not valid JSON, so the gateway would
+    drop the whole deny body with a `warn!` and the structured refusal Task 5
+    keys off would silently vanish.
+
+    A JSON integer literal too large for a float raises `OverflowError` on
+    `float()` rather than returning `inf`; caught, because `parse_call` must
+    never raise.
+    """
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    return number if math.isfinite(number) else None
+
+
 def parse_call(params: bytes | None) -> ToolCall:
     """Read the tool, amount and currency out of the JSON-RPC `params` bytes.
 
@@ -87,9 +117,6 @@ def parse_call(params: bytes | None) -> ToolCall:
     routes a gRPC error through `failureMode` and reports it as a PDS *outage*,
     which is a different sentence from a policy refusal both on stage and in a
     trace.
-
-    `bool` is excluded from the amount deliberately -- `isinstance(True, int)`
-    is true in Python, and `"amount": true` is not an amount.
     """
     try:
         payload = json.loads(params) if params else None
@@ -106,9 +133,7 @@ def parse_call(params: bytes | None) -> ToolCall:
     if not isinstance(arguments, dict):
         arguments = {}
 
-    amount = arguments.get("amount")
-    amount = float(amount) if isinstance(amount, (int, float)) and not isinstance(
-        amount, bool) else None
+    amount = _amount(arguments.get("amount"))
 
     currency = arguments.get("currency")
     if not isinstance(currency, str):

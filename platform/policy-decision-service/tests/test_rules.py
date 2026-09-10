@@ -69,3 +69,75 @@ def test_the_denial_reason_names_both_numbers():
 
 def test_decisions_are_not_retryable():
     assert decide(_input(amount=6200.0)).retryable is False
+
+
+# --- F5. The limit's only test is `amount > limit`, so everything merely "not
+# --- greater" permitted -- including values that are not money at all. Fixed
+# --- in both layers; these are the rule layer's half.
+
+
+@pytest.mark.parametrize("amount", [
+    float("nan"),        # not greater than anything, so it used to permit
+    float("inf"),        # denied before, but as an "over the limit" payment
+    float("-inf"),
+])
+def test_a_non_finite_amount_is_denied(amount):
+    """A policy service that permits NaN is worse than one with no policy at
+    all: the permit came back stamped with the limit rule's own name."""
+    assert decide(_input(amount=amount)).permit is False
+
+
+@pytest.mark.parametrize("amount", [0.0, -0.0, -0.01, -500000.0])
+def test_a_zero_or_negative_amount_is_denied(amount):
+    """A EUR 0 or -EUR 500,000 'payment' is outside the domain the limit
+    reasons about, not inside a EUR 6,000 allowance."""
+    assert decide(_input(amount=amount)).permit is False
+
+
+@pytest.mark.parametrize("amount", [
+    float("nan"), float("inf"), float("-inf"), 0.0, -0.0, -0.01, -500000.0,
+])
+def test_an_unpayable_amount_is_not_attributed_to_the_limit_rule(amount):
+    """The rule name is the audit record. Refusing NaN under
+    `settlement-agent.assisted.execute_limit` would claim the limit rule had
+    considered a NaN payment and reached a view about EUR 6,000, which is not
+    what happened. A reader must be able to tell "the limit refused this" from
+    "this was never a payable amount".
+    """
+    decision = decide(_input(amount=amount))
+    assert decision.rule == "invalid_amount"
+    assert decision.rule != "settlement-agent.assisted.execute_limit"
+
+
+def test_the_unpayable_amount_denial_still_reports_the_callers_allowance():
+    """`limit` is what the caller *was* allowed, which an audit trail needs
+    even for a request that never qualified for it."""
+    assert decide(_input(amount=float("nan"))).limit == 6000.0
+
+
+def test_the_smallest_payable_amount_is_still_permitted():
+    """The guard must refuse non-money, not quietly tighten the limit. Without
+    this, `amount <= 0` could drift to `amount <= 1` unnoticed."""
+    assert decide(_input(amount=0.01)).permit is True
+
+
+def test_a_missing_currency_does_not_leave_a_hole_in_the_refusal_text():
+    """The reason is narrated to a customer. `server.py` falls back to an empty
+    currency rather than inventing "EUR", so the text must still read as
+    English: not "requested 6200  exceeds the 6000  limit"."""
+    reason = decide(_input(amount=6200.0, currency="")).reason
+    assert "  " not in reason
+    assert "requested 6200 exceeds the 6000 limit" in reason
+
+
+def test_the_refusal_text_still_names_the_currency_when_one_was_sent():
+    """The other half of the helper: EUR must not have been dropped. This is
+    the exact string measured off the running container in Task 3."""
+    assert decide(_input(amount=6200.0)).reason == (
+        "requested 6200 EUR exceeds the 6000 EUR limit for this agent at "
+        "autonomy level assisted")
+
+
+def test_the_permit_text_also_names_the_currency_once_each():
+    assert decide(_input(amount=5800.0)).reason == \
+        "5800 EUR is within the 6000 EUR limit"

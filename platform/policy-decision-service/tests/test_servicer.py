@@ -119,6 +119,70 @@ def test_a_payment_within_the_limit_is_permitted(spans):
     assert result.WhichOneof("result") == "pass"
 
 
+# --- F5, at the boundary ----------------------------------------------------
+
+
+@pytest.mark.parametrize("literal,expected_rule", [
+    # Refused by `parse_call`, so `decide` is handed no amount at all.
+    ("NaN", "malformed_request"),
+    ("Infinity", "malformed_request"),
+    ("-Infinity", "malformed_request"),
+    ("1e309", "malformed_request"),
+    # Finite, so these reach `decide` and are refused by the rule -- under a
+    # name that does not claim the EUR 6,000 limit approved them.
+    ("0", "invalid_amount"),
+    ("-0.0", "invalid_amount"),
+    ("-500000.0", "invalid_amount"),
+])
+def test_f5_an_unpayable_amount_is_refused_end_to_end(spans, literal,
+                                                      expected_rule):
+    """The reviewer drove `NaN`, `-Infinity` and `-1e309` through
+    `CheckRequest` and all three came back PERMIT -- stamped with the limit
+    rule's own name, so the audit record claimed the EUR 6,000 rule had
+    considered them and said yes. Both layers refuse now, and the rule name
+    says which one did it.
+    """
+    result = PolicyServicer().CheckRequest(
+        _request(params=(b'{"name":"execute_payment","arguments":{"amount":'
+                         + literal.encode() + b',"currency":"EUR"}}')), None)
+    assert result.WhichOneof("result") == "error", "PERMITTED an unpayable amount"
+    body = json.loads(result.error.mcp_error)
+    assert body["data"]["rule"] == expected_rule
+    assert body["data"]["retryable"] is False
+
+
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity", "1e309"])
+def test_the_deny_body_stays_strictly_valid_json(spans, literal):
+    """Python's `json.loads` accepts `NaN`; the gateway's
+    `serde_json::from_slice` does not, and Task 1 measured that an unparseable
+    `mcp_error` is dropped with a `warn!` while the deny is still returned. So
+    a non-finite amount echoed into `data.requested` would silently cost the
+    whole structured refusal. `parse_constant` is what makes this strict --
+    without it `json.loads` would accept the very `NaN` being guarded against
+    and the test would pass over a body the gateway throws away.
+    """
+    def reject(name):
+        raise AssertionError(f"body contains the non-JSON literal {name}")
+
+    result = PolicyServicer().CheckRequest(
+        _request(params=(b'{"name":"execute_payment","arguments":{"amount":'
+                         + literal.encode() + b"}}")), None)
+    body = json.loads(result.error.mcp_error, parse_constant=reject)
+    assert body["data"]["requested"] is None
+
+
+def test_the_span_never_carries_a_non_finite_amount(spans):
+    """An OTLP double attribute can hold NaN quite happily, and a NaN in a
+    trace backend is a value nobody can filter on. `parse_call` refusing it
+    upstream is what keeps it off the span as well as out of the body."""
+    PolicyServicer().CheckRequest(
+        _request(params=b'{"name":"execute_payment","arguments":{"amount":NaN}}'),
+        None)
+    span, = spans.get_finished_spans()
+    assert telemetry.ATTR_AMOUNT not in span.attributes
+    assert span.attributes[telemetry.ATTR_DECISION] == "deny"
+
+
 def test_the_measured_propose_payload_is_permitted(spans):
     """The bytes Task 1 actually observed. Proposing 6200 must still work --
     the demo depends on the model proposing it and then being refused."""

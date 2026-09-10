@@ -111,6 +111,8 @@ def test_a_string_amount_is_not_silently_coerced():
     b'{"name": 42}',
     b'{"name":"execute_payment","arguments":"not-an-object"}',
     b"\xff\xfe not utf-8",
+    b'{"name":"execute_payment","arguments":{"amount":NaN}}',
+    b'{"name":"execute_payment","arguments":{"amount":-Infinity}}',
 ])
 def test_no_params_shape_makes_parse_call_raise(params):
     """Every one of these must become a `ToolCall` with holes in it, which
@@ -120,3 +122,50 @@ def test_no_params_shape_makes_parse_call_raise(params):
     call = parse_call(params)
     assert call.amount is None or isinstance(call.amount, float)
     assert isinstance(call.currency, str)
+
+
+# --- F5, the parser's half of the fix ---------------------------------------
+
+
+@pytest.mark.parametrize("literal", [b"NaN", b"Infinity", b"-Infinity",
+                                     b"1e309", b"-1e309"])
+def test_a_non_finite_amount_never_becomes_a_policy_input(literal):
+    """Python's `json` accepts the non-standard literals `NaN`, `Infinity` and
+    `-Infinity` by default, and `1e309` overflows to `inf`, so a caller really
+    can put one of these on the wire -- the reviewer did.
+
+    Refusing here is defence in depth behind `rules.decide`, and it earns its
+    place twice: `json.dumps` would otherwise write `NaN` straight back out
+    into `mcp_error.data.requested`, which is not valid JSON, so the gateway
+    would drop the whole deny body with a `warn!` and the structured refusal
+    Task 5 keys off would silently vanish.
+    """
+    params = b'{"name":"execute_payment","arguments":{"amount":' + literal + b"}}"
+    call = parse_call(params)
+    assert call.tool == "execute_payment", "the tool must still be recoverable"
+    assert call.amount is None
+
+
+def test_an_integer_too_large_for_a_float_does_not_raise():
+    """A JSON integer literal this big raises `OverflowError` on `float()`
+    rather than returning `inf`, and `parse_call` must never raise."""
+    params = (b'{"name":"execute_payment","arguments":{"amount":'
+              + b"9" * 400 + b"}}")
+    assert parse_call(params).amount is None
+
+
+def test_a_finite_amount_of_every_ordinary_shape_still_parses():
+    """The guard must not eat real amounts. A zero or negative amount *does*
+    still reach `decide` -- refusing it is the rule's job, and refusing it
+    there is what puts `invalid_amount` in the audit record rather than the
+    parser's `malformed_request`."""
+    def amount(literal):
+        return parse_call(b'{"name":"execute_payment","arguments":{"amount":'
+                          + literal + b"}}").amount
+    assert amount(b"6200.0") == 6200.0
+    assert amount(b"6200") == 6200.0
+    assert amount(b"0") == 0.0
+    assert amount(b"-500000.0") == -500000.0
+    assert amount(b"0.01") == 0.01
+
+
