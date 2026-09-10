@@ -1,0 +1,133 @@
+# M3 Task 4: reviewer-ui, the HITL stage surface.
+#
+# Its own ServiceAccount, for the same reason settlement-agent.yaml's own
+# comment gives: without one this pod attests as
+# spiffe://northstar.local/ns/northstar-agents/sa/default, an identity a
+# policy cannot decide on. It is a REQUIREMENT here, not a nicety --
+# reviewer-ui must have a real SPIFFE ID of its own so the Policy Decision
+# Service's `unknown_caller` refusal (spec §7 criterion 7; Task 5's test) is
+# a decision about a real, distinct identity, not one that happens to match
+# some other workload's `default` by accident. It grants no RBAC and this pod
+# makes no Kubernetes API call. No new SPIRE registration is needed: the
+# chart's own catch-all `default` ClusterSPIFFEID (fallback: true) derives the
+# ID from namespace + ServiceAccount the same way it already does for
+# senior-settlement-agent (deploy/k8s/senior-settlement-agent.yaml's own
+# comment).
+#
+# Deliberately NO `EXECUTE_LIMITS` row anywhere in
+# platform/policy-decision-service/pds/rules.py for this identity, and this
+# manifest mounts no SPIFFE Workload API socket for calling agentgateway --
+# reviewer-ui never reaches agentgateway/payments-mcp/the Policy Decision
+# Service at all (deploy/platform/cilium-policies.yaml's
+# reviewer-ui-egress-allowlist is the enforced version of that boundary). The
+# CSI volume it DOES mount below is for a different, narrower purpose: reading
+# its own SPIFFE ID back from the Workload API, for the `review.decision`
+# span's `review.reviewer.spiffe_id` attribute (apps/reviewer-ui/identity.py)
+# -- not for presenting a credential to anything.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: reviewer-ui
+  namespace: northstar-agents
+  labels:
+    app: reviewer-ui
+    northstar.io/plane: agents
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reviewer-ui
+  namespace: northstar-agents
+  labels:
+    app: reviewer-ui
+    northstar.io/plane: agents
+    northstar.io/owner: claims-team
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reviewer-ui
+  template:
+    metadata:
+      labels:
+        app: reviewer-ui
+        northstar.io/plane: agents
+        northstar.io/owner: claims-team
+    spec:
+      serviceAccountName: reviewer-ui
+      containers:
+        - name: reviewer-ui
+          # A1: images go through the local registry, never `kind load`.
+          image: localhost:5001/northstar/reviewer-ui:dev
+          imagePullPolicy: Always
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: reviewer-ui
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            # Task 2's ledger listing/read routes, reached directly -- no MCP
+            # hop, no agentgateway, no Policy Decision Service. See
+            # apps/reviewer-ui/ledger.py's module docstring for why.
+            - name: PAYMENTS_API_URL
+              value: http://payments-api.northstar-systems.svc.cluster.local:8080
+            # Task 3's colleague with higher approval authority. reviewer-ui's
+            # only outbound A2A peer -- it holds no NORTHSTAR_ALLOWED_AGENTS
+            # list of its own because it is a client to exactly one agent, not
+            # a delegating one.
+            - name: SENIOR_SETTLEMENT_AGENT_URL
+              value: http://senior-settlement-agent.northstar-agents.svc.cluster.local:9002
+            - name: PORT
+              value: "8080"
+            # M2.1 Task 4's socket path, mounted here for the narrower reason
+            # this file's header comment gives: reading this workload's own
+            # SPIFFE ID back, not presenting a JWT-SVID to anything.
+            - name: SPIFFE_ENDPOINT_SOCKET
+              value: unix:///spiffe-workload-api/spire-agent.sock
+          ports:
+            - name: http
+              containerPort: 8080
+          # Mirrors payments-api's own /healthz: a plain 200, no ledger call,
+          # no SPIFFE fetch -- startup finishing is what this proves, the same
+          # "probe traffic must not need the thing it is proving" argument
+          # systems/payments-api/handlers.go's own comment makes for its
+          # /healthz route.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+          resources:
+            requests:
+              memory: 32Mi
+              cpu: 25m
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+              readOnly: true
+      volumes:
+        # Same CSI driver every other identity-bearing workload in this
+        # namespace mounts (deploy/k8s/settlement-agent.yaml's own comment
+        # explains the chart and the driver name in full).
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reviewer-ui
+  namespace: northstar-agents
+spec:
+  type: NodePort
+  selector:
+    app: reviewer-ui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30081

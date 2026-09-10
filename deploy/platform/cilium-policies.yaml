@@ -707,16 +707,129 @@ spec:
     matchLabels:
       app: senior-settlement-agent
   ingress:
-    # No `fromEndpoints` rule, deliberately. Nothing in this repo, as of this
-    # commit, has any business calling execute_approved -- reviewer-ui is
-    # Task 4's. Task 4 must add a rule here for reviewer-ui (and only
-    # reviewer-ui) when that workload exists; until then this endpoint stays
-    # unreachable from the mesh, ingress-wise, except for the probe below.
-    #
-    # 1. The node itself, for the readiness probe. Present even though there
-    # is no application ingress rule yet: without it the pod never goes
-    # Ready, for the same reason ruling R6 (policy-decision-service, above)
-    # gives.
+    # 1. reviewer-ui, M3 Task 4's own addition -- and the ONLY application
+    # caller this document grants. R18 (M3 Task 3 review) named this as a
+    # blocking requirement: this endpoint permitted no application caller at
+    # all when it was written, deliberately, because reviewer-ui did not yet
+    # exist -- widening it before the workload that needs it existed would
+    # have been exactly the "reachability nothing measured asked for" this
+    # file's own egress header argues against. It exists now
+    # (deploy/k8s/reviewer-ui.yaml), and its POST /review/{payment_id} handler
+    # is the one and only caller of execute_approved over A2A in this repo, so
+    # it is the one and only rule added here.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: northstar-agents
+            app: reviewer-ui
+      toPorts:
+        - ports:
+            - port: "9002"
+              protocol: TCP
+
+    # 2. The node itself, for the readiness probe. Unchanged from before this
+    # task -- see ruling R6 (policy-decision-service, above) for why this
+    # matters even once rule 1 exists.
     - fromEntities:
         - host
         - remote-node
+---
+# =============================================================================
+# M3 Task 4 -- reviewer-ui's own egress.
+#
+# THE MEASURED HAZARD, restated once more for this endpoint: in Cilium, ANY
+# egress rule that selects an endpoint makes that endpoint default-deny for
+# egress. This document's own header names two prior regressions this exact
+# hazard produced (stripping the DNS proxy's `rules.dns` block, and widening
+# egress to payments-mcp directly) that stayed green under behavioural probing
+# alone. So this is reviewer-ui's *complete* outbound inventory, taken from
+# `apps/reviewer-ui/bootstrap.py`, `ledger.py`, `approval.py` and
+# `identity.py` rather than from watching a running pod:
+#
+#   * DNS (L3/L4 only -- no `rules.dns` block, because there is no `toFQDNs`
+#     rule below for it to feed; same reasoning as claims-agent-egress-
+#     allowlist's own rule 1).
+#   * payments-api:8080 in northstar-systems (ledger.py's GET
+#     /payments?status=refused and GET /payments/{id} -- a direct REST call,
+#     never through agentgateway/payments-mcp/the Policy Decision Service:
+#     reviewer-ui has no business anywhere near that governed MCP path, and
+#     this is the enforced half of that boundary).
+#   * senior-settlement-agent:9002 in northstar-agents (approval.py's A2A
+#     POST carrying the human's approval -- the other half of the ingress
+#     rule added above).
+#   * the OTLP collector:4318 -- same "silent, not fatal" argument as every
+#     other workload's own rule 3 in this file: dropping it would not break
+#     the demo, it would just make `review.decision` (and every CLIENT span
+#     this process emits) vanish from the trace no one would notice missing.
+#
+# Deliberately absent: agentgateway:3000, payments-mcp:8000,
+# policy-decision-service:9100, and api.anthropic.com:443. reviewer-ui calls
+# none of them -- it holds no `EXECUTE_LIMITS` row and must never be able to
+# reach a place that would grant one (spec §5). identity.py's SPIFFE Workload
+# API call is a Unix domain socket, exactly like every other workload's own
+# SVID fetch in this file's header note ("UDS IPC never enters the pod's
+# network namespace, so Cilium policy does not govern it") -- there is
+# nothing to allow here for it.
+#
+# Datapath assertion, not just this YAML: `cilium-dbg bpf policy get
+# <reviewer-ui endpoint id>`, run against the live cluster and recorded in
+# this task's report.
+# =============================================================================
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: reviewer-ui-egress-allowlist
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m3
+spec:
+  endpointSelector:
+    matchLabels:
+      app: reviewer-ui
+  egress:
+    # 1. DNS -- L3/L4 only. See claims-agent-egress-allowlist's own rule 1
+    # for why this workload gets no `rules.dns` block: there is no `toFQDNs`
+    # rule here to feed one.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
+    # 2. payments-api, directly -- ledger.py's GET /payments?status=refused
+    # and GET /payments/{id}. Cross-namespace (northstar-systems), and still
+    # namespace-pinned for the reason every other rule in this file gives.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: northstar-systems
+            app: payments-api
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+
+    # 3. senior-settlement-agent, on its A2A port -- approval.py's one
+    # outbound peer, and the other half of this document's ingress rule for
+    # that endpoint (above).
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: northstar-agents
+            app: senior-settlement-agent
+      toPorts:
+        - ports:
+            - port: "9002"
+              protocol: TCP
+
+    # 4. The OTLP collector.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            app: otel-collector
+      toPorts:
+        - ports:
+            - port: "4318"
+              protocol: TCP

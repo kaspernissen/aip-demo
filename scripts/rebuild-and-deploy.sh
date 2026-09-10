@@ -60,6 +60,17 @@ COMPONENTS=(
   "claims-agent:agents/claims-agent:northstar-agents"
   "customer-ui:apps/customer-ui:northstar-agents"
   "policy-decision-service:platform/policy-decision-service:northstar-platform"
+  # M3 Task 4: reviewer-ui. Note what is deliberately NOT here:
+  # senior-settlement-agent -- it is the settlement-agent image, unmodified,
+  # in a second Deployment (deploy/k8s/senior-settlement-agent.yaml's own
+  # header), so it has no build context of its own and is applied by hand
+  # (`kubectl apply -f deploy/k8s/senior-settlement-agent.yaml`) rather than
+  # rebuilt here. reviewer-ui is a genuinely new image, built from its own
+  # apps/reviewer-ui context, so it belongs in this list the same way
+  # policy-decision-service's own addition comment argues: a component
+  # outside this list keeps running whatever image happened to be pushed
+  # last, silently.
+  "reviewer-ui:apps/reviewer-ui:northstar-agents"
 )
 
 component_names() {
