@@ -212,9 +212,16 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
         try:
             parent = telemetry.context_from_headers(request.headers)
             # SpanKind.SERVER: the gateway emits a CLIENT `Guardrail` span for
-            # this very RPC (measured, Task 1 Q6), and its remote child is a
-            # server span. That pairing is what makes the decision hop show up
-            # as one hop rather than two halves.
+            # this very RPC (measured, Task 1 Q6), and the server span for an
+            # inbound RPC is the matching half of that pairing, which is what
+            # makes the decision hop show up as one hop rather than two halves.
+            #
+            # Note this span is a SIBLING of `Guardrail`, not its child --
+            # measured in Task 4's denial and permit traces, where `Guardrail`
+            # (CLIENT) and `policy.decision` (SERVER) carry the *same* parent
+            # span id, the gateway's `tools/call`. The gateway propagates the
+            # context it received rather than the context of its own client
+            # span, so the parent here is `tools/call`.
             #
             # record_exception/set_status_on_exception are off because we do
             # both ourselves below, and because nothing propagates out of this
