@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math"
@@ -70,6 +71,68 @@ func confirmsPayment(payment Payment, statedAmount float64, statedCurrency strin
 	// spelling. An omitted currency defaults to EUR exactly as it does on
 	// propose, so the two ends of the check agree on the same default.
 	return strings.EqualFold(payment.Currency, statedCurrency)
+}
+
+// northstarRefusalCause names WHICH layer refused an execution.
+//
+// M2.2 rulings R23/R18. After M2.2 Task 4 there are two refusal mechanisms at
+// two different layers on the same request path:
+//
+//  1. the Policy Decision Service, which denies `execute_payment` above the
+//     agreed limit before the call ever reaches payments-mcp; and
+//  2. this handler, which refuses an execution whose stated amount does not
+//     confirm the recorded proposal, or one that has already happened.
+//
+// Both of this service's causes surface as `http.response.status_code=409` and
+// nothing else. A 4xx leaves an OTel server span `Unset` (that is the HTTP
+// convention: a 4xx is the client's problem, not the server's), so the span
+// carries no status to distinguish them either. The consequence is a hole
+// exactly where this demo's thesis lives: a trace could show a refusal and
+// still not answer "which layer refused this, and why?" -- and answering that
+// from a trace is the whole claim.
+//
+// So: ONE attribute, on the server span, naming the cause. It is
+// `northstar.`-prefixed because it is ours to define (no OpenTelemetry
+// semantic convention covers a payment refusal) and because that prefix is
+// this repo's standing signal for "we invented this name", as opposed to the
+// `http.*`, `gen_ai.*` and `mcp.*` attributes the frameworks emit. It sits
+// beside `northstar.claim.id`, the only other attribute this service defines.
+//
+// What it deliberately is NOT: a rename or a supplement of anything
+// agentgateway or the PDS emits. The PDS's own refusal is already legible in
+// its `policy.decision` span (`policy.decision=deny` plus `policy.rule`), and
+// the gateway's spans are recorded exactly as they appear. This attribute is
+// only about the two causes that belong to this service, which is our own
+// code, and it is set nowhere else.
+//
+// The value set is closed and low-cardinality -- two constants below -- so it
+// is safe to group by. Absence is meaningful: a request that was not refused
+// by this service carries no such attribute at all, rather than an "ok" or an
+// empty string. That is asserted in handlers_test.go, because an attribute
+// that is always present says nothing.
+const northstarRefusalCause = "northstar.payment.refusal_cause"
+
+const (
+	// The stated amount or currency did not confirm the recorded proposal.
+	// Nothing was mutated: the payment is still `proposed`.
+	refusalAmountMismatch = "amount_mismatch"
+	// The payment had already been executed. Also unmutated -- but for the
+	// opposite reason: the money has already moved, once.
+	refusalAlreadyExecuted = "already_executed"
+)
+
+// refuse records the cause on the current server span and writes the 409.
+//
+// The two are done together, in one function, deliberately: they are two
+// halves of one fact, and every previous "fix one site, miss its sibling"
+// defect in this project came from having two places to keep in step. A new
+// 409 cause added here cannot forget the attribute, because there is no way
+// to write the response without it.
+func refuse(ctx context.Context, w http.ResponseWriter, cause, message string) {
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.String(northstarRefusalCause, cause),
+	)
+	writeError(w, http.StatusConflict, message)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
@@ -188,7 +251,13 @@ func newRouter(s *store) http.Handler {
 				// statuses settlement-agent's mcp_tools.py documents as
 				// surfacing meaningfully through the MCP layer. Nothing is
 				// mutated on this path: the payment stays proposed.
-				writeError(w, http.StatusConflict,
+				//
+				// `refuse` also records WHICH of this service's two 409
+				// causes this is (rulings R23/R18). The status code alone
+				// cannot tell this apart from the already-executed case
+				// below, and a 4xx leaves the span Unset, so without the
+				// attribute a trace shows a refusal with no cause.
+				refuse(r.Context(), w, refusalAmountMismatch,
 					"stated amount does not match the proposal")
 				return
 			}
@@ -198,7 +267,14 @@ func newRouter(s *store) http.Handler {
 			case errors.Is(err, ErrNotFound):
 				writeError(w, http.StatusNotFound, "payment not found")
 			case errors.Is(err, ErrExecuted):
-				writeError(w, http.StatusConflict, "payment already executed")
+				// The other 409, and the reason the attribute above needs a
+				// second value rather than a boolean: this refusal means the
+				// money HAS moved, once, which is the opposite fact from an
+				// amount mismatch, where nothing moved at all. Reading a bare
+				// 409 as "the payment did not happen" is right above and
+				// wrong here, and nothing in the response distinguishes them.
+				refuse(r.Context(), w, refusalAlreadyExecuted,
+					"payment already executed")
 			case err != nil:
 				writeError(w, http.StatusInternalServerError, "unexpected error")
 			default:

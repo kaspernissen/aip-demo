@@ -51,13 +51,15 @@ Usage: setup-kind.sh [--stage N]
                           [installs]
   --stage 2   Governed:   stage 1, on a Cilium dataplane -- the cluster is
                           created with kind's default CNI disabled
-                          [installs Cilium, SPIFFE/SPIRE and agentgateway.
-                          The gateway is in the MCP path as of M2.1 Task 3
-                          and verifies a SPIRE-issued JWT-SVID on every MCP
-                          call as of Task 4; it still carries no
-                          authorization policy. Kyverno and the Policy
-                          Decision Service are part of this stage in the
-                          design but are NOT installed yet. cert-manager is
+                          [installs Cilium, SPIFFE/SPIRE, agentgateway and
+                          the Policy Decision Service. The gateway is in the
+                          MCP path as of M2.1 Task 3, verifies a
+                          SPIRE-issued JWT-SVID on every MCP call as of
+                          Task 4, and as of M2.2 Task 4 asks the PDS for a
+                          permit/deny on every tools/call -- FAIL-CLOSED, so
+                          a PDS outage refuses payments rather than waving
+                          them through. Kyverno is part of this stage in the
+                          design but is NOT installed yet. cert-manager is
                           NOT installed and is not needed: the pinned SPIRE
                           chart only uses it for optional features this
                           install does not enable -- see
@@ -377,14 +379,41 @@ if [[ "${STAGE}" -ge 2 ]]; then
   # and the `rollout status` wait below drives a settlement -- so the gateway is
   # up before any request can reach it. If a future step ever drives traffic
   # between those two points, this block has to move.
-  echo -e "${BLUE}Step 9b/9 (stage 2+): Installing agentgateway...${NC}"
+  # M2.2 Task 4: the Policy Decision Service, deployed BEFORE the gateway that
+  # calls it. The ordering is not cosmetic. The gateway's guardrail is
+  # `failureMode: failClosed`, so between the gateway coming up and the PDS
+  # becoming Ready every `tools/call` is refused -- and refused with the
+  # gateway's own `mcpGuardrails checkRequest failed` outage message, not with
+  # a policy reason. Nothing between these two blocks drives a settlement, so
+  # neither order would leave a real request refused; this order means that if
+  # a future step ever does, the window does not exist. It also fails in the
+  # right place: a PDS that cannot start stops this script here, at its own
+  # `rollout status`, rather than presenting later as a gateway that refuses
+  # everything.
+  #
+  # Built and deployed through rebuild-and-deploy.sh rather than a bare
+  # `kubectl apply`, so this component's image is rebuilt from source like
+  # every other one (it is registered in that script's COMPONENTS list).
+  echo -e "${BLUE}Step 9b/9 (stage 2+): Building and deploying the Policy Decision Service...${NC}"
+  "$ROOT/scripts/rebuild-and-deploy.sh" policy-decision-service
+  echo -e "${GREEN}policy-decision-service is up on 9100.${NC}"
+
+  echo -e "${BLUE}Step 9c/9 (stage 2+): Installing agentgateway...${NC}"
   kubectl create configmap agentgateway-config \
     --namespace northstar-platform \
     --from-file=config.yaml="$ROOT/deploy/platform/agentgateway/config.yaml" \
     --dry-run=client -o yaml | kubectl apply -f -
   kubectl apply -f "$ROOT/deploy/platform/agentgateway/deployment.yaml"
+  # A ConfigMap change is invisible to a running pod here: this config is
+  # mounted as a volume, and agentgateway reads it once at startup with `-f`.
+  # Without a restart, `kubectl apply` reports the ConfigMap updated and the
+  # gateway goes on running M2.1's policy-free config -- which, since the
+  # milestone's whole claim is a refusal, would present as the €6,200 being
+  # paid out with the committed config and the live ConfigMap in perfect
+  # agreement. Restart, then wait.
+  kubectl -n northstar-platform rollout restart deployment/agentgateway
   kubectl -n northstar-platform rollout status deployment/agentgateway --timeout=120s
-  echo -e "${GREEN}agentgateway is up (in the MCP path, permitting everything -- no policy yet).${NC}"
+  echo -e "${GREEN}agentgateway is up, calling the PDS on every tools/call (fail-closed).${NC}"
 fi
 
 # A9: a stray port-forward from another cluster on this machine (e.g.

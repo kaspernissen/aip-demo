@@ -315,7 +315,7 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (also run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 52, payments-mcp 9, payments-api (Go) 15,
+claims-agent 16, settlement-agent 52, payments-mcp 9, payments-api (Go) 20,
 customer-ui (vitest) 6 — all passing. (This row was stale at 19 for
 settlement-agent from before M1.2 Tasks 1-4 added the PydanticAI agent's own
 tests — `tests/unit/test_telemetry_contract_counts.py` cannot see per-service
@@ -363,7 +363,19 @@ mismatched amount and a mismatched currency each refused with 409 *and* leaving
 the payment proposed, a missing body and an amount-less body each refused with
 400, the half-cent epsilon absorbing float representation noise, and that same
 epsilon still refusing a one-cent difference. Re-measured with `GOTOOLCHAIN=local
-GOPROXY=off go test ./... -list '.*'` → 15, not counted by hand.)
+GOPROXY=off go test ./... -list '.*'` → 15, not counted by hand. Grown again
+by M2.2 Task 4, payments-api 15→20, for rulings R23/R18: that task added one
+`northstar.payment.refusal_cause` span attribute naming which of this
+service's two 409 causes refused an execution, because the amount-mismatch
+refusal added by D1 and the already-executed refusal are indistinguishable in
+a trace otherwise — both are `http.response.status_code=409`, and a 4xx leaves
+the server span `Unset`, so neither the code nor the status separates them.
+The five new Go tests read the attribute off a real recorded span via an
+in-memory `tracetest.SpanRecorder` rather than trusting the call site, and
+cover: each of the two causes recorded correctly, the two values being
+distinct at all, the attribute being ABSENT on a successful execution (so its
+presence means 'refused here'), and the `northstar.` prefix that marks it as
+ours rather than a semantic convention. Re-measured the same way → 20.)
 customer-ui's suite includes its own
 A19 regression test for the traceparent-across-await fix described below
 (`apps/customer-ui/NOTES.md` §2) — worth naming explicitly, since it's the

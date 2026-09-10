@@ -40,12 +40,26 @@ fi
 # NOTE: macOS ships bash 3.2 with no associative arrays (`declare -A`), and
 # this repo has no bash 4+ available, so the map is an indexed array of
 # "name:context:namespace" triples instead. Append new components here.
+#
+# M2.2 Task 4 appended policy-decision-service. It is registered here rather
+# than applied by hand so it is rebuilt exactly like the others: a component
+# outside this list is a component that silently keeps running last week's
+# image after someone edits its source, and this one's source is the policy.
+#
+# It is a STAGE 2 component (northstar-platform does not exist at stage 1),
+# which is why scripts/setup-kind.sh names it inside a `STAGE -ge 2` block
+# rather than adding it to the stage-1 list at Step 9. A bare
+# `./scripts/rebuild-and-deploy.sh` with no arguments does still build it: this
+# script has no notion of stages and never has, and against a stage-1 cluster
+# this component's apply would fail on the missing namespace exactly as
+# agentgateway's ConfigMap would.
 COMPONENTS=(
   "payments-api:systems/payments-api:northstar-systems"
   "payments-mcp:tools/payments-mcp:northstar-tools"
   "settlement-agent:agents/settlement-agent:northstar-agents"
   "claims-agent:agents/claims-agent:northstar-agents"
   "customer-ui:apps/customer-ui:northstar-agents"
+  "policy-decision-service:platform/policy-decision-service:northstar-platform"
 )
 
 component_names() {

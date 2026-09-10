@@ -131,6 +131,13 @@ JWT_ISSUER = (
 )
 SETTLEMENT_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/settlement-agent"
 GATEWAY_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-platform/sa/agentgateway"
+# M2.2 Task 4: the third registered workload. Registered, but NOT fetched --
+# the PDS's pod carries no Workload API mount, because the identity it decides
+# on is the caller's, handed to it by the gateway as an already-verified
+# `jwt.sub`. See deploy/platform/spire/registration.yaml's closing note.
+PDS_SPIFFE_ID = (
+    f"spiffe://{TRUST_DOMAIN}/ns/northstar-platform/sa/policy-decision-service"
+)
 # The workload-facing Workload API socket, as READ from the pinned chart's
 # rendered output rather than assumed: `helm template spire spiffe/spire
 # --version 0.30.1` renders the spiffe-oidc-discovery-provider (the chart's own
@@ -451,12 +458,20 @@ def test_every_cluster_spiffeid_sets_the_controller_managers_class_name():
     apply` succeeds, the CR's status stays empty, no entry is created, and the
     only symptom is a workload that cannot fetch an SVID. The chart's own
     install NOTES say so in as many words.
+
+    **M2.2 Task 4 widened the count below from two to three**: the Policy
+    Decision Service is the third registered workload
+    (deploy/platform/spire/registration.yaml). The check's intent is unchanged
+    -- every ClusterSPIFFEID in this file must carry the controller-manager's
+    className -- and the count is what makes a silently *absent* CR fail here
+    as well as a classless one. It is still an exact count, deliberately: a
+    fourth identity appearing in this trust domain without review still fails.
     """
     docs = _yaml_docs(SPIRE_REGISTRATION)
     crs = [d for d in docs if d.get("kind") == "ClusterSPIFFEID"]
-    assert len(crs) == 2, (
-        f"expected exactly two ClusterSPIFFEID resources (settlement-agent and "
-        f"agentgateway); found {len(crs)}"
+    assert len(crs) == 3, (
+        f"expected exactly three ClusterSPIFFEID resources (settlement-agent, "
+        f"agentgateway and policy-decision-service); found {len(crs)}"
     )
     for cr in crs:
         name = cr["metadata"]["name"]
@@ -496,11 +511,16 @@ def test_both_workloads_are_attested_on_namespace_and_service_account():
 
 
 def test_the_registered_spiffe_ids_are_built_from_this_projects_trust_domain():
-    """The ID template must render the two IDs the rest of the repo names.
+    """The ID template must render the IDs the rest of the repo names.
 
     Rendered by substitution here rather than asserted as a literal, so the
     guard fails if the *template* changes shape (say to `/sa/{{...}}/ns/{{...}}`)
     as well as if the trust domain drifts.
+
+    **M2.2 Task 4 widened `expected` from two entries to three**, adding the
+    Policy Decision Service. Nothing about the check's shape changed: it is
+    still an exact set comparison, so an unreviewed fourth identity fails, and
+    each entry's template is still rendered rather than matched as a string.
     """
     crs = {
         d["metadata"]["name"]: d["spec"]
@@ -510,6 +530,9 @@ def test_the_registered_spiffe_ids_are_built_from_this_projects_trust_domain():
     expected = {
         "northstar-settlement-agent": ("northstar-agents", "settlement-agent", SETTLEMENT_SPIFFE_ID),
         "northstar-agentgateway": ("northstar-platform", "agentgateway", GATEWAY_SPIFFE_ID),
+        "northstar-policy-decision-service": (
+            "northstar-platform", "policy-decision-service", PDS_SPIFFE_ID,
+        ),
     }
     assert set(crs) == set(expected), (
         f"unexpected ClusterSPIFFEID names: {sorted(crs)} vs {sorted(expected)}"
@@ -917,32 +940,76 @@ def test_the_gateway_trusts_exactly_the_issuer_spire_is_configured_to_mint():
         )
 
 
-def test_the_gateway_carries_no_authorization_policy_yet():
-    """M2.1 makes identity real; a later milestone decides what to do with it.
+def test_the_gateway_carries_only_the_reviewed_authorization_mechanism():
+    """**SUPERSEDES `test_the_gateway_carries_no_authorization_policy_yet`
+    (M2.1 Task 4). Read this before assuming a guard was relaxed.**
 
-    Structural, over the parsed document, so a comment discussing
-    `mcpAuthorization` cannot trip it and an actual rule block cannot hide from
-    it. Enumerated over every bind, listener and route rather than the first of
-    each: a policy on a second listener is just as much a policy.
+    That guard's own docstring read: "M2.1 makes identity real; a later
+    milestone decides what to do with it" and, in its failure message, "The
+    denial is a later milestone." Its forbidden set was
+    `("mcpAuthorization", "authorization", "extAuthz", "mcpGuardrails")`.
+
+    That later milestone is M2.2, and its Task 4 is what added `mcpGuardrails`
+    -- the whole point of the milestone. So this is not an M2.1 measurement
+    quietly widened to accommodate new code: it is a scope assertion that
+    named its own expiry condition, reaching it. The distinction matters
+    because the two are indistinguishable from the diff alone, which is why it
+    is written out here rather than left to a commit message.
+
+    What is deliberately preserved is the property the original guard actually
+    protected: that no *unreviewed* authorization mechanism appears on this
+    gateway. Three of the four forbidden keys are still forbidden. A native
+    `mcpAuthorization` CEL rule, a generic `authorization` block or an
+    `extAuthz` hook would each be a second, independent place a payment could
+    be permitted or denied -- with no test asserting its shape, no fail-closed
+    guarantee, and nothing in a trace distinguishing its decision from the
+    PDS's. `mcpGuardrails` moves from "forbidden" to "required, and asserted in
+    detail": `tests/unit/test_stage2_pds_config.py` pins its failure mode, its
+    phase, its target and its identity contract, key by key. The net number of
+    unchecked authorization mechanisms this file permits is still zero.
+
+    Structural, over the parsed document, for the original's reason: a comment
+    discussing `mcpAuthorization` must not trip it (this config now carries
+    several paragraphs of them) and an actual rule block must not hide from it.
+    Still enumerated over every bind, listener and route, and over
+    `frontendPolicies`, which is a document-level block Task 3's tracing lives
+    in and therefore a third place a policy can hide.
     """
     config = _yaml(GATEWAY_CONFIG)
-    forbidden = ("mcpAuthorization", "authorization", "extAuthz", "mcpGuardrails")
+    forbidden = ("mcpAuthorization", "authorization", "extAuthz")
     offenders = []
     for where, node in _all_routes(config) + _all_listeners(config):
         policies = node.get("policies") or {}
         present = [key for key in forbidden if key in policies]
         if present:
             offenders.append(f"{where}: {present}")
-    # `frontendPolicies` is a document-level block (Task 3's tracing lives
-    # there), so it is a third place a policy can hide.
     frontend = config.get("frontendPolicies") or {}
     present = [key for key in forbidden if key in frontend]
     if present:
         offenders.append(f"frontendPolicies: {present}")
     assert not offenders, (
-        "M2.1 adds JWT verification only; found authorization policy at:\n  "
+        "this gateway's only authorization mechanism is `mcpGuardrails`, which "
+        "tests/unit/test_stage2_pds_config.py asserts key by key -- including "
+        "that it is fail-closed. Found a second, unasserted one at:\n  "
         + "\n  ".join(offenders)
-        + "\nThe denial is a later milestone."
+        + "\nA second place a payment can be permitted is a second place the "
+        "platform can stop governing without any test noticing."
+    )
+    # The other half of "only": the reviewed mechanism must actually be there.
+    # Without this the test above passes on a gateway with no authorization at
+    # all, which is precisely the M2.1 state this one supersedes -- a guard
+    # that permits the thing it replaced is not a replacement.
+    governed = [
+        where
+        for where, route in _all_routes(config)
+        if ((route.get("policies") or {}).get("mcpGuardrails") or {}).get("processors")
+    ]
+    assert governed, (
+        "no route on this gateway carries an mcpGuardrails processor. M2.2 "
+        "replaced M2.1's 'no authorization yet' with 'exactly this "
+        "authorization', so an absent guardrail is now a regression, not a "
+        "prior state -- the gateway would permit every tool call it can "
+        "authenticate."
     )
 
 

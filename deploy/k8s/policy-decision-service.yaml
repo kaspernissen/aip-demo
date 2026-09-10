@@ -1,0 +1,145 @@
+# M2.2 Task 4: the Policy Decision Service, the component that turns "the
+# platform knows who is calling" (M2.1) into "the platform decides whether the
+# call becomes an effect".
+#
+# agentgateway calls it over gRPC on every MCP `tools/call`
+# (`mcpGuardrails` in deploy/platform/agentgateway/config.yaml) and it answers
+# permit or deny. It is the only thing standing between settlement-agent's
+# €6,200 execute_payment and payments-api actually moving the money.
+#
+# It lives in `northstar-platform`, with the gateway and SPIRE, rather than in
+# `northstar-tools` or beside the agents: it is platform machinery, not a tool
+# an agent may call and not an agent's own dependency. Nothing in
+# northstar-agents can reach it (see deploy/platform/cilium-policies.yaml).
+---
+# A dedicated ServiceAccount, for the same measured reason
+# deploy/k8s/settlement-agent.yaml and deploy/platform/agentgateway/deployment.yaml
+# each have one: SPIRE's ID template is
+# spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}
+# (deploy/platform/spire/registration.yaml), so a pod running as `default`
+# attests as `spiffe://northstar.local/ns/northstar-platform/sa/default` -- an
+# identity that verifies perfectly and identifies nothing. That was measured in
+# M2.1, on this cluster, for settlement-agent, before it was given a
+# ServiceAccount of its own.
+#
+# Grants no RBAC. This pod makes no Kubernetes API calls.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: policy-decision-service
+  namespace: northstar-platform
+  labels:
+    app: policy-decision-service
+    northstar.io/plane: platform
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: policy-decision-service
+  namespace: northstar-platform
+  labels:
+    app: policy-decision-service
+    northstar.io/plane: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: policy-decision-service
+  template:
+    metadata:
+      labels:
+        app: policy-decision-service
+        northstar.io/plane: platform
+    spec:
+      serviceAccountName: policy-decision-service
+      containers:
+        - name: policy-decision-service
+          # scripts/rebuild-and-deploy.sh's convention:
+          # localhost:5001/northstar/<component>:dev, built from
+          # platform/policy-decision-service and pushed to the kind registry.
+          # `Always` because the tag never changes -- a rebuilt `:dev` would
+          # otherwise be ignored in favour of the node's cached layer.
+          image: localhost:5001/northstar/policy-decision-service:dev
+          imagePullPolicy: Always
+          env:
+            # The same three OTLP variables every other service here sets, so
+            # the `policy.decision` span reaches the same collector and lands
+            # in the same trace as the gateway's `tools/call` and the model's
+            # reasoning. pds/telemetry.py reads them through the standard
+            # `OTEL_EXPORTER_OTLP_*` names rather than any of our own, so this
+            # manifest is the only place they are named.
+            - name: OTEL_SERVICE_NAME
+              value: policy-decision-service
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+          # No OTEL_SEMCONV_STABILITY_OPT_IN here, unlike the three services
+          # that set it: that opt-in converges *HTTP client* instrumentation on
+          # the stable attribute spelling, and this service makes no outbound
+          # HTTP call of its own except the exporter's, which is not
+          # instrumented. Setting it would be cargo-culted from a sibling
+          # manifest rather than doing anything.
+          ports:
+            - name: grpc
+              containerPort: 9100
+          # Ruling R26: a TCP-socket probe on the gRPC port, NOT a gRPC health
+          # check. `grpcio-health-checking` is deliberately outside this
+          # service's pinned dependency closure (requirements.txt, resolved
+          # once under ruling R4) and R4 forbids re-resolving that closure to
+          # add it. A TCP connect proves the gRPC server has called
+          # `add_insecure_port` and `start()`, which is the transition this
+          # probe exists to detect; it cannot prove the servicer is registered,
+          # and pds/server.py registers it before the port is opened.
+          #
+          # This probe is load-bearing in a way it would not be under
+          # fail-open. The gateway's guardrail is `failureMode: failClosed`, so
+          # a PDS the gateway cannot reach refuses every payment. A pod that
+          # never becomes Ready therefore does not degrade the demo, it stops
+          # it -- and it stops it with a refusal that looks exactly like a
+          # policy denial to anyone reading the agent's reply. That is also why
+          # the ingress network policy for this pod must admit the node (ruling
+          # R6): kubelet dials this probe from the host, and a dropped probe
+          # packet becomes "every payment refused", with nothing in the output
+          # mentioning networking.
+          readinessProbe:
+            tcpSocket:
+              port: 9100
+            initialDelaySeconds: 2
+          # A liveness probe as well, which the other services here do not
+          # have, for a reason specific to this one: `pds/server.py`'s main
+          # thread blocks on a `threading.Event` and the gRPC server runs on a
+          # thread pool, so a process that has stopped serving does not
+          # necessarily exit. Under fail-closed a wedged-but-running PDS is
+          # indistinguishable from a policy that refuses everything, so it is
+          # worth restarting rather than leaving up.
+          livenessProbe:
+            tcpSocket:
+              port: 9100
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # Matched to payments-mcp's values, which is the closest comparable
+          # workload in this repo: a CPython 3.13 service whose footprint is
+          # interpreter plus one framework (grpcio and the OTel SDK here). No
+          # independent measurement of this pod's idle RSS is published,
+          # deliberately -- the numbers below are a sibling's measurement
+          # reused, not this one's.
+          resources:
+            requests:
+              memory: 96Mi
+              cpu: 50m
+            limits:
+              memory: 192Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: policy-decision-service
+  namespace: northstar-platform
+spec:
+  selector:
+    app: policy-decision-service
+  ports:
+    - name: grpc
+      port: 9100
+      targetPort: 9100

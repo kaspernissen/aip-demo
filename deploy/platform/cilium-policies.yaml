@@ -77,3 +77,77 @@ spec:
     - fromEntities:
         - host
         - remote-node
+---
+# M2.2 Task 4: the same argument, applied to the Policy Decision Service.
+#
+# A policy service anything can call is a policy service anything can
+# impersonate answers from. The PDS is not a tool and not an agent's
+# dependency: exactly one client in this cluster has any business opening a
+# connection to it, and that is agentgateway, on the guardrail hook. Everything
+# else -- settlement-agent, claims-agent, customer-ui, payments-mcp -- is
+# denied by the mere presence of the `ingress` block below.
+#
+# What a bypass would buy here is different from the payments-mcp case, and
+# worth being precise about rather than asserting the same sentence twice.
+# Reaching payments-mcp directly skips the decision and moves money. Reaching
+# the PDS directly moves nothing -- but the ExtMCP contract is unauthenticated
+# on the wire (`add_insecure_port`; no mTLS in M2.2) and the caller identity the
+# policy decides on arrives as a *field in the request*,
+# `metadata_context.caller`, which the gateway fills from an already-verified
+# `jwt.sub`. So anything that can call this service can claim to be
+# settlement-agent and be told, truthfully, what the policy would answer. That
+# is an oracle, not an authorisation: a confidentiality problem rather than an
+# integrity one. It is closed here, on the dataplane, rather than by adding
+# mTLS that this service's pinned dependency closure does not carry (ruling
+# R4).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: policy-decision-service-gateway-only
+  namespace: northstar-platform
+  labels:
+    northstar.io/milestone: m2.2
+spec:
+  # Selects the PDS, not its callers -- and specifically NOT an empty
+  # selector, which would match every endpoint in `northstar-platform` and
+  # apply default-deny to all of SPIRE (server, agent, CSI driver, OIDC
+  # discovery provider) and to agentgateway itself. In this namespace that
+  # mistake would not break one service, it would break the trust root.
+  endpointSelector:
+    matchLabels:
+      app: policy-decision-service
+  ingress:
+    # 1. The gateway, and nothing else in the mesh.
+    #
+    # Both labels, for the reason spelled out on the payments-mcp rule above.
+    # Note that here the caller happens to live in the *same* namespace as the
+    # protected endpoint, which makes the namespace label look redundant. It is
+    # not: a Cilium `fromEndpoints` selector is not implicitly scoped to the
+    # policy's own namespace the way a core NetworkPolicy's `podSelector` is,
+    # so without the namespace label this would read "any pod anywhere
+    # labelled app: agentgateway".
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: northstar-platform
+            app: agentgateway
+      toPorts:
+        - ports:
+            - port: "9100"
+              protocol: TCP
+
+    # 2. The node itself, for the probes. RULING R6 -- and the one rule in this
+    # file whose absence would be actively misleading rather than merely
+    # broken.
+    #
+    # deploy/k8s/policy-decision-service.yaml probes 9100 with `tcpSocket`
+    # (ruling R26), and kubelet dials that from the host, not from a pod.
+    # Without this the probe is dropped, the pod never goes Ready -- and
+    # because the gateway's guardrail is `failureMode: failClosed`, a PDS the
+    # gateway cannot reach REFUSES EVERY PAYMENT. The demo would then show the
+    # €6,200 refused, which is exactly the outcome M2.2 exists to produce, for
+    # entirely the wrong reason, with the €5,800 control refused alongside it
+    # and nothing in the output mentioning networking. `remote-node` is
+    # included on the same single-node reasoning as the payments-mcp rule.
+    - fromEntities:
+        - host
+        - remote-node

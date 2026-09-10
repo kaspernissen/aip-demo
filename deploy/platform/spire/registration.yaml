@@ -79,6 +79,28 @@ spec:
     - "k8s:ns:{{ .PodMeta.Namespace }}"
     - "k8s:sa:{{ .PodSpec.ServiceAccountName }}"
   fallback: false
+---
+# M2.2 Task 4: the Policy Decision Service. Same template, same two attestation
+# selectors, same non-fallback, for the same reasons as the two above; the
+# rendered ID is
+#   spiffe://northstar.local/ns/northstar-platform/sa/policy-decision-service
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: northstar-policy-decision-service
+spec:
+  className: northstar-platform-spire
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  podSelector:
+    matchLabels:
+      app: policy-decision-service
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: northstar-platform
+  workloadSelectorTemplates:
+    - "k8s:ns:{{ .PodMeta.Namespace }}"
+    - "k8s:sa:{{ .PodSpec.ServiceAccountName }}"
+  fallback: false
 # NOTE on the gateway entry specifically: agentgateway does NOT fetch this
 # SVID in M2.1 and its pod deliberately carries no Workload API mount. It
 # verifies JWT-SVIDs by fetching a JWKS over HTTP; it never presents one.
@@ -89,3 +111,24 @@ spec:
 # M2.2's Policy Decision Service is expected to need the gateway's own
 # identity when it starts making decisions on this hop. Recorded here rather
 # than left as an unexplained resource.
+#
+# THE SAME NOTE APPLIES, VERBATIM, TO THE PDS ENTRY ADDED ABOVE, and it is
+# worth stating rather than leaving a reader to infer it from the missing
+# volume: the PDS does not fetch an SVID either, and
+# deploy/k8s/policy-decision-service.yaml carries no `csi.spiffe.io` mount.
+# It does not need one. The identity it decides *on* is the caller's, handed to
+# it by the gateway as an already-verified `jwt.sub`
+# (deploy/platform/agentgateway/config.yaml, `metadata: {caller: 'jwt.sub'}`),
+# and it presents nothing of its own: the ExtMCP hop between the gateway and
+# the PDS is plain gRPC, protected by a CiliumNetworkPolicy rather than by
+# mTLS (deploy/platform/cilium-policies.yaml).
+#
+# So why register it at all? Because the ServiceAccount in
+# deploy/k8s/policy-decision-service.yaml exists specifically to make this
+# pod's attested identity name it rather than `sa/default`, and an identity
+# nothing registers is a string, not an identity. The moment the gateway-to-PDS
+# hop gets mTLS -- the obvious next step for a hop that currently trusts the
+# dataplane -- this is the entry that makes the PDS's own certificate possible,
+# and the identity a future audit record would name as the decider. Registering
+# it now costs one CR and keeps the set of identities in this trust domain
+# in-tree and reviewable, which is the property this whole file exists for.

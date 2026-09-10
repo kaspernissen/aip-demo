@@ -5,7 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func newTestServer() http.Handler {
@@ -345,5 +350,162 @@ func TestPaymentIDsAreDeterministicAndSequential(t *testing.T) {
 	}
 	if second.PaymentID != "PAY-000002" {
 		t.Errorf("got second paymentId %q, want PAY-000002", second.PaymentID)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The refusal cause on the span (M2.2 rulings R23/R18).
+//
+// After M2.2 Task 4 there are two refusal mechanisms at two layers: the Policy
+// Decision Service denies an over-limit `execute_payment` before it ever
+// reaches this service, and this service refuses an execution that either
+// fails to confirm the recorded amount or has already happened. All three
+// refusals reach a reader of the trace as one thing -- a 409 -- and a 4xx
+// leaves an OTel server span `Unset`, so the span status cannot separate them
+// either. `northstar.payment.refusal_cause` is the one attribute that answers
+// "which layer refused this, and why?" for the two causes that belong to this
+// service.
+//
+// These tests read the attribute off a REAL recorded span rather than trusting
+// the call site, because the two things that could break this are both
+// invisible at the call site: an attribute set on a span that is not the one
+// exported (the handler's own context vs. otelhttp's), and a handler wired
+// without the otelhttp wrapper at all, where `trace.SpanFromContext` returns a
+// no-op span that silently drops every attribute. Both would leave a
+// source-reading assertion green.
+// ---------------------------------------------------------------------------
+
+// recordSpans installs a TracerProvider with an in-memory recorder as the
+// global provider for the duration of one test, and returns the recorder.
+//
+// otelhttp.NewHandler resolves the global provider at request time, so this
+// has to be the global one and not a local handle. The previous provider is
+// restored on cleanup so the tests in this file stay order-independent.
+func recordSpans(t *testing.T) *tracetest.SpanRecorder {
+	t.Helper()
+	recorder := tracetest.NewSpanRecorder()
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(
+		sdktrace.WithSpanProcessor(recorder),
+	))
+	t.Cleanup(func() { otel.SetTracerProvider(previous) })
+	return recorder
+}
+
+// executeSpanAttributes returns the attributes of the recorded server span for
+// the execute route.
+//
+// Selected by span name rather than by position: `propose` records a span too,
+// and every test below proposes before it executes, so taking the first or the
+// last recorded span would be reading a different request's span half the time.
+func executeSpanAttributes(t *testing.T, recorder *tracetest.SpanRecorder) map[string]string {
+	t.Helper()
+	const name = "POST /payments/{paymentId}/execute"
+	var found []sdktrace.ReadOnlySpan
+	for _, span := range recorder.Ended() {
+		if span.Name() == name {
+			found = append(found, span)
+		}
+	}
+	if len(found) != 1 {
+		var names []string
+		for _, span := range recorder.Ended() {
+			names = append(names, span.Name())
+		}
+		t.Fatalf("expected exactly one %q span; recorded %v", name, names)
+	}
+	attributes := map[string]string{}
+	for _, kv := range found[0].Attributes() {
+		attributes[string(kv.Key)] = kv.Value.Emit()
+	}
+	return attributes
+}
+
+func TestAMismatchedAmountRecordsItsRefusalCauseOnTheSpan(t *testing.T) {
+	recorder := recordSpans(t)
+	srv := newTestServer()
+	payment := proposePayment(t, srv, "CLM-1842", 6200)
+
+	rec := executePayment(srv, payment.PaymentID,
+		map[string]any{"amount": 4000.0, "currency": "EUR"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("got status %d, want 409 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	got := executeSpanAttributes(t, recorder)[northstarRefusalCause]
+	if got != refusalAmountMismatch {
+		t.Errorf("span attribute %s is %q, want %q -- without it this 409 is "+
+			"indistinguishable in a trace from an already-executed payment, "+
+			"and from the PDS's own denial",
+			northstarRefusalCause, got, refusalAmountMismatch)
+	}
+}
+
+func TestAnAlreadyExecutedPaymentRecordsItsRefusalCauseOnTheSpan(t *testing.T) {
+	recorder := recordSpans(t)
+	srv := newTestServer()
+	payment := proposePayment(t, srv, "CLM-1842", 6200)
+
+	body := map[string]any{"amount": 6200.0, "currency": "EUR"}
+	if rec := executePayment(srv, payment.PaymentID, body); rec.Code != http.StatusOK {
+		t.Fatalf("first execute: got status %d, want 200 (body: %s)",
+			rec.Code, rec.Body.String())
+	}
+	// Fresh recorder for the second call, so `executeSpanAttributes` reads the
+	// refused execution's span and not the successful one's.
+	recorder = recordSpans(t)
+	if rec := executePayment(srv, payment.PaymentID, body); rec.Code != http.StatusConflict {
+		t.Fatalf("second execute: got status %d, want 409 (body: %s)",
+			rec.Code, rec.Body.String())
+	}
+
+	got := executeSpanAttributes(t, recorder)[northstarRefusalCause]
+	if got != refusalAlreadyExecuted {
+		t.Errorf("span attribute %s is %q, want %q -- this refusal means the "+
+			"money HAS moved, which is the opposite fact from a mismatch, and "+
+			"the 409 alone says neither",
+			northstarRefusalCause, got, refusalAlreadyExecuted)
+	}
+}
+
+func TestTheTwoRefusalCausesAreDistinguishable(t *testing.T) {
+	// The property both tests above exist to establish, stated once directly:
+	// a single value would leave the trace exactly as unable to answer "which
+	// layer refused this" as no attribute at all.
+	if refusalAmountMismatch == refusalAlreadyExecuted {
+		t.Fatalf("both 409 causes report %q, so the attribute distinguishes "+
+			"nothing", refusalAmountMismatch)
+	}
+}
+
+func TestASuccessfulExecutionRecordsNoRefusalCause(t *testing.T) {
+	// Absence is the signal for "not refused here". An attribute present on
+	// every execution -- say an "ok" or an empty string -- would be indexed,
+	// grouped and charted while distinguishing nothing, and would make
+	// "refused by payments-api" unanswerable by the attribute's presence.
+	recorder := recordSpans(t)
+	srv := newTestServer()
+	payment := proposePayment(t, srv, "CLM-1842", 6200)
+
+	rec := executePayment(srv, payment.PaymentID,
+		map[string]any{"amount": 6200.0, "currency": "EUR"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got status %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	if got, present := executeSpanAttributes(t, recorder)[northstarRefusalCause]; present {
+		t.Errorf("a successful execution recorded %s=%q; the attribute must be "+
+			"absent when this service did not refuse", northstarRefusalCause, got)
+	}
+}
+
+func TestTheRefusalCauseAttributeIsNorthstarPrefixed(t *testing.T) {
+	// House convention, and the reason it is a convention: a reader must be
+	// able to tell at a glance which attributes this project invented and
+	// which the frameworks emit. No OpenTelemetry semantic convention covers a
+	// payment refusal, so this name is ours -- and naming it `payment.*` or
+	// `http.*` would claim a shared vocabulary that does not exist.
+	if !strings.HasPrefix(northstarRefusalCause, "northstar.") {
+		t.Errorf("attribute %q must carry the northstar. prefix", northstarRefusalCause)
 	}
 }

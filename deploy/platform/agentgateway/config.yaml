@@ -145,6 +145,128 @@ binds:
           # SPIRE CA in order to fetch a public key set.
           jwks:
             url: http://spire-spiffe-oidc-discovery-provider.northstar-platform.svc.cluster.local/keys
+        # M2.2 Task 4: the decision. `mcpGuardrails` is a route-level policy and
+        # a SIBLING of `jwtAuth` above -- the two do different jobs on the same
+        # hop. `jwtAuth` establishes *who* is calling; this establishes *what*
+        # that caller may do. Losing either makes the other meaningless: an
+        # unauthenticated caller with a policy is a policy deciding on a
+        # self-asserted name, and an authenticated caller with no policy is
+        # M2.1, which permitted every tool call it could authenticate.
+        #
+        # EVERY KEY AND ENUM VALUE HERE IS camelCase, and this shape was
+        # established by iterating against the pinned image's own validator
+        # (M2.2 Task 1), not read off documentation -- four of the five
+        # spellings the M2.2 plan reconstructed were wrong. Validate before
+        # deploying, from deploy/platform/agentgateway:
+        #   docker run --rm -v .:/c cr.agentgateway.dev/agentgateway:v1.5.0 \
+        #     --validate-only -f /c/config.yaml
+        # A rejected config names the offending key. Note that the validator
+        # goes on to fetch the JWKS, so reaching that stage already proves the
+        # schema parsed. (Same no-dollar-sign constraint as the rest of this
+        # file: the gateway expands environment variables in the raw text,
+        # comments included, before parsing.)
+        mcpGuardrails:
+          processors:
+            # `kind: remote` is the external hook -- the ExtMCP gRPC service in
+            # platform/policy-decision-service, serving
+            # `agentgateway.dev.ext_mcp.ExtMcp`.
+            - kind: remote
+              # Only `tools/call` is sent for a decision, at the REQUEST phase:
+              # before the call reaches payments-mcp, which is the only moment
+              # at which a refusal is still a refusal rather than a regret.
+              # `initialize` and `notifications/initialized` carry no tool and
+              # no amount, so there is nothing to decide about them -- and
+              # pds/server.py denies any method it is handed other than this
+              # one, so a config change that widened this block would fail
+              # loudly rather than silently permit.
+              methods:
+                "tools/call": request
+              # The right arm of the flattened backend reference -- the same
+              # spelling `frontendPolicies.tracing.host` already uses at the
+              # top of this file. `name:`+`port:` and `backend:` are the other
+              # two arms and exactly one may be set.
+              host: policy-decision-service.northstar-platform.svc.cluster.local:9100
+              # THE SINGLE MOST CONSEQUENTIAL LINE IN THIS MILESTONE.
+              #
+              # agentgateway v1.5.0's `FailureMode` derives `Default` with
+              # `FailOpen` listed first, so omitting this key means a PDS
+              # outage -- a crashed pod, a dropped packet, an OOM kill --
+              # PERMITS EVERY PAYMENT. The demo would keep working, the €6,200
+              # would go out, and nothing anywhere would say the platform had
+              # stopped governing. There is no observable difference between
+              # "fail-open and healthy" and "fail-open and not governing"
+              # until someone reads a trace.
+              #
+              # Fail-closed inverts that: if the decision service cannot
+              # answer, the answer is no. The cost is that a PDS outage stops
+              # payments, which is the correct trade for a component whose
+              # entire job is refusing them, and it is why the PDS's own
+              # readiness probe and its ingress network policy (see
+              # deploy/platform/cilium-policies.yaml, ruling R6) are
+              # load-bearing rather than hygiene.
+              failureMode: failClosed
+              # What the gateway hands the PDS about the caller. `jwt.sub` is a
+              # CEL expression over the token `jwtAuth` above has ALREADY
+              # verified -- signature, issuer, audience and expiry -- so what
+              # arrives at the PDS is an attested subject, which for a JWT-SVID
+              # is the caller's SPIFFE ID. It lands in
+              # `McpRequest.metadata_context` under `caller` (measured, Task 1)
+              # and is exactly what pds/identity.py reads.
+              #
+              # Note what is deliberately NOT here: `jwtAuth.preserveToken:
+              # true` (ruling R14). This delivers the verified subject without
+              # forwarding a live bearer credential to a second service, which
+              # would be a security regression relative to M2.1's config for
+              # no gain at all -- pds/identity.py accepts the `headers` half of
+              # the request and documents that it does not read it.
+              metadata:
+                caller: 'jwt.sub'
+              # `requestHeaders.allowed` IS A STRICT ALLOWLIST, and this is
+              # the one line in this block that was measured wrong before it
+              # was measured right. Recorded in full because the failure was
+              # silent and the fix is counter-intuitive.
+              #
+              # The M2.2 Task 4 brief carried `allowed: ["authorization"]` as
+              # the validated shape. It validates, the gateway starts, the PDS
+              # is called, and the policy decides correctly -- the €6,200 was
+              # refused on the first run with that value. What it does NOT do
+              # is forward `traceparent`, because the list is exhaustive rather
+              # than additive. So `pds/telemetry.context_from_headers` found no
+              # trace context, `extract` returned an empty context, and every
+              # `policy.decision` span started A NEW ROOT TRACE OF ITS OWN. In
+              # Jaeger that reads as the policy working perfectly and the
+              # milestone's observability claim -- the decision appears in the
+              # same trace as the gateway's `tools/call` and the model's
+              # reasoning -- being quietly false. Measured: two orphan
+              # single-span traces, `refs=[]`, service present in Jaeger's
+              # service list, nothing wrong anywhere in any log.
+              #
+              # Three values were then measured against the running cluster,
+              # each by driving one real `tools/call` (`propose_payment`, so no
+              # model tokens were spent) with a minted JWT-SVID and a known
+              # `traceparent`:
+              #   allowed: ["authorization"]              -> orphan root span
+              #   the whole `requestHeaders` block absent -> correctly parented
+              #   allowed: ["traceparent", "tracestate"]  -> correctly parented
+              #
+              # The explicit pair is chosen over the block's absence: the
+              # default's contents were not measured, and naming exactly what
+              # the hook needs is the same argument the network policies in
+              # this repo make. `tracestate` rides with `traceparent` in W3C
+              # trace context and costs nothing; `baggage` is deliberately not
+              # here, because nothing in the PDS reads it.
+              #
+              # `authorization` is deliberately NOT in this list (ruling R14).
+              # It would be inert anyway -- without `preserveToken`, `jwtAuth`
+              # removes the credential from its location on the way out
+              # (`if !self.preserve_token { self.location.remove(req)?; }`,
+              # crates/agentgateway/src/http/jwt.rs) -- but an allowlist is
+              # exactly where a future `preserveToken` would turn an inert
+              # entry into a forwarded bearer token, and pds/identity.py reads
+              # the caller from `metadata_context` and documents that it never
+              # reads a header.
+              requestHeaders:
+                allowed: ["traceparent", "tracestate"]
       backends:
       - mcp:
           targets:
