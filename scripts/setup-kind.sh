@@ -64,8 +64,15 @@ Usage: setup-kind.sh [--stage N]
                           chart only uses it for optional features this
                           install does not enable -- see
                           deploy/platform/spire/values.yaml]
-  --stage 3   Supervised:           + Dapr, Keycloak, reviewer UI, Postgres
-                          [not implemented -- exits]
+  --stage 3   Supervised:           stage 2, on a cluster created with a
+                          fourth host port reserved (8081 -> nodePort 30081,
+                          for reviewer-ui) -- deploy/kind/stage3.yaml.
+                          [as of M3 Task 1, this stage installs exactly what
+                          stage 2 installs: no M3 workload (reviewer-ui, the
+                          senior-settlement-agent identity, the refusal
+                          record, the PDS's new row) exists yet. Later M3
+                          tasks add them; until then "stage 3" only differs
+                          from stage 2 in the cluster's own port mappings]
   --stage 4   Observable:           + OpenSearch, Prometheus
                           [not implemented -- exits]
   --stage 5   Progressive autonomy: + flagd
@@ -76,12 +83,14 @@ Usage: setup-kind.sh [--stage N]
 Each stage installs only what that stage of the demo needs, so the laptop
 runs exactly one stage at a time.
 
-Stage 2 is the current cluster. It must be created FROM deploy/kind/stage2.yaml:
-`networking.disableDefaultCNI` is a create-time kind flag, so it cannot be
-applied to a cluster that already exists, and this script refuses rather than
-layering Cilium on a running default CNI. Note that --stage defaults to 1, so a
-bare `./scripts/setup-kind.sh` builds a stage-1 (kindnet) cluster -- pass
---stage 2 explicitly for the M2.1 dataplane.
+Stage 2 and stage 3 both need `networking.disableDefaultCNI`, a create-time
+kind flag: it cannot be applied to a cluster that already exists, so each
+must be created FROM its own deploy/kind/stageN.yaml (stage 3's only
+difference from stage 2's is the reviewer-ui port reservation), and this
+script refuses rather than layering Cilium on a running default CNI. Note
+that --stage defaults to 1, so a bare `./scripts/setup-kind.sh` builds a
+stage-1 (kindnet) cluster -- pass --stage 2 or --stage 3 explicitly for the
+Cilium dataplane.
 EOF
 }
 
@@ -99,8 +108,8 @@ if ! [[ "$STAGE" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-if [[ "${STAGE}" -gt 2 ]]; then
-  echo "Stage $STAGE is not implemented yet. Stages 1 (Connected) and 2 (Governed: Cilium) are implemented; stages 3-6 arrive in later milestones." >&2
+if [[ "${STAGE}" -gt 3 ]]; then
+  echo "Stage $STAGE is not implemented yet. Stages 1 (Connected), 2 (Governed: Cilium) and 3 (Supervised) are implemented; stages 4-6 arrive in later milestones." >&2
   exit 1
 fi
 
@@ -149,7 +158,9 @@ fi
 echo -e "${BLUE}Step 2/9: Creating kind cluster '${CLUSTER_NAME}'...${NC}"
 # Each stage brings its own kind config. Stage 2's only difference from stage
 # 1's is `networking.disableDefaultCNI: true`, which is a **create-time** flag
-# — see deploy/kind/stage2.yaml's header.
+# — see deploy/kind/stage2.yaml's header. Stage 3's only difference from
+# stage 2's is one extra host port reservation for reviewer-ui — see
+# deploy/kind/stage3.yaml's header.
 KIND_CONFIG="$ROOT/deploy/kind/stage${STAGE}.yaml"
 [[ -f "$KIND_CONFIG" ]] || { echo -e "${RED}Error: ${KIND_CONFIG} not found.${NC}" >&2; exit 1; }
 
@@ -164,7 +175,7 @@ if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
   if [[ "${STAGE}" -ge 2 ]] \
     && kubectl --context "kind-${CLUSTER_NAME}" -n kube-system get daemonset kindnet >/dev/null 2>&1; then
     echo -e "${RED}Error: cluster '${CLUSTER_NAME}' already exists and is still running the default CNI (the kube-system/kindnet DaemonSet is present).${NC}" >&2
-    echo "networking.disableDefaultCNI is a create-time kind flag, so stage 2 cannot be applied to this cluster." >&2
+    echo "networking.disableDefaultCNI is a create-time kind flag, so stage ${STAGE} cannot be applied to this cluster." >&2
     echo "Recreate it deliberately:" >&2
     echo "  kind delete cluster --name ${CLUSTER_NAME} && ./scripts/setup-kind.sh --stage ${STAGE}" >&2
     exit 1
@@ -473,7 +484,9 @@ verify_port_forward 18080 "${API_PF_PID}" payments-api
 echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payments-mcp, payments-api.${NC}"
 
 echo ""
-if [[ "${STAGE}" -ge 2 ]]; then
+if [[ "${STAGE}" -eq 3 ]]; then
+  echo -e "${GREEN}Stage 3 (Supervised) cluster is up -- no M3 workload exists yet, so what's actually running is stage 2's: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity. The only difference from a stage-2 cluster is the reviewer-ui port reservation.${NC}"
+elif [[ "${STAGE}" -ge 2 ]]; then
   echo -e "${GREEN}Stage 2 (Governed) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity.${NC}"
 else
   echo -e "${GREEN}Stage 1 (Connected) is up.${NC}"
