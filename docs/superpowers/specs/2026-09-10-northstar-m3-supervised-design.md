@@ -222,8 +222,21 @@ M1.2's four items were marked "to be cleared early in M2" and were not. They are
 Task 1 here, batched:
 
 - No service has an advisory gate; extend `test_pins.py`'s pattern.
-- `claims-agent` and `payments-mcp` do not pin full transitive closures.
+- ~~`claims-agent` and `payments-mcp` do not pin full transitive closures.~~
+  **Already cleared, 2026-09-10.** Both files were fully pinned by M2.1 Task 6,
+  which cited this very list and never struck itself off it. Verified two ways
+  before the entry was retired: every non-comment line carries `==`, and each
+  file's installed closure was diffed against its own venv in both directions
+  with zero mismatches. Task 1 made no edit here.
 - Ruling 5's single-asyncio-style decision was recorded and never applied.
+
+> **This is the stale-prose defect class, for the third time.** M2.1's own
+> closing lesson was that 13 of 13 final-review findings were sentences true
+> when written and falsified by a later task. This entry was one of them and
+> survived into two later planning documents — including this spec — because a
+> task cleared the debt without clearing the record of it. **Clearing an item
+> includes striking it off every list that names it**, and the M2 spec's §11 now
+> carries the same correction.
 
 **OQ-1 (the content-capture trade-off) stays open** and is explicitly *not* Task
 1's business. It is a real experiment about what tracing an agent costs in

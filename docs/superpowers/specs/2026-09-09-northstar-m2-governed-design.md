@@ -358,8 +358,19 @@ silently and should be fixed near the start of M2 rather than at its final gate.
   `pytest`/`pytest-asyncio` versions via `importlib.metadata`; that pattern needs extending.
 - **`claims-agent` and `payments-mcp` do not pin full transitive closures.** Two of four
   requirements files meet the house "nothing floats" rule.
+
+  > **Correction, M3 Task 1 (2026-09-10) — cleared during M2, never struck off.**
+  > M2.1 Task 6 pinned both files' full closures, citing this very list, and left the entry
+  > standing. It was then copied into M3's spec and plan as outstanding work. Verified before
+  > retiring it: every non-comment line carries `==`, and each file's installed closure diffs
+  > clean against its own venv in both directions. Nothing here remains to do.
+
 - **Ruling 5's single-asyncio-style decision was recorded and never applied**; both styles
   coexist in the test suites.
+
+  > **Cleared, M3 Task 1 (2026-09-10).** 40 async tests: 18 carried an explicit
+  > `@pytest.mark.asyncio`, 22 were bare under `asyncio_mode = auto`. Bare was dominant, so the
+  > 18 decorators were removed. No test's meaning changed.
 - **OQ-1's content-capture experiment remains unrun** — the observability-versus-confidentiality
   trade-off recorded, deliberately, as an open question rather than a resolved one.
 
