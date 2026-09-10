@@ -53,14 +53,20 @@ green has confirmed the browser hop; a reader who instead runs a bare
 `pytest tests/` by hand — bypassing the gate — gets the weaker, default
 result below, and should not conclude the top of the chain was checked.
 
-Measured counts. **Provenance, restated for M2.2 Task 8 rather than carried
-forward:** the gate row below was measured by running
+Measured counts. **Provenance, restated for the final-review fix round rather
+than carried forward:** the gate row below is anchored on a run of
 `./scripts/smoke-test.sh` itself, once, to completion, on the long-running
 `kind-northstar` **stage 2** cluster — not on a freshly created one, and
-`teardown.sh` was not run. The tree it ran against was `50fac07` plus M2.2
-Task 8's own documentation work, which adds and removes no tests, so the 213
-collected below is the same 213 that commit carries. The run finished
-`212 passed, 1 xfailed` in 283.60s and exited 0. Two operational facts about
+`teardown.sh` was not run. M2.2 Task 8's run of it, against the tree at
+`50fac07` plus that task's documentation work (which added and removed no
+tests, so its 213 collected was the same 213 that commit carries), finished
+212 passed with 1 xfailed in 283.60s and exited 0. **The final-review fix round
+adds one test to the `tests/` tree** (`tests/e2e/test_gateway_config_drift.py`,
+adjudication 1) and adds the Policy Decision Service's own suite to the gate's
+per-service loop (finding 1), so both rows below moved by one. The arithmetic
+behind each row, and which of the two is measured and which is derived, is
+itemised in the bullet list further down this section — the same place it has
+always been stated. Two operational facts about
 it, because the next person to reproduce it will hit both: the gate does
 **not** create its own port-forwards — it checks that four are already
 listening (19001 claims-agent, 19002 settlement-agent, 18000 payments-mcp,
@@ -78,8 +84,8 @@ as it was actually run.)
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `185 passed, 27 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `212 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `186 passed, 27 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `213 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -250,9 +256,11 @@ move this count.
 
 **M2.2 (Decided), the whole milestone in one place, re-derived by M2.2 Task 8
 from a live per-file collection rather than from any earlier task's reported
-delta.** The chain from M2.1's close (145) to today's 213 is five moves, and
-every component below was measured by `.venv/bin/python -m pytest
-tests/<file> --collect-only -q` at `50fac07`, not read out of a report:
+delta.** The chain from M2.1's close (145) to today's 214 is six moves — five
+from the milestone and one from its final-review fix round — and every
+component below was measured by `.venv/bin/python -m pytest tests/<file>
+--collect-only -q`, the first five at `50fac07` and the sixth in the fix round
+itself, not read out of a report:
 
 | Commit | What it added | Collected |
 |---|---|---|
@@ -262,6 +270,7 @@ tests/<file> --collect-only -q` at `50fac07`, not read out of a report:
 | Task 6 | `tests/e2e/test_policy_denial.py` (6) — one test per exit criterion 1–6 | 187 |
 | `477e7fb` | **minus one**: `test_payment_was_executed_with_no_governance` retired | 186 |
 | `50fac07` (Task 7) | `tests/e2e/test_egress_policy.py` (27) — the Cilium `toFQDNs` egress half of criterion 7 | 213 |
+| final-review fix round | `tests/e2e/test_gateway_config_drift.py` (1) — the live gateway ConfigMap against the committed file, `yaml.safe_load`-parsed on both sides (adjudication 1) | 214 |
 
 **The single subtraction is the one number in this table that is not growth,
 and it is a milestone marker rather than a cleanup.**
@@ -299,19 +308,22 @@ was still three modules.** It is now four:
 in `tests/e2e/test_policy_denial.py` — 27, which is exactly the skip count in
 the default row and exactly the difference between the two rows.
 
-- **Measured (M2.2 Task 8):** `.venv/bin/python -m pytest --collect-only -q
-  tests/` → `213 tests collected`, and the per-file breakdown above sums to the
-  same figure. This is the number both published rows are anchored on.
-- **Measured (M2.2 Task 8), gate row:** `./scripts/smoke-test.sh` run once, in
-  full, on the live stage-2 `kind-northstar` cluster — `RUN_BROWSER_TESTS=1`
-  unconditionally, the whole `tests/` tree, real browser, real settlements —
-  returning `212 passed, 1 xfailed`, 0 skipped. A direct observation of the
-  whole gate, including the per-service suites and the two count guards that
-  check this very table. It cross-checks against the collected total by the
-  second route this document has always used: 213 collected − 0 skipped − 1
-  xfailed = 212.
-- **Derived (M2.2 Task 8), default row, components shown:** 213 collected − 27
-  gated − 1 xfailed = **`185 passed, 27 skipped, 1 xfailed`**. Every component
+- **Measured (final-review fix round):** `.venv/bin/python -m pytest
+  --collect-only -q tests/` → `214 tests collected`, and the per-file breakdown
+  above sums to the same figure. This is the number both published rows are
+  anchored on. It was `213` through M2.2 Task 8; the fix round added
+  `tests/e2e/test_gateway_config_drift.py` (1).
+- **Derived, gate row, pending re-measurement later in this same fix round:**
+  214 collected − 0 skipped − 1 xfailed = **`213 passed, 1 xfailed`**. Labelled
+  derived, not measured, because at the moment this line was written the gate
+  had not yet been re-run against the fix round's tree — and this document does
+  not publish a run that has not happened. The last direct observation of the
+  gate is M2.2 Task 8's, which returned `212 passed, 1 xfailed` in 283.60s
+  against 213 collected. The fix round's own gate run replaces this bullet with
+  a measured one.
+- **Derived (final-review fix round), default row, components shown:** 214
+  collected − 27 gated − 1 xfailed = **`186 passed, 27 skipped, 1 xfailed`**.
+  Every component
   is itself measured above (the 27 is the four-module gated count, collected
   per file; the 1 xfail is the FastMCP-baggage one below, which is not gated
   and so appears in both rows). Labelled derived rather than measured for the
@@ -512,10 +524,13 @@ own code, not only in a third-party library's behavior.
 
 **A sixth per-service suite exists and is deliberately *outside* that row, so
 this is stated rather than left to be discovered.** M2.2 Task 4 added
-`platform/policy-decision-service/tests/` — **95 tests** (measured for this
+`platform/policy-decision-service/tests/` — **96 tests** (measured for this
 edit by `cd platform/policy-decision-service && .venv/bin/python -m pytest
-tests -q --collect-only` → `95 tests collected`, not carried forward from any
-task report). Two facts about it are true and neither is an oversight:
+tests -q --collect-only` → `96 tests collected`, not carried forward from any
+task report; it was 95 through M2.2 Task 8, and the final-review fix round
+added `tests/test_proto_pin.py`, the sha256 guard on the vendored ExtMCP proto
+— finding 6, ruling R45). Two facts about it are true and neither is an
+oversight:
 `scripts/smoke-test.sh` does **not** run it (its per-service loop is the three
 services named above), and
 `test_per_service_counts_match_what_each_suites_own_runner_collects` does

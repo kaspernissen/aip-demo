@@ -100,6 +100,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 UI_URL = os.environ.get("CUSTOMER_UI_URL", "http://localhost:8080")
 CLAIMS_AGENT_URL = os.environ.get("CLAIMS_AGENT_URL", "http://localhost:19001")
+# The ledger itself, for criterion 1's read-back. Same env var and same default
+# `tests/e2e/test_payments_api_trace.py` already uses, and 18080 is one of the
+# four repo-managed port-forwards `scripts/smoke-test.sh` requires before it
+# runs anything (A9), so this needs no fixture of its own.
+PAYMENTS_API_URL = os.environ.get("PAYMENTS_API_URL", "http://localhost:18080")
 
 KUBE_CONTEXT = "kind-northstar"
 AGENTS_NAMESPACE = "northstar-agents"
@@ -501,17 +506,33 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
     it. The decision is read from the PDS's span rather than from the refusal
     prose, so a reworded message cannot make this pass or fail.
 
-    *No payment is executed*: the execute leg leaves no trace past the gateway.
-    `payments-api` is where the ledger lives, and it has no execute span; nor
-    does `payments-mcp` have a `tools/call execute_payment`; nor does the
-    gateway have its `tools/call payments-mcp_execute_payment` CLIENT forward
-    span. The request stopped at the choke point.
+    *No payment is executed*: **the ledger says so, and the trace agrees.**
 
-    Note what is *not* asserted: a ledger read-back. `payments-api` exposes no
-    `GET /payments/{id}` (`systems/payments-api/handlers.go::newRouter`), so
-    there is nothing to read; the absence of the execute span in the service
-    that owns the ledger is the available evidence, and it is direct evidence
-    rather than a proxy.
+    The ledger read-back is the primary evidence and it is a positive one.
+    `payments-api` does expose `GET /payments/{paymentId}`
+    (`systems/payments-api/handlers.go:285`, and it predates this branch), so
+    the record the proposal created can simply be fetched and required to still
+    read `status == "proposed"` — `store.go`'s only other status is `executed`,
+    and `s.execute` is the only writer of it. That is a direct statement about
+    the thing the criterion is about: the money did not move.
+
+    An earlier revision of this docstring claimed the opposite — *"`payments-api`
+    exposes no `GET /payments/{id}` ... so there is nothing to read"* — and used
+    that false premise to justify proving the criterion by span absence alone.
+    The route was there the whole time; the execute handler itself reads the
+    record through it at `handlers.go:243`. Corrected in the M2.2 fix round
+    (final-review finding 2), and the read-back it was excusing is now here.
+
+    The three span absences are kept as *corroboration*, not as the whole
+    argument, because they say something the read-back cannot: not only did the
+    money not move, the request never got past the choke point.
+    `payments-api` has no execute span; `payments-mcp` has no `tools/call
+    execute_payment`; the gateway has no `tools/call
+    payments-mcp_execute_payment` CLIENT forward span. Read-back plus absences
+    together also rule out the one case either alone would miss — a payment
+    executed by some path this trace does not cover would show in the ledger,
+    and a refusal that mutated the record without a span would show in the
+    read-back.
     """
     reply = denial_run.reply
     trace = denial_run.trace
@@ -551,8 +572,30 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
     assert decision.attrs.get(ATTR_POLICY_LIMIT) == 6000, decision.attrs
     assert decision.attrs.get(ATTR_POLICY_AMOUNT) == 6200, decision.attrs
 
-    # And nothing executed. Three independent absences, one per service the
-    # execution would have had to pass through.
+    # And nothing executed. The ledger first, read straight from the service
+    # that owns it: the proposal is still a proposal.
+    payment_id = reply["paymentId"]
+    read_back = requests.get(f"{PAYMENTS_API_URL}/payments/{payment_id}", timeout=10)
+    assert read_back.status_code == 200, (
+        f"could not read payment {payment_id} back from the ledger at "
+        f"{PAYMENTS_API_URL} (HTTP {read_back.status_code}); this criterion's "
+        "primary evidence is the record's own status, so an unreadable ledger "
+        f"is a failure, not a pass: {read_back.text[:300]}"
+    )
+    record = read_back.json()
+    assert record.get("status") == "proposed", (
+        "THE PAYMENT EXECUTED DESPITE THE DENIAL -- payments-api's own record "
+        f"for {payment_id} reads {record.get('status')!r}, not 'proposed'. "
+        f"The ledger is the authority on whether money moved: {record}"
+    )
+    # The record is also the honest source for the amount and currency (the
+    # same rule settlement.py follows), so assert them here rather than
+    # trusting the reply alone.
+    assert record.get("amount") == DENIED_AMOUNT, record
+    assert record.get("claimId") == DENIED_CLAIM_ID, record
+
+    # Then the corroborating absences, one per service the execution would have
+    # had to pass through.
     assert not trace.spans_named(PAYMENTS_API_EXECUTE, service="payments-api"), (
         "payments-api recorded an execution -- money moved despite the denial"
     )

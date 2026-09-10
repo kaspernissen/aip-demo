@@ -264,13 +264,36 @@ def test_the_agent_does_not_import_the_pds_in_production():
     which would contradict the architecture the milestone demonstrates, where
     the agent reaches the policy only through the gateway and cannot reach
     around it.
+
+    **Recursive, deliberately.** This used `here.glob("*.py")` until the M2.2
+    fix round (final-review finding 7), which scanned only the component root
+    and would therefore have passed a `pds` import from any future subpackage
+    under `agents/settlement-agent/` -- the blind spot, not the guard. Its
+    sibling guard, `tests/e2e/test_policy_denial.py::_source_files`, already
+    used `rglob` and already documented recursion as the point ("so that a
+    future subpackage cannot become a blind spot"); this now matches it,
+    including the same exclusion set and the same reasons:
+
+    * `tests/` is excluded because *this file* is the licensed exception -- it
+      imports `pds` on purpose, three lines from the top.
+    * `.venv`/`venv` are excluded because each component keeps its own pinned
+      virtualenv inside its own directory; those are third-party dependencies,
+      not this component's code, and walking them would be both wrong and slow.
+    * `__pycache__` and `node_modules` for the same reason.
+
+    Reported as paths relative to the component root rather than bare names,
+    since with recursion a bare `settlement.py` no longer says where it lives.
     """
     here = pathlib.Path(__file__).resolve().parents[1]
+    skip = {"tests", ".venv", "venv", "__pycache__", "node_modules"}
     offenders = []
-    for module in sorted(here.glob("*.py")):
+    for module in sorted(here.rglob("*.py")):
+        relative = module.relative_to(here)
+        if skip & set(relative.parts):
+            continue
         text = module.read_text()
         if "import pds" in text or "from pds" in text:
-            offenders.append(module.name)
+            offenders.append(str(relative))
     assert offenders == [], (
         f"production modules import the policy service directly: {offenders}"
     )
