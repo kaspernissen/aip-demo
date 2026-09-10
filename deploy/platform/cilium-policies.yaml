@@ -619,3 +619,104 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+---
+# =============================================================================
+# M3 Task 3 review fix round -- finding 1 (R11), the ingress half.
+#
+# Measured, not assumed: `cilium-dbg bpf policy get` on both settlement
+# endpoints (177 = settlement-agent, 421 = senior-settlement-agent) showed
+# `Allow Ingress ANY` -- neither Deployment had ever gained an ingress policy,
+# despite the egress documents above existing since M2.2/M3. Combined with
+# `execute_approved` not verifying the ledger (the code half of this same
+# finding, closed in agents/settlement-agent/settlement.py), anything in the
+# cluster that could reach port 9002 could execute any proposed payment up to
+# that identity's limit, with no model call and no human. The code fix closes
+# "no review happened"; this closes "anything can even ask".
+#
+# THE MEASURED HAZARD, restated for ingress: exactly as on the egress side,
+# ANY rule that selects an endpoint makes that endpoint default-deny in the
+# direction the rule is written for. The moment either `endpointSelector`
+# below matches, every legitimate caller has to be listed or it silently
+# stops working. So each document lists only what is measured to need in,
+# right now -- "grant the least that is still recognisably a policy"
+# (customer-ui-egress-allowlist's own phrase, applied here to ingress).
+#
+# settlement-agent (junior): claims-agent is its one real caller today --
+# `NORTHSTAR_ALLOWED_AGENTS` in deploy/k8s/claims-agent.yaml names it, and
+# claims-agent-egress-allowlist's rule 2 already permits the egress half of
+# this exact connection. This document is that allowance's other half.
+#
+# senior-settlement-agent: it has NO legitimate caller in this repo yet.
+# Task 4 has not run on this branch -- reviewer-ui, the workload that will
+# call execute_approved for real, does not exist. Granting it reachability
+# now would be exactly the "reachability nothing measured asked for" this
+# file's own egress header argues against. So this document permits nothing
+# but the readiness probe: senior-settlement-agent's A2A port is reachable
+# from precisely nowhere in the mesh until Task 4 adds reviewer-ui and widens
+# this document explicitly. (A `kubectl port-forward` still reaches it for
+# manual verification, the same way the readiness probe does: kubelet dials
+# the pod directly from the node, which Cilium classifies as `reserved:host`,
+# not as mesh traffic from another endpoint.)
+#
+# Both readinessProbes are `httpGet` on 9002 (deploy/k8s/settlement-agent.yaml,
+# deploy/k8s/senior-settlement-agent.yaml), dialled by kubelet from the node --
+# the same `fromEntities: [host, remote-node]` reasoning the payments-mcp and
+# policy-decision-service ingress documents above already state in full.
+#
+# Asserted at the datapath, not just read off this YAML: `cilium-dbg bpf
+# policy get` on both endpoints, before and after, recorded in this task's
+# report -- the same discipline this file's egress header prescribes
+# ("behavioural probes have twice gone green against real regressions").
+# =============================================================================
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: settlement-agent-ingress-allowlist
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m3
+spec:
+  endpointSelector:
+    matchLabels:
+      app: settlement-agent
+  ingress:
+    # 1. claims-agent, its one real A2A caller.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: northstar-agents
+            app: claims-agent
+      toPorts:
+        - ports:
+            - port: "9002"
+              protocol: TCP
+
+    # 2. The node itself, for the readiness probe.
+    - fromEntities:
+        - host
+        - remote-node
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: senior-settlement-agent-ingress-allowlist
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m3
+spec:
+  endpointSelector:
+    matchLabels:
+      app: senior-settlement-agent
+  ingress:
+    # No `fromEndpoints` rule, deliberately. Nothing in this repo, as of this
+    # commit, has any business calling execute_approved -- reviewer-ui is
+    # Task 4's. Task 4 must add a rule here for reviewer-ui (and only
+    # reviewer-ui) when that workload exists; until then this endpoint stays
+    # unreachable from the mesh, ingress-wise, except for the probe below.
+    #
+    # 1. The node itself, for the readiness probe. Present even though there
+    # is no application ingress rule yet: without it the pod never goes
+    # Ready, for the same reason ruling R6 (policy-decision-service, above)
+    # gives.
+    - fromEntities:
+        - host
+        - remote-node

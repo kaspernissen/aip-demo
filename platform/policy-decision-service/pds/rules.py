@@ -28,12 +28,45 @@ EXECUTE_LIMITS: dict[tuple[str, str], float] = {
 # Tools with no world-changing effect. Proposing is reversible; executing moves
 # money. Only the latter is limited.
 #
-# M3: `refuse_payment` joins `propose_payment` here. It is settlement-agent
-# recording, through the same governed MCP path everything else in this repo
-# uses, the reason a payment already did not execute -- it moves no money and
-# reverses nothing, so it is unlimited for the same reason proposing is.
-UNLIMITED_TOOLS = frozenset({"propose_payment", "refuse_payment"})
+# M3 Task 3: `refuse_payment` joins `propose_payment` here. It is
+# settlement-agent recording, through the same governed MCP path everything
+# else in this repo uses, the reason a payment already did not execute -- it
+# moves no money and reverses nothing, so it is unlimited for the same reason
+# proposing is.
+#
+# M3 Task 3 fix round (R11): `get_payment` joins them too. `execute_approved`
+# (agents/settlement-agent/settlement.py) reads the ledger back before
+# executing an approval, and a read that moves nothing and reverses nothing is
+# exactly this set's own admission rule.
+UNLIMITED_TOOLS = frozenset({"propose_payment", "refuse_payment", "get_payment"})
 LIMITED_TOOLS = frozenset({"execute_payment"})
+
+# M3 Task 3 fix round (R12b, finding 2): `refuse_payment` was unconditional for
+# ANY caller, including `caller=None` -- so any holder of a valid SVID (or, in
+# principle, none at all) could mark an arbitrary `proposed` payment `refused`
+# with attacker-chosen `rule`/`limit`/`requested`/`narrative`, inject it into
+# the reviewer's queue, and overwrite an existing refusal's
+# `refusedTraceId`/`refusedSpanId` -- authorship of the exact surface a human
+# reads before releasing money.
+#
+# The reviewer put a caller restriction on the milestone's debt list because
+# it "needs a branch in decide()", which Task 3 was rightly forbidden from
+# adding. That reading is overruled (ruling R12): the no-new-logic constraint
+# exists to stop the policy engine acquiring an input that WIDENS what is
+# permitted -- an override flag, an approval token. A caller restriction on an
+# already-unlimited tool NARROWS what is permitted; it is data, exactly like
+# EXECUTE_LIMITS above, not a widening input. So this is one more table,
+# consulted by decide() as one more lookup -- never a tool-name branch.
+#
+# Only tools actually named here are restricted; a tool in UNLIMITED_TOOLS but
+# absent from this mapping (propose_payment, get_payment) stays unconditional,
+# because nothing about proposing or reading widens what a human reviews.
+CALLER_SCOPED_TOOLS: dict[str, frozenset[str]] = {
+    "refuse_payment": frozenset({
+        "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent",
+        "spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent",
+    }),
+}
 
 
 @dataclass(frozen=True)
@@ -73,6 +106,13 @@ def _money(amount: float, currency: str) -> str:
 
 def decide(req: PolicyInput) -> Decision:
     if req.tool in UNLIMITED_TOOLS:
+        allowed_callers = CALLER_SCOPED_TOOLS.get(req.tool)
+        if allowed_callers is not None and req.caller not in allowed_callers:
+            return Decision(
+                False,
+                f"{req.tool} may not be called by caller {req.caller!r}",
+                rule="unlimited_tool_caller_not_allowed",
+            )
         return Decision(True, f"{req.tool} has no effect to authorise",
                         rule="unlimited_tool")
 

@@ -66,6 +66,16 @@ class FakePayments:
             "status": "refused",
         }
 
+    def get(self, payment_id):
+        self.calls.append(("get", payment_id))
+        return {
+            "paymentId": payment_id,
+            "claimId": "CLM-1842",
+            "amount": 6200.0,
+            "currency": "EUR",
+            "status": "refused",
+        }
+
 
 def test_propose_payment_delegates_to_the_system_of_record(server_module, monkeypatch):
     fake = FakePayments()
@@ -157,4 +167,30 @@ def test_refuse_payment_delegates_to_the_system_of_record(server_module, monkeyp
 
 def test_refuse_payment_is_not_advertised_as_destructive(server_module):
     annotations = _tool_annotations(server_module, "refuse_payment")
+    assert annotations.get("destructiveHint") is False
+
+
+# ---------------------------------------------------------------------------
+# M3 Task 3 review fix round (finding 1, R11): `execute_approved` needs a way
+# to read the ledger back before executing an approval. `get_payment` reads
+# and moves nothing -- readOnlyHint=true, unlike every other tool here -- and
+# is advertised unlimited on the PDS side (test_rules.py) for the same reason
+# propose_payment is.
+# ---------------------------------------------------------------------------
+
+
+def test_get_payment_delegates_to_the_system_of_record(server_module, monkeypatch):
+    fake = FakePayments()
+    monkeypatch.setattr(server_module, "payments", fake)
+
+    result = server_module.get_payment("PAY-000001")
+
+    assert fake.calls == [("get", "PAY-000001")]
+    assert result["paymentId"] == "PAY-000001"
+    assert result["status"] == "refused"
+
+
+def test_get_payment_is_advertised_as_read_only_and_not_destructive(server_module):
+    annotations = _tool_annotations(server_module, "get_payment")
+    assert annotations.get("readOnlyHint") is True
     assert annotations.get("destructiveHint") is False

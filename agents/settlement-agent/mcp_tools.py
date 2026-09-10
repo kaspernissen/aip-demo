@@ -381,6 +381,14 @@ class PaymentsTools:
             {"payment_id": payment_id, "amount": amount, "currency": currency},
         )
 
+    async def get(self, payment_id: str) -> dict:
+        """Read back what the ledger recorded for a payment (M3 Task 3 fix
+        round, R11). `execute_approved` calls this before executing an
+        approval, to confirm a refusal record actually exists and that its
+        recorded amount matches -- through the same governed MCP path every
+        other payments call in this repo takes, not a new HTTP path."""
+        return await self._call("get_payment", {"payment_id": payment_id})
+
     async def refuse(
         self,
         payment_id: str,

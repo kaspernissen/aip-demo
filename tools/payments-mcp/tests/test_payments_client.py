@@ -66,6 +66,29 @@ def test_execute_posts_to_execute_endpoint():
     assert result["status"] == "executed"
 
 
+def test_get_reads_the_payment_endpoint():
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["method"] = request.method
+        return httpx.Response(
+            200,
+            json={
+                "paymentId": "PAY-000001",
+                "claimId": "CLM-1842",
+                "amount": 6200.0,
+                "currency": "EUR",
+                "status": "refused",
+            },
+        )
+
+    seen = {}
+    result = make_client(handler).get("PAY-000001")
+
+    assert seen["method"] == "GET"
+    assert seen["url"] == "http://payments-api:8080/payments/PAY-000001"
+    assert result["status"] == "refused"
+
+
 def test_http_errors_are_raised():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404, json={"error": "payment not found"})

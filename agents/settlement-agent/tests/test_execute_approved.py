@@ -23,7 +23,8 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 import settlement
-from settlement import _refusal_link, execute_approved
+from mcp_tools import ToolCallError
+from settlement import UnverifiedApproval, _refusal_link, execute_approved
 
 REFUSED_TRACE_ID = "331edba8cb21223e9de2f244360c42ef"
 REFUSED_SPAN_ID = "b7997877797c1b27"
@@ -55,8 +56,28 @@ def traced(monkeypatch):
 
 
 class FakePayments:
-    def __init__(self):
+    """`get` defaults to a ledger record that verifies cleanly: `refused`,
+    amount 6200.0 -- the shape every pre-existing test in this file exercises
+    a successful execute_approved against. Tests of the ledger-check itself
+    override `ledger` to a record that fails verification, or `get_error` to
+    make `.get()` raise (a 404, i.e. the payment never existed)."""
+
+    def __init__(self, ledger=None, get_error=None):
         self.calls: list[tuple] = []
+        self._ledger = ledger if ledger is not None else {
+            "paymentId": "PAY-000001",
+            "claimId": "CLM-1842",
+            "amount": 6200.0,
+            "currency": "EUR",
+            "status": "refused",
+        }
+        self._get_error = get_error
+
+    async def get(self, payment_id):
+        self.calls.append(("get", payment_id))
+        if self._get_error is not None:
+            raise self._get_error
+        return self._ledger
 
     async def propose(self, *args, **kwargs):
         self.calls.append(("propose", args, kwargs))
@@ -80,7 +101,9 @@ async def test_execute_approved_calls_execute_directly_with_no_propose(traced):
         payments, REFUSED_TRACE_ID, REFUSED_SPAN_ID,
     )
 
-    assert [c[0] for c in payments.calls] == ["execute"]
+    # `get` reads the ledger back before `execute` moves anything -- the
+    # ledger-verification fix (R11) sits between the two.
+    assert [c[0] for c in payments.calls] == ["get", "execute"]
     assert ("execute", "PAY-000001", 6200.0, "EUR") in payments.calls
 
 
@@ -158,6 +181,90 @@ async def test_a_malformed_approval_payload_fails_loudly_not_silently_executing(
             REFUSED_TRACE_ID, REFUSED_SPAN_ID,
         )
     assert payments.calls == [], "a malformed approval must not reach the payment system"
+
+
+# ---------------------------------------------------------------------------
+# M3 Task 3 review fix round, finding 1 (R11) -- the hole this milestone
+# exists to close: `execute_approved` never read the ledger, so it would
+# execute ANY proposed payment up to the caller's limit on an unverified
+# `reviewerId` string, with no check that a refusal or a review ever
+# happened. It now reads the ledger back (`payments.get`) and refuses unless
+# the payment exists, carries a refusal record, and the amount matches within
+# the ledger's own `amountEpsilon` -- never executing on the way to any of
+# those failures.
+# ---------------------------------------------------------------------------
+
+
+async def test_execute_approved_refuses_a_payment_that_was_never_refused(traced):
+    """The decisive case: a payment that is merely `proposed` -- no human ever
+    reviewed it -- must not execute just because a caller reached this port.
+    Before the fix, this exact call executed it (see the task report for the
+    before/after comparison)."""
+    payments = FakePayments(ledger={
+        "paymentId": "PAY-000001", "claimId": "CLM-1842",
+        "amount": 6200.0, "currency": "EUR", "status": "proposed",
+    })
+
+    with pytest.raises(UnverifiedApproval):
+        await execute_approved(
+            "PAY-000001", 6200.0, "EUR", {"reviewerId": "alex.mercer"},
+            payments, REFUSED_TRACE_ID, REFUSED_SPAN_ID,
+        )
+
+    assert [c[0] for c in payments.calls] == ["get"], (
+        "a payment with no refusal record must never reach execute"
+    )
+
+
+async def test_execute_approved_refuses_a_payment_that_does_not_exist():
+    """A 404 from the ledger (the payment id names nothing) must propagate as
+    a loud failure, not be swallowed into a default execute."""
+    payments = FakePayments(get_error=ToolCallError("payment not found"))
+
+    with pytest.raises(ToolCallError):
+        await execute_approved(
+            "PAY-999999", 6200.0, "EUR", {"reviewerId": "alex.mercer"},
+            payments, REFUSED_TRACE_ID, REFUSED_SPAN_ID,
+        )
+
+    assert [c[0] for c in payments.calls] == ["get"]
+
+
+async def test_execute_approved_refuses_on_amount_mismatch():
+    """The ledger recorded 6200.0; this approval asks to execute 6300.0. The
+    two must agree, the same confirmation discipline payments-api's own
+    execute route already applies."""
+    payments = FakePayments(ledger={
+        "paymentId": "PAY-000001", "claimId": "CLM-1842",
+        "amount": 6200.0, "currency": "EUR", "status": "refused",
+    })
+
+    with pytest.raises(UnverifiedApproval):
+        await execute_approved(
+            "PAY-000001", 6300.0, "EUR", {"reviewerId": "alex.mercer"},
+            payments, REFUSED_TRACE_ID, REFUSED_SPAN_ID,
+        )
+
+    assert [c[0] for c in payments.calls] == ["get"]
+
+
+async def test_execute_approved_permits_an_amount_within_epsilon(traced):
+    """The ledger's own half-cent tolerance (systems/payments-api/handlers.go's
+    amountEpsilon), mirrored here: a float that has been through arithmetic
+    upstream may land a fraction of a cent off without being a real
+    disagreement about money."""
+    payments = FakePayments(ledger={
+        "paymentId": "PAY-000001", "claimId": "CLM-1842",
+        "amount": 6200.0, "currency": "EUR", "status": "refused",
+    })
+
+    result = await execute_approved(
+        "PAY-000001", 6200.001, "EUR", {"reviewerId": "alex.mercer"},
+        payments, REFUSED_TRACE_ID, REFUSED_SPAN_ID,
+    )
+
+    assert result["status"] == "executed"
+    assert [c[0] for c in payments.calls] == ["get", "execute"]
 
 
 # ---------------------------------------------------------------------------

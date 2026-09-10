@@ -426,8 +426,8 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (all six run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 101, payments-mcp 12, payments-api (Go) 28,
-customer-ui (vitest) 6, policy-decision-service 101 — all passing. (The sixth
+claims-agent 16, settlement-agent 106, payments-mcp 15, payments-api (Go) 28,
+customer-ui (vitest) 6, policy-decision-service 105 — all passing. (The sixth
 entry arrived in the M2.2 final-review fix round: `policy-decision-service` was
 in neither the gate's loop nor this row until finding 1 showed both already
 *depended* on that component's generated stubs while collecting none of its

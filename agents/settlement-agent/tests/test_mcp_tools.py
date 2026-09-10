@@ -875,6 +875,22 @@ async def test_refuse_sends_every_field_in_the_tool_call_arguments(monkeypatch):
     }
 
 
+async def test_get_sends_the_payment_id_in_the_tool_call_arguments(monkeypatch):
+    """M3 Task 3 review fix round (finding 1, R11): execute_approved reads the
+    ledger back through this call before executing an approval."""
+    monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
+    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport({}))
+    monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
+    _FakeSessionCapturingRequest.captured = {}
+
+    tools = PaymentsTools("http://fake-mcp/mcp")
+    await tools.get("PAY-000001")
+
+    params = _FakeSessionCapturingRequest.captured["request"].root.params
+    assert params.name == "get_payment"
+    assert params.arguments == {"payment_id": "PAY-000001"}
+
+
 async def test_call_still_unwraps_a_tool_call_error_after_the_denial_branch(
     monkeypatch,
 ):

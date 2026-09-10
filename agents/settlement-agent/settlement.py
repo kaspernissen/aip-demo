@@ -267,6 +267,64 @@ def _refusal_link(refused_trace_id: str, refused_span_id: str) -> list[Link]:
     ]
 
 
+class UnverifiedApproval(RuntimeError):
+    """`execute_approved` refuses to execute: the ledger carries no evidence
+    that a human ever reviewed this payment.
+
+    M3 Task 3 review, finding 1 (R11), the milestone's own anti-bypass
+    criterion failing inside the milestone: `execute_approved` read no
+    ledger state at all, and neither settlement Deployment had a Cilium
+    ingress policy (`Allow Ingress ANY`, measured). Anything that could reach
+    a settlement agent's A2A port could execute any proposed payment up to
+    that identity's limit, on an unverified `reviewerId` string, with no
+    model call, no proposal step and no review. This exception is what
+    replaces "anything reaching the port" with "a real refusal record, for
+    this exact amount, exists first" -- raised before any call to
+    `payments.execute`, never after.
+    """
+
+
+# Mirrors systems/payments-api/handlers.go's own `amountEpsilon`: half a cent,
+# the tolerance below the smallest amount anyone can actually be paid. Not
+# shared code across the Go/Python boundary -- the two services do not share a
+# module -- but the same number for the same reason: a float that has been
+# through arithmetic somewhere upstream can land an ULP or two off the value
+# it is really equal to, and refusing an execution over that would be a bug,
+# not rigour. See handlers.go's own comment for the full justification.
+AMOUNT_EPSILON = 0.005
+
+
+async def _verify_refusal(payments: Any, payment_id: str, amount: float) -> None:
+    """Read the ledger back and refuse to proceed unless it shows a real,
+    matching refusal.
+
+    Lets `mcp_tools.ToolCallError` propagate unchanged when the payment does
+    not exist at all (payments-api's 404, surfaced the same way every other
+    ledger lookup in this repo surfaces it) -- that is already a loud
+    failure and already executes nothing, so wrapping it would only relabel
+    it. `UnverifiedApproval` is raised for the two cases a successful lookup
+    can still fail: no refusal was ever recorded, or the amount this approval
+    asks to execute does not match what was refused.
+    """
+    ledger_record = await payments.get(payment_id)
+
+    if ledger_record.get("status") != "refused":
+        raise UnverifiedApproval(
+            f"payment {payment_id}: ledger status is "
+            f"{ledger_record.get('status')!r}, not 'refused' -- no refusal "
+            "record covers this payment, so execute_approved will not "
+            "execute it"
+        )
+
+    ledger_amount = ledger_record.get("amount")
+    if ledger_amount is None or abs(float(ledger_amount) - amount) > AMOUNT_EPSILON:
+        raise UnverifiedApproval(
+            f"payment {payment_id}: this approval asks to execute {amount!r}, "
+            f"but the ledger's refused record is for {ledger_amount!r} -- the "
+            "two must agree within the ledger's own amountEpsilon"
+        )
+
+
 async def execute_approved(
     payment_id: str, amount: float, currency: str, approval: dict[str, Any],
     payments: Any, refused_trace_id: str, refused_span_id: str,
@@ -281,14 +339,25 @@ async def execute_approved(
     parameter here: it comes from which workload runs this process
     (`senior-settlement-agent`'s own SPIFFE ID, via SPIRE), the same way it
     always has for `execute_payment`.
+
+    M3 Task 3 review fix round (R11): before any of that, this reads the
+    ledger back and refuses unless it shows a real refusal record for this
+    exact amount (`_verify_refusal`). `approval["reviewerId"]` is read first
+    and still fails loudly with `KeyError` on a malformed payload, exactly as
+    before this fix, and before any payment-system call at all -- the ledger
+    check is an additional gate, not a replacement for that one.
     """
+    reviewer_id = approval["reviewerId"]
+
+    await _verify_refusal(payments, payment_id, amount)
+
     tracer = trace.get_tracer(__name__)
     with tracer.start_as_current_span(
         "settlement.execute_approved",
         links=_refusal_link(refused_trace_id, refused_span_id),
         attributes={
             "northstar.payment.id": payment_id,
-            "northstar.approval.reviewer_id": approval["reviewerId"],
+            "northstar.approval.reviewer_id": reviewer_id,
         },
     ):
         # Straight to execute. No propose: the proposal is what was reviewed.

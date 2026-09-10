@@ -193,5 +193,58 @@ def test_the_senior_limit_is_higher_than_the_junior_limit_not_equal_to_it():
 # ---------------------------------------------------------------------------
 
 
-def test_refusing_a_payment_is_unlimited_like_proposing():
-    assert decide(_input(tool="refuse_payment", amount=None, caller=None)).permit is True
+def test_refusing_a_payment_is_unlimited_for_either_settlement_identity():
+    """M3 Task 3 fix round (R12): unconditional was wrong -- `refuse_payment`
+    is scoped to the two settlement identities, as data, not to every caller.
+    A caller-scoped tool is still unlimited *for its allowed callers*, which
+    is what this test pins; the disallowed and unauthenticated cases are
+    below."""
+    assert decide(_input(tool="refuse_payment", amount=None, caller=AGENT)).permit is True
+    assert decide(_input(tool="refuse_payment", amount=None, caller=SENIOR)).permit is True
+
+
+# ---------------------------------------------------------------------------
+# M3 Task 3 review, finding 1 (R11): `execute_approved` needs a way to read
+# the ledger back before executing. `get_payment` is read-only, moves no
+# money and reverses nothing -- the same argument `propose_payment` already
+# carries in UNLIMITED_TOOLS -- so it joins that set unconditionally, for any
+# caller. Unlike `refuse_payment`, nothing about `get_payment` writes to the
+# human-review surface, so it is not caller-scoped.
+# ---------------------------------------------------------------------------
+
+
+def test_getting_a_payment_is_unlimited_for_any_caller():
+    assert decide(_input(tool="get_payment", amount=None, caller=AGENT)).permit is True
+    assert decide(_input(tool="get_payment", amount=None, caller=SENIOR)).permit is True
+    assert decide(_input(tool="get_payment", amount=None, caller=OTHER)).permit is True
+    assert decide(_input(tool="get_payment", amount=None, caller=None)).permit is True
+
+
+# ---------------------------------------------------------------------------
+# M3 Task 3 review, finding 2 (R12b): `refuse_payment` unconditional for any
+# caller -- including `caller=None` -- let any holder of a valid SVID (or, in
+# principle, no identity at all) author the justification a human reviewer
+# reads before releasing money. Fixed as data: a tool -> allowed-callers
+# mapping alongside EXECUTE_LIMITS/UNLIMITED_TOOLS, consulted by one more
+# lookup in `decide()`, not a new branch keyed on the tool name.
+# ---------------------------------------------------------------------------
+
+
+def test_refusing_a_payment_is_denied_for_a_caller_outside_the_settlement_identities():
+    assert decide(_input(tool="refuse_payment", amount=None, caller=OTHER)).permit is False
+
+
+def test_refusing_a_payment_is_denied_for_caller_none():
+    """The review's own point (finding 2, item 4): an unlimited tool that
+    permits `caller=None` is unlimited even for an unidentified principal.
+    `jwtAuth: mode: strict` makes this defence-in-depth in practice, but the
+    policy itself must not be the layer that waves it through."""
+    assert decide(_input(tool="refuse_payment", amount=None, caller=None)).permit is False
+
+
+def test_proposing_a_payment_is_still_unlimited_for_any_caller():
+    """propose_payment is NOT caller-scoped -- only refuse_payment is (R12b).
+    Regression guard: the caller-scope data must not spread to a tool the
+    review never asked to restrict."""
+    assert decide(_input(tool="propose_payment", amount=None, caller=None)).permit is True
+    assert decide(_input(tool="propose_payment", amount=None, caller=OTHER)).permit is True
