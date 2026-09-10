@@ -70,7 +70,11 @@ async def _call_tools(claim_id: str, traceparent: str) -> dict:
                     method="tools/call",
                     params=types.CallToolRequestParams(
                         name="execute_payment",
-                        arguments={"payment_id": payment_id},
+                        arguments={
+                            "payment_id": payment_id,
+                            "amount": 6200,
+                            "currency": "EUR",
+                        },
                         _meta=types.RequestParams.Meta(traceparent=traceparent),
                     ),
                 )

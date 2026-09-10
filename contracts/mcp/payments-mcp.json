@@ -26,12 +26,14 @@
     },
     {
       "name": "execute_payment",
-      "description": "Execute a previously proposed payment.\n\nMoney leaves the company. This action cannot be undone.",
+      "description": "Execute a previously proposed payment.\n\nMoney leaves the company. This action cannot be undone.\n\nPass the amount and currency of the proposal you are executing. The call\nstates what it is paying rather than naming an opaque id alone, so the\npayment system can confirm the instruction matches what it recorded.",
       "inputSchema": {
         "properties": {
-          "payment_id": { "type": "string" }
+          "payment_id": { "type": "string" },
+          "amount": { "type": "number" },
+          "currency": { "default": "EUR", "type": "string" }
         },
-        "required": ["payment_id"],
+        "required": ["payment_id", "amount"],
         "type": "object",
         "additionalProperties": false
       },

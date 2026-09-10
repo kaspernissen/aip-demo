@@ -63,7 +63,8 @@ settlement_agent = Agent(
         "You settle motor insurance claims for Northstar Insurance.\n"
         "You are given a claim that has already been assessed as covered.\n"
         "Settle it by calling propose_payment with the assessed amount, then "
-        "execute_payment with the paymentId you get back.\n"
+        "execute_payment with the paymentId you get back and that same "
+        "amount.\n"
         "Then reply with a short narrative for the claimant.\n"
         "Settle the assessed amount. Do not round it, discount it or "
         "renegotiate it. Do not state amounts in your narrative."
@@ -82,9 +83,19 @@ async def propose_payment(
 
 
 @settlement_agent.tool
-async def execute_payment(ctx: RunContext[SettlementDeps], payment_id: str) -> dict[str, Any]:
-    """Execute a proposed payment. This moves money and cannot be undone."""
-    result = await ctx.deps.payments.execute(payment_id)
+async def execute_payment(
+    ctx: RunContext[SettlementDeps],
+    payment_id: str,
+    amount: float,
+    currency: str = "EUR",
+) -> dict[str, Any]:
+    """Execute a proposed payment. This moves money and cannot be undone.
+
+    Pass the amount and currency you proposed. The execution states what it is
+    paying rather than naming an opaque id alone, so the payment system can
+    confirm the instruction matches the proposal it recorded.
+    """
+    result = await ctx.deps.payments.execute(payment_id, amount, currency)
     ctx.deps.record.executed = result
     return result
 

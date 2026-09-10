@@ -217,5 +217,13 @@ class PaymentsTools:
             {"claim_id": claim_id, "amount": amount, "currency": currency},
         )
 
-    async def execute(self, payment_id: str) -> dict:
-        return await self._call("execute_payment", {"payment_id": payment_id})
+    async def execute(self, payment_id: str, amount: float, currency: str = "EUR") -> dict:
+        # The amount travels with the execution call rather than being looked
+        # up from the id. An API that takes only an opaque id cannot be
+        # governed at a choke point: agentgateway's policy hook sees the
+        # `tools/call` arguments and nothing else, and payments-api can only
+        # confirm an instruction that states what it is paying.
+        return await self._call(
+            "execute_payment",
+            {"payment_id": payment_id, "amount": amount, "currency": currency},
+        )

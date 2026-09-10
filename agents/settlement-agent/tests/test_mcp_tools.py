@@ -213,7 +213,7 @@ async def test_call_unwraps_a_doubly_nested_exception_group_to_the_tool_call_err
 
     tools = PaymentsTools("http://fake-mcp/mcp")
     with pytest.raises(ToolCallError, match="404 Not Found"):
-        await tools.execute("PAY-999999")
+        await tools.execute("PAY-999999", 6200.0, "EUR")
 
 
 class _FakeSessionCapturingRequest:
@@ -386,7 +386,7 @@ async def test_call_mints_the_svid_for_the_gateway_audience(monkeypatch):
     _FakeSessionCapturingRequest.captured = {}
 
     tools = PaymentsTools("http://fake-mcp/mcp")
-    await tools.execute("PAY-000001")
+    await tools.execute("PAY-000001", 6200.0, "EUR")
 
     assert audiences == [mcp_tools._GATEWAY_AUDIENCE]
     # And that audience is the gateway's SPIFFE ID, not a bare label: the same
@@ -453,3 +453,46 @@ async def test_the_identity_and_trace_carriers_do_not_bleed_into_each_other(monk
     assert {k.lower() for k in headers} == {"authorization"}, (
         f"the identity header carrier grew beyond Authorization: {sorted(headers)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# The amount travels with the execution call.
+#
+# agentgateway's policy hook decides on what the `tools/call` request itself
+# contains -- the PDS receives `mcp_request` carrying {"name", "arguments"}
+# verbatim -- so an execute call whose only argument is an opaque payment id
+# is un-governable at that choke point, and payments-api has no stated
+# instruction to confirm against either. These two tests pin the arguments
+# dict, which is the thing both the policy layer and the system of record
+# actually see.
+# ---------------------------------------------------------------------------
+
+
+async def test_execute_sends_the_amount_in_the_tool_call_arguments(monkeypatch):
+    monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
+    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport({}))
+    monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
+    _FakeSessionCapturingRequest.captured = {}
+
+    tools = PaymentsTools("http://fake-mcp/mcp")
+    await tools.execute("PAY-000001", 6200.0, "EUR")
+
+    params = _FakeSessionCapturingRequest.captured["request"].root.params
+    assert params.name == "execute_payment"
+    assert params.arguments == {
+        "payment_id": "PAY-000001",
+        "amount": 6200.0,
+        "currency": "EUR",
+    }
+
+
+async def test_execute_defaults_the_currency_but_never_the_amount():
+    """The currency has a sensible default; the amount must be stated.
+
+    `execute(payment_id)` with no amount is the pre-fix signature, and it is
+    exactly the shape that leaves the choke point with nothing to decide on.
+    It must be a TypeError, not a silently-defaulted zero.
+    """
+    tools = PaymentsTools("http://fake-mcp/mcp")
+    with pytest.raises(TypeError):
+        await tools.execute("PAY-000001")

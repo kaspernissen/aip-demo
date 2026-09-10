@@ -37,12 +37,16 @@ def propose_payment(claim_id: str, amount: float, currency: str = "EUR") -> dict
         "openWorldHint": False,
     }
 )
-def execute_payment(payment_id: str) -> dict:
+def execute_payment(payment_id: str, amount: float, currency: str = "EUR") -> dict:
     """Execute a previously proposed payment.
 
     Money leaves the company. This action cannot be undone.
+
+    Pass the amount and currency of the proposal you are executing. The call
+    states what it is paying rather than naming an opaque id alone, so the
+    payment system can confirm the instruction matches what it recorded.
     """
-    return payments.execute(payment_id)
+    return payments.execute(payment_id, amount, currency)
 
 
 if __name__ == "__main__":

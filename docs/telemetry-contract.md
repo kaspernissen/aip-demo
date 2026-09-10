@@ -315,7 +315,7 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (also run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 49, payments-mcp 8, payments-api (Go) 7,
+claims-agent 16, settlement-agent 52, payments-mcp 9, payments-api (Go) 7,
 customer-ui (vitest) 6 — all passing. (This row was stale at 19 for
 settlement-agent from before M1.2 Tasks 1-4 added the PydanticAI agent's own
 tests — `tests/unit/test_telemetry_contract_counts.py` cannot see per-service
@@ -345,7 +345,17 @@ that no transport is opened at all when no SVID is available, and that the
 identity and trace carriers stay separate; and `tests/test_pins.py` gained 3
 for the new `spiffe` dependency and its two transitives, one of which imports
 `WorkloadApiClient` so a compiled-wheel mismatch fails as a test rather than at
-pod start.)
+pod start. Grown again by M2.2's unplanned Task D1, which threads the payment
+amount through to the `execute_payment` tool call so the execute step is
+governable at the gateway's policy hook and confirmable by payments-api at all:
+settlement-agent 49→52 and payments-mcp 8→9, re-measured with each service's
+own runner as above. The three new settlement-agent tests pin that the amount
+reaches `PaymentsTools.execute` from the model's tool call, that it lands in the
+`tools/call` arguments dict — the only thing the policy hook sees — and that
+omitting it is a `TypeError` rather than a silent default; payments-mcp's new
+test pins `amount` as *required* in the advertised input schema, since an
+optional amount is one the model can leave out and both checks then quietly
+stop applying.)
 customer-ui's suite includes its own
 A19 regression test for the traceparent-across-await fix described below
 (`apps/customer-ui/NOTES.md` §2) — worth naming explicitly, since it's the

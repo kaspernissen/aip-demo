@@ -28,8 +28,13 @@ class PaymentsClient:
         response.raise_for_status()
         return response.json()
 
-    def execute(self, payment_id: str) -> dict:
-        response = self._client.post(f"/payments/{payment_id}/execute")
+    def execute(self, payment_id: str, amount: float, currency: str = "EUR") -> dict:
+        # The execution states the amount it believes it is paying. payments-api
+        # holds the proposal and is the party that can confirm the two agree.
+        response = self._client.post(
+            f"/payments/{payment_id}/execute",
+            json={"amount": amount, "currency": currency},
+        )
         response.raise_for_status()
         return response.json()
 

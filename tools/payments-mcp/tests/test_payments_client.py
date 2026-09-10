@@ -42,7 +42,10 @@ def test_execute_posts_to_execute_endpoint():
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
         seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content)
         return httpx.Response(
             200,
             json={
@@ -54,9 +57,12 @@ def test_execute_posts_to_execute_endpoint():
             },
         )
 
-    result = make_client(handler).execute("PAY-000001")
+    result = make_client(handler).execute("PAY-000001", 6200.0, "EUR")
 
     assert seen["url"] == "http://payments-api:8080/payments/PAY-000001/execute"
+    # The amount is stated in the body, not inferred from the id. payments-api
+    # holds the proposal and is the party that can confirm the two agree.
+    assert seen["body"] == {"amount": 6200.0, "currency": "EUR"}
     assert result["status"] == "executed"
 
 
@@ -65,4 +71,4 @@ def test_http_errors_are_raised():
         return httpx.Response(404, json={"error": "payment not found"})
 
     with pytest.raises(httpx.HTTPStatusError):
-        make_client(handler).execute("PAY-999999")
+        make_client(handler).execute("PAY-999999", 6200.0, "EUR")

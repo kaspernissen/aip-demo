@@ -32,8 +32,8 @@ class FakePayments:
             "status": "PROPOSED",
         }
 
-    async def execute(self, payment_id):
-        self.calls.append(("execute", payment_id))
+    async def execute(self, payment_id, amount, currency="EUR"):
+        self.calls.append(("execute", payment_id, amount, currency))
         if self._execute_raises:
             raise self._execute_raises
         return {
@@ -57,7 +57,12 @@ def _script(*, amount: float = 6200.0, narrative: str = "Settled in full."):
             )
         if state["step"] == 2:
             return ModelResponse(
-                parts=[ToolCallPart("execute_payment", {"payment_id": "PAY-000001"})]
+                parts=[
+                    ToolCallPart(
+                        "execute_payment",
+                        {"payment_id": "PAY-000001", "amount": amount, "currency": "EUR"},
+                    )
+                ]
             )
         return ModelResponse(parts=[TextPart(content=narrative)])
 
@@ -74,6 +79,22 @@ async def test_model_calls_propose_then_execute_in_that_order():
     payments = FakePayments()
     await _run(CLAIM, payments, _script())
     assert [c[0] for c in payments.calls] == ["propose", "execute"]
+
+
+@pytest.mark.asyncio
+async def test_execute_passes_the_amount_through_to_the_payments_tool():
+    """The execute call states what it is paying, not just which id.
+
+    A tool that takes only an opaque payment id cannot be judged at the
+    gateway's policy hook (which decides on the tools/call arguments and
+    nothing else) and cannot be confirmed by payments-api against the
+    proposal it recorded. The amount has to reach PaymentsTools.execute for
+    either to be possible.
+    """
+    payments = FakePayments()
+    await _run(CLAIM, payments, _script())
+
+    assert ("execute", "PAY-000001", 6200.0, "EUR") in payments.calls
 
 
 @pytest.mark.asyncio

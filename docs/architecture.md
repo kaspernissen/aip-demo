@@ -488,7 +488,7 @@ Two tools, exact signatures and annotations
 propose_payment(claim_id: string, amount: number, currency: string = "EUR") -> dict
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
 
-execute_payment(payment_id: string) -> dict
+execute_payment(payment_id: string, amount: number, currency: string = "EUR") -> dict
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false }
 ```
 
@@ -560,7 +560,8 @@ settlement_agent = Agent(
         "You settle motor insurance claims for Northstar Insurance.\n"
         "You are given a claim that has already been assessed as covered.\n"
         "Settle it by calling propose_payment with the assessed amount, then "
-        "execute_payment with the paymentId you get back.\n"
+        "execute_payment with the paymentId you get back and that same "
+        "amount.\n"
         "Then reply with a short narrative for the claimant.\n"
         "Settle the assessed amount. Do not round it, discount it or "
         "renegotiate it. Do not state amounts in your narrative."
@@ -571,7 +572,7 @@ settlement_agent = Agent(
 async def propose_payment(ctx, amount, currency="EUR") -> dict: ...
 
 @settlement_agent.tool
-async def execute_payment(ctx, payment_id) -> dict: ...
+async def execute_payment(ctx, payment_id, amount, currency="EUR") -> dict: ...
 ```
 
 **The model chooses the tool sequence.** `decide_settlement` no longer calls

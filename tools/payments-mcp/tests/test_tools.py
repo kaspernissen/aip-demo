@@ -42,13 +42,13 @@ class FakePayments:
             "status": "proposed",
         }
 
-    def execute(self, payment_id):
-        self.calls.append(("execute", payment_id))
+    def execute(self, payment_id, amount, currency="EUR"):
+        self.calls.append(("execute", payment_id, amount, currency))
         return {
             "paymentId": payment_id,
             "claimId": "CLM-1842",
-            "amount": 6200,
-            "currency": "EUR",
+            "amount": amount,
+            "currency": currency,
             "status": "executed",
         }
 
@@ -68,10 +68,29 @@ def test_execute_payment_delegates_to_the_system_of_record(server_module, monkey
     fake = FakePayments()
     monkeypatch.setattr(server_module, "payments", fake)
 
-    result = server_module.execute_payment("PAY-000001")
+    result = server_module.execute_payment("PAY-000001", 6200.0, "EUR")
 
-    assert fake.calls == [("execute", "PAY-000001")]
+    assert fake.calls == [("execute", "PAY-000001", 6200.0, "EUR")]
     assert result["status"] == "executed"
+    assert result["amount"] == 6200.0
+
+
+def test_execute_payment_advertises_the_amount_as_a_required_argument(server_module):
+    """The amount is what makes the execute call governable and confirmable.
+
+    A tool advertised as taking only an opaque payment id gives the policy
+    hook at the gateway nothing to decide on and payments-api nothing to
+    confirm against, which is the defect this change exists to fix. If the
+    argument silently becomes optional, the model can omit it and both
+    checks quietly stop applying.
+    """
+    tools = asyncio.run(server_module.mcp.list_tools())
+    schema = {t.name: t for t in tools}["execute_payment"].parameters
+
+    assert "amount" in schema["properties"]
+    assert schema["properties"]["amount"]["type"] == "number"
+    assert "amount" in schema["required"]
+    assert "currency" in schema["properties"]
 
 
 def _tool_annotations(server_module, name: str) -> dict:
