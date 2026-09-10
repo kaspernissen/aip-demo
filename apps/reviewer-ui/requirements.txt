@@ -1,0 +1,90 @@
+# reviewer-ui: Python (FastAPI + server-rendered HTML), per
+# docs/superpowers/specs/2026-09-10-northstar-m3-supervised-design.md §3.
+# No frontend toolchain: FastAPI renders HTML strings directly (see render.py),
+# the same "no build step" property apps/customer-ui deliberately does NOT
+# have (it is Next.js) but this stage surface does.
+#
+# Direct dependencies, each pinned to the version actually installed and
+# tested against (house style: nothing floats). Resolved fresh into a
+# scratchpad venv (`uv`/`pip index versions` against the live PyPI index,
+# 2026-09-10) rather than assumed from another service's pins, except where
+# noted below.
+fastapi==0.141.1
+# ASGI server. Version matches the pin already used by claims-agent and
+# settlement-agent (deploy/k8s/*.yaml `python main.py`), for consistency
+# across the repo's Python services rather than independently re-resolved.
+uvicorn==0.34.0
+# Form parsing (reviewer_id, decision) -- FastAPI's Form() requires this to be
+# importable, and raises its own AssertionError at request time otherwise.
+python-multipart==0.0.32
+# HTTP client. GET /payments?status=refused and GET /payments/{id} on
+# payments-api directly (no MCP hop -- this route never goes through
+# agentgateway/PDS, see main.py's module docstring), and the raw A2A
+# JSON-RPC POST to senior-settlement-agent (approval.py, same technique as
+# agents/claims-agent/delegation.py's A2ADelegate). Version matches every
+# other Python service's pin.
+httpx==0.28.1
+# OpenTelemetry. Versions match every other Python service's pin
+# (opentelemetry-sdk/-exporter-otlp-proto-http 1.44.0,
+# opentelemetry-instrumentation-httpx 0.65b0) -- these are cross-cutting
+# packages already verified elsewhere in this repo; re-resolving them
+# independently per new service would risk landing on a different SDK
+# version with no reason tied to this service's own needs.
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0
+opentelemetry-instrumentation-httpx==0.65b0
+# SPIFFE Workload API client. Not for calling anything with a JWT-SVID
+# (reviewer-ui makes no MCP call and holds no EXECUTE_LIMITS row) -- solely to
+# read this workload's own X.509 SVID, so the `review.decision` span's
+# `review.reviewer.spiffe_id` attribute is a real, measured identity rather
+# than a value assembled from the namespace/ServiceAccount strings this
+# process merely believes it was deployed with. Version matches
+# settlement-agent's pin (identical Workload API contract, same chart).
+spiffe==0.3.1
+
+# --- test-only, gated by the same advisory-pin discipline as every other
+# service's test_pins.py (agents/settlement-agent/tests/test_pins.py) ---
+pytest==9.0.3
+pytest-asyncio==1.4.0
+
+# --- the rest of this file's transitive closure, pinned exactly as resolved
+# by `pip install` into a clean scratchpad venv (house style: nothing
+# floats). Not re-verified line-by-line against upstream release notes; each
+# is what the direct dependencies above actually declared. ---
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+certifi==2026.7.22
+cffi==2.1.1
+charset-normalizer==3.5.1
+click==8.5.0
+cryptography==50.0.1
+googleapis-common-protos==1.75.3
+grpcio==1.83.1
+h11==0.16.0
+httpcore==1.0.9
+idna==3.19
+iniconfig==2.3.0
+opentelemetry-api==1.44.0
+opentelemetry-exporter-otlp-proto-common==1.44.0
+opentelemetry-instrumentation==0.65b0
+opentelemetry-proto==1.44.0
+opentelemetry-semantic-conventions==0.65b0
+opentelemetry-util-http==0.65b0
+packaging==26.3
+pem==23.1.0
+pluggy==1.6.0
+protobuf==7.36.1
+pyasn1==0.6.4
+pyasn1-modules==0.4.2
+pycparser==3.0
+pydantic==2.13.5
+pydantic-core==2.46.5
+Pygments==2.21.0
+PyJWT==2.13.0
+requests==2.34.2
+starlette==1.6.0
+typing-extensions==4.16.0
+typing-inspection==0.4.4
+urllib3==2.7.0
+wrapt==2.4.0
