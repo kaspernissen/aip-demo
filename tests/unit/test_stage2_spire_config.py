@@ -794,9 +794,10 @@ def test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures(doc):
     file today and two in `architecture.md`; a check pinned to a line number,
     or to the attribute block alone, would leave the others exactly as
     unguarded as they were. So the enumeration unit is "every SPIFFE ID
-    anywhere in the document", and the permitted set is the two IDs this repo
-    actually registers -- which makes a wrong trust domain, a wrong namespace
-    and a wrong service account all fail, not only `sa/default`.
+    anywhere in the document", and the permitted set is the three IDs this repo
+    actually registers (M2.2 added the Policy Decision Service's) -- which
+    makes a wrong trust domain, a wrong namespace and a wrong service account
+    all fail, not only `sa/default`.
 
     And it enumerates over the **raw text**, deliberately including prose,
     tables and fenced blocks. A published measurement is wrong wherever it
@@ -810,7 +811,15 @@ def test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures(doc):
         "guard would be checking nothing. If the identity documentation moved, "
         "point this at where it went rather than deleting the check."
     )
-    permitted = {SETTLEMENT_SPIFFE_ID, GATEWAY_SPIFFE_ID}
+    # Three as of M2.2, not two. `PDS_SPIFFE_ID` was registered by Task 4 and
+    # is already checked against the CR's own rendered template by
+    # `test_every_cluster_spiffeid_renders_the_identity_it_claims` -- but it
+    # was missing from *this* allow-list, so the moment a document published
+    # the third identity this repository genuinely configures, the guard would
+    # have called a correct document an offender. A guard that fails on a
+    # correct document is as harmful as one that passes a wrong one: both
+    # teach a reader to edit the document to match the test.
+    permitted = {SETTLEMENT_SPIFFE_ID, GATEWAY_SPIFFE_ID, PDS_SPIFFE_ID}
     offenders = sorted({one for one in found if one not in permitted})
     assert not offenders, (
         f"{doc.relative_to(REPO_ROOT)} publishes SPIFFE ID(s) this repo does "

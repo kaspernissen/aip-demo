@@ -16,7 +16,7 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
-echo -e "${BLUE}=== Northstar M2.1 smoke test ===${NC}"
+echo -e "${BLUE}=== Northstar M2.2 smoke test ===${NC}"
 
 echo -e "${BLUE}--- Checking prerequisites ---${NC}"
 command_exists go || { echo -e "${RED}go is required${NC}" >&2; exit 1; }
@@ -96,4 +96,4 @@ echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included 
 RUN_BROWSER_TESTS=1 "$ROOT/.venv/bin/python" -m pytest "$ROOT/tests" -v
 
 echo ""
-echo -e "${GREEN}M2.1 smoke test passed.${NC}"
+echo -e "${GREEN}M2.2 smoke test passed.${NC}"

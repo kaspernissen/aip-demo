@@ -288,11 +288,23 @@ Jaeger query window.
   left to read as current:** settlement-agent's MCP client now injects
   `params._meta` (traceparent + baggage) via the low-level request API, and
   FastMCP's server-side extraction joins the trace. Both tests named above
-  have not been `xfail(strict=True)` since Task 7 landed — they are plain
-  passing assertions today, confirmed at the final whole-branch review
+  have not been `xfail(strict=True)` since Task 7 landed — they became plain
+  passing assertions, confirmed at the final whole-branch review
   (`55 passed, 1 xfailed` at the first final-review round; `62 passed, 1
   xfailed` after the second round added seven more tests — see
-  `docs/telemetry-contract.md`). The one remaining gap at this boundary
+  `docs/telemetry-contract.md`).
+  **Superseded again by M2.2 (commit `477e7fb`), so the second name above no
+  longer resolves:** `test_payment_was_executed_with_no_governance` was
+  **retired**, not renamed and not moved. Its whole assertion was that a
+  €6,200 payment reaches `status: "executed"` with nothing in the chain
+  deciding whether it should — a true statement about M1 and a false one
+  about M2.2, where the same payment is refused by policy. A test that
+  asserts the absence of governance cannot survive governance arriving, so
+  it was deleted rather than inverted, and `tests/e2e/test_claims_chain_trace.py`
+  carries a `RETIRED IN M2.2` block at its site explaining that. Its
+  companion, `test_all_four_backend_services_are_in_one_trace`, is
+  unaffected and still passing. Only the name is stale here; everything this
+  bullet says about trace propagation still holds. The one remaining gap at this boundary
   is narrower than "does not propagate": the trace joins fully; only the
   `northstar.claim.id` *attribute* still does not cross it (FastMCP never
   reads `baggage` out of `params._meta` — see `tools/payments-mcp/NOTES.md`

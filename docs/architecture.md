@@ -1,25 +1,36 @@
-# Northstar Architecture — M2.1 (Interposed)
+# Northstar Architecture — M2.2 (Decided)
 
-Status: **M2.1 (Interposed)**, on branch `m2.1-interposed`. The M2.1 content
-below was written and checked against commit `b75b260` — the commit
-immediately before the one that adds it — against both the source tree and
-the live `kind-northstar` cluster at that point. M1.1 and M1.2 content keeps
-its own, older provenance, stated in the next block; this document does not
-claim a single verification pass over all of it.
+Status: **M2.2 (Decided)**, on branch `m2.2-decided`. The M2.2 content below
+was written and checked by Task 8 against commit `50fac07` — the last commit
+of the milestone's implementation — against the source tree and the live
+`kind-northstar` cluster at that point. M2.1's content keeps its own
+provenance (commit `b75b260`), and M1.1's and M1.2's keep theirs, stated in
+the next block; this document does not claim a single verification pass over
+all of it.
 
 M1.1 was the walking skeleton: one claim, five components, one trace, no
 governance. M1.2 put a real model call inside that skeleton without changing
-its shape. M2.1 changes the shape for the first time — a proxy and an
-identity provider are now in the picture, and one hop authenticates its
-caller cryptographically.
+its shape. M2.1 changed the shape for the first time — a proxy and an
+identity provider entered the picture, and one hop authenticated its caller
+cryptographically. **M2.2 is where the platform starts saying no.**
 
-**The one-sentence version of M2.1, and the honest one:** *the model can
-request; the platform now knows who is requesting.* It does not yet decide.
-Every call from a caller the gateway can authenticate is still forwarded, and
-no policy exists anywhere in this chain — see "What the system deliberately
-does not do", which M2.1 **sharpens** from *no authorization anywhere* to
-**authenticated but not authorized**, rather than deleting. That distinction
-is precisely what M2.2 changes.
+**The one-sentence version of M2.2, and the honest one:** *the model can
+request, the platform knows who is requesting, and the platform now decides
+whether the request becomes an effect.* Concretely, and measured live rather
+than described: submitting the pre-filled `CLM-1842` at €6,200 gets the
+payment **proposed and then refused**, the model narrates the refusal to the
+claimant in its own words and does not retry, and the decision is a span in
+the same trace. A second claim at €5,800 executes end to end. Both halves
+matter: a platform that refuses everything is not governance, it is an outage.
+
+**What is still not decided, so the "authorized" claim is not overread.** One
+hop authorizes: `settlement-agent → agentgateway` on the MCP call. Hop 1
+(browser → claims-agent), Hop 2 (claims-agent → settlement-agent) and Hop 4
+(payments-mcp → payments-api) carry no identity and no policy, and
+payments-api still moves money for anything that can reach it. See "What the
+system deliberately does not do", which M2.2 **sharpens again** — from
+*authenticated but not authorized* to *one hop authorized, on one rule* —
+rather than deleting.
 
 **Two claims a reader might expect to find here and will not, because they
 are measurably false.**
@@ -51,11 +62,23 @@ are measurably false.**
 2. *A whole-trace span total.* This document publishes none. The trace is
    non-deterministic: the `a2a-sdk`'s
    `a2a.server.events.event_queue.EventQueue.dequeue_event` polling span was
-   measured varying **10–16** across identically-shaped runs. The "62 spans"
-   figures further down are M1.2-era captures, kept with their own stated
-   provenance rather than restated as current. What is stable, and therefore
-   what gets published and asserted, is trace **shape** — service, operation,
-   kind, parent.
+   measured varying **10–16** across identically-shaped runs, and **M2.2 adds a
+   second source of variance** — a denied settlement short-circuits the whole
+   subtree below the refused tool call, so a denied run is genuinely smaller
+   than a permitted one. Measured for M2.2 across four browser-rooted traces:
+   125, 123, 119, 117 spans, same shape every time. The "62 spans" figures
+   further down are M1.2-era captures, kept with their own stated provenance
+   rather than restated as current. What is stable, and therefore what gets
+   published and asserted, is trace **shape** — service, operation, kind,
+   parent.
+3. *That the refusal is a red span.* It is not, and that is a decision rather
+   than an omission. The `policy.decision` span's status stays `Unset` on a
+   deny: a refusal is the platform working correctly, and an ERROR span for
+   the one thing this milestone exists to do would read as a fault. The
+   refusal is legible from the attributes (`policy.decision=deny`, the rule
+   that fired, the amount and the limit) and from agentgateway's own
+   `otel.status_description` one span up — where agentgateway *does* set
+   ERROR, because from its point of view the proxied call failed.
 
 **Provenance (fixed by the M1.2 final-review fix round, SF-6):** this
 document previously claimed every claim in it was checked against HEAD
@@ -82,10 +105,10 @@ instead, so the document describes the system that is actually deployed:
    underneath every hop below and changes none of them: the trace survived
    the swap with all 61 distinct `(service, operation, kind, parent)` rows
    identical pre and post. `kubeProxyReplacement` is deliberately off, and
-   `kube-proxy` is still running. **There is no `toFQDNs` egress policy** —
-   only its `l7Proxy` prerequisite is confirmed present; egress denial is a
-   later milestone's work and nothing in this system restricts outbound
-   traffic today.
+   `kube-proxy` is still running. At M2.1 there was **no `toFQDNs` egress
+   policy** — only its `l7Proxy` prerequisite was confirmed present, and
+   nothing restricted outbound traffic. **M2.2 changed that**; see "The
+   network, as the second defence" below.
 2. **Task 2** deployed **agentgateway v1.5.0** into `northstar-platform` as a
    plain Deployment with a ConfigMap-mounted `config.yaml` — **not** the Helm
    chart, which installs a Gateway API control plane with nowhere to put this
@@ -101,6 +124,28 @@ instead, so the document describes the system that is actually deployed:
 5. **Task 5** proved the verification is load-bearing rather than
    decorative — `tests/e2e/test_caller_identity.py` — and wrote this
    revision. See "Identity with teeth".
+
+**What M2.2 changed, in the order it happened.** Same convention: each item
+names where it is described.
+
+1. **`d17309c`** made the choke point enforceable rather than conventional: a
+   `CiliumNetworkPolicy` on `payments-mcp`'s **ingress** admitting only
+   agentgateway. Before it, `claims-agent` could POST an MCP `initialize`
+   straight at `payments-mcp:8000` and get HTTP 200 — measured. See "Hop 3".
+2. **The Policy Decision Service** (`platform/policy-decision-service`), a
+   gRPC service implementing agentgateway's `ExtMcp` contract, holding one
+   rule and emitting one span. See "The components" and "The decision the
+   platform makes".
+3. **`mcpGuardrails`** on the gateway's MCP route, calling that service on
+   every `tools/call`, `failureMode: failClosed`. The deny became real. See
+   "Hop 3a".
+4. **A terminal denial path in `agents/settlement-agent/mcp_tools.py`**, so
+   the model sees a refusal it cannot retry and narrates it. See "The decision
+   logic".
+5. **Cilium `toFQDNs` egress policies** on all three `northstar-agents`
+   workloads, so the model provider is reachable from exactly one pod and the
+   gateway is the only path to a tool. See "The network, as the second
+   defence".
 
 This document does not duplicate [`docs/telemetry-contract.md`](telemetry-contract.md),
 which is the authority on exactly what instrumentation is enabled, what it
@@ -132,17 +177,23 @@ picking one silently.
                                                                        │
                                                                        ▼
                                                           ┌──────────────────┐
-                                                          │  agentgateway    │
-                                                          │  (Rust, v1.5.0)  │
-                                                          │  SVID verified   │
-                                                          │  no policy yet   │
-                                                          └────────┬─────────┘
-                                                                   │
+                                                          │  agentgateway    │      ┌──────────────────────────┐
+                                                          │  (Rust, v1.5.0)  │      │ policy-decision-service  │
+                                                          │  SVID verified   │─────▶│ (Python, gRPC ExtMCP)    │
+                                                          │  policy consulted│◀─────│ permit | deny            │
+                                                          └────────┬─────────┘      └──────────────────────────┘
+                                                                   │            Hop 3p: gRPC, on EVERY
+                                                                   │            `tools/call`, BEFORE the
+                                                                   │            call reaches payments-mcp.
+                                                                   │            failureMode: failClosed.
+                                                                   │            A deny stops here.
                                                      Hop 3b: MCP again, same
-                                                     transport. The gateway
-                                                     STRIPS the credential and
-                                                     re-stamps `_meta` with its
-                                                     own outbound span
+                                                     transport, ONLY if the
+                                                     policy permitted. The
+                                                     gateway STRIPS the
+                                                     credential and re-stamps
+                                                     `_meta` with its own
+                                                     outbound span
                                                                    │
                                                                    ▼
                                                           ┌──────────────────┐
@@ -165,12 +216,27 @@ This agrees with `README.md`'s one-line version; this diagram just names the
 transport and the payload shape at each arrow, which the README's version
 doesn't attempt.
 
+**Hop 3p is drawn as a branch off the gateway rather than as a step in the
+chain, deliberately, and the trace agrees.** The decision is not a hop the
+claim travels through — it is a question the gateway asks and a verdict it
+acts on. In Jaeger both the gateway's `Guardrail` CLIENT span and the PDS's
+`policy.decision` SERVER span are **children of the gateway's `tools/call`
+SERVER span**, siblings of each other, and the onward
+`tools/call payments-mcp_<tool>` CLIENT span is their sibling too — present
+on a permit, absent on a deny. Measured; see
+[`docs/telemetry-contract.md`](telemetry-contract.md)'s "agentgateway's
+guardrail telemetry, as measured".
+
 ## The components
 
-M1.1 had five, all of them this project's own code. M2.1 adds platform
+M1.1 had five, all of them this project's own code. M2.1 added platform
 infrastructure this project runs but did not write, so the two are listed
 separately — the distinction matters for the no-invented-telemetry rule,
-which applies to the second table without exception.
+which applies to the second table without exception. **M2.2 adds a sixth
+component of this project's own**, and it is deliberately in neither of those
+two groups: the Policy Decision Service is code this repository writes, but it
+is platform machinery rather than an application component, so it gets its own
+row in the platform table with that distinction stated in the cell.
 
 ### The five application components
 
@@ -226,7 +292,7 @@ What each component is explicitly **not** responsible for:
   *"Deliberately tiny. In M1 it has no authorization of any kind: anything
   that can reach it can move money."*
 
-### The platform components M2.1 adds
+### The platform components M2.1 and M2.2 add
 
 All of these live in `northstar-platform` and none is this project's code.
 Images and versions below were read from the live cluster, enumerating over
@@ -237,7 +303,8 @@ the six SPIRE sub-images, including the one carrying the hazard recorded under
 
 | Component | What it is | Version / image | Role in this system |
 |---|---|---|---|
-| `agentgateway` | Rust MCP/A2A/LLM proxy. A **Linux Foundation** project — **not** CNCF | `cr.agentgateway.dev/agentgateway:v1.5.0` (note the leading `v`; the tag `1.5.0` does not exist on that registry, though the binary reports `1.5.0` as its internal version) | Interposed on the MCP hop. Verifies the caller's JWT-SVID; forwards to `payments-mcp`. Carries no policy. |
+| `agentgateway` | Rust MCP/A2A/LLM proxy. A **Linux Foundation** project — **not** CNCF | `cr.agentgateway.dev/agentgateway:v1.5.0` (note the leading `v`; the tag `1.5.0` does not exist on that registry, though the binary reports `1.5.0` as its internal version) | Interposed on the MCP hop. Verifies the caller's JWT-SVID (`jwtAuth`), asks the Policy Decision Service about every `tools/call` (`mcpGuardrails`), and forwards to `payments-mcp` **only** if the answer is permit. |
+| `policy-decision-service` | **This project's own code** (Python 3.13, `grpcio`), not third-party — listed here because it is platform machinery rather than an application component. Serves agentgateway's `agentgateway.dev.ext_mcp.ExtMcp` contract, from a proto vendored verbatim at v1.5.0 (`platform/policy-decision-service/proto/ext_mcp.proto`, `d459d88`) | `localhost:5001/northstar/policy-decision-service:dev`, `policy-decision-service.northstar-platform.svc.cluster.local:9100` | Answers permit or deny on caller identity plus amount. Holds the milestone's one rule and emits the `policy.decision` span. Makes no Kubernetes API calls and holds no RBAC; nothing in `northstar-agents` can reach it. |
 | SPIRE server / agent | SPIFFE runtime, chart `spiffe/spire` 0.30.1 from the hardened repo | appVersion SPIRE **1.15.3**; `ghcr.io/spiffe/spire-server:1.15.3`, `spire-agent:1.15.3` | Issues the JWT-SVID. Trust domain `northstar.local`, cluster name `northstar`. |
 | SPIRE CRDs | chart `spiffe/spire-crds` 0.6.1, installed first | — | The `spire.spiffe.io` CRDs the `ClusterSPIFFEID` resources need. |
 | `spire-controller-manager` | ships inside the SPIRE chart | `ghcr.io/spiffe/spire-controller-manager:0.7.0` | Reconciles `ClusterSPIFFEID` resources into real registration entries. |
@@ -334,6 +401,21 @@ Real reply, same capture:
 }
 ```
 
+**That reply capture is M1-era, and is kept deliberately** — it is the
+envelope shape, and the envelope shape has not changed. What M2.2 changed is
+one value inside it. The same `CLM-1842`/€6,200 submission now comes back
+with `"status": "refused"` rather than `"executed"`: settlement-agent still
+proposes the payment, the platform refuses the execute, and
+`agents/settlement-agent/settlement.py`'s refusal branch returns the *same
+five keys* it returns on success (`amount`, `currency`, `status`,
+`paymentId`, `narrative`) — sourced from what the ledger recorded for the
+**proposal**, so `paymentId` names a real proposed-but-unexecuted payment and
+`amount` is the proposed amount. Only `narrative` is the model's, and it
+differs on every run, which is why no verbatim M2.2 reply is published here.
+Transport is unchanged too: HTTP 200, `result` present, no JSON-RPC `error`.
+So claims-agent and the browser parse a refusal exactly as they parse a
+settlement.
+
 The claim's `parts[0].text` is itself a JSON string (A2A wraps arbitrary
 text; the claim payload happens to be JSON) — claims-agent's `intake.py`
 parses that inner string, not the outer envelope, as the claim.
@@ -421,12 +503,21 @@ the network boundary instead of in application code.
 
 | | From → to | What is different about it |
 |---|---|---|
-| **Hop 3a** | `settlement-agent` → `agentgateway` | Carries the credential: `Authorization: Bearer <JWT-SVID>`. Trace context rides in *two* independent carriers (see below). This is the only authenticated hop in the system. |
-| **Hop 3b** | `agentgateway` → `payments-mcp` | Same MCP transport, same tool call. The gateway has **stripped** the credential and **re-stamped** `params._meta` with its own outbound span. `payments-mcp` therefore verifies nothing and sees no identity. |
+| **Hop 3a** | `settlement-agent` → `agentgateway` | Carries the credential: `Authorization: Bearer <JWT-SVID>`. Trace context rides in *two* independent carriers (see below). This is the only authenticated hop in the system, and as of M2.2 the only authorized one. |
+| **Hop 3p** | `agentgateway` → `policy-decision-service` | **M2.2.** gRPC, `agentgateway.dev.ext_mcp.ExtMcp/CheckRequest`, on every `tools/call`, at the REQUEST phase — before the call reaches `payments-mcp`, which is the only moment at which a refusal is still a refusal rather than a regret. Not on the claim's path: a question the gateway asks. |
+| **Hop 3b** | `agentgateway` → `payments-mcp` | Same MCP transport, same tool call — **only if Hop 3p permitted**. The gateway has **stripped** the credential and **re-stamped** `params._meta` with its own outbound span. `payments-mcp` therefore verifies nothing and sees no identity. |
 
-Both hops are MCP over streamable HTTP, and the reroute did not change the
-protocol at either end: `payments-mcp` is unmodified and does not know a
-proxy is in front of it.
+Hops 3a and 3b are MCP over streamable HTTP, and neither the reroute nor the
+policy changed the protocol at either end: `payments-mcp` is unmodified, does
+not know a proxy is in front of it, and does not know a policy exists. That is
+the property exit criterion 4 is about — the tool is governed without being
+told it is being governed.
+
+**What `payments-mcp` sees on a refusal: nothing at all.** Measured on the
+denial trace — there is no `payments-mcp` span for the refused `tools/call`
+anywhere in it (the `payments-mcp` spans present are `initialize`'s), and no
+`payments-api` execute span either. The refusal is not a call that failed; it
+is a call that never happened.
 
 **The gateway is a node in the trace, not a fracture** — measured shape, and
 the only thing about the trace this document publishes, since a whole-trace
@@ -436,7 +527,9 @@ span total is not stable (see the header):
 settlement-agent  execute_tool
   settlement-agent  POST                                  (httpx CLIENT)
     agentgateway    tools/call                             (SERVER)
-      agentgateway  tools/call payments-mcp_<tool>         (CLIENT)
+      agentgateway  Guardrail                              (CLIENT)   ── M2.2
+      policy-decision-service  policy.decision             (SERVER)   ── M2.2
+      agentgateway  tools/call payments-mcp_<tool>         (CLIENT)   ── permit only
         payments-mcp  tools/call <tool>                    (SERVER)
           payments-mcp  POST                               (httpx CLIENT)
             payments-api  POST /payments/...               (SERVER)
@@ -444,11 +537,22 @@ settlement-agent  execute_tool
 
 One trace id throughout, no new roots and no orphans.
 `tests/e2e/test_gateway_trace.py` is the runnable evidence and pins this
-shape, the two span kinds, the parentage, and the gateway's exact attribute
+shape, the span kinds, the parentage, and the gateway's exact attribute
 vocabulary. Note that the tool name is **not** in the gateway's SERVER span
 name — both tool calls in a settlement produce a span named exactly
 `tools/call`, and telling them apart means reading the `gen_ai.tool.name`
 attribute.
+
+**Read the indentation carefully, because it is the M2.2 measurement that was
+easiest to get wrong.** The three M2.2-marked spans are **siblings**, all three
+children of the gateway's `tools/call` SERVER span. `policy.decision` is *not*
+a child of `Guardrail`, even though `Guardrail` is the span for the gRPC call
+that produced it: agentgateway propagates the context it *received* to the
+guardrail hook rather than its own client span's context. Measured on six
+captured traces before it was written down, and pinned by exact equality on
+the sorted `(service, operation, kind)` triples of that span's children in
+`tests/e2e/test_policy_denial.py` — which is a stronger assertion than a
+child count, and replaced an "exactly one child" assertion that M2.2 falsified.
 
 **Why the trace survives, stated precisely, because two mechanisms are very
 easy to conflate here and conflating them produces a false claim.** The
@@ -497,15 +601,31 @@ spec's own argument is *"Consequence is declared in the protocol... the
 Policy Decision Service (M2) reads that annotation rather than pattern-matching
 tool names. ... It also means a newly added consequential tool inherits
 governance automatically, which is the real test of whether a platform
-abstraction works."* Nothing reads this annotation yet — not in M1.1 and
-still not in M2.1, because no policy engine exists in either. The gateway
-records the tool name on its spans (`gen_ai.tool.name`) but makes no
-decision from it. Today the annotation is inert metadata sitting in the tool
-schema.
-That is precisely the point being set up: the annotation is already true and
-already correct, waiting for M2's Policy Decision Service to key off it
-instead of a hardcoded list of "dangerous tool names," which is the weaker
-design this project is deliberately avoiding.
+abstraction works."*
+
+**M2.2 correction, and it is a correction against this project's own stated
+intention rather than a stale sentence.** Earlier revisions said the
+annotation was "waiting for M2's Policy Decision Service to key off it instead
+of a hardcoded list of dangerous tool names, which is the weaker design this
+project is deliberately avoiding." The Policy Decision Service now exists, and
+**it does not read the annotation.** `platform/policy-decision-service/pds/rules.py`
+holds two frozensets of tool *names*, `UNLIMITED_TOOLS = {"propose_payment"}`
+and `LIMITED_TOOLS = {"execute_payment"}`, and decides from those. So the
+weaker design is the one that shipped, and the reason is worth stating rather
+than hiding: agentgateway's guardrail hook hands the PDS the JSON-RPC `params`
+of the call it is judging (`{"name": ..., "arguments": {...}}`, measured, M2.2
+Task 1 question 5) and nothing else — no tool schema, no annotations. Reading
+`destructiveHint` from a `tools/list` the PDS would have to fetch and cache
+itself is real work with real staleness questions, and it was out of scope for
+a milestone whose job was to make one denial real.
+
+The consequence is concrete and should be read as debt, not as nuance: a
+newly-added consequential tool does **not** inherit governance here. It falls
+into neither frozenset, so `decide()` refuses it under the rule name
+`unknown_tool` — which fails closed, and is the right direction, but it means
+every new tool needs a `rules.py` edit rather than being governed by what it
+already declares about itself. The annotation is still true, still correct,
+and still read by nothing.
 
 ## Hop 4 — payments-mcp → payments-api: plain HTTP/JSON
 
@@ -663,19 +783,170 @@ Exactly one such span appears per `chat` span, confirmed by diffing a live
 capture taken before this change against one taken after
 (`tests/e2e/test_settlement_llm_trace.py::test_anthropic_client_span_exists_and_is_parented_to_chat`).
 
-**No amount check, clamp, threshold or guard rail exists anywhere in this
-path**, confirmed by reading `settlement.py`, `executor.py`, `mcp_tools.py`,
-`tools/payments-mcp/*.py` and `systems/payments-api/*.go` — the only numeric
-checks anywhere are `_validate`'s pre-model `amount is None`/`amount < 0`
-guards, both inherited unchanged from M1.1 and both about the *inbound*
-claim, not the model's proposal. `settlement.py`'s own module docstring
-states the intent as plainly as M1.1's did: *"There is no €5,000 check here,
-and that is the point: M1 is ungoverned on purpose. The model can propose
-any amount and nothing stops it. That hole is what M2's Policy Decision
-Service fills."* Three independent live runs (a direct A2A measurement, the
-gate's own assertions, and a real browser submission) all settled exactly
-the assessed €6,200 — a fact about this model on this prompt, not a property
-anything in this chain enforces.
+## The decision the platform makes — M2.2
+
+**Still no amount check, clamp, threshold or guard rail in the agent, and that
+is now a governed property rather than an admission.** Re-confirmed for M2.2
+by reading `settlement.py`, `executor.py`, `mcp_tools.py` and
+`tools/payments-mcp/*.py`: the only numeric checks in either component are
+`_validate`'s pre-model `amount is None`/`amount < 0` guards, both inherited
+unchanged from M1.1 and both about the *inbound claim*, not about how much may
+be paid. `settlement.py`'s own module docstring says where the limit is
+instead: *"That hole is what M2's Policy Decision Service fills — and note
+where it is filled: still not here. There is no limit in this file in M2.2
+either. The refusal comes from the platform, at a choke point the agent cannot
+reach around."* That claim is not left to prose:
+`tests/e2e/test_policy_denial.py`'s criterion-4 test walks both components'
+production source with `ast`, and fails on any policy vocabulary, any literal
+equal to a PDS allowance, or any unallowlisted comparison involving money.
+
+**The rule, in full, because it is one rule and hiding it would be worse than
+printing it** (`platform/policy-decision-service/pds/rules.py`):
+
+> `settlement-agent`, at autonomy level `assisted`, may **execute** up to
+> €6,000. Proposing is unlimited. Any other tool, any other caller, any other
+> autonomy level, and any amount that is not finite and positive: **denied**.
+
+Four properties of that rule are deliberate and each was argued:
+
+- **Identity is structurally required, not merely consulted.** The allowance
+  table is keyed on `(SPIFFE ID, autonomy level)`, so a decision cannot be
+  reached without a caller. An unknown caller falls to `unknown_caller` and is
+  denied — which is what exit criterion 5 demonstrates by changing the
+  identity and watching the verdict change, using a second real SPIRE-minted
+  JWT-SVID rather than a mocked one.
+- **Proposing and executing are different acts.** `propose_payment` records an
+  intent and moves no money, so it is permitted unconditionally
+  (`unlimited_tool`); `execute_payment` is the one that is limited. The trace
+  shows both decisions, which is more informative than a single gate would be:
+  the same caller is permitted to propose €6,200 and refused permission to
+  execute it.
+- **The limit test is `amount > limit`, so everything that is not greater
+  would otherwise pass** — including `NaN`, which is not greater than
+  anything, and zero, and negatives. Those are refused separately, under their
+  own rule name `invalid_amount`, so an audit trail can distinguish "the limit
+  considered this and said yes" from "this was never a payable amount".
+- **A parse failure is a denial, never a gRPC error.** `parse_call` never
+  raises; it returns a `ToolCall` with holes in it, which `decide` refuses.
+  The distinction matters because agentgateway routes a gRPC error through
+  `failureMode` and reports it as a PDS *outage*, which is a different
+  sentence both on stage and in a trace.
+
+**`failureMode: failClosed` is set explicitly, and the reason this document
+gave for it was wrong — the correction is recorded rather than quietly
+swapped.** Through M2.2 Tasks 2–7 this paragraph read: *"agentgateway v1.5.0's
+`FailureMode` derives `Default` with `FailOpen` first, so omitting the key
+means a PDS outage silently permits every payment."* Task 8 measured it
+against the pinned image and **the default is `failClosed`, not `failOpen`.**
+
+The measurement, because a claim this load-bearing should not be swapped for
+another assertion. First, the binary was tied to a source revision: `docker run
+--rm cr.agentgateway.dev/agentgateway:v1.5.0 --version` reports
+`git_revision: fe6732474a96a0363dfb9822859af4e9bab360fa`, which is exactly the
+commit tag `v1.5.0` points at — so the source read below is the source of the
+binary that runs in this cluster, not a nearby version of it. Then three
+probes, same image, same throwaway MCP backend, a guardrail pointed at a dead
+address (`127.0.0.1:9`) so every `tools/call` forces the failure branch:
+
+| `failureMode` in the config | What the `tools/call` returned |
+|---|---|
+| omitted entirely | `-32603 mcpGuardrails checkRequest failed: upstream call failed: Connect: Connection refused` |
+| `failClosed` | the same error, byte for byte |
+| `failOpen` | the call **passed through** to the backend and the tool answered |
+
+Omitting the key behaves identically to `failClosed`, and only `failOpen`
+lets the call through. The source agrees:
+`crates/agentgateway/src/mcp/guardrails/mod.rs` at that revision declares
+`enum FailureMode` with `#[derive(Default)]` and `#[default]` on `FailClosed`,
+and `Remote.failure_mode` is `#[serde(default)]` — and `client.rs` imports its
+`FailureMode` from that module, so this is the enum the guardrail actually
+uses.
+
+**The line stays, and stays load-bearing, for a different reason.** It is no
+longer "the default would betray us"; it is that fail-open is one word away
+and the difference is invisible in a healthy cluster — there is no observable
+difference between fail-open-and-healthy and fail-open-and-not-governing until
+someone reads a trace. Stating the value makes the intent reviewable instead
+of inherited, and `tests/unit/test_stage2_pds_config.py` still fails if the
+deployed config ever says `failOpen` or drops the key. What changed is the
+argument, not the configuration: nothing in this repository was altered by
+this correction except the sentences that got it wrong.
+
+**What the model does with a refusal.** `mcp_tools.PolicyDenial` is a
+`pydantic_ai.ToolFailed`, so the framework hands the refusal to the model as a
+result rather than as a retry instruction — and deliberately **not** a
+`pydantic_ai.ModelRetry`, which the framework would hand back as "try again".
+The model sees the refusal and explains it to the claimant. The denial is
+recognised by the structured marker `data.retryable: false` /
+`data.decision: "deny"` that the PDS puts in the JSON-RPC error's `data`
+member, never by pattern-matching the reason prose — a transport failure and a
+denial-shaped message with no marker both stay transport failures. And
+`settlement.py`'s `_latch` makes the guarantee independent of the model's
+cooperation: after a refusal, no further payment call leaves the process for
+that claim, so an agent cannot sit on stage retrying a payment it will never
+be allowed to make.
+
+**A refusal comes back as a reply, not as an error.** `executor.py` returns a
+normal A2A reply with `status: "refused"` and the model's narrative, rather
+than letting an exception become a JSON-RPC error envelope. The claimant is
+owed an explanation rather than a stack trace, and the platform refusing is
+the platform working. Every other field of the documented reply is unchanged —
+including `amount: 6200`, which is the amount the ledger recorded for the
+*proposal*, since proposing was permitted.
+
+**One number in M1.2's version of this section has to be read differently
+now.** It said three independent live runs "all settled exactly the assessed
+€6,200 — a fact about this model on this prompt, not a property anything in
+this chain enforces." Both halves still hold and the conclusion has inverted:
+the model still proposes exactly €6,200, and the platform now refuses to
+execute it. What was an observation about a model's behaviour is now the input
+to a decision something else makes.
+
+## The network, as the second defence — M2.2
+
+Everything above is enforced at the application layer, by a proxy an agent
+chooses to talk to. M2.2's last task makes that choice not a choice, in both
+directions, with `CiliumNetworkPolicy` on a Cilium 1.20.1 dataplane
+(`deploy/platform/cilium-policies.yaml`, five documents):
+
+| Direction | Policy | What it makes impossible |
+|---|---|---|
+| **Ingress** (`d17309c`) | `payments-mcp` admits agentgateway and the kubelet probe, nothing else | A workload reaching the tool without crossing the policy hook. Measured before it existed: `claims-agent` POSTed an MCP `initialize` at `payments-mcp:8000` and got **HTTP 200** |
+| **Egress** (`50fac07`) | one document per workload in `northstar-agents` — `settlement-agent` may reach DNS, agentgateway:3000, the collector:4318 and `api.anthropic.com:443` by name; `claims-agent` may reach DNS, settlement-agent:9002 and the collector; `customer-ui` may reach DNS only | An agent reaching the model provider, the ledger, the tool or the PDS directly. Two of the three workloads had unrestricted outbound egress before this, including to the model provider — measured, which is why the policy covers the namespace rather than the one agent the criterion names |
+
+Four things about that table are measurements and not design intent:
+
+- **The denials are `TimeoutError`, not `ConnectionRefusedError`.** A Cilium
+  drop discards the packet, so there is no RST. A test written to expect a
+  refusal would fail against a working policy.
+- **DNS still resolves for hosts the policy will not let you reach.**
+  `api.anthropic.com` resolves inside `claims-agent` while the connection to
+  it is dropped. That is correct: the L4 DNS rule permits the lookup, and
+  enforcement happens on the connect.
+- **`toFQDNs` needs Cilium's DNS proxy, and the proxy is visible in the
+  datapath.** `settlement-agent`'s two port-53 rules carry a `PROXY PORT`
+  in the BPF policy map; the other two agents' do not, because they have no
+  `toFQDNs` rule to feed. That difference is asserted, and it catches a
+  mutation the behavioural probe cannot: stripping `rules.dns` leaves the
+  connection to `api.anthropic.com` working, because Cilium retains the
+  already-derived FQDN identity from earlier lookups.
+- **The model-provider allowance is a per-name identity, not "external is
+  fine".** Its BPF row carries `fqdn:api.anthropic.com` *and*
+  `reserved:world` on 443/TCP, so "no egress row mentions `reserved:world`"
+  would fail on a *correct* policy. The assertion that separates the two cases
+  is that every world-bearing row is also FQDN-labelled and port-scoped.
+
+**No Cilium telemetry is asserted as a span, and none was invented.**
+`enable-hubble: false` in this cluster's `cilium-config` — read live — so
+there are no Hubble flows here at all. The evidence for every claim in this
+section is a read of the BPF policy map or a TCP probe from inside a pod.
+
+**`toFQDNs` is only as good as the SDK default it names.**
+`api.anthropic.com` is configured nowhere in this repository; it is the
+`anthropic` client's own hardcoded `base_url`. If that default ever moves,
+this policy fails **closed** — the model call breaks rather than a new host
+being silently permitted. That is the right direction, and it is still a
+coupling to a third-party constant.
 
 ## Workload identity: what is real and what is deferred
 
@@ -692,19 +963,49 @@ What is installed, pinned (`deploy/platform/spire/`):
 | trust domain | `northstar.local` | every SPIFFE ID in this system |
 | cluster name | `northstar` | the k8s node attestor's cluster |
 
-Two identities are registered, declaratively, as `ClusterSPIFFEID` resources:
+**Three** identities are registered, declaratively, as `ClusterSPIFFEID`
+resources — two from M2.1 Task 4 and a third added by M2.2, all in
+`deploy/platform/spire/registration.yaml`, all rendered from the same
+`spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}`
+template. Read back off the live SPIRE server's own entry list, not from the
+manifest alone:
 
 ```
 spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
 spiffe://northstar.local/ns/northstar-platform/sa/agentgateway
+spiffe://northstar.local/ns/northstar-platform/sa/policy-decision-service
 ```
 
-Both are attested on namespace **and** Kubernetes service account
+All three are attested on namespace **and** Kubernetes service account
 (`k8s:ns:...` plus `k8s:sa:...` selectors on the entry, alongside the
 controller-manager's own `k8s:pod-uid:`), which is why each workload got a
-dedicated ServiceAccount in this task: without one, both attested as
-`.../sa/default`, and an identity whose service-account component reads
-"default" is not something a policy can decide on.
+dedicated ServiceAccount: without one, each attested as `.../sa/default`, and
+an identity whose service-account component reads "default" is not something a
+policy can decide on. That is not hypothetical — it is what SPIRE minted for
+`settlement-agent`'s pod, on this cluster, before it was given a
+ServiceAccount of its own.
+
+**Only one of the three is ever fetched, and the other two are registered on
+purpose rather than by accident.** `settlement-agent` mounts the Workload API
+socket and fetches a JWT-SVID; neither agentgateway nor the Policy Decision
+Service has a `csi.spiffe.io` mount, and neither presents an SVID to anything.
+The gateway's entry exists because its SPIFFE ID is the **audience**
+settlement-agent's token is minted for, so that string has to name a real
+registered identity rather than an invented label. The PDS's entry exists for
+the same class of reason and one more: the ExtMCP hop between the gateway and
+the PDS is **plain gRPC today**, protected by a `CiliumNetworkPolicy` rather
+than by mTLS, and this entry is what makes the PDS's own certificate possible
+the day that hop is hardened — as well as being the identity a future audit
+record would name as the decider. An identity nothing registers is a string,
+not an identity.
+
+**A guard exists for these three strings specifically**, because a published
+identity nothing checks is a published identity that can go stale in the
+direction that looks like success:
+`tests/unit/test_stage2_spire_config.py::test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures`
+enumerates **every** `spiffe://` string in this document and in
+`docs/telemetry-contract.md` — prose, tables and fenced blocks alike — and
+fails on any that is not one of the three this repository actually registers.
 
 **How the credential gets into the pod.** No secret, key or token is in any
 manifest. The `spiffe-csi-driver` bind-mounts the spire-agent's Workload API
@@ -913,40 +1214,76 @@ back with `jsonpath` and compared by checksum against the repo file — a
 
 ## What the system deliberately does not do
 
-**M2.1 sharpens this section rather than deleting it. The position is now
-"authenticated but not authorized".** One hop knows *who* is calling and
-refuses a caller it cannot verify. No hop anywhere decides *whether the
-caller may do what it asked*. Those are different properties, an identity
-that decides nothing is decoration, and the whole point of M2.1 is to make
-the "who" real so that M2.2 has something to decide on.
+**M2.2 sharpens this section for the third time rather than deleting it. The
+position is now "one hop authorized, on one rule".** M1 was *no authorization
+anywhere*. M2.1 was *authenticated but not authorized*. M2.2 puts a real
+decision in the path of the one call that moves money — and the accurate
+summary is narrower than "the platform is governed", so here is what is
+actually decided and what is still not:
 
-**There is still no authorization anywhere in this chain.** Concretely,
-verified by reading every hop's code, not inferred:
+**What is now authorized**, verified by reading the config and confirmed on
+live spans:
 
-- **agentgateway performs authentication only.** Its `config.yaml` carries a
-  `jwtAuth` block and deliberately **no** `mcpAuthorization` and no
-  `authorization` rule. Both policy mechanisms this project examined — the
-  native CEL `mcpAuthorization` and the external `ExtMCP` gRPC hook — are
-  absent on purpose. Every call it can authenticate, it forwards. A verified
-  `settlement-agent` asking to move any amount for any claim gets through,
-  and the `destructiveHint: true` annotation on `execute_payment` is read by
-  nothing.
-- claims-agent's delegate allow-list (Hop 2) checks a target *name*, not
-  whether the delegation should happen for this claim.
-- settlement-agent executes the payment unconditionally — as of M1.2, the
-  model itself decides to call `propose_payment` then `execute_payment`,
-  with no approval step, no check against a policy, and no human in the
-  loop anywhere in that decision. `executor.py`'s own module docstring
-  states it plainly, updated for the model now being the one that chooses:
-  *"There is no policy check here. That is the point: EUR 6,200 leaves the
-  company because a message asked for it, and the model itself chose to
-  spend it. M2 puts a policy decision in the path."*
-- payments-mcp performs no check of its own before calling payments-api.
-- payments-api's own OpenAPI contract states it outright: *"Deliberately
-  tiny. In M1 it has no authorization of any kind: anything that can reach
-  it can move money."* Still exactly true in M2.1: nothing was added to
-  payments-api, and anything in the cluster that can reach its Service can
-  move money without presenting anything.
+- **agentgateway does authorization as well as authentication.** Its
+  `config.yaml` carries `jwtAuth` *and* `mcpGuardrails` as siblings on the
+  same route — the first establishes who is calling, the second what that
+  caller may do. Losing either makes the other meaningless: a policy without
+  authentication decides on a self-asserted name, and authentication without a
+  policy is M2.1. Of the two mechanisms this project examined, the external
+  `ExtMCP` gRPC hook is the one used; the native CEL `mcpAuthorization` is
+  still absent, deliberately, because the rule needs an amount comparison and
+  an identity table rather than an expression.
+- **The decision is made somewhere the agent cannot reach around.** The PDS is
+  not reachable from `northstar-agents` at all (egress policy), the tool is
+  not reachable except through the gateway (ingress policy), and the agent
+  contains no limit to disable. Removing the governance means changing the
+  platform, not the agent.
+
+**What is still not authorized, and none of it is an oversight:**
+
+- **Only `tools/call` is decided.** `initialize`, `notifications/initialized`
+  and the transport's own `GET`/`DELETE` are not sent to the PDS, because they
+  carry no tool and no amount. The PDS denies any method other than
+  `tools/call` if it is ever handed one, so widening the config fails loudly
+  rather than silently permitting.
+- **Only one rule, one caller, one autonomy level.** The allowance table has
+  two entries and both name `settlement-agent`. Any other caller is
+  `unknown_caller` and denied — correct today, and nowhere near a general
+  authorization model.
+- **Hops 1, 2 and 4 carry no identity and no policy.** Hop 2's allow-list
+  still checks a target *name*, exactly as described at Hop 2 above. Anything
+  in the cluster can still call `settlement-agent`'s Service directly, and
+  `customer-ui` reaches `claims-agent` with no credential at all.
+- **payments-mcp performs no check of its own** before calling payments-api,
+  and sees no identity to check with — the gateway strips the credential on
+  the outbound leg.
+- **payments-api still has no authorization.** Its OpenAPI contract says so
+  outright: *"Deliberately tiny. In M1 it has no authorization of any kind:
+  anything that can reach it can move money."* M2.2 added one thing to that
+  service and it is **not** authorization: the execute handler now confirms
+  the stated amount and currency against the recorded proposal, and refuses
+  with `409` on disagreement. That is a confirmation of intent — it checks
+  that an instruction agrees with itself — not a decision about whether the
+  caller may pay. Anything in the cluster that can reach its Service can still
+  move money, as long as it states the right amount.
+- **No human is in the loop anywhere.** The platform refuses; nobody is asked
+  to approve, and there is no escalation path. That is M3.
+
+**One M1.2 sentence in this section is now false and is corrected rather than
+left standing.** It quoted `executor.py`'s module docstring: *"There is no
+policy check here. That is the point: EUR 6,200 leaves the company because a
+message asked for it, and the model itself chose to spend it."* That docstring
+was rewritten in M2.2 and now reads: *"There is no policy check here, and
+there is none in settlement.py either. In M1 that was the whole point... As of
+M2.2 the check exists, but it is deliberately somewhere this code cannot reach
+around — the gateway's policy hook, deciding on the `tools/call` request
+itself."* The first clause survived; the conclusion inverted.
+
+Submitting the default form (`CLM-1842`, `€6,200`) now proposes the payment
+and is **refused** at the execute step, and the model explains why. That is
+the argument this demo has been building towards since M1.1, when the same
+form moved €6,200 through a real Go system of record because a JSON-RPC
+message asked for it.
 
 **One claim in this section was true through M1.2 and is now false, so it is
 corrected rather than left standing.** Earlier revisions said *"There is no
@@ -959,12 +1296,10 @@ construction sites are unchanged and still set no credential, so the accurate
 statement is: one of this chain's three HTTP client construction sites now
 presents a credential, and it is the one on Hop 3a.
 
-Submitting the default form (`CLM-1842`, `€6,200`) moves €6,200 through a
-real Go system of record because a JSON-RPC message asked for it. This is
-the deliberate argument the rest of the demo builds against, not an
-oversight — `README.md`'s own Status line says so ("authenticated but not
-authorized", matching this document's own "What the system deliberately does
-not do" above), and the code bears it out exactly.
+(That paragraph, in turn, is now itself out of date in one direction and
+sharpened rather than deleted: `mcp_tools.py` is still the one construction
+site that presents a credential, and as of M2.2 it is also the one that
+receives a refusal. `delegation.py` and `payments_client.py` still set none.)
 
 ## Determinism worth knowing: payment IDs
 
@@ -1029,6 +1364,7 @@ propagation table itself is current.
 | settlement-agent (inbound) | Same ASGI/Starlette instrumentation as claims-agent | Yes | Yes — extracted at the ASGI boundary, before any of settlement-agent's internal tasks spawn, so it reaches every subsequent span in that process |
 | settlement-agent → agentgateway (**Hop 3a**, M2.1) | **Two independent carriers, both present, neither redundant.** (i) JSON-RPC `params._meta` (SEP-414, unprefixed `traceparent`/`tracestate`/`baggage`): on `mcp==1.9.4` (this project's original pin), the high-level client's `ClientSession.call_tool()` had no way to set `_meta` at all, so `mcp_tools.py` (Task 7) drops to `ClientSession.send_request()` and hand-builds the request, injecting via `opentelemetry.propagate.inject(carrier)`. **The pin is now `mcp==1.28.1`** (cleared four pip-audit advisories; `docs/telemetry-contract.md`'s Gap 6), whose `call_tool()` gained a `meta=` kwarg upstream (`modelcontextprotocol/python-sdk#1231`) — but `mcp_tools.py`'s mechanism was deliberately left unchanged at the bump, so the hand-built `send_request()` path above is still what actually runs; adopting the simpler call is open future work (`docs/upstream-findings.md` Finding 4). (ii) An HTTP `traceparent` **header**, auto-injected by `HTTPXClientInstrumentor` because the transport is httpx-based | Yes, twice over | Yes in `_meta`; yes in the `baggage` header |
 | agentgateway (inbound) | **The HTTP header, and only that.** `TraceParent::from_request` (v1.5.0, `crates/agentgateway/src/telemetry/trc.rs:690-696`) reads the `traceparent` header and never inspects the request body. It does **not** read `params._meta` — Finding 6. With no header it would mint a new trace root | Yes (via the header) | Not consumed as baggage — the gateway has no baggage concept and its spans carry no `northstar.claim.id`, which is the intended enrichment boundary and is asserted as a negative in `tests/e2e/test_gateway_trace.py` |
+| agentgateway → policy-decision-service (**Hop 3p**, M2.2) | The HTTP `traceparent` header on the gRPC `CheckRequest`, forwarded by the gateway to the guardrail hook and extracted by the PDS's own `CompositePropagator` from the ExtMCP `headers` field. **Measured that it is forwarded** (M2.2 Task 1, run C: ten headers reached the hook with `requestHeaders` removed entirely, `traceparent` among them) — exit criterion 3 depends on it, so it was checked rather than assumed. The context forwarded is the one the gateway *received*, not its own client span's, which is why `policy.decision` is a sibling of `Guardrail` rather than its child | Yes | **No.** `baggage` was not among those ten headers, and the PDS is not one of the three services running `ClaimIdSpanProcessor`. Its span carries no `northstar.claim.id`, and is correlated to the claim by trace id — the same boundary agentgateway's own spans sit on |
 | agentgateway → payments-mcp (**Hop 3b**, M2.1) | The gateway starts its own outbound CLIENT span, injects that span into the outbound **headers**, and then copies the three W3C keys from those headers into `params._meta` (`crates/agentgateway/src/mcp/upstream/mod.rs:146` then `:110-122`). So `_meta` reaching payments-mcp names the *gateway's* span, not settlement-agent's — which is why payments-mcp parents under the gateway and not under the agent | Yes (re-stamped) | The `baggage` key is copied too, if the header is present |
 | payments-mcp (inbound) | FastMCP 4.0.3's own `extract_trace_context()` (`fastmcp/telemetry.py`) reads `traceparent`/`tracestate` out of `params._meta` | Yes | **No — FastMCP never reads the `baggage` key out of `_meta` at all.** This is the one place `northstar.claim.id` stops, and interposing the gateway did not change that. |
 | payments-mcp → payments-api | Ordinary HTTP header, via `HTTPXClientInstrumentor` | Yes | No — nothing to propagate; baggage never entered this process's ambient context |
@@ -1090,9 +1426,16 @@ calling the tracer directly.
 
 1. Open the Customer UI. The form is pre-filled with claim `CLM-1842`,
    policy `POL-77120`, €6,200. Click "Submit claim." Within a few seconds
-   you should see an "Outcome" block with `"status": "executed"` and a
-   `paymentId` like `PAY-0000NN` (not necessarily `PAY-000001` — the counter
-   is cumulative since the pod's last restart, see "Determinism" above).
+   you should see an "Outcome" block with **`"status": "refused"`** — this is
+   the milestone working, not a failure — a `paymentId` like `PAY-0000NN` for
+   the payment that was *proposed* (not necessarily `PAY-000001`; the counter
+   is cumulative since the pod's last restart, see "Determinism" above),
+   `"amount": 6200` for that same proposal, and a `narrative` in which the
+   model explains, in its own words, that the settlement could not be paid.
+   The words differ every run, because they are genuinely the model's.
+   **Then change the amount to `5800` and submit again**: the same claim shape
+   comes back `"status": "executed"`. Seeing both is the point — a platform
+   that refused everything would look identical on the first run alone.
 2. In Jaeger: service `customer-ui`, operation `claim.submit`, "Find Traces."
    The single result is your submission (Jaeger's `total` field in its own
    API response is often `0` even when traces are returned — a documented
@@ -1119,11 +1462,21 @@ calling the tracer directly.
      Hop 2's trace context crosses: no code in `delegation.py` injects a
      header by hand, `HTTPXClientInstrumentor` does it as a side effect of
      the ambient context being correct at call time.
-   - **`payments-mcp`'s `tools/call execute_payment`** — check its
-     attributes: `gen_ai.tool.name = execute_payment` is present;
+   - **`payments-mcp`'s `tools/call propose_payment`** — check its
+     attributes: `gen_ai.tool.name = propose_payment` is present;
      `gen_ai.operation.name` is not (Gap in `docs/telemetry-contract.md`).
      Also confirm `northstar.claim.id` is absent here specifically — this is
      the span the coverage table above and the contract's Gap 4 are about.
+     **Read this bullet on the `propose_payment` span, not the
+     `execute_payment` one, and the reason is the milestone.** In the €6,200
+     run there *is* no `payments-mcp` span for `execute_payment`, because the
+     execute call never reached the tool — the gateway refused it at the
+     policy hook. Its absence is itself the evidence, and it is the first
+     thing to look for in the trace. Submit the €5,800 claim and the
+     `execute_payment` span appears, carrying exactly the attributes
+     described here; both tools behave identically as far as FastMCP's
+     instrumentation is concerned, which is the point of checking the gap on
+     whichever one the run produced.
    - **agentgateway's `tools/call` (SERVER)** — new in M2.1, and the most
      informative span in the trace. Three things to look at: `jwt.sub`,
      which is the caller's attested SPIFFE ID
@@ -1139,18 +1492,47 @@ calling the tracer directly.
      its child CLIENT span, `tools/call payments-mcp_<tool>`, and note
      `jwt.sub` is **absent** there — the gateway strips the credential on
      the outbound leg, so there is no verified token to attribute.
+   - **`policy-decision-service`'s `policy.decision`** — new in M2.2, and the
+     span the whole milestone exists to produce. There are two per settlement,
+     one per tool call. On the `execute_payment` one in a €6,200 run:
+     `policy.decision = deny`, `policy.rule =
+     settlement-agent.assisted.execute_limit`, `policy.request.amount = 6200`,
+     `policy.limit.amount = 6000`, and `policy.caller.spiffe_id` naming the
+     attested caller the limit was looked up by. Note the span's status is
+     **not** ERROR: a refusal is the platform working. Compare it with the
+     `propose_payment` one in the same trace, which is a `permit` under the
+     rule `unlimited_tool` and carries no `policy.limit.amount` at all.
+   - **agentgateway's `Guardrail` (CLIENT)** — its sibling, and the gateway's
+     own view of the same hop. `http.path` is literally the ExtMCP gRPC
+     method, and `grpc.status = 0` says the *call* succeeded — the deny is in
+     the payload, which is how "the policy said no" stays distinguishable from
+     "the policy service was down".
    - **`payments-api`'s `POST /payments/{paymentId}/execute`** — the last
      hop, stable HTTP semantic-convention spelling
      (`http.request.method`/`http.response.status_code`), and the one place
      in the whole trace where real money state changed. Comparing this
      span's attribute names with the gateway's, in the same trace, is the
-     fastest way to see the naming divergence for yourself.
-6. **See the refusal, without spending a model call.** This costs nothing and
-   needs no Anthropic tokens:
+     fastest way to see the naming divergence for yourself. **In a €6,200
+     trace this span does not exist** — neither does `payments-mcp`'s
+     `tools/call execute_payment`, nor the gateway's own outbound CLIENT span
+     for it. That absence is the trace-level evidence that the execution never
+     happened, rather than happening and failing.
+6. **See both refusals, without spending a model call.** Neither costs
+   Anthropic tokens:
 
    ```bash
    .venv/bin/python -m pytest tests/e2e/test_caller_identity.py -v
+   .venv/bin/python -m pytest tests/e2e/test_policy_denial.py -v \
+       -k "criterion_4 or criterion_5"
    ```
+
+   The second pair is M2.2's: criterion 4 is a hermetic AST walk proving no
+   policy logic lives in `settlement-agent` or `payments-mcp`, and criterion 5
+   speaks MCP to the gateway directly with **two different** SPIRE-minted
+   identities and shows the verdict changing with the caller — which is what
+   makes "identity is an input to the decision" a demonstration rather than a
+   claim. The other four tests in that file drive a real browser and a real
+   model, and are gated behind `RUN_BROWSER_TESTS=1`.
 
    That file port-forwards to the gateway itself (on an ephemeral local port
    it asks `kubectl` for, so it cannot collide with the four repo-managed

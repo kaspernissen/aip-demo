@@ -186,24 +186,37 @@ binds:
               # top of this file. `name:`+`port:` and `backend:` are the other
               # two arms and exactly one may be set.
               host: policy-decision-service.northstar-platform.svc.cluster.local:9100
-              # THE SINGLE MOST CONSEQUENTIAL LINE IN THIS MILESTONE.
-              #
-              # agentgateway v1.5.0's `FailureMode` derives `Default` with
-              # `FailOpen` listed first, so omitting this key means a PDS
-              # outage -- a crashed pod, a dropped packet, an OOM kill --
-              # PERMITS EVERY PAYMENT. The demo would keep working, the €6,200
-              # would go out, and nothing anywhere would say the platform had
-              # stopped governing. There is no observable difference between
-              # "fail-open and healthy" and "fail-open and not governing"
-              # until someone reads a trace.
-              #
-              # Fail-closed inverts that: if the decision service cannot
-              # answer, the answer is no. The cost is that a PDS outage stops
-              # payments, which is the correct trade for a component whose
-              # entire job is refusing them, and it is why the PDS's own
-              # readiness probe and its ingress network policy (see
+              # Stated explicitly. If the decision service cannot answer, the
+              # answer is no. The cost is that a PDS outage stops payments,
+              # which is the correct trade for a component whose entire job is
+              # refusing them, and it is why the PDS's own readiness probe and
+              # its ingress network policy (see
               # deploy/platform/cilium-policies.yaml, ruling R6) are
               # load-bearing rather than hygiene.
+              #
+              # CORRECTION, M2.2 Task 8. This comment previously said that
+              # v1.5.0's `FailureMode` derives `Default` with `FailOpen` listed
+              # first, so that omitting this key would PERMIT EVERY PAYMENT
+              # during a PDS outage. THAT IS FALSE, and it was carried from the
+              # M2.2 plan through four tasks without anyone measuring it.
+              # Measured against this exact image, whose `--version` reports
+              # git_revision fe6732474a96a0363dfb9822859af4e9bab360fa (= the
+              # v1.5.0 tag), with a guardrail pointed at a dead address so
+              # every tools/call takes the failure branch:
+              #   key omitted        -> rejected, "mcpGuardrails checkRequest
+              #                         failed: ... Connection refused"
+              #   failureMode: failClosed -> the same error, byte for byte
+              #   failureMode: failOpen   -> the call PASSED THROUGH to the tool
+              # The default is failClosed. Source agrees:
+              # crates/agentgateway/src/mcp/guardrails/mod.rs at that revision
+              # puts `#[default]` on `FailClosed`, and client.rs imports its
+              # FailureMode from that module.
+              #
+              # The line stays anyway, and so does the test that requires it.
+              # The reason is now the honest one: `failOpen` is one word away,
+              # and a fail-open gateway is indistinguishable from a governing
+              # one until someone reads a trace. Naming the value makes the
+              # intent reviewable rather than inherited.
               failureMode: failClosed
               # What the gateway hands the PDS about the caller. `jwt.sub` is a
               # CEL expression over the token `jwtAuth` above has ALREADY

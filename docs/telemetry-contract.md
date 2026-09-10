@@ -1,8 +1,10 @@
 # Northstar Telemetry Contract
 
 Status: M1.1, revised through M1.2 for the settlement-agent's model-driven
-decision logic, and through M2.1 for agentgateway's interposition and SPIRE's
-workload identity. Revised at every milestone.
+decision logic, through M2.1 for agentgateway's interposition and SPIRE's
+workload identity, and through **M2.2 (Decided)** for the Policy Decision
+Service, the `policy.decision` span (which closes Gap 3), and agentgateway's
+own guardrail telemetry. Revised at every milestone.
 
 ## The governing rule
 
@@ -51,22 +53,33 @@ green has confirmed the browser hop; a reader who instead runs a bare
 `pytest tests/` by hand — bypassing the gate — gets the weaker, default
 result below, and should not conclude the top of the chain was checked.
 
-Measured counts. **Provenance, corrected in M2.1 Task 1 fix round 1:** the gate
-row below was measured on a freshly created **stage 2** cluster —
-`kind delete cluster --name northstar && ./scripts/setup-kind.sh --stage 2`,
-i.e. stage 1's workloads on a Cilium 1.20.1 dataplane — and `teardown.sh` was
-not run. This preamble previously read "from a clean cluster
-(`./scripts/teardown.sh && ./scripts/setup-kind.sh --stage 1`)", which was the
-provenance of the *earlier* numbers, not of these; a review caught the
-mismatch. The counts are CNI-independent (they count tests, not spans), so the
-numbers were not affected — but a published number carrying provenance it does
-not have is this repo's most-repeated defect class, so the command is stated as
-it was actually run:
+Measured counts. **Provenance, restated for M2.2 Task 8 rather than carried
+forward:** the gate row below was measured by running
+`./scripts/smoke-test.sh` itself, once, to completion, on the long-running
+`kind-northstar` **stage 2** cluster — not on a freshly created one, and
+`teardown.sh` was not run. The tree it ran against was `50fac07` plus M2.2
+Task 8's own documentation work, which adds and removes no tests, so the 213
+collected below is the same 213 that commit carries. The run finished
+`212 passed, 1 xfailed` in 283.60s and exited 0. Two operational facts about
+it, because the next person to reproduce it will hit both: the gate does
+**not** create its own port-forwards — it checks that four are already
+listening (19001 claims-agent, 19002 settlement-agent, 18000 payments-mcp,
+18080 payments-api) and exits in about a second if any is missing, which is
+what `setup-kind.sh` normally leaves behind; and `localhost:8080` and
+`localhost:16686` come from the kind node's own port mappings rather than
+from forwards, so those two need nothing. (The M2.1 rows this replaces were measured on a
+freshly created stage-2 cluster, `kind delete cluster --name northstar &&
+./scripts/setup-kind.sh --stage 2`; an earlier preamble claimed for them the
+teardown-and-rebuild-at-stage-1 provenance that belonged to the *M1.1*
+numbers, and a review caught that. The counts are cluster-independent — they
+count tests, not spans — but a published number carrying provenance it does
+not have is this repo's most-repeated defect class, so the command is stated
+as it was actually run.)
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `135 passed, 23 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `158 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `185 passed, 27 skipped, 1 xfailed` |
+| The gate itself | `./scripts/smoke-test.sh` | `212 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -82,10 +95,19 @@ the same `RUN_BROWSER_TESTS=1` flag — it needs the live cluster and spends
 real model tokens on every run, so a bare `pytest tests/` must not trigger
 it, while the gate (which sets that flag unconditionally) always does. Task 5
 grew it again, 15 to 16: `tests/e2e/test_browser_root_span.py` gained one
-test (`test_the_browser_path_settles_the_expected_amount`, asserting the
+test (`test_the_browser_path_settles_the_expected_amount`, at the time asserting the
 €6,200 outcome through the browser path specifically — Task 4 review,
-Finding 2), and that file shares the same gate. Task 5's fix round 1 grew it
-once more, 16 to 17: `tests/e2e/test_settlement_llm_trace.py` gained
+Finding 2), and that file shares the same gate. **That test's assertion has
+since been rewritten, and this sentence described it wrongly until M2.2 Task 8
+re-read it.** It used to say "asserting the €6,200 *outcome*". M2.2's
+remediation commit `477e7fb` rewrote the test to assert the **refusal** of that
+payout. €6,200 is still the amount the model *proposes*, and the ledger really
+does record the proposal — `propose_payment` is permitted unconditionally
+(`UNLIMITED_TOOLS`) — but the outcome the test now pins is
+`status == "refused"`, not an execution. The figure did not move; the claim
+about it did, and a document that kept calling a denial an outcome would be
+describing the previous milestone. M1.2 Task 5's fix round 1 grew the skip
+count once more, 16 to 17: `tests/e2e/test_settlement_llm_trace.py` gained
 `test_tool_call_arguments_carries_the_settled_amount`, pinning
 `gen_ai.tool.call.arguments` (fix-round Finding 2). **These are counts only;
 M1.2 Task 5 also revises this document's substantive content** — including
@@ -225,6 +247,79 @@ fix to `test_every_agentgateway_vocabulary_claim_names_the_pinned_version`
 (closing a substring escape — see the mutation table in that guard's own
 docstring) modified an existing test rather than adding one, so it does not
 move this count.
+
+**M2.2 (Decided), the whole milestone in one place, re-derived by M2.2 Task 8
+from a live per-file collection rather than from any earlier task's reported
+delta.** The chain from M2.1's close (145) to today's 213 is five moves, and
+every component below was measured by `.venv/bin/python -m pytest
+tests/<file> --collect-only -q` at `50fac07`, not read out of a report:
+
+| Commit | What it added | Collected |
+|---|---|---|
+| `8c0e980` (M2.1 close) | — | 145 |
+| `d17309c` | `tests/unit/test_stage2_network_policy.py` (10) and `tests/e2e/test_gateway_is_the_only_route.py` (4) — the payments-mcp **ingress** policy that makes the gateway a choke point rather than a convention | 159 |
+| Tasks 3–4 | `tests/unit/test_stage2_pds_config.py` (22) — the PDS's manifest, its SPIRE registration, and the gateway's `mcpGuardrails` block, all read from files | 181 |
+| Task 6 | `tests/e2e/test_policy_denial.py` (6) — one test per exit criterion 1–6 | 187 |
+| `477e7fb` | **minus one**: `test_payment_was_executed_with_no_governance` retired | 186 |
+| `50fac07` (Task 7) | `tests/e2e/test_egress_policy.py` (27) — the Cilium `toFQDNs` egress half of criterion 7 | 213 |
+
+**The single subtraction is the one number in this table that is not growth,
+and it is a milestone marker rather than a cleanup.**
+`tests/e2e/test_claims_chain_trace.py::test_payment_was_executed_with_no_governance`
+asserted, under the docstring "M1's deliberate horror: nothing stopped the
+payment", that `tools/call execute_payment` reached payments-mcp and that
+payments-api answered `200`. M2.2 makes both false on purpose: the PDS denies
+`execute_payment` above the €6,000 allowance and the execution never leaves the
+gateway. The test could not be re-pointed at a smaller amount without becoming
+green for the opposite reason to the one it was written for, so `477e7fb`
+retired it **visibly** — a comment block stands where it was, quoting its
+assertions verbatim and naming `tests/e2e/test_policy_denial.py` as its
+successor at both ends of the same rule. That is the whole of the 187 → 186
+step, recorded here so the jump in the table above is not left unexplained.
+
+Two of M2.2's five moves also change the **skip** count, and one deliberately
+does not. `tests/e2e/test_policy_denial.py` is the only new file that is
+partly gated: four of its six tests carry `@browser_test` (criteria 1, 2, 3
+and 6 all drive a real browser submission), and criteria 4 and 5 do not —
+criterion 4 is a hermetic AST walk over `settlement-agent`'s and
+`payments-mcp`'s own source, and criterion 5 speaks MCP to the gateway
+directly with two different SPIRE-minted identities, spending no model tokens.
+So the skip count moves 23 → 27 and no further: neither
+`tests/unit/test_stage2_network_policy.py`, nor
+`tests/e2e/test_gateway_is_the_only_route.py`, nor
+`tests/unit/test_stage2_pds_config.py`, nor `tests/e2e/test_egress_policy.py`
+is behind `RUN_BROWSER_TESTS=1`, for the same reason
+`tests/e2e/test_caller_identity.py` never was — that gate exists for tests that
+spend real model tokens, and none of those four does.
+
+**M2.2 Task 8 also re-measured the gated set directly rather than assuming it
+was still three modules.** It is now four:
+`tests/e2e/test_browser_root_span.py` (8), `tests/e2e/test_settlement_llm_trace.py`
+(9), `tests/e2e/test_gateway_trace.py` (6) and the four `@browser_test` cases
+in `tests/e2e/test_policy_denial.py` — 27, which is exactly the skip count in
+the default row and exactly the difference between the two rows.
+
+- **Measured (M2.2 Task 8):** `.venv/bin/python -m pytest --collect-only -q
+  tests/` → `213 tests collected`, and the per-file breakdown above sums to the
+  same figure. This is the number both published rows are anchored on.
+- **Measured (M2.2 Task 8), gate row:** `./scripts/smoke-test.sh` run once, in
+  full, on the live stage-2 `kind-northstar` cluster — `RUN_BROWSER_TESTS=1`
+  unconditionally, the whole `tests/` tree, real browser, real settlements —
+  returning `212 passed, 1 xfailed`, 0 skipped. A direct observation of the
+  whole gate, including the per-service suites and the two count guards that
+  check this very table. It cross-checks against the collected total by the
+  second route this document has always used: 213 collected − 0 skipped − 1
+  xfailed = 212.
+- **Derived (M2.2 Task 8), default row, components shown:** 213 collected − 27
+  gated − 1 xfailed = **`185 passed, 27 skipped, 1 xfailed`**. Every component
+  is itself measured above (the 27 is the four-module gated count, collected
+  per file; the 1 xfail is the FastMCP-baggage one below, which is not gated
+  and so appears in both rows). Labelled derived rather than measured for the
+  reason this row has always carried: a bare `pytest tests/` is **not** free —
+  it skips the gated modules but still runs the ungated e2e files, which drive
+  real model-driven settlements — so re-running it to re-observe a number two
+  measured figures already determine would spend Anthropic tokens for no
+  additional evidence.
 
 - **Measured (final-review fix round):** `.venv/bin/python -m pytest
   --collect-only -q tests/` → `145 tests collected`. The four previous
@@ -403,12 +498,35 @@ The new file copies nothing: it drives the real chain (`parse_call` ->
 `McpError` -> `mcp_tools._policy_denial`) with a **test-only** import of the
 PDS, guarded by a test that fails if any production module in the service ever
 grows a `pds` import. Same mutation now reddens four tests in
-`agents/settlement-agent`.)
+`agents/settlement-agent`. **M2.2 Task 8 re-measured all five figures with each
+service's own runner, the same way, and none of them moved** — every test M2.2
+added after that fix round went under the repo-root `tests/` tree, so Task 5's
+fix round 1 remains the last change to this row. Re-measuring rather than
+reasoning that nothing can have changed is the point: this row's entire history
+is a number that stayed correct until the moment nobody checked it.)
 customer-ui's suite includes its own
 A19 regression test for the traceparent-across-await fix described below
 (`apps/customer-ui/NOTES.md` §2) — worth naming explicitly, since it's the
 one unit suite that pins a real, previously-silent defect in this project's
 own code, not only in a third-party library's behavior.
+
+**A sixth per-service suite exists and is deliberately *outside* that row, so
+this is stated rather than left to be discovered.** M2.2 Task 4 added
+`platform/policy-decision-service/tests/` — **95 tests** (measured for this
+edit by `cd platform/policy-decision-service && .venv/bin/python -m pytest
+tests -q --collect-only` → `95 tests collected`, not carried forward from any
+task report). Two facts about it are true and neither is an oversight:
+`scripts/smoke-test.sh` does **not** run it (its per-service loop is the three
+services named above), and
+`test_per_service_counts_match_what_each_suites_own_runner_collects` does
+**not** guard it, because `_PER_SERVICE_SUITES` lists the same five. The
+reason it stays out of both is that the PDS suite needs generated gRPC stubs
+(`gen-stubs.sh`, git-ignored) present before it will even import, and both the
+gate's per-service loop and `tests/unit` are supposed to run without a
+generation step. So this count is **measured but unguarded** — the one number
+in this document with no automated check behind it — and it will drift the
+moment nobody re-measures it, which is precisely the failure mode the rest of
+this section documents. Recorded as limitation 10 below.
 
 **M1.2 Task 6 closed that blind spot rather than re-stating the number a
 fourth time.** The stale-at-19 defect above was the third recurrence of the
@@ -463,10 +581,11 @@ marker is removed, rather than staying silently green.
 |---|---|---|---|---|
 | customer-ui | OpenTelemetry JS web, manual root span | `@opentelemetry/sdk-trace-web` 2.8.0, `@opentelemetry/context-zone` 1.30.0, `@opentelemetry/exporter-trace-otlp-http` 0.219.0, `@opentelemetry/resources` 2.8.0 | `claim.submit` | Owns the trace root. Requires `traceparent`/`tracestate`/`baggage` in claims-agent's own CORS `allow_headers` (`agents/claims-agent/main.py`) so the browser's request survives preflight — the collector's own CORS requirement is different: it needs `http://localhost:8080` in `allowed_origins` (its `allowed_headers` is already wildcarded), since the browser's OTLP export to the collector carries no `traceparent` header of its own. Requires a *static* import of the injection helper — a dynamic `import()` (or any other `await`) before reading the active span loses it under `ZoneContextManager` (`apps/customer-ui/NOTES.md` §2; pinned by that service's own vitest regression test). |
 | claims-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` | `a2a-sdk[telemetry]==0.3.7`, `opentelemetry-instrumentation-starlette==0.65b0` | ASGI entry span `POST /`; `a2a.server.request_handlers.jsonrpc_handler.JSONRPCHandler.on_message_send` and the rest of the `a2a.server.*` call-graph spans (`DefaultRequestHandler.on_message_send`, `EventQueue.enqueue_event`/`.dequeue_event`/`.close`, `EventConsumer.consume_all`, etc.) | `DISABLE_OTEL_INSTRUMENTATION` must remain unset; `bootstrap.configure()` raises if it is `true`. Inbound W3C trace-context extraction comes from `StarletteInstrumentor` wrapping the built ASGI app (A18) — `a2a-sdk` itself extracts nothing (see Gap 1). **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/claims-agent.yaml`) — OTel Python's HTTP instrumentation defaults to the legacy spelling (`http.method`/`http.url`/`http.status_code`) on both the ASGI entry span and the outbound httpx span; without this, this service alone would mix conventions with the Go hop (`agents/claims-agent/NOTES.md` §7, which also records a measurement mistake made while proving the opt-in was genuinely needed, not assumed). |
-| settlement-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` + `mcp` client | `a2a-sdk[telemetry]==0.3.7`, `mcp==1.28.1` (Task 7; was `1.9.4`), `opentelemetry-instrumentation-starlette==0.65b0` | Same shape as claims-agent (`POST /` ASGI entry span, `a2a.server.*` call-graph spans), plus outbound `httpx` CLIENT spans (`POST`/`GET`/`DELETE`) to payments-mcp, plus — as of Task 8 — outbound `httpx2` CLIENT spans (`POST`) to `api.anthropic.com`, nested under each `chat` span | Only agent permitted to reach payments-mcp. Same `StarletteInstrumentor` fix as claims-agent for inbound extraction. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/settlement-agent.yaml`), same reason as claims-agent — measured legacy-by-default, confirmed stable after the opt-in (`agents/settlement-agent/NOTES.md` §6); the same opt-in applies to both `HTTPXClientInstrumentor` and `HTTPX2ClientInstrumentor`, since both share one `get_tracer` call in the same module. |
+| settlement-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` + `mcp` client | `a2a-sdk[telemetry]==0.3.7`, `mcp==1.28.1` (Task 7; was `1.9.4`), `opentelemetry-instrumentation-starlette==0.65b0` | Same shape as claims-agent (`POST /` ASGI entry span, `a2a.server.*` call-graph spans), plus outbound `httpx` CLIENT spans (`POST`/`GET`/`DELETE`) to payments-mcp, plus — as of M1.2 Task 8 — outbound `httpx2` CLIENT spans (`POST`) to `api.anthropic.com`, nested under each `chat` span | Only agent permitted to reach payments-mcp. Same `StarletteInstrumentor` fix as claims-agent for inbound extraction. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/settlement-agent.yaml`), same reason as claims-agent — measured legacy-by-default, confirmed stable after the opt-in (`agents/settlement-agent/NOTES.md` §6); the same opt-in applies to both `HTTPXClientInstrumentor` and `HTTPX2ClientInstrumentor`, since both share one `get_tracer` call in the same module. |
 | settlement-agent (model) | PydanticAI `Agent.instrument_all(InstrumentationSettings(...))` (`bootstrap.py`) | `pydantic-ai-slim==2.41.0`, `version=5` (the library default, pinned explicitly) | `invoke_agent settlement_agent` (internal, ×1/request), `chat claude-sonnet-5` (client, ×3/request — one per model turn: propose, execute, final narrative), `execute_tool propose_payment`, `execute_tool execute_payment` (internal, ×1 each) | As of M1.2: the settlement decision itself, not only its transport. **28 distinct `gen_ai.*` attribute names measured at ON (25 at OFF)** across these four span shapes — full inventory and per-span breakdown below. (This cell read a bare "25 distinct" from M1.2 until M2.1 Task 3 fix round 1: the OFF-mode figure, in a cell whose own next clause states the default is ON. M1.2's SF-3 fix round corrected the inventory 165 lines below to 28 and never touched this summary — the fifth time in this project that fixing an instance missed a sibling, and the first with the sibling in the same file. Every attribute count in this document now carries its mode — there are **six** mode-carrying such sites (**eight** assignments in total) — and `tests/unit/test_telemetry_contract_attribute_counts.py` fails if any is unqualified, disagrees with the inventory it summarises, or has the ON and OFF figures the wrong way round. The unit matters, because two defensible numbers exist here and they differ: a *site* is a published count anchored on `gen_ai.*` or on the word "names", which is what a reader would point at and call a claim, and there are six of those, all six naming a mode; the guard additionally holds to the right mode any bare integer that merely equals one of the two figures, which is what makes the second half of "28 at ON, 25 at OFF" checkable rather than decorative, and counting those as well gives eight assignments. "Site" is the unit this sentence is about, so six is the figure it publishes, with eight stated beside it so the two cannot later be mistaken for each other. (This read "there are nine of them" from M2.1 Task 4 until Task 5's fix round measured it — **nine was wrong in both units**. It was never guarded, and because it is the sentence that tells a reader how much of this document the guard covers, it propagated from here into four separate task briefs before anyone checked it: the counts it describes were correct the whole time, and only the count *of* them drifted, precisely because the site total was the one number with nothing asserting it. `test_the_documents_own_count_of_its_attribute_count_sites_is_right` now derives both figures from the checker's own functions rather than from anything typed by hand.) That last check arrived in fix round 2: the guard's first version tested which numbers appeared in a sentence rather than which mode each was assigned to, so it would have passed "25 at ON, 28 at OFF".) `include_content` is **not** hardcoded — it reads `NORTHSTAR_CAPTURE_CONTENT` (default ON; see "Content capture" below) — and `include_model_request_parameters` is left at its library default (`True`), never passed explicitly. |
-| agentgateway | native, `frontendPolicies.tracing` in its own config | `cr.agentgateway.dev/agentgateway:v1.5.0` (Resource `service.version=1.5.0`; scope `agentgateway` with **no** `otel.scope.version`; Resource `telemetry.sdk.language=rust`, `telemetry.sdk.name=opentelemetry`, `telemetry.sdk.version=0.32.1`) | Two spans per MCP message: a SERVER span named after the JSON-RPC method (`initialize`, `notifications/initialized`, `tools/call`) or, for non-JSON-RPC HTTP, after method-and-route (`GET /*`, `DELETE /*`); and a CLIENT span named `<method> <target>` (`initialize payments-mcp`), which for tool calls becomes `tools/call <target>_<tool>` (`tools/call payments-mcp_propose_payment`) | Interposed by M2.1 Task 3; **verifies a SPIRE-minted JWT-SVID as of Task 4** (`jwtAuth`, `mode: strict`) and still carries no authorization policy — it permits every tool call it can authenticate, and the denial is M2.2. That verification is visible in the trace, not only in a 401: its SERVER spans gained one attribute, `jwt.sub`, carrying the verified token's subject — for a JWT-SVID, the caller's SPIFFE ID (measured `spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent`). The gateway derives it from the token it validated; nothing in this project sets it. Measured **absent** from the CLIENT spans, consistent with the gateway stripping the credential on the outbound leg (`if !self.preserve_token { self.location.remove(req)?; }`, `crates/agentgateway/src/http/jwt.rs`) — so payments-mcp receives no identity to check. Emits **a third HTTP attribute vocabulary**, neither stable nor OTel-legacy — see "agentgateway instrumentation, as measured" below, which is the one place this document's HTTP-convention claim has an exception. Exports OTLP/**gRPC** to the collector on 4317, the only component here that does not use OTLP/HTTP on 4318. Task 2 shipped it with no `tracing` block at all, i.e. emitting nothing; Task 3 added one, which is why this row did not exist before. |
+| agentgateway | native, `frontendPolicies.tracing` in its own config | `cr.agentgateway.dev/agentgateway:v1.5.0` (Resource `service.version=1.5.0`; scope `agentgateway` with **no** `otel.scope.version`; Resource `telemetry.sdk.language=rust`, `telemetry.sdk.name=opentelemetry`, `telemetry.sdk.version=0.32.1`) | Two spans per MCP message: a SERVER span named after the JSON-RPC method (`initialize`, `notifications/initialized`, `tools/call`) or, for non-JSON-RPC HTTP, after method-and-route (`GET /*`, `DELETE /*`); and a CLIENT span named `<method> <target>` (`initialize payments-mcp`), which for tool calls becomes `tools/call <target>_<tool>` (`tools/call payments-mcp_propose_payment`) | Interposed by M2.1 Task 3; **verifies a SPIRE-minted JWT-SVID as of Task 4** (`jwtAuth`, `mode: strict`); and, **as of M2.2, calls out to the Policy Decision Service on every `tools/call`** (`mcpGuardrails`, `kind: remote`, `failureMode: failClosed`) and refuses the call when the answer is deny. That third job is visible in the trace as one extra span per tool call, a CLIENT span named `Guardrail` — see "agentgateway's guardrail telemetry, as measured" below; it is agentgateway's own span and nothing here invented it. The verification is visible in the trace, not only in a 401: its SERVER spans gained one attribute, `jwt.sub`, carrying the verified token's subject — for a JWT-SVID, the caller's SPIFFE ID (measured `spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent`). The gateway derives it from the token it validated; nothing in this project sets it. Measured **absent** from the CLIENT spans, consistent with the gateway stripping the credential on the outbound leg (`if !self.preserve_token { self.location.remove(req)?; }`, `crates/agentgateway/src/http/jwt.rs`) — so payments-mcp receives no identity to check. Emits **a third HTTP attribute vocabulary**, neither stable nor OTel-legacy — see "agentgateway instrumentation, as measured" below, which is the one place this document's HTTP-convention claim has an exception. Exports OTLP/**gRPC** to the collector on 4317, the only component here that does not use OTLP/HTTP on 4318. Task 2 shipped it with no `tracing` block at all, i.e. emitting nothing; Task 3 added one, which is why this row did not exist before. |
 | payments-mcp | FastMCP native | `fastmcp==4.0.3` | `tools/call propose_payment`, `tools/call execute_payment` | TracerProvider does **not** need to be installed before importing fastmcp on this version — `fastmcp.telemetry.get_tracer()` calls `get_tracer_provider()` fresh on every span, not once at import (measured; the brief's premise here was wrong for 4.0.3 — kept as a code convention anyway, not a correctness requirement). `FASTMCP_TELEMETRY_MODE=native` is set explicitly even though it is already the default. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is also set** (`deploy/k8s/payments-mcp.yaml`) — this governs only the *outbound httpx* span to payments-api (FastMCP's own native MCP spans are unaffected; this knob is httpx-instrumentation-specific), measured legacy-by-default, confirmed stable after (`tools/payments-mcp/NOTES.md` §3). |
+| policy-decision-service | OTel Python SDK, applied by this project's own `pds/telemetry.py` | `opentelemetry-sdk==1.44.0` (Resource carries `service.name`, `service.instance.id`, `telemetry.sdk.language=python`, `telemetry.sdk.name=opentelemetry`, `telemetry.sdk.version=1.44.0` — and **no** `service.version`; scope `northstar.policy-decision-service` with no `otel.scope.version`) | one span, `policy.decision`, SERVER kind, one per `tools/call` the gateway sends for a decision | **The one component in this system whose span is entirely this project's own** — no framework emits a policy decision, which is what Gap 3 below was about. It opens the span by hand because there is nothing wrapping it that would: the gRPC servicer is the top of its own call stack. Everything below that name is the real SDK — `TracerProvider`/`BatchSpanProcessor`/OTLP-HTTP exporter, endpoint and protocol from the standard `OTEL_EXPORTER_OTLP_*` env vars, and a `CompositePropagator(TraceContextTextMapPropagator, W3CBaggagePropagator)` registered explicitly. It joins the caller's trace because agentgateway forwards `traceparent` to the guardrail hook (measured, M2.2 Task 1 run C), so the decision span is a genuine **child of the gateway's `tools/call` SERVER span** — a sibling of the `Guardrail` CLIENT span, not its child, because the gateway propagates the context it received rather than its own client span's. **The span status stays `Unset` on a deny, deliberately:** a refusal is this service working, and an ERROR span for the one thing this milestone exists to do would read as a fault. Attribute inventory below. |
 | payments-api | `otelhttp` | `otelhttp v0.66.0`, otel core `v1.41.0` | `POST /payments/propose`, `POST /payments/{paymentId}/execute`, `GET /payments/{paymentId}` | HTTP attribute spelling as emitted by the pinned version: **stable** — `http.request.method` / `http.response.status_code` / `http.route`, not the legacy `http.method`/`http.status_code`. `network.protocol.name` is **not** emitted by this otelhttp version (only `network.protocol.version` is); do not assert its presence. No `OTEL_SEMCONV_STABILITY_OPT_IN` is set or needed — this version emits the stable spelling by default (A12), unlike every Python service in this table. |
 
 **Operational fact that keeps *this project's own services* on one HTTP
@@ -532,9 +651,10 @@ the full suite, re-capture a live trace to confirm span shape is unchanged).
 Recorded here so M1.2's planner inherits an explicit, considered choice
 rather than rediscovering the skew as an accident.
 
-**Architectural fact, applying to every component above:** none of them creates
-a span of its own. Every span in this milestone comes from library
-instrumentation — `StarletteInstrumentor`, `a2a-sdk`'s own `@trace_class`/
+**Architectural fact, as it stood through M1.1 and M1.2, and with M2.2's one
+deliberate exception stated immediately after it:** none of the components
+above creates a span of its own. Every span in this milestone comes from
+library instrumentation — `StarletteInstrumentor`, `a2a-sdk`'s own `@trace_class`/
 `@trace_function` decorators, `HTTPXClientInstrumentor`, FastMCP's native
 tracer, `otelhttp`, and customer-ui's one hand-written `claim.submit` span
 (the sole exception — it is the root, and nothing upstream of the browser
@@ -551,6 +671,19 @@ final-review.md, an earlier version of this sentence named only the harness
 probe). This predicts where M1.2 changes shape: PydanticAI is expected to be
 the first library that gives this project's own code spans to open directly,
 rather than only ever wrapping calls from the outside.
+
+**M2.2 adds the second hand-written span in this project, and the reason is
+the same shape as the browser's.** `platform/policy-decision-service/pds/`
+calls `start_as_current_span("policy.decision")` directly, because — exactly
+like customer-ui's root — nothing else could have created it. The PDS is a
+gRPC servicer at the top of its own call stack, and no instrumentation
+library anywhere emits "a policy decided this", which is the substance of
+Gap 3 below. The grep claim in the paragraph above is unchanged and was
+re-run for M2.2: there is still no `get_tracer`/`start_span`/
+`start_as_current_span` in `agents/`, `tools/` or `systems/`. The new site is
+in `platform/`, a directory that did not exist when that sentence was
+written, and it is named here rather than allowed to make the sentence
+quietly false by living outside the three directories it enumerates.
 
 That prediction held, and this is where M1.2 changes it: PydanticAI's own
 `invoke_agent`/`chat`/`execute_tool` spans are the first spans in this project
@@ -697,7 +830,7 @@ M1.1, unaffected by any of this):
 | Span | Kind | Count/request | Carries |
 |---|---|---|---|
 | `invoke_agent settlement_agent` | internal | 1 | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=invoke_agent`, the five `gen_ai.aggregated_usage.*` roll-ups. Also the non-`gen_ai` `agent_name`, `model_name`, `logfire.msg`, `logfire.json_schema`, and `pydantic_ai.all_messages` (the full conversation, redacted to shape only unless capture is ON). |
-| `chat claude-sonnet-5` | client | 3 (one per model turn: propose, execute, final narrative) | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=chat`, `gen_ai.provider.name`/`gen_ai.system` (both `anthropic` — `gen_ai.system` is the deprecated spelling; `version=5` emits both), `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.response.id`, `gen_ai.response.finish_reasons`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.definitions`, the five `gen_ai.usage.*` fields (`details.thinking_tokens` only on turns where the model actually thought — deliberately not asserted, since that is the model's behaviour, not our wiring). Also `server.address=api.anthropic.com`, `operation.cost` (e.g. `0.002894`), and `model_request_parameters` (see "Content capture"). **As of Task 8**, each of these three spans has exactly one httpx-instrumented CLIENT child (`otel.scope.name=opentelemetry.instrumentation.httpx`, `POST`, stable HTTP semconv — see Gap 7 below), the model's own wire-level hop. |
+| `chat claude-sonnet-5` | client | 3 (one per model turn: propose, execute, final narrative) | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=chat`, `gen_ai.provider.name`/`gen_ai.system` (both `anthropic` — `gen_ai.system` is the deprecated spelling; `version=5` emits both), `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.response.id`, `gen_ai.response.finish_reasons`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.definitions`, the five `gen_ai.usage.*` fields (`details.thinking_tokens` only on turns where the model actually thought — deliberately not asserted, since that is the model's behaviour, not our wiring). Also `server.address=api.anthropic.com`, `operation.cost` (e.g. `0.002894`), and `model_request_parameters` (see "Content capture"). **As of M1.2 Task 8**, each of these three spans has exactly one httpx-instrumented CLIENT child (`otel.scope.name=opentelemetry.instrumentation.httpx`, `POST`, stable HTTP semconv — see Gap 7 below), the model's own wire-level hop. |
 | `execute_tool propose_payment` / `execute_tool execute_payment` | internal | 1 each | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=execute_tool`, `gen_ai.tool.call.id`, `gen_ai.tool.name`, plus `gen_ai.tool.call.arguments`/`gen_ai.tool.call.result` when capture is ON. |
 | `tools/call propose_payment` / `tools/call execute_payment` (payments-mcp) | server | 1 each | `gen_ai.tool.name` only — pre-existing FastMCP behaviour from M1.1 (Gap 5 below covers what's still missing from it). |
 
@@ -778,6 +911,41 @@ services, which operations, one root, zero orphans — is the property this
 project actually tests and guarantees; a specific span total is not, and
 publishing one here would only become the
 next stale number this contract has already had to correct twice.
+
+**M2.2 correction: `policy-decision-service` is a seventh service in this
+trace, and it is in the denied trace as well as the permitted one.** Measured
+by querying Jaeger for browser-rooted traces directly
+(`GET /api/traces?service=customer-ui&operation=claim.submit&lookback=48h`)
+and reading each one's service set, roots, orphans and `policy.decision`
+attributes — four such traces carry all seven services: the denials
+`6eed5ffa79e3eb758b4367eb75cb5a0d` and `4ccb95666e75dafc0700639baf37ead0`
+(€6,200, `policy.decision=deny` on `execute_payment`) and the permits
+`3b78201273e80fed79ff01264892ca78` and `59850646e3c7d3d35b74e5072ccc23c0`
+(€5,800, permitted and executed). All four show **1 root**
+(`customer-ui:claim.submit`) and **0 orphans**. The shape claim, and still
+only the shape:
+
+- **`policy.decision` ×2 per settlement**, one per tool call, each a child of
+  the gateway's own `tools/call` SERVER span for that call.
+- **`Guardrail` ×2 per settlement**, agentgateway's own CLIENT span for the
+  policy hop, sibling to the `policy.decision` span under the same parent.
+- **`payments-api` is in the denied trace too**, with the propose (`201`) and
+  **no** execute. That is the precise sense in which "no payment is executed"
+  is a claim about the execute leg: the proposal really is recorded, and only
+  the execution is refused.
+- One root, zero orphans, one trace id throughout, exactly as before.
+
+**Still no whole-trace span total, and M2.2 hardens the reason rather than
+softening it.** Across the four browser-rooted traces above the totals are
+125, 123, 119 and 117 — same shape every time. The two direct-A2A reference
+traces hold 67 (denied) and 92 (permitted), and Task 7's own script-driven
+permit run measured 116. Seven numbers, one shape. Two independent sources of
+variance are now stacked: the `a2a-sdk` `dequeue_event` polling span
+(measured 10–16) that this document has always declined to publish a total
+against, and — new in M2.2 — a denial short-circuiting the second tool call's
+entire subtree, so a denied run is genuinely smaller than a permitted one by a
+margin that itself varies. Publishing a total here would be publishing a
+number that changes with the verdict.
 
 ## agentgateway instrumentation, as measured (M2.1 Task 3)
 
@@ -1060,6 +1228,244 @@ incoming `traceparent` is sampled by default, and a request arriving
 config so a headerless caller is visible too rather than silently untraced;
 it changes nothing for settlement-agent's own path.
 
+## agentgateway's guardrail telemetry, as measured (M2.2)
+
+**Every name in this section was read off a live span in Jaeger and dumped in
+full before being written down, exactly as the M2.1 section above was.**
+agentgateway is not this project's component, so the no-invented-telemetry rule
+applies to it without exception, and that rule is why this section records
+`reason = "MCP"` rather than the more informative string a designer would have
+picked. The reference trace is `b05167ba11744cff81bcedce615cb379`, a real
+denial of `CLM-1842` at €6,200 on the pinned
+`cr.agentgateway.dev/agentgateway:v1.5.0`, re-read span-by-span for this
+section in Task 8 rather than copied from any earlier task's report. **It is a
+direct-A2A run, not a browser one** — stated because it matters for one thing
+only: it carries no `customer-ui` root and its one "orphan" is the
+script-minted parent of `settlement-agent`'s `POST /`, exactly the artifact
+this document already describes for script-driven runs. Nothing about the
+gateway's own attributes depends on how the settlement was started, and the
+browser-rooted denial `6eed5ffa79e3eb758b4367eb75cb5a0d` carries the identical
+key sets — checked, not assumed.
+
+M2.2 adds one policy hop to the gateway's configuration —
+`mcpGuardrails.processors[0]`, `kind: remote`, `methods: {"tools/call":
+request}`, `host: policy-decision-service.northstar-platform.svc.cluster.local:9100`,
+`failureMode: failClosed` — and that hop is visible in the trace as one extra
+span per tool call plus four extra attributes on the SERVER span of a call
+that gets refused. Nothing else about the gateway's telemetry changed.
+
+### Attributes on the `Guardrail` span, the gateway's own view of the policy hop
+
+A CLIENT span named `Guardrail`, one per `tools/call`, a **child of the
+gateway's `tools/call` SERVER span**. Nine keys — the complete set, nothing
+omitted, with Jaeger's own two excluded as described under "What this project
+does *not* claim about those spans" above:
+
+```
+agentgateway.outbound.kind      "Policy"
+agentgateway.outbound.subtype   "Guardrail"
+grpc.status                     0
+http.host                       "policy-decision-service.northstar-platform.svc.cluster.local"
+http.method                     "POST"
+http.path                       "/agentgateway.dev.ext_mcp.ExtMcp/CheckRequest"
+mcp.method.name                 "tools/call"
+mcp.target                      "payments-mcp"
+otel.scope.name                 "agentgateway"
+```
+
+Four things follow from that list, and each is a measurement rather than a
+reading of the source:
+
+- **`http.path` is literally the ExtMCP gRPC method.** An operator who has
+  never seen this config can tell from one span that the gateway asked an
+  external service for a decision, and which RPC it used.
+- **`grpc.status = 0` reports the transport, not the decision.** The gRPC call
+  succeeded; the deny is in the payload. That distinction is diagnostically
+  load-bearing under `failureMode: failClosed`: a refusal caused by an
+  *unreachable* PDS produces a different `grpc.status` here, so "the policy
+  said no" and "the policy service was down" are separable in the trace rather
+  than both surfacing as a blocked call.
+- **The span appears on a permitted call too**, with the identical key set —
+  the decision is not in this span at all. Confirmed on the permit trace
+  `88cdfbcf5720487c9597ba573c02c33d` (€5,800, executed).
+- **Two attributes are absent and are recorded as absent rather than guessed:**
+  nothing names the guardrail *processor* or the `metadata` keys it was
+  configured with, and nothing carries the JSON-RPC error code or the
+  `mcp_error` payload the PDS returned. If you want the decision, you read the
+  `policy.decision` span below, or the parent's `otel.status_description`.
+
+### Attributes on a policy-denied `tools/call` SERVER span
+
+The accepted-call block earlier in this document lists 22 attribute names. A
+call the policy refuses carries **26 keys** on the same span — those same 22
+plus exactly four, and the four are the whole of the difference:
+
+```
+duration                     "1ms"
+error                        true
+gateway                      "default/default"
+gen_ai.tool.name             "execute_payment"
+http.host                    "agentgateway.northstar-platform.svc.cluster.local"
+http.method                  "POST"
+http.path                    "/mcp"
+http.status                  200
+http.version                 "HTTP/1.1"
+jwt.sub                      "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
+listener                     "listener0"
+mcp.method.name              "tools/call"
+mcp.resource.type            "tool"
+mcp.session.id               (base64 JSON, same form as the accepted span)
+mcp.target                   "payments-mcp"
+network.protocol.version     "1.1"
+otel.scope.name              "agentgateway"
+otel.status_code             "ERROR"
+otel.status_description      "mcp: mcpGuardrails rejected: requested 6200 EUR exceeds the 6000 EUR limit for this agent at autonomy level assisted"
+protocol                     "mcp"
+reason                       "MCP"
+route                        "default/route0"
+span.id                      "de60313895471382"
+src.addr                     "10.244.0.149:38056"
+trace.id                     "b05167ba11744cff81bcedce615cb379"
+url.scheme                   "http"
+```
+
+The four that only a refusal carries are `error`, `otel.status_code`,
+`otel.status_description` and `reason`. Five observations, all measured:
+
+- **`http.status` is 200, not 4xx.** ExtMCP's refusal is a JSON-RPC error
+  inside a successful HTTP response — measured on the wire in M2.2 Task 1 and
+  confirmed here on the span. It matches neither the native CEL
+  `mcpAuthorization` mechanism's 400 nor `jwtAuth`'s 401, both of which this
+  project has also measured on v1.5.0. Anyone alerting on HTTP status alone
+  will not see this refusal at all.
+- **`reason = "MCP"`, and that is all the categorisation there is.** On the
+  M2.1 jwtAuth refusal documented above the same key reads `"JwtAuth"`. So the
+  key does separate an authentication refusal from a policy refusal, but it
+  names the *layer*, not the rule — `"MCP"` is as specific as v1.5.0 gets.
+- **`otel.status_description` carries the PDS's own reason string verbatim**,
+  behind a fixed `mcp: mcpGuardrails rejected: ` prefix the gateway adds.
+  `AuthorizationError.reason` is what lands there. This is the one place the
+  refusal's *reason* is machine-readable from gateway telemetry alone, and it
+  is a free-text string, not a code.
+- **Unlike the M2.1 jwtAuth refusal, every `mcp.*` attribute is present.** The
+  guardrail hook runs after the message has been parsed as JSON-RPC, so
+  `mcp.method.name`, `mcp.session.id`, `mcp.target` and — critically —
+  `gen_ai.tool.name` are all on the span. An operator can tell *which tool* was
+  refused, which the authentication refusal could not tell them. `jwt.sub` is
+  present for the same reason: the caller was authenticated, then refused.
+- **There is no CLIENT span to payments-mcp**, and no payments-mcp span for
+  this tool call anywhere in the trace. That absence is the trace-level
+  evidence that the execution never happened rather than happening and failing.
+
+`tests/e2e/test_policy_denial.py` asserts the behavioural half of all of this
+and pins the gateway's child-span shape by exact equality on the sorted
+`(service, operation, kind)` triples of the SERVER span's children — measured
+as three, not one: `Guardrail` (CLIENT, agentgateway) and `policy.decision`
+(SERVER, policy-decision-service) are **siblings** under it, because the
+gateway propagates the context it received to the hook rather than its own
+client span's context.
+
+Deliberately *not* asserted by any test: the exact text of
+`otel.status_description`. Pinning it would pin a concatenation of an upstream
+prefix with this project's own reason string, and both halves are already
+covered — the prefix by the child-shape assertion, the reason by the PDS's own
+unit tests.
+
+## The policy decision, as measured (M2.2) — Gap 3, closed
+
+Gap 3 below records that no OpenTelemetry semantic convention exists for a
+policy or autonomy decision. That is still true; what changed in M2.2 is that
+this project now emits such a span, so the gap moves from "deferred" to
+"closed by defining our own names, in the open, and saying so".
+
+**The attribute keys are defined in exactly one place —
+`platform/policy-decision-service/pds/telemetry.py` — and this document cites
+that file rather than re-typing them**, which is the whole reason they were
+put in a module-level `ATTRIBUTES` tuple: the same tuple is what
+`tests/unit/test_stage2_pds_config.py` asserts against, so the source, the
+guard and this contract cannot drift into three different lists. The `policy.`
+prefix is deliberate and so is its absence of a `northstar.` one: a reader
+scanning a span must be able to tell at a glance which attributes came from a
+framework (`gen_ai.*`, `mcp.*`, `http.*`) and which this project invented, and
+this whole section is the second kind.
+
+**Read off a live span, not off that file.** The block below is the deny
+decision from trace `b05167ba11744cff81bcedce615cb379`, dumped from Jaeger and
+compared key-for-key against `telemetry.py`'s declared `ATTRIBUTES`. They
+agree, and the check was worth making in that direction: the source declares
+nine `policy.*` keys, and how many of them a given span actually carries
+depends on the decision, because `server.py` writes the optional ones only
+when it has a value (`if decision.limit is not None: span.set_attribute(...)`,
+and likewise for the caller, tool, amount and currency). Absent reads as
+absent; a zero amount would read as a request for nothing.
+
+### Attributes on the `policy.decision` span
+
+Ten keys on a limit-rule decision — the nine `policy.*` names plus the scope —
+which is the complete set for the span below, nothing omitted, with Jaeger's
+own `internal.span.format` and `span.kind` excluded by the same convention as
+the agentgateway blocks:
+
+```
+otel.scope.name              "northstar.policy-decision-service"
+policy.autonomy.level        "assisted"
+policy.caller.spiffe_id      "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
+policy.decision              "deny"
+policy.decision.retryable    false
+policy.limit.amount          6000
+policy.request.amount        6200
+policy.request.currency      "EUR"
+policy.rule                  "settlement-agent.assisted.execute_limit"
+policy.tool.name             "execute_payment"
+```
+
+**What varies, measured across both reference traces rather than reasoned
+about.** `policy.decision` is `"permit"` or `"deny"`; `policy.rule` names the
+rule that fired; and `policy.limit.amount` is **absent** whenever the rule that
+fired has no limit to state. Concretely, from the two traces:
+
+| Trace | Tool | `policy.rule` | `policy.decision` | `policy.limit.amount` | Keys |
+|---|---|---|---|---|---|
+| `b05167ba…` (denial) | `propose_payment` | `unlimited_tool` | `permit` | absent | 9 |
+| `b05167ba…` (denial) | `execute_payment` | `settlement-agent.assisted.execute_limit` | `deny` | `6000` | 10 |
+| `88cdfbcf…` (permit) | `propose_payment` | `unlimited_tool` | `permit` | absent | 9 |
+| `88cdfbcf…` (permit) | `execute_payment` | `settlement-agent.assisted.execute_limit` | `permit` | `6000` | 10 |
+
+So **two `policy.decision` spans appear per settlement**, one per tool call,
+and the pair is the interesting artefact rather than either span alone: the
+same caller, at the same autonomy level, is permitted to *propose* €6,200 and
+refused permission to *execute* it. `propose_payment` is in the PDS's
+`UNLIMITED_TOOLS` set because proposing is reversible and executing moves
+money, and the trace shows that distinction being made rather than asserted.
+
+Four properties worth stating because they are easy to get wrong from the
+outside:
+
+- **`policy.request.amount` is a float**, `6200` rather than `"6200"` or
+  `6200.0` as a string. The amount arrives at the PDS as a JSON number inside
+  `mcp_request` (measured, M2.2 Task 1: `{"name":"propose_payment",
+  "arguments":{"claim_id":"CLM-1842","amount":6200.0,"currency":"EUR"}}`), and
+  nothing stringifies it on the way to the span.
+- **`policy.decision.retryable` is always `false`**, and is on the span rather
+  than only in the response body because it is the field the agent keys its
+  terminal branch off. A denial the agent may retry is a denial it can sit on
+  stage retrying.
+- **`policy.caller.spiffe_id` is the *caller's* attested identity**, not the
+  PDS's own and not the audience — the same string the gateway records as
+  `jwt.sub` one span up, handed to the PDS through the guardrail's
+  `metadata: {caller: 'jwt.sub'}` CEL expression rather than re-verified. The
+  PDS validates no token itself and presents none: it decides on an identity
+  the gateway already established.
+- **`policy.autonomy.level` is a constant today** (`assisted`), and is on the
+  span anyway. It is the field M5 turns into a feature flag; recording it now
+  means the traces M5 changes the behaviour of already say what the behaviour
+  was keyed on.
+
+**No `policy.*` attribute is set anywhere except in the PDS.** In particular
+nothing in `settlement-agent`, `payments-mcp` or `payments-api` writes one, and
+nothing rewrites agentgateway's spans to add one — the enrichment boundary
+described under "Domain attributes we own" applies here unchanged.
+
 ## SPIRE instrumentation, as measured (M2.1 Task 4)
 
 **SPIRE 1.15.3 emits no spans.** Not "we did not wire tracing up" — there is no
@@ -1161,6 +1567,20 @@ part a dashboard or an alert would be built on.
 |---|---|---|---|
 | `northstar.claim.id` | claims-agent at intake | W3C baggage | See "Real, measured coverage" below — **not** every span everywhere |
 | `northstar.policy.number` | customer-ui root span | none | The root span only |
+| `policy.*` (nine keys, M2.2) | policy-decision-service, on its own `policy.decision` span | none — set locally, never propagated | That one span only. Keys declared in `platform/policy-decision-service/pds/telemetry.py`; measured inventory under "The policy decision, as measured (M2.2)" |
+| `northstar.payment.refusal_cause` (M2.2 Task 4) | payments-api, on its own server span for a refused execute; two closed values, `amount_mismatch` and `already_executed` (`systems/payments-api/handlers.go`) | none | payments-api's execute span, and **only when it refuses** — absent on success, so its presence means "refused here". Read off a real recorded span by that service's own Go tests via an in-memory `tracetest.SpanRecorder`; it appears on **none** of the six M2.2 traces named in this document, because neither the denied nor the permitted scenario reaches a 409 |
+
+**Two M2.2 notes on this table, both measured rather than reasoned.** The
+`policy.*` family is prefixed `policy.` and not `northstar.` on purpose: it is
+a decision, not a domain fact about a Northstar claim, and the prefix is what
+tells a reader which of the two it is. And **`policy.decision` spans carry no
+`northstar.claim.id`** — confirmed on all six M2.2 traces named in this
+document. That is correct rather than a gap: the PDS is not one of the three
+Python services running `ClaimIdSpanProcessor`, and agentgateway forwards only
+`traceparent` (plus `:authority`/`:path`) to the guardrail hook, never
+`baggage` — measured in M2.2 Task 1, run C, which removed the header filter
+entirely and got ten headers with no `baggage` among them. So the decision is
+correlated to the claim by trace id, exactly as agentgateway's own spans are.
 
 **Real, measured coverage, one live capture (trace
 `8a59dfee2b192408f4282a07a0938f43`). No whole-trace span total is published
@@ -1457,10 +1877,40 @@ For each: the evidence, whether upstream already has work in flight, and what we
   human-interrupt step inside an agent trajectory.
 - **Status:** Deferred to M3, when we have a working implementation to argue from.
 
-### Gap 3: policy and autonomy decision spans
+### Gap 3 (closed, M2.2): policy and autonomy decision spans
 
-- **Evidence:** No convention found. `policy.decision` in M2 is ours to define.
-- **Status:** Deferred to M2.
+- **Evidence:** No convention found, and re-checked for M2.2 rather than
+  assumed still true: OpenTelemetry's semantic conventions have no span, no
+  attribute namespace and no registry entry for a policy, authorization or
+  autonomy decision. The nearest neighbours are all about the *principal*
+  (`user.id`, the deprecated `enduser.*`), not about a verdict. So
+  `policy.decision` and the nine `policy.*` attributes are this project's own
+  to define, and there is nothing upstream to defer to or to file against.
+- **Status: closed in M2.2, by defining them in the open.** The span is
+  emitted by `platform/policy-decision-service`, its attribute keys are
+  declared once in `platform/policy-decision-service/pds/telemetry.py` (which
+  is the source this document cites rather than re-typing), and the full
+  measured inventory — read off two live traces, with the conditional keys
+  identified by measurement rather than from the source's declared tuple —
+  is in "The policy decision, as measured (M2.2)" above.
+- **Why this is a closure and not an invented convention.** The distinction
+  this project's governing rule draws is between inventing telemetry *for a
+  third-party component* — forbidden, without exception — and instrumenting
+  our own code where no framework does it for us. A policy decision is the
+  second: no library emits one, so either this project names the attributes or
+  the decision is invisible. The names are prefixed `policy.` precisely so a
+  reader can tell them apart from the `gen_ai.*`, `mcp.*` and `http.*`
+  attributes the frameworks emit, and this document says outright that they
+  are ours. Nothing was renamed, aliased or back-filled onto anyone else's
+  spans to make the story neater.
+- **What would make this reopen.** If OpenTelemetry ever specifies a
+  policy-decision convention, these names become divergence rather than
+  invention, and the honest move then is to adopt theirs and record the
+  rename here. That is a real possibility rather than a formality: the GenAI
+  semantic conventions are actively growing towards agent governance, and the
+  same repository already carries four independent open proposals for A2A
+  identity (see Gap 1). Nothing in this project would notice the day such a
+  convention lands, which is worth knowing.
 
 ### Gap 4: baggage propagation across the MCP boundary
 
@@ -1598,7 +2048,7 @@ For each: the evidence, whether upstream already has work in flight, and what we
   the pin: adopting the simpler call path is still available future work,
   now recorded in `docs/upstream-findings.md` Finding 4, not decided here.
 
-### Gap 7 (closed, Task 8): the model's own outbound HTTP hop had no CLIENT span — already fixed upstream, and now applied here too
+### Gap 7 (closed, M1.2 Task 8): the model's own outbound HTTP hop had no CLIENT span — already fixed upstream, and now applied here too
 
 - **Evidence:** `anthropic==1.4.0` requires `httpx2<3,>=2.0.0` — a distribution
   genuinely separate from `httpx` — confirmed by reading the installed
@@ -1648,12 +2098,12 @@ For each: the evidence, whether upstream already has work in flight, and what we
   this milestone ever measured the absence.
 - **Where the actual gap lived:** entirely in this project's own
   `bootstrap.py`, which called `HTTPXClientInstrumentor()` and not also
-  `HTTPX2ClientInstrumentor()`. **Closed by Task 8**: `bootstrap.py` now also
+  `HTTPX2ClientInstrumentor()`. **Closed by M1.2 Task 8**: `bootstrap.py` now also
   calls `HTTPX2ClientInstrumentor().instrument()` alongside the existing
   `HTTPXClientInstrumentor()` call — the one-line addition this section
   originally predicted, with the version already installed, no dependency
   bump, no upstream wait.
-- **Measured after the fix (Task 8, live capture, before/after diff against a
+- **Measured after the fix (M1.2 Task 8, live capture, before/after diff against a
   saved pre-fix trace dump):** each `chat claude-sonnet-5` span now has
   exactly one httpx-instrumented CLIENT span nested directly under it — three
   such spans in a three-turn conversation, matching the three `chat` spans
@@ -1711,14 +2161,178 @@ For each: the evidence, whether upstream already has work in flight, and what we
   Anthropic client's own transport hop to gain a CLIENT span — this
   project's specific instance of the gap is unreported, because the generic
   fix that would close it is already shipped and merely unapplied here.
-- **Status: closed (Task 8), and there was never anything to file.** Unlike
+- **Status: closed (M1.2 Task 8), and there was never anything to file.** Unlike
   Findings 1 and 3 in `docs/upstream-findings.md`, this was never
   filing-ready material — filing would have asked upstream to do something it
   already did. The one remaining action was local — apply
   `HTTPX2ClientInstrumentor()` in this project's own `bootstrap.py` — and
-  Task 8 did exactly that; the omission was this project's, never an
+  M1.2 Task 8 did exactly that; the omission was this project's, never an
   upstream gap. See `docs/upstream-findings.md` Finding 5 for the full
   write-up in that document's format, updated to match.
+
+## Known limitations, recorded rather than fixed (M2.2)
+
+Every item below is a **deliberate scope boundary**, not a defect discovered
+late: items 1–9 were each found and argued during M2.2 Tasks 3, 5 or 7,
+decided against fixing in that task, and logged for this section. Task 8
+re-verified every one of them against the source and — where it is a runtime
+property — against the live cluster, rather than transcribing the list it was
+handed. That re-check earned its keep twice: **one item on the list did not
+survive verification and is corrected in place below** (item 5, which had been
+attributed to the wrong service), and **item 10 is not on the list at all** —
+it was found by the re-check itself.
+
+None of these is a telemetry-invention issue and none of them makes a
+published claim in this document false. They are the places a reader who
+pushes on this system will find its edges.
+
+**1. The policy limit is currency-blind.** `platform/policy-decision-service/pds/rules.py`
+keys `EXECUTE_LIMITS` on `(SPIFFE ID, autonomy level)` and compares
+`req.amount > limit` with no reference to `req.currency` at all — the currency
+reaches `decide()` and is used only to render the refusal text (`_money`). So
+a request for 6,200 of any unit is judged against a limit denominated in
+euros. It is bounded today by two things outside the PDS, and by nothing
+inside it: payments-api's execute handler confirms the stated currency against
+the recorded proposal (`e062c10`), and `contracts/openapi/payments-api.yaml`
+puts `enum: [EUR]` on the *propose* body, so a non-EUR proposal is refused
+before it can be executed. Both of those are real and both are somewhere else.
+The honest statement is that the platform, as a whole, is EUR-only; the policy
+engine, on its own, does not know what a euro is. Fixing it properly means
+either a per-currency limit table or an explicit refusal of any currency the
+table is not denominated in — a design decision, and M5's autonomy work is
+where the limit table becomes configurable anyway.
+
+**2. Unbounded attacker-supplied strings reach a span attribute.**
+`decide()`'s refusal texts interpolate values that came off the wire:
+`f"unknown tool {req.tool!r}"` echoes the tool name, and `_money()` echoes the
+currency. `parse_call` type-checks both (a non-string becomes `None` or `""`)
+but does not length-check either. That string becomes
+`AuthorizationError.reason`, which agentgateway v1.5.0 copies verbatim into
+`otel.status_description` on its `tools/call` SERVER span — measured, see
+"agentgateway's guardrail telemetry, as measured" above. So a caller that can
+reach the gateway and pass authentication can put an arbitrary-length string
+of its choosing into this system's telemetry. The blast radius is bounded by
+who can get that far — only a workload holding a valid JWT-SVID for the
+gateway's audience, which today is `settlement-agent` alone — and the failure
+mode is a fat span rather than an injection, since it lands as an OTLP
+attribute value and not in a query or a shell. Recorded because "telemetry is
+a sink for untrusted input" is exactly the kind of thing that is obvious once
+stated and invisible until then.
+
+**3. `_latch` latches the whole run, not the refused call.**
+`agents/settlement-agent/settlement.py`'s `_latch` exists so that a model
+cannot sit on stage retrying a payment it will never be allowed to make: after
+any refusal, *no further payment call* leaves the process for that claim, and
+the second attempt is logged and handed the same terminal refusal. The
+granularity is deliberately coarse for M2.2, where the only correct next move
+after a refusal is to narrate it. It becomes wrong the moment a future
+milestone wants a re-propose at a compliant amount, or an escalate-then-retry
+path after a human approves — both of which are legitimate follow-on calls
+that this latch would refuse. Narrowing it to the specific refused call is the
+fix, and it is M3's problem, not a bug today.
+
+**4. `_leaf_exception` can drop a denial-bearing `McpError` in a mixed
+exception group.** `agents/settlement-agent/mcp_tools.py`'s unwrapper prefers a
+`ToolCallError` leaf anywhere in the group and otherwise takes `leaves[0]`.
+`McpError` — which is what a policy denial arrives as (measured, M2.2 Task 1)
+— is not a `ToolCallError`, so a group holding both would surface the
+`ToolCallError` and lose the denial, and the `except McpError` clause below
+does not help because the group clause wins first. Not reachable today: every
+exception group measured on this path has held exactly one leaf. Left alone
+because the preference is *correct* for the case it was written for (M1.1's
+tool-failure text) and changing it needs a real mixed-group case to reason
+from rather than a hypothetical.
+
+**5. `settlement-agent` configures no logging, so its own `logger.info` calls
+are inert in-pod. The Policy Decision Service does not have this problem —
+this item was carried into Task 8 attributed to the wrong service, and the
+re-check is what caught it.** Measured on the live cluster: `settlement-agent`
+has no `logging.basicConfig`, `logging.config` or `dictConfig` anywhere in its
+source, so its root logger sits at WARNING with no handlers and only
+`logging.lastResort` reaches stderr. `decide_settlement`'s refusal line and
+`executor.py`'s reply line are both INFO and print nothing; `_latch`'s WARNING
+does appear, which is what makes the absence of the other two real evidence
+rather than an assumption about log levels. (The uvicorn `INFO:` lines visible
+in that pod's log are uvicorn configuring its own logger, not this project's.)
+The PDS, by contrast, calls `logging.basicConfig(level=os.environ.get("LOG_LEVEL",
+"INFO"))` in `serve()` — and its pod log carries one
+`decision=… rule=… tool=… caller=…` line per decision, read live. The levels
+in `settlement-agent` were left at INFO rather than inflated to make them
+visible, which is the correct level for a normal-operation event; the decision
+that is genuinely open is whether that service gets a logging config at all.
+
+**6. Criterion 4's structural guard keys its allowlist on file basename.**
+`tests/e2e/test_policy_denial.py`'s `ALLOWED_MONEY_COMPARISONS` is keyed
+`(component, path.name, source)`. `path.name` is the basename, so a future
+subpackage file sharing a basename with an allowlisted one — a second
+`settlement.py` under `agents/settlement-agent/something/` — would silently
+inherit its two entries and could carry an unargued money comparison past the
+guard. The guard already walks recursively (`rglob("*.py")`), so the file
+would be *scanned*; only the allowlist lookup is too generous. The fix is one
+line, keying on the path relative to the component root instead, and it is
+suggested rather than required now because no such subpackage exists in either
+governed component.
+
+**7. Criterion 4's structural guard reads only `*.py`.** Same test, same
+`_source_files`: a threshold expressed anywhere other than Python — a
+Dockerfile `ENV`, a ConfigMap, a Helm value, a YAML default — is invisible to
+the vocabulary, literal and comparison checks alike. Entirely latent today,
+because the €6,000 allowance lives in `rules.py` and nowhere else and neither
+governed component has a config file that could carry a number like it. It
+becomes relevant at **M5**, when the execute allowance becomes a feature flag
+and therefore configuration: at that point a limit could legitimately be
+expressed outside Python, and this guard would stop covering the thing it is
+named for. Recorded here so that is a decision M5 makes rather than a hole M5
+walks into.
+
+**8. `test_gateway_is_the_only_route.py`'s bypass probe is now enforced at a
+different layer than the one it was written to test.**
+`test_an_unprivileged_workload_cannot_reach_the_tool_directly` probes
+`claims-agent → payments-mcp:8000` and asserts it fails. It was written for
+`d17309c`'s **ingress** policy on payments-mcp. Task 7's
+`claims-agent-egress-allowlist` gives `claims-agent` no egress to
+`payments-mcp` at all, so the connection is now dropped at **egress**, before
+the ingress policy it was written for is ever consulted. The assertion still
+passes and still fails loudly if *either* layer breaks — which is defence in
+depth working, and is why the test was not changed — but it no longer
+attributes the block to the ingress half on its own. Task 8 corrected that
+test's docstring to say which layer is actually being exercised; the
+assertions are untouched. The same asymmetry, from the other side, is recorded
+in Task 7's own mutation 4: adding a `payments-mcp:8000` egress allowance left
+the behavioural probe green because the ingress policy was still dropping the
+packet, and only the BPF-map assertion caught it.
+
+**9. There is no Hubble flow evidence anywhere in this project, and no
+document should imply otherwise.** `enable-hubble: false` in this cluster's
+`kube-system/cilium-config` — read live, not from the chart default. Cilium
+emits Prometheus metrics and Hubble flows; only the first is available here.
+Every network claim in this repository therefore rests on one of two things:
+reads of the BPF policy map (`cilium-dbg bpf policy get <endpoint>`, which is
+what pins the egress allowlists by set equality) or TCP probes run from inside
+the pods. No Cilium telemetry is asserted as a span anywhere, and none was
+invented — which is the same rule this document applies to agentgateway and
+SPIRE, applied to a third component that also has no OTel story.
+
+**10. The Policy Decision Service's own 95-test suite is run by neither the
+gate nor any drift guard.** Found by Task 8's re-check, not carried in on the
+list it was handed — which is why the re-check exists. `scripts/smoke-test.sh`
+loops over three service directories (`tools/payments-mcp`,
+`agents/settlement-agent`, `agents/claims-agent`) and
+`test_per_service_counts_match_what_each_suites_own_runner_collects` guards
+the same five published counts, so `platform/policy-decision-service/tests/`
+— the suite covering the component that makes the decision this whole
+milestone is named for — is outside both. The cause is mechanical: that suite
+imports generated gRPC stubs produced by `gen-stubs.sh` and git-ignored, so
+running it needs a generation step that neither the gate's per-service loop
+nor the hermetic `tests/unit` subset is willing to take on. The decision it
+governs *is* covered end to end from the repo-root tree — `tests/e2e/test_policy_denial.py`
+drives a real denial through the deployed PDS, and
+`agents/settlement-agent/tests/test_policy_deny_contract.py` drives the real
+`decide`/`build_result` chain with a test-only PDS import — so this is a
+missing *unit-level* gate, not a missing assertion about behaviour. Fixing it
+means either committing the stubs or teaching the gate to generate them, both
+of which are real choices rather than oversights. Until one is made, the 95 is
+the one published count in this document with nothing automated behind it.
 
 ## Open questions
 

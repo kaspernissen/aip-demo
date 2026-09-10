@@ -1,9 +1,17 @@
 # Upstream findings — held locally, not filed
 
 Status: M1.1, revised through M1.2 for the settlement-agent's model-driven
-decision logic, and through **M2.1 (Interposed)** for the two findings the
+decision logic, through **M2.1 (Interposed)** for the two findings the
 interposed proxy produced — Findings 6 and 7, both against `agentgateway`
-v1.5.0, added by M2.1 Task 5 and checked against commit `27a32df`.
+v1.5.0, added by M2.1 Task 5 and checked against commit `27a32df` — and
+through **M2.2 (Decided)** for three more, Findings 8, 9 and 10, all against
+the same pinned v1.5.0 and all about the `mcpGuardrails`/ExtMCP policy hook
+this milestone put in the path. Those three were gathered by M2.2 Task 1 and
+independently re-measured by Task 8 before being written here: the four
+validator rejections in Finding 8 were re-run against the image, the
+`examples/` sweep was done fresh over the whole v1.5.0 tree, and every source
+line cited was read at the exact revision the running image reports as its
+own.
 No upstream repository exists for this project yet, and filing
 these upstream is a deliberate decision this project defers to its
 maintainers rather than one any implementation task makes unilaterally. The
@@ -30,9 +38,20 @@ questions this project has not yet answered itself:
 - **Gap 2** ("human-in-the-loop approval spans") — no convention exists yet
   for representing an approval/escalation step in a trace; deferred to M3,
   when this project has a working implementation to argue from.
-- **Gap 3** ("policy and autonomy decision spans") — no convention exists for
-  a policy/autonomy decision span; `policy.decision` is this project's own
-  attribute to define in M2, not a gap in someone else's library.
+- **Gap 3** ("policy and autonomy decision spans") — **closed in M2.2, and
+  closed the way it said it would be.** No OTel convention exists for a
+  policy/autonomy decision span, so this was never an upstream defect; it was
+  this project's own attribute vocabulary to define. M2.2 defined it and
+  measured it: a `policy.decision` span carrying ten `policy.*` attributes,
+  emitted by this project's own Policy Decision Service, with the keys owned
+  by one module (`platform/policy-decision-service/pds/telemetry.py`) rather
+  than typed into a document. The measured inventory is in
+  [`docs/telemetry-contract.md`](telemetry-contract.md)'s "The policy
+  decision, as measured (M2.2)". It stays listed here because a reader
+  checking this document against the contract's seven gaps should find all
+  seven accounted for, and because "we defined our own attributes, under our
+  own prefix, and did not pretend they were a convention" is the outcome this
+  entry was predicting.
 
 Neither is "filing-ready" in the sense the findings below are: there is no
 specific library behaviour to point at, no version to cite, no issue number
@@ -42,16 +61,27 @@ the remaining five contract items — Gaps 1, 4, 5, 6, and 7 — renumbered belo
 as Findings 1–5 in the order a reader would hit them walking the chain from
 the A2A hop down to the model's own outbound call.
 
-**Findings 6 and 7 do not come from that list at all**, and the numbering
-would mislead a reader who assumed they did. They are M2.1 findings, both
-against `agentgateway` v1.5.0, about a component that did not exist in this
-system when Gaps 1–7 were enumerated: there was no proxy in the path to have
-a finding about. They continue the numbering because that is what a reader
-scanning this document expects, not because they map onto a contract gap.
-Findings 6 and 7 are also the only two here whose subject is a **Linux
-Foundation** project rather than an independent Python package — worth
-stating because "agentgateway is CNCF" is an easy and wrong assumption, and
-this document is the wrong place to launder it.
+**Findings 6 through 10 do not come from that list at all**, and the numbering
+would mislead a reader who assumed they did. Findings 6 and 7 are M2.1
+findings and Findings 8, 9 and 10 are M2.2 findings; all five are against
+`agentgateway` v1.5.0, about a component that did not exist in this system
+when Gaps 1–7 were enumerated — there was no proxy in the path to have a
+finding about, and no policy hook inside it. They continue the numbering
+because that is what a reader scanning this document expects, not because they
+map onto a contract gap. They are also the only entries here whose subject is
+a **Linux Foundation** project rather than an independent Python package —
+worth stating because "agentgateway is CNCF" is an easy and wrong assumption,
+and this document is the wrong place to launder it.
+
+**One more distinction between the two groups, since it changes how they
+should be read.** Findings 6 and 7 are about *telemetry*: what the gateway
+names things, and where trace context comes from. Findings 8, 9 and 10 are
+about the *policy extension point* — its configuration, its error contract and
+its header filter — and none of them is a telemetry gap at all. Finding 10 is
+the one that touches both, and it is worth reading in that light: a header
+filter defaulting one way and documented accurately still cost this project
+its trace across the policy hop, because the first sensible edit to it is the
+one that breaks tracing.
 
 The evidence for Findings
 1–4 was originally gathered as A8 upstream-contribution material and lives,
@@ -1148,3 +1178,324 @@ of recording this — the tracker was read only, via `gh issue view` /
 upstream already). The `jwt.sub` half is unreported and *remains* unfiled:
 whether to raise it is a decision for this project's maintainers, not one an
 implementation task takes unilaterally.
+
+---
+
+## Finding 8: agentgateway v1.5.0's ExtMCP guardrail has two config vocabularies with different casing, and the only worked example in the repository is the one a standalone deployment cannot use
+
+**The problem, plainly:** the `mcpGuardrails` / ExtMCP feature can be
+configured two ways — through the Kubernetes CRDs (`AgentgatewayPolicy`) or
+through a standalone `config.yaml` — and the two spell the same settings
+differently: PascalCase enum values and a nested `remote:` key in the CRD,
+camelCase values and a `kind: remote` discriminator in the standalone config.
+At v1.5.0 the repository's `examples/` tree, which is where a reader is
+directed for working configuration, contains **no example of either**. The one
+worked ExtMCP configuration anywhere in the tree is a CRD manifest under
+`controller/test/e2e/testdata/`. A reader who reconstructs a standalone
+config from it gets four of five spellings wrong, and finds out one key at a
+time.
+
+**Project and version:** `agentgateway` v1.5.0 (released 2026-08-27), image
+`cr.agentgateway.dev/agentgateway:v1.5.0`. Linux Foundation, not CNCF. The
+image's `--version` reports `git_revision:
+fe6732474a96a0363dfb9822859af4e9bab360fa`, which is exactly the commit the
+`v1.5.0` tag points at — so every source line cited below is the source of the
+binary this project runs, not of a nearby revision.
+
+**What we observed. [measured]** Listing the v1.5.0 tree read-only
+(`gh api repos/agentgateway/agentgateway/git/trees/v1.5.0?recursive=1`):
+`examples/` holds 33 directories and 230 paths, including `mcp-authorization`,
+`mcp-telemetry`, `mcp-basic`, `mcp-multiplex`, `mcp-openapi`, `mcp-apps` and
+`mcp-tls`. Fetching and grepping every YAML file under `examples/` for
+`mcpGuardrails`, `ext_mcp` or `extMcp` returns **zero** hits. The nearest
+neighbour, `examples/mcp-authorization/config.yaml`, configures
+`mcpAuthorization` — the *native CEL* authorization mechanism, a different
+feature with a different schema — which is precisely the kind of near-miss
+that makes the absence hard to notice.
+
+The only worked ExtMCP configuration at that tag is
+`controller/test/e2e/testdata/extmcp/extmcp.yaml`:
+
+```yaml
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+spec:
+  backend:
+    mcp:
+      guardrails:
+        processors:
+        - remote:
+            backendRef: { name: ext-mcp, port: 4445 }
+            failureMode: FailClosed
+          methods:
+            tools/call: Request
+            tools/list: Response
+```
+
+The standalone config that the same binary accepts is a different shape with
+different casing:
+
+```yaml
+policies:
+  mcpGuardrails:
+    processors:
+      - kind: remote
+        host: policy-decision-service.northstar-platform.svc.cluster.local:9100
+        failureMode: failClosed
+        methods:
+          "tools/call": request
+        requestHeaders:
+          allowed: ["traceparent", "tracestate"]
+```
+
+**The cost, measured against the pinned image's own validator. [measured]**
+Starting from the working config above and changing exactly one token at a
+time, `docker run --rm -v .:/c cr.agentgateway.dev/agentgateway:v1.5.0
+--validate-only -f /c/config.yaml` says:
+
+| Change | Validator output |
+|---|---|
+| `kind: remote` → `kind: Remote` | ``unknown variant `Remote`, expected `remote` `` |
+| `"tools/call": request` → `Request` | ``unknown variant `Request`, expected one of `off`, `request`, `response`, `full` `` |
+| `failureMode: failClosed` → `FailClosed` | ``unknown variant `FailClosed`, expected `failClosed` or `failOpen` `` |
+| `requestHeaders.allowed` → `.allow` | ``unknown field `allow`, expected `allowed` or `disallowed` `` |
+
+Three of those four are exactly the spellings the CRD example uses. The fifth
+key a reader must guess — how to name the policy server's address — is `host`,
+the `TargetOrUri` arm of a flattened `SimpleBackendReferenceWithPolicies`,
+where the CRD says `backendRef: {name, port}`.
+
+**Where the behaviour lives:** the casing is not accidental and not
+per-field. `schema!` and `schema_enum!` in `crates/core/src/serdes.rs` expand
+to `#[serde(rename_all = "camelCase", deny_unknown_fields)]`, and every
+standalone-config type in `crates/agentgateway/src/types/` carries one of
+them. The CRD types are Go, in `api/` and `controller/`, and follow Kubernetes
+convention. Both are internally consistent; nothing reconciles them for a
+reader, and no example shows the second one.
+
+**Why it matters, beyond this project.** ExtMCP is the extension point for
+putting an external policy decision on an MCP tool call — the thing an
+organisation reaches for when "which agent may call which tool with what
+arguments" has to be answered somewhere other than in the agent. That is a
+security control, and the failure mode of an undocumented security control is
+not that people configure it wrongly and see an error; the validator is
+strict, so they do see an error. The failure mode is that people give up and
+put the check somewhere weaker, or reach for the CEL mechanism that *does*
+have an example even where an external decision is what they need. A
+`deny_unknown_fields` validator is a good property; it is not a substitute for
+one worked example.
+
+**What a fix would need to do:** add `examples/mcp-guardrails/` in the same
+shape as the existing `mcp-*` examples — a `config.yaml` in the standalone
+vocabulary, a README, and something runnable on the other end of the gRPC
+call. The `crates/agentgateway/src/test_helpers/extmcpmock.rs` already in the
+tree is most of that other end. A second, smaller fix would be a note in the
+CRD testdata pointing out that its casing is CRD-specific.
+
+**Existing upstream activity (verified live, read-only, 2026-09-10).** Nothing
+found. `gh search issues --repo agentgateway/agentgateway` for `mcpGuardrails`,
+`ext_mcp`, `ExtMCP`, `guardrails example` and `mcpGuardrails documentation
+example` returns issues about guardrail *telemetry* (#3178, #3168, both
+closed), an ExtMcp replay feature request (#3003, open), and a backend-resolution
+bug (#2302, closed) — none about missing examples or the two-vocabulary skew.
+No issue, comment or pull request was posted anywhere as part of this search.
+
+**How we worked around it:** by iterating against the pinned image's validator
+until the config parsed, and then recording the working shape and every
+rejected spelling in `deploy/platform/agentgateway/config.yaml`'s comments, so
+the next reader of *this* repository does not repeat the loop. That file also
+records the validator's one useful ordering property: it checks the schema
+before it fetches the JWKS, so reaching the JWKS stage already proves the
+schema parsed.
+
+**Status: not filed by this project.** Tracker read only, via `gh search
+issues` and `gh api`. Whether to raise it is a decision for this project's
+maintainers.
+
+---
+
+## Finding 9: `AuthorizationError.mcp_error` is documented as overriding the JSON-RPC error and does not — it is nested whole under `error.data` while the gateway assigns its own code
+
+**The problem, plainly:** the ExtMCP protobuf's own comment on
+`AuthorizationError.mcp_error` reads *"Optional explicit JSON-RPC error
+payload, as raw JSON bytes. **Overrides the code-derived default.**"* At
+v1.5.0 it overrides nothing. The gateway computes the JSON-RPC `code` from the
+`AuthorizationError.Code` enum unconditionally, puts the `reason` string in
+`message`, and parks the entire parsed `mcp_error` payload — its own `code`,
+`message` and `data` included — under `data`. A policy server that sets
+`mcp_error` to name a specific JSON-RPC error therefore ships that code to a
+place no MCP client looks for it.
+
+**Project and version:** `agentgateway` v1.5.0, as in Finding 8, same
+revision.
+
+**What we observed. [measured]** With a policy server answering every
+`CheckRequest` with
+`AuthorizationError{code = PERMISSION_DENIED, reason = "echo-pds denies
+everything", mcp_error = {"code": -32003, "message": "PDS-DENY-MARKER",
+"data": {"marker": "task-1"}}}`, the body on the wire, byte for byte:
+
+```json
+{"jsonrpc":"2.0","id":"7876ec8661114e6d97b45e39255dfb80","error":{"code":-32001,"message":"echo-pds denies everything","data":{"code":-32003,"message":"PDS-DENY-MARKER","data":{"marker":"task-1"}}}}
+```
+
+| The policy server sent | The MCP client sees | |
+|---|---|---|
+| `code = PERMISSION_DENIED` | `error.code = -32001` | the gateway's own constant, **not** the `-32003` inside `mcp_error` |
+| `reason` | `error.message` | the free-text reason is the client-visible message |
+| `mcp_error` (JSON bytes) | `error.data` | the *whole* payload, parsed, nested one level down |
+
+**Where the behaviour lives:** `translate_error` in
+`crates/agentgateway/src/mcp/guardrails/client.rs` at that revision:
+
+```rust
+let code = match C::try_from(e.code).unwrap_or(C::Unknown) {
+    C::PermissionDenied => PERMISSION_DENIED,      // ErrorCode(-32001)
+    C::ResourceExhausted => crate::mcp::RESOURCE_EXHAUSTED,
+    C::Invalid => ErrorCode::INVALID_REQUEST,
+    C::Unknown => ErrorCode::INTERNAL_ERROR,
+};
+let data = e.mcp_error.as_deref().and_then(|b| serde_json::from_slice::<Value>(b) ... );
+ErrorData::new(code, e.reason, data)
+```
+
+`code` is derived from the enum on every path; `mcp_error` only ever reaches
+the `data` argument. An unparseable `mcp_error` is dropped with a `warn!` and
+the error is returned regardless — so a malformed payload is silently reduced
+to the code-derived error, which is the same shape as success at the
+protocol level.
+
+**What the convention says should happen:** nothing in JSON-RPC or MCP
+requires `mcp_error` to behave either way — this is agentgateway's own
+extension point, and either design is defensible. The defect is that the
+proto's comment describes one design and the implementation is the other, and
+the proto is the artifact a policy-server author reads. `ext_mcp.proto` is
+also what implementers vendor: this project vendors it verbatim, header
+excepted, precisely so the contract is unambiguous.
+
+**Why it matters, beyond this project.** A policy server's most useful
+client-visible signal is a machine-readable one — "this was refused by policy,
+do not retry" is a different instruction from "the tool failed, try again",
+and an agent framework will act on the difference. If an author believes
+`mcp_error.code` reaches the client, they will encode that distinction in a
+code, and the agent will never see it: what arrives is `-32001` for every
+`PERMISSION_DENIED`, with the intended code buried in `data`. The bug is
+silent in both directions — nothing errors, and the deny still works.
+
+**What a fix would need to do:** either honour the comment (when `mcp_error`
+parses to an object with a numeric `code`, use it) or correct the comment to
+describe nesting. The second is cheaper and arguably better: overriding the
+code from an arbitrary payload lets a policy server emit codes rmcp assigns to
+unrelated conditions, and the existing constant deliberately skips `-32002`
+because rmcp uses it for `RESOURCE_NOT_FOUND`. If the comment is what changes,
+it should also say that `data` is where the payload lands, so authors put the
+machine-readable marker there on purpose.
+
+**How we worked around it, and it is the reason this finding is here rather
+than in a scratch note:** this project's policy server puts its
+machine-readable deny marker (`decision: "deny"`, `retryable: false`) in
+`mcp_error`, and its agent reads that marker at `error.data`, never by
+pattern-matching the reason prose. That works *because* the nesting was
+measured before the agent was written. A `tests/`-level contract test
+(`agents/settlement-agent/tests/test_policy_deny_contract.py`) drives the real
+chain end to end so the two sides cannot drift apart silently.
+
+**Existing upstream activity (verified live, read-only, 2026-09-10).** Nothing
+found. `gh search issues --repo agentgateway/agentgateway` for `mcp_error`
+returns no results at all; the `ExtMCP` and `mcpGuardrails` searches return
+only the unrelated items listed in Finding 8. The tracker was read only.
+
+**Status: not filed by this project.** No issue, comment or pull request was
+posted anywhere. Whether to raise it is a decision for this project's
+maintainers.
+
+---
+
+## Finding 10: `mcpGuardrails.processors[].requestHeaders.allowed` is an exhaustive allowlist, so naming any header silently drops `traceparent` and every policy decision starts its own trace
+
+**The problem, plainly:** `requestHeaders.allowed` reads like an addition to
+whatever the gateway already forwards. It is a replacement. An empty list
+forwards everything; a non-empty list forwards *only* what it names. So the
+moment an operator adds one header for the policy server's benefit, W3C trace
+context stops being forwarded — and the only symptom is that the policy
+server's spans are no longer in the caller's trace. Nothing fails, nothing is
+logged, and the policy itself keeps working perfectly.
+
+**Project and version:** `agentgateway` v1.5.0, as above, same revision.
+
+**Where the behaviour lives:** `crates/agentgateway/src/mcp/guardrails/mod.rs`
+at that revision. The doc comment is accurate and the code matches it:
+
+```rust
+/// Allow/deny filter over request headers, mirroring ext_authz: empty `allowed`
+/// forwards every header plus all pseudo-headers (`:authority`, `:method`, ...);
+/// a non-empty `allowed` forwards only the listed names. `disallowed` always wins.
+pub struct HeaderFilter { pub allowed: Vec<...>, pub disallowed: Vec<...> }
+
+pub fn allows(&self, name: &HeaderOrPseudo) -> bool {
+    if self.disallowed.iter().any(|n| n == name) { return false; }
+    self.allowed.is_empty() || self.allowed.iter().any(|n| n == name)
+}
+```
+
+`collect_headers` then builds the policy server's view of the request from
+that filter alone. So this is not a bug in the sense of code disagreeing with
+its own documentation — it is a **default that is safe and a first edit that
+is not**, in a field whose name invites exactly that first edit.
+
+**What we observed. [measured]** Three values, each measured against the
+running cluster by driving one real MCP `tools/call` with a minted JWT-SVID
+and a known incoming `traceparent`:
+
+| `requestHeaders` | Where the policy server's span landed |
+|---|---|
+| `allowed: ["authorization"]` | **a new root trace of its own** — orphan single-span traces, `refs=[]` |
+| block absent entirely | correctly parented under the gateway's `tools/call` span |
+| `allowed: ["traceparent", "tracestate"]` | correctly parented |
+
+The first row is the shape this project shipped first, and it is worth being
+precise about what it looked like from the outside: the policy decided
+correctly, the payment was refused correctly, the policy server appeared in
+the trace backend's service list, its spans existed and carried every
+attribute they should — and the milestone's central observability claim, that
+the decision appears in the same trace as the call it decided, was quietly
+false. No log line anywhere mentioned a header.
+
+**Why it matters, beyond this project.** Anyone wiring an external
+authorization or policy hook has two reasons to name headers: forwarding a
+credential, and trimming what a second service gets to see. Both are
+legitimate and both are the first edit an operator makes to this field. The
+security-minded edit — "forward only `authorization`" — is precisely the one
+that costs you distributed tracing across the policy hop, which is the hop
+whose latency and outcome an operator most wants in the trace. `ext_authz`,
+which this filter explicitly mirrors, has the same shape and therefore the
+same trap.
+
+**What a fix would need to do:** the cheapest fix is documentation — say in
+the field's doc comment, and in whatever example ships for this feature (see
+Finding 8), that trace-context headers are subject to the same filter and must
+be listed explicitly. A stronger fix is to exempt `traceparent`/`tracestate`
+from the allowlist the way pseudo-headers are already handled specially, on
+the reasoning that trace context is transport metadata rather than request
+content; that is a design call for upstream, and it has a real counter-argument
+(explicit is better than magic).
+
+**How we worked around it:** by naming the pair explicitly —
+`allowed: ["traceparent", "tracestate"]` — rather than by deleting the block.
+Removing `requestHeaders` also restores parenting, but it forwards every
+header, and the contents of "every header" were not measured; naming exactly
+what the hook needs is the same argument this repository's network policies
+make. `authorization` is deliberately *not* in that list: the policy server
+reads the caller's identity from the gateway's verified `metadata_context`
+rather than from a header, so forwarding a live bearer credential to a second
+service would be a cost with no benefit.
+
+**Existing upstream activity (verified live, read-only, 2026-09-10).** Nothing
+found. `gh search issues --repo agentgateway/agentgateway` for
+`requestHeaders` returns only unrelated LLM-provider header bugs (#3383,
+#3401, #1777); `traceparent guardrails` returns nothing. The tracker was read
+only.
+
+**Status: not filed by this project.** No issue, comment or pull request was
+posted anywhere. Of the three M2.2 findings this is the one whose fix is most
+plausibly a one-line doc comment, and it is still the maintainers' call.

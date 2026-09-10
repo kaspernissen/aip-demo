@@ -523,10 +523,23 @@ _KEY_VALUE_LINE_RE = re.compile(r"^[a-z][a-z0-9_.]*\s+\S")
 # *deleted* block detectable: dropping a block, or dropping its whole section,
 # removes the heading that matches one of these. Adding a new attribute block
 # is deliberately fine -- it must simply carry a correct claim like the rest.
+# M2.2 widened this from three to six, and two of the original markers had to
+# be made more specific in the same edit -- which is this constant's own
+# failure message working as intended ("make the markers in
+# REQUIRED_ATTRIBUTE_SECTIONS distinguishing again"). M2.2 publishes a
+# *policy-denied* `tools/call` SERVER span alongside the accepted one, so the
+# bare substring "`tools/call` SERVER span" stopped identifying a single
+# section; "on the `tools/call` SERVER span" does. Adding a section is
+# deliberately allowed by the guard below -- it is simply held to the same
+# claim rule -- but a *published* block must stay published, which is what
+# listing all six here buys.
 REQUIRED_ATTRIBUTE_SECTIONS = (
-    "`tools/call` SERVER span",
+    "on the `tools/call` SERVER span",
     "CLIENT span",
     "refused",
+    "`Guardrail`",
+    "policy-denied",
+    "`policy.decision`",
 )
 
 _KEY_COUNT_CLAIM_RE = re.compile(r"\b(?:(\d+)|([A-Za-z][A-Za-z-]*))\s+keys\b")

@@ -237,6 +237,24 @@ def test_an_unprivileged_workload_cannot_reach_the_tool_directly(policy_present)
     This is the assertion the milestone's claim rests on. It is written against
     `claims-agent` rather than a purpose-built prober pod so that it exercises
     the policy exactly as a real neighbouring workload would.
+
+    **Which layer this actually exercises, as of M2.2 Task 7.** It was written
+    for `d17309c`'s *ingress* policy on `payments-mcp` -- "only the gateway may
+    connect to this pod". Task 7 then gave `claims-agent` an egress allowlist
+    (`claims-agent-egress-allowlist`) that does not include `payments-mcp` at
+    all, so this connection is now dropped at **egress**, on the client side,
+    before the ingress policy it was written for is ever consulted. The
+    assertion is deliberately unchanged: it still fails loudly if *either*
+    layer breaks, which is what defence in depth looks like from the outside.
+    What it no longer does on its own is attribute the block to the ingress
+    half. `test_the_datapath_allowlist_admits_the_gateway_and_no_other_workload`
+    below is what pins that half specifically, by reading the enforced
+    allowlist out of `payments-mcp`'s BPF policy map rather than probing it --
+    and Task 7's own mutation 4 is the evidence that the split matters: adding
+    a `payments-mcp:8000` egress allowance left this behavioural probe green,
+    because the ingress policy was still dropping the packet, and only the
+    BPF-map assertion caught it. Hence a corrected docstring rather than a
+    rewritten test.
     """
     result = _probe(
         "northstar-agents", "claims-agent", "claims-agent",

@@ -270,6 +270,30 @@ The order is chosen so that each step has one suspect if it fails.
    refused tool call, the gateway, and the PDS's decision span.
 4. `settlement-agent` and `payments-mcp` contain no policy logic; the only change to either is
    `mcp_tools.py`'s denial-to-terminal-result branch.
+
+   > **Factual correction, M2.2 Task 8 — the first clause held, the second did not.**
+   > Five production files changed across the two components, not one:
+   > `agents/settlement-agent/{executor,mcp_tools,settlement}.py` and
+   > `tools/payments-mcp/{payments_client,server}.py` (measured with
+   > `git diff --name-only 83cced5..50fac07` over both component trees,
+   > excluding `tests/`). Four of the five come from unplanned task D1 and its
+   > follow-up, and D1's justification is the reason they were unavoidable:
+   > **a policy hook can only judge what is in the request.** The execute step
+   > did not carry the amount, so `payments-mcp` had to advertise `amount` as a
+   > *required* tool input and pass it on, and `settlement-agent` had to thread
+   > the model's chosen amount into the `tools/call` arguments dict — the only
+   > thing the hook sees. The fifth, `executor.py`, returns a refusal as a
+   > normal A2A reply rather than letting it become a JSON-RPC error envelope.
+   >
+   > None of that is policy logic, and the criterion's real claim is intact:
+   > the *decision* lives only in the Policy Decision Service, and
+   > `tests/e2e/test_policy_denial.py`'s criterion-4 test enforces that
+   > structurally — no threshold literal, no money comparison and no policy
+   > vocabulary in either component, over an explicit allowlist of which
+   > comparisons may exist and why. What this sentence got wrong is the *size*
+   > of the change, not its shape. It is left standing with this note rather
+   > than rewritten: it is what was believed at design time, and the distance
+   > between that and what shipped is the useful part of the record.
 5. The caller's SPIFFE identity is a **required** input to the decision — demonstrated by the
    decision changing when the identity changes.
 6. A payment **below** the threshold still executes end to end, proving the platform permits as

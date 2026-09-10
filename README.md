@@ -11,15 +11,26 @@ Built from open standards and existing open-source projects, not a proprietary
 
 ## Status
 
-**M2.1 — Interposed.** The claim flows end to end and produces one correlated
-trace. agentgateway now sits in the MCP path and verifies a SPIRE-minted
-JWT-SVID on every call. The position is **authenticated but not
-authorized**: one hop knows who is calling and refuses a caller it cannot
-verify, but no hop anywhere decides whether the caller may do what it asked
-— a €6,200 payment still executes because a message asked for it, and the
-gateway permits every tool call it can authenticate. The policy denial and
-the `toFQDNs` egress denial are M2.2. That remaining gap is deliberate — it
-is the system the rest of the demo argues against.
+**M2.2 — Decided.** The claim flows end to end and produces one correlated
+trace. agentgateway sits in the MCP path, verifies a SPIRE-minted JWT-SVID on
+every call, and now asks a Policy Decision Service whether the call is
+allowed. The position is **one hop authorized, on one rule**: submitting the
+pre-filled €6,200 claim gets the payment **proposed and then refused**, the
+model narrates the refusal to the claimant in its own words and does not
+retry, and the decision itself is a `policy.decision` span in the same trace
+as the call it decided. A second claim at €5,800 settles end to end — a
+platform that refuses everything is not governance, it is an outage. Cilium
+enforces the same shape at the network layer in both directions, so the
+gateway is not a proxy an agent may choose to skip.
+
+**What is deliberately still not decided**, so the "authorized" claim is not
+overread: exactly one hop authorizes, on exactly one rule. The
+browser → claims-agent, claims-agent → settlement-agent and
+payments-mcp → payments-api hops carry no identity and no policy, no human is
+in the loop anywhere, and payments-api still moves money for anything that can
+reach its Service. Human approval is M3. See `docs/architecture.md`'s "What
+the system deliberately does not do", which each milestone sharpens rather
+than deletes.
 
 ## Quick start
 
@@ -35,8 +46,11 @@ is that missing step:
 cp .env.template .env
 # edit .env: ANTHROPIC_API_KEY is REQUIRED now that M1.2 shipped — the
 # settlement decision is a real Claude model call, not a stub. Leave it
-# blank and setup-kind.sh will still bring up all 7 pods Running and fully
-# traced (the key is deliberately optional at the Kubernetes level), but the
+# blank and setup-kind.sh will still bring up every pod Running and fully
+# traced -- 7 application pods at stage 1, and 9 at stage 2, where
+# agentgateway and the Policy Decision Service join them (alongside SPIRE's
+# four and Cilium's, which are platform rather than application). The key is
+# deliberately optional at the Kubernetes level, but the
 # FIRST claim submission fails at the model call — the one thing this
 # milestone exists to demonstrate. setup-kind.sh prints SET/EMPTY for this
 # variable; check for SET before going on stage. DASH0_AUTH_TOKEN and its
@@ -58,6 +72,24 @@ for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent; do
   (cd "$svc" && uv venv --python 3.13 .venv && uv pip install -r requirements.txt)
 done
 ```
+
+The Policy Decision Service is deliberately not in that loop: `smoke-test.sh`
+does not run its suite, because that suite needs generated gRPC stubs and the
+gate does not generate anything. To run it, do the generation first — it fails
+loudly rather than skipping if the stubs are missing:
+
+```bash
+(cd platform/policy-decision-service \
+  && uv venv --python 3.13 .venv && uv pip install -r requirements.txt \
+  && ./gen-stubs.sh \
+  && .venv/bin/python -m pytest tests -q)
+```
+
+The venv comes first because `gen-stubs.sh` defaults to that venv's `python`
+for the pinned `grpc_tools.protoc`. The stubs are git-ignored on purpose
+(ruling R22): committing them would let the image and the repo disagree about
+a contract whose only source of truth is the vendored
+`proto/ext_mcp.proto`.
 
 Then open:
 
@@ -84,9 +116,15 @@ M1.2 made the settlement a real model call, `tests/e2e/test_settlement_agent_tra
 and `tests/e2e/test_claims_chain_trace.py` each drive a live model-driven
 settlement — three Anthropic turns apiece — from a module-scoped fixture, and
 they are deliberately left ungated so the default suite still proves the chain
-end to end. Only `tests/e2e/test_browser_root_span.py` and
-`tests/e2e/test_settlement_llm_trace.py` sit behind `RUN_BROWSER_TESTS=1`.
-Without a live cluster and port-forwards those e2e files fail rather than skip.
+end to end. Four modules sit behind `RUN_BROWSER_TESTS=1`, 27 tests in all
+(re-measured for M2.2 Task 8 with `--collect-only`, not counted by hand):
+`tests/e2e/test_browser_root_span.py` (8), `tests/e2e/test_gateway_trace.py`
+(6), `tests/e2e/test_settlement_llm_trace.py` (9), and 4 of the 6 tests in
+`tests/e2e/test_policy_denial.py` — that last file is the only partly-gated
+one. Its two ungated tests spend nothing: one reads source structurally, and
+the other drives two direct MCP calls with different SPIFFE identities and no
+model call at all. Without a live cluster and port-forwards those e2e files
+fail rather than skip.
 
 `tests/unit` is the hermetic subset: no cluster, no API key, no network.
 
@@ -98,7 +136,7 @@ the laptop runs one stage at a time.
 | Stage | Name | Adds |
 |---|---|---|
 | 1 | Connected | agents, MCP servers, systems of record, customer UI, collector, Jaeger |
-| 2 | Governed | agentgateway, SPIFFE/SPIRE, Policy Decision Service, Kyverno, Cilium — **partly built: as of M2.1 `--stage 2` installs Cilium (Task 3), agentgateway (Task 3, in the MCP path between settlement-agent and payments-mcp, permitting everything — no policy yet) and SPIRE (Task 4, verifying a JWT-SVID at the gateway) — Policy Decision Service and Kyverno are NOT installed yet**, on a cluster created with kind's default CNI disabled |
+| 2 | Governed | agentgateway, SPIFFE/SPIRE, Policy Decision Service, Kyverno, Cilium — **as of M2.2 `--stage 2` installs Cilium (M2.1 Task 3, with M2.2 Task 7 adding ingress and `toFQDNs` egress policies), agentgateway (M2.1 Task 3, in the MCP path between settlement-agent and payments-mcp), SPIRE (M2.1 Task 4, verifying a JWT-SVID at the gateway) and the Policy Decision Service (M2.2 Task 4, deciding every `tools/call` through the gateway's `mcpGuardrails` hook) — Kyverno is NOT installed yet**, on a cluster created with kind's default CNI disabled |
 | 3 | Supervised | Dapr Workflow, reviewer UI, Keycloak |
 | 4 | Observable | OpenSearch + Agent Evals, Prometheus |
 | 5 | Progressive autonomy | OpenFeature / flagd |
@@ -108,14 +146,21 @@ the laptop runs one stage at a time.
 
 M2.1 Task 1 left this chain unchanged — Cilium sits underneath every hop of it,
 and the trace was verified span-by-span against a pre-Cilium baseline to confirm
-that. **M2.1 Task 3 added one hop**: agentgateway is now interposed on the MCP
-call, and the whole chain is still one distributed trace (measured — see
-`tests/e2e/test_gateway_trace.py` and `docs/telemetry-contract.md`'s
-"agentgateway instrumentation, as measured").
+that. **M2.1 Task 3 added one hop**: agentgateway is interposed on the MCP
+call. **M2.2 Task 4 added a branch off it**: before the gateway forwards a
+`tools/call`, it asks the Policy Decision Service whether to. The whole chain
+is still one distributed trace, and the decision is a span inside it (measured
+— see `tests/e2e/test_gateway_trace.py`, `tests/e2e/test_policy_denial.py`, and
+`docs/telemetry-contract.md`'s "agentgateway instrumentation, as measured" and
+"The policy decision, as measured").
 
 ```text
 browser ──A2A──► claims-agent ──A2A──► settlement-agent ──MCP──► agentgateway ──MCP──► payments-mcp ──HTTP──► payments-api
-  (TS)              (Python)              (Python)                 (Rust)               (Python)              (Go)
+  (TS)              (Python)              (Python)                 │  (Rust)             (Python)              (Go)
+                                                                   │ ExtMCP/gRPC — permit or deny, before forwarding
+                                                                   ▼
+                                                         policy-decision-service
+                                                                (Python)
 ```
 
 ## Telemetry
@@ -130,6 +175,6 @@ report the gaps we find. See [`docs/telemetry-contract.md`](docs/telemetry-contr
 
 - [`docs/architecture.md`](docs/architecture.md) — components, hops, protocols, and the trace, walked end to end
 - [`docs/telemetry-contract.md`](docs/telemetry-contract.md) — verified instrumentation and convention gaps
-- [`docs/upstream-findings.md`](docs/upstream-findings.md) — the six open convention gaps (one further finding closed), consolidated as filing-ready findings (not yet filed)
+- [`docs/upstream-findings.md`](docs/upstream-findings.md) — ten consolidated, filing-ready findings against `a2a-sdk`, FastMCP, `mcp` and agentgateway v1.5.0, **none of them filed**: nine still open (one of those already fixed upstream but unreleased) and one closed on discovery. M2.2 added three, all about agentgateway's ExtMCP policy hook
 - [`docs/superpowers/specs/`](docs/superpowers/specs/) — designs
 - [`docs/superpowers/plans/`](docs/superpowers/plans/) — implementation plans

@@ -5,15 +5,31 @@ policy that calls it.
 authenticates every MCP `tools/call` and then permits it. M2.2 adds the
 refusal, and the refusal is configuration -- six keys in
 `deploy/platform/agentgateway/config.yaml` and one Deployment. Every one of
-those keys has a default, and the defaults are not conservative. The worst of
-them is `failureMode`: agentgateway v1.5.0's `FailureMode` derives `Default`
-with `FailOpen` first, so **deleting one line makes a PDS outage permit every
-payment**. The demo would keep working. The €6,200 would go out. Nothing in the
-output, the pod list or the agent's reply would say the platform had stopped
-governing -- fail-open-and-healthy and fail-open-and-not-governing are
-indistinguishable until somebody reads a trace. That single line is why this
-file exists; the rest of it is the surrounding structure that has to hold for
-that line to mean anything.
+those keys has a default. The one that matters most is `failureMode`, and the
+reason it matters is NOT the one this docstring gave through M2.2 Task 7.
+
+**Correction, M2.2 Task 8.** This module used to open by claiming that
+agentgateway v1.5.0's `FailureMode` derives `Default` with `FailOpen` first,
+so that *deleting one line makes a PDS outage permit every payment*. That is
+false. Measured against the pinned image (whose `--version` reports
+git_revision fe6732474a96a0363dfb9822859af4e9bab360fa, exactly the v1.5.0
+tag), with the guardrail pointed at a dead address so every `tools/call` takes
+the failure branch: omitting `failureMode` rejects the call with
+`mcpGuardrails checkRequest failed: ... Connection refused`, `failClosed`
+returns that same error byte for byte, and only `failOpen` lets the call
+through to the tool. The source agrees --
+`crates/agentgateway/src/mcp/guardrails/mod.rs` at that revision puts
+`#[default]` on `FailClosed`. The claim was carried from the M2.2 plan through
+four tasks with nobody measuring it.
+
+**The assertion below is unchanged, because its value is unchanged.**
+`failOpen` is one word away from `failClosed`, and a fail-open gateway is
+indistinguishable from a governing one until somebody reads a trace: the demo
+keeps working, the €6,200 goes out, and nothing in the output, the pod list or
+the agent's reply says the platform stopped governing. Requiring the value to
+be present and to be `failClosed` makes that intent reviewable rather than
+inherited, and catches the one-word edit. What changed is the argument, not
+the guard.
 
 **Every assertion parses YAML or Bash structurally. None greps.** This repo's
 manifests carry heavy explanatory comments, and those comments contain every
@@ -187,13 +203,25 @@ def _containers() -> list[dict]:
 
 
 def test_the_guardrail_is_fail_closed():
-    """The single most consequential line in this milestone.
+    """`failOpen` is one word away, and the difference is invisible when
+    everything is healthy.
 
-    agentgateway v1.5.0's `FailureMode` derives `Default` with `FailOpen`
-    listed first, so an omitted `failureMode` means a PDS outage -- a crashed
-    pod, a dropped probe, an OOM kill, a network policy missing its `host`
-    entity -- **permits every payment**. The demo keeps working and silently
-    stops governing anything, which is strictly worse than a demo that breaks.
+    Note what this docstring no longer says. Through M2.2 Task 7 it claimed an
+    *omitted* `failureMode` permits every payment, because v1.5.0's
+    `FailureMode` derives `Default` with `FailOpen` first. Task 8 measured that
+    against the pinned image and it is false: the default is `failClosed`, and
+    omitting the key behaves exactly as `failClosed` does (see this module's
+    docstring for the three-way probe). So the risk this test guards is not an
+    accidental deletion; it is a deliberate one-word edit to `failOpen`, whose
+    effect -- a gateway that keeps working and stops governing, with nothing in
+    the pod list or the agent's reply to say so -- is strictly worse than a
+    demo that breaks.
+
+    The key is still required to be *present*, not merely not-`failOpen`. An
+    explicit value is what makes the intent reviewable in a diff instead of
+    inherited from an upstream default that could change under us in any
+    release -- and this milestone has now had one documented instance of
+    believing the wrong thing about exactly that default.
 
     The failure message names both accepted spellings because they are the
     validator's own: the pinned image rejects `fail_closed` with "unknown
@@ -205,9 +233,12 @@ def test_the_guardrail_is_fail_closed():
     for where, processor in _guardrail_processors():
         assert processor.get("failureMode") == "failClosed", (
             f"{where}.failureMode is {processor.get('failureMode')!r}; it must "
-            "be 'failClosed'. Absent or 'failOpen' means a PDS outage permits "
-            "every payment -- the demo would keep working and stop governing, "
-            "with nothing in the pod list or the agent's reply to say so. "
+            "be 'failClosed', stated explicitly. 'failOpen' means a PDS outage "
+            "permits every payment -- the demo would keep working and stop "
+            "governing, with nothing in the pod list or the agent's reply to "
+            "say so. An absent key currently behaves as 'failClosed' (measured "
+            "against the pinned image, M2.2 Task 8), but is still rejected "
+            "here: an inherited default is not a reviewable decision. "
             "(The pinned image accepts exactly 'failClosed' or 'failOpen'.)"
         )
 
