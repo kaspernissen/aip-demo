@@ -159,6 +159,39 @@ def decide(req: PolicyInput) -> Decision:
             limit=limit,
         )
 
+    # **`rule` is a literal, and it mislabels two of the three principals that
+    # can reach here. Read this before changing it** -- `policy.rule` on the
+    # `policy.decision` span is what a reader on stage reads off the trace.
+    #
+    # The name says `settlement-agent` and `assisted`; the lookup above is
+    # keyed by `(caller, autonomy_level)` and EXECUTE_LIMITS holds three rows.
+    # So:
+    #
+    #   * `(settlement-agent, assisted)` -> the name is exactly right.
+    #   * `(senior-settlement-agent, assisted)` -> the name names the junior,
+    #     and that is **deliberate and load-bearing**. M3's whole claim is
+    #     that the approval changes *who is asking*, not what is allowed: the
+    #     same rule permits at a different limit because the caller differs,
+    #     and the shared rule name is what makes that visible in one span.
+    #     `tests/e2e/test_supervised.py`'s criterion 4 asserts this exact
+    #     string on the permitting decision. Do not "fix" it.
+    #   * `(settlement-agent, autonomous)` -> the name says `assisted` and the
+    #     decision was made at autonomy level `autonomous`. That one is a
+    #     plain mislabel. It is **pre-existing**, not M3's: the row landed
+    #     with this file itself (`fb3e294`, M2.2), and nothing in this repo
+    #     can drive an `autonomous` request today -- `server.py`'s
+    #     `AUTONOMY_LEVEL` is the module constant `"assisted"`, passed on
+    #     every `PolicyInput`, so no emitted span has ever carried this name
+    #     against that row. M3 only made the simplification visible, by adding
+    #     a third principal and thereby making "one literal for every execute
+    #     decision" obviously a shorthand rather than a description.
+    #
+    # Left as a literal rather than composed from `(req.caller,
+    # req.autonomy_level)`: composing it would silently change the string
+    # criterion 4 asserts and would break the "same rule, different caller"
+    # reading the demo rests on. The honest fix belongs with M5's autonomy
+    # work, which is the milestone that makes `autonomous` reachable and
+    # therefore the milestone in which the mislabel can actually be observed.
     if req.amount > limit:
         return Decision(
             False,

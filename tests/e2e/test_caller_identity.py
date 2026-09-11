@@ -44,6 +44,15 @@ it needs the live `kind-northstar` cluster the same way
 `tests/e2e/test_payments_api_trace.py` does, and like that file it fails rather
 than skips when the cluster is not there.
 
+**One test here is not about identity at all** (M3 final-review fix round):
+`test_a_jsonrpc_batch_is_rejected_before_the_policy_hook_and_changes_nothing`
+is the regression guard `docs/upstream-findings.md`'s OQ-U1 says it lacks. It
+lives in this file because it reuses exactly this file's machinery — the
+gateway port-forward, the SPIRE minting, `_post`/`_json_body`, and the
+no-model-tokens, not-behind-`RUN_BROWSER_TESTS=1` property — and building a
+second copy of that dance elsewhere is the thing this repo's own conventions
+argue against. See that test's own docstring for what it asserts and why.
+
 **Port-forward ownership (A9).** The four forwards this repo manages —
 19001/19002/18000/18080, started and verified by `scripts/setup-kind.sh` — are
 none of this file's business and are never touched. The gateway has no
@@ -61,6 +70,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import subprocess
 import time
@@ -70,7 +80,10 @@ from dataclasses import dataclass, field
 import httpx
 import jwt as pyjwt
 import pytest
+import requests
 from cryptography.hazmat.primitives.asymmetric import rsa
+
+from tests.harness.jaeger import JaegerClient
 
 KUBE_CONTEXT = "kind-northstar"
 GATEWAY_NAMESPACE = "northstar-platform"
@@ -681,4 +694,218 @@ def test_gateway_refuses_a_bearer_value_that_is_not_a_jwt(gateway_url):
     assert result.refused, f"gateway accepted a forged token: {result!r}"
     assert result.tool_result is None, (
         f"the gateway refused but a tool result came back anyway: {result!r}"
+    )
+
+
+# --- OQ-U1's regression guard (M3 final-review fix round) --------------------
+#
+# `docs/upstream-findings.md`'s OQ-U1 closed the one policy-bypass shape M2.2's
+# final review could not rule out: whether agentgateway v1.5.0's
+# `mcpGuardrails` evaluates every message inside a batched JSON-RPC array. It
+# does not have to -- the gateway rejects the array at deserialization, before
+# the hook runs at all. That write-up names its own gap in as many words:
+# "the day agentgateway accepts a batch on this transport, the original
+# question reopens in full, and nothing in this repository's test suite would
+# notice."
+#
+# This is that notice. It asserts exactly what was measured and nothing more,
+# and it costs no model tokens -- it speaks MCP to the gateway directly, the
+# same reason nothing else in this file is behind `RUN_BROWSER_TESTS=1`. If a
+# future gateway version starts accepting arrays, this goes red and the
+# question is reopened deliberately rather than discovered later.
+
+JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
+PAYMENTS_API_URL = os.environ.get("PAYMENTS_API_URL", "http://localhost:18080")
+
+# The status agentgateway v1.5.0 answers a JSON-RPC array with, measured
+# (M3 Task 5B's probe, and re-measured on this test's own first run).
+BATCH_REJECTED = 400
+
+# Over `settlement-agent`'s assisted allowance of 6,000, so a batch that DID
+# reach the guardrail would produce a `policy.decision` span -- and one that
+# bypassed it would execute a real over-limit payment. The probe cannot
+# produce a false negative by asking for something that was never decidable.
+BATCH_PROBE_AMOUNT = 6200.0
+
+
+def _open_session(gateway_url: str, token: str) -> str:
+    """`initialize` through the gateway with a real SVID, returning the
+    `mcp-session-id` it hands back. `call_tool_directly` does this internally
+    and then throws the session away; the batch probe needs to POST a second,
+    hand-built body on the *same* session."""
+    init = _post(
+        gateway_url,
+        {
+            "jsonrpc": "2.0",
+            "id": uuid.uuid4().hex,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": "oq-u1-batch-probe", "version": "0"},
+            },
+        },
+        {"authorization": f"Bearer {token}"},
+    )
+    assert init.status_code == 200, (
+        f"could not open an MCP session for the batch probe: HTTP "
+        f"{init.status_code}: {init.text[:300]}"
+    )
+    session_id = init.headers.get("mcp-session-id")
+    assert session_id, f"no mcp-session-id: headers={dict(init.headers)!r}"
+    return session_id
+
+
+def test_a_jsonrpc_batch_is_rejected_before_the_policy_hook_and_changes_nothing(
+    gateway_url, valid_svid
+):
+    """OQ-U1's closure, turned into a guard (`docs/upstream-findings.md`).
+
+    A JSON-RPC **array** of two `tools/call` messages -- a benign
+    `propose_payment` followed by an over-limit `execute_payment` -- is the
+    shape of a policy bypass: if the gateway unpacked the array but handed
+    `mcpGuardrails` only the first message, the second would reach
+    `payments-mcp` with no decision made about it.
+
+    Three assertions, one per thing that was measured:
+
+    1. **HTTP 400.** The gateway refuses the payload at deserialization
+       (`mcp: fail to deserialize request body: data did not match any
+       variant of untagged enum JsonRpcMessage`), one layer above the point
+       where a method name exists to be matched against `methods:
+       {"tools/call": request}`.
+    2. **No decision spans.** Zero `policy.decision` spans in the trace the
+       request carries, read from Jaeger by an id this test mints itself, so
+       there is no search and no ambiguity. A rejection that still consulted
+       the policy would be a different (and much more interesting) finding.
+    3. **The ledger is untouched.** The payment proposed as bait is still
+       `proposed` afterwards.
+
+    A control is built in: the bait payment is created by a *single*
+    `propose_payment` through the same session with the same token, which
+    must succeed. Without it a 400 could equally mean "this probe built a
+    malformed request", and every assertion below would be satisfied by a
+    gateway that was simply down.
+    """
+    session_id = _open_session(gateway_url, valid_svid)
+    headers = {
+        "authorization": f"Bearer {valid_svid}",
+        "mcp-session-id": session_id,
+    }
+
+    # The control, and the bait. A single message on this session must work.
+    claim_id = f"CLM-BATCH-{uuid.uuid4().hex[:8]}"
+    proposed = _post(
+        gateway_url,
+        {
+            "jsonrpc": "2.0",
+            "id": uuid.uuid4().hex,
+            "method": "tools/call",
+            "params": {
+                "name": "propose_payment",
+                "arguments": {
+                    "claim_id": claim_id,
+                    "amount": BATCH_PROBE_AMOUNT,
+                    "currency": "EUR",
+                },
+            },
+        },
+        headers,
+    )
+    assert proposed.status_code == 200, (
+        "the single-message control failed, so a 400 on the batch below would "
+        f"prove nothing about batching: HTTP {proposed.status_code}: "
+        f"{proposed.text[:300]}"
+    )
+    control_body = _json_body(proposed) or {}
+    structured = ((control_body.get("result") or {}).get("structuredContent")) or {}
+    payment_id = structured.get("paymentId")
+    assert payment_id, f"the control proposal recorded no payment: {control_body!r}"
+    assert structured.get("status") == "proposed", control_body
+
+    # A trace id this test mints, so the trace is fetched by id rather than
+    # searched for (A14).
+    trace_id = uuid.uuid4().hex
+    span_id = uuid.uuid4().hex[:16]
+    batch = [
+        {
+            "jsonrpc": "2.0",
+            "id": uuid.uuid4().hex,
+            "method": "tools/call",
+            "params": {
+                "name": "propose_payment",
+                "arguments": {
+                    "claim_id": f"{claim_id}-B",
+                    "amount": 100,
+                    "currency": "EUR",
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": uuid.uuid4().hex,
+            "method": "tools/call",
+            "params": {
+                "name": "execute_payment",
+                "arguments": {
+                    "payment_id": payment_id,
+                    "amount": BATCH_PROBE_AMOUNT,
+                    "currency": "EUR",
+                },
+            },
+        },
+    ]
+    batched = httpx.post(
+        f"{gateway_url}/mcp",
+        json=batch,
+        headers={
+            "content-type": "application/json",
+            "accept": "application/json, text/event-stream",
+            "traceparent": f"00-{trace_id}-{span_id}-01",
+            **headers,
+        },
+        timeout=30,
+    )
+
+    # 1. Rejected outright.
+    assert batched.status_code == BATCH_REJECTED, (
+        "agentgateway no longer rejects a JSON-RPC array outright -- OQ-U1 "
+        "(docs/upstream-findings.md) is REOPENED, and whether `mcpGuardrails` "
+        "evaluates every message in a batch is an open policy-bypass question "
+        f"again. HTTP {batched.status_code}: {batched.text[:500]}"
+    )
+
+    # 3. The ledger, first, because it is the primary evidence and it needs no
+    # export delay to settle.
+    record = requests.get(
+        f"{PAYMENTS_API_URL}/payments/{payment_id}", timeout=10
+    )
+    assert record.status_code == 200, (
+        f"could not read {payment_id} back from the ledger: HTTP "
+        f"{record.status_code}: {record.text[:300]}"
+    )
+    assert record.json().get("status") == "proposed", (
+        "A BATCHED OVER-LIMIT execute_payment MOVED MONEY: the ledger's own "
+        f"record for {payment_id} reads "
+        f"{record.json().get('status')!r}: {record.json()}"
+    )
+
+    # 2. No decision spans. The trace may be empty (Jaeger 404s on an id it
+    # has never seen) or may hold the gateway's single `POST /*` span; both
+    # are consistent with "the guardrail never ran", and only a
+    # `policy.decision` span would contradict it. Waiting out one full
+    # BatchSpanProcessor cycle first, so "absent" is not merely "not exported
+    # yet" -- the PDS uses the SDK default 5s schedule delay.
+    time.sleep(JaegerClient.QUIET_WINDOW_S)
+    try:
+        trace = JaegerClient(JAEGER_URL).get_trace(trace_id)
+    except AssertionError:
+        decisions = []
+    else:
+        decisions = trace.spans_named("policy.decision")
+    assert decisions == [], (
+        "the batched request produced policy.decision span(s), so the "
+        "guardrail DID see the array -- OQ-U1's measured answer ('rejected at "
+        "deserialization, before the hook runs') no longer holds: "
+        f"{[(s.service, s.attrs) for s in decisions]}"
     )

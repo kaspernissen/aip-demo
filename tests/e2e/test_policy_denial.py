@@ -1146,10 +1146,23 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
       anything the platform permitted. Assertions 1-3 above cover it.
     * `executor.py` -- a docstring and a log line that no longer calls a
       refusal a settlement.
-    * `payments-mcp/server.py` and `payments_client.py` -- Task 2's amount
-      threading on `execute_payment`, so that the instruction states what it
-      pays and the choke point has arguments to decide on. Plumbing, and a
-      precondition for governing at all rather than an instance of it.
+    * `payments-mcp/server.py` and `payments_client.py` -- M2.2 Task 2's
+      amount threading on `execute_payment`, so that the instruction states
+      what it pays and the choke point has arguments to decide on. Plumbing,
+      and a precondition for governing at all rather than an instance of it.
+
+      **M3 added two more tools to both files, and this bullet said only
+      "Task 2's amount threading" until the M3 final-review fix round.**
+      `refuse_payment` (so the agent records *why* a payment did not execute,
+      through the same governed path everything else uses) and `get_payment`
+      (so `execute_approved` can read the ledger back before acting on an
+      approval, R11). Both are in the PDS's own `UNLIMITED_TOOLS` and
+      `refuse_payment` is additionally caller-scoped there, which is exactly
+      the point: the decision about them lives only in `rules.py`, and these
+      two files carry nothing but the call. The assertion below was correct
+      throughout -- M3 added tools, not files, so the five-file set never
+      moved -- and only the reason written beside it went stale, which is the
+      same class this milestone's own review found in a dozen other places.
 
     So the criterion's *substance* -- no policy logic in either component --
     holds and is asserted. Its literal "only one file changed" wording does not,
@@ -1300,9 +1313,12 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
         "tools/payments-mcp/payments_client.py",
     }
     assert production_changed <= expected, (
-        "M2.2 changed production source in these components beyond the five "
-        "files this criterion accounts for (see this test's docstring for why "
-        "each of the five is not policy logic). New: "
+        "production source changed in these components since m2.1-verified, "
+        "beyond the five files this criterion accounts for (see this test's "
+        "docstring for why each of the five is not policy logic). This "
+        "message named M2.2 alone until the M3 final-review fix round; the "
+        "window this comparison actually covers is m2.1-verified..HEAD, which "
+        "is every milestone since, M3 included. New: "
         f"{sorted(production_changed - expected)}"
     )
 
