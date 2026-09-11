@@ -16,7 +16,15 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
-echo -e "${BLUE}=== Northstar M2.2 smoke test ===${NC}"
+# M3 Task 5B: renamed from "M2.2" here and on the success line at the bottom,
+# following the precedent 8c0e980 set for the same reason -- the gate now
+# covers M3's refusal record, reviewer UI and approved-execution assertions, so
+# a banner and a sign-off naming M2.2 misreported what a passing run had
+# proven. That commit's own message called it "the same stale-prose class the
+# final review found thirteen times". No test pins either string; the only
+# references are this file's own two echoes (re-checked with grep across the
+# repo, not assumed).
+echo -e "${BLUE}=== Northstar M3 smoke test ===${NC}"
 
 echo -e "${BLUE}--- Checking prerequisites ---${NC}"
 command_exists go || { echo -e "${RED}go is required${NC}" >&2; exit 1; }
@@ -38,7 +46,19 @@ command_exists npx || { echo -e "${RED}npx (Node.js) is required${NC}" >&2; exit
 # README told a new operator the PDS setup was not needed. Both halves are
 # fixed: the venv is required here, the stubs are generated below, and the
 # suite is run.
-for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service; do
+#
+# `apps/reviewer-ui` joins the loop in M3 Task 5B for the same reason, and it is
+# the same kind of fix: an existing undeclared dependency, not a new one.
+# `tests/unit/test_telemetry_contract_counts.py` (which Step 2/2 below runs,
+# because it runs the whole `tests/` tree) calls
+# `_pytest_collected_count(apps/reviewer-ui)`, and that helper asserts
+# `<service>/.venv/bin/python` exists before it will count anything. So without
+# this venv the gate already failed -- just four minutes later, inside a unit
+# test, with a message about a contract count rather than about a missing
+# prerequisite. Measured, not assumed: the helper is at
+# tests/unit/test_telemetry_contract_counts.py:143-148 and the reviewer-ui row
+# at :296. Its own 50-test suite is run below alongside the other six.
+for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui; do
   [[ -x "$ROOT/$svc/.venv/bin/python" ]] || {
     echo -e "${RED}Error: $ROOT/$svc/.venv not found.${NC}" >&2
     echo "Create it: (cd $svc && uv venv --python 3.13 .venv && uv pip install -r requirements.txt)" >&2
@@ -51,10 +71,21 @@ kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
   # M2.1 Task 1: this said `--stage 1` until Cilium arrived. Following that
   # after a cluster loss rebuilds on kindnet, silently reverting the CNI this
   # gate's own trace assertions exist to verify — and the stage-2 kindnet
-  # guard would then refuse, but only after a second delete. Stage 2 is the
-  # current cluster; `--stage 1` is still supported, it is just no longer what
-  # this repo's own instructions should point a reader at.
-  echo "Run ./scripts/setup-kind.sh --stage 2 first." >&2
+  # guard would then refuse, but only after a second delete. `--stage 1` and
+  # `--stage 2` are both still supported; they are just no longer what this
+  # repo's own instructions should point a reader at.
+  #
+  # M3 Task 5B: and it said `--stage 2` until now, which is the SAME defect
+  # one stage later and with a worse failure. Stage 3 is the current cluster,
+  # and the port loop immediately below requires five ports including
+  # reviewer-ui's 8081 — a workload no stage-2 cluster has. So an operator who
+  # followed this line rebuilt at stage 2 and then failed the very next check,
+  # on a component this script had just told them not to install.
+  # tests/unit/test_stage2_cilium_config.py's
+  # `test_no_operator_facing_instruction_still_points_at_an_older_stage` now
+  # pins both numbers, so the M4 recurrence is caught by a test rather than by
+  # a reader.
+  echo "Run ./scripts/setup-kind.sh --stage 3 first." >&2
   exit 1
 }
 # The e2e/browser assertions below need all five ports up. Four are
@@ -115,7 +146,7 @@ for probe in \
   path="${rest#*:}"
   lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1 || {
     echo -e "${RED}Error: nothing is listening on port ${port} (${name}).${NC}" >&2
-    echo "Port-forwards die after a redeploy and need re-establishing: kubectl -n <namespace> port-forward svc/${name} ${port}:<container-port> (or re-run ./scripts/setup-kind.sh --stage 2)." >&2
+    echo "Port-forwards die after a redeploy and need re-establishing: kubectl -n <namespace> port-forward svc/${name} ${port}:<container-port> (or re-run ./scripts/setup-kind.sh --stage 3)." >&2
     exit 1
   }
   # -o /dev/null: the body is irrelevant, only whether one arrived.
@@ -125,7 +156,7 @@ for probe in \
     echo -e "${RED}Error: port ${port} (${name}) is LISTENING but carries no request.${NC}" >&2
     echo "This is a dead kubectl port-forward: its target pod was replaced, the socket stayed bound, and lsof still calls it healthy (ruling R20). Nothing here is broken in the cluster." >&2
     echo "Kill that forward and re-establish it: lsof -nP -iTCP:${port} -sTCP:LISTEN  # then kill that PID" >&2
-    echo "  kubectl -n <namespace> port-forward svc/${name} ${port}:<container-port>   (or re-run ./scripts/setup-kind.sh --stage 2)" >&2
+    echo "  kubectl -n <namespace> port-forward svc/${name} ${port}:<container-port>   (or re-run ./scripts/setup-kind.sh --stage 3)" >&2
     exit 1
   }
 done
@@ -169,6 +200,16 @@ echo -e "${YELLOW}policy-decision-service${NC}"
 echo -e "${YELLOW}customer-ui${NC}"
 (cd "$ROOT/apps/customer-ui" && npx vitest run)
 
+# M3 Task 5B: the seventh per-service suite, and the last one still outside the
+# gate. Same shape as the PDS row above -- the venv is required in the
+# prerequisite loop, so reaching here means it exists. 50 tests, 0.36s measured,
+# so this costs the gate nothing. docs/telemetry-contract.md's per-service row
+# publishes all seven figures and tests/unit/test_telemetry_contract_counts.py
+# re-measures each of them, which means this suite's count was already gating
+# before its assertions were.
+echo -e "${YELLOW}reviewer-ui${NC}"
+(cd "$ROOT/apps/reviewer-ui" && .venv/bin/python -m pytest tests -q)
+
 echo ""
 echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included ---${NC}"
 # A22: the milestone's headline claim is that ONE trace spans the browser down
@@ -188,4 +229,4 @@ echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included 
 RUN_BROWSER_TESTS=1 "$ROOT/.venv/bin/python" -m pytest "$ROOT/tests" -v
 
 echo ""
-echo -e "${GREEN}M2.2 smoke test passed.${NC}"
+echo -e "${GREEN}M3 smoke test passed.${NC}"

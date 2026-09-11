@@ -32,7 +32,7 @@ command_exists docker || { echo -e "${RED}docker is required${NC}" >&2; exit 1; 
 command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1; }
 
 if ! docker ps --format '{{.Names}}' | grep -qx kind-registry; then
-  echo -e "${RED}kind-registry is not running. Run scripts/setup-kind.sh --stage 2 first.${NC}" >&2
+  echo -e "${RED}kind-registry is not running. Run scripts/setup-kind.sh --stage 3 first.${NC}" >&2
   exit 1
 fi
 

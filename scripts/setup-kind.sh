@@ -64,15 +64,22 @@ Usage: setup-kind.sh [--stage N]
                           chart only uses it for optional features this
                           install does not enable -- see
                           deploy/platform/spire/values.yaml]
-  --stage 3   Supervised:           stage 2, on a cluster created with a
-                          fourth host port reserved (8081 -> nodePort 30081,
-                          for reviewer-ui) -- deploy/kind/stage3.yaml.
-                          [as of M3 Task 1, this stage installs exactly what
-                          stage 2 installs: no M3 workload (reviewer-ui, the
-                          senior-settlement-agent identity, the refusal
-                          record, the PDS's new row) exists yet. Later M3
-                          tasks add them; until then "stage 3" only differs
-                          from stage 2 in the cluster's own port mappings]
+  --stage 3   Supervised:           stage 2, plus a human in the loop, on a
+                          cluster created with a fourth host port reserved
+                          (8081 -> nodePort 30081, for reviewer-ui) --
+                          deploy/kind/stage3.yaml.
+                          [installs, on top of stage 2: reviewer-ui (the
+                          approval page a human reads and clicks) and
+                          senior-settlement-agent -- the SAME
+                          settlement-agent image in a second Deployment under
+                          a second ServiceAccount, because "senior" here is an
+                          identity, not a different program. The refusal
+                          record and the PDS's senior row are in stage 2's
+                          images already, since they are code in payments-api
+                          and the Policy Decision Service rather than separate
+                          workloads. This paragraph read "no M3 workload
+                          exists yet" from M3 Task 1 until Task 5B; that was
+                          true when written and false from Task 4 onward]
   --stage 4   Observable:           + OpenSearch, Prometheus
                           [not implemented -- exits]
   --stage 5   Progressive autonomy: + flagd
@@ -427,6 +434,61 @@ if [[ "${STAGE}" -ge 2 ]]; then
   echo -e "${GREEN}agentgateway is up, calling the PDS on every tools/call (fail-closed).${NC}"
 fi
 
+if [[ "${STAGE}" -ge 3 ]]; then
+  # M3 Task 5B. Until this block existed, `--stage 3` installed exactly what
+  # `--stage 2` installed plus one host-port reservation -- which was true and
+  # documented while M3 had no workload, and false from Task 4 onward. The
+  # consequence was not cosmetic: README tells a reader to run this script and
+  # then run the gate, and the gate checks port 8081 (reviewer-ui) as one of
+  # its five prerequisites, so a cold reader following the documented path got
+  # a gate that failed on a workload the setup script had never deployed.
+  #
+  # Two components, and they are deployed differently for a reason that is
+  # already recorded in scripts/rebuild-and-deploy.sh's COMPONENTS list:
+  #
+  #   * reviewer-ui is a genuinely new image with its own build context
+  #     (apps/reviewer-ui/Dockerfile), so it goes through rebuild-and-deploy.sh
+  #     like every other component -- which also gives it the
+  #     apply/restart/rollout-status sequence the blocks above rely on.
+  #   * senior-settlement-agent has NO image of its own. It is the
+  #     settlement-agent image, unmodified, in a second Deployment with a
+  #     second ServiceAccount -- the whole point being that "senior" is an
+  #     identity, not a different program (deploy/k8s/senior-settlement-agent.yaml's
+  #     own header). So it is a bare `kubectl apply`, and the `rollout status`
+  #     is spelled out here rather than inherited.
+  #
+  # Order: the identity first, the UI second. reviewer-ui's SENIOR_AGENT_URL
+  # points at senior-settlement-agent's Service, and although nothing between
+  # here and the end of this script drives an approval (so neither order would
+  # leave a real request failing), this order means the window does not exist
+  # if a future step ever does.
+  #
+  # Nothing else is needed for either: deploy/platform/cilium-policies.yaml,
+  # applied at Step 6 above, already carries both workloads' policies (M3 Task
+  # 3 added them), and neither needs a ClusterSPIFFEID of its own -- both take
+  # their ID from the SPIRE chart's catch-all `default` CR (fallback: true),
+  # which derives it from namespace + ServiceAccount. That is why
+  # deploy/platform/spire/registration.yaml is unchanged by this stage.
+  echo -e "${BLUE}Step 9d/9 (stage 3): Deploying the M3 supervised workloads...${NC}"
+  kubectl --context "kind-${CLUSTER_NAME}" apply \
+    -f "$ROOT/deploy/k8s/senior-settlement-agent.yaml"
+  # `rollout restart` for the same reason rebuild-and-deploy.sh does it, not by
+  # imitation: both Deployments name the MUTABLE tag
+  # `localhost:5001/northstar/settlement-agent:dev` (read from both manifests,
+  # not assumed). On a re-run Step 9 has just pushed a new image under that
+  # same tag, and `kubectl apply` over an unchanged manifest is a no-op -- so
+  # without this, senior-settlement-agent alone would keep serving the previous
+  # build while settlement-agent, which rebuild-and-deploy.sh does restart,
+  # served the new one. Two pods of "the same image" silently disagreeing is
+  # the worst version of this to debug.
+  kubectl --context "kind-${CLUSTER_NAME}" -n northstar-agents \
+    rollout restart deployment/senior-settlement-agent
+  kubectl --context "kind-${CLUSTER_NAME}" -n northstar-agents \
+    rollout status deployment/senior-settlement-agent --timeout=180s
+  "$ROOT/scripts/rebuild-and-deploy.sh" reviewer-ui
+  echo -e "${GREEN}reviewer-ui is up on 8081 (NodePort, mapped by deploy/kind/stage3.yaml); senior-settlement-agent is up on 9002 in its own Deployment.${NC}"
+fi
+
 # A9: a stray port-forward from another cluster on this machine (e.g.
 # `capybara`) has silently shadowed a host port before, twice. This only ever
 # kills forwards matching this repo's own pattern, never blanket-kills
@@ -485,13 +547,20 @@ echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payment
 
 echo ""
 if [[ "${STAGE}" -eq 3 ]]; then
-  echo -e "${GREEN}Stage 3 (Supervised) cluster is up -- no M3 workload exists yet, so what's actually running is stage 2's: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity. The only difference from a stage-2 cluster is the reviewer-ui port reservation.${NC}"
+  echo -e "${GREEN}Stage 3 (Supervised) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity, plus reviewer-ui and senior-settlement-agent -- so a refused payment now has a human who can approve it.${NC}"
 elif [[ "${STAGE}" -ge 2 ]]; then
   echo -e "${GREEN}Stage 2 (Governed) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity.${NC}"
 else
   echo -e "${GREEN}Stage 1 (Connected) is up.${NC}"
 fi
 echo "  Customer UI:         http://localhost:8080"
+if [[ "${STAGE}" -ge 3 ]]; then
+  # Only at stage 3: the host port is reserved by deploy/kind/stage3.yaml, so
+  # on a stage-1 or stage-2 cluster this URL answers nothing and printing it
+  # would be the same class of false instruction this block's sibling in
+  # scripts/smoke-test.sh checks for.
+  echo "  Reviewer UI:         http://localhost:8081"
+fi
 echo "  Jaeger UI:           http://localhost:16686"
 echo "  Collector OTLP/HTTP: http://localhost:4318"
 echo "  claims-agent (A2A):  http://localhost:19001"

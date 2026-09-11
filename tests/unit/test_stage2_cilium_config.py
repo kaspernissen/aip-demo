@@ -599,10 +599,10 @@ def test_stage_two_proceeds_when_the_existing_cluster_has_no_kindnet(tmp_path):
     )
 
 
-def test_no_operator_facing_instruction_still_points_at_stage_1():
-    """Fix round 1 (review Findings 3, 4 and 7, treated as one class): stage 2
-    is the current cluster, so nothing a reader is told to run may say
-    `--stage 1`.
+def test_no_operator_facing_instruction_still_points_at_an_older_stage():
+    """Fix round 1 (review Findings 3, 4 and 7, treated as one class): the
+    current stage is the current cluster, so nothing a reader is told to run may
+    name an older one.
 
     This had teeth. `scripts/smoke-test.sh` told an operator whose cluster was
     unreachable to run `--stage 1`; following that after a cluster loss rebuilds
@@ -613,25 +613,60 @@ def test_no_operator_facing_instruction_still_points_at_stage_1():
     this asserts over a *set* of files rather than the one line the review
     cited.
 
-    `docs/superpowers/` is deliberately excluded: those are the M1.1/M1.2 plan
-    and spec documents, and `--stage 1` is the correct, historical instruction
-    for the milestone each of them describes. Rewriting them would falsify a
-    record rather than fix a pointer.
+    **M3 Task 5B widened it from `--stage 1` to every stage below the current
+    one, because the defect recurred exactly as the name of the original
+    version invited it to.** Once `--stage 3` became the current cluster, six
+    sites still said `--stage 2` — `smoke-test.sh` three times,
+    `rebuild-and-deploy.sh`, `README.md`, and one historical line in
+    `docs/telemetry-contract.md` — and the guard was green through all of it,
+    because it only ever knew the number 1. The stage-2 version of the failure
+    is worse than the stage-1 one it was written for: `smoke-test.sh`'s port
+    loop requires reviewer-ui on 8081, a workload no stage-2 cluster has, so
+    following the instruction guaranteed a failure on the very next check.
+
+    `CURRENT_STAGE` below is the single number M4 has to change. It is also the
+    reason this test is parameter-free rather than parameterised: adding a stage
+    must not change how many tests this module collects, since
+    `docs/telemetry-contract.md` publishes that count.
+
+    Two deliberate exclusions:
+
+    * `docs/superpowers/` — those are the M1.1/M1.2/M2.x plan and spec
+      documents, and the older `--stage N` is the correct, historical
+      instruction for the milestone each of them describes. Rewriting them would
+      falsify a record rather than fix a pointer.
+    * `docs/telemetry-contract.md` is checked for `--stage 1` but NOT for the
+      later stages. That file's job is to state the command each published
+      number was actually measured with, and the M2.1 rows were genuinely
+      measured on a freshly created stage-2 cluster (line ~102). Naming the
+      stage actually run is *required* there; "fixing" it to `--stage 3` would
+      attach provenance to those numbers that they do not have, which is this
+      repo's most-repeated defect class. The `--stage 1` check is kept on it
+      because no number in it was ever measured at stage 1 — the file's own
+      preamble records a review catching precisely that false claim.
     """
-    checked = [
+    CURRENT_STAGE = 3
+    scripts_and_readme = [
         REPO_ROOT / "scripts" / "smoke-test.sh",
         REPO_ROOT / "scripts" / "rebuild-and-deploy.sh",
         REPO_ROOT / "scripts" / "setup-kind.sh",
         REPO_ROOT / "README.md",
-        REPO_ROOT / "docs" / "telemetry-contract.md",
     ]
+    checked: list[tuple[Path, int]] = [
+        (path, stage)
+        for path in scripts_and_readme
+        for stage in range(1, CURRENT_STAGE)
+    ]
+    checked.append((REPO_ROOT / "docs" / "telemetry-contract.md", 1))
+
     offenders = []
-    for path in checked:
+    for path, stage in checked:
         if not path.exists():
             continue
+        needle = f"setup-kind.sh --stage {stage}"
         lines = path.read_text().splitlines()
         for i, line in enumerate(lines):
-            if "setup-kind.sh --stage 1" not in line:
+            if needle not in line:
                 continue
             # A passage that documents the correction is allowed to quote the
             # old instruction; a line that *issues* it is not. Whole-line
@@ -643,11 +678,15 @@ def test_no_operator_facing_instruction_still_points_at_stage_1():
             window = "\n".join(lines[max(0, i - 2): i + 1])
             if "previously read" in window:
                 continue
-            offenders.append(f"{path.relative_to(REPO_ROOT)}:{i + 1}: {line.strip()}")
+            offenders.append(
+                f"{path.relative_to(REPO_ROOT)}:{i + 1} (stage {stage}): "
+                f"{line.strip()}"
+            )
     assert not offenders, (
-        "these lines still instruct a reader to build a stage-1 (kindnet) "
-        "cluster; stage 2 is the current cluster and `--stage 1` silently "
-        "reverts the CNI:\n" + "\n".join(offenders)
+        f"these lines still instruct a reader to build a cluster older than "
+        f"stage {CURRENT_STAGE}, which is the current one. `--stage 1` "
+        "silently reverts the CNI; `--stage 2` omits the M3 workloads the "
+        "gate's own prerequisite check then requires:\n" + "\n".join(offenders)
     )
 
 
