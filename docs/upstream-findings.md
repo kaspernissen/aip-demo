@@ -12,6 +12,14 @@ validator rejections in Finding 8 were re-run against the image, the
 `examples/` sweep was done fresh over the whole v1.5.0 tree, and every source
 line cited was read at the exact revision the running image reports as its
 own.
+
+**M3 (Supervised) adds no finding.** It adds a *measurement*: OQ-U1 — whether
+agentgateway v1.5.0's `mcpGuardrails` evaluates every message inside a batched
+JSON-RPC array, the one policy-bypass shape M2.2's final review could not rule
+out — was probed live against the deployed gateway and is now **closed**. It
+is not a bypass, so it did not become a Finding; see "Open questions" at the
+end of this document for the probe, the evidence, and what it does and does
+not settle. Ten findings, still none filed.
 No upstream repository exists for this project yet, and filing
 these upstream is a deliberate decision this project defers to its
 maintainers rather than one any implementation task makes unilaterally. The
@@ -32,12 +40,29 @@ own history.
 
 `docs/telemetry-contract.md`'s "Confirmed convention gaps" section numbers
 seven items, 1 through 7 (M1.2 added Gap 7). Two of those are not findings
-about a third-party library's behaviour at all — they are open design
-questions this project has not yet answered itself:
+about a third-party library's behaviour at all — they were open design
+questions this project had not yet answered itself, and **as of M3 both are
+closed, each in the milestone it said it would be**:
 
-- **Gap 2** ("human-in-the-loop approval spans") — no convention exists yet
-  for representing an approval/escalation step in a trace; deferred to M3,
-  when this project has a working implementation to argue from.
+- **Gap 2** ("human-in-the-loop approval spans") — **closed in M3, and closed
+  the way it said it would be.** This entry read "deferred to M3, when this
+  project has a working implementation to argue from" for the whole of M2, and
+  M3 built the implementation. No OTel convention exists for an approval,
+  escalation or human-interrupt step inside an agent trajectory — re-checked
+  for M3 rather than assumed — so this was never an upstream defect either; it
+  was this project's own attribute vocabulary to define. M3 defined it and
+  measured it: a `review.decision` span carrying six `review.*` attributes,
+  emitted by this project's own `reviewer-ui`, and a
+  `settlement.execute_approved` span carrying two `northstar.*` attributes and
+  this project's first span **link**, back to the span that recorded the
+  refusal. The measured inventories are in
+  [`docs/telemetry-contract.md`](telemetry-contract.md)'s "reviewer-ui's own
+  instrumentation: `review.decision` (M3 Task 4)" and "settlement-agent's own
+  instrumentation: `execute_approved` (M3 Task 3)", and the closure argument —
+  including what it deliberately does not cover — is at that document's Gap 2.
+  It stays listed here for the same reason Gap 3 does: a reader checking this
+  document against the contract's seven gaps should find all seven accounted
+  for.
 - **Gap 3** ("policy and autonomy decision spans") — **closed in M2.2, and
   closed the way it said it would be.** No OTel convention exists for a
   policy/autonomy decision span, so this was never an upstream defect; it was
@@ -53,10 +78,12 @@ questions this project has not yet answered itself:
   own prefix, and did not pretend they were a convention" is the outcome this
   entry was predicting.
 
-Neither is "filing-ready" in the sense the findings below are: there is no
-specific library behaviour to point at, no version to cite, no issue number
-to check. They are recorded in the contract as open questions this project
-will need to resolve itself, not as upstream defects. This document covers
+Neither was ever "filing-ready" in the sense the findings below are: there is
+no specific library behaviour to point at, no version to cite, no issue number
+to check. Both were recorded in the contract as open questions this project
+would have to resolve itself, not as upstream defects, and both were resolved
+that way — by defining this project's own attributes under this project's own
+prefixes and saying so out loud. This document covers
 the remaining five contract items — Gaps 1, 4, 5, 6, and 7 — renumbered below
 as Findings 1–5 in the order a reader would hit them walking the chain from
 the A2A hop down to the model's own outbound call.
@@ -1513,9 +1540,119 @@ plausibly a one-line doc comment, and it is still the maintainers' call.
 An entry here is a question this project could not answer, written down so the
 next person does not have to rediscover that it is open. It is deliberately not
 numbered into the findings above: a finding names a behaviour and shows the
-evidence, and neither of these does.
+evidence, and this one did not when it was written.
 
-### OQ-U1: does `mcpGuardrails` evaluate every message inside a batched JSON-RPC array? (agentgateway v1.5.0)
+**There is exactly one entry in this section, and M3 Task 5B corrected the
+sentence above to say so.** It read *"neither of these does"* from M2.2 until
+then — plural, with one entry beneath it. Whether a second question was
+planned and never written, or written and dropped, is not recoverable from
+this document's history; what is recoverable is that nobody re-read the
+sentence after the section stopped having two members. Recorded rather than
+silently fixed, because this repository's most-repeated defect is exactly
+this: a sentence true when written, falsified by a later edit, and nobody
+re-read it.
+
+**And that one entry has since been answered.** OQ-U1 was measured live in M3
+Task 5B and is now closed. It stays in this section rather than moving up into
+the findings, for the reason this section's own rule gives: the measurement
+found no defect to name. An answered question is kept, with its answer, rather
+than deleted — the distance between what was feared and what was measured is
+the part worth keeping.
+
+### OQ-U1 (closed, M3 Task 5B — measured, not a bypass): does `mcpGuardrails` evaluate every message inside a batched JSON-RPC array? (agentgateway v1.5.0)
+
+**The answer, first, because it is the reason to read the rest. [measured]**
+agentgateway v1.5.0 **rejects a JSON-RPC array outright, before the
+`mcpGuardrails` hook runs at all.** It answers `HTTP 400` with a `text/plain`
+body, `mcp: fail to deserialize request body: data did not match any variant
+of untagged enum JsonRpcMessage`. Zero `policy.decision` spans are emitted,
+`payments-mcp` records nothing, and the ledger is untouched. That is the third
+of the three outcomes this entry predicted ("A rejected batch closes it a
+third way"), and it means **there is no batch bypass on this transport in this
+version.** The M2.2 review's concern was correct to raise and turns out not to
+be reachable.
+
+**The probe, exactly as run** (M3 Task 5B, against the deployed
+`cr.agentgateway.dev/agentgateway:v1.5.0` on the live `kind-northstar`
+cluster, costing no model tokens — it speaks MCP to the gateway directly,
+reusing `tests/e2e/test_caller_identity.py`'s port-forward and
+`spire-server jwt mint` machinery):
+
+1. Open a session: `initialize` with a real SPIRE-minted JWT-SVID for the
+   gateway's audience → `HTTP 200`, `mcp-session-id` returned.
+2. Create something worth stealing: a single `propose_payment` for €6,200 →
+   `HTTP 200`, `PAY-000024`, `status: proposed`. This matters: it means a
+   successful bypass would have *executed a real over-limit payment*, so the
+   probe could not have produced a false negative by asking the gateway to
+   execute a payment that did not exist.
+3. POST the batch: a JSON-RPC **array** of two `tools/call` messages on that
+   same session — a benign `propose_payment` first, then
+   `execute_payment(PAY-000024, 6200)`, which is €200 over
+   `settlement-agent`'s assisted allowance and is the exact call M2.2 exists
+   to refuse — with a hand-minted `traceparent` so the resulting trace could
+   be fetched by id rather than searched for.
+
+**What came back, and what the trace says. [measured]**
+
+| Observation | Value |
+|---|---|
+| HTTP status | `400` |
+| `content-type` | `text/plain` |
+| body | `mcp: fail to deserialize request body: data did not match any variant of untagged enum JsonRpcMessage` |
+| spans in the trace | **1** — `agentgateway`, operation `POST /*`, SpanKind SERVER |
+| `policy.decision` spans | **0** |
+| `payments-mcp` spans | **0** (no `tools/call execute_payment`, and no `initialize` either) |
+| ledger, read back afterwards | `PAY-000024` still `status: proposed` |
+
+**The single span is itself the evidence, and it is worth more than the status
+code.** Its operation name is `POST /*` — the gateway's own HTTP route span —
+not `tools/call`. Every guarded call in this system produces a `tools/call`
+SERVER span with `gen_ai.tool.name` on it and a `Guardrail` CLIENT child; this
+produces neither, because the request never reached MCP method dispatch. The
+rejection is at deserialization, one layer *above* the point where a method
+name exists to be matched against `methods: {"tools/call": request}`. The
+gateway carries the parser's own message into
+`otel.status_description` on that span, so the cause is legible from the trace
+alone.
+
+**The control, because a refusal that proves nothing is worse than no probe.**
+A `400` could equally mean "this probe built a malformed request". So the same
+two messages were sent **singly**, on the same session, with the same token:
+
+| Sent | Result | `policy.decision` spans |
+|---|---|---|
+| message 1 alone (`propose_payment`, €6,200) | `HTTP 200`, `PAY-000025` recorded `proposed`; `payments-mcp` and `payments-api` both in the trace | **1** — `permit`, rule `unlimited_tool` |
+| message 2 alone (`execute_payment`, €6,200) | `HTTP 200` carrying JSON-RPC error `-32001`, the PDS's own refusal text and `data.decision: "deny"`; no `payments-mcp` span | **1** — `deny`, rule `settlement-agent.assisted.execute_limit`, `policy.limit.amount` 6000, `policy.request.amount` 6200 |
+| a **one-element** array holding message 1's exact shape | `HTTP 400`, byte-identical `text/plain` body, one `POST /*` span | **0** |
+
+So both messages are well-formed and individually decidable — one is permitted
+and one is denied, each with its own decision span — and wrapping a single
+*known-good* message in an array is enough to get the same rejection. The
+rejection is attributable to the array container and to nothing else about the
+request.
+
+**What this does NOT establish, stated so the closure is not overread.** It
+does not establish *why* the rejection happens — the `untagged enum
+JsonRpcMessage` text points at the MCP layer's own deserializer (rmcp's
+`JsonRpcMessage`, which the gateway wraps) rather than at anything
+configurable in `config.yaml`, but the source was not read at the image's
+revision to confirm which variant set is missing an array case. It does not
+establish that a *future* version behaves this way: the day agentgateway
+accepts a batch on this transport, the original question reopens in full, and
+nothing in this repository's test suite would notice. And it says nothing
+about other MCP transports — this project is streamable-HTTP throughout, and
+stdio was never probed.
+
+**Status: nothing filed, nothing asked upstream, and nothing to file.** No
+issue, comment, pull request or discussion post exists anywhere for this, and
+the question was not put to the maintainers. There is also no defect here to
+put to them: refusing a payload shape the configuration does not opt into
+handling is the gateway failing closed, which is the right direction.
+
+**The original question and the reasoning that produced it are kept below,
+unedited, because the distance between the two is the record.**
+
+---
 
 **The question.** JSON-RPC 2.0 allows a client to send an array of requests in
 one payload. If agentgateway v1.5.0 unpacks such an array but hands the
@@ -1573,7 +1710,15 @@ rather than a question. A rejected batch closes it a third way. Reading
 `crates/agentgateway/src/mcp/` at the image's own revision for the array case
 would narrow it further before any probe is run.
 
-**Status: nothing filed, nothing asked upstream.** No issue, comment, pull
-request or discussion post exists anywhere for this, and the question was not
-put to the maintainers. It is carried as this project's own open item, to be
-measured — and only then written up as a finding, if it turns out to be one.
+**Status (as written, M2.2): nothing filed, nothing asked upstream.** No
+issue, comment, pull request or discussion post exists anywhere for this, and
+the question was not put to the maintainers. It is carried as this project's
+own open item, to be measured — and only then written up as a finding, if it
+turns out to be one.
+
+*(End of the M2.2 text. The probe above was run exactly as this section
+specifies it, the third outcome is what it produced, and it did not turn out
+to be a finding. The one thing it suggests and that was **not** done is
+reading `crates/agentgateway/src/mcp/` at the image's own revision — the live
+measurement was decisive enough on its own that reading the source would have
+narrowed only the `why`, which the closure above records as still open.)*
