@@ -644,6 +644,21 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
       repo's most-repeated defect class. The `--stage 1` check is kept on it
       because no number in it was ever measured at stage 1 — the file's own
       preamble records a review catching precisely that false claim.
+
+    **M3 final-review fix round: `deploy/kind/*.yaml` joins the file set.**
+    The whole-branch review found two more instances of this class, and both
+    were in files no version of this guard had ever opened — `deploy/kind/
+    stage3.yaml` (which still said stage 3 deploys "exactly what stage 2
+    deploys, plus that free port", the *identical* sentence `9c7b3b7`
+    corrected in `setup-kind.sh`'s help text and missed here) and
+    `deploy/platform/cilium-policies.yaml`. Neither carried a `setup-kind.sh
+    --stage N` string, so neither is something this particular needle could
+    ever have caught — what it does catch is the next kind config that grows
+    a `# create this with ./scripts/setup-kind.sh --stage 2`-style operator
+    instruction, which is a real and cheap thing to close now that the class
+    has recurred twice. It is added as coverage for the future, not as a
+    claim that it would have found the two misses. The glob is deliberate:
+    `stage4.yaml` is covered the day it is written, with no edit here.
     """
     CURRENT_STAGE = 3
     scripts_and_readme = [
@@ -651,7 +666,14 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
         REPO_ROOT / "scripts" / "rebuild-and-deploy.sh",
         REPO_ROOT / "scripts" / "setup-kind.sh",
         REPO_ROOT / "README.md",
+        *sorted((REPO_ROOT / "deploy" / "kind").glob("*.yaml")),
     ]
+    assert any(
+        path.parent.name == "kind" for path in scripts_and_readme
+    ), (
+        "deploy/kind/ matched no *.yaml at all, so this guard silently covers "
+        "less than its docstring claims -- has the directory moved?"
+    )
     checked: list[tuple[Path, int]] = [
         (path, stage)
         for path in scripts_and_readme

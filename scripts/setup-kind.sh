@@ -457,7 +457,11 @@ if [[ "${STAGE}" -ge 3 ]]; then
   #     own header). So it is a bare `kubectl apply`, and the `rollout status`
   #     is spelled out here rather than inherited.
   #
-  # Order: the identity first, the UI second. reviewer-ui's SENIOR_AGENT_URL
+  # Order: the identity first, the UI second. reviewer-ui's
+  # SENIOR_SETTLEMENT_AGENT_URL -- this line named `SENIOR_AGENT_URL` until
+  # the M3 final-review fix round, and no such variable exists; the real name
+  # is in deploy/k8s/reviewer-ui.yaml and in apps/reviewer-ui/main.py's own
+  # `os.environ.get` default --
   # points at senior-settlement-agent's Service, and although nothing between
   # here and the end of this script drives an approval (so neither order would
   # leave a real request failing), this order means the window does not exist

@@ -646,17 +646,35 @@ spec:
 # claims-agent-egress-allowlist's rule 2 already permits the egress half of
 # this exact connection. This document is that allowance's other half.
 #
-# senior-settlement-agent: it has NO legitimate caller in this repo yet.
-# Task 4 has not run on this branch -- reviewer-ui, the workload that will
-# call execute_approved for real, does not exist. Granting it reachability
-# now would be exactly the "reachability nothing measured asked for" this
-# file's own egress header argues against. So this document permits nothing
-# but the readiness probe: senior-settlement-agent's A2A port is reachable
-# from precisely nowhere in the mesh until Task 4 adds reviewer-ui and widens
-# this document explicitly. (A `kubectl port-forward` still reaches it for
-# manual verification, the same way the readiness probe does: kubelet dials
-# the pod directly from the node, which Cilium classifies as `reserved:host`,
-# not as mesh traffic from another endpoint.)
+# senior-settlement-agent: reviewer-ui is its one legitimate caller, and the
+# senior-settlement-agent-ingress-allowlist document below grants exactly
+# that -- one endpoint, one port (9002) -- plus the readiness probe. (A
+# `kubectl port-forward` also reaches it for manual verification, the same
+# way the readiness probe does: kubelet dials the pod directly from the node,
+# which Cilium classifies as `reserved:host`, not as mesh traffic from
+# another endpoint.)
+#
+# **Correction, M3 final-review fix round 2026-09-11 -- this paragraph is an
+# instance of the stale-prose class the whole-branch review found.** It read:
+#
+#   senior-settlement-agent: it has NO legitimate caller in this repo yet.
+#   Task 4 has not run on this branch -- reviewer-ui, the workload that will
+#   call execute_approved for real, does not exist. Granting it reachability
+#   now would be exactly the "reachability nothing measured asked for" this
+#   file's own egress header argues against. So this document permits nothing
+#   but the readiness probe: senior-settlement-agent's A2A port is reachable
+#   from precisely nowhere in the mesh until Task 4 adds reviewer-ui and
+#   widens this document explicitly.
+#
+# Every word of that was true when M3 Task 3's review fix round wrote it.
+# Task 4 then ran, reviewer-ui shipped, and it widened the very policy this
+# shared header heads -- the senior-settlement-agent-ingress-allowlist
+# document roughly fifty lines below grants reviewer-ui ingress on 9002 and
+# says so in its own rule comment -- so from that moment the header
+# contradicted the policy underneath it. The *reasoning* is not retracted:
+# "grant the least that is still recognisably a policy" is exactly what the
+# widened document does, one caller and one port, which is what the old
+# paragraph asked Task 4 to do. Only its claim about what exists went stale.
 #
 # Both readinessProbes are `httpGet` on 9002 (deploy/k8s/settlement-agent.yaml,
 # deploy/k8s/senior-settlement-agent.yaml), dialled by kubelet from the node --
