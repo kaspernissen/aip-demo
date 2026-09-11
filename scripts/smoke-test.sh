@@ -180,7 +180,18 @@ echo -e "${YELLOW}policy-decision-service: ExtMCP stubs (gen-stubs.sh)${NC}"
 (cd "$ROOT/platform/policy-decision-service" && ./gen-stubs.sh)
 
 echo -e "${YELLOW}payments-api (Go)${NC}"
-(cd "$ROOT/systems/payments-api" && GOTOOLCHAIN=local go test ./...)
+# 2026-09-11 (M3): was `GOTOOLCHAIN=local`. Retired, not weakened. `local`
+# means "whatever `go` PATH resolves to and nothing else", which made the
+# toolchain a property of the operator's machine rather than of this
+# repository -- and that coupling is exactly what docs/upstream-findings.md
+# Finding 11 recorded as the blocker to taking otel-go's fix ("adopting the
+# fix is a Go toolchain bump, not a module bump"). `go.mod` now carries an
+# explicit `toolchain go1.27.1` line, so `auto` resolves to that one exact
+# release on every machine; it does not float. The first run on a cold
+# machine fetches that toolchain once into the module cache and every run
+# after is offline (measured: `GOTOOLCHAIN=auto GOPROXY=off go test ./...
+# -list '.*'` exits 0 once it is cached).
+(cd "$ROOT/systems/payments-api" && GOTOOLCHAIN=auto go test ./...)
 
 echo -e "${YELLOW}payments-mcp${NC}"
 (cd "$ROOT/tools/payments-mcp" && .venv/bin/python -m pytest tests -q)

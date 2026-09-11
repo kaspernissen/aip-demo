@@ -170,12 +170,17 @@ def _go_test_count(service_dir: Path) -> int:
     # `go test -list '.*'` prints one matching test name per line and never
     # runs a single one of them -- the Go analogue of `--collect-only`,
     # confirmed by timing (sub-second here vs. the real run) and by reading
-    # `go help testflag`. Mirrors smoke-test.sh's own `GOTOOLCHAIN=local`.
-    # `GOPROXY=off` forbids the Go toolchain from reaching the module proxy
-    # network for anything not already in the local module cache -- a
-    # missing/incomplete cache must fail loudly here, not silently fetch.
+    # `go help testflag`. Mirrors smoke-test.sh's own `GOTOOLCHAIN=auto`.
+    # 2026-09-11 (M3): that was `GOTOOLCHAIN=local` on both sides until
+    # payments-api moved to otel-go v1.46.0, which declares `go 1.25.0`;
+    # `go.mod` now pins `toolchain go1.27.1`, so `auto` is still exactly one
+    # reproducible release and not a floating one. `GOPROXY=off` is kept and
+    # still does its job: it forbids the Go toolchain from reaching the module
+    # proxy network for anything not already in the local module cache -- a
+    # missing/incomplete cache (the pinned toolchain included) must fail
+    # loudly here, not silently fetch.
     env = dict(os.environ)
-    env["GOTOOLCHAIN"] = "local"
+    env["GOTOOLCHAIN"] = "auto"
     env["GOPROXY"] = "off"
     result = subprocess.run(
         ["go", "test", "./...", "-list", ".*"],
