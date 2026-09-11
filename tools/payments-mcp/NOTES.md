@@ -153,6 +153,18 @@ FastMCP appears to be mid-migration on fully modeling the GenAI operation dimens
 
 ## 3. Outbound HTTP semconv spelling (A13)
 
+**2026-09-11 (M3): this section was measured against
+`opentelemetry-instrumentation-httpx==0.50b0`, and this service is now on
+`0.65b0`** (the current PyPI release, 2026-07-16; see `requirements.txt` and
+`docs/upstream-findings.md` Finding 11 for why the bump waited). Its
+conclusion was re-verified rather than assumed: on the deployed pod's outbound
+call to payments-api in trace `967b8b72abbd4b6383409a747c0b43f0`, the CLIENT
+span's attribute set is **identical** to the one recorded below —
+`http.request.method`, `http.response.status_code`, `url.full`,
+`server.address`/`server.port`, `network.peer.address`/`network.peer.port`,
+`network.protocol.version`, with `otel.scope.version` now reading `0.65b0`.
+Nothing in this section changed meaning, so it is left as written.
+
 `opentelemetry-instrumentation-httpx==0.50b0`'s default spelling, captured with a
 `ConsoleSpanExporter` against a local HTTP server (no opt-in set):
 

@@ -14,9 +14,21 @@ pytest==9.0.3
 # for this file.
 requests==2.34.2
 PyYAML==6.0.2
-opentelemetry-api==1.29.0
-opentelemetry-sdk==1.29.0
-opentelemetry-exporter-otlp-proto-http==1.29.0
+# 2026-09-11 (M3): 1.29.0 -> 1.44.0 and 0.50b0 -> 0.65b0 across all six
+# OpenTelemetry distributions in this file -- the current PyPI releases, all
+# published 2026-07-16 (checked against pypi.org's own JSON API, not a local
+# index). This harness was the last Python tree in the repo on the 1.29
+# generation; every service now agrees on 1.44.0/0.65b0. Bumped only after
+# systems/payments-api reached go.opentelemetry.io/otel v1.46.0, for the
+# reason docs/upstream-findings.md Finding 11 gives: on 1.29.0 this harness's
+# own hand-minted `traceparent` and any span it exports carry flag byte `01`
+# unconditionally, and until that bump payments-api discarded anything above
+# 0x02. Note that the e2e tests mint their traceparent strings literally
+# (tests/e2e/test_payments_mcp_trace.py builds `00-{trace}-{span}-01` by hand),
+# so this pin governs what the harness *exports*, not what it injects.
+opentelemetry-api==1.44.0
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0
 mcp==1.28.1
 anyio==4.15.1
 playwright==1.49.1
@@ -38,7 +50,16 @@ cffi==2.1.1
 charset-normalizer==3.5.1
 click==8.5.0
 cryptography==50.0.1
-deprecated==1.3.1
+# 2026-09-11 (M3): `deprecated==1.3.1` used to be here, and `wrapt==2.4.0`,
+# `importlib-metadata==8.5.0` and `zipp==4.1.0` used to be further down. All
+# four are gone from this file because they are gone from the venv: every one
+# of them was reachable only through `opentelemetry-api` 1.29.0, and 1.44.0
+# declares none of them. Measured, not assumed -- a reachability walk from
+# this file's nine direct dependencies over every installed distribution's
+# `requires` leaves them unreachable, and `uv pip check` reports all 49
+# remaining packages compatible without them. (`cffi`, `cryptography` and
+# `pycparser` look like orphans to the same walk and are NOT: they arrive
+# through `mcp`'s `pyjwt[crypto]` extra, which the walk skips by design.)
 googleapis-common-protos==1.75.0
 greenlet==3.1.1
 h11==0.16.0
@@ -46,13 +67,12 @@ httpcore==1.0.9
 httpx==0.28.1
 httpx-sse==0.4.3
 idna==3.19
-importlib-metadata==8.5.0
 iniconfig==2.3.0
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
-opentelemetry-exporter-otlp-proto-common==1.29.0
-opentelemetry-proto==1.29.0
-opentelemetry-semantic-conventions==0.50b0
+opentelemetry-exporter-otlp-proto-common==1.44.0
+opentelemetry-proto==1.44.0
+opentelemetry-semantic-conventions==0.65b0
 packaging==26.3
 pluggy==1.6.0
 protobuf==5.29.6
@@ -73,5 +93,3 @@ typing-extensions==4.16.0
 typing-inspection==0.4.4
 urllib3==2.7.0
 uvicorn==0.52.4
-wrapt==2.4.0
-zipp==4.1.0
