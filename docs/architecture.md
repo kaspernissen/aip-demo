@@ -346,7 +346,7 @@ Namespaces, ports, and service DNS names below are read directly from
 | `claims-agent` | Python 3.13, `a2a-sdk[telemetry]==0.3.7` + Starlette | `northstar-agents` | `claims-agent.northstar-agents.svc.cluster.local:9001` | `localhost:5001/northstar/claims-agent:dev` | A2A server (inbound, from the browser) and A2A client (outbound, to settlement-agent). Parses the claim, delegates, returns settlement-agent's JSON verbatim. |
 | `settlement-agent` | Python 3.13, `a2a-sdk[telemetry]==0.3.7` + Starlette + `mcp==1.28.1` client (Task 7; was `1.9.4`) + `pydantic-ai-slim==2.41.0` (M1.2) | `northstar-agents` | `settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` | A2A server; MCP client. As of M1.2, the settlement decision itself is a real model call (see "The decision logic" below) — the model chooses whether and how to propose and execute the payment via payments-mcp. |
 | `payments-mcp` | Python 3.13, FastMCP 4.0.3 | `northstar-tools` | `payments-mcp.northstar-tools.svc.cluster.local:8000`, MCP endpoint at `/mcp` | `localhost:5001/northstar/payments-mcp:dev` | MCP server exposing **four** tools as of M3 — `propose_payment` and `execute_payment` since M1.1, plus `refuse_payment` and `get_payment` from M3 Task 3 (this row said "two tools" until M3 Task 5B, and `contracts/mcp/payments-mcp.json` still listed only two, which is what made the gate red). An adapter over payments-api — it owns no state of its own (`server.py`'s own docstring: "This is an adapter over payments-api, not a system of record."). |
-| `payments-api` | Go 1.24, `otelhttp v0.66.0` / otel core `v1.41.0` | `northstar-systems` | `payments-api.northstar-systems.svc.cluster.local:8080` | `localhost:5001/northstar/payments-api:dev` | The system of record for payments. In-memory store, sequential IDs, no persistence. As of M3 it also records **why** a payout did not happen (`POST /refuse`) and lists them (`GET /payments`) — a record, not a gate. |
+| `payments-api` | Go 1.27.1, `otelhttp v0.71.0` / otel core `v1.46.0` (**2026-09-11 (M3): was Go 1.24, `otelhttp v0.66.0` / otel core `v1.41.0`** — see Finding 11) | `northstar-systems` | `payments-api.northstar-systems.svc.cluster.local:8080` | `localhost:5001/northstar/payments-api:dev` | The system of record for payments. In-memory store, sequential IDs, no persistence. As of M3 it also records **why** a payout did not happen (`POST /refuse`) and lists them (`GET /payments`) — a record, not a gate. |
 | `reviewer-ui` **(M3 Task 4)** | Python 3.13, FastAPI 0.141.1 + uvicorn, server-rendered HTML strings — **no frontend toolchain and no build step**, deliberately unlike `customer-ui` | `northstar-agents` | `reviewer-ui.northstar-agents.svc.cluster.local:8080`, exposed as a `NodePort` (30081) mapped to host `8081` by `deploy/kind/stage3.yaml` | `localhost:5001/northstar/reviewer-ui:dev` | The page a human reads and clicks. Lists refusals straight from payments-api's REST API (never through the MCP path), and POSTs an approval to `senior-settlement-agent` over A2A. Emits the `review.decision` span. |
 | `senior-settlement-agent` **(M3 Task 3)** | **No image and no code of its own** — the `settlement-agent` image, byte-identical, in a second Deployment under a second ServiceAccount | `northstar-agents` | `senior-settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` (the same mutable `:dev` tag settlement-agent runs) | Executes what a human approved, under an identity the Policy Decision Service grants a higher limit. "Senior" is an *identity*, not a different program — which is the entire point, and the reason this row's Image cell repeats another row's. |
 
@@ -1709,7 +1709,7 @@ propagation table itself is current.
 | payments-mcp → payments-api | Ordinary HTTP header, via `HTTPXClientInstrumentor` | Yes | No — nothing to propagate; baggage never entered this process's ambient context |
 | payments-api (inbound) | `otelhttp` (Go), standard W3C header extraction | Yes | No, for the same reason |
 | **browser → reviewer-ui (M3)** | Nothing. A plain HTML form POST from a page reviewer-ui itself rendered, with no JavaScript and no instrumentation — deliberately unlike `customer-ui`, which hand-mints a root span in `telemetry.ts`. So `review.decision` is a **trace root**, and the reviewer's trace begins at the server rather than in the browser | No | No |
-| **reviewer-ui → payments-api (M3)** | `HTTPXClientInstrumentor`, on the direct REST reads (`GET /payments?status=refused`, `GET /payments/{id}`) — each now made inside one of this service's **own** spans (`review.queue`, `review.decision`), so the CLIENT span has a parent to inject — **plus** a trace-flags mask on injection (`apps/reviewer-ui/bootstrap.py`'s `_Level1CompatibleTraceContextPropagator`). Note which hop this is *not*: it never crosses agentgateway, payments-mcp or the PDS | Yes — **but this cell said "Yes" for a whole task while it was measurably "No"; see the correction under this table** | No — reviewer-ui runs no `ClaimIdSpanProcessor` and never sees the claim id as baggage; it knows the payment id, which is what it renders |
+| **reviewer-ui → payments-api (M3)** | `HTTPXClientInstrumentor`, on the direct REST reads (`GET /payments?status=refused`, `GET /payments/{id}`) — each now made inside one of this service's **own** spans (`review.queue`, `review.decision`), so the CLIENT span has a parent to inject. **2026-09-11 (M3): this cell used to continue "— **plus** a trace-flags mask on injection (`apps/reviewer-ui/bootstrap.py`'s `_Level1CompatibleTraceContextPropagator`)".** There is no mask any more: payments-api moved to otel-go v1.46.0, which accepts the Level 2 `-03` flag byte its predecessor discarded, so this hop is now plain stock W3C propagation like every other hop in this table. Note which hop this is *not*: it never crosses agentgateway, payments-mcp or the PDS | Yes — **but this cell said "Yes" for a whole task while it was measurably "No"; see the correction under this table** | No — reviewer-ui runs no `ClaimIdSpanProcessor` and never sees the claim id as baggage; it knows the payment id, which is what it renders |
 | **reviewer-ui → senior-settlement-agent (M3)** | `HTTPXClientInstrumentor` again, on the raw A2A JSON-RPC POST (`approval.py`, the same technique as `delegation.py`), so the senior agent's spans are children of `review.decision`'s trace. **The join back to the refused trace is carried in the request body, not in a header**: `refusedTraceId` and `refusedSpanId` travel as ordinary JSON fields and become a `Link` on `settlement.execute_approved` | Yes | No |
 | **senior-settlement-agent → agentgateway (M3)** | Identical to Hop 3a above, because it is the same code in the same image. The only difference on the wire is the `Authorization` bearer token, which carries this pod's own SPIFFE ID | Yes, twice over | Yes — and **the claim id is re-minted here rather than propagated**, which is the one genuinely new thing in this column. The approval arrives from reviewer-ui carrying no baggage (reviewer-ui never had any), so `execute_approved` reads `claimId` off the ledger record it just fetched and calls `set_claim_id` itself. That is why `settlement.execute_approved` and everything below it carry `northstar.claim.id` in a trace whose root never saw one |
 
@@ -1739,28 +1739,43 @@ system:
    Measured through the repo-managed port-forward: a hand-injected `…-01`
    produced a correctly parented `GET /payments` span; the identical request
    with `…-03` produced no span under that trace id at all. **otel-go
-   v1.42.0 already widened that check to `> 3`** (read in the module cache at
-   v1.42.0/v1.44.0/v1.45.0/v1.46.0), but every release from v1.42.0 on
-   declares `go 1.25.0` while this repo builds payments-api on
-   `golang:1.24-alpine` under `GOTOOLCHAIN=local` against go1.24.10 — so the
-   upstream fix is a toolchain bump, not a module bump, and is carried debt
-   rather than something this round took. The workaround is one masked flag
-   byte on reviewer-ui's injected header, documented in full on
-   `_Level1CompatibleTraceContextPropagator` and pinned by
-   `apps/reviewer-ui/tests/test_bootstrap.py`.
+   v1.42.0 already widened that check to `> 3`.**
 
-**Measured after both fixes**, one live listing request:
-trace `c05d71f98aecafddaaf0fa4e3901213c`, three spans —
-`reviewer-ui review.queue` (root, SERVER) → `reviewer-ui GET` (CLIENT,
-`http.url` `…/payments?status=refused`) → `payments-api GET /payments`
-(SERVER). `tests/e2e/test_supervised.py`'s criterion 5 now asserts the
+   **2026-09-11 (M3): this item used to continue, and no longer holds:**
+
+   > but every release from v1.42.0 on declares `go 1.25.0` while this repo
+   > builds payments-api on `golang:1.24-alpine` under `GOTOOLCHAIN=local`
+   > against go1.24.10 — so the upstream fix is a toolchain bump, not a module
+   > bump, and is carried debt rather than something this round took. The
+   > workaround is one masked flag byte on reviewer-ui's injected header,
+   > documented in full on `_Level1CompatibleTraceContextPropagator` and
+   > pinned by `apps/reviewer-ui/tests/test_bootstrap.py`.
+
+   payments-api is on **otel-go v1.46.0** and `otelhttp v0.71.0`, built on
+   `golang:1.27.1-alpine`, with `go.mod` declaring `go 1.25.0` and pinning
+   `toolchain go1.27.1`; the Go suite runs under `GOTOOLCHAIN=auto`, which is
+   what moved the toolchain from the operator's PATH into this repository.
+   The mask and the three tests that pinned it are deleted. Re-run on the live
+   cluster, the same two-request experiment: `…-01` → `GET /payments` SERVER
+   `da5830097b2aa97e` parent `31966bf1692149b0`; `…-03` → `GET /payments`
+   SERVER `ca981a384c75fc22` parent `51665f1dbec74c0b`. The second used to
+   produce nothing.
+
+**Measured after the mask was removed**, one live listing request:
+trace `eacff63cc15a0868cee60332b1728735`, three spans —
+`reviewer-ui review.queue` (root, SERVER, `e40bafb90b4a5483`) →
+`reviewer-ui GET` (CLIENT, `9280bc1b88bb4120`, `http.url`
+`…/payments?status=refused`) → `payments-api GET /payments` (SERVER,
+`a418e6258a9c1bac`). The pre-bump capture of the same shape, reached through
+the mask, was trace `c05d71f98aecafddaaf0fa4e3901213c`.
+`tests/e2e/test_supervised.py`'s criterion 5 asserts the
 decision-path equivalent (`review.decision` → reviewer-ui CLIENT `GET` →
 payments-api `GET /payments/{paymentId}`), identified by parentage rather
 than by name because the approved-execution trace contains a second
 payments-api `GET /payments/{paymentId}` from the `get_payment` MCP call.
-Why nothing else in this table was affected: reviewer-ui is the only service
+Why nothing else in this table was affected: reviewer-ui was the only service
 on `opentelemetry-sdk` 1.44 that speaks **directly** to the Go service.
-`payments-mcp` is pinned at 1.29 (flag byte `01`), and agentgateway re-stamps
+`payments-mcp` was pinned at 1.29 (flag byte `01`), and agentgateway re-stamps
 the context with its own before the hop to `payments-mcp`.
 
 **`northstar.claim.id` is set exactly once**, at claims-agent's intake

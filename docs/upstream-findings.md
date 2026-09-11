@@ -1137,7 +1137,8 @@ For contrast, in the same trace: the three Python services emit the stable
 spelling (`http.request.method`, `http.response.status_code`,
 `server.address`, `url.full`) because
 `OTEL_SEMCONV_STABILITY_OPT_IN=http` forces them onto it, and payments-api's
-`otelhttp v0.66.0` emits it by default. So a single trace in this system
+`otelhttp v0.66.0` emits it by default (v0.71.0 as of 2026-09-11, and
+re-measured on that bump: the attribute set is unchanged). So a single trace in this system
 contains three HTTP attribute vocabularies, one of which is not an OTel
 vocabulary at all — again a property of the pinned v1.5.0 specifically, and the
 count drops to two once a release carrying PR #3182 is adopted with its opt-in
@@ -1569,6 +1570,18 @@ plausibly a one-line doc comment, and it is still the maintainers' call.
 
 ## Finding 11: `opentelemetry-sdk` 1.44.0 emits a W3C Level 2 flag byte that `go.opentelemetry.io/otel` v1.41.0 rejects outright, so the hop silently starts a second trace instead of failing
 
+> **2026-09-11 (M3): resolved in this repository, by taking the upstream fix.**
+> `systems/payments-api` is on `go.opentelemetry.io/otel` **v1.46.0**
+> (2026-08-25, the newest stable release on the module proxy; `v1.47.0-rc.1`
+> exists and was not taken) with `otelhttp v0.71.0`, built on
+> `golang:1.27.1-alpine`, `go.mod` declaring `go 1.25.0` and pinning
+> `toolchain go1.27.1`. The workaround described at the end of this finding is
+> deleted. **The finding itself stands**: it is the record of a real interop
+> defect between two current, correct OpenTelemetry SDKs, it is still
+> unreported anywhere, and everything measured below was measured. Read the
+> rest in the past tense; the dated corrections inside it mark the sentences
+> the fix falsified.
+
 **The problem, plainly:** W3C Trace Context **Level 2** added a second flag
 bit — `0x02`, "this trace id was generated randomly". `opentelemetry-sdk`
 1.44.0 sets it alongside `SAMPLED`, so the `traceparent` it injects ends
@@ -1727,15 +1740,28 @@ than discard the bitmask. That is exactly what landed.
   `otel@v1.41.0/propagation/trace_context.go:107` is `opts[0] > 2`;
   `otel@v1.42.0/propagation/trace_context.go:107` is `opts[0] > 3`. Same file,
   same line number, one character apart.
-- **Why this project cannot take it, stated as a version fact rather than a
-  preference.** `otel@v1.42.0/go.mod` declares `go 1.25.0`, and v1.42.0's
-  changelog says **"Drop support for Go 1.24. (#7984)"** while v1.41.0's says
-  **"This release is the last to support Go 1.24. The next release will
-  require at least Go 1.25."** `systems/payments-api/go.mod` declares
-  `go 1.24.0` and its `Dockerfile:1` builds `FROM golang:1.24-alpine`; the
-  host toolchain is go1.24.10 and `scripts/smoke-test.sh:183` runs the Go
+- **Why this project could not take it, stated as a version fact rather than a
+  preference — and how that was resolved.** `otel@v1.42.0/go.mod` declares
+  `go 1.25.0`, and v1.42.0's changelog says **"Drop support for Go 1.24.
+  (#7984)"** while v1.41.0's says **"This release is the last to support Go
+  1.24. The next release will require at least Go 1.25."**
+  **2026-09-11 (M3):** this bullet used to close *"`systems/payments-api/go.mod`
+  declares `go 1.24.0` and its `Dockerfile:1` builds `FROM golang:1.24-alpine`;
+  the host toolchain is go1.24.10 and `scripts/smoke-test.sh:183` runs the Go
   tests under `GOTOOLCHAIN=local`. So adopting the fix is a **Go toolchain
-  bump, not a module bump** — carried debt, recorded rather than taken.
+  bump, not a module bump** — carried debt, recorded rather than taken."*
+  Every clause of that was true when written. The debt is paid: `go.mod`
+  declares `go 1.25.0` with `toolchain go1.27.1`, the Dockerfile builds on
+  `golang:1.27.1-alpine`, and the gate runs the Go suite under
+  `GOTOOLCHAIN=auto` — which is the change that actually mattered, because
+  `local` is what made the toolchain a property of the operator's PATH instead
+  of this repository's. The Go suite is unchanged at 31 tests, passing.
+  One thing the bump forced that this finding did not predict:
+  `otel/sdk` v1.46.0's `resource/builtin.go:16` imports `semconv/v1.43.0`, and
+  `resource.Merge` refuses two different schema URLs, so `telemetry.go`'s
+  `semconv/v1.39.0` import had to move with it — left alone it crash-looped
+  the pod with *"initialising tracing: building resource: conflicting Schema
+  URL: https://opentelemetry.io/schemas/1.43.0 and .../1.39.0"*.
 - No issue was searched for or filed on `opentelemetry-python`, because there
   is nothing to report there: setting `0x02` is what Level 2 requires, and the
   Python SDK is correct.
@@ -1751,7 +1777,12 @@ trace, where the flag byte is `01` or `03`; the `00`/`02` pair was never
 exercised, and by the source read above `opts[0] > 2` would reject `02` the
 same way.
 
-**How we worked around it, and what we did not do.**
+**How we worked around it, and what we did not do.** *(Historical: the
+workaround described in this section was deleted on 2026-09-11 when
+payments-api reached otel-go v1.46.0, which is exactly the exit condition the
+section's last sentence names. Kept because the reasoning is the record, and
+because a reader hitting this defect on a pinned otel-go still needs it. What
+replaced it is at the end of this section.)*
 `apps/reviewer-ui/bootstrap.py`'s `_Level1CompatibleTraceContextPropagator`
 masks the **injected** flag byte to `SAMPLED`, by delegating to the upstream
 propagator with a masked `NonRecordingSpan` context rather than by formatting
@@ -1773,6 +1804,35 @@ sides, including its *premise* — that the installed SDK really does still set
 `0x02` — so the day that stops being true the test goes red and points the
 reader at the deletion. **The exit condition is exact: delete the workaround
 and that test file the moment `payments-api` is on otel-go ≥ v1.42.0.**
+
+**2026-09-11 (M3): the exit condition was met and acted on.** payments-api is
+on otel-go v1.46.0. `_Level1CompatibleTraceContextPropagator` is gone and
+`bootstrap.py` registers the stock `TraceContextTextMapPropagator`;
+`apps/reviewer-ui/tests/test_bootstrap.py` survives rather than being deleted
+outright, because the *positive* claim became pinnable for the first time —
+its two remaining tests assert that the registered trace-context propagator is
+upstream's own class and not a subclass of it (`type(...) is`, deliberately,
+since the retired workaround *was* a `TraceContextTextMapPropagator` and would
+pass an `isinstance` check), and that the injected flag byte is now `03`. That
+file's docstring names all five retired tests. Re-measured on the live cluster
+on the day of the deletion, the same two-request experiment recorded above:
+
+```
+00-df5aa13c6d534c0f9c36ef5c187d014d-31966bf1692149b0-01
+  -> payments-api GET /payments SERVER da5830097b2aa97e, parent 31966bf1692149b0
+00-9b855ee5e0a442619dc8d48118324644-51665f1dbec74c0b-03
+  -> payments-api GET /payments SERVER ca981a384c75fc22, parent 51665f1dbec74c0b
+```
+
+The `-03` request is the one that used to produce no span at all. Measured
+inside the deployed reviewer-ui pod, so the byte above is the one the service
+really sends: `get_global_textmap()._propagators` is
+`['TraceContextTextMapPropagator', 'W3CBaggagePropagator']`, injecting
+`00-4fd1495b2de7214c10469a745ba986aa-cdb290f086f73d06-03`. And end to end,
+one live `GET /` against reviewer-ui — trace
+`eacff63cc15a0868cee60332b1728735`: `review.queue` SERVER
+`e40bafb90b4a5483` (root) → reviewer-ui `GET` CLIENT `9280bc1b88bb4120` →
+payments-api `GET /payments` SERVER `a418e6258a9c1bac`.
 
 **Status: nothing filed, nothing asked upstream, and nothing to file on the Go
 side.** No issue, comment, pull request, review or discussion post was made to

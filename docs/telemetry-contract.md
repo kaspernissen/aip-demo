@@ -637,7 +637,7 @@ the plan defect described two paragraphs up).
 Per-service unit suites (all seven run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 108, payments-mcp 15, payments-api (Go) 31,
 customer-ui (vitest) 6, policy-decision-service 105,
-reviewer-ui 59 — all passing.
+reviewer-ui 56 — all passing.
 (**The seventh entry arrived in M3 Task 5B, and it is the same defect
 as the sixth, one milestone later.** `reviewer-ui` shipped in M3 Task 4 with
 its own `requirements.txt`, its own `.venv`, its own `pytest.ini` and 50 tests
@@ -649,7 +649,7 @@ could go green with `apps/reviewer-ui` broken. All three sites are now closed
 together, in the same task, which is the lesson the sixth entry's own note
 below already spells out. Its figure is measured by the same route as the
 other six, `cd apps/reviewer-ui && .venv/bin/python -m pytest --collect-only
--q tests` → `59 tests collected`, and the suite runs in 0.37s with no cluster,
+-q tests` → `56 tests collected`, and the suite runs in 0.24s with no cluster,
 no network and no model. It read **50** from Task 5B until the final-review
 fix round, which added nine: five in a new `tests/test_bootstrap.py` pinning
 the trace-flags workaround from both sides, three in `tests/test_main.py`
@@ -657,7 +657,15 @@ covering `review.queue`'s span, its ERROR status on a ledger outage and
 `GET /healthz` still emitting nothing, and one in `tests/test_review.py`
 pinning that `ledger.get` runs inside `review.decision`. Two existing tests in
 that file changed their assertions in the same round and are counted in the
-50 as well as the 59 — see `review.py`'s own correction note.) (The sixth
+50 as well as the 59 — see `review.py`'s own correction note.
+**2026-09-11 (M3): 59 → 56.** It read **59** until payments-api moved to
+`go.opentelemetry.io/otel v1.46.0` and the trace-flags workaround was deleted
+with it. `tests/test_bootstrap.py`'s five workaround tests went; two replaced
+them, pinning the state that workaround used to prevent — that the registered
+trace-context propagator is upstream's own class and not a subclass of it,
+and that the injected flag byte is now `03`. Net −3. The file itself stays,
+and its docstring names all five retired tests rather than deleting them
+without trace.) (The sixth
 entry arrived in the M2.2 final-review fix round: `policy-decision-service` was
 in neither the gate's loop nor this row until finding 1 showed both already
 *depended* on that component's generated stubs while collecting none of its
@@ -921,8 +929,8 @@ marker is removed, rather than staying silently green.
 | agentgateway | native, `frontendPolicies.tracing` in its own config | `cr.agentgateway.dev/agentgateway:v1.5.0` (Resource `service.version=1.5.0`; scope `agentgateway` with **no** `otel.scope.version`; Resource `telemetry.sdk.language=rust`, `telemetry.sdk.name=opentelemetry`, `telemetry.sdk.version=0.32.1`) | Two spans per MCP message: a SERVER span named after the JSON-RPC method (`initialize`, `notifications/initialized`, `tools/call`) or, for non-JSON-RPC HTTP, after method-and-route (`GET /*`, `DELETE /*`); and a CLIENT span named `<method> <target>` (`initialize payments-mcp`), which for tool calls becomes `tools/call <target>_<tool>` (`tools/call payments-mcp_propose_payment`) | Interposed by M2.1 Task 3; **verifies a SPIRE-minted JWT-SVID as of Task 4** (`jwtAuth`, `mode: strict`); and, **as of M2.2, calls out to the Policy Decision Service on every `tools/call`** (`mcpGuardrails`, `kind: remote`, `failureMode: failClosed`) and refuses the call when the answer is deny. That third job is visible in the trace as one extra span per tool call, a CLIENT span named `Guardrail` — see "agentgateway's guardrail telemetry, as measured" below; it is agentgateway's own span and nothing here invented it. The verification is visible in the trace, not only in a 401: its SERVER spans gained one attribute, `jwt.sub`, carrying the verified token's subject — for a JWT-SVID, the caller's SPIFFE ID (measured `spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent`). The gateway derives it from the token it validated; nothing in this project sets it. Measured **absent** from the CLIENT spans, consistent with the gateway stripping the credential on the outbound leg (`if !self.preserve_token { self.location.remove(req)?; }`, `crates/agentgateway/src/http/jwt.rs`) — so payments-mcp receives no identity to check. Emits **a third HTTP attribute vocabulary**, neither stable nor OTel-legacy — see "agentgateway instrumentation, as measured" below, which is the one place this document's HTTP-convention claim has an exception. Exports OTLP/**gRPC** to the collector on 4317, the only component here that does not use OTLP/HTTP on 4318. Task 2 shipped it with no `tracing` block at all, i.e. emitting nothing; Task 3 added one, which is why this row did not exist before. |
 | payments-mcp | FastMCP native | `fastmcp==4.0.3` | `tools/call propose_payment`, `tools/call execute_payment` | TracerProvider does **not** need to be installed before importing fastmcp on this version — `fastmcp.telemetry.get_tracer()` calls `get_tracer_provider()` fresh on every span, not once at import (measured; the brief's premise here was wrong for 4.0.3 — kept as a code convention anyway, not a correctness requirement). `FASTMCP_TELEMETRY_MODE=native` is set explicitly even though it is already the default. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is also set** (`deploy/k8s/payments-mcp.yaml`) — this governs only the *outbound httpx* span to payments-api (FastMCP's own native MCP spans are unaffected; this knob is httpx-instrumentation-specific), measured legacy-by-default, confirmed stable after (`tools/payments-mcp/NOTES.md` §3). |
 | policy-decision-service | OTel Python SDK, applied by this project's own `pds/telemetry.py` | `opentelemetry-sdk==1.44.0` (Resource carries `service.name`, `service.instance.id`, `telemetry.sdk.language=python`, `telemetry.sdk.name=opentelemetry`, `telemetry.sdk.version=1.44.0` — and **no** `service.version`; scope `northstar.policy-decision-service` with no `otel.scope.version`) | one span, `policy.decision`, SERVER kind, one per `tools/call` the gateway sends for a decision | **The one component in this system whose span is entirely this project's own** — no framework emits a policy decision, which is what Gap 3 below was about. It opens the span by hand because there is nothing wrapping it that would: the gRPC servicer is the top of its own call stack. Everything below that name is the real SDK — `TracerProvider`/`BatchSpanProcessor`/OTLP-HTTP exporter, endpoint and protocol from the standard `OTEL_EXPORTER_OTLP_*` env vars, and a `CompositePropagator(TraceContextTextMapPropagator, W3CBaggagePropagator)` registered explicitly. It joins the caller's trace because agentgateway forwards `traceparent` to the guardrail hook (measured, M2.2 Task 1 run C), so the decision span is a genuine **child of the gateway's `tools/call` SERVER span** — a sibling of the `Guardrail` CLIENT span, not its child, because the gateway propagates the context it received rather than its own client span's. **The span status stays `Unset` on a deny, deliberately:** a refusal is this service working, and an ERROR span for the one thing this milestone exists to do would read as a fault. Attribute inventory below. |
-| payments-api | `otelhttp` | `otelhttp v0.66.0`, otel core `v1.41.0` | `POST /payments/propose`, `POST /payments/{paymentId}/execute`, `GET /payments/{paymentId}` | HTTP attribute spelling as emitted by the pinned version: **stable** — `http.request.method` / `http.response.status_code` / `http.route`, not the legacy `http.method`/`http.status_code`. `network.protocol.name` is **not** emitted by this otelhttp version (only `network.protocol.version` is); do not assert its presence. No `OTEL_SEMCONV_STABILITY_OPT_IN` is set or needed — this version emits the stable spelling by default (A12), unlike every Python service in this table. |
-| reviewer-ui (M3 Task 4; corrected M3 final-review fix round) | OTel Python SDK, applied by this project's own `bootstrap.py`; `HTTPXClientInstrumentor` for outbound calls | `opentelemetry-sdk==1.44.0` | `review.decision`, SERVER kind, one per submitted approve/reject decision; `review.queue`, SERVER kind, one per `GET /` | **Two** owned spans, and no framework instrumentation: no `opentelemetry-instrumentation-fastapi`/`-starlette` is applied, the same way `policy-decision-service`'s own row above is "entirely this project's own". Both are hand-created (`review.py`, `main.py`) and each is the root of its own trace, matching apps/customer-ui's `claim.submit` pattern rather than PDS's (a child of the caller's propagated context). `GET /healthz` still produces nothing. `HTTPXClientInstrumentor` runs, so the outbound calls to payments-api and to senior-settlement-agent's A2A endpoint get CLIENT spans and carry `traceparent`. **This cell read "`review.decision`, the only span" and "`GET /` and `GET /healthz` produce no spans at all" from Task 4 until the final-review fix round (R36), and both halves were wrong — `GET /` always produced the outbound CLIENT span this same cell then went on to describe, and that span, having no parent, rooted a trace of its own.** `bootstrap.py` additionally registers `_Level1CompatibleTraceContextPropagator`, which masks the injected trace-flags byte to `SAMPLED`; the measurement that forced it is under "reviewer-ui's own instrumentation" below. Attribute inventory below. |
+| payments-api | `otelhttp` | `otelhttp v0.71.0`, otel core `v1.46.0` (**2026-09-11 (M3): was `otelhttp v0.66.0`, otel core `v1.41.0`.** The bump is what retired the reviewer-ui trace-flags workaround — see Finding 11 and the section below) | `POST /payments/propose`, `POST /payments/{paymentId}/execute`, `GET /payments/{paymentId}` | HTTP attribute spelling as emitted by the pinned version: **stable** — `http.request.method` / `http.response.status_code` / `http.route`, not the legacy `http.method`/`http.status_code`. `network.protocol.name` is **not** emitted by this otelhttp version (only `network.protocol.version` is); do not assert its presence. No `OTEL_SEMCONV_STABILITY_OPT_IN` is set or needed — this version emits the stable spelling by default (A12), unlike every Python service in this table. |
+| reviewer-ui (M3 Task 4; corrected M3 final-review fix round) | OTel Python SDK, applied by this project's own `bootstrap.py`; `HTTPXClientInstrumentor` for outbound calls | `opentelemetry-sdk==1.44.0` | `review.decision`, SERVER kind, one per submitted approve/reject decision; `review.queue`, SERVER kind, one per `GET /` | **Two** owned spans, and no framework instrumentation: no `opentelemetry-instrumentation-fastapi`/`-starlette` is applied, the same way `policy-decision-service`'s own row above is "entirely this project's own". Both are hand-created (`review.py`, `main.py`) and each is the root of its own trace, matching apps/customer-ui's `claim.submit` pattern rather than PDS's (a child of the caller's propagated context). `GET /healthz` still produces nothing. `HTTPXClientInstrumentor` runs, so the outbound calls to payments-api and to senior-settlement-agent's A2A endpoint get CLIENT spans and carry `traceparent`. **This cell read "`review.decision`, the only span" and "`GET /` and `GET /healthz` produce no spans at all" from Task 4 until the final-review fix round (R36), and both halves were wrong — `GET /` always produced the outbound CLIENT span this same cell then went on to describe, and that span, having no parent, rooted a trace of its own.** **2026-09-11 (M3): this cell used to end "`bootstrap.py` additionally registers `_Level1CompatibleTraceContextPropagator`, which masks the injected trace-flags byte to `SAMPLED`".** It no longer does, and there is no longer anything to mask: payments-api moved to otel-go v1.46.0, whose extractor accepts a Level 2 `-03` flag byte, so `bootstrap.py` registers the stock `TraceContextTextMapPropagator` like every other service here and reviewer-ui's outbound `traceparent` goes out as `…-03`. Measured inside the deployed pod: `get_global_textmap()._propagators` is `['TraceContextTextMapPropagator', 'W3CBaggagePropagator']` and an injection from a real sampled span produced `00-4fd1495b2de7214c10469a745ba986aa-cdb290f086f73d06-03`. The removal is under "reviewer-ui's own instrumentation" below. Attribute inventory below. |
 
 **Operational fact that keeps *this project's own services* on one HTTP
 convention — and, as of M2.1 Task 3, the one component it cannot reach:**
@@ -930,7 +938,7 @@ convention — and, as of M2.1 Task 3, the one component it cannot reach:**
 (claims-agent, settlement-agent, payments-mcp) and on none of the others.
 Without it, OTel Python's HTTP instrumentation defaults to the legacy
 attribute spelling (`http.method`/`http.url`/`http.status_code`) while
-payments-api's Go `otelhttp v0.66.0` emits the stable spelling by default
+payments-api's Go `otelhttp v0.71.0` (v0.66.0 until 2026-09-11) emits the stable spelling by default
 with no opt-in available to change that — measured, not assumed, for each
 service independently (`agents/claims-agent/NOTES.md` §7,
 `agents/settlement-agent/NOTES.md` §6, `tools/payments-mcp/NOTES.md` §3),
@@ -2064,40 +2072,74 @@ differing only in the flag byte: `…-01` produced a `GET /payments` span
 parented to the injected span id; `…-03` produced **no span under that trace
 id at all**.
 
-**Upstream already fixed this, in a release this repo cannot take yet.**
-otel-go **v1.42.0** widened that line to `opts[0] > 3` (read in the local
-module cache at v1.42.0, v1.44.0, v1.45.0 and v1.46.0; v1.41.0 is the last
-with `> 2`). Every release from v1.42.0 onward declares `go 1.25.0`, and this
-repo builds payments-api on `golang:1.24-alpine` and runs its tests under
-`GOTOOLCHAIN=local` against a host go1.24.10 — so adopting it is a Go
-*toolchain* bump, not a module bump. That is carried debt, recorded here
-rather than taken in a fix round.
+**Upstream already fixed this — and 2026-09-11 (M3) this repo took the fix.**
+otel-go **v1.42.0** widened that line to `opts[0] > 3`; `systems/payments-api`
+is now on **v1.46.0** (2026-08-25), the newest stable release, with
+`otelhttp v0.71.0` (2026-08-26) and `semconv/v1.43.0`. This section used to
+close the paragraph above with:
 
-**The workaround, and its exit condition.**
-`apps/reviewer-ui/bootstrap.py`'s `_Level1CompatibleTraceContextPropagator`
-masks the injected flag byte to `SAMPLED`, delegating everything else —
-including all extraction — to the upstream propagator. It emits a valid Level
-1 traceparent that every participant in this system accepts, and drops only
-an advisory bit nothing here reads. `apps/reviewer-ui/tests/test_bootstrap.py`
-pins it from both sides: that the installed SDK really does still set `0x02`
-(so the workaround's premise is asserted rather than assumed), and that
-nothing but the flag byte differs from the upstream propagator's own output.
-**Delete both the moment payments-api reaches otel-go ≥ v1.42.0.**
+> Every release from v1.42.0 onward declares `go 1.25.0`, and this repo builds
+> payments-api on `golang:1.24-alpine` and runs its tests under
+> `GOTOOLCHAIN=local` against a host go1.24.10 — so adopting it is a Go
+> *toolchain* bump, not a module bump. That is carried debt, recorded here
+> rather than taken in a fix round.
 
-reviewer-ui is the only service where this could bite: it is the one
+That debt is paid. `go.mod` declares `go 1.25.0` with `toolchain go1.27.1`,
+the Dockerfile builds on `golang:1.27.1-alpine`, and `scripts/smoke-test.sh`
+runs the Go suite under `GOTOOLCHAIN=auto` — which is what turns the toolchain
+back into a property of this repository rather than of the operator's PATH.
+The 31-test Go suite is unchanged in count and still passes.
+
+**The workaround is gone.** This section used to describe
+`apps/reviewer-ui/bootstrap.py`'s `_Level1CompatibleTraceContextPropagator`,
+which masked the injected flag byte to `SAMPLED`, and closed **"Delete both
+the moment payments-api reaches otel-go ≥ v1.42.0."** That condition is met
+and both are deleted: the class, and the three tests in
+`apps/reviewer-ui/tests/test_bootstrap.py` that existed only to pin it (plus
+two more that pinned inherited behaviour the override touched). `bootstrap.py`
+now registers the stock `TraceContextTextMapPropagator`, and its module
+docstring holds the dated record of what the mask was. Two replacement tests
+pin the *wanted* state instead: that the registered trace-context propagator
+is upstream's own class rather than a subclass of it, and that the injected
+flag byte is `03`.
+
+**Re-measured on the live cluster the day the mask came out**, the same
+two-request experiment as above through the repo-managed port-forward,
+differing only in the flag byte:
+
+```
+00-df5aa13c6d534c0f9c36ef5c187d014d-31966bf1692149b0-01
+  -> payments-api GET /payments SERVER da5830097b2aa97e, parent 31966bf1692149b0
+00-9b855ee5e0a442619dc8d48118324644-51665f1dbec74c0b-03
+  -> payments-api GET /payments SERVER ca981a384c75fc22, parent 51665f1dbec74c0b
+```
+
+The `-03` row produced **no span at all** before the bump. And inside the
+deployed reviewer-ui pod, `get_global_textmap()` is
+`['TraceContextTextMapPropagator', 'W3CBaggagePropagator']` and injects
+`00-4fd1495b2de7214c10469a745ba986aa-cdb290f086f73d06-03` — so the `-03`
+being accepted above is the byte this service actually sends, not a synthetic
+one.
+
+**Measured end to end after the mask was removed**, one live listing request
+(`GET http://localhost:8081/`) — trace `eacff63cc15a0868cee60332b1728735`,
+three spans:
+
+```
+reviewer-ui   review.queue     SERVER  e40bafb90b4a5483  root
+reviewer-ui   GET              CLIENT  9280bc1b88bb4120  parent=e40bafb90b4a5483, http.url=…/payments?status=refused
+payments-api  GET /payments    SERVER  a418e6258a9c1bac  parent=9280bc1b88bb4120
+```
+
+This replaces the pre-bump capture, which is kept for the record: trace
+`c05d71f98aecafddaaf0fa4e3901213c`, the same three spans in the same shape,
+but reached through the mask.
+
+reviewer-ui was the only service where this could bite: it is the one
 `opentelemetry-sdk` 1.44 service that speaks **directly** to the Go system of
-record. `payments-mcp`, the other service that calls payments-api, is pinned
-at `opentelemetry-sdk==1.29.0` and emits `…-01`; and agentgateway re-stamps
+record. `payments-mcp`, the other service that calls payments-api, was pinned
+at `opentelemetry-sdk==1.29.0` and emitted `…-01`; and agentgateway re-stamps
 the context with its own before the hop to `payments-mcp` anyway.
-
-**Measured after both halves**, one live listing request — trace
-`c05d71f98aecafddaaf0fa4e3901213c`, three spans:
-
-```
-reviewer-ui   review.queue     SERVER  root
-reviewer-ui   GET              CLIENT  parent=review.queue, http.url=…/payments?status=refused
-payments-api  GET /payments    SERVER  parent=reviewer-ui's CLIENT GET
-```
 
 `tests/e2e/test_supervised.py`'s criterion 5 asserts the decision-path
 equivalent on every gate run, identified by **parentage** rather than by span

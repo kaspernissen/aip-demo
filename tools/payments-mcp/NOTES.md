@@ -192,7 +192,9 @@ server.port              = 8080
 url.full                 = http://payments-api.northstar-systems.svc.cluster.local:8080/payments/PAY-000002/execute
 ```
 
-This now matches payments-api's own (Go, otelhttp v0.66.0, A12) stable spelling on
+This now matches payments-api's own (Go, otelhttp v0.66.0 when this was written;
+**v0.71.0 as of 2026-09-11 (M3)**, re-measured on that bump with an unchanged
+attribute set, A12) stable spelling on
 the same hop — both sides of the payments-mcp ↔ payments-api HTTP call use
 `http.request.method` / `http.response.status_code` / `url.full` / `server.address`,
 so Task 7/8's cross-service attribute queries see one convention, not two.

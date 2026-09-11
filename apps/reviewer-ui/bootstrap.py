@@ -33,9 +33,39 @@ the senior agent's inbound server span, and payments-api's own server spans
 for both ledger reads, end up in `review.decision`'s / `review.queue`'s trace
 rather than starting unrelated ones.
 
-**The trace-flags mask below is the second half of R36's fix, and it was not
-in the finding. Both halves were needed; neither alone works.** See
-`_Level1CompatibleTraceContextPropagator`.
+**Retired 2026-09-11 (M3): the trace-flags mask that used to live here.**
+This paragraph used to read:
+
+> **The trace-flags mask below is the second half of R36's fix, and it was
+> not in the finding. Both halves were needed; neither alone works.** See
+> `_Level1CompatibleTraceContextPropagator`.
+
+That class was a `TraceContextTextMapPropagator` subclass which masked the
+injected flag byte down to `TraceFlags.SAMPLED`. It existed because
+`opentelemetry-sdk` 1.44.0 emits W3C Trace Context **Level 2**'s
+`RANDOM_TRACE_ID` bit alongside `SAMPLED` -- a `...-03` traceparent -- and
+payments-api's then-pinned `go.opentelemetry.io/otel v1.41.0` **discarded**
+any version-00 traceparent with a flag byte above `0x02`
+(`propagation/trace_context.go:107`: `if version == 0 && (h != "" || opts[0]
+> 2)`), so `otelhttp` minted a fresh trace root for every ledger read. The
+full account is `docs/upstream-findings.md` Finding 11.
+
+Its removal condition was stated on the class itself -- *"Remove this the
+moment payments-api is on otel-go >= v1.42.0"* -- and payments-api is now on
+**v1.46.0** (commit `chore(m3): payments-api to otel-go v1.46.0 and Go
+1.27.1`), whose same line reads `opts[0] > 3` and whose extractor masks to
+`FlagsSampled | FlagsRandom`. Measured on the live cluster the day the mask
+came out, two requests to `payments-api` differing only in the flag byte:
+
+  * `00-df5aa13c6d534c0f9c36ef5c187d014d-31966bf1692149b0-01` ->
+    `GET /payments` SERVER span `da5830097b2aa97e`, parent `31966bf1692149b0`;
+  * `00-9b855ee5e0a442619dc8d48118324644-51665f1dbec74c0b-03` ->
+    `GET /payments` SERVER span `ca981a384c75fc22`, parent `51665f1dbec74c0b`.
+
+The second of those produced **no span at all** before the bump. So the
+service now registers the stock upstream propagator like every other service
+in this repo, and reviewer-ui's outbound header goes out as `...-03`,
+natively accepted.
 """
 from __future__ import annotations
 
@@ -43,98 +73,14 @@ import os
 
 from opentelemetry import trace
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
-from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.propagate import set_global_textmap
-from opentelemetry.propagators import textmap
 from opentelemetry.propagators.composite import CompositePropagator
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
-
-
-class _Level1CompatibleTraceContextPropagator(TraceContextTextMapPropagator):
-    """W3C trace-context, injected with the sampling bit only.
-
-    **Why this exists at all -- measured on the live cluster, then confirmed
-    in both upstreams' source.** With `review.queue`/`review.decision` in
-    place as parents (the other half of R36's fix), reviewer-ui's outbound
-    `traceparent` was still being *discarded* by payments-api, which went on
-    minting a fresh trace root for every ledger read:
-
-      * `opentelemetry-sdk==1.44.0` (this service's pin) sets **two** flag
-        bits, not one -- `TraceFlags.SAMPLED` (0x01) and
-        `TraceFlags.RANDOM_TRACE_ID` (0x02), the latter being W3C Trace
-        Context **Level 2**'s new "the trace id was generated randomly" bit
-        (`opentelemetry/trace/span.py`). So the header it emits reads
-        `00-<trace>-<span>-03`, measured directly off a local repro of
-        `ledger.py`'s own client against a capturing HTTP server.
-      * `systems/payments-api` pins `go.opentelemetry.io/otel v1.41.0`, whose
-        `propagation/trace_context.go` extractor refuses any version-00
-        traceparent whose flag byte exceeds 0x02:
-        `if version == 0 && (h != "" || opts[0] > 2) { return
-        trace.SpanContext{} }`. An empty SpanContext means "no parent", so
-        `otelhttp` starts a new root. Measured end to end through the
-        repo-managed port-forward: a hand-injected `...-01` produced a
-        correctly parented `GET /payments` span; the identical request with
-        `...-03` produced no span in that trace id at all.
-
-    **Upstream has already fixed this -- on the Go side, in a release this
-    repo cannot take yet.** `otel-go` v1.42.0 widened exactly that line to
-    `opts[0] > 3` (verified by reading v1.42.0, v1.44.0, v1.45.0 and v1.46.0
-    in the local module cache; v1.41.0 is the last with `> 2`). Every one of
-    those releases declares `go 1.25.0`, and this repo builds payments-api on
-    `golang:1.24-alpine` with `GOTOOLCHAIN=local` against a host toolchain of
-    go1.24.10 -- so adopting the fix is a Go *toolchain* bump, not a module
-    bump, which is a machine-level change well outside this fix round.
-
-    **So the workaround lives here, on the one hop that needs it**, and it is
-    a workaround rather than a disagreement with either upstream: both are
-    right, and the two pins are simply one minor release apart across the
-    Level 1/Level 2 boundary. Masking to `TraceFlags.SAMPLED` emits a
-    perfectly valid Level 1 traceparent that every participant in this system
-    accepts, and loses only the advisory "this trace id is random" bit, which
-    nothing here reads. Trace id, span id and tracestate are untouched, and
-    nothing about the *local* span context changes -- this masks the wire
-    format only.
-
-    **Remove this the moment payments-api is on `otel-go` >= v1.42.0.** That
-    is the whole exit condition; `tests/test_bootstrap.py` pins the behaviour
-    so a silent regression is impossible, and the telemetry contract records
-    the measurement.
-
-    Implemented by delegating to the upstream propagator with a masked
-    `SpanContext` rather than by re-formatting the header here, so the wire
-    format stays upstream's and only the flag byte is ours.
-    """
-
-    def inject(
-        self,
-        carrier: textmap.CarrierT,
-        context: Context | None = None,
-        setter: textmap.Setter[textmap.CarrierT] = textmap.default_setter,
-    ) -> None:
-        span_context = trace.get_current_span(context).get_span_context()
-        if span_context != trace.INVALID_SPAN_CONTEXT:
-            masked = trace.TraceFlags(
-                span_context.trace_flags & trace.TraceFlags.SAMPLED
-            )
-            if masked != span_context.trace_flags:
-                context = trace.set_span_in_context(
-                    trace.NonRecordingSpan(
-                        trace.SpanContext(
-                            trace_id=span_context.trace_id,
-                            span_id=span_context.span_id,
-                            is_remote=span_context.is_remote,
-                            trace_flags=masked,
-                            trace_state=span_context.trace_state,
-                        )
-                    ),
-                    context,
-                )
-        super().inject(carrier, context=context, setter=setter)
 
 
 def configure() -> None:
@@ -148,17 +94,15 @@ def configure() -> None:
     # rather than left implicit, per this repo's own convention -- see
     # agents/settlement-agent/bootstrap.py's identical comment).
     #
-    # The ONE departure from every other service's copy of this block, and the
-    # only one: the trace-context half is this module's Level-1-compatible
-    # subclass rather than `TraceContextTextMapPropagator` itself. Extraction
-    # is entirely unchanged (inherited); only the injected flag byte is
-    # masked, and only because payments-api's pinned `otel-go` v1.41.0 drops
-    # a traceparent carrying OTel Python 1.44's Level 2 random-trace-id bit.
-    # The full measurement, both upstream citations and the removal condition
-    # are in that class's docstring.
+    # 2026-09-11 (M3): this block used to say "The ONE departure from every
+    # other service's copy of this block" and register
+    # `_Level1CompatibleTraceContextPropagator()` in the first slot. There is
+    # no departure any more -- this is now byte-for-byte the block every other
+    # service runs. The module docstring records what the departure was and
+    # which bump retired it.
     set_global_textmap(
         CompositePropagator(
-            [_Level1CompatibleTraceContextPropagator(), W3CBaggagePropagator()]
+            [TraceContextTextMapPropagator(), W3CBaggagePropagator()]
         )
     )
 
