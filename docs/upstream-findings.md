@@ -1658,6 +1658,12 @@ repository and the installed `.venv` of each service that has one:
 | `platform/policy-decision-service` | 1.44.0 | No — `pds/` imports no HTTP client at all; its only outbound HTTP is the OTLP exporter's, to the collector |
 | `tests/` (the e2e harness) | 1.29.0 | mints `traceparent` by hand |
 
+> **2026-09-11 (M3): the `opentelemetry-sdk` column is now `1.44.0` in all six
+> rows.** `tools/payments-mcp` and `tests/` were bumped from 1.29.0 once
+> payments-api reached otel-go v1.46.0; the "Talks directly to `payments-api`?"
+> column is unchanged and still correct. The table is left as it was measured
+> because the rest of this finding reasons from it.
+
 `tools/payments-mcp/.venv/.../opentelemetry/trace/span.py` has **no
 `RANDOM_TRACE_ID` constant at all** — it stops at `SAMPLED = 0x01` on line 210
 — and its `sdk/trace/__init__.py:1145-1149` derives the outgoing flag byte
@@ -1685,6 +1691,31 @@ settles it: read the flag byte on the `traceparent` `payments-mcp` receives.
 Until someone does, "bumping this pin is safe" is not a claim this project can
 make.
 
+> **2026-09-11 (M3): settled, and settled in the stronger direction — the
+> chamber's contents stopped mattering.** The pin was bumped to 1.44.0 after
+> payments-api reached otel-go v1.46.0. Measured inside the deployed
+> `payments-mcp` pod, the inheritance mechanism behaves exactly as this
+> paragraph predicted:
+>
+> ```
+> child of a `…-03` remote parent injects 00-4bf92f3577b34da6a3ce929d0e0e4736-ff9fecefb59e0be7-03
+> child of a `…-01` remote parent injects 00-4bf92f3577b34da6a3ce929d0e0e4736-d8b6b402ca358a12-01
+> ```
+>
+> So the outbound flag byte really is a function of the inbound one now. What
+> makes that safe is the other end: driven end to end with a `-03` parent
+> injected at the MCP boundary (`params._meta.traceparent`), trace
+> `967b8b72abbd4b6383409a747c0b43f0` holds all three spans with full
+> ancestry — `tools/call execute_payment` SERVER `a5a0e0df10bc2223` (parent
+> `0e2bb76df975444f`, the injected one) → payments-mcp `POST` CLIENT
+> `1d3cb4342ba6e48e` → payments-api `POST /payments/{paymentId}/execute` SERVER
+> `1346117449d1a702`. The `-01` control is trace
+> `09809e3142874fb09ce8111c5366c9f6`, same shape.
+>
+> **What agentgateway v1.5.0 forwards is still not measured**, and this entry
+> does not pretend otherwise. It is simply no longer load-bearing: both flag
+> bytes now traverse the hop, so the answer changes nothing either way.
+
 **What would and would not catch it. [measured — first-hand, and it corrects
 the brief that commissioned this entry]** This finding was commissioned with
 the claim that nothing in the repository would warn about such a bump and that
@@ -1709,6 +1740,15 @@ useful:
 That gap is a unit-level guard on `payments-mcp`'s pin, plus a comment saying
 why `1.29.0` is load-bearing. **This document does not build it** — recording
 it is this entry's job, and the guard is a code change for whoever takes it.
+
+> **2026-09-11 (M3): built, pointing the other way.**
+> `tools/payments-mcp/tests/test_pins.py` now asserts
+> `importlib.metadata.version("opentelemetry-sdk") == "1.44.0"`, with a
+> docstring carrying the reasoning above. It is not the guard this paragraph
+> imagined — that one would have pinned 1.29.0 *down*, and the direction taken
+> was forward instead, to the current release, with the Go end fixed rather
+> than the Python end held back. What the paragraph actually asked for is what
+> shipped: the pin is no longer invisible at the point of edit.
 
 **Why it matters, beyond this project.** Any fleet mixing OpenTelemetry Python
 ≥ 1.4x with OpenTelemetry Go ≤ v1.41.0 has this on every Python→Go hop, and

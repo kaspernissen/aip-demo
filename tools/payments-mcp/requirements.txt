@@ -1,8 +1,25 @@
 fastmcp==4.0.3
 httpx==0.28.1
-opentelemetry-sdk==1.29.0
-opentelemetry-exporter-otlp-proto-http==1.29.0
-opentelemetry-instrumentation-httpx==0.50b0
+# 2026-09-11 (M3): 1.29.0 -> 1.44.0 and 0.50b0 -> 0.65b0, the current PyPI
+# releases (all nine OpenTelemetry distributions in this file were published
+# 2026-07-16; verified against pypi.org's own JSON API, not a local cache).
+# These are now the same pins the other four Python services in this repo
+# carry.
+#
+# Why this line was load-bearing until today, and is not any more —
+# docs/upstream-findings.md Finding 11. 1.44.0's
+# `sdk/trace/__init__.py:1234-1242` inherits W3C Trace Context Level 2's
+# RANDOM_TRACE_ID bit (0x02) from an extracted remote parent, where 1.29.0's
+# `:1145-1149` derived the flag byte from the sampling decision alone and so
+# emitted `…-01` unconditionally. payments-api's otel-go v1.41.0 discarded any
+# version-00 traceparent above 0x02 outright, so this pin was the only thing
+# keeping the payments-mcp -> payments-api hop in one trace whenever what
+# agentgateway hands payments-mcp carries 0x02. payments-api is now on otel-go
+# v1.46.0, whose extractor accepts it, so the hazard is gone rather than
+# merely still unfired.
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0
+opentelemetry-instrumentation-httpx==0.65b0
 # Fix round (final-review.md SF-2): pytest 8.3.4 -> 9.0.3, clearing
 # PYSEC-2026-1845 (pip-audit). This file's runtime image installs the whole
 # requirements.txt (Dockerfile), so the advisory was shipping in the running
@@ -42,7 +59,13 @@ charset-normalizer==3.5.1
 click==8.5.0
 cryptography==50.0.1
 cyclopts==4.25.0
-deprecated==1.3.1
+# 2026-09-11 (M3): `deprecated==1.3.1` used to be here. It is gone
+# from this file because it is gone from the venv: it was pulled in by
+# `opentelemetry-api` 1.29.0, and 1.44.0 does not declare it. Measured,
+# not assumed -- after the bump nothing in this venv requires it
+# (`importlib.metadata` walk over every installed distribution's
+# `requires`), and `uv pip check` reports all 88 packages compatible
+# with it removed. None of the other four Python services pin it either.
 dnspython==2.8.0
 docstring-parser==0.18.0
 email-validator==2.3.0
@@ -72,12 +95,12 @@ mcp-types==2.1.1
 mdurl==0.1.2
 more-itertools==11.1.0
 openapi-pydantic==0.5.1
-opentelemetry-api==1.29.0
-opentelemetry-exporter-otlp-proto-common==1.29.0
-opentelemetry-instrumentation==0.50b0
-opentelemetry-proto==1.29.0
-opentelemetry-semantic-conventions==0.50b0
-opentelemetry-util-http==0.50b0
+opentelemetry-api==1.44.0
+opentelemetry-exporter-otlp-proto-common==1.44.0
+opentelemetry-instrumentation==0.65b0
+opentelemetry-proto==1.44.0
+opentelemetry-semantic-conventions==0.65b0
+opentelemetry-util-http==0.65b0
 packaging==26.3
 pathable==0.6.0
 platformdirs==4.11.7

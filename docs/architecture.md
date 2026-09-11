@@ -1777,6 +1777,12 @@ Why nothing else in this table was affected: reviewer-ui was the only service
 on `opentelemetry-sdk` 1.44 that speaks **directly** to the Go service.
 `payments-mcp` was pinned at 1.29 (flag byte `01`), and agentgateway re-stamps
 the context with its own before the hop to `payments-mcp`.
+**2026-09-11 (M3): `payments-mcp` is on 1.44.0 now too**, so its outbound flag
+byte is a function of the inbound one rather than a constant — measured in the
+deployed pod, a `-03` parent in produces a `-03` child out. Driven end to end
+with a `-03` parent at the MCP boundary, trace
+`967b8b72abbd4b6383409a747c0b43f0` carries all three spans with full ancestry;
+the `-01` control is `09809e3142874fb09ce8111c5366c9f6`.
 
 **`northstar.claim.id` is set exactly once**, at claims-agent's intake
 (`correlation.py`'s `set_claim_id`, called from `executor.py` right after

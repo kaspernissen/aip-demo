@@ -635,7 +635,7 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (all seven run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 108, payments-mcp 15, payments-api (Go) 31,
+claims-agent 16, settlement-agent 108, payments-mcp 16, payments-api (Go) 31,
 customer-ui (vitest) 6, policy-decision-service 105,
 reviewer-ui 56 — all passing.
 (**The seventh entry arrived in M3 Task 5B, and it is the same defect
@@ -976,7 +976,18 @@ independently, and they do not agree. On the Python side, payments-mcp runs
 `opentelemetry-sdk==1.29.0`/`opentelemetry-instrumentation-httpx==0.50b0`
 while both agents run `1.44.0`/`0.65b0`, and the repo-root `tests/`
 harness pins `1.29.0` — three Python processes on two OTel generations, in a
-milestone whose whole product is the telemetry these libraries emit. On the
+milestone whose whole product is the telemetry these libraries emit.
+(**2026-09-11 (M3): the Python half of this skew is closed.** `payments-mcp`
+and the repo-root `tests/` harness are both on `1.44.0`/`0.65b0` now, so every
+Python process in this repo runs one OTel generation — the current PyPI
+releases, published 2026-07-16. The paragraph's closing argument, that
+harmonizing the pins "carries real regression risk for zero measured
+benefit", was answered rather than ignored: it **did** carry a measured
+benefit, since `payments-mcp`'s 1.29.0 turned out to be load-bearing by
+accident (Finding 11), and the re-verification discipline it asks for was
+performed — every affected service rebuilt and redeployed, every suite re-run,
+and live traces re-captured. The browser-side skew is untouched and still
+stands as written.) On the
 browser side, `@opentelemetry/context-zone` sits at `1.30.0` alongside
 `sdk-trace-web`/`resources` at `2.8.0`, and the top-level
 `@opentelemetry/semantic-conventions` pin (`1.28.0`) differs from what
@@ -2140,6 +2151,31 @@ reviewer-ui was the only service where this could bite: it is the one
 record. `payments-mcp`, the other service that calls payments-api, was pinned
 at `opentelemetry-sdk==1.29.0` and emitted `…-01`; and agentgateway re-stamps
 the context with its own before the hop to `payments-mcp` anyway.
+
+**2026-09-11 (M3): `payments-mcp` is on `opentelemetry-sdk==1.44.0` too**, and
+the question Finding 11 left open — whether that bump would fragment the
+money-path trace — is now answered by measurement rather than left as a loaded
+gun. Measured inside the deployed payments-mcp pod, the 1.44.0 inheritance
+mechanism doing exactly what Finding 11 predicted it would:
+
+```
+child of a `…-03` remote parent injects 00-4bf92f3577b34da6a3ce929d0e0e4736-ff9fecefb59e0be7-03
+child of a `…-01` remote parent injects 00-4bf92f3577b34da6a3ce929d0e0e4736-d8b6b402ca358a12-01
+```
+
+So payments-mcp now forwards whatever flag byte it receives, `0x02` included.
+Driven end to end with a `-03` parent injected at the MCP boundary
+(`params._meta.traceparent`), trace `967b8b72abbd4b6383409a747c0b43f0`:
+
+```
+a5a0e0df10bc2223 parent=0e2bb76df975444f (injected)  payments-mcp  tools/call execute_payment  SERVER
+1d3cb4342ba6e48e parent=a5a0e0df10bc2223             payments-mcp  POST                        CLIENT
+1346117449d1a702 parent=1d3cb4342ba6e48e             payments-api  POST /payments/{paymentId}/execute SERVER
+```
+
+Three spans, one trace, full ancestry — on the flag byte that used to be
+dropped. The `-01` control run is trace `09809e3142874fb09ce8111c5366c9f6`,
+the same shape.
 
 `tests/e2e/test_supervised.py`'s criterion 5 asserts the decision-path
 equivalent on every gate run, identified by **parentage** rather than by span

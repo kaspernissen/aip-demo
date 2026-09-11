@@ -22,3 +22,24 @@ import importlib.metadata as md
 
 def test_pytest_is_pinned_clear_of_pysec_2026_1845():
     assert md.version("pytest") == "9.0.3"
+
+
+def test_opentelemetry_sdk_matches_the_rest_of_the_repo():
+    """2026-09-11 (M3). This service sat at `opentelemetry-sdk==1.29.0` while
+    its four Python siblings were on 1.44.0, and nothing anywhere said so.
+
+    `docs/upstream-findings.md` Finding 11 recorded that pin as load-bearing
+    by accident: 1.29.0 derives the injected flag byte from the sampling
+    decision alone and emits `...-01` unconditionally, whereas 1.44.0 inherits
+    W3C Trace Context Level 2's `RANDOM_TRACE_ID` bit from an extracted remote
+    parent -- and `payments-api`'s then-pinned otel-go v1.41.0 discarded any
+    version-00 traceparent above `0x02` outright. Bumping this line was
+    therefore a trace-fragmentation risk that surfaced only in an expensive
+    cluster-dependent e2e assertion about a missing span.
+
+    payments-api is on otel-go v1.46.0 now, whose extractor accepts `-03`, so
+    the bump was taken and this assertion is what keeps the five services
+    agreeing about it. The same shape as
+    `apps/reviewer-ui/tests/test_pins.py::test_opentelemetry_sdk_matches_the_rest_of_the_repo`.
+    """
+    assert md.version("opentelemetry-sdk") == "1.44.0"
