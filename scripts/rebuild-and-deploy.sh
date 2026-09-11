@@ -70,8 +70,46 @@ COMPONENTS=(
   # policy-decision-service's own addition comment argues: a component
   # outside this list keeps running whatever image happened to be pushed
   # last, silently.
+  #
+  # M3 final-review fix round: "applied by hand" was only half the story, and
+  # the missing half was a real hazard -- see COMPANION_DEPLOYMENTS below.
   "reviewer-ui:apps/reviewer-ui:northstar-agents"
 )
+
+# component:companion-deployment:namespace
+#
+# A *companion* is a Deployment that runs one of COMPONENTS' images but is not
+# a component itself: no build context, no manifest applied by this script. It
+# still has to be RESTARTED whenever that image is rebuilt, because both
+# Deployments name the same MUTABLE tag and `kubectl apply` over an unchanged
+# manifest is a no-op.
+#
+# M3 final-review fix round. `deploy/k8s/settlement-agent.yaml` and
+# `deploy/k8s/senior-settlement-agent.yaml` both name
+# `localhost:5001/northstar/settlement-agent:dev` -- read out of both
+# manifests, not assumed. Until now, running this script for
+# `settlement-agent` (or a bare full run) pushed a new image under that tag
+# and restarted `deployment/settlement-agent` alone, leaving
+# `deployment/senior-settlement-agent` serving the previous build.
+# scripts/setup-kind.sh's Step 9d already states this hazard in full -- "Two
+# pods of 'the same image' silently disagreeing is the worst version of this
+# to debug" -- and fixed it only on the full-cluster path, which is not the
+# path an operator takes between demos. The two digests happened to agree when
+# the whole-branch review found this; the first edit to `settlement.py`
+# followed by a redeploy is what would have broken the byte-identical-image
+# premise this entire milestone's argument rests on.
+COMPANION_DEPLOYMENTS=(
+  "settlement-agent:senior-settlement-agent:northstar-agents"
+)
+
+component_companions() {
+  local name="$1" entry
+  for entry in "${COMPANION_DEPLOYMENTS[@]}"; do
+    if [[ "${entry%%:*}" == "$name" ]]; then
+      echo "${entry#*:}"
+    fi
+  done
+}
 
 component_names() {
   local entry
@@ -151,6 +189,20 @@ for component in "${targets[@]}"; do
   kubectl apply -f "$ROOT/deploy/k8s/${component}.yaml"
   kubectl -n "$namespace" rollout restart "deployment/${component}"
   kubectl -n "$namespace" rollout status "deployment/${component}" --timeout=180s
+
+  # Every other Deployment running the image this step just pushed. No
+  # `kubectl apply` for these: their manifests are not this script's to apply
+  # (senior-settlement-agent's is applied by setup-kind.sh's Step 9d), and an
+  # apply would be a no-op anyway. What they need is the restart, and they
+  # need it for exactly the reason the component itself does.
+  while IFS= read -r companion; do
+    [[ -n "$companion" ]] || continue
+    companion_ns="${companion##*:}"
+    companion_name="${companion%%:*}"
+    echo -e "${BLUE}Step ${step}/${total}: Restarting companion deployment/${companion_name} (same image, second identity)${NC}"
+    kubectl -n "$companion_ns" rollout restart "deployment/${companion_name}"
+    kubectl -n "$companion_ns" rollout status "deployment/${companion_name}" --timeout=180s
+  done < <(component_companions "$component")
 
   echo -e "${GREEN}${component} deployed.${NC}"
   deployed+=("$component")

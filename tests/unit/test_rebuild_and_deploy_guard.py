@@ -34,6 +34,20 @@ This version instead runs the real script (or a temporarily corrupted copy
 of it, in a RED demonstration) in an isolated sandbox with every build
 context absent, and asserts on its actual exit code and diagnostic output —
 for both calling conventions A15a covers.
+
+**M3 final-review fix round — the companion-deployment half.** The tests
+above all run against a sandbox where every build context is *missing*, so
+the script hard-errors before it ever reaches a `kubectl rollout`. That left
+the whole deploy half of this script unguarded, and the whole-branch review
+found a real defect in it: `deploy/k8s/settlement-agent.yaml` and
+`deploy/k8s/senior-settlement-agent.yaml` name the same mutable image tag
+(`localhost:5001/northstar/settlement-agent:dev`), and this script restarted
+only the first of them — so the senior identity went on serving the previous
+build of the image the demo's whole argument says is byte-identical. The
+second group of tests below gives the *present*-build-context path a sandbox
+of its own (fake `docker`/`kubectl` that succeed and record what they were
+called with) and pins the restart, plus a RED demonstration that emptying
+`COMPANION_DEPLOYMENTS` really does redden it.
 """
 import os
 import stat
@@ -204,4 +218,179 @@ def test_guard_goes_red_against_a15s_retired_silent_continue(tmp_path):
         "the missing component, confirming the two behavioural tests above "
         "would correctly go RED against this exact reintroduction:\n"
         f"stderr:\n{result.stderr}"
+    )
+
+
+# --- The deploy half: companion deployments (M3 final-review fix round) ------
+#
+# A second sandbox shape. The one above deliberately has NO build contexts, so
+# the script exits before deploying anything; this one has the requested
+# component's context present and fake docker/kubectl that succeed, so the
+# script runs all the way through its build/push/apply/restart sequence and
+# every invocation is recorded for assertion.
+
+_RECORDING_DOCKER = """#!/usr/bin/env bash
+echo "docker $*" >> "$FAKE_CMD_LOG"
+if [[ "$1" == "ps" ]]; then
+  echo "kind-registry"
+fi
+exit 0
+"""
+
+_RECORDING_KUBECTL = """#!/usr/bin/env bash
+echo "kubectl $*" >> "$FAKE_CMD_LOG"
+exit 0
+"""
+
+
+def _deploying_sandbox(
+    tmp_path: Path, build_contexts: list[str], script_text: str | None = None
+) -> tuple[Path, dict, Path]:
+    """A sandbox the script can run to completion in.
+
+    `build_contexts` are paths relative to ROOT that must exist (the script's
+    A15a check is `-d "$ROOT/$context"`, so an empty directory is enough --
+    `docker build` never really runs). Returns the script copy, the env, and
+    the path of the log both fakes append their full argv to.
+    """
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    script_copy = scripts_dir / "rebuild-and-deploy.sh"
+    real_text = (REPO_ROOT / SCRIPT_RELATIVE_PATH).read_text()
+    script_copy.write_text(script_text if script_text is not None else real_text)
+    script_copy.chmod(0o755)
+    (tmp_path / ".env").write_text("")
+    # The manifests `kubectl apply -f` names. kubectl is faked, so the contents
+    # are irrelevant -- but the directory keeps the sandbox honest about what
+    # the script actually references.
+    (tmp_path / "deploy" / "k8s").mkdir(parents=True)
+    for context in build_contexts:
+        (tmp_path / context).mkdir(parents=True)
+
+    bin_dir = tmp_path / "fakebin"
+    bin_dir.mkdir()
+    _make_executable(bin_dir / "docker", _RECORDING_DOCKER)
+    _make_executable(bin_dir / "kubectl", _RECORDING_KUBECTL)
+
+    log = tmp_path / "fake-commands.log"
+    log.write_text("")
+
+    env = dict(os.environ)
+    env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
+    env["FAKE_CMD_LOG"] = str(log)
+    return script_copy, env, log
+
+
+def test_rebuilding_settlement_agent_also_restarts_its_companion_senior_deployment(
+    tmp_path,
+):
+    """The defect the whole-branch review found: both settlement Deployments
+    name the mutable tag `localhost:5001/northstar/settlement-agent:dev`, so a
+    push under that tag that restarts only one of them leaves the other
+    serving the previous build -- two pods of "the same image" disagreeing,
+    which is the exact premise M3's "the approval changes the caller, not the
+    code" argument rests on.
+
+    Behavioural, not a source grep: the script is really run and the real
+    `kubectl` argv is asserted.
+    """
+    script_copy, env, log = _deploying_sandbox(
+        tmp_path, ["agents/settlement-agent"]
+    )
+    result = _run(script_copy, env, ["settlement-agent"])
+    assert result.returncode == 0, (
+        "the script should run to completion in this sandbox (build context "
+        f"present, fakes succeed); stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+
+    calls = log.read_text().splitlines()
+    assert any(
+        "rollout restart deployment/settlement-agent" in call for call in calls
+    ), f"the component's own restart is missing entirely: {calls}"
+    assert any(
+        "rollout restart deployment/senior-settlement-agent" in call
+        for call in calls
+    ), (
+        "deployment/senior-settlement-agent was NOT restarted after a new "
+        "settlement-agent image was pushed under the tag both Deployments "
+        f"name, so it keeps serving the previous build: {calls}"
+    )
+    assert any(
+        "rollout status deployment/senior-settlement-agent" in call
+        for call in calls
+    ), (
+        "the companion was restarted but never waited on, so the script can "
+        f"return while the old pod is still serving: {calls}"
+    )
+    # It is a restart, not an apply: senior-settlement-agent's manifest is
+    # setup-kind.sh's to apply, and this script must not take that over.
+    assert not any(
+        "apply -f" in call and "senior-settlement-agent" in call for call in calls
+    ), f"this script must not apply senior-settlement-agent's manifest: {calls}"
+
+
+def test_a_bare_full_run_also_restarts_the_companion(tmp_path):
+    """The other calling convention, and the likelier one before a demo: no
+    arguments at all. Every component's build context is present here, so the
+    script walks the whole COMPONENTS list."""
+    contexts = [
+        "systems/payments-api",
+        "tools/payments-mcp",
+        "agents/settlement-agent",
+        "agents/claims-agent",
+        "apps/customer-ui",
+        "platform/policy-decision-service",
+        "apps/reviewer-ui",
+    ]
+    script_copy, env, log = _deploying_sandbox(tmp_path, contexts)
+    result = _run(script_copy, env, [])
+    assert result.returncode == 0, (
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    calls = log.read_text().splitlines()
+    assert any(
+        "rollout restart deployment/senior-settlement-agent" in call
+        for call in calls
+    ), f"a bare full run left the senior identity on the previous build: {calls}"
+
+
+def test_the_companion_guard_goes_red_when_the_mapping_is_emptied(tmp_path):
+    """Proves the two tests above actually guard, the same way
+    `test_guard_goes_red_against_a15s_retired_silent_continue` does for A15a:
+    empty `COMPANION_DEPLOYMENTS` -- byte-for-byte the shape this script had
+    before the M3 fix round -- and the companion restart must disappear while
+    everything else still succeeds."""
+    real_text = (REPO_ROOT / SCRIPT_RELATIVE_PATH).read_text()
+    marker = (
+        "COMPANION_DEPLOYMENTS=(\n"
+        '  "settlement-agent:senior-settlement-agent:northstar-agents"\n'
+        ")"
+    )
+    assert marker in real_text, (
+        "expected scripts/rebuild-and-deploy.sh's COMPANION_DEPLOYMENTS list "
+        "to match this test's known-good text exactly -- if a companion was "
+        "added or the formatting changed, update `marker` above alongside it"
+    )
+    corrupted_text = real_text.replace(marker, "COMPANION_DEPLOYMENTS=()")
+    assert corrupted_text != real_text
+
+    script_copy, env, log = _deploying_sandbox(
+        tmp_path, ["agents/settlement-agent"], script_text=corrupted_text
+    )
+    result = _run(script_copy, env, ["settlement-agent"])
+    assert result.returncode == 0, (
+        "sanity check on the corruption: an empty companion list should still "
+        f"deploy the component itself.\nstdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    calls = log.read_text().splitlines()
+    assert any(
+        "rollout restart deployment/settlement-agent" in call for call in calls
+    ), f"the corruption broke more than it should have: {calls}"
+    assert not any(
+        "senior-settlement-agent" in call for call in calls
+    ), (
+        "the corrupted script still restarted the companion, so the tests "
+        f"above would not go red against this reintroduction: {calls}"
     )
