@@ -68,26 +68,43 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-11 (M3, guard-test addition) — the current figures, derived rather
-than re-measured.** `tests/unit/test_no_sampling.py` was added: three
-hermetic assertions guarding the standing "100% of telemetry, always"
-requirement (no `OTEL_TRACES_SAMPLER`/`_ARG` anywhere in `deploy/`, no
-`tail_sampling`/`probabilistic_sampler` processor in the collector,
-`agentgateway`'s `frontendPolicies.tracing.randomSampling` still `true`).
-None of the three is gated and none is expected to fail, so this only adds 3
-to what was already measured; the gate itself was **not** re-run — that
-needs a live cluster and spends real tokens (see the section above), and
-this change touches no runtime code. `pytest --collect-only -q tests/` now
-collects **228** (225 + 3), measured directly and requiring no cluster.
-Bare-suite row: 228 collected − 33 gated − 1 xfailed = `194 passed, 33
-skipped, 1 xfailed`. Gate row, **derived, not measured against a live
-run**: 228 − 1 xfailed = `227 passed, 1 xfailed`. The row below this one is
-the last figure the gate was actually run against; the next real
-`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` run is what turns this derived
-gate figure into a measured one.
+**2026-09-11 (M3, remaining dependency bumps) — the current figures, and the
+gate row is now MEASURED.** The three bumps of this round (`mcp` → 2.2.0,
+`pydantic-ai-slim`/`pydantic-graph` → 2.42.0, `a2a-sdk` held at 0.3.7) added
+no tests and removed none, so the collected total is unchanged at **228**,
+re-measured with `.venv/bin/python -m pytest --collect-only -q tests/`.
+`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` was run to completion on the
+long-running `kind-northstar` **stage 3** cluster (no `teardown.sh`, no
+cluster recreation), with settlement-agent and payments-mcp rebuilt and
+redeployed from this round's own tree first. Result: **`227 passed, 1
+xfailed in 346.46s (0:05:46)`**, exit 0, followed by "M3 smoke test
+passed." — **zero skips anywhere in the run**, checked by grepping the whole
+log rather than by trusting the summary line. Bare-suite row, still derived
+from the same collection: 228 collected − 33 gated − 1 xfailed = `194
+passed, 33 skipped, 1 xfailed`.
 
-**M3 (Supervised), final-review fix round — superseded by the row above;
-kept because it is the last run that actually exercised the gate.** A second
+**It took two runs, and saying so is the point (again).** The first attempt
+came back `1 failed, 226 passed, 1 xfailed in 347.42s`, exit 1, on
+`tests/e2e/test_policy_denial.py::test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp`
+— its change-surface assertion, which named five production files in
+settlement-agent and payments-mcp as accounted for since `m2.1-verified` and
+found a sixth, `agents/settlement-agent/bootstrap.py`. The guard was right
+to fire and the criterion's substance was never in question: the diff is
+comment-only (the module docstring corrected for `mcp` 2.2.0 moving the MCP
+client onto `httpx2`, a note beside `HTTPX2ClientInstrumentor().instrument()`,
+and a re-dated `_instrument_pydantic_ai` docstring at 2.42.0 — no executable
+line moved), and that file is the OTel bootstrap, which holds no threshold
+and no branch a payment passes through. The allowlist gained the file and
+its written reason, and the gate was re-run once, which is the measured run
+above. **The superseded claim, recorded rather than deleted:** this block
+used to say the gate row was "derived, not measured against a live run" at
+`227 passed, 1 xfailed`. The derivation turned out to be arithmetically
+right; it is now measured, which is a different thing and the reason the
+distinction is drawn at all.
+
+**M3 (Supervised), final-review fix round — superseded by the row above.**
+(It was also, until 2026-09-11, the last run that actually exercised the
+gate; the row above has now taken that over as well.) A second
 gate run was authorised (controller ruling R37) because that round changed
 span parentage in a live service, and certifying that on the strength of the
 pre-change run would have made the certification false. Run the same way as
@@ -161,7 +178,7 @@ defect class, so each command is stated as it was actually run.)
 | Run | Command | Result |
 |---|---|---|
 | Default (bypasses the gate) | `pytest tests/` (no env var) | `194 passed, 33 skipped, 1 xfailed` |
-| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `227 passed, 1 xfailed` (derived — see the note above; not yet re-measured against a live run) |
+| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `227 passed, 1 xfailed` (measured 2026-09-11, exit 0, 346.46s, zero skips — see the note above; this row read "derived … not yet re-measured against a live run" until that run) |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
