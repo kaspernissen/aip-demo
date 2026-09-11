@@ -1638,10 +1638,28 @@ JsonRpcMessage` text points at the MCP layer's own deserializer (rmcp's
 configurable in `config.yaml`, but the source was not read at the image's
 revision to confirm which variant set is missing an array case. It does not
 establish that a *future* version behaves this way: the day agentgateway
-accepts a batch on this transport, the original question reopens in full, and
-nothing in this repository's test suite would notice. And it says nothing
-about other MCP transports — this project is streamable-HTTP throughout, and
-stdio was never probed.
+accepts a batch on this transport, the original question reopens in full. And
+it says nothing about other MCP transports — this project is streamable-HTTP
+throughout, and stdio was never probed.
+
+> **Corrected in the M3 final-review fix round (2026-09-10):** the paragraph
+> above used to end its second sentence with *"…the original question reopens
+> in full, **and nothing in this repository's test suite would notice**"*. That
+> was true when written, and the whole-branch final review filed it as a
+> finding — a measurement this careful, left without a guard, decays into
+> prose. It now has one. `tests/e2e/test_caller_identity.py::test_a_jsonrpc_batch_is_rejected_before_the_policy_hook_and_changes_nothing`
+> re-runs the probe above on every gate run and asserts exactly the three
+> things that were measured, and nothing more: `HTTP 400`, **zero**
+> `policy.decision` spans in a trace fetched by an id the test mints itself,
+> and the bait payment still `proposed` in the ledger afterwards. It carries
+> the same control the probe did — the single `propose_payment` that creates
+> the bait must first succeed on that same session with that same token — so a
+> `400` from a gateway that is merely unhealthy cannot be misread as this
+> finding holding. It is ungated and spends no model tokens, which is why it
+> lives in `test_caller_identity.py`: that file already owns the port-forward,
+> the `spire-server jwt mint` machinery and the streamable-HTTP session dance
+> this probe needs. The rest of this paragraph stands unchanged — the *why* is
+> still unread at the image's revision, and stdio is still unprobed.
 
 **Status: nothing filed, nothing asked upstream, and nothing to file.** No
 issue, comment, pull request or discussion post exists anywhere for this, and

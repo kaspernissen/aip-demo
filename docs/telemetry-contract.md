@@ -68,12 +68,33 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**M3 (Supervised).** The gate row below is anchored on a run of
-`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` to completion, on the
+**M3 (Supervised), final-review fix round — the current figures.** A second
+gate run was authorised (controller ruling R37) because that round changed
+span parentage in a live service, and certifying that on the strength of the
+pre-change run would have made the certification false. Run the same way as
+the one below it: `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` to
+completion, on the long-running `kind-northstar` **stage 3** cluster, no
+`teardown.sh`, with `reviewer-ui` redeployed from the fix round's own tree
+first. Result: `224 passed, 1 xfailed` in **353.77s**, final line
+"`224 passed, 1 xfailed, 2 warnings in 353.77s (0:05:53)`". The whole `tests/` tree collects
+**225** at this tree, measured with `.venv/bin/python -m pytest
+--collect-only -q tests/`; the four net-new cases are itemised in the M3
+table further down. The gated set is unchanged at **33** — re-measured by
+walking pytest's own collected items and reading each item's `skipif`
+marker, not by counting decorators: `test_browser_root_span.py` 8,
+`test_settlement_llm_trace.py` 9, `test_gateway_trace.py` 6,
+`test_policy_denial.py` 4, `test_supervised.py` 6. Both of the round's new
+e2e cases are deliberately ungated, for the reason
+`tests/e2e/test_caller_identity.py` has never been gated: neither spends a
+model token.
+
+**M3 (Supervised), Task 5B — superseded by the row above, kept because it is
+the run that certified the pre-fix tree.** The gate row then was anchored on
+a run of `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` to completion, on the
 long-running `kind-northstar` **stage 3** cluster — not on a freshly created
 one, and `teardown.sh` was not run — by M3 Task 5B, against that task's own
 tree: `220 passed, 1 xfailed` in **343.14s**, final line "M3 smoke test
-passed." The whole `tests/` tree collects **221** at that tree, re-measured
+passed." The whole `tests/` tree collected **221** at that tree, re-measured
 with `.venv/bin/python -m pytest --collect-only -q tests/` and itemised per
 file in the M3 table further down. The arithmetic behind each row, and which
 of the two is measured and which is derived, is in the bullet list further
@@ -120,8 +141,8 @@ defect class, so each command is stated as it was actually run.)
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `187 passed, 33 skipped, 1 xfailed` |
-| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `220 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `191 passed, 33 skipped, 1 xfailed` |
+| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `224 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -361,10 +382,23 @@ correction.
 |---|---|---|
 | `b472c89` (M2.2 close, re-measured at `main`) | — | 214 |
 | `ed2dcf4` (M3 Task 5A) | `tests/e2e/test_supervised.py` (7) — one test per spec §7 exit criterion | 221 |
+| M3 final-review fix round | `tests/e2e/test_caller_identity.py` +1 (OQ-U1's regression guard, ungated — see Minor 6 below) and `tests/unit/test_rebuild_and_deploy_guard.py` +3 (the companion-deployment restart, run behaviourally against a sandbox with recording fake `docker`/`kubectl`) | 225 |
 
-That one file is the whole of M3's repo-root move, and the *absence* of other
-moves was measured rather than assumed. `git diff --stat main..HEAD --
-tests/` shows this branch edited **seven** files under `tests/`. One is
+The fix round also **changed** three files under `tests/` without changing
+their counts, stated here rather than left to be inferred: criterion 5 of
+`tests/e2e/test_supervised.py` gained the assertions that reviewer-ui's own
+ledger read is a hop of the approval trace, criterion 6 gained a subject
+assertion on its own token and criterion 2 gained an ordering note;
+`tests/e2e/test_policy_denial.py`'s criterion-4 docstring and failure message
+were brought up to what M3 actually changed; and
+`tests/unit/test_stage2_cilium_config.py`'s stale-stage guard widened its
+file set to `deploy/kind/*.yaml` — still 22, because that guard is
+deliberately parameter-free so widening it cannot move this table.
+
+M3 Task 5A's one file was the whole of that task's repo-root move, and the
+*absence* of other moves was measured rather than assumed. `git diff --stat
+main..HEAD -- tests/` showed this branch had edited **seven** files under
+`tests/`. One is
 `test_supervised.py` itself, which did not exist at `main`. The other six
 still collect exactly what they collected there, because what changed in them
 was content, not cases — a SPIFFE allow-list extended inside a test
@@ -399,6 +433,13 @@ items and reading each item's `skipif` marker, not by counting decorators by
 eye: 8 + 9 + 6 + 4 + 6 = 33, which is exactly the skip count in the default
 row and exactly the difference between the two rows.
 
+**Still 33 after the final-review fix round, re-measured the same way rather
+than assumed unchanged.** Both cases that round added are ungated — the OQ-U1
+batch guard in `tests/e2e/test_caller_identity.py` (no model tokens, no
+browser, the same reason nothing else in that file is gated) and three
+hermetic unit tests — so the gated per-file breakdown is byte-identical to
+the one above while the tree total moved 221 → 225.
+
 **One correction M3 Task 5B's re-measure turned up in the *M2.1* history
 above, left standing with this note rather than rewritten.** That history
 states `tests/unit/test_stage2_spire_config.py` gained 24 tests at M2.1 Task 4
@@ -416,10 +457,37 @@ test. It is **not** silently corrected, because the correct historical
 attribution cannot be recovered from this document and guessing at it would
 replace a known-wrong number with an unverified one.
 
-- **Measured (M3 Task 5B):** `.venv/bin/python -m pytest --collect-only -q
-  tests/` → `221 tests collected`, and the per-file breakdown in the M3 table
-  above accounts for the whole delta from `main`'s re-measured 214. This is
-  the number both published rows are anchored on today.
+- **Measured (M3 final-review fix round):** `.venv/bin/python -m pytest
+  --collect-only -q tests/` → `225 tests collected`, and the per-file
+  breakdown in the M3 table above accounts for the whole delta from `main`'s
+  re-measured 214. This is the number both published rows are anchored on
+  today.
+- **Measured (M3 final-review fix round), gate row:** `RUN_BROWSER_TESTS=1
+  ./scripts/smoke-test.sh` run in full, once, on the live stage-3
+  `kind-northstar` cluster with `reviewer-ui` redeployed from this round's own
+  tree first — the whole `tests/` tree, real browser, real settlements, a real
+  human-approved execution, all **seven** per-service suites including
+  `reviewer-ui`'s 59 — returning `224 passed, 1 xfailed`, 0 skipped, in
+  353.77s, final line
+  "`224 passed, 1 xfailed, 2 warnings in 353.77s (0:05:53)`". Authorised as a
+  *second* gate run for this milestone by controller ruling R37, overriding
+  the plan's "the gate runs once": this round changed span parentage inside a
+  live service, and certifying that on the strength of the pre-change run
+  would have made the certification false. It cross-checks against the
+  collected total by the second route this document has always used: 225
+  collected − 0 skipped − 1 xfailed = 224. The same exit-code qualification
+  the Task 5B bullet below states applies here too.
+- **Derived (M3 final-review fix round), default row, components shown:** 225
+  collected − 33 gated − 1 xfailed = **`191 passed, 33 skipped, 1 xfailed`**.
+  Each component is measured above; the label is "derived" for the reason the
+  Task 5B bullet below gives, unchanged — a bare `pytest tests/` still drives
+  real model-driven settlements, so re-running it to re-observe a number two
+  measured figures already determine would spend Anthropic tokens for no
+  additional evidence.
+- **Measured (M3 Task 5B) — superseded by the two bullets above, kept as the
+  record of the pre-fix tree:** `.venv/bin/python -m pytest --collect-only -q
+  tests/` → `221 tests collected`, and that task's per-file breakdown
+  accounted for the whole delta from `main`'s re-measured 214.
 - **Measured (M3 Task 5B), gate row:** `RUN_BROWSER_TESTS=1
   ./scripts/smoke-test.sh` run in full on the live stage-3 `kind-northstar`
   cluster — the whole `tests/` tree, real browser, real settlements, a real
@@ -569,7 +637,7 @@ the plan defect described two paragraphs up).
 Per-service unit suites (all seven run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 108, payments-mcp 15, payments-api (Go) 31,
 customer-ui (vitest) 6, policy-decision-service 105,
-reviewer-ui 50 — all passing.
+reviewer-ui 59 — all passing.
 (**The seventh entry arrived in M3 Task 5B, and it is the same defect
 as the sixth, one milestone later.** `reviewer-ui` shipped in M3 Task 4 with
 its own `requirements.txt`, its own `.venv`, its own `pytest.ini` and 50 tests
@@ -579,10 +647,17 @@ this row, nor `_PER_SERVICE_SUITES`. Unlike the PDS's case there was no hidden
 dependency doing half the work: nothing ran those 50 tests at all, so the gate
 could go green with `apps/reviewer-ui` broken. All three sites are now closed
 together, in the same task, which is the lesson the sixth entry's own note
-below already spells out. Its 50 is measured by the same route as the other
-six, `cd apps/reviewer-ui && .venv/bin/python -m pytest --collect-only -q
-tests` → `50 tests collected`, and the suite runs in 0.30s with no cluster, no
-network and no model.) (The sixth
+below already spells out. Its figure is measured by the same route as the
+other six, `cd apps/reviewer-ui && .venv/bin/python -m pytest --collect-only
+-q tests` → `59 tests collected`, and the suite runs in 0.37s with no cluster,
+no network and no model. It read **50** from Task 5B until the final-review
+fix round, which added nine: five in a new `tests/test_bootstrap.py` pinning
+the trace-flags workaround from both sides, three in `tests/test_main.py`
+covering `review.queue`'s span, its ERROR status on a ledger outage and
+`GET /healthz` still emitting nothing, and one in `tests/test_review.py`
+pinning that `ledger.get` runs inside `review.decision`. Two existing tests in
+that file changed their assertions in the same round and are counted in the
+50 as well as the 59 — see `review.py`'s own correction note.) (The sixth
 entry arrived in the M2.2 final-review fix round: `policy-decision-service` was
 in neither the gate's loop nor this row until finding 1 showed both already
 *depended* on that component's generated stubs while collecting none of its
@@ -847,7 +922,7 @@ marker is removed, rather than staying silently green.
 | payments-mcp | FastMCP native | `fastmcp==4.0.3` | `tools/call propose_payment`, `tools/call execute_payment` | TracerProvider does **not** need to be installed before importing fastmcp on this version — `fastmcp.telemetry.get_tracer()` calls `get_tracer_provider()` fresh on every span, not once at import (measured; the brief's premise here was wrong for 4.0.3 — kept as a code convention anyway, not a correctness requirement). `FASTMCP_TELEMETRY_MODE=native` is set explicitly even though it is already the default. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is also set** (`deploy/k8s/payments-mcp.yaml`) — this governs only the *outbound httpx* span to payments-api (FastMCP's own native MCP spans are unaffected; this knob is httpx-instrumentation-specific), measured legacy-by-default, confirmed stable after (`tools/payments-mcp/NOTES.md` §3). |
 | policy-decision-service | OTel Python SDK, applied by this project's own `pds/telemetry.py` | `opentelemetry-sdk==1.44.0` (Resource carries `service.name`, `service.instance.id`, `telemetry.sdk.language=python`, `telemetry.sdk.name=opentelemetry`, `telemetry.sdk.version=1.44.0` — and **no** `service.version`; scope `northstar.policy-decision-service` with no `otel.scope.version`) | one span, `policy.decision`, SERVER kind, one per `tools/call` the gateway sends for a decision | **The one component in this system whose span is entirely this project's own** — no framework emits a policy decision, which is what Gap 3 below was about. It opens the span by hand because there is nothing wrapping it that would: the gRPC servicer is the top of its own call stack. Everything below that name is the real SDK — `TracerProvider`/`BatchSpanProcessor`/OTLP-HTTP exporter, endpoint and protocol from the standard `OTEL_EXPORTER_OTLP_*` env vars, and a `CompositePropagator(TraceContextTextMapPropagator, W3CBaggagePropagator)` registered explicitly. It joins the caller's trace because agentgateway forwards `traceparent` to the guardrail hook (measured, M2.2 Task 1 run C), so the decision span is a genuine **child of the gateway's `tools/call` SERVER span** — a sibling of the `Guardrail` CLIENT span, not its child, because the gateway propagates the context it received rather than its own client span's. **The span status stays `Unset` on a deny, deliberately:** a refusal is this service working, and an ERROR span for the one thing this milestone exists to do would read as a fault. Attribute inventory below. |
 | payments-api | `otelhttp` | `otelhttp v0.66.0`, otel core `v1.41.0` | `POST /payments/propose`, `POST /payments/{paymentId}/execute`, `GET /payments/{paymentId}` | HTTP attribute spelling as emitted by the pinned version: **stable** — `http.request.method` / `http.response.status_code` / `http.route`, not the legacy `http.method`/`http.status_code`. `network.protocol.name` is **not** emitted by this otelhttp version (only `network.protocol.version` is); do not assert its presence. No `OTEL_SEMCONV_STABILITY_OPT_IN` is set or needed — this version emits the stable spelling by default (A12), unlike every Python service in this table. |
-| reviewer-ui (M3 Task 4) | OTel Python SDK, applied by this project's own `bootstrap.py`; `HTTPXClientInstrumentor` for outbound calls | `opentelemetry-sdk==1.44.0` | `review.decision`, SERVER kind, one per submitted approve/reject decision | Deliberately the **only** span this service creates or instruments for. No `opentelemetry-instrumentation-fastapi`/`-starlette` is applied — `GET /` and `GET /healthz` produce no spans at all, the same way `policy-decision-service`'s own row above is "entirely this project's own": `review.decision` is hand-created in `review.py` and is this trace's root, matching apps/customer-ui's `claim.submit` pattern (a single owned root span, not a framework entry span with the owned span nested inside it) rather than PDS's pattern (a child of the caller's propagated context). `HTTPXClientInstrumentor` still runs, so the outbound calls to payments-api and to senior-settlement-agent's A2A endpoint get CLIENT spans and carry `traceparent`, which is what makes the approved-execution call's own inbound server span a child of `review.decision` rather than the start of an unrelated trace. Attribute inventory below. |
+| reviewer-ui (M3 Task 4; corrected M3 final-review fix round) | OTel Python SDK, applied by this project's own `bootstrap.py`; `HTTPXClientInstrumentor` for outbound calls | `opentelemetry-sdk==1.44.0` | `review.decision`, SERVER kind, one per submitted approve/reject decision; `review.queue`, SERVER kind, one per `GET /` | **Two** owned spans, and no framework instrumentation: no `opentelemetry-instrumentation-fastapi`/`-starlette` is applied, the same way `policy-decision-service`'s own row above is "entirely this project's own". Both are hand-created (`review.py`, `main.py`) and each is the root of its own trace, matching apps/customer-ui's `claim.submit` pattern rather than PDS's (a child of the caller's propagated context). `GET /healthz` still produces nothing. `HTTPXClientInstrumentor` runs, so the outbound calls to payments-api and to senior-settlement-agent's A2A endpoint get CLIENT spans and carry `traceparent`. **This cell read "`review.decision`, the only span" and "`GET /` and `GET /healthz` produce no spans at all" from Task 4 until the final-review fix round (R36), and both halves were wrong — `GET /` always produced the outbound CLIENT span this same cell then went on to describe, and that span, having no parent, rooted a trace of its own.** `bootstrap.py` additionally registers `_Level1CompatibleTraceContextPropagator`, which masks the injected trace-flags byte to `SAMPLED`; the measurement that forced it is under "reviewer-ui's own instrumentation" below. Attribute inventory below. |
 
 **Operational fact that keeps *this project's own services* on one HTTP
 convention — and, as of M2.1 Task 3, the one component it cannot reach:**
@@ -1931,6 +2006,106 @@ that call, connected to it by ordinary parent/child propagation (the outbound
 A2A POST carries `traceparent` while `review.decision` is current), not by a
 link of its own.
 
+### `review.queue`, and the two reasons the ledger reads were untraceable (M3 final-review fix round, R36)
+
+**The second owned span this service creates**, added in the M3 final-review
+fix round: `review.queue`, SpanKind SERVER, one per `GET /` — the reviewer's
+queue of refusals awaiting a decision. It carries **no attributes**. Every
+figure on that page is a ledger record, and payments-api's own `GET /payments`
+span (now in the same trace, which is the point) is what describes the read;
+a seventh `review.*` key publishing a count would widen the inventory above
+for a question nobody asked. The name follows this document's own convention
+for owned spans — `<domain>.<the thing this span is>`, as in `claim.submit`,
+`policy.decision` and `review.decision` — and deliberately not `GET /`, which
+is a framework's name for a route, in a service that applies no framework
+instrumentation.
+
+**What it is for.** `main.py`'s `index()` used to call `list_refused()` with
+no span current, and `review.py`'s `decide()` used to call `ledger.get()`
+*before* `tracer.start_as_current_span`, on an explicit rule that a review
+which never happened is not telemetry this service owns to invent. The cost
+of that rule was not looked for until the whole-branch review looked:
+`HTTPXClientInstrumentor`'s CLIENT span for each read became **the root of a
+trace of its own**, and the `traceparent` it injected named that root.
+
+**Measured before the fix**, over the 30 most recent traces of each shape:
+
+```
+reviewer-ui   CLIENT "GET"            30 traces, every one a 1-span root
+payments-api  SERVER "GET /payments"  30 traces, every one a 1-span root
+shared trace ids                      0
+```
+
+and one live approval trace of 67 spans (`5c17694d8d4d202159a9a57a3eec55b7`)
+containing no reviewer-ui ledger read at all. `decide()` now opens
+`review.decision` first and reads the ledger inside it, which means a stale
+link or a race with another reviewer **does** now produce a span — one ending
+ERROR with the exception on it, carrying the four attributes known before the
+read and not the two read off the record. That is a change in what this
+service claims, stated here rather than absorbed silently.
+
+**And that alone did not fix it, which is the part the finding did not
+anticipate.** With the parent spans in place, payments-api *still* minted a
+fresh root for every ledger read. Two pins, one minor release apart across
+the W3C Trace Context Level 1/Level 2 boundary:
+
+* `opentelemetry-sdk==1.44.0` sets `TraceFlags.SAMPLED | RANDOM_TRACE_ID`
+  (`0x01 | 0x02` — Level 2's "this trace id was generated randomly" bit,
+  `opentelemetry/trace/span.py`), so the header reads `00-…-03`. Measured on
+  a local repro of `ledger.py`'s own client against a capturing HTTP server.
+* `systems/payments-api` pins `go.opentelemetry.io/otel v1.41.0`, whose
+  extractor refuses any version-00 traceparent with a flag byte above
+  `0x02` — `propagation/trace_context.go`: `if version == 0 && (h != "" ||
+  opts[0] > 2) { return trace.SpanContext{} }`. An empty SpanContext is "no
+  parent", so `otelhttp` starts a new root.
+
+Measured directly through the repo-managed port-forward, two requests
+differing only in the flag byte: `…-01` produced a `GET /payments` span
+parented to the injected span id; `…-03` produced **no span under that trace
+id at all**.
+
+**Upstream already fixed this, in a release this repo cannot take yet.**
+otel-go **v1.42.0** widened that line to `opts[0] > 3` (read in the local
+module cache at v1.42.0, v1.44.0, v1.45.0 and v1.46.0; v1.41.0 is the last
+with `> 2`). Every release from v1.42.0 onward declares `go 1.25.0`, and this
+repo builds payments-api on `golang:1.24-alpine` and runs its tests under
+`GOTOOLCHAIN=local` against a host go1.24.10 — so adopting it is a Go
+*toolchain* bump, not a module bump. That is carried debt, recorded here
+rather than taken in a fix round.
+
+**The workaround, and its exit condition.**
+`apps/reviewer-ui/bootstrap.py`'s `_Level1CompatibleTraceContextPropagator`
+masks the injected flag byte to `SAMPLED`, delegating everything else —
+including all extraction — to the upstream propagator. It emits a valid Level
+1 traceparent that every participant in this system accepts, and drops only
+an advisory bit nothing here reads. `apps/reviewer-ui/tests/test_bootstrap.py`
+pins it from both sides: that the installed SDK really does still set `0x02`
+(so the workaround's premise is asserted rather than assumed), and that
+nothing but the flag byte differs from the upstream propagator's own output.
+**Delete both the moment payments-api reaches otel-go ≥ v1.42.0.**
+
+reviewer-ui is the only service where this could bite: it is the one
+`opentelemetry-sdk` 1.44 service that speaks **directly** to the Go system of
+record. `payments-mcp`, the other service that calls payments-api, is pinned
+at `opentelemetry-sdk==1.29.0` and emits `…-01`; and agentgateway re-stamps
+the context with its own before the hop to `payments-mcp` anyway.
+
+**Measured after both halves**, one live listing request — trace
+`c05d71f98aecafddaaf0fa4e3901213c`, three spans:
+
+```
+reviewer-ui   review.queue     SERVER  root
+reviewer-ui   GET              CLIENT  parent=review.queue, http.url=…/payments?status=refused
+payments-api  GET /payments    SERVER  parent=reviewer-ui's CLIENT GET
+```
+
+`tests/e2e/test_supervised.py`'s criterion 5 asserts the decision-path
+equivalent on every gate run, identified by **parentage** rather than by span
+name: the approved-execution trace contains a second payments-api
+`GET /payments/{paymentId}` span, from the `get_payment` MCP call
+`execute_approved` makes one hop downstream, and only one of the two is a
+child of reviewer-ui's own CLIENT span.
+
 ## Conventions adopted
 
 - **GenAI semconv** for model calls, exercised as of M1.2 — see "PydanticAI
@@ -1949,7 +2124,7 @@ link of its own.
 | `policy.*` (nine keys, M2.2) | policy-decision-service, on its own `policy.decision` span | none — set locally, never propagated | That one span only. Keys declared in `platform/policy-decision-service/pds/telemetry.py`; measured inventory under "The policy decision, as measured (M2.2)" |
 | `northstar.payment.refusal_cause` (M2.2 Task 4) | payments-api, on its own server span for a refused execute; two closed values, `amount_mismatch` and `already_executed` (`systems/payments-api/handlers.go`) | none | payments-api's execute span, and **only when it refuses** — absent on success, so its presence means "refused here". Read off a real recorded span by that service's own Go tests via an in-memory `tracetest.SpanRecorder`; it appears on **none** of the six M2.2 traces named in this document, because neither the denied nor the permitted scenario reaches a 409 |
 | `northstar.payment.id`, `northstar.approval.reviewer_id` (M3 Task 3) | settlement-agent, on its own `settlement.execute_approved` span (`agents/settlement-agent/settlement.py`) | none | That span only, on the human-approved execution path. See "settlement-agent's own instrumentation" above, including this milestone's first span **link** and the same span's `northstar.claim.id` baggage (M3 Task 3 review, R16) |
-| `review.*` (six keys, M3 Task 4) | reviewer-ui, on its own `review.decision` span (`apps/reviewer-ui/review.py`) | none | That span only, one per submitted approve/reject decision. See "reviewer-ui's own instrumentation" above |
+| `review.*` (six keys, M3 Task 4) | reviewer-ui, on its own `review.decision` span (`apps/reviewer-ui/review.py`) | none | That span only, one per submitted approve/reject decision — reviewer-ui's second owned span, `review.queue` (M3 final-review fix round), deliberately carries **none** of them, and no attributes at all. Two of the six (`review.refused.trace_id`, `review.elapsed_ms`) are now set *after* the span opens rather than at creation, because the ledger read they come from moved inside it; a decision that never reaches a refused record therefore emits the other four and an ERROR status. See "reviewer-ui's own instrumentation" above |
 
 **Two M2.2 notes on this table, both measured rather than reasoned.** The
 `policy.*` family is prefixed `policy.` and not `northstar.` on purpose: it is

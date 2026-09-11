@@ -103,8 +103,12 @@ finally being declared rather than a new one. `tests/unit`'s per-service count
 guard shells out to reviewer-ui's own suite through `apps/reviewer-ui/.venv`,
 so the gate already could not pass without this venv; it just failed four
 minutes in, inside a unit test, complaining about a published count. The gate
-now requires it up front and runs reviewer-ui's 50 tests alongside the other
-six suites.
+now requires it up front and runs reviewer-ui's 59 tests alongside the other
+six suites. (That read 50 until the M3 final-review fix round, which added
+nine — the `review.queue` span and the trace-flags workaround described in
+`docs/telemetry-contract.md`'s "reviewer-ui's own instrumentation". That
+document's per-service row is the measured source, and a unit test
+re-measures it against the suite on every run.)
 
 **The Policy Decision Service is in that loop, and it is not optional.** An
 earlier version of this section said it was "deliberately not in that loop"
