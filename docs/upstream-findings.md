@@ -13,13 +13,31 @@ validator rejections in Finding 8 were re-run against the image, the
 line cited was read at the exact revision the running image reports as its
 own.
 
-**M3 (Supervised) adds no finding.** It adds a *measurement*: OQ-U1 — whether
-agentgateway v1.5.0's `mcpGuardrails` evaluates every message inside a batched
-JSON-RPC array, the one policy-bypass shape M2.2's final review could not rule
-out — was probed live against the deployed gateway and is now **closed**. It
-is not a bypass, so it did not become a Finding; see "Open questions" at the
-end of this document for the probe, the evidence, and what it does and does
-not settle. Ten findings, still none filed.
+**M3 (Supervised) adds one finding and one measurement.** The measurement is
+OQ-U1 — whether agentgateway v1.5.0's `mcpGuardrails` evaluates every message
+inside a batched JSON-RPC array, the one policy-bypass shape M2.2's final
+review could not rule out — probed live against the deployed gateway and now
+**closed**. It is not a bypass, so it did not become a Finding; see "Open
+questions" at the end of this document for the probe, the evidence, and what
+it does and does not settle. The finding is **Finding 11**, added 2026-09-11:
+`opentelemetry-sdk` 1.44.0 emits a W3C Trace Context Level 2 flag byte that
+`go.opentelemetry.io/otel` v1.41.0 rejects outright, so the hop silently
+starts a second trace. **Eleven findings, still none filed.**
+
+> **Corrected 2026-09-11, when Finding 11 was written.** This paragraph opened
+> *"**M3 (Supervised) adds no finding.** It adds a *measurement*"* and closed
+> *"Ten findings, still none filed"*, and both clauses were false by the time
+> the milestone ended. M3's final fix round measured the Level 1/Level 2
+> interop defect above, fixed it, and recorded it in source comments,
+> `docs/architecture.md` and `docs/telemetry-contract.md` — every place except
+> this ledger, which is the one the README advertises as where such things go.
+> The claim is quoted and dated rather than overwritten, for the reason this
+> document keeps giving: a sentence true when written and falsified by a later
+> edit, with nobody re-reading it, is this repository's most-repeated defect.
+> Finding 11 is also the first entry here found by *this project's own fix
+> round* rather than by a task that set out to survey a dependency, which is
+> precisely how it came to be written down everywhere but here.
+
 No upstream repository exists for this project yet, and filing
 these upstream is a deliberate decision this project defers to its
 maintainers rather than one any implementation task makes unilaterally. The
@@ -109,6 +127,20 @@ the one that touches both, and it is worth reading in that light: a header
 filter defaulting one way and documented accurately still cost this project
 its trace across the policy hop, because the first sensible edit to it is the
 one that breaks tracing.
+
+**Finding 11 sits outside both groups, and is the only entry here that is not
+about a single dependency.** It is an M3 finding, added 2026-09-11, and its
+subject is an *interop boundary* between two projects that are each correct on
+their own: OpenTelemetry **Python** (`opentelemetry-sdk` 1.44.0) and
+OpenTelemetry **Go** (`go.opentelemetry.io/otel` v1.41.0), one release apart
+across W3C Trace Context's Level 1/Level 2 line. Both are **CNCF** projects,
+which makes Finding 11 the only entry here with a CNCF subject — Findings 1–5
+are independent Python packages and Findings 6–10 are Linux Foundation, so
+each of the three groups sits under a different roof, and none of them should
+be assumed into another. It is also the only finding
+this project found by *fixing its own system* rather than by surveying a
+dependency, and the only one whose evidence includes a live A/B control: the
+same request, twice, differing in one hex digit.
 
 **There is also an "Open questions" section at the end of this document**, added
 in the M2.2 fix round (ruling R46). Entries there are deliberately *outside* the
@@ -1532,6 +1564,227 @@ only.
 **Status: not filed by this project.** No issue, comment or pull request was
 posted anywhere. Of the three M2.2 findings this is the one whose fix is most
 plausibly a one-line doc comment, and it is still the maintainers' call.
+
+---
+
+## Finding 11: `opentelemetry-sdk` 1.44.0 emits a W3C Level 2 flag byte that `go.opentelemetry.io/otel` v1.41.0 rejects outright, so the hop silently starts a second trace instead of failing
+
+**The problem, plainly:** W3C Trace Context **Level 2** added a second flag
+bit — `0x02`, "this trace id was generated randomly". `opentelemetry-sdk`
+1.44.0 sets it alongside `SAMPLED`, so the `traceparent` it injects ends
+`-03`. `go.opentelemetry.io/otel` v1.41.0's extractor refuses any version-`00`
+traceparent whose flag byte exceeds `2` and returns an **empty** `SpanContext`
+— which `otelhttp` reads as "no parent" and turns into a brand-new trace root.
+Neither end is wrong about anything: one implements Level 2, the other
+validates against Level 1, and the two pins are one minor release apart across
+that boundary. The failure mode is the expensive one: nothing errors, nothing
+is logged, both services are healthy, both emit spans with every attribute
+they should — and the spans are in two different traces.
+
+**Projects and versions.** Two, and the defect exists only in the *pair*:
+
+- `opentelemetry-sdk` **1.44.0** (OpenTelemetry Python) — pinned by
+  `apps/reviewer-ui`, `agents/settlement-agent`, `agents/claims-agent` and
+  `platform/policy-decision-service`.
+- `go.opentelemetry.io/otel` **v1.41.0** (OpenTelemetry Go) — pinned by
+  `systems/payments-api` (`go.mod`, with `go 1.24.0`; built on
+  `golang:1.24-alpine`).
+
+**Where the behaviour lives. [read from source]** Both halves were read in the
+installed artefacts, not inferred from release notes:
+
+- Python, `opentelemetry/trace/span.py:220` — `RANDOM_TRACE_ID = 0x02`, with
+  an `is_random` accessor at :232.
+- Python, `opentelemetry/sdk/trace/__init__.py:1234-1242` — and this is the
+  line that decides the blast radius below. The bit is **generated** only on a
+  trace root (`if parent_span_context is None: random_trace_id =
+  self.id_generator.is_trace_id_random()`); on any **child** of an extracted
+  remote context it is **inherited** from the parent's flag byte
+  (`else: random_trace_id = parent_span_context.trace_flags.random_trace_id`).
+  So a 1.44.0 service emits `-03` if it roots the trace, and otherwise emits
+  whatever bit its caller sent it.
+- Go, `propagation/trace_context.go:107` —
+  `if version == 0 && (h != "" || opts[0] > 2) { return trace.SpanContext{} }`.
+  An empty `SpanContext` is not an error and is not reported; it is
+  indistinguishable from "no header arrived".
+
+**What we observed. [measured — by M3's final fix round, not re-derived here]**
+The account below is the fix round's, recorded in
+`.superpowers/sdd/2026-09-10-m3-supervised/final-fix-report.md` and in
+[`docs/telemetry-contract.md`](telemetry-contract.md); this document cites it
+rather than re-running it. It was found the hard way — as the *second* cause
+of a propagation failure whose first cause had already been fixed and
+verified, which is why it is worth recording as a finding rather than as a
+line in a fix report:
+
+| Probe | Result |
+|---|---|
+| 30 most recent `reviewer-ui` outbound `GET` traces, and 30 most recent `payments-api` `GET /payments` traces, before the fix | all 1 span each, every one its own root; **zero shared trace ids** between the two sets |
+| the header `reviewer-ui` actually emits, captured from a local repro of `ledger.py`'s own client against a capturing HTTP server | `traceparent: 00-9946bc5707f7d4a0bbd77773b18f2a8f-9919a1db7019e831-03` |
+| **the control** — a hand-injected traceparent ending `-01`, through the repo-managed port-forward | `GET /payments`, span `4fbcdb1162a83475`, parent `['e4763e4e0f4241a6']` — correctly parented |
+| the byte-identical request ending `-03` | **no span under that trace id at all**; a fresh root was minted instead |
+
+The control is what makes this a finding rather than a guess: two requests
+differing in one hex digit, one parented and one not.
+
+**The blast radius, which is the part with teeth, and which is latent rather
+than fixed. [measured — first-hand, for this document]** The workaround (below)
+ships in **one** service. The defect is a property of the **system**, and the
+only thing standing between it and the money path is a version pin nobody
+chose for this reason.
+
+Verified for this document by reading all six `requirements.txt` files in the
+repository and the installed `.venv` of each service that has one:
+
+| Service | `opentelemetry-sdk` pin | Talks directly to `payments-api`? |
+|---|---|---|
+| `apps/reviewer-ui` | 1.44.0 | **Yes** — and it is the one carrying the workaround |
+| `tools/payments-mcp` | **1.29.0** | **Yes** — and it carries nothing |
+| `agents/settlement-agent` | 1.44.0 | No (reaches it via the gateway and `payments-mcp`) |
+| `agents/claims-agent` | 1.44.0 | No |
+| `platform/policy-decision-service` | 1.44.0 | No — `pds/` imports no HTTP client at all; its only outbound HTTP is the OTLP exporter's, to the collector |
+| `tests/` (the e2e harness) | 1.29.0 | mints `traceparent` by hand |
+
+`tools/payments-mcp/.venv/.../opentelemetry/trace/span.py` has **no
+`RANDOM_TRACE_ID` constant at all** — it stops at `SAMPLED = 0x01` on line 210
+— and its `sdk/trace/__init__.py:1145-1149` derives the outgoing flag byte
+*solely* from the sampling decision, never inheriting any other bit from the
+parent. That is the whole reason the `payments-mcp → payments-api` hop
+correlates today: at 1.29.0 it emits `-01` unconditionally, whatever arrives.
+
+**So the money path — the `execute_payment` hop, the one in the demo's
+headline trace — is correlated by a pin fifteen minor releases behind its
+siblings, rather than by anything anyone decided.** `payments-mcp` registers the stock
+`TraceContextTextMapPropagator` (`tools/payments-mcp/bootstrap.py:49-51`) and
+relies on it to inject on the outbound call to `payments-api`. Bumping that
+one pin to match its four siblings changes its flag byte from a constant into
+a function of whatever the gateway sends it.
+
+**What that means precisely, and the honest version is weaker than the
+alarming one.** Because 1.44.0 *inherits* the bit on a child span rather than
+re-generating it, a bumped `payments-mcp` would emit `-03` **only if the
+context it extracts already carries `0x02`**. What agentgateway v1.5.0 puts on
+the wire toward `payments-mcp` was **not measured**, by the fix round or by
+this document — and Finding 6 establishes that the gateway is a trace-context
+participant in its own right rather than a pass-through. So this is a loaded
+gun with an unverified chamber, not a demonstrated break. One measurement
+settles it: read the flag byte on the `traceparent` `payments-mcp` receives.
+Until someone does, "bumping this pin is safe" is not a claim this project can
+make.
+
+**What would and would not catch it. [measured — first-hand, and it corrects
+the brief that commissioned this entry]** This finding was commissioned with
+the claim that nothing in the repository would warn about such a bump and that
+the gate would stay green. That is **false**, and the true version is more
+useful:
+
+- **The e2e gate would catch it.**
+  `tests/e2e/test_payments_mcp_trace.py::test_mcp_span_is_parent_of_payments_api_span`
+  asserts genuine ancestry (`is_descendant_of(api_spans[0], mcp_span.span_id)`),
+  not co-membership, over a trace fetched by an id the test injects — and its
+  first assertion, `assert api_spans, "payments-api span is not in the same
+  trace as the MCP span"`, is exactly the shape a dropped traceparent produces.
+  `scripts/smoke-test.sh:229` runs the whole `tests/` tree, so it is gated.
+- **Nothing catches it before that.** `tools/payments-mcp/tests/test_pins.py`
+  says nothing about `opentelemetry-sdk` — none of the five per-service pin
+  guards does, except `apps/reviewer-ui/tests/test_pins.py:47`, which asserts
+  `== "1.44.0"` for an unrelated reason. So the bump is invisible at the point
+  it is made, in a one-line `requirements.txt` edit, and surfaces only in an
+  expensive test that needs a live cluster and whose failure message names a
+  missing span rather than a flag byte.
+
+That gap is a unit-level guard on `payments-mcp`'s pin, plus a comment saying
+why `1.29.0` is load-bearing. **This document does not build it** — recording
+it is this entry's job, and the guard is a code change for whoever takes it.
+
+**Why it matters, beyond this project.** Any fleet mixing OpenTelemetry Python
+≥ 1.4x with OpenTelemetry Go ≤ v1.41.0 has this on every Python→Go hop, and
+the spec boundary guarantees it will keep appearing: Level 2 tells senders to
+set a bit that Level 1 receivers were told to reject. The generic lesson is the
+one about *strictness at a version boundary* — a validator that refuses an
+unrecognised flag bit, rather than ignoring it, converts a forward-compatible
+spec extension into silent data loss. And the loss is silent in the worst
+direction: a rejected parent does not orphan a span, which a suite might
+notice; it starts a **second trace**, which looks perfectly healthy from every
+angle except the one that asks whether the two are the same trace.
+
+**What a fix would need to do — and upstream already did it.** Widen the
+extractor to accept the flag bits the spec now defines, and preserve rather
+than discard the bitmask. That is exactly what landed.
+
+**Existing upstream activity (verified 2026-09-11, read-only).**
+
+- **`open-telemetry/opentelemetry-go` PR
+  [#7834](https://github.com/open-telemetry/opentelemetry-go/pull/7834)**,
+  *"Feat: Have SpanContext support the new W3C random flag"* — **merged
+  2026-03-04**, released in **v1.42.0** (2026-03-06). Confirmed two ways: the
+  release's own `CHANGELOG.md` in the local module cache lists, under
+  v1.42.0's **Fixed** section, *"Preserve W3C TraceFlags bitmask (including
+  the random Trace ID flag) during trace context extraction and injection in
+  `go.opentelemetry.io/otel/propagation`. (#7834)"*; and the GitHub PR page
+  was read directly (no comment, review or reaction was posted).
+- **Read in the module cache rather than taken from the changelog:**
+  `otel@v1.41.0/propagation/trace_context.go:107` is `opts[0] > 2`;
+  `otel@v1.42.0/propagation/trace_context.go:107` is `opts[0] > 3`. Same file,
+  same line number, one character apart.
+- **Why this project cannot take it, stated as a version fact rather than a
+  preference.** `otel@v1.42.0/go.mod` declares `go 1.25.0`, and v1.42.0's
+  changelog says **"Drop support for Go 1.24. (#7984)"** while v1.41.0's says
+  **"This release is the last to support Go 1.24. The next release will
+  require at least Go 1.25."** `systems/payments-api/go.mod` declares
+  `go 1.24.0` and its `Dockerfile:1` builds `FROM golang:1.24-alpine`; the
+  host toolchain is go1.24.10 and `scripts/smoke-test.sh:183` runs the Go
+  tests under `GOTOOLCHAIN=local`. So adopting the fix is a **Go toolchain
+  bump, not a module bump** — carried debt, recorded rather than taken.
+- No issue was searched for or filed on `opentelemetry-python`, because there
+  is nothing to report there: setting `0x02` is what Level 2 requires, and the
+  Python SDK is correct.
+
+**What this does NOT establish, stated so the finding is not overread.** It
+does not establish that any *other* Python→Go hop in this system is currently
+broken — only `reviewer-ui` was measured, and it is fixed. It does not
+establish what flag byte agentgateway v1.5.0 forwards to `payments-mcp`
+(above). It does not establish behaviour for otel-go versions between the two
+read, nor for any non-HTTP propagator. And it says nothing about what happens
+under a **non-sampled** parent: every measurement above was taken on a sampled
+trace, where the flag byte is `01` or `03`; the `00`/`02` pair was never
+exercised, and by the source read above `opts[0] > 2` would reject `02` the
+same way.
+
+**How we worked around it, and what we did not do.**
+`apps/reviewer-ui/bootstrap.py`'s `_Level1CompatibleTraceContextPropagator`
+masks the **injected** flag byte to `SAMPLED`, by delegating to the upstream
+propagator with a masked `NonRecordingSpan` context rather than by formatting
+the header itself — so the wire format stays upstream's and only the flag byte
+is ours. Trace id, span id, `tracestate` and **all extraction** are untouched;
+the service still accepts a Level 2 parent from anyone
+(`tests/test_bootstrap.py::test_extraction_is_untouched_and_still_accepts_a_level_2_parent`).
+The only thing lost is an advisory bit nothing in this system reads. It is a
+workaround, not a position on the spec.
+
+Deliberately **not** done: rewriting the flag byte in the collector (which
+would make this project's telemetry disagree with what its services actually
+emit — the same no-invented-telemetry rule Finding 7 applies to agentgateway's
+attributes), and pinning the other three 1.44.0 services down to 1.29.0 to
+match `payments-mcp` (which would trade a known, guarded, one-hop workaround
+for an unmeasured downgrade across four services).
+`apps/reviewer-ui/tests/test_bootstrap.py` pins the workaround from both
+sides, including its *premise* — that the installed SDK really does still set
+`0x02` — so the day that stops being true the test goes red and points the
+reader at the deletion. **The exit condition is exact: delete the workaround
+and that test file the moment `payments-api` is on otel-go ≥ v1.42.0.**
+
+**Status: nothing filed, nothing asked upstream, and nothing to file on the Go
+side.** No issue, comment, pull request, review or discussion post was made to
+any upstream repository or tracker as part of recording this; PR #7834 and the
+module cache were read only. The Go half is Finding-5-shaped and
+Finding-7-shaped both: real in the version this project runs, already fixed
+upstream, and blocked here on a toolchain rather than on upstream. The Python
+half is not a defect. What remains unreported anywhere is the *interop*
+observation — that the Level 1/Level 2 boundary drops trace context silently
+between two current, correct OpenTelemetry SDKs — and whether that is worth
+raising with either project is a decision for this project's maintainers, not
+one an implementation task takes unilaterally.
 
 ---
 
