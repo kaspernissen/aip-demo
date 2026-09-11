@@ -511,10 +511,35 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
     The ledger read-back is the primary evidence and it is a positive one.
     `payments-api` does expose `GET /payments/{paymentId}`
     (`systems/payments-api/handlers.go:285`, and it predates this branch), so
-    the record the proposal created can simply be fetched and required to still
-    read `status == "proposed"` — `store.go`'s only other status is `executed`,
-    and `s.execute` is the only writer of it. That is a direct statement about
-    the thing the criterion is about: the money did not move.
+    the record the proposal created can simply be fetched and required to read
+    the status the system actually produces for a denied settlement. That is a
+    direct statement about the thing the criterion is about: the money did not
+    move.
+
+    **M3 changed which status that is, and this assertion moved with it (M3
+    Task 5B, ruling R28).** Through M2.2 this required `status == "proposed"`,
+    justified in this docstring by *"`store.go`'s only other status is
+    `executed`, and `s.execute` is the only writer of it"* — true when written
+    and falsified twice since. M3 Task 2 added a third status, `StatusRefused`,
+    written only by `store.refuse`; M3 Task 3 made
+    `agents/settlement-agent/settlement.py`'s `decide_settlement` call
+    `POST /payments/{id}/refuse` on its refused branch (`_record_refusal`), so
+    a denied settlement now leaves the ledger reading `refused` rather than
+    `proposed`. Verified by reading that branch, not inferred from the
+    milestone's intent.
+
+    The repair keeps the criterion rather than weakening it, which matters
+    because `refused` is *stronger* evidence here than `proposed` was and
+    neither is satisfiable by an execution: `refused` is reachable only from
+    `proposed` and only through the refuse route, `executed` is still reachable
+    only through `store.execute`, and the two are distinct terminal values. So
+    this assertion fails on each of the two ways the criterion can break, and
+    says which: `executed` means the money moved despite the denial, and
+    `proposed` now means the refusal was never recorded, so the human reviewer
+    this milestone exists for would never see it (`_record_refusal` logs and
+    swallows a recording failure rather than surfacing it to the claimant,
+    which is correct for the claimant and is exactly why a test has to be the
+    thing that notices).
 
     An earlier revision of this docstring claimed the opposite — *"`payments-api`
     exposes no `GET /payments/{id}` ... so there is nothing to read"* — and used
@@ -573,7 +598,7 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
     assert decision.attrs.get(ATTR_POLICY_AMOUNT) == 6200, decision.attrs
 
     # And nothing executed. The ledger first, read straight from the service
-    # that owns it: the proposal is still a proposal.
+    # that owns it: the proposal was refused, not paid.
     payment_id = reply["paymentId"]
     read_back = requests.get(f"{PAYMENTS_API_URL}/payments/{payment_id}", timeout=10)
     assert read_back.status_code == 200, (
@@ -583,10 +608,16 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
         f"is a failure, not a pass: {read_back.text[:300]}"
     )
     record = read_back.json()
-    assert record.get("status") == "proposed", (
-        "THE PAYMENT EXECUTED DESPITE THE DENIAL -- payments-api's own record "
-        f"for {payment_id} reads {record.get('status')!r}, not 'proposed'. "
-        f"The ledger is the authority on whether money moved: {record}"
+    assert record.get("status") == "refused", (
+        "payments-api's own record for "
+        f"{payment_id} reads {record.get('status')!r}, not 'refused'. The "
+        "ledger is the authority on whether money moved, and this is the "
+        "criterion's primary evidence -- so read the value before concluding "
+        "anything. 'executed' means THE PAYMENT EXECUTED DESPITE THE DENIAL. "
+        "'proposed' means the denial held but settlement.py's "
+        "`_record_refusal` never landed, so the refusal record a human "
+        "reviewer reads does not exist (it logs and swallows that failure by "
+        f"design, so nothing else would tell you). Record: {record}"
     )
     # The record is also the honest source for the amount and currency (the
     # same rule settlement.py follows), so assert them here rather than
@@ -927,6 +958,68 @@ ALLOWED_MONEY_COMPARISONS = {
         "limit, it compares against zero rather than against an amount anyone "
         "may spend, and it refuses rather than authorises. payments-api makes "
         "the same check independently (handlers.go)."
+    ),
+    # ---------------------------------------------------------------------
+    # M3 Task 5B. These four entries are added LATE and that is the point
+    # worth recording: M3 Tasks 2 and 3 introduced all four comparisons, this
+    # guard went red the moment they landed, and nothing caught it until the
+    # milestone's last task ran the gate's own suite. It is an *ungated* test,
+    # so every `pytest tests/` since Task 2 has been red here. The defect is
+    # not that the comparisons exist -- each is justified below -- it is that
+    # an allowlist whose whole design is "declare the exception with a reason"
+    # was left undeclared for two tasks. Written up as a finding in
+    # .superpowers/sdd/2026-09-10-m3-supervised/task-5b-report.md rather than
+    # quietly appended.
+    #
+    # The classification each entry rests on is not invented here. It is the
+    # one docs/architecture.md already applies to payments-api's own
+    # `amountEpsilon`: a check that an instruction agrees with itself is a
+    # CONFIRMATION OF INTENT, not a decision about whether the caller may pay.
+    # None of the four consults a caller, an autonomy level, or any number that
+    # a policy could configure; three are presence checks and the fourth
+    # compares a figure against the ledger's own record of that same figure.
+    ("settlement-agent", "executor.py", "amount is None"): (
+        "a presence check on the inbound A2A payload in _validate_approval, "
+        "before anything is dispatched. Structurally the same check as "
+        "settlement.py's `amount is None` above and for the same reason -- it "
+        "is about whether a value arrived, not about how large it may be. It "
+        "reads as a separate entry only because this allowlist is keyed by "
+        "file, which is deliberate: a money comparison appearing in a new file "
+        "should have to be justified again rather than inherit a neighbour's "
+        "exemption."
+    ),
+    ("settlement-agent", "settlement.py", "abs(float(ledger_amount) - amount) > AMOUNT_EPSILON"): (
+        "_verify_refusal's confirmation of intent (M3 Task 3, R11). It compares "
+        "the amount an approval asks to execute against the amount THE LEDGER "
+        "ITSELF recorded as refused -- two representations of one figure -- "
+        "within payments-api's own half-cent tolerance. It is not a policy "
+        "allowance by every test this allowlist's second entry already sets "
+        "out: it consults no caller, no autonomy level and no configurable "
+        "limit, and the number on the right-hand side is read back over HTTP "
+        "from the system of record rather than held here. Deleting it would "
+        "not widen what anyone may be paid; it would let an approval for one "
+        "amount execute against a refusal recorded for another, which is why "
+        "the Task 3 review required it. The genuine policy question -- may "
+        "senior-settlement-agent pay this much at all -- is still decided "
+        "only by the PDS, and tests/e2e/test_supervised.py's criterion 6 is "
+        "what proves the junior identity still cannot."
+    ),
+    ("settlement-agent", "settlement.py", "refused.limit is not None"): (
+        "a presence check in _record_refusal, on a field of the PDS's own "
+        "reported decision, immediately before writing it to the ledger "
+        "(`refused.limit if ... is not None else 0.0`). It decides whether "
+        "there is a number to record, never whether a payment may happen: at "
+        "this point the payment has ALREADY been refused by the platform and "
+        "this function's only job is to write down why. Note also which "
+        "direction the value flows -- settlement-agent is reporting the "
+        "platform's decision, not forming one."
+    ),
+    ("settlement-agent", "settlement.py", "refused.requested is not None"): (
+        "the same check on the sibling field, one line later, for the same "
+        "reason. Listed separately rather than folded in because this "
+        "allowlist is keyed on the comparison's source text, and an entry that "
+        "covered both would stop being hit -- and therefore start failing the "
+        "stale-entry assertion below -- the moment either line changed."
     ),
 }
 

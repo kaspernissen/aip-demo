@@ -725,18 +725,48 @@ def test_the_dns_proxy_is_interposed_on_the_model_agent_and_only_there(datapath)
                 )
 
 
-def test_the_agent_plane_is_still_default_allow_for_ingress(datapath):
-    """Task 7 added egress only; inbound A2A and the probes must be untouched.
+def test_the_agent_planes_ingress_is_exactly_what_the_milestones_intended(datapath):
+    """Inbound A2A must be filtered where a milestone said so, and nowhere else.
 
-    `claims-agent` calls `settlement-agent:9002` and the browser calls
-    `claims-agent:9001`, and neither is governed by anything in this task. An
-    `ingress` block accidentally added to one of these documents would make
-    that endpoint default-deny for ingress and break the chain from the other
-    end -- so the absence of one is asserted where it is enforced, as the
+    **This test asserted the opposite until M3 Task 5B, and it was red for two
+    tasks before anyone ran it.** As written for M2.2 Task 7 it was called
+    `test_the_agent_plane_is_still_default_allow_for_ingress`, and its premise
+    was that Task 7 added *egress only*: `claims-agent` calls
+    `settlement-agent:9002` and the browser calls `claims-agent:9001`, so an
+    `ingress` block accidentally added to one of those egress documents would
+    make that endpoint default-deny and break the chain from the far end. It
+    asserted the absence of such a block where it is enforced -- as the
     catch-all `Allow Ingress ANY` row the datapath carries for an endpoint no
     ingress policy selects.
+
+    **M3 Task 3 then added one on purpose.** `settlement-agent-ingress-allowlist`
+    exists because both settlement Deployments were reachable from anything in
+    the mesh, so anything that could reach an A2A port could execute any
+    proposed payment (Task 3 review, finding 1/R11). That is the exact
+    condition the old assertion required to remain true. Nothing caught the
+    contradiction because this module needs a live Cilium dataplane and
+    `cilium-dbg`, so it is not part of any cheap local loop.
+
+    The repair is deliberately a STRENGTHENING rather than a narrowing, so the
+    mutation the original was written to catch is still caught:
+
+    * `claims-agent` and `customer-ui` must still carry the catch-all. Nothing
+      in any milestone has filtered their ingress, and an ingress block
+      accidentally added to either egress document still fails here.
+    * `settlement-agent` must now be default-DENY for ingress AND must admit
+      `claims-agent` on 9002 specifically. The old test passed on
+      "unfiltered"; this one fails both if the allowlist disappears (the
+      catch-all returns) and if the allowlist stops naming its one real
+      caller (the 9002 row goes). An accidental ingress block on the *egress*
+      document would still be caught, because it would not produce a
+      claims-agent-labelled row on 9002.
+
+    Scope is unchanged on purpose: `senior-settlement-agent` and `reviewer-ui`
+    have their own ingress documents and their own coverage in
+    tests/e2e/test_supervised.py; widening this module's fixture to them is a
+    separate change, not a bug fix.
     """
-    for app in ALL_AGENTS:
+    for app in OTHER_AGENTS:
         catch_all = [
             r
             for r in datapath[app]
@@ -748,5 +778,32 @@ def test_the_agent_plane_is_still_default_allow_for_ingress(datapath):
         assert catch_all, (
             f"{app} is no longer default-allow for ingress, so something added "
             "an ingress block to an egress-only policy; inbound A2A and the "
-            f"kubelet readiness probe are now filtered. Rows: {datapath[app]}"
+            f"kubelet readiness probe are now filtered. No milestone has asked "
+            f"for that on {app}. Rows: {datapath[app]}"
         )
+
+    ingress = [r for r in datapath[MODEL_AGENT] if r["direction"] == "Ingress"]
+    catch_all = [
+        r
+        for r in ingress
+        if r["verdict"] == "Allow" and r["labels"] == ["ANY"] and r["port"] == "ANY"
+    ]
+    assert not catch_all, (
+        f"{MODEL_AGENT} is default-allow for ingress again, so "
+        "settlement-agent-ingress-allowlist is no longer selecting it -- "
+        "anything in the mesh that can reach 9002 can execute a proposed "
+        f"payment (M3 Task 3, R11). Rows: {ingress}"
+    )
+    from_claims = [
+        r
+        for r in ingress
+        if r["verdict"] == "Allow"
+        and r["port"] == "9002/TCP"
+        and any(lbl == "k8s:app=claims-agent" for lbl in r["labels"])
+    ]
+    assert from_claims, (
+        f"{MODEL_AGENT}'s ingress no longer admits claims-agent on 9002, so "
+        "the A2A hop the whole demo runs through is filtered. An ingress "
+        "policy that denies the one caller it exists to permit is worse than "
+        f"no policy. Rows: {ingress}"
+    )
