@@ -43,6 +43,56 @@
         "idempotentHint": false,
         "openWorldHint": false
       }
+    },
+    {
+      "name": "refuse_payment",
+      "description": "Record why a payout was refused, beside the payout.\n\nCalled by settlement-agent's own decide_settlement, through the same\ngoverned MCP path every other payments call in this repo takes -- not a\nnew HTTP path from the agent to payments-api. Moves no money; the\nexecute path stays exactly as guarded as it always was.",
+      "inputSchema": {
+        "properties": {
+          "payment_id": { "type": "string" },
+          "rule": { "type": "string" },
+          "limit": { "type": "number" },
+          "requested": { "type": "number" },
+          "narrative": { "type": "string" },
+          "refused_trace_id": { "type": "string" },
+          "refused_span_id": { "type": "string" }
+        },
+        "required": [
+          "payment_id",
+          "rule",
+          "limit",
+          "requested",
+          "narrative",
+          "refused_trace_id",
+          "refused_span_id"
+        ],
+        "type": "object",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_payment",
+      "description": "Read back what the ledger recorded for a payment.\n\nUsed by settlement-agent's execute_approved to confirm, before executing,\nthat a refusal record actually exists for this payment and that its\nrecorded amount matches what this approval asks to execute.",
+      "inputSchema": {
+        "properties": {
+          "payment_id": { "type": "string" }
+        },
+        "required": ["payment_id"],
+        "type": "object",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     }
   ]
 }

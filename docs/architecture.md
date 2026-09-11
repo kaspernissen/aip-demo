@@ -345,7 +345,7 @@ Namespaces, ports, and service DNS names below are read directly from
 | `customer-ui` | TypeScript, Next.js 15.5.21 (`output: "export"`, static, served by nginx 1.27) | `northstar-agents` (**not** its own namespace — see note below) | `customer-ui.northstar-agents.svc.cluster.local:8080`, exposed as a `NodePort` (30080) mapped to host `8080` by kind's `extraPortMappings` | `localhost:5001/northstar/customer-ui:dev` | Owns the trace root. The only component a human touches directly. |
 | `claims-agent` | Python 3.13, `a2a-sdk[telemetry]==0.3.7` + Starlette | `northstar-agents` | `claims-agent.northstar-agents.svc.cluster.local:9001` | `localhost:5001/northstar/claims-agent:dev` | A2A server (inbound, from the browser) and A2A client (outbound, to settlement-agent). Parses the claim, delegates, returns settlement-agent's JSON verbatim. |
 | `settlement-agent` | Python 3.13, `a2a-sdk[telemetry]==0.3.7` + Starlette + `mcp==1.28.1` client (Task 7; was `1.9.4`) + `pydantic-ai-slim==2.41.0` (M1.2) | `northstar-agents` | `settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` | A2A server; MCP client. As of M1.2, the settlement decision itself is a real model call (see "The decision logic" below) — the model chooses whether and how to propose and execute the payment via payments-mcp. |
-| `payments-mcp` | Python 3.13, FastMCP 4.0.3 | `northstar-tools` | `payments-mcp.northstar-tools.svc.cluster.local:8000`, MCP endpoint at `/mcp` | `localhost:5001/northstar/payments-mcp:dev` | MCP server exposing two tools. An adapter over payments-api — it owns no state of its own (`server.py`'s own docstring: "This is an adapter over payments-api, not a system of record."). |
+| `payments-mcp` | Python 3.13, FastMCP 4.0.3 | `northstar-tools` | `payments-mcp.northstar-tools.svc.cluster.local:8000`, MCP endpoint at `/mcp` | `localhost:5001/northstar/payments-mcp:dev` | MCP server exposing **four** tools as of M3 — `propose_payment` and `execute_payment` since M1.1, plus `refuse_payment` and `get_payment` from M3 Task 3 (this row said "two tools" until M3 Task 5B, and `contracts/mcp/payments-mcp.json` still listed only two, which is what made the gate red). An adapter over payments-api — it owns no state of its own (`server.py`'s own docstring: "This is an adapter over payments-api, not a system of record."). |
 | `payments-api` | Go 1.24, `otelhttp v0.66.0` / otel core `v1.41.0` | `northstar-systems` | `payments-api.northstar-systems.svc.cluster.local:8080` | `localhost:5001/northstar/payments-api:dev` | The system of record for payments. In-memory store, sequential IDs, no persistence. As of M3 it also records **why** a payout did not happen (`POST /refuse`) and lists them (`GET /payments`) — a record, not a gate. |
 | `reviewer-ui` **(M3 Task 4)** | Python 3.13, FastAPI 0.141.1 + uvicorn, server-rendered HTML strings — **no frontend toolchain and no build step**, deliberately unlike `customer-ui` | `northstar-agents` | `reviewer-ui.northstar-agents.svc.cluster.local:8080`, exposed as a `NodePort` (30081) mapped to host `8081` by `deploy/kind/stage3.yaml` | `localhost:5001/northstar/reviewer-ui:dev` | The page a human reads and clicks. Lists refusals straight from payments-api's REST API (never through the MCP path), and POSTs an approval to `senior-settlement-agent` over A2A. Emits the `review.decision` span. |
 | `senior-settlement-agent` **(M3 Task 3)** | **No image and no code of its own** — the `settlement-agent` image, byte-identical, in a second Deployment under a second ServiceAccount | `northstar-agents` | `senior-settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` (the same mutable `:dev` tag settlement-agent runs) | Executes what a human approved, under an identity the Policy Decision Service grants a higher limit. "Senior" is an *identity*, not a different program — which is the entire point, and the reason this row's Image cell repeats another row's. |
@@ -705,8 +705,10 @@ the one carrier this gateway does not read.
 `payments-mcp/server.py` runs `mcp.run(transport="http", ...)`; settlement-agent's
 `mcp_tools.py` connects via `mcp.client.streamable_http.streamablehttp_client`.
 
-Two tools, exact signatures and annotations
-(`contracts/mcp/payments-mcp.json`, matching `tools/payments-mcp/server.py`):
+**Four** tools as of M3, exact signatures and annotations
+(`contracts/mcp/payments-mcp.json`, matching `tools/payments-mcp/server.py` —
+and read back off the *served* `tools/list` for M3 Task 5B rather than off
+either file, which is how the drift below was found):
 
 ```json
 propose_payment(claim_id: string, amount: number, currency: string = "EUR") -> dict
@@ -714,7 +716,26 @@ propose_payment(claim_id: string, amount: number, currency: string = "EUR") -> d
 
 execute_payment(payment_id: string, amount: number, currency: string = "EUR") -> dict
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false }
+
+refuse_payment(payment_id, rule, limit, requested, narrative,
+               refused_trace_id, refused_span_id) -> dict          # M3 Task 3
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+  (every parameter required -- no defaults)
+
+get_payment(payment_id: string) -> dict                            # M3 Task 3
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+  (the only tool in this server with readOnlyHint: true)
 ```
+
+**This paragraph said "two tools" until M3 Task 5B, and so did
+`contracts/mcp/payments-mcp.json` — which is worse, because a test reads it.**
+`tests/e2e/test_payments_mcp_trace.py::test_tool_schema_matches_the_committed_contract`
+diffs the served tool list against that file, so it had been **failing** since
+M3 Task 3 added the two tools without updating the contract. It is not a
+gated test; it is simply in a module that needs a live cluster, so no cheap
+local loop ran it. The contract file is regenerated from the served list, and
+the failure is recorded here rather than only fixed — a "source of truth" that
+a milestone can leave two tools behind is worth knowing about.
 
 **Why `destructiveHint: true` is load-bearing, not decorative:** the design
 spec's own argument is *"Consequence is declared in the protocol... the
@@ -729,8 +750,10 @@ annotation was "waiting for M2's Policy Decision Service to key off it instead
 of a hardcoded list of dangerous tool names, which is the weaker design this
 project is deliberately avoiding." The Policy Decision Service now exists, and
 **it does not read the annotation.** `platform/policy-decision-service/pds/rules.py`
-holds two frozensets of tool *names*, `UNLIMITED_TOOLS = {"propose_payment"}`
-and `LIMITED_TOOLS = {"execute_payment"}`, and decides from those. So the
+holds frozensets of tool *names* — `UNLIMITED_TOOLS` and `LIMITED_TOOLS`,
+which at M2.2 held one name each (`propose_payment` and `execute_payment`) and
+as of M3 hold three and one, plus a third `CALLER_SCOPED_TOOLS` mapping — and
+decides from those. So the
 weaker design is the one that shipped, and the reason is worth stating rather
 than hiding: agentgateway's guardrail hook hands the PDS the JSON-RPC `params`
 of the call it is judging (`{"name": ..., "arguments": {...}}`, measured, M2.2
@@ -746,6 +769,18 @@ into neither frozenset, so `decide()` refuses it under the rule name
 every new tool needs a `rules.py` edit rather than being governed by what it
 already declares about itself. The annotation is still true, still correct,
 and still read by nothing.
+
+**M3 turned that prediction into a measurement, which is the only reason to
+mention it again.** Task 3 added two tools, and both needed exactly the
+`rules.py` edit this paragraph warned about: `refuse_payment` and
+`get_payment` had to be named in `UNLIMITED_TOOLS` by hand, and
+`refuse_payment` then needed a *third* table (`CALLER_SCOPED_TOOLS`) because
+being unlimited in amount is not the same as being open to any caller — a
+distinction `destructiveHint` cannot express at all. Both carry
+`destructiveHint: false`, and `get_payment` is the server's only tool with
+`readOnlyHint: true`; neither annotation took any part in the decision. The
+debt is real and it compounded exactly as predicted rather than turning out
+cheaper than feared.
 
 ## Hop 4 — payments-mcp → payments-api: plain HTTP/JSON
 
@@ -1676,7 +1711,7 @@ propagation table itself is current.
 | **browser → reviewer-ui (M3)** | Nothing. A plain HTML form POST from a page reviewer-ui itself rendered, with no JavaScript and no instrumentation — deliberately unlike `customer-ui`, which hand-mints a root span in `telemetry.ts`. So `review.decision` is a **trace root**, and the reviewer's trace begins at the server rather than in the browser | No | No |
 | **reviewer-ui → payments-api (M3)** | `HTTPXClientInstrumentor`, on the direct REST reads (`GET /payments?status=refused`, `GET /payments/{id}`). Note which hop this is *not*: it never crosses agentgateway, payments-mcp or the PDS | Yes | No — reviewer-ui runs no `ClaimIdSpanProcessor` and never sees the claim id as baggage; it knows the payment id, which is what it renders |
 | **reviewer-ui → senior-settlement-agent (M3)** | `HTTPXClientInstrumentor` again, on the raw A2A JSON-RPC POST (`approval.py`, the same technique as `delegation.py`), so the senior agent's spans are children of `review.decision`'s trace. **The join back to the refused trace is carried in the request body, not in a header**: `refusedTraceId` and `refusedSpanId` travel as ordinary JSON fields and become a `Link` on `settlement.execute_approved` | Yes | No |
-| **senior-settlement-agent → agentgateway (M3)** | Identical to Hop 3a above, because it is the same code in the same image. The only difference on the wire is the `Authorization` bearer token, which carries this pod's own SPIFFE ID | Yes, twice over | Yes in `_meta`; yes in the `baggage` header — but there is no claim id in this process's baggage to carry, since the approval arrived without one |
+| **senior-settlement-agent → agentgateway (M3)** | Identical to Hop 3a above, because it is the same code in the same image. The only difference on the wire is the `Authorization` bearer token, which carries this pod's own SPIFFE ID | Yes, twice over | Yes — and **the claim id is re-minted here rather than propagated**, which is the one genuinely new thing in this column. The approval arrives from reviewer-ui carrying no baggage (reviewer-ui never had any), so `execute_approved` reads `claimId` off the ledger record it just fetched and calls `set_claim_id` itself. That is why `settlement.execute_approved` and everything below it carry `northstar.claim.id` in a trace whose root never saw one |
 
 **`northstar.claim.id` is set exactly once**, at claims-agent's intake
 (`correlation.py`'s `set_claim_id`, called from `executor.py` right after
@@ -1792,7 +1827,8 @@ calling the tracer directly.
      (`spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent`)
      and is set by the gateway from the token it verified, not by anything
      this project wrote; `gen_ai.tool.name`, which is where the tool name
-     lives, because the span's *name* is just `tools/call` for both tools;
+     lives, because the span's *name* is just `tools/call` for every one of
+     the four tools;
      and `http.method` / `http.path` / `http.status`, which are **v1.5.0's**
      third HTTP vocabulary described in the header and in Finding 7 — scoped
      to the pinned version, because the upstream fix for it is merged but

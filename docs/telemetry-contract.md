@@ -161,7 +161,12 @@ on `PATH` and assert on what it actually invoked (a review's mutation testing
 found three of the original text-grep guards stayed green while the behaviour
 they named was deleted, because the string each searched for also appeared in a
 comment), and one pins that no operator-facing script or doc still instructs
-`--stage 1`. Like every other `tests/unit/` module they read files or run a
+`--stage 1`. **That last one was widened in M3 Task 5B** — to every stage below
+the current one, driven by a single constant, after it stayed green through six
+sites that had gone on saying `--stage 2` once stage 3 became the current
+cluster. Its name changed with its scope
+(`test_no_operator_facing_instruction_still_points_at_an_older_stage`); the
+count did not. Like every other `tests/unit/` module they read files or run a
 script with fakes rather than touching a cluster, so they need no cluster, no
 browser and no model tokens, and they run in both rows.
 
@@ -347,13 +352,24 @@ correction.
 
 That one file is the whole of M3's repo-root move, and the *absence* of other
 moves was measured rather than assumed. `git diff --stat main..HEAD --
-tests/` shows this branch also edited `tests/unit/test_stage2_cilium_config.py`
-and `tests/unit/test_stage2_spire_config.py`; both still collect exactly what
-they collected at `main` (22 and 27), because what changed in them was
-content, not cases — `63729e1` extended the SPIFFE allow-list inside a test
-that is parametrised over documents rather than adding a test. Both figures
-were collected per file at `main` and at `HEAD` and compared, not reasoned
-about.
+tests/` shows this branch edited **seven** files under `tests/`. One is
+`test_supervised.py` itself, which did not exist at `main`. The other six
+still collect exactly what they collected there, because what changed in them
+was content, not cases — a SPIFFE allow-list extended inside a test
+parametrised over documents (`63729e1`), a stale assertion repaired
+(`test_policy_denial.py`, R28), an inverted ingress guard rewritten in place
+(`test_egress_policy.py`), a docstring struck off a list, and two guard
+constants widened. Every one of the six was collected **per file at `main` and
+again at `HEAD` and compared**, not reasoned about:
+
+| File | at `main` | at `HEAD` |
+|---|---|---|
+| `tests/unit/test_stage2_cilium_config.py` | 22 | 22 |
+| `tests/unit/test_stage2_spire_config.py` | 27 | 27 |
+| `tests/unit/test_telemetry_contract_attribute_counts.py` | 8 | 8 |
+| `tests/unit/test_telemetry_contract_counts.py` | 2 | 2 |
+| `tests/e2e/test_policy_denial.py` | 6 | 6 |
+| `tests/e2e/test_egress_policy.py` | 27 | 27 |
 
 **The gated set is now five modules, 33 tests, re-measured rather than
 incremented.** `tests/e2e/test_supervised.py` is the second partly-gated file:
