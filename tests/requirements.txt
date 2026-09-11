@@ -29,7 +29,19 @@ PyYAML==6.0.2
 opentelemetry-api==1.44.0
 opentelemetry-sdk==1.44.0
 opentelemetry-exporter-otlp-proto-http==1.44.0
-mcp==1.28.1
+# 2026-09-11 (M3 remaining-bumps, step 1): 1.28.1 -> 2.2.0, the newest stable
+# `mcp` release (published 2026-09-07; read from PyPI's release history for
+# `mcp` and from the `v2.2.0` tag on
+# github.com/modelcontextprotocol/python-sdk). The 1.x line still ships
+# releases -- 1.30.0 came out the same day -- but upstream's own v2.0.0 release
+# notes put it in "maintenance mode ... security fixes only", so 1.30.0 is the
+# maintenance branch, not the latest stable. Pinned in lock-step with the two
+# services that speak MCP (agents/settlement-agent, tools/payments-mcp) so the
+# e2e tests exercise the same wire library the deployment does.
+mcp==2.2.0
+# v2's split-out wire-type package, pinned exactly by `mcp` 2.2.0's own
+# metadata. `mcp.types` is a permanent alias for it.
+mcp-types==2.2.0
 anyio==4.15.1
 playwright==1.49.1
 
@@ -64,8 +76,25 @@ googleapis-common-protos==1.75.0
 greenlet==3.1.1
 h11==0.16.0
 httpcore==1.0.9
+# `httpx` is a DIRECT dependency of this harness, not a transitive one: six
+# e2e test files `import httpx` outright. It sat in this transitive block
+# because `mcp==1.28.1` also required it, and that cover is gone -- `mcp`
+# 2.2.0 requires `httpx2` instead (2026-09-11, M3 remaining-bumps step 1).
+# Left in place at the same version, relabelled rather than moved, so the
+# reachability walk this file's comments describe does not report it as an
+# orphan it is not.
 httpx==0.28.1
-httpx-sse==0.4.3
+# 2026-09-11 (M3 remaining-bumps, step 1): `httpx-sse==0.4.3` used to be here
+# and is gone, because it is gone from the venv. It was reachable only through
+# `mcp==1.28.1`, which declared it; `mcp` 2.2.0 does not, nothing in this tree
+# imports it (`grep -rn "httpx_sse\|httpx-sse" tests/` finds nothing), and no
+# other installed distribution requires it. The three lines below arrive the
+# other way, as `mcp` 2.2.0's own new closure: `httpx2` is what its
+# streamable-HTTP client is built on, `httpcore2` is `httpx2`'s transport and
+# `truststore` is required by both.
+httpcore2==2.12.0
+httpx2==2.12.0
+truststore==0.10.4
 idna==3.19
 iniconfig==2.3.0
 jsonschema==4.26.0

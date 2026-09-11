@@ -10,14 +10,31 @@ a2a-sdk[telemetry]==0.3.7
 # this is a determinism fix, not a version bump.
 starlette==1.6.0
 sse-starlette==3.4.11
-# Task 7: mcp==1.9.4 -> 1.28.1, clearing PYSEC-2026-1617/-1618/-3482/-3483
-# (pip-audit). Still a client-side pin, well below the mcp<3.0.0,>=2.0.0 that
-# pydantic-ai-slim[anthropic]'s [mcp] extra would require — that extra
-# remains unsatisfiable against this pin, on purpose (see the comment below).
-# mcp_tools.py's low-level send_request _meta-injection path (the one thing
-# in this repo that needs it) is re-verified against 1.28.1 unchanged; see
-# tests/e2e/test_payments_mcp_trace.py and docs/upstream-findings.md Finding 4.
-mcp==1.28.1
+# M3 remaining-bumps, step 1 (2026-09-11): mcp 1.28.1 -> 2.2.0, the newest
+# stable release of the MCP Python SDK (published 2026-09-07, read from PyPI's
+# release history for `mcp` and from the `v2.2.0` tag on
+# github.com/modelcontextprotocol/python-sdk). The 1.x line still receives
+# releases (1.30.0, same day) but upstream's own v2.0.0 release notes put it in
+# "maintenance mode ... security fixes only", so 1.30.0 is not the latest
+# stable, it is the maintenance branch.
+#
+# **Superseded claim, recorded rather than deleted.** This block used to read
+# "Still a client-side pin, well below the mcp<3.0.0,>=2.0.0 that
+# pydantic-ai-slim[anthropic]'s [mcp] extra would require — that extra remains
+# unsatisfiable against this pin, on purpose". That is now false in its
+# premise: this pin satisfies `mcp<3.0.0,>=2.0.0`. What has NOT changed is the
+# decision: the `[mcp]` extra is still not taken, and `MCPToolset` is still not
+# adopted. `test_no_fastmcp_in_this_service` is what keeps that honest now,
+# because the version number no longer can.
+#
+# This bump is not a version change alone — v2 renamed the three client symbols
+# `mcp_tools.py` uses. See that file's `_call` for the four renames, each
+# checked against the installed 2.2.0 source, not against the changelog.
+mcp==2.2.0
+# `mcp-types` (imported as `mcp_types`) is v2's split-out wire-type package,
+# published in lock-step with `mcp` and pinned by it exactly (`mcp-types==2.2.0`
+# in mcp 2.2.0's own metadata). `mcp.types` is a permanent alias for it.
+mcp-types==2.2.0
 uvicorn==0.34.0
 opentelemetry-sdk==1.44.0
 opentelemetry-exporter-otlp-proto-http==1.44.0
@@ -58,11 +75,19 @@ grpcio==1.83.1
 pem==23.1.0
 
 # M1.2: the settlement decision becomes a real model call.
-# `pydantic-ai-slim[anthropic]`, NOT `pydantic-ai` and NOT the [mcp] extra:
-# the [mcp] extra requires fastmcp-slim[client]<5,>=3.3.0 -> mcp<3.0.0,>=2.0.0,
-# which is directly unsatisfiable against the mcp==1.28.1 pin above that
-# mcp_tools.py's low-level send_request propagation is verified against.
-# Enforced by tests/test_pins.py.
+# `pydantic-ai-slim[anthropic]`, NOT `pydantic-ai` and NOT the [mcp] extra.
+#
+# **Corrected 2026-09-11 (M3 remaining-bumps, step 1).** This read: "the [mcp]
+# extra requires fastmcp-slim[client]<5,>=3.3.0 -> mcp<3.0.0,>=2.0.0, which is
+# directly unsatisfiable against the mcp==1.28.1 pin above that mcp_tools.py's
+# low-level send_request propagation is verified against." The version
+# arithmetic in that sentence is dead: `mcp==2.2.0` above satisfies
+# `mcp<3.0.0,>=2.0.0`. The extra is still not taken, and the reason is the one
+# that was always the real one: adopting `MCPToolset` would replace
+# `mcp_tools.py`'s hand-built `send_request` call — the one code path in this
+# repo that sets `params._meta` — with a convenience wrapper whose propagation
+# behaviour nothing here has measured. `tests/test_pins.py`'s
+# `test_no_fastmcp_in_this_service` is now the only thing enforcing it.
 pydantic-ai-slim[anthropic]==2.41.0
 # Transitive pins pulled in by pydantic-ai-slim[anthropic]==2.41.0, recorded
 # exactly as resolved by `uv pip install` (house style: nothing floats).

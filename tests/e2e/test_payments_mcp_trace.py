@@ -7,8 +7,12 @@ the JSON-RPC `params._meta` field, which is where MCP carries trace context
 (SEP-414). `mcp==1.9.4`'s high-level `ClientSession.call_tool()` has no way to
 set `_meta`, so the injected call goes through the lower-level
 `ClientSession.send_request()` with a hand-built `CallToolRequest` whose
-`params._meta = {"traceparent": ...}` (via `RequestParams.Meta`, which allows
-extra fields). The trace is then looked up by the exact ID this test
+`params._meta = {"traceparent": ...}`. At 1.x that value had to be built as a
+`RequestParams.Meta` model (which allowed extra fields); since the mcp 2.x bump
+(2026-09-11) `params._meta` is the `RequestParamsMeta` **TypedDict**, so the
+plain dict IS the value and `types.ClientRequest` is a union rather than a
+wrapper model. The serialised request is unchanged, which is why every
+server-side assertion below stayed as it was. The trace is then looked up by the exact ID this test
 generated (`wait_for_trace_id`), never by service/operation search — a search
 was proven live to return an unrelated trace from 14 minutes earlier (see
 task-3-review.md finding 1), which would pass even with propagation broken.
@@ -40,7 +44,7 @@ from pathlib import Path
 import pytest
 import mcp.types as types
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 from tests.harness.jaeger import JaegerClient, assert_span_kind
 
@@ -52,32 +56,30 @@ MCP_CONTRACT = REPO_ROOT / "contracts" / "mcp" / "payments-mcp.json"
 
 
 async def _call_tools(claim_id: str, traceparent: str) -> dict:
-    async with streamablehttp_client(MCP_URL) as (read, write, _):
+    async with streamable_http_client(MCP_URL) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             proposed = await session.call_tool(
                 "propose_payment",
                 {"claim_id": claim_id, "amount": 6200, "currency": "EUR"},
             )
-            payment = proposed.structuredContent or {}
+            payment = proposed.structured_content or {}
             payment_id = payment.get("paymentId") or payment.get("result", {}).get("paymentId")
 
             # The high-level call_tool() has no way to set params._meta, so the
             # execute call — the one this test looks its trace up by — goes
             # through the lower-level request API with a hand-built _meta.
-            request = types.ClientRequest(
-                types.CallToolRequest(
-                    method="tools/call",
-                    params=types.CallToolRequestParams(
-                        name="execute_payment",
-                        arguments={
-                            "payment_id": payment_id,
-                            "amount": 6200,
-                            "currency": "EUR",
-                        },
-                        _meta=types.RequestParams.Meta(traceparent=traceparent),
-                    ),
-                )
+            request = types.CallToolRequest(
+                method="tools/call",
+                params=types.CallToolRequestParams(
+                    name="execute_payment",
+                    arguments={
+                        "payment_id": payment_id,
+                        "amount": 6200,
+                        "currency": "EUR",
+                    },
+                    _meta={"traceparent": traceparent},
+                ),
             )
             executed = await session.send_request(request, types.CallToolResult)
             return {"payment_id": payment_id, "executed": executed}
@@ -237,7 +239,7 @@ def test_tool_schema_matches_the_committed_contract():
     import anyio
 
     async def _list_tools():
-        async with streamablehttp_client(MCP_URL) as (read, write, _):
+        async with streamable_http_client(MCP_URL) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.list_tools()
@@ -245,7 +247,7 @@ def test_tool_schema_matches_the_committed_contract():
                     {
                         "name": tool.name,
                         "description": tool.description,
-                        "inputSchema": tool.inputSchema,
+                        "inputSchema": tool.input_schema,
                         "annotations": (
                             tool.annotations.model_dump(by_alias=True, exclude_none=True)
                             if tool.annotations

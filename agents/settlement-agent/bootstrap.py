@@ -2,11 +2,14 @@
 
 Imported first in main.py. The a2a-sdk telemetry extra instruments the A2A
 server's own internal call graph (see NOTES.md); nothing here creates A2A
-spans by hand. HTTPXClientInstrumentor is added here (not in the brief's
+spans by hand. The httpx instrumentors are added here (not in the brief's
 original sketch) because settlement-agent's MCP client
 (`mcp.client.streamable_http`) is httpx-based under the hood, and A13
 requires measuring this service's own outbound HTTP spans rather than
-assuming payments-mcp's spelling carries over.
+assuming payments-mcp's spelling carries over. Since the `mcp` 2.x bump
+(2026-09-11) that client is built on `httpx2` rather than `httpx`, so it is
+`HTTPX2ClientInstrumentor` that covers the payments-mcp hop; see the comment
+on that call below.
 
 A18: a2a-sdk 0.3.7's own telemetry does not extract inbound W3C trace context
 (verified empirically — see NOTES.md); StarletteInstrumentor (applied to the
@@ -63,12 +66,10 @@ def configure() -> None:
         CompositePropagator([TraceContextTextMapPropagator(), W3CBaggagePropagator()])
     )
 
-    # Emits CLIENT spans for the outbound HTTP calls the MCP streamable-http
-    # transport makes to payments-mcp, and injects trace context into those
-    # outbound headers. The measurement in NOTES.md §6 confirmed this
-    # instrumentation defaults to the legacy HTTP attribute spelling, so
-    # OTEL_SEMCONV_STABILITY_OPT_IN=http is set on the deployment manifest to
-    # converge it onto the stable spelling.
+    # The measurement in NOTES.md §6 confirmed this instrumentation defaults to
+    # the legacy HTTP attribute spelling, so OTEL_SEMCONV_STABILITY_OPT_IN=http
+    # is set on the deployment manifest to converge it onto the stable
+    # spelling. That applies to both instrumentors below.
     HTTPXClientInstrumentor().instrument()
     # anthropic==1.4.0 depends on httpx2, a distribution separate from
     # httpx. HTTPXClientInstrumentor's _module_name is "httpx", so without
@@ -78,6 +79,17 @@ def configure() -> None:
     # detail. httpx2 is present in this venv because anthropic requires it
     # (agents/settlement-agent/requirements.txt pins httpx2==2.12.0), so
     # instrument() cannot raise ModuleNotFoundError here.
+    #
+    # **2026-09-11 (M3 remaining-bumps, step 1): this line stopped being only
+    # about the model call.** This file's own header used to say the MCP client
+    # "is httpx-based under the hood", and that was true of `mcp==1.28.1`.
+    # `mcp==2.2.0`'s streamable-HTTP client is built on `httpx2`
+    # (`mcp.client.streamable_http` imports `httpx2`, and
+    # `streamable_http_client(http_client=...)` is typed
+    # `httpx2.AsyncClient | None`), so THIS instrumentor is now what emits the
+    # CLIENT span for the payments-mcp hop and injects `traceparent` into it.
+    # Deleting it as "the anthropic one" would sever the money path's trace,
+    # not just lose a model-call span.
     HTTPX2ClientInstrumentor().instrument()
 
     _instrument_pydantic_ai()

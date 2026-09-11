@@ -2,12 +2,12 @@
 and (Task 7) the client-side params._meta injection that closes the MCP hop.
 
 Both original fixes were verified live in the original round (NOTES.md §7),
-but neither had a test: deleting either the `isError` branch in `_unwrap` or
+but neither had a test: deleting either the `is_error` branch in `_unwrap` or
 the `except BaseExceptionGroup` clause in `_call` would still leave every
 prior test green while a real 404/409 from payments-api was buried again —
 exactly the failure mode this file guards against. Concrete regression checks:
 
-- Delete the `if getattr(result, "isError", False): ...` branch from
+- Delete the `if getattr(result, "is_error", False): ...` branch from
   `_unwrap` -> `test_unwrap_raises_tool_call_error_with_the_tools_own_text`
   fails (falls through to the generic "no structured content" ValueError).
 - Delete the `except BaseExceptionGroup as eg: raise _leaf_exception(eg)`
@@ -27,7 +27,9 @@ NOTES.md and mcp_tools.py's own module docstring).
 M2.1 Task 4 adds the identity half, at the bottom of this file, and changes
 every `_call` test's transport fake: the old `lambda url:
 _FakeReadWriteContext()` accepted no `headers` argument, so it could not have
-observed a credential even if one were sent. See `_capturing_transport`.
+observed a credential even if one were sent. See `_patch_transport` (named
+`_capturing_transport` until the mcp 2.x bump split it in two, because the
+credential and the transport are no longer built by the same call).
 
 M2.2 Task 5 adds the denial half, in the last section: `PolicyDenial`, and the
 branch in `_call` that produces it. Its own header block carries that
@@ -39,8 +41,7 @@ there is one definition of the exception shape the deployed gateway produces.
 from __future__ import annotations
 
 import pytest
-from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData
+from mcp.shared.exceptions import MCPError
 from opentelemetry import baggage, context, trace
 from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
 
@@ -64,20 +65,20 @@ class _FakeTextBlock:
 
 class _FakeCallToolResult:
     """Stands in for mcp.types.CallToolResult without pulling in the real
-    class, whose `structuredContent` is a pydantic "extra" field only
+    class, whose `structured_content` is a pydantic "extra" field only
     present when the server actually sends one (NOTES.md §7) — so a plain
     object that simply omits the attribute reproduces that shape exactly."""
 
-    def __init__(self, isError: bool = False, content=None, structuredContent=None):
-        self.isError = isError
+    def __init__(self, is_error: bool = False, content=None, structured_content=None):
+        self.is_error = is_error
         self.content = content or []
-        if structuredContent is not None:
-            self.structuredContent = structuredContent
+        if structured_content is not None:
+            self.structured_content = structured_content
 
 
 def test_unwrap_raises_tool_call_error_with_the_tools_own_text():
     result = _FakeCallToolResult(
-        isError=True,
+        is_error=True,
         content=[_FakeTextBlock("Error calling tool 'execute_payment': Client error '404 Not Found'")],
     )
     with pytest.raises(ToolCallError, match="404 Not Found"):
@@ -86,7 +87,7 @@ def test_unwrap_raises_tool_call_error_with_the_tools_own_text():
 
 def test_unwrap_joins_multiple_error_text_blocks():
     result = _FakeCallToolResult(
-        isError=True,
+        is_error=True,
         content=[_FakeTextBlock("first"), _FakeTextBlock("second")],
     )
     with pytest.raises(ToolCallError, match="first; second"):
@@ -94,19 +95,19 @@ def test_unwrap_joins_multiple_error_text_blocks():
 
 
 def test_unwrap_returns_the_structured_payload_on_success():
-    result = _FakeCallToolResult(structuredContent={"paymentId": "PAY-000001"})
+    result = _FakeCallToolResult(structured_content={"paymentId": "PAY-000001"})
     assert _unwrap(result) == {"paymentId": "PAY-000001"}
 
 
 def test_unwrap_unwraps_the_result_wrapper_key():
     # FastMCP wraps scalar/dict returns under "result" in some versions
     # (mcp_tools.py's own comment) — confirm _unwrap accounts for it.
-    result = _FakeCallToolResult(structuredContent={"result": {"paymentId": "PAY-000002"}})
+    result = _FakeCallToolResult(structured_content={"result": {"paymentId": "PAY-000002"}})
     assert _unwrap(result) == {"paymentId": "PAY-000002"}
 
 
 def test_unwrap_raises_value_error_when_no_structured_content_and_not_an_error():
-    result = _FakeCallToolResult()  # isError=False, no structuredContent at all
+    result = _FakeCallToolResult()  # is_error=False, no structured_content at all
     with pytest.raises(ValueError, match="no structured content"):
         _unwrap(result)
 
@@ -133,11 +134,35 @@ def test_leaf_exception_prefers_a_tool_call_error_over_other_siblings():
 
 
 class _FakeReadWriteContext:
-    """Stands in for streamablehttp_client(url, headers=...)'s async context
-    manager."""
+    """Stands in for `streamable_http_client(url, http_client=...)`'s async
+    context manager.
+
+    mcp 2.x yields a **two**-tuple `(read, write)`. At 1.28.1 it was a
+    three-tuple whose third element (a session-id callback) `_call` never used
+    — this fake returned three for that reason, and returns two now.
+    """
 
     async def __aenter__(self):
-        return (None, None, None)
+        return (None, None)
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeHttpClient:
+    """Stands in for the `httpx2.AsyncClient` that
+    `create_mcp_http_client(headers=...)` returns.
+
+    It is an async context manager because `_call` enters it: mcp 2.x's
+    `streamable_http_client` only closes a client it created itself, so one
+    passed in via `http_client=` is the caller's to manage.
+    """
+
+    def __init__(self, headers=None):
+        self.headers = headers
+
+    async def __aenter__(self):
+        return self
 
     async def __aexit__(self, exc_type, exc, tb):
         return False
@@ -162,21 +187,35 @@ def _fake_svid_fetcher(audiences: list):
     return _fetch
 
 
-def _capturing_transport(captured: dict):
-    """Stands in for mcp_tools.streamablehttp_client, recording the url and
-    headers it was called with.
+def _patch_transport(monkeypatch, captured: dict):
+    """Patch BOTH halves of mcp 2.x's transport construction, recording what
+    each was called with.
 
     The old fakes were `lambda url: _FakeReadWriteContext()` -- positional-only
     and header-blind, so a `_call` that forgot the credential entirely would
-    still have passed every test in this file. Capturing both means the
-    Authorization header is asserted on rather than assumed."""
+    still have passed every test in this file. Capturing the headers means the
+    Authorization header is asserted on rather than assumed.
 
-    def _factory(url, headers=None):
-        captured["url"] = url
+    Why two patches now: at mcp 1.28.1 the credential went to
+    `streamablehttp_client(url, headers=...)`, one call. mcp 2.x's
+    `streamable_http_client` takes **no** `headers` parameter -- the headers go
+    to the `httpx2.AsyncClient` the caller builds and hands it, which for this
+    client is `create_mcp_http_client(headers=...)`. Patching only the
+    transport would therefore leave the credential unobserved again, which is
+    the exact blindness this helper was written to remove.
+    """
+
+    def _client_factory(headers=None, timeout=None, auth=None):
         captured["headers"] = headers
+        return _FakeHttpClient(headers)
+
+    def _transport_factory(url, *, http_client=None, terminate_on_close=True):
+        captured["url"] = url
+        captured["http_client"] = http_client
         return _FakeReadWriteContext()
 
-    return _factory
+    monkeypatch.setattr(mcp_tools, "create_mcp_http_client", _client_factory)
+    monkeypatch.setattr(mcp_tools, "streamable_http_client", _transport_factory)
 
 
 class _FakeSessionRaisingNestedGroup:
@@ -222,9 +261,7 @@ class _FakeSessionRaisingNestedGroup:
 
 async def test_call_unwraps_a_doubly_nested_exception_group_to_the_tool_call_error(monkeypatch):
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
-    monkeypatch.setattr(
-        mcp_tools, "streamablehttp_client", _capturing_transport({})
-    )
+    _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionRaisingNestedGroup)
 
     tools = PaymentsTools("http://fake-mcp/mcp")
@@ -254,7 +291,7 @@ class _FakeSessionCapturingRequest:
 
     async def send_request(self, request, result_type):
         _FakeSessionCapturingRequest.captured["request"] = request
-        return _FakeCallToolResult(structuredContent={"paymentId": "PAY-000001"})
+        return _FakeCallToolResult(structured_content={"paymentId": "PAY-000001"})
 
     async def call_tool(self, name, arguments):
         # Review nit 6: same rationale as _FakeSessionRaisingNestedGroup's
@@ -285,9 +322,7 @@ async def test_call_injects_params_meta_traceparent_from_the_ambient_context(mon
     Task 7's job specifically (that e2e test's injection does not pre-empt
     it)."""
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
-    monkeypatch.setattr(
-        mcp_tools, "streamablehttp_client", _capturing_transport({})
-    )
+    _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
     _FakeSessionCapturingRequest.captured = {}
 
@@ -300,9 +335,9 @@ async def test_call_injects_params_meta_traceparent_from_the_ambient_context(mon
         context.detach(token)
 
     request = _FakeSessionCapturingRequest.captured["request"]
-    meta = request.root.params.meta
+    meta = request.params.meta
     assert meta is not None, "params._meta was never set — no context was injected"
-    assert meta.traceparent == (
+    assert meta["traceparent"] == (
         "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
     )
 
@@ -311,11 +346,9 @@ async def test_call_injects_params_meta_baggage_from_the_ambient_context(monkeyp
     """The MCP boundary carries baggage the same way it carries trace context
     (SEP-414's unprefixed `baggage` key): whatever propagate.inject() puts in
     the carrier from the ambient context — including northstar.claim.id, set
-    via correlation.set_claim_id — must reach params._meta.baggage."""
+    via correlation.set_claim_id — must reach params._meta["baggage"]."""
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
-    monkeypatch.setattr(
-        mcp_tools, "streamablehttp_client", _capturing_transport({})
-    )
+    _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
     _FakeSessionCapturingRequest.captured = {}
 
@@ -328,9 +361,9 @@ async def test_call_injects_params_meta_baggage_from_the_ambient_context(monkeyp
         context.detach(token)
 
     request = _FakeSessionCapturingRequest.captured["request"]
-    meta = request.root.params.meta
+    meta = request.params.meta
     assert meta is not None, "params._meta was never set — no context was injected"
-    assert "northstar.claim.id=CLM-1842" in meta.baggage
+    assert "northstar.claim.id=CLM-1842" in meta["baggage"]
 
 
 async def test_call_omits_meta_entirely_when_context_is_empty(monkeypatch):
@@ -339,9 +372,7 @@ async def test_call_omits_meta_entirely_when_context_is_empty(monkeypatch):
     object — matching the pre-Task-7 wire shape for a caller with nothing to
     propagate."""
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
-    monkeypatch.setattr(
-        mcp_tools, "streamablehttp_client", _capturing_transport({})
-    )
+    _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
     _FakeSessionCapturingRequest.captured = {}
 
@@ -353,7 +384,7 @@ async def test_call_omits_meta_entirely_when_context_is_empty(monkeypatch):
         context.detach(token)
 
     request = _FakeSessionCapturingRequest.captured["request"]
-    assert request.root.params.meta is None
+    assert request.params.meta is None
 
 
 # ---------------------------------------------------------------------------
@@ -361,9 +392,11 @@ async def test_call_omits_meta_entirely_when_context_is_empty(monkeypatch):
 # in params._meta, and the two carriers stay separate.
 #
 # Concrete regression checks:
-# - Drop `headers=` from the streamablehttp_client call ->
+# - Drop `headers=` from the create_mcp_http_client call ->
 #   test_call_sends_the_jwt_svid_as_an_authorization_bearer_header fails
-#   (headers is None, so no credential reaches the gateway at all).
+#   (headers is None, so no credential reaches the gateway at all). mcp 2.x
+#   moved this argument: `streamable_http_client` has no `headers` parameter,
+#   so the credential now rides on the httpx2 client handed to it.
 # - Drop the `Bearer ` prefix -> the same test fails on the exact value.
 #   agentgateway strips exactly `"Bearer "` before validating
 #   (AuthorizationLocation::bearer_header()), so a bare token is not a
@@ -384,7 +417,7 @@ async def test_call_omits_meta_entirely_when_context_is_empty(monkeypatch):
 async def test_call_sends_the_jwt_svid_as_an_authorization_bearer_header(monkeypatch):
     captured: dict = {}
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
-    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport(captured))
+    _patch_transport(monkeypatch, captured)
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
     _FakeSessionCapturingRequest.captured = {}
 
@@ -397,7 +430,7 @@ async def test_call_sends_the_jwt_svid_as_an_authorization_bearer_header(monkeyp
 async def test_call_mints_the_svid_for_the_gateway_audience(monkeypatch):
     audiences: list[str] = []
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher(audiences))
-    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport({}))
+    _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
     _FakeSessionCapturingRequest.captured = {}
 
@@ -425,7 +458,7 @@ async def test_call_opens_no_transport_when_no_svid_is_available(monkeypatch):
         raise SvidUnavailable("no socket")
 
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", boom)
-    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport(captured))
+    _patch_transport(monkeypatch, captured)
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
 
     tools = PaymentsTools("http://fake-mcp/mcp")
@@ -443,7 +476,7 @@ async def test_the_identity_and_trace_carriers_do_not_bleed_into_each_other(monk
     """
     captured: dict = {}
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
-    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport(captured))
+    _patch_transport(monkeypatch, captured)
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
     _FakeSessionCapturingRequest.captured = {}
 
@@ -456,7 +489,7 @@ async def test_the_identity_and_trace_carriers_do_not_bleed_into_each_other(monk
         context.detach(token)
 
     headers = captured["headers"]
-    meta = _FakeSessionCapturingRequest.captured["request"].root.params.meta
+    meta = _FakeSessionCapturingRequest.captured["request"].params.meta
 
     # Identity is in the header and nowhere else.
     assert headers["Authorization"] == f"Bearer {_FAKE_SVID}"
@@ -465,7 +498,7 @@ async def test_the_identity_and_trace_carriers_do_not_bleed_into_each_other(monk
     # Trace context is in params._meta. This client does not hand-inject
     # traceparent into headers -- HTTPXClientInstrumentor does that, one layer
     # down, for every outbound request -- so it must not appear here.
-    assert meta.traceparent == "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+    assert meta["traceparent"] == "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
     assert {k.lower() for k in headers} == {"authorization"}, (
         f"the identity header carrier grew beyond Authorization: {sorted(headers)}"
     )
@@ -486,14 +519,14 @@ async def test_the_identity_and_trace_carriers_do_not_bleed_into_each_other(monk
 
 async def test_execute_sends_the_amount_in_the_tool_call_arguments(monkeypatch):
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
-    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport({}))
+    _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
     _FakeSessionCapturingRequest.captured = {}
 
     tools = PaymentsTools("http://fake-mcp/mcp")
     await tools.execute("PAY-000001", 6200.0, "EUR")
 
-    params = _FakeSessionCapturingRequest.captured["request"].root.params
+    params = _FakeSessionCapturingRequest.captured["request"].params
     assert params.name == "execute_payment"
     assert params.arguments == {
         "payment_id": "PAY-000001",
@@ -523,11 +556,13 @@ async def test_execute_defaults_the_currency_but_never_the_amount():
 # absence of a retry loop, not merely for the presence of a deny."
 #
 # The exception that actually arrives here was measured, not guessed
-# (task-1-findings.md §3): `mcp.shared.exceptions.McpError`, because the
+# (task-1-findings.md §3): `mcp.shared.exceptions.MCPError`, because the
 # gateway denies on **HTTP 200** with an `application/json` JSON-RPC error
 # body, so `raise_for_status()` is a no-op and there is no
 # `httpx.HTTPStatusError` on this path at all. Every fixture below therefore
-# builds a real `McpError` around a real `mcp.types.ErrorData`, in the real
+# builds a real `MCPError` (2.x renamed it from `McpError`, and its
+# constructor now takes `code`/`message`/`data` directly rather than an
+# `ErrorData` instance), in the real
 # nesting the gateway produces, rather than a hand-rolled stand-in.
 #
 # Concrete regression checks:
@@ -539,7 +574,7 @@ async def test_execute_defaults_the_currency_but_never_the_amount():
 #   test_a_denial_shaped_message_with_no_marker_is_not_a_denial fails.
 # - Drop the `_policy_denial` call from `_call`'s handler ->
 #   test_call_translates_a_denied_tool_call_into_a_policy_denial fails (a bare
-#   McpError propagates, which is exactly the pre-task behaviour that gave the
+#   MCPError propagates, which is exactly the pre-task behaviour that gave the
 #   A2A caller a -32603 with no narration).
 # - Read only `str(exc)` instead of `exc.error.data` ->
 #   test_a_policy_denial_carries_the_structured_facts_str_drops fails.
@@ -547,7 +582,7 @@ async def test_execute_defaults_the_currency_but_never_the_amount():
 
 # The reason string the deployed PDS emits, verbatim (task-1-findings.md /
 # the M2.2 deny body). It is on `error.message` deliberately: that is the one
-# place `str(McpError)` preserves, and therefore the only text that can reach
+# place `str(MCPError)` preserves, and therefore the only text that can reach
 # the model that must narrate the refusal.
 DENY_REASON = (
     "requested 6200 EUR exceeds the 6000 EUR limit for this agent at "
@@ -577,7 +612,7 @@ def _denial_body(*, retryable: bool = False, requested: float | None = 6200.0) -
     }
 
 
-def _denial_error(**kwargs) -> McpError:
+def _denial_error(**kwargs) -> MCPError:
     """The exception as it arrives inside mcp_tools, end to end.
 
     `error.code` is the gateway's own `-32001` (PERMISSION_DENIED), *not* the
@@ -585,9 +620,7 @@ def _denial_error(**kwargs) -> McpError:
     (task-1-findings.md §1). Pinning the gateway's code here means a test that
     accidentally started depending on -32003 would be caught.
     """
-    return McpError(
-        ErrorData(code=-32001, message=DENY_REASON, data=_denial_body(**kwargs))
-    )
+    return MCPError(code=-32001, message=DENY_REASON, data=_denial_body(**kwargs))
 
 
 def _as_anyio_group(exc: BaseException) -> BaseExceptionGroup:
@@ -623,7 +656,7 @@ def test_a_policy_denial_is_a_ToolFailed_so_the_model_sees_it():
 def test_the_denial_message_reaches_the_model_intact():
     """The model narrates this text, so it must survive unwrapping.
 
-    `str(McpError)` yields `error.message` and nothing else, so the reason has
+    `str(MCPError)` yields `error.message` and nothing else, so the reason has
     to be carried across into PolicyDenial's own message -- which is what
     PydanticAI puts in the failed ToolReturnPart the model reads.
     """
@@ -639,7 +672,7 @@ def test_the_denial_message_reaches_the_model_intact():
 
 
 def test_a_policy_denial_carries_the_structured_facts_str_drops():
-    """`str(McpError)` silently drops `error.data`. Task 1 measured the
+    """`str(MCPError)` silently drops `error.data`. Task 1 measured the
     consequence: the deny marker did not reach the A2A caller at all. The
     structured facts have to be read off `exc.error.data`."""
     denial = _policy_denial(_denial_error())
@@ -671,18 +704,16 @@ def test_a_transport_error_is_still_a_transport_error():
     report them as policy denials.
 
     This exact message is the PDS-unreachable case, measured in Task 4's
-    failClosed test. It arrives as an McpError too, and it carries no marker.
+    failClosed test. It arrives as an MCPError too, and it carries no marker.
     An outage reported as "policy said no" is a lie the model would go on to
     narrate to a claimant.
     """
-    outage = McpError(
-        ErrorData(
-            code=-32001,
-            message=(
-                "mcpGuardrails checkRequest failed: upstream call failed: "
-                "Connect: Connection refused (os error 111)"
-            ),
-        )
+    outage = MCPError(
+        code=-32001,
+        message=(
+            "mcpGuardrails checkRequest failed: upstream call failed: "
+            "Connect: Connection refused (os error 111)"
+        ),
     )
     assert _policy_denial(outage) is None
 
@@ -696,7 +727,7 @@ def test_a_denial_shaped_message_with_no_marker_is_not_a_denial():
     -- and here, the reverse: any upstream that happened to echo the reason
     would be mistaken for the policy layer.
     """
-    lookalike = McpError(ErrorData(code=-32603, message=DENY_REASON))
+    lookalike = MCPError(code=-32603, message=DENY_REASON)
     assert _policy_denial(lookalike) is None
 
 
@@ -726,7 +757,7 @@ def test_a_permit_marker_is_not_a_denial():
     """
     body = _denial_body()
     body["data"]["decision"] = "permit"
-    permitted = McpError(ErrorData(code=-32001, message=DENY_REASON, data=body))
+    permitted = MCPError(code=-32001, message=DENY_REASON, data=body)
     assert _policy_denial(permitted) is None, (
         "a permit was read as a denial -- the detector is keying on the "
         "reason text rather than on data.decision"
@@ -746,7 +777,7 @@ def test_the_marker_is_recognised_un_nested_too():
     un-nested position is accepted as well, so a gateway that stopped
     double-wrapping would not silently make denials retryable."""
     marker = _denial_body()["data"]
-    flat = McpError(ErrorData(code=-32001, message=DENY_REASON, data=marker))
+    flat = MCPError(code=-32001, message=DENY_REASON, data=marker)
     denial = _policy_denial(flat)
     assert isinstance(denial, PolicyDenial)
     assert denial.rule == "settlement-agent.assisted.execute_limit"
@@ -754,7 +785,7 @@ def test_the_marker_is_recognised_un_nested_too():
 
 class _FakeSessionDenying:
     """Stands in for mcp.ClientSession, raising the denial exactly as measured:
-    an `McpError` doubly wrapped by the two anyio TaskGroups."""
+    an `MCPError` doubly wrapped by the two anyio TaskGroups."""
 
     def __init__(self, read, write):
         pass
@@ -788,13 +819,13 @@ async def test_call_translates_a_denied_tool_call_into_a_policy_denial(
 ):
     """End to end through the production `_call` handler, both wrappings.
 
-    Without the translation, `_call` re-raises the McpError leaf: it
+    Without the translation, `_call` re-raises the MCPError leaf: it
     propagates out of Agent.run(), the a2a-sdk turns it into JSON-RPC -32603
     with no `result`, and nothing narrates the refusal (measured, Task 4
     §11.4).
     """
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
-    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport({}))
+    _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", session)
 
     tools = PaymentsTools("http://fake-mcp/mcp")
@@ -809,14 +840,12 @@ async def test_call_translates_a_denied_tool_call_into_a_policy_denial(
 class _FakeSessionTransportFailing(_FakeSessionDenying):
     async def send_request(self, request, result_type):
         raise _as_anyio_group(
-            McpError(
-                ErrorData(
-                    code=-32001,
-                    message=(
-                        "mcpGuardrails checkRequest failed: upstream call "
-                        "failed: Connect: Connection refused (os error 111)"
-                    ),
-                )
+            MCPError(
+                code=-32001,
+                message=(
+                    "mcpGuardrails checkRequest failed: upstream call "
+                    "failed: Connect: Connection refused (os error 111)"
+                ),
             )
         )
 
@@ -829,13 +858,13 @@ async def test_call_leaves_a_transport_failure_as_an_mcp_error(monkeypatch):
     to narrate.
     """
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
-    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport({}))
+    _patch_transport(monkeypatch, {})
     monkeypatch.setattr(
         mcp_tools, "ClientSession", _FakeSessionTransportFailing
     )
 
     tools = PaymentsTools("http://fake-mcp/mcp")
-    with pytest.raises(McpError) as excinfo:
+    with pytest.raises(MCPError) as excinfo:
         await tools.execute("PAY-000001", 6200.0, "EUR")
     assert not isinstance(excinfo.value, PolicyDenial)
     assert "Connection refused" in str(excinfo.value)
@@ -847,7 +876,7 @@ async def test_refuse_sends_every_field_in_the_tool_call_arguments(monkeypatch):
     validates only that `rule` is non-empty (M3 Task 2), so this client is
     what has to send every field, always."""
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
-    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport({}))
+    _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
     _FakeSessionCapturingRequest.captured = {}
 
@@ -862,7 +891,7 @@ async def test_refuse_sends_every_field_in_the_tool_call_arguments(monkeypatch):
         refused_span_id="b7997877797c1b27",
     )
 
-    params = _FakeSessionCapturingRequest.captured["request"].root.params
+    params = _FakeSessionCapturingRequest.captured["request"].params
     assert params.name == "refuse_payment"
     assert params.arguments == {
         "payment_id": "PAY-000001",
@@ -879,14 +908,14 @@ async def test_get_sends_the_payment_id_in_the_tool_call_arguments(monkeypatch):
     """M3 Task 3 review fix round (finding 1, R11): execute_approved reads the
     ledger back through this call before executing an approval."""
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
-    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport({}))
+    _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
     _FakeSessionCapturingRequest.captured = {}
 
     tools = PaymentsTools("http://fake-mcp/mcp")
     await tools.get("PAY-000001")
 
-    params = _FakeSessionCapturingRequest.captured["request"].root.params
+    params = _FakeSessionCapturingRequest.captured["request"].params
     assert params.name == "get_payment"
     assert params.arguments == {"payment_id": "PAY-000001"}
 
@@ -898,7 +927,7 @@ async def test_call_still_unwraps_a_tool_call_error_after_the_denial_branch(
     not have displaced it: payments-api's 404/409 still arrives as a
     ToolCallError carrying its own text."""
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
-    monkeypatch.setattr(mcp_tools, "streamablehttp_client", _capturing_transport({}))
+    _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionRaisingNestedGroup)
 
     tools = PaymentsTools("http://fake-mcp/mcp")

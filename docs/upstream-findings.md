@@ -689,6 +689,37 @@ path this project actually runs, not for the simpler path now available.
 Adopting `call_tool(meta=...)` remains recorded, available work for a future
 task with its own re-verification obligation, not decided here.
 
+**Update, 2026-09-11 (M3 remaining-bumps, step 1): `mcp` is now 2.2.0, and
+this finding has gone past "fixed" to "obsolete".** At 2.2.0 the client does
+not need to be asked to attach trace context at all — the JSON-RPC dispatcher
+injects it into `params._meta` on every outbound request, unconditionally,
+with a source comment naming SEP-414 by number:
+
+```python
+# mcp/shared/jsonrpc_dispatcher.py, read from the installed 2.2.0
+with otel_span(span_name, kind=SpanKind.CLIENT, attributes={...}):
+    # SEP-414: inject W3C trace context; `_meta` stays on the wire even with a no-op tracer.
+    inject_trace_context(out_meta)
+```
+
+Measured live rather than read off the changelog: that injection is what
+parents payments-mcp's server span under the SDK's own new `MCP send
+tools/call <tool>` CLIENT span (trace `e086b1efd1ae4fba819455c5d9f5fa75`; the
+span inventory and full parent chain are in `docs/telemetry-contract.md`'s
+"The `mcp` client's own telemetry, as measured"). `mcp` 1.28.1, by contrast,
+ships no OpenTelemetry code whatsoever — `grep -rl opentelemetry` over its
+installed package tree returns nothing.
+
+So the two halves of "available future work" now have different answers.
+Adopting `call_tool(meta=...)` is still available and still not taken. But the
+*reason* to hand-build `_meta` at all is gone: `mcp_tools.py`'s injection is
+now redundant, overwritten by the SDK's own with a strictly deeper parent in
+the same trace. It was **left in place** in this step, on purpose — removing
+production code that carries trace context is a behavioural change with its
+own proof obligation, and this step's obligation was to prove the bump alone
+did not break the chain. Recorded so the next reader finds a decision rather
+than dead code nobody noticed.
+
 ---
 
 ## Finding 5 (closed, Task 8): the model's own outbound HTTP hop had no CLIENT span — and, unlike Findings 1–4, the fix was already shipped upstream

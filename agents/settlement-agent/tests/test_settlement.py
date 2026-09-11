@@ -14,8 +14,7 @@ section's own header.
 from __future__ import annotations
 
 import pytest
-from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData
+from mcp.shared.exceptions import MCPError
 from pydantic_ai.messages import (
     ModelResponse,
     RetryPromptPart,
@@ -356,7 +355,7 @@ async def test_a_second_execute_attempt_never_reaches_the_payment_system():
 async def test_the_model_sees_the_denial_reason_and_can_narrate_it():
     """The refusal has to arrive as something the model reads.
 
-    Before this task it arrived as a bare McpError that propagated out of
+    Before this task it arrived as a bare MCPError that propagated out of
     Agent.run(), so the model was never told anything at all. Here the
     scripted narrative is built from what the model was actually handed, so
     the assertion is about the reason reaching it -- not about a string the
@@ -530,20 +529,18 @@ async def test_a_refused_propose_records_no_refusal_since_no_payment_exists_yet(
 async def test_a_transport_failure_still_propagates_rather_than_being_narrated():
     """Regression guard at the agent level.
 
-    The PDS being unreachable arrives as an McpError with no deny marker
+    The PDS being unreachable arrives as an MCPError with no deny marker
     (Task 4's failClosed measurement). It is an outage, not a decision: it
     must reach the caller as an error, never as a refusal the model explains
     away to a claimant.
     """
-    outage = McpError(
-        ErrorData(
-            code=-32001,
-            message=(
-                "mcpGuardrails checkRequest failed: upstream call failed: "
-                "Connect: Connection refused (os error 111)"
-            ),
-        )
+    outage = MCPError(
+        code=-32001,
+        message=(
+            "mcpGuardrails checkRequest failed: upstream call failed: "
+            "Connect: Connection refused (os error 111)"
+        ),
     )
     payments = FakePayments(execute_raises=outage)
-    with pytest.raises(McpError, match="Connection refused"):
+    with pytest.raises(MCPError, match="Connection refused"):
         await _run(CLAIM, payments, _obedient_model())

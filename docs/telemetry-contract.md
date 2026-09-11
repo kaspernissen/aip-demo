@@ -654,9 +654,15 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (all seven run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 108, payments-mcp 16, payments-api (Go) 31,
+claims-agent 16, settlement-agent 109, payments-mcp 16, payments-api (Go) 31,
 customer-ui (vitest) 6, policy-decision-service 105,
 reviewer-ui 56 — all passing.
+(**2026-09-11, M3 remaining-bumps step 1: settlement-agent 108 → 109.** The
+`mcp` 1.28.1 → 2.2.0 bump added one test to `agents/settlement-agent/tests/test_pins.py`,
+`test_mcp_types_is_pinned_in_lock_step_with_mcp` — v2 split the wire types
+into their own `mcp-types` distribution, which `mcp.types` now aliases, so a
+drift there would be a drift in every request settlement-agent builds and
+nothing else in this repo would have said so. Net +1; no test was removed.)
 (**The seventh entry arrived in M3 Task 5B, and it is the same defect
 as the sixth, one milestone later.** `reviewer-ui` shipped in M3 Task 4 with
 its own `requirements.txt`, its own `.venv`, its own `pytest.ini` and 50 tests
@@ -943,7 +949,7 @@ marker is removed, rather than staying silently green.
 |---|---|---|---|---|
 | customer-ui | OpenTelemetry JS web, manual root span | `@opentelemetry/sdk-trace-web` 2.8.0, `@opentelemetry/context-zone` 1.30.0, `@opentelemetry/exporter-trace-otlp-http` 0.219.0, `@opentelemetry/resources` 2.8.0 | `claim.submit` | Owns the trace root. Requires `traceparent`/`tracestate`/`baggage` in claims-agent's own CORS `allow_headers` (`agents/claims-agent/main.py`) so the browser's request survives preflight — the collector's own CORS requirement is different: it needs `http://localhost:8080` in `allowed_origins` (its `allowed_headers` is already wildcarded), since the browser's OTLP export to the collector carries no `traceparent` header of its own. Requires a *static* import of the injection helper — a dynamic `import()` (or any other `await`) before reading the active span loses it under `ZoneContextManager` (`apps/customer-ui/NOTES.md` §2; pinned by that service's own vitest regression test). |
 | claims-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` | `a2a-sdk[telemetry]==0.3.7`, `opentelemetry-instrumentation-starlette==0.65b0` | ASGI entry span `POST /`; `a2a.server.request_handlers.jsonrpc_handler.JSONRPCHandler.on_message_send` and the rest of the `a2a.server.*` call-graph spans (`DefaultRequestHandler.on_message_send`, `EventQueue.enqueue_event`/`.dequeue_event`/`.close`, `EventConsumer.consume_all`, etc.) | `DISABLE_OTEL_INSTRUMENTATION` must remain unset; `bootstrap.configure()` raises if it is `true`. Inbound W3C trace-context extraction comes from `StarletteInstrumentor` wrapping the built ASGI app (A18) — `a2a-sdk` itself extracts nothing (see Gap 1). **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/claims-agent.yaml`) — OTel Python's HTTP instrumentation defaults to the legacy spelling (`http.method`/`http.url`/`http.status_code`) on both the ASGI entry span and the outbound httpx span; without this, this service alone would mix conventions with the Go hop (`agents/claims-agent/NOTES.md` §7, which also records a measurement mistake made while proving the opt-in was genuinely needed, not assumed). |
-| settlement-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` + `mcp` client | `a2a-sdk[telemetry]==0.3.7`, `mcp==1.28.1` (Task 7; was `1.9.4`), `opentelemetry-instrumentation-starlette==0.65b0` | Same shape as claims-agent (`POST /` ASGI entry span, `a2a.server.*` call-graph spans), plus outbound `httpx` CLIENT spans (`POST`/`GET`/`DELETE`) to payments-mcp, plus — as of M1.2 Task 8 — outbound `httpx2` CLIENT spans (`POST`) to `api.anthropic.com`, nested under each `chat` span | Only agent permitted to reach payments-mcp. Same `StarletteInstrumentor` fix as claims-agent for inbound extraction. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/settlement-agent.yaml`), same reason as claims-agent — measured legacy-by-default, confirmed stable after the opt-in (`agents/settlement-agent/NOTES.md` §6); the same opt-in applies to both `HTTPXClientInstrumentor` and `HTTPX2ClientInstrumentor`, since both share one `get_tracer` call in the same module. |
+| settlement-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` + `mcp` client (**which now instruments itself**) | `a2a-sdk[telemetry]==0.3.7`, `mcp==2.2.0` (2026-09-11; was `1.28.1`, and `1.9.4` before that), `opentelemetry-instrumentation-starlette==0.65b0` | Same shape as claims-agent (`POST /` ASGI entry span, `a2a.server.*` call-graph spans), plus outbound `httpx2` CLIENT spans (`POST`/`GET`/`DELETE`) to payments-mcp, plus — as of M1.2 Task 8 — outbound `httpx2` CLIENT spans (`POST`) to `api.anthropic.com`, nested under each `chat` span, plus — **new with `mcp` 2.2.0** — the SDK's own CLIENT spans `MCP send initialize` and `MCP send tools/call <tool>`, one per JSON-RPC request it sends | Only agent permitted to reach payments-mcp. Same `StarletteInstrumentor` fix as claims-agent for inbound extraction. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is set** (`deploy/k8s/settlement-agent.yaml`), same reason as claims-agent — measured legacy-by-default, confirmed stable after the opt-in (`agents/settlement-agent/NOTES.md` §6); the same opt-in applies to both `HTTPXClientInstrumentor` and `HTTPX2ClientInstrumentor`, since both share one `get_tracer` call in the same module. **2026-09-11 correction: the outbound spans to payments-mcp used to come from `HTTPXClientInstrumentor` and now come from `HTTPX2ClientInstrumentor`.** `mcp` 2.x's streamable-HTTP client is built on `httpx2`, a distribution separate from `httpx`; the `httpx2` instrumentor was already applied here (M1.2 Task 8, for `anthropic`), so nothing had to be added, but the attribution in this cell was wrong the moment the bump landed. See "the `mcp` client's own telemetry, as measured" below for the new spans' full inventory. |
 | settlement-agent (model) | PydanticAI `Agent.instrument_all(InstrumentationSettings(...))` (`bootstrap.py`) | `pydantic-ai-slim==2.41.0`, `version=5` (the library default, pinned explicitly) | `invoke_agent settlement_agent` (internal, ×1/request), `chat claude-sonnet-5` (client, ×3/request — one per model turn: propose, execute, final narrative), `execute_tool propose_payment`, `execute_tool execute_payment` (internal, ×1 each) | As of M1.2: the settlement decision itself, not only its transport. **28 distinct `gen_ai.*` attribute names measured at ON (25 at OFF)** across these four span shapes — full inventory and per-span breakdown below. (This cell read a bare "25 distinct" from M1.2 until M2.1 Task 3 fix round 1: the OFF-mode figure, in a cell whose own next clause states the default is ON. M1.2's SF-3 fix round corrected the inventory 165 lines below to 28 and never touched this summary — the fifth time in this project that fixing an instance missed a sibling, and the first with the sibling in the same file. Every attribute count in this document now carries its mode — there are **six** mode-carrying such sites (**eight** assignments in total) — and `tests/unit/test_telemetry_contract_attribute_counts.py` fails if any is unqualified, disagrees with the inventory it summarises, or has the ON and OFF figures the wrong way round. The unit matters, because two defensible numbers exist here and they differ: a *site* is a published count anchored on `gen_ai.*` or on the word "names", which is what a reader would point at and call a claim, and there are six of those, all six naming a mode; the guard additionally holds to the right mode any bare integer that merely equals one of the two figures, which is what makes the second half of "28 at ON, 25 at OFF" checkable rather than decorative, and counting those as well gives eight assignments. "Site" is the unit this sentence is about, so six is the figure it publishes, with eight stated beside it so the two cannot later be mistaken for each other. (This read "there are nine of them" from M2.1 Task 4 until Task 5's fix round measured it — **nine was wrong in both units**. It was never guarded, and because it is the sentence that tells a reader how much of this document the guard covers, it propagated from here into four separate task briefs before anyone checked it: the counts it describes were correct the whole time, and only the count *of* them drifted, precisely because the site total was the one number with nothing asserting it. `test_the_documents_own_count_of_its_attribute_count_sites_is_right` now derives both figures from the checker's own functions rather than from anything typed by hand.) That last check arrived in fix round 2: the guard's first version tested which numbers appeared in a sentence rather than which mode each was assigned to, so it would have passed "25 at ON, 28 at OFF".) `include_content` is **not** hardcoded — it reads `NORTHSTAR_CAPTURE_CONTENT` (default ON; see "Content capture" below) — and `include_model_request_parameters` is left at its library default (`True`), never passed explicitly. |
 | agentgateway | native, `frontendPolicies.tracing` in its own config | `cr.agentgateway.dev/agentgateway:v1.5.0` (Resource `service.version=1.5.0`; scope `agentgateway` with **no** `otel.scope.version`; Resource `telemetry.sdk.language=rust`, `telemetry.sdk.name=opentelemetry`, `telemetry.sdk.version=0.32.1`) | Two spans per MCP message: a SERVER span named after the JSON-RPC method (`initialize`, `notifications/initialized`, `tools/call`) or, for non-JSON-RPC HTTP, after method-and-route (`GET /*`, `DELETE /*`); and a CLIENT span named `<method> <target>` (`initialize payments-mcp`), which for tool calls becomes `tools/call <target>_<tool>` (`tools/call payments-mcp_propose_payment`) | Interposed by M2.1 Task 3; **verifies a SPIRE-minted JWT-SVID as of Task 4** (`jwtAuth`, `mode: strict`); and, **as of M2.2, calls out to the Policy Decision Service on every `tools/call`** (`mcpGuardrails`, `kind: remote`, `failureMode: failClosed`) and refuses the call when the answer is deny. That third job is visible in the trace as one extra span per tool call, a CLIENT span named `Guardrail` — see "agentgateway's guardrail telemetry, as measured" below; it is agentgateway's own span and nothing here invented it. The verification is visible in the trace, not only in a 401: its SERVER spans gained one attribute, `jwt.sub`, carrying the verified token's subject — for a JWT-SVID, the caller's SPIFFE ID (measured `spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent`). The gateway derives it from the token it validated; nothing in this project sets it. Measured **absent** from the CLIENT spans, consistent with the gateway stripping the credential on the outbound leg (`if !self.preserve_token { self.location.remove(req)?; }`, `crates/agentgateway/src/http/jwt.rs`) — so payments-mcp receives no identity to check. Emits **a third HTTP attribute vocabulary**, neither stable nor OTel-legacy — see "agentgateway instrumentation, as measured" below, which is the one place this document's HTTP-convention claim has an exception. Exports OTLP/**gRPC** to the collector on 4317, the only component here that does not use OTLP/HTTP on 4318. Task 2 shipped it with no `tracing` block at all, i.e. emitting nothing; Task 3 added one, which is why this row did not exist before. |
 | payments-mcp | FastMCP native | `fastmcp==4.0.3` | `tools/call propose_payment`, `tools/call execute_payment` | TracerProvider does **not** need to be installed before importing fastmcp on this version — `fastmcp.telemetry.get_tracer()` calls `get_tracer_provider()` fresh on every span, not once at import (measured; the brief's premise here was wrong for 4.0.3 — kept as a code convention anyway, not a correctness requirement). `FASTMCP_TELEMETRY_MODE=native` is set explicitly even though it is already the default. **`OTEL_SEMCONV_STABILITY_OPT_IN=http` is also set** (`deploy/k8s/payments-mcp.yaml`) — this governs only the *outbound httpx* span to payments-api (FastMCP's own native MCP spans are unaffected; this knob is httpx-instrumentation-specific), measured legacy-by-default, confirmed stable after (`tools/payments-mcp/NOTES.md` §3). |
@@ -1321,6 +1327,67 @@ entire subtree, so a denied run is genuinely smaller than a permitted one by a
 margin that itself varies. Publishing a total here would be publishing a
 number that changes with the verdict.
 
+## The `mcp` client's own telemetry, as measured (M3 remaining-bumps, step 1)
+
+**New as of 2026-09-11, and not authored here.** `mcp` 1.28.1 shipped no
+OpenTelemetry code at all — `grep -rl opentelemetry` over the installed 1.28.1
+package tree returns nothing. `mcp` 2.2.0 ships three such modules
+(`mcp/shared/_otel.py`, `mcp/server/_otel.py`,
+`mcp/shared/jsonrpc_dispatcher.py`), and upstream's v2.0.0 release notes say so
+outright: "OpenTelemetry tracing ships on by default". So settlement-agent
+gained spans it does not create, from a library bump, which is exactly the
+class of change this document exists to record rather than discover later.
+
+Measured off a live refused settlement (trace
+`e086b1efd1ae4fba819455c5d9f5fa75`, 145 spans, six services, one orphan and
+that orphan the test's own synthetic root):
+
+| Span name | Kind | Count per settlement | Attributes, verbatim |
+|---|---|---|---|
+| `MCP send initialize` | CLIENT | 3 (one per `_call`, because this client opens a fresh session per tool call) | `mcp.method.name=initialize`, `jsonrpc.request.id=1` |
+| `MCP send tools/call <tool>` | CLIENT | 3 (`propose_payment`, `execute_payment`, `refuse_payment`) | `mcp.method.name=tools/call`, `jsonrpc.request.id=2` |
+
+Both carry `otel.scope.name=mcp-python-sdk` with **no** `otel.scope.version`,
+and both carry `northstar.claim.id` — that last one is *this project's*
+`ClaimIdSpanProcessor` stamping every span in the process, not the SDK.
+
+Where they sit: `execute_tool <tool>` (PydanticAI) → **`MCP send tools/call
+<tool>`** → `POST` (the httpx2 CLIENT span) → agentgateway. They are a new
+level in the chain, not a replacement for one, and the hop still survives them
+— the parent chains further down this section were re-measured after the bump.
+
+**Two convention gaps, recorded as they appear rather than as they should be**
+(same rule as the agentgateway section below):
+
+- The span name is `MCP send {method} {target}`, not the OTel MCP semantic
+  conventions' `{mcp.method.name} {target}` that payments-mcp's own server-side
+  spans follow (`tools/call execute_payment`). The `MCP send ` prefix is a
+  literal in `jsonrpc_dispatcher.py`.
+- No `gen_ai.tool.name`. The tool name appears only inside the span *name*,
+  so it is not queryable as an attribute on the client side — where
+  payments-mcp's server span does carry it. The attribute set is the two keys
+  in the table and nothing else.
+
+**And one behaviour that is not a gap but changes what this repo's own code is
+for.** `mcp` 2.2.0's dispatcher injects W3C trace context into `params._meta`
+itself, immediately after opening the span above:
+
+```python
+span_name = f"MCP send {method}{f' {target}' if isinstance(target, str) else ''}"
+with otel_span(span_name, kind=SpanKind.CLIENT, attributes={...}):
+    # SEP-414: inject W3C trace context; `_meta` stays on the wire even with a no-op tracer.
+    inject_trace_context(out_meta)
+```
+
+`agents/settlement-agent/mcp_tools.py` has hand-injected exactly that since
+M1.1 Task 7, because at the time nothing else would. It still does, and the
+SDK's own injection now overwrites it with a strictly deeper parent (the `MCP
+send` span) in the same trace — so the wire is correct either way and nothing
+was broken by leaving it. **It is redundant, and that is a finding, not a
+silent deletion:** see Gap 6 below, and `docs/upstream-findings.md` Finding 4.
+Removing it is its own change with its own proof, deliberately not folded into
+a dependency bump.
+
 ## agentgateway instrumentation, as measured (M2.1 Task 3)
 
 `cr.agentgateway.dev/agentgateway:v1.5.0`, standalone (ConfigMap + Deployment +
@@ -1581,12 +1648,16 @@ carriers, not one:
   header and nothing else — it never inspects the request body. Read in
   isolation that predicts a fractured trace, and the M2 spike's first pass
   concluded exactly that, wrongly.
-- It survives because `bootstrap.py` runs
-  `HTTPXClientInstrumentor().instrument()` and the MCP streamable-HTTP
-  transport is httpx-based, so every outbound MCP request **also** carries an
-  auto-injected `traceparent` HTTP header. Measured against an echo server:
+- It survives because `bootstrap.py` instruments the httpx client the MCP
+  streamable-HTTP transport is built on, so every outbound MCP request
+  **also** carries an auto-injected `traceparent` HTTP header. Measured
+  against an echo server:
   `00-df60a027741941a16675b35edbcf0a32-5675a787e51b87e6-03`, with no manual
-  injection anywhere in the call path.
+  injection anywhere in the call path. (**2026-09-11:** this said
+  "`HTTPXClientInstrumentor().instrument()`" specifically. Since `mcp` 2.2.0 the
+  transport is built on `httpx2`, so the instrumentor that does this is
+  `HTTPX2ClientInstrumentor` — also already applied in the same file. The
+  mechanism and the conclusion are unchanged; the name was not.)
 
 So nothing here should be read as agentgateway supporting SEP-414 on ingress.
 It does not, and a future MCP client carrying context in `_meta` *alone* — a
@@ -2760,6 +2831,24 @@ For each: the evidence, whether upstream already has work in flight, and what we
   deliberately left unchanged, byte-for-byte, in the same task that bumped
   the pin: adopting the simpler call path is still available future work,
   now recorded in `docs/upstream-findings.md` Finding 4, not decided here.
+- **Update (2026-09-11, M3 remaining-bumps step 1): `mcp` is now 2.2.0, and
+  the gap is not merely fixed, it is obsolete.** The SDK no longer needs to be
+  *asked* to attach trace context to `params._meta`: its JSON-RPC dispatcher
+  injects W3C trace context into `_meta` on every outbound request
+  unconditionally, with a source comment naming SEP-414
+  (`mcp/shared/jsonrpc_dispatcher.py`, read from the installed 2.2.0 — quoted
+  in "The `mcp` client's own telemetry, as measured" above). Measured live, not
+  read off a changelog: the injection is what parents payments-mcp's server
+  span under the client's new `MCP send tools/call <tool>` span.
+  **Consequence for this repo, stated rather than acted on:**
+  `mcp_tools.py`'s hand-built `send_request` path — the one piece of production
+  code here that exists because of this gap — is now redundant. It is not
+  harmful (the SDK's own injection overwrites the same keys with a deeper
+  parent in the same trace, and the hand-built path is still what the unit
+  tests pin), and it was **left in place**: deleting it is a behavioural change
+  that deserves its own step and its own live proof, not a passenger on a
+  dependency bump. Recorded here and in `docs/upstream-findings.md` Finding 4
+  so the next reader finds a decision rather than an accident.
 
 ### Gap 7 (closed, M1.2 Task 8): the model's own outbound HTTP hop had no CLIENT span — already fixed upstream, and now applied here too
 

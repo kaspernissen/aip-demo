@@ -17,7 +17,7 @@ from the bytes the gateway measurably sends the PDS to the exception
       -> pds.rules.decide               (the real policy)
       -> pds.server.build_result        (the real deny body)
       -> the gateway's measured mapping (`_as_it_arrives_at_the_agent`)
-      -> mcp.shared.exceptions.McpError (the real exception type)
+      -> mcp.shared.exceptions.MCPError (the real exception type)
       -> mcp_tools._policy_denial       (the real detector)
 
 Only one hop in that chain is a stand-in, and it is the one hop that is not
@@ -46,8 +46,7 @@ import pathlib
 import sys
 
 import pytest
-from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData
+from mcp.shared.exceptions import MCPError
 
 from mcp_tools import PolicyDenial, _deny_marker, _policy_denial
 
@@ -135,7 +134,7 @@ def _pds_decision(params: bytes):
     return decision, result
 
 
-def _as_it_arrives_at_the_agent(result) -> McpError:
+def _as_it_arrives_at_the_agent(result) -> MCPError:
     """agentgateway's mapping, measured byte-for-byte in Task 1 finding 1.
 
     The one hop in this chain that is not Python. `reason` becomes
@@ -143,12 +142,10 @@ def _as_it_arrives_at_the_agent(result) -> McpError:
     code is the gateway's `-32001` (`PERMISSION_DENIED`) and never the
     `-32003` the PDS put inside the body.
     """
-    return McpError(
-        ErrorData(
-            code=-32001,
-            message=result.error.reason,
-            data=json.loads(result.error.mcp_error),
-        )
+    return MCPError(
+        code=-32001,
+        message=result.error.reason,
+        data=json.loads(result.error.mcp_error),
     )
 
 

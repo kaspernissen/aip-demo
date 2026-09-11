@@ -45,6 +45,14 @@ pytest==9.0.3
 # an untested version bump this task never verified. house style is that
 # nothing floats, not that the newest available wins; the installed,
 # already-exercised tree is the one being pinned.
+#
+# **2026-09-11 (M3 remaining-bumps, step 1): one of those three has since been
+# taken, deliberately and with a proof.** `mcp`/`mcp-types` are now 2.2.0 (see
+# their lines below), bumped as their own step with the distributed trace
+# re-measured across this service's hop afterwards -- which is the "verified"
+# the paragraph above says was missing, not an exception to it. `cyclopts` and
+# `platformdirs` are deliberately still 4.25.0 and 4.11.7: neither is in that
+# step's scope, and the paragraph above still governs them.
 aiofile==3.12.3
 annotated-types==0.8.0
 anyio==4.15.1
@@ -90,8 +98,8 @@ jsonschema-path==0.5.0
 jsonschema-specifications==2025.9.1
 keyring==25.7.0
 markdown-it-py==4.2.0
-mcp==2.1.1
-mcp-types==2.1.1
+mcp==2.2.0
+mcp-types==2.2.0
 mdurl==0.1.2
 more-itertools==11.1.0
 openapi-pydantic==0.5.1

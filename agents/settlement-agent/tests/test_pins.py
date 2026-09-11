@@ -8,10 +8,18 @@ gained a merged `call_tool(meta=...)` convenience method
 (docs/upstream-findings.md, Finding 4), but adopting it is explicitly left as
 recorded, available future work, not taken here — this task verifies the
 *existing* `send_request` path still propagates at the new version, rather
-than replacing it. `mcp` staying below `2.0.0` also keeps PydanticAI's `[mcp]`
-extra unsatisfiable against this pin (see requirements.txt), on purpose:
-bumping to pick up the fix and adopting `MCPToolset` are independent
-decisions, and only the former is this task's job.
+than replacing it.
+
+**2026-09-11 (M3 remaining-bumps, step 1): `mcp` is now 2.2.0**, and one
+sentence that used to close the paragraph above is dead. It read: "`mcp`
+staying below `2.0.0` also keeps PydanticAI's `[mcp]` extra unsatisfiable
+against this pin (see requirements.txt), on purpose: bumping to pick up the
+fix and adopting `MCPToolset` are independent decisions, and only the former
+is this task's job." The two decisions are still independent and `MCPToolset`
+is still not adopted — but the version number no longer enforces that, so
+`test_no_fastmcp_in_this_service` below is the whole of the enforcement now.
+The `send_request` path is still the one `_call` takes, still hand-building
+`params._meta`, and it is still what this file exists to pin.
 
 Final-review fix round (SF-2): this file pinned `mcp` and `pydantic-ai-slim`
 via `importlib.metadata` but not `pytest`/`pytest-asyncio`, so the pytest
@@ -30,7 +38,15 @@ import pytest
 
 
 def test_mcp_is_still_pinned_to_the_version_mcp_tools_was_verified_against():
-    assert md.version("mcp") == "1.28.1"
+    assert md.version("mcp") == "2.2.0"
+
+
+def test_mcp_types_is_pinned_in_lock_step_with_mcp():
+    # v2 split the wire types into their own distribution, "published in
+    # lock-step with `mcp`" (upstream's v2.0.0 release notes) and pinned exactly
+    # by `mcp`'s own metadata. `mcp.types` is an alias for it, so a drift here
+    # would be a drift in every request this service builds.
+    assert md.version("mcp-types") == "2.2.0"
 
 
 def test_pydantic_ai_is_importable_and_at_the_verified_version():
