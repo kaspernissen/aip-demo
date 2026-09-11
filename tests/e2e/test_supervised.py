@@ -322,6 +322,24 @@ def reviewer_ui_route():
     the two-tier skip/fail discriminator this mirrors from
     `test_gateway_is_the_only_route.py::policy_present`.
     """
+    # The cluster-reachability probe, ahead of and separate from the stage-3
+    # discriminator below -- same split test_gateway_config_drift.py's
+    # `live_gateway_config_text` makes. `_stage3_workload_present()` returns
+    # `False` on ANY non-zero `kubectl get deployment` exit, which includes an
+    # unreachable cluster, a wrong context or a missing `kubectl` binary, not
+    # only a genuinely absent Deployment -- and the skip message below it
+    # positively asserts "this is not a stage-3 cluster", which would be false
+    # in exactly those cases. Checking `cluster-info` first, and skipping with
+    # an honest reason when THAT is what's actually wrong, is what makes the
+    # stage-3 skip message beneath it a true statement whenever it fires.
+    reachable = _kubectl("cluster-info")
+    if reachable.returncode != 0:
+        pytest.skip(
+            f"needs the live cluster: cannot reach {KUBE_CONTEXT} "
+            f"({reachable.stderr.strip() or 'no output'}); "
+            "run ./scripts/setup-kind.sh --stage 3"
+        )
+
     if not _stage3_workload_present():
         pytest.skip(
             f"no {STAGE3_DISCRIMINATOR_DEPLOYMENT} Deployment in "
@@ -607,17 +625,35 @@ def test_criterion_2_the_refusal_appears_in_reviewer_ui_with_rule_limit_requeste
     next_start = html.find('<div class="card">', idx + 1)
     card = html[card_start: next_start if next_start != -1 else len(html)]
 
-    assert escape(str(refusal["rule"])) in card, (
+    # Each figure is checked as its OWN labeled fragment
+    # (`render.py::_payment_card`'s literal "rule <span ...>", "limit
+    # <span ...>", "requested <span ...>" text), not as a bare value. A bare
+    # `escape(str(refusal["requested"])) in card` check does not actually pin
+    # down which field the page is showing: `_payment_card` also prints
+    # `payment["amount"]` under its own "Amount requested" label, and
+    # `refusal["requested"]` is always the same number as `payment["amount"]`
+    # (settlement-agent records the refusal against the amount it was asked to
+    # execute) -- so that bare check would still pass even if the "Policy
+    # decision" line's own `requested` figure were deleted from the template
+    # entirely. Anchoring each value to its own label is what makes this
+    # assertion about the refusal record specifically, not about whichever
+    # field on the card happens to carry the same number.
+    assert f'rule <span class="figure">{escape(str(refusal["rule"]))}</span>' in card, (
         f"reviewer-ui's card for {payment_id} does not show the ledger's "
-        f"rule {refusal['rule']!r}:\n{card}"
+        f"rule {refusal['rule']!r} under its own 'rule' label:\n{card}"
     )
-    assert escape(str(refusal["limit"])) in card, (
+    assert f'limit <span class="figure">{escape(str(refusal["limit"]))}</span>' in card, (
         f"reviewer-ui's card for {payment_id} does not show the ledger's "
-        f"limit {refusal['limit']!r}:\n{card}"
+        f"limit {refusal['limit']!r} under its own 'limit' label:\n{card}"
     )
-    assert escape(str(refusal["requested"])) in card, (
+    assert (
+        f'requested <span class="figure">{escape(str(refusal["requested"]))}</span>'
+        in card
+    ), (
         f"reviewer-ui's card for {payment_id} does not show the ledger's "
-        f"requested amount {refusal['requested']!r}:\n{card}"
+        f"requested amount {refusal['requested']!r} under its own 'requested' "
+        f"label (a bare value match here could be satisfied by the card's "
+        f"separate 'Amount requested' figure instead):\n{card}"
     )
     assert escape(str(refusal["narrative"])) in card, (
         f"reviewer-ui's card for {payment_id} does not show the agent's own "
@@ -654,7 +690,28 @@ def test_criterion_3_a_human_approves_in_the_browser_and_the_payment_executes(
 
     assert "Approved by" in approval_run.result_text, approval_run.result_text
     assert approval_run.payment_id in approval_run.result_text, approval_run.result_text
-    assert "executed" in approval_run.result_text, approval_run.result_text
+    # The success-branch phrase `render.py::result_page` prints ONLY when
+    # `outcome.executed is not None` -- not a bare "executed" substring check,
+    # which the failure branch also satisfies: that branch's own text is
+    # "Approved by {reviewer}, but the execution did not happen ... was not
+    # executed: ...", which contains the literal substring "executed" too. A
+    # bare check here would pass on a failed execution just as readily as on
+    # a real one; the ledger check above is still this test's primary
+    # evidence, but this corroboration block should actually corroborate it.
+    # `page.locator("body").inner_text()` (Playwright) returns rendered TEXT,
+    # not markup, so the check is against the plain-text phrase the success
+    # branch alone produces ("Payment ... is now executed for ..."), not
+    # against `render.py`'s own `<span class="figure">` HTML.
+    assert "is now executed" in approval_run.result_text, (
+        "the rendered result page does not carry reviewer-ui's own "
+        "success-branch phrase ('is now executed'), so this corroboration "
+        "cannot tell a real execution from the 'did not happen' failure "
+        f"branch, which also contains the word 'executed': {approval_run.result_text!r}"
+    )
+    assert "did not happen" not in approval_run.result_text, (
+        "the result page shows the execution-did-not-happen branch: "
+        f"{approval_run.result_text!r}"
+    )
 
 
 # --- Criterion 4 --------------------------------------------------------------
@@ -788,9 +845,18 @@ def test_criterion_5_the_approved_trace_links_to_the_refusal_and_review_decision
         f"review.decision's own review.refused.trace_id does not name the "
         f"denial run: {review_span.attrs}"
     )
+    # `> 0`, not `>= 0`: the criterion says "records the elapsed time", and a
+    # hardcoded `elapsed_ms = 0` would satisfy `>= 0` while proving nothing was
+    # ever measured. `bool` is deliberately excluded even though it is an
+    # `int` subclass in Python -- `isinstance(True, (int, float))` is `True`,
+    # and this field is elapsed milliseconds, not a flag.
     elapsed = review_span.attrs.get("review.elapsed_ms")
-    assert isinstance(elapsed, (int, float)) and elapsed >= 0, (
-        f"review.elapsed_ms is not a sane non-negative number: {elapsed!r}"
+    assert (
+        isinstance(elapsed, (int, float))
+        and not isinstance(elapsed, bool)
+        and elapsed > 0
+    ), (
+        f"review.elapsed_ms is not a real, positive measured duration: {elapsed!r}"
     )
 
 
