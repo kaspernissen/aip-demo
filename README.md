@@ -31,11 +31,14 @@ settles end to end with no human involved: a platform that asks a human about
 everything is not supervision, it is a queue.
 
 **What is deliberately still not decided**, so the "supervised" claim is not
-overread. Approval is **one human, one click, once**: there is no second
-approver, no timeout, no expiry, no rejection path back to the agent, and no
-per-human identity — the reviewer UI reads *its own* SPIFFE ID for the
-`review.decision` span, so the span records which deployment approved, not
-which person. Authorization is still exactly one hop on the MCP call; the
+overread. Approval is **one human, one click, once**: no second approver, no
+timeout, no expiry, no re-proposal path back to the agent, and no
+**authenticated** human — the reviewer id is a string the form supplies, and
+the `review.decision` span's `review.reviewer.spiffe_id` is the reviewer UI's
+*own* identity, so between them the span records an unverified claim and the
+deployment that accepted it, never which person approved. There is a Reject
+button and it is honest about doing nothing: it records a span and leaves the
+payment exactly as refused. Authorization is still exactly one hop on the MCP call; the
 browser → claims-agent, claims-agent → settlement-agent and
 payments-mcp → payments-api hops carry no identity and no policy, and
 payments-api still moves money for anything that can reach its Service —
