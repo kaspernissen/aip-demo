@@ -57,10 +57,13 @@ kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
   echo "Run ./scripts/setup-kind.sh --stage 2 first." >&2
   exit 1
 }
-# The e2e/browser assertions below need all four port-forwards up. They die
-# after any redeploy and simply need re-establishing (A9) — check for that
-# now, so a stale/missing forward fails in a second, not after minutes of
-# test timeouts that look like a broken chain.
+# The e2e/browser assertions below need all five ports up. Four are
+# `kubectl port-forward`s that die after any redeploy and simply need
+# re-establishing (A9); the fifth (reviewer-ui, M3 Task 5A) is normally kept
+# alive by kind's own host-port mapping instead (deploy/kind/stage3.yaml),
+# but the check below asks the same liveness question of it regardless —
+# check for that now, so a stale/missing port fails in a second, not after
+# minutes of test timeouts that look like a broken chain.
 #
 # TWO checks per port, and the second one is the one that matters.
 # `lsof -sTCP:LISTEN` answers "is a socket bound", which is NOT the same
@@ -89,11 +92,23 @@ command_exists curl || { echo -e "${RED}curl is required (the port-forward liven
 # port:service:path — the path is any endpoint that answers HTTP without
 # authentication or a session. The two agents serve their A2A agent card; the
 # ledger serves /healthz; payments-mcp answers /mcp with 400 and that is fine.
+#
+# M3 Task 5A: reviewer-ui joins this loop as the fifth port. Unlike the four
+# above (plain ClusterIP Services, each reached only through an ephemeral
+# `kubectl port-forward`), reviewer-ui's own Service is NodePort and
+# deploy/kind/stage3.yaml maps host port 8081 straight to it, so in the
+# ordinary case this finds it already alive without anyone having started a
+# forward for it. The probe asks the same two questions either way, and the
+# remedy line below still names a `kubectl port-forward` as the fallback fix
+# — reaching the Service that way (`kubectl -n northstar-agents port-forward
+# svc/reviewer-ui 8081:8080`) works regardless of whether the NodePort mapping
+# is what's actually missing.
 for probe in \
   "19001:claims-agent:/.well-known/agent-card.json" \
   "19002:settlement-agent:/.well-known/agent-card.json" \
   "18000:payments-mcp:/mcp" \
-  "18080:payments-api:/healthz"; do
+  "18080:payments-api:/healthz" \
+  "8081:reviewer-ui:/healthz"; do
   port="${probe%%:*}"
   rest="${probe#*:}"
   name="${rest%%:*}"
