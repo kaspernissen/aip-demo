@@ -68,7 +68,26 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**M3 (Supervised), final-review fix round — the current figures.** A second
+**2026-09-11 (M3, guard-test addition) — the current figures, derived rather
+than re-measured.** `tests/unit/test_no_sampling.py` was added: three
+hermetic assertions guarding the standing "100% of telemetry, always"
+requirement (no `OTEL_TRACES_SAMPLER`/`_ARG` anywhere in `deploy/`, no
+`tail_sampling`/`probabilistic_sampler` processor in the collector,
+`agentgateway`'s `frontendPolicies.tracing.randomSampling` still `true`).
+None of the three is gated and none is expected to fail, so this only adds 3
+to what was already measured; the gate itself was **not** re-run — that
+needs a live cluster and spends real tokens (see the section above), and
+this change touches no runtime code. `pytest --collect-only -q tests/` now
+collects **228** (225 + 3), measured directly and requiring no cluster.
+Bare-suite row: 228 collected − 33 gated − 1 xfailed = `194 passed, 33
+skipped, 1 xfailed`. Gate row, **derived, not measured against a live
+run**: 228 − 1 xfailed = `227 passed, 1 xfailed`. The row below this one is
+the last figure the gate was actually run against; the next real
+`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` run is what turns this derived
+gate figure into a measured one.
+
+**M3 (Supervised), final-review fix round — superseded by the row above;
+kept because it is the last run that actually exercised the gate.** A second
 gate run was authorised (controller ruling R37) because that round changed
 span parentage in a live service, and certifying that on the strength of the
 pre-change run would have made the certification false. Run the same way as
@@ -141,8 +160,8 @@ defect class, so each command is stated as it was actually run.)
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `191 passed, 33 skipped, 1 xfailed` |
-| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `224 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `194 passed, 33 skipped, 1 xfailed` |
+| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `227 passed, 1 xfailed` (derived — see the note above; not yet re-measured against a live run) |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
