@@ -88,9 +88,21 @@ pem==23.1.0
 # repo that sets `params._meta` — with a convenience wrapper whose propagation
 # behaviour nothing here has measured. `tests/test_pins.py`'s
 # `test_no_fastmcp_in_this_service` is now the only thing enforcing it.
-pydantic-ai-slim[anthropic]==2.41.0
-# Transitive pins pulled in by pydantic-ai-slim[anthropic]==2.41.0, recorded
+#
+# **M3 remaining-bumps, step 2 (2026-09-11): 2.41.0 -> 2.42.0.** The newest
+# stable release, published 2026-09-09 (PyPI release history for
+# `pydantic-ai-slim`; the `v2.42.0` tag on github.com/pydantic/pydantic-ai is
+# dated the same). This library emits settlement-agent's whole `gen_ai.*` span
+# inventory, which `docs/telemetry-contract.md` publishes attribute by
+# attribute, so the bump was followed by re-measuring that inventory off a live
+# settlement rather than by reading the release notes: 28 names at
+# `NORTHSTAR_CAPTURE_CONTENT` ON, unchanged, and the four span shapes unchanged
+# — only `otel.scope.version` moved, 2.41.0 -> 2.42.0.
+pydantic-ai-slim[anthropic]==2.42.0
+# Transitive pins pulled in by pydantic-ai-slim[anthropic], recorded
 # exactly as resolved by `uv pip install` (house style: nothing floats).
+# `pydantic-graph` is released in lock-step with `pydantic-ai-slim` from the
+# same repository and is pinned to the same version for that reason.
 anthropic==1.4.0
 docstring-parser==0.18.0
 genai-prices==0.1.6
@@ -99,7 +111,7 @@ httpcore2==2.12.0
 httpx2==2.12.0
 jiter==0.16.0
 logfire-api==5.0.0
-pydantic-graph==2.41.0
+pydantic-graph==2.42.0
 sniffio==1.3.1
 truststore==0.10.4
 

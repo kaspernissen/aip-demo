@@ -112,7 +112,9 @@ def capture_content_enabled() -> bool:
 def _instrument_pydantic_ai() -> None:
     """Turn on PydanticAI's own OTel instrumentation.
 
-    Verified against pydantic-ai-slim 2.41.0:
+    Verified against pydantic-ai-slim 2.42.0 (2.41.0 until 2026-09-11; every
+    bullet below was re-checked against the installed 2.42.0 at the bump, and
+    all four still hold):
       * `Agent(..., instrument=True)` does NOT exist at this version — it
         raises TypeError. `Agent.instrument_all()` is a staticmethod setting a
         process-wide default, which is what we want: one call, every agent.

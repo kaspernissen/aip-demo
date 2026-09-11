@@ -65,7 +65,8 @@ settlement_agent = Agent(
     deps_type=SettlementDeps,
     # output_type is deliberately the default `str`, not a structured
     # BaseModel. Agent.__init__'s output_type defaults to `str` (verified via
-    # inspect.signature against the installed 2.41.0). A structured
+    # inspect.signature against the installed 2.42.0 -- 2.41.0 until
+    # 2026-09-11, re-checked rather than assumed at the bump). A structured
     # output_type forces the model's final reply to be JSON matching that
     # schema; this agent's final turn is free-form prose for the claimant,
     # so plain text is the correct output type, not an accidental omission.
@@ -74,7 +75,8 @@ settlement_agent = Agent(
     # Agent at import time can require ANTHROPIC_API_KEY to be present, which
     # would break the token-free unit suite (it imports this module but always
     # runs under `settlement_agent.override(model=...)` and never resolves the
-    # real model). Verified parameter on Agent.__init__ at 2.41.0.
+    # real model). Verified parameter on Agent.__init__ at 2.42.0 (2.41.0
+    # until 2026-09-11; re-checked at the bump, default still False).
     defer_model_check=True,
     instructions=(
         "You settle motor insurance claims for Northstar Insurance.\n"

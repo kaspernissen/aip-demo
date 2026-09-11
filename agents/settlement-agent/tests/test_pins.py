@@ -50,7 +50,18 @@ def test_mcp_types_is_pinned_in_lock_step_with_mcp():
 
 
 def test_pydantic_ai_is_importable_and_at_the_verified_version():
-    assert md.version("pydantic-ai-slim") == "2.41.0"
+    # 2026-09-11 (M3 remaining-bumps, step 2): 2.41.0 -> 2.42.0. "Verified"
+    # here means the `gen_ai.*` inventory `docs/telemetry-contract.md`
+    # publishes was re-measured off a live settlement at this version, not
+    # that the release notes were read.
+    assert md.version("pydantic-ai-slim") == "2.42.0"
+
+
+def test_pydantic_graph_is_pinned_in_lock_step_with_pydantic_ai_slim():
+    # Same repository, released together, and `pydantic-ai-slim` declares it as
+    # an exact-version dependency. A drift would be a resolver accident, not a
+    # decision.
+    assert md.version("pydantic-graph") == md.version("pydantic-ai-slim")
 
 
 def test_no_fastmcp_in_this_service():

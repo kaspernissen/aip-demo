@@ -105,7 +105,8 @@ class PolicyDenial(ToolFailed):
         turns a `ToolFailed` raised anywhere under a tool call into a
         `ToolReturnPart(outcome='failed')` carrying `.message`
         (`tool_manager.py::_wrap_error_as_failed`, read from the installed
-        2.41.0). The model therefore reads the refusal and can narrate it,
+        2.42.0 -- 2.41.0 until 2026-09-11, re-read at the bump and unchanged).
+        The model therefore reads the refusal and can narrate it,
         which is the whole point: before this, a denial left `_call` as a bare
         `MCPError`, propagated out of `Agent.run()`, and the A2A caller got a
         JSON-RPC `-32603` where a customer-facing explanation belongs
