@@ -1244,13 +1244,24 @@ settlement-agent's `execute_tool <tool>` span. The measured chain is:
 
 ```
 settlement-agent  execute_tool propose_payment            internal
-  settlement-agent  POST                                  client   (httpx, to agentgateway)
-    agentgateway    tools/call                             server
-      agentgateway  tools/call payments-mcp_propose_payment client
-        payments-mcp  tools/call propose_payment            server
-          payments-mcp  POST                                client
-            payments-api  POST /payments/propose            server
+  settlement-agent  MCP send tools/call propose_payment   client   (mcp 2.2.0's own span)
+    settlement-agent  POST                                client   (httpx2, to agentgateway)
+      agentgateway    tools/call                           server
+        agentgateway  tools/call payments-mcp_propose_payment client
+          payments-mcp  tools/call propose_payment          server
+            payments-mcp  POST                              client
+              payments-api  POST /payments/propose          server
 ```
+
+**2026-09-11: one level was added to this chain by a dependency bump, not by
+this project.** The block above had seven rows, `execute_tool` straight to the
+httpx `POST`, until `mcp` went 1.28.1 → 2.2.0. 2.x ships OpenTelemetry on by
+default and opens its own `MCP send tools/call <tool>` CLIENT span around each
+request, so the httpx span is now that span's child — and it is an `httpx2`
+span, because 2.x's transport is built on `httpx2`. Re-measured off trace
+`e086b1efd1ae4fba819455c5d9f5fa75`, not edited to match a changelog. The two
+e2e assertions described immediately below are unaffected: both are ancestry
+checks, not parent-of checks.
 
 One trace id throughout, every span parented on the one directly above it,
 `agentgateway` added as a **sixth service**. Two pre-existing e2e assertions
