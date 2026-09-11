@@ -597,6 +597,16 @@ def test_criterion_2_the_refusal_appears_in_reviewer_ui_with_rule_limit_requeste
     (ruling R23: `PAY-000053` and its Jaeger traces are exactly that kind of
     stale leftover) -- a bare substring match on `rule`/`limit`/`requested`
     could be satisfied by a stranger's card on the same page.
+
+    **Ordering dependency, stated rather than enforced:** this test requires
+    the payment to still be `refused`, and `approval_run` (which criteria 3-6
+    use) moves that same payment to `executed`. Nothing but pytest's
+    file-definition order keeps them apart -- this test is defined above the
+    first test that requests `approval_run`, and pytest runs items in
+    definition order, so the module-scoped fixture has not been built yet when
+    this runs. Do not reorder the criteria in this file, and do not run it
+    with a plugin that randomises order, without giving this test a refusal of
+    its own.
     """
     payment_id = denial_run.reply["paymentId"]
     record = _get_payment(payment_id)
@@ -867,6 +877,63 @@ def test_criterion_5_the_approved_trace_links_to_the_refusal_and_review_decision
         f"review.elapsed_ms is not a real, positive measured duration: {elapsed!r}"
     )
 
+    # --- The ledger read the criterion's "all read from the ledger" rests on,
+    # asserted as a hop of THIS trace (M3 final-review fix round, R36).
+    #
+    # Nothing in this suite guarded it before. Criteria 3 and 5 only require
+    # `payments-api` to be among `trace.services()`, and the execute leg
+    # (payments-mcp -> payments-api) satisfies that on its own -- so the
+    # reviewer's own read of the ledger could be, and measured before this fix
+    # WAS, in a completely separate single-span trace: 30 reviewer-ui `GET`
+    # spans and 30 payments-api `GET /payments` spans over 48h, zero shared
+    # trace ids.
+    #
+    # Identified by parentage, not by name: this trace contains a SECOND
+    # payments-api `GET /payments/{paymentId}` span, from the `get_payment`
+    # MCP tool call `execute_approved` makes one hop downstream. The one this
+    # assertion is about is specifically the child of reviewer-ui's own CLIENT
+    # span, which is itself a child of `review.decision`.
+    #
+    # `http.url` (legacy spelling) is measured, not guessed: reviewer-ui sets
+    # no `OTEL_SEMCONV_STABILITY_OPT_IN` (deploy/k8s/reviewer-ui.yaml), so its
+    # `HTTPXClientInstrumentor` spans carry OTel Python's default legacy keys,
+    # unlike payments-api's Go `otelhttp`, which emits the stable spelling on
+    # the server side of the same hop.
+    ledger_reads = [
+        span
+        for span in approval_run.trace.spans
+        if span.service == "reviewer-ui"
+        and span.parent_id == review_span.span_id
+        and str(span.attrs.get("http.url", "")).endswith(
+            f"/payments/{approval_run.payment_id}"
+        )
+    ]
+    assert len(ledger_reads) == 1, (
+        "reviewer-ui's own ledger read for this payment is not a child of "
+        "review.decision in the approved-execution trace -- so the figures "
+        "the human acted on were fetched outside the trace that records the "
+        "decision. reviewer-ui spans in this trace: "
+        f"{[(s.operation, s.parent_id, s.attrs.get('http.url')) for s in approval_run.trace.spans if s.service == 'reviewer-ui']}"
+    )
+    ledger_read = ledger_reads[0]
+
+    served = [
+        span
+        for span in approval_run.trace.spans
+        if span.service == "payments-api" and span.parent_id == ledger_read.span_id
+    ]
+    assert len(served) == 1, (
+        "payments-api served reviewer-ui's ledger read outside this trace: "
+        f"no span in {approval_run.trace.trace_id} is a child of "
+        f"reviewer-ui's CLIENT span {ledger_read.span_id}. payments-api spans "
+        "present: "
+        f"{[(s.operation, s.parent_id) for s in approval_run.trace.spans if s.service == 'payments-api']}"
+    )
+    assert served[0].operation == "GET /payments/{paymentId}", (
+        f"unexpected payments-api operation under reviewer-ui's ledger read: "
+        f"{served[0].operation!r}"
+    )
+
 
 # --- Criterion 6 (anti-bypass) ------------------------------------------------
 
@@ -902,6 +969,14 @@ def test_criterion_6_the_junior_identity_still_cannot_execute_6200_after_the_app
     assert payment_id == approval_run.payment_id, (
         "criterion 6 must probe the exact payment the approval executed, not "
         "a different one"
+    )
+    # The same self-evidencing check criterion 7 makes of its own token: this
+    # probe only proves what it claims if the SVID really carries the JUNIOR
+    # identity's subject. It changes nothing about what the test proves; it
+    # makes the premise visible instead of implied by `valid_svid`'s name.
+    assert _claims(valid_svid).get("sub") == CALLER_SPIFFE_ID, (
+        "this test is only meaningful if the token's subject is really the "
+        f"junior settlement-agent's: {_claims(valid_svid).get('sub')!r}"
     )
 
     result = call_tool_directly(

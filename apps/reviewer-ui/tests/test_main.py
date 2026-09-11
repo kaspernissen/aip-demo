@@ -11,6 +11,11 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from opentelemetry import trace as otel_trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind, StatusCode
 
 import main
 
@@ -37,11 +42,20 @@ class FakeLedger:
         self._listing = listing if listing is not None else [REFUSED_PAYMENT]
         self._record = record if record is not None else dict(REFUSED_PAYMENT)
         self._get_error = get_error
+        # The span that was current at the moment each read was made. This is
+        # the property R36 is about: in production it is what
+        # `HTTPXClientInstrumentor` hangs its CLIENT span (and the injected
+        # `traceparent`) off, so a read made with no current span puts itself
+        # and payments-api's own server span in a trace of their own.
+        self.span_context_at_list: object | None = None
+        self.span_context_at_get: object | None = None
 
     async def list_refused(self):
+        self.span_context_at_list = otel_trace.get_current_span().get_span_context()
         return self._listing
 
     async def get(self, payment_id):
+        self.span_context_at_get = otel_trace.get_current_span().get_span_context()
         if self._get_error is not None:
             raise self._get_error
         return self._record
@@ -59,6 +73,18 @@ class FakeApprover:
         if self._error is not None:
             raise self._error
         return self._result
+
+
+@pytest.fixture
+def traced(monkeypatch):
+    """Capture main.py's own spans in memory, the same way tests/test_review.py
+    captures review.py's."""
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer("test")
+    monkeypatch.setattr(main.trace, "get_tracer", lambda name: tracer)
+    return exporter
 
 
 @pytest.fixture
@@ -99,6 +125,74 @@ async def test_index_reports_a_ledger_outage_honestly(monkeypatch):
         response = await c.get("/")
     assert response.status_code == 502
     assert "PAY-" not in response.text
+
+
+async def test_index_makes_its_ledger_read_inside_an_owned_review_queue_span(
+    monkeypatch, traced
+):
+    """R36: the listing read must have a parent span, or its CLIENT span roots
+    a trace of its own and payments-api's server span for the read lands in a
+    second, unrelated one -- measured as zero shared trace ids across the 30
+    most recent traces of each shape before this was fixed.
+
+    The span context captured *inside* `list_refused` is the assertion that
+    matters: it is exactly what `HTTPXClientInstrumentor` reads to parent its
+    CLIENT span and to build the `traceparent` it injects.
+    """
+    ledger = FakeLedger()
+    monkeypatch.setattr(main, "ledger_client", ledger)
+
+    transport = httpx.ASGITransport(app=main.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        response = await c.get("/")
+    assert response.status_code == 200
+
+    spans = traced.get_finished_spans()
+    assert [s.name for s in spans] == ["review.queue"]
+    span = spans[0]
+    assert span.kind == SpanKind.SERVER
+    # No attributes, deliberately -- see main.py's own comment on the name.
+    assert dict(span.attributes) == {}
+    assert ledger.span_context_at_list is not None
+    assert ledger.span_context_at_list.is_valid, (
+        "the ledger listing ran with no valid span current, so its outbound "
+        "CLIENT span would root a trace of its own"
+    )
+    assert ledger.span_context_at_list.span_id == span.context.span_id, (
+        "the ledger listing did not run inside the review.queue span"
+    )
+
+
+async def test_a_ledger_outage_ends_the_review_queue_span_error(monkeypatch, traced):
+    """The page renders a 502; the span must say so too, rather than ending
+    Unset beside it."""
+
+    class BrokenLedger:
+        async def list_refused(self):
+            raise main.ledger.LedgerUnavailable("connection refused")
+
+    monkeypatch.setattr(main, "ledger_client", BrokenLedger())
+    transport = httpx.ASGITransport(app=main.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        response = await c.get("/")
+    assert response.status_code == 502
+
+    span = traced.get_finished_spans()[0]
+    assert span.name == "review.queue"
+    assert span.status.status_code == StatusCode.ERROR
+    assert "connection refused" in (span.status.description or "")
+    assert [event.name for event in span.events] == ["exception"]
+
+
+async def test_healthz_produces_no_span_at_all(traced):
+    """bootstrap.py's own claim, and the half of it that survived R36: the
+    probe endpoint makes no outbound call and owns no domain event, so it is
+    not telemetry this service invents."""
+    transport = httpx.ASGITransport(app=main.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        response = await c.get("/healthz")
+    assert response.status_code == 200
+    assert traced.get_finished_spans() == ()
 
 
 async def test_approve_executes_and_shows_the_ledgers_result(client):

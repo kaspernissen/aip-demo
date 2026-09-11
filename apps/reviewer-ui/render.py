@@ -98,12 +98,13 @@ def list_page(payments: list[dict[str, Any]]) -> str:
     return _page("Refused payments", body)
 
 
-def error_page(message: str, *, status_hint: str = "") -> str:
-    hint = f" ({escape(status_hint)})" if status_hint else ""
-    return _page(
-        "Reviewer UI",
-        f'<p class="error">{escape(message)}{hint}</p>',
-    )
+def error_page(message: str) -> str:
+    # Shipped with a keyword-only `status_hint` parameter that no caller ever
+    # passed: main.py's six call sites all pass the message alone, and the
+    # HTTP status each of them chooses is already on the response. Dropped in
+    # the M3 final-review fix round rather than left standing as a second,
+    # unexercised way to say the same thing.
+    return _page("Reviewer UI", f'<p class="error">{escape(message)}</p>')
 
 
 @dataclass
