@@ -1137,7 +1137,8 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
     **Where this test is honest about the spec.** The criterion's second clause
     -- "the only change to either is `mcp_tools.py`'s denial-to-terminal-result
     branch" -- was written before Task 5 and is now narrower than what shipped.
-    Four other files changed, and assertion 4 names all five with a reason:
+    Five other files changed (four until 2026-09-11), and assertion 4 names all
+    six with a reason:
 
     * `mcp_tools.py` -- the branch the criterion names.
     * `settlement.py` -- Task 5's `_latch` and the `status: "refused"` reply.
@@ -1160,9 +1161,28 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
       `refuse_payment` is additionally caller-scoped there, which is exactly
       the point: the decision about them lives only in `rules.py`, and these
       two files carry nothing but the call. The assertion below was correct
-      throughout -- M3 added tools, not files, so the five-file set never
-      moved -- and only the reason written beside it went stale, which is the
-      same class this milestone's own review found in a dozen other places.
+      throughout -- M3's feature work added tools, not files, so the five-file
+      set did not move then -- and only the reason written beside it went
+      stale, which is the same class this milestone's own review found in a
+      dozen other places. (M3's *dependency* bumps did move it, later the same
+      milestone; that is the sixth bullet.)
+
+    * `bootstrap.py` -- **added to the set on 2026-09-11 (M3 remaining-bumps),
+      making it six.** It is settlement-agent's OpenTelemetry bootstrap: it
+      builds the TracerProvider, registers the propagators, turns on the two
+      httpx instrumentors and calls `Agent.instrument_all`. It decides nothing
+      about money, reads nothing from the PDS, and holds no branch any payment
+      passes through. The M3 dependency bumps changed it **in comments only** --
+      `git diff m2.1-verified..HEAD -- agents/settlement-agent/bootstrap.py` is
+      a corrected module docstring (the MCP client moved from `httpx` to
+      `httpx2` at `mcp` 2.2.0, so `HTTPX2ClientInstrumentor` is now what covers
+      the payments-mcp hop), a note on that instrumentor's call, and a re-dated
+      `_instrument_pydantic_ai` docstring at pydantic-ai-slim 2.42.0. No
+      executable line moved. It is named here rather than excused silently,
+      because this assertion's worth is that *every* file in the set carries a
+      written reason; and assertions 1-3 above already scan it like any other
+      file in the component, so listing it widens nothing except the change
+      surface it accounts for.
 
     So the criterion's *substance* -- no policy logic in either component --
     holds and is asserted. Its literal "only one file changed" wording does not,
@@ -1309,12 +1329,16 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
         "agents/settlement-agent/mcp_tools.py",
         "agents/settlement-agent/settlement.py",
         "agents/settlement-agent/executor.py",
+        # Comment-only changes since m2.1-verified; the OTel bootstrap, no
+        # policy logic. See this test's docstring for the full reason and for
+        # what the M3 dependency bumps actually changed in it.
+        "agents/settlement-agent/bootstrap.py",
         "tools/payments-mcp/server.py",
         "tools/payments-mcp/payments_client.py",
     }
     assert production_changed <= expected, (
         "production source changed in these components since m2.1-verified, "
-        "beyond the five files this criterion accounts for (see this test's "
+        "beyond the six files this criterion accounts for (see this test's "
         "docstring for why each of the five is not policy logic). This "
         "message named M2.2 alone until the M3 final-review fix round; the "
         "window this comparison actually covers is m2.1-verified..HEAD, which "
