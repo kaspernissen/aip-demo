@@ -302,6 +302,74 @@ finding are not covered by any open issue found on that exact point, and
 remain filing-ready — installed version, exact behaviour, and the capture
 evidence above — whenever the decision to file is made.
 
+**Re-checked against `a2a-sdk` 1.1.2, 2026-09-11 (M3 remaining-bumps, step 3).
+Both halves of this finding survive the major version. Nothing here is
+closeable.** The check was made because a 1.x that fixed inbound extraction
+would have let this project delete the `StarletteInstrumentor` workaround
+(amendment A18) — a real event for this repository, not a version number. It
+did not, so the workaround stays and this finding stays open.
+
+The evidence is the same two greps this finding was originally written from,
+re-run over the installed `a2a-sdk[telemetry,http-server]==1.1.2` package tree:
+
+- **Inbound trace-context extraction: still absent.** `propagate` → 0 hits,
+  `traceparent` → 0 hits, `TextMapPropagator` → 0 hits across every `.py` in
+  the package. `extract` returns 19 hits and not one is trace context: they are
+  `_extract_task_id`/`_extract_task_and_config_id` in the v0.3 gRPC compat
+  handler, and the `attribute_extractor` parameter of `a2a/utils/telemetry.py`.
+  So a 1.1.2 server still starts a disconnected root trace for every inbound
+  request unless something else extracts the header first.
+- **Identity attributes on its spans: still none.** Every instrumented class
+  is decorated `@trace_class(kind=SpanKind.SERVER)` or
+  `@trace_class(kind=SpanKind.CLIENT)` with **no** `attributes=` argument, in
+  all 17 decorated modules — and `attribute_extractor=` (which exists in
+  0.3.7 too, 12 mentions) has **zero** call sites outside `telemetry.py` in
+  either version. The span body only sets attributes `if attributes:`, so the
+  attribute set is empty for the same reason it was at 0.3.7.
+
+What *did* change at 1.x is everything around it, which is why this project is
+still on 0.3.7 and why the re-check stopped at reading the package rather than
+deploying it. `a2a-sdk` 1.x implements **A2A protocol v1.0**, with v0.3 behind
+an opt-in compatibility layer (`a2a/compat/v0_3/`, and
+`create_jsonrpc_routes(..., enable_v0_3_compat=False)` by default). Measured,
+not inferred from a changelog:
+
+- **The JSON-RPC method names changed.** `jsonrpc_dispatcher.py` dispatches
+  `'SendMessage'` / `'SendStreamingMessage'` / `'SubscribeToTask'`; 0.3.7's
+  app dispatches `message/send` / `tasks/get` / `tasks/cancel`. This repo sends
+  raw JSON-RPC `message/send` from **13 files across three languages** —
+  production Python (`agents/claims-agent/delegation.py`,
+  `apps/reviewer-ui/approval.py`), production TypeScript
+  (`apps/customer-ui/src/a2a.ts`) and nine test files.
+- **The agent-card format changed.** `a2a.types.AgentCard` is no longer a
+  pydantic model; it is a protobuf message (`lf.a2a.v1.AgentCard`), and
+  `AgentCard.model_validate()` does not exist. Parsing this repo's own
+  committed card through it fails outright: `ParseError: Message type
+  "lf.a2a.v1.AgentCard" has no field named "protocolVersion"`. `url` and
+  `preferredTransport` are gone too, replaced by `supportedInterfaces`. That
+  card is `contracts/agent-cards/*.json`, this project's declared single source
+  of truth, and two e2e tests diff the served document against it whole.
+- **The server API changed.** `a2a.server.apps.A2AStarletteApplication` — the
+  class both agents' `main.py` builds their app with, and the object A18's
+  `StarletteInstrumentor().instrument_app(app)` is attached to — **does not
+  exist**; the module `a2a.server.apps` is gone. Apps are assembled from
+  `a2a.server.routes.create_jsonrpc_routes(...)` /
+  `create_agent_card_routes(...)`. `DefaultRequestHandler` gained a required
+  `agent_card` argument, and `a2a.utils.new_agent_text_message` — used by both
+  executors — is no longer exported from `a2a.utils`.
+
+That is a wire-shape change, a contract-document change and a server-API change
+at once: a milestone, not a bump. It is recorded here rather than attempted,
+and `a2a-sdk[telemetry]==0.3.7` stays pinned in both agents.
+
+**One more fact worth pinning, because it will look like an error later:** the
+newest `a2a-sdk` **on PyPI** is 1.1.2 (2026-07-22). `a2aproject/a2a-python` has
+published GitHub releases v1.1.3 (2026-08-18) and v1.1.4 (2026-09-08), and
+neither is on PyPI — `https://pypi.org/pypi/a2a-sdk/1.1.3/json` and `/1.1.4/json`
+both return 404. So "latest" for anything installable is 1.1.2, and a reader
+comparing the GitHub releases page against this document has not caught a stale
+pin.
+
 ---
 
 ## Finding 2: FastMCP 4.0.3 never emits `gen_ai.operation.name` on tool-call spans

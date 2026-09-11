@@ -1,4 +1,28 @@
 a2a-sdk[telemetry]==0.3.7
+# **Held at 0.3.7 deliberately, 2026-09-11 (M3 remaining-bumps, step 3).** The
+# newest installable release is 1.1.2 (2026-07-22 on PyPI; the project's GitHub
+# releases go to v1.1.4 but v1.1.3 and v1.1.4 were never published to PyPI --
+# both /pypi/a2a-sdk/<v>/json return 404 -- so 1.1.2 is "latest" for anything
+# that can be pinned). It was evaluated and NOT taken. Two reasons, both
+# measured against the installed 1.1.2 rather than read off a changelog:
+#
+#   * The thing that would have justified the risk is not there.
+#     docs/upstream-findings.md Finding 1 is precisely about this library
+#     not extracting inbound trace context and its spans carrying no
+#     attributes. At 1.1.2, `propagate`/`traceparent`/`TextMapPropagator` are
+#     still 0 hits across the package, and all 17 instrumented modules still
+#     carry a bare `@trace_class(kind=...)` with no `attributes=`. The
+#     StarletteInstrumentor workaround (amendment A18) is still required.
+#   * 1.x is a protocol migration, not a bump. It implements A2A v1.0 with
+#     v0.3 behind an opt-in compat layer: the JSON-RPC method is `SendMessage`
+#     rather than `message/send` (this repo sends `message/send` from 13 files
+#     in three languages), `a2a.types.AgentCard` is a protobuf message that
+#     cannot parse this repo's own committed agent card, and
+#     `a2a.server.apps.A2AStarletteApplication` -- what main.py builds and what
+#     A18 attaches to -- no longer exists.
+#
+# Recorded in full in docs/upstream-findings.md Finding 1 and
+# docs/telemetry-contract.md Gap 1. Taking it is its own milestone.
 starlette==1.6.0
 sse-starlette==3.4.11
 httpx==0.28.1

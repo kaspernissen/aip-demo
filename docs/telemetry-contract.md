@@ -2626,6 +2626,23 @@ For each: the evidence, whether upstream already has work in flight, and what we
   above) and remain filing-ready whenever that decision is made. No
   `a2a.*`/`gen_ai.*` attribute was invented anywhere in this repo to fill the
   gap in the meantime.
+- **Re-checked at `a2a-sdk` 1.1.2, 2026-09-11 (M3 remaining-bumps, step 3) —
+  both halves survive the major version, so this gap does not close and A18
+  stays.** The check existed to answer one question: does 1.x extract inbound
+  trace context, and could `StarletteInstrumentor` therefore be removed? No.
+  Re-running this gap's own greps over the installed
+  `a2a-sdk[telemetry,http-server]==1.1.2` tree gives `propagate` 0,
+  `traceparent` 0, `TextMapPropagator` 0, and every one of 17 decorated modules
+  still carries a bare `@trace_class(kind=SpanKind.SERVER|CLIENT)` with no
+  `attributes=` and no `attribute_extractor=` call site anywhere outside
+  `telemetry.py`. **The bump was not taken**: 1.x is A2A protocol v1.0 (the
+  JSON-RPC method is `SendMessage`, not `message/send`), its `AgentCard` is a
+  protobuf message that cannot parse this repo's own committed card
+  (`ParseError: ... has no field named "protocolVersion"`), and
+  `a2a.server.apps.A2AStarletteApplication` — the object A18 attaches
+  `StarletteInstrumentor` to — no longer exists. Full evidence and the size of
+  that migration are in `docs/upstream-findings.md` Finding 1's re-check note.
+  Both agents stay on `a2a-sdk[telemetry]==0.3.7`.
 
 ### Gap 2 (closed, M3): human-in-the-loop approval spans
 
