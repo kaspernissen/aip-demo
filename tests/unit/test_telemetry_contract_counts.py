@@ -111,13 +111,16 @@ def test_contracts_published_counts_match_what_pytest_actually_collects():
 
 # --- Per-service row (M1.2 Task 6) -----------------------------------------
 #
-# The row this guards reads, verbatim, as of this writing (M2.2 final-review
-# fix round; it read `claims-agent 14, settlement-agent 31, payments-mcp 7,
-# payments-api (Go) 7, customer-ui (vitest) 6` when this guard was written at
-# M1.2 Task 6, which is the drift it exists to catch):
+# The row this guards reads, verbatim, as of this writing (M3 Task 5B; it read
+# `claims-agent 14, settlement-agent 31, payments-mcp 7, payments-api (Go) 7,
+# customer-ui (vitest) 6` when this guard was written at M1.2 Task 6, and
+# `claims-agent 16, settlement-agent 79, payments-mcp 9, payments-api (Go) 20,
+# customer-ui (vitest) 6, policy-decision-service 96` at the M2.2 final-review
+# fix round -- which is the drift it exists to catch):
 #
-#   claims-agent 16, settlement-agent 79, payments-mcp 9, payments-api (Go) 20,
-#   customer-ui (vitest) 6, policy-decision-service 96 -- all passing.
+#   claims-agent 16, settlement-agent 108, payments-mcp 15,
+#   payments-api (Go) 31, customer-ui (vitest) 6,
+#   policy-decision-service 105, reviewer-ui 50 -- all passing.
 #
 # Each service is checked with the *same command* `scripts/smoke-test.sh`
 # uses for it (Step 1/2), just in collect/list mode instead of run mode, so
@@ -275,6 +278,22 @@ _PER_SERVICE_SUITES = [
         REPO_ROOT / "platform" / "policy-decision-service",
         _pytest_collected_count,
     ),
+    # The seventh row, added in M3 Task 5B (ruling R32's sibling finding). It
+    # is the sixth row's defect recurring one milestone later, and the
+    # recurrence is worth naming because the two are not identical: the PDS was
+    # left out while `tests/unit` already *depended* on it, so removing its
+    # stubs reddened this very test. `apps/reviewer-ui` was left out with no
+    # such backstop at all -- M3 Task 4 shipped 50 tests for the component that
+    # carries this milestone's human decision, and nothing anywhere ran them,
+    # so `scripts/smoke-test.sh` could go green with that suite entirely
+    # broken. Adding a service to `deploy/k8s/` means adding it here, in the
+    # same task.
+    #
+    # `_pytest_collected_count` needs no special case: like the four Python
+    # services above it has its own `.venv`, its own `requirements.txt` and its
+    # own `pytest.ini`, and its suite is hermetic -- no cluster, no network, no
+    # model, 0.3s.
+    ("reviewer-ui", REPO_ROOT / "apps" / "reviewer-ui", _pytest_collected_count),
 ]
 
 

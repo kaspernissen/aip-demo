@@ -2,9 +2,13 @@
 
 Status: M1.1, revised through M1.2 for the settlement-agent's model-driven
 decision logic, through M2.1 for agentgateway's interposition and SPIRE's
-workload identity, and through **M2.2 (Decided)** for the Policy Decision
+workload identity, through M2.2 (Decided) for the Policy Decision
 Service, the `policy.decision` span (which closes Gap 3), and agentgateway's
-own guardrail telemetry. Revised at every milestone.
+own guardrail telemetry, and through **M3 (Supervised)** for the two spans
+this repo owns outright on the human-in-the-loop path —
+`settlement.execute_approved` (with this project's first span link) and
+`review.decision` — which between them close Gap 2. Revised at every
+milestone.
 
 ## The governing rule
 
@@ -53,40 +57,59 @@ green has confirmed the browser hop; a reader who instead runs a bare
 `pytest tests/` by hand — bypassing the gate — gets the weaker, default
 result below, and should not conclude the top of the chain was checked.
 
-Measured counts. **Provenance, restated for the final-review fix round rather
-than carried forward:** the gate row below is anchored on a run of
-`./scripts/smoke-test.sh` itself, once, to completion, on the long-running
-`kind-northstar` **stage 2** cluster — not on a freshly created one, and
-`teardown.sh` was not run. M2.2 Task 8's run of it, against the tree at
-`50fac07` plus that task's documentation work (which added and removed no
-tests, so its 213 collected was the same 213 that commit carries), finished
-212 passed with 1 xfailed in 283.60s and exited 0. **The final-review fix round
-adds one test to the `tests/` tree** (`tests/e2e/test_gateway_config_drift.py`,
-adjudication 1) and adds the Policy Decision Service's own suite to the gate's
-per-service loop (finding 1), so both rows below moved by one, and the gate was
-re-run in full: `213 passed, 1 xfailed` in 284.44s, exit 0. The arithmetic
-behind each row, and which of the two is measured and which is derived, is
-itemised in the bullet list further down this section — the same place it has
-always been stated. Two operational facts about
-it, because the next person to reproduce it will hit both: the gate does
-**not** create its own port-forwards — it checks that four are already
-listening (19001 claims-agent, 19002 settlement-agent, 18000 payments-mcp,
-18080 payments-api) and exits in about a second if any is missing, which is
-what `setup-kind.sh` normally leaves behind; and `localhost:8080` and
-`localhost:16686` come from the kind node's own port mappings rather than
-from forwards, so those two need nothing. (The M2.1 rows this replaces were measured on a
-freshly created stage-2 cluster, `kind delete cluster --name northstar &&
-./scripts/setup-kind.sh --stage 2`; an earlier preamble claimed for them the
-teardown-and-rebuild-at-stage-1 provenance that belonged to the *M1.1*
-numbers, and a review caught that. The counts are cluster-independent — they
-count tests, not spans — but a published number carrying provenance it does
-not have is this repo's most-repeated defect class, so the command is stated
-as it was actually run.)
+Measured counts. **Provenance, restated for M3 rather than carried
+forward — and the ordering of this section is load-bearing, so it is stated
+outright: the CURRENT figures come first, and every earlier milestone's
+figures below them carry their own milestone label.**
+`tests/unit/test_telemetry_contract_counts.py` reads the *first*
+`` `N passed, M xfailed` `` and the first
+`` `N passed, M skipped, K xfailed` `` in this file and requires each to sum to
+what `pytest --collect-only tests/` actually collects; a historical figure
+moved above a current one would therefore be checked in its place. Keep the
+current run first.
+
+**M3 (Supervised).** The gate row below is anchored on a run of
+`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` itself, once, to completion, on
+the long-running `kind-northstar` **stage 3** cluster — not on a freshly
+created one, and `teardown.sh` was not run — by M3 Task 5B, against that
+task's own tree: `220 passed, 1 xfailed` in 452.77s, exit code 0, final line
+"M3 smoke test passed." The whole `tests/` tree collects **221** at that
+tree, re-measured with `.venv/bin/python -m pytest --collect-only -q tests/`
+and itemised per file in the M3 table further down. The arithmetic behind each
+row, and which of the two is measured and which is derived, is in the bullet
+list further down this section — the same place it has always been stated.
+
+Three operational facts about that run, because the next person to reproduce
+it will hit all three: the gate does **not** create its own port-forwards — it
+checks that **five** ports are already listening (19001 claims-agent, 19002
+settlement-agent, 18000 payments-mcp, 18080 payments-api, and — since M3 Task
+5A — 8081 reviewer-ui) and exits in about a second if any is missing; the
+first four are what `setup-kind.sh` normally leaves behind and the fifth comes
+from kind's own host-port mapping in `deploy/kind/stage3.yaml`; and
+`localhost:8080` and `localhost:16686` come from the same kind node port
+mappings rather than from forwards, so those two need nothing.
+
+(**M2.2's figures, kept for the audit trail.** M2.2 Task 8's run of the gate,
+against the tree at `50fac07` plus that task's documentation work — which
+added and removed no tests, so its 213 collected was the same 213 that commit
+carries — finished 212 passed with 1 xfailed in 283.60s and exited 0. Its
+final-review fix round added one test to the `tests/` tree
+(`tests/e2e/test_gateway_config_drift.py`, adjudication 1) and added the
+Policy Decision Service's own suite to the gate's per-service loop (finding
+1), so both of that milestone's rows moved by one and the gate was re-run in
+full: 213 passed with 1 xfailed in 284.44s, exit 0, against 214 collected. The
+M2.1 rows those replaced were measured on a freshly created stage-2 cluster,
+`kind delete cluster --name northstar && ./scripts/setup-kind.sh --stage 2`;
+an earlier preamble claimed for them the teardown-and-rebuild-at-stage-1
+provenance that belonged to the *M1.1* numbers, and a review caught that. The
+counts are cluster-independent — they count tests, not spans — but a published
+number carrying provenance it does not have is this repo's most-repeated
+defect class, so each command is stated as it was actually run.)
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `186 passed, 27 skipped, 1 xfailed` |
-| The gate itself | `./scripts/smoke-test.sh` | `213 passed, 1 xfailed` |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `187 passed, 33 skipped, 1 xfailed` |
+| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `220 passed, 1 xfailed` |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -303,11 +326,92 @@ is behind `RUN_BROWSER_TESTS=1`, for the same reason
 spend real model tokens, and none of those four does.
 
 **M2.2 Task 8 also re-measured the gated set directly rather than assuming it
-was still three modules.** It is now four:
+was still three modules.** It was then four:
 `tests/e2e/test_browser_root_span.py` (8), `tests/e2e/test_settlement_llm_trace.py`
 (9), `tests/e2e/test_gateway_trace.py` (6) and the four `@browser_test` cases
-in `tests/e2e/test_policy_denial.py` — 27, which is exactly the skip count in
-the default row and exactly the difference between the two rows.
+in `tests/e2e/test_policy_denial.py` — 27, which was then exactly the skip
+count in the default row and exactly the difference between the two rows. M3
+makes it five and 33; see immediately below.
+
+**M3 (Supervised), the whole milestone in one place, measured the same way.**
+The chain from M2.2's close (214) to today's 221 is **one** move, and the
+starting figure was re-measured rather than trusted: a throwaway `git
+worktree` at `main` (`b472c89`) collects `214 tests collected`, which is
+exactly what this document published, so the M2.2 table above needed no
+correction.
+
+| Commit | What it added | Collected |
+|---|---|---|
+| `b472c89` (M2.2 close, re-measured at `main`) | — | 214 |
+| `ed2dcf4` (M3 Task 5A) | `tests/e2e/test_supervised.py` (7) — one test per spec §7 exit criterion | 221 |
+
+That one file is the whole of M3's repo-root move, and the *absence* of other
+moves was measured rather than assumed. `git diff --stat main..HEAD --
+tests/` shows this branch also edited `tests/unit/test_stage2_cilium_config.py`
+and `tests/unit/test_stage2_spire_config.py`; both still collect exactly what
+they collected at `main` (22 and 27), because what changed in them was
+content, not cases — `63729e1` extended the SPIFFE allow-list inside a test
+that is parametrised over documents rather than adding a test. Both figures
+were collected per file at `main` and at `HEAD` and compared, not reasoned
+about.
+
+**The gated set is now five modules, 33 tests, re-measured rather than
+incremented.** `tests/e2e/test_supervised.py` is the second partly-gated file:
+**six** of its seven tests carry `@browser_test` (criteria 1–6 each drive a
+real browser submission, and criterion 3 drives a real approval through the
+reviewer UI), and criterion 7 does not — it speaks MCP to the gateway directly
+with `reviewer-ui`'s own SPIRE-minted identity and spends no model tokens, the
+same reason `tests/e2e/test_caller_identity.py` has never been gated. So the
+skip count moves 27 → 33: `tests/e2e/test_browser_root_span.py` (8),
+`tests/e2e/test_settlement_llm_trace.py` (9),
+`tests/e2e/test_gateway_trace.py` (6), the four `@browser_test` cases in
+`tests/e2e/test_policy_denial.py`, and the six in
+`tests/e2e/test_supervised.py`. Measured by walking pytest's own collected
+items and reading each item's `skipif` marker, not by counting decorators by
+eye: 8 + 9 + 6 + 4 + 6 = 33, which is exactly the skip count in the default
+row and exactly the difference between the two rows.
+
+**One correction M3 Task 5B's re-measure turned up in the *M2.1* history
+above, left standing with this note rather than rewritten.** That history
+states `tests/unit/test_stage2_spire_config.py` gained 24 tests at M2.1 Task 4
+and 2 more in that task's fix round 1 — 26. The file collects **27**, measured
+at `main` and at `HEAD`. Every other per-file figure in the M2.1/M2.2
+narrative reconciles exactly with a live per-file collection
+(`test_gateway_trace.py` 6, `test_telemetry_contract_attribute_counts.py` 8,
+`test_stage2_cilium_config.py` 22, `test_stage2_network_policy.py` 10,
+`test_stage2_pds_config.py` 22, `test_egress_policy.py` 27), and every
+published *tree total* reconciles too, so the discrepancy is one off-by-one in
+a prose delta rather than in any total. The likeliest cause is visible in the
+file: two of its tests are `@pytest.mark.parametrize`d and expand to two cases
+each, so one narrative line almost certainly counted an expansion as a single
+test. It is **not** silently corrected, because the correct historical
+attribution cannot be recovered from this document and guessing at it would
+replace a known-wrong number with an unverified one.
+
+- **Measured (M3 Task 5B):** `.venv/bin/python -m pytest --collect-only -q
+  tests/` → `221 tests collected`, and the per-file breakdown in the M3 table
+  above accounts for the whole delta from `main`'s re-measured 214. This is
+  the number both published rows are anchored on today.
+- **Measured (M3 Task 5B), gate row:** `RUN_BROWSER_TESTS=1
+  ./scripts/smoke-test.sh` run once, in full, on the live stage-3
+  `kind-northstar` cluster — the whole `tests/` tree, real browser, real
+  settlements, a real human-approved execution, all **seven** per-service
+  suites including `reviewer-ui`'s 50 — returning `220 passed, 1 xfailed`,
+  0 skipped, in 452.77s, exit code 0, final line "M3 smoke test passed." A
+  direct observation of the whole gate, including the two count guards that
+  check this very table. It cross-checks against the collected total by the
+  second route this document has always used: 221 collected − 0 skipped − 1
+  xfailed = 220.
+- **Derived (M3 Task 5B), default row, components shown:** 221 collected − 33
+  gated − 1 xfailed = **`187 passed, 33 skipped, 1 xfailed`**. Every component
+  is itself measured above (the 33 is the five-module gated count, read off
+  pytest's own markers; the 1 xfail is the FastMCP-baggage one below, which is
+  not gated and so appears in both rows). Labelled derived rather than
+  measured for the reason this row has always carried: a bare `pytest tests/`
+  is **not** free — it skips the gated modules but still runs the ungated e2e
+  files, which drive real model-driven settlements — so re-running it to
+  re-observe a number two measured figures already determine would spend
+  Anthropic tokens for no additional evidence.
 
 - **Measured (final-review fix round):** `.venv/bin/python -m pytest
   --collect-only -q tests/` → `214 tests collected`, and the per-file breakdown
@@ -425,15 +529,31 @@ the 19 other `tests/unit/` harness-correctness tests silently) or if
 environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
-Per-service unit suites (all six run by `smoke-test.sh`, before any e2e test):
+Per-service unit suites (all seven run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 108, payments-mcp 15, payments-api (Go) 31,
-customer-ui (vitest) 6, policy-decision-service 105 — all passing. (The sixth
+customer-ui (vitest) 6, policy-decision-service 105,
+reviewer-ui 50 — all passing.
+(**The seventh entry arrived in M3 Task 5B, and it is the same defect
+as the sixth, one milestone later.** `reviewer-ui` shipped in M3 Task 4 with
+its own `requirements.txt`, its own `.venv`, its own `pytest.ini` and 50 tests
+of its own — the component that carries the human decision this whole
+milestone is named for — and was in neither the gate's per-service loop, nor
+this row, nor `_PER_SERVICE_SUITES`. Unlike the PDS's case there was no hidden
+dependency doing half the work: nothing ran those 50 tests at all, so the gate
+could go green with `apps/reviewer-ui` broken. All three sites are now closed
+together, in the same task, which is the lesson the sixth entry's own note
+below already spells out. Its 50 is measured by the same route as the other
+six, `cd apps/reviewer-ui && .venv/bin/python -m pytest --collect-only -q
+tests` → `50 tests collected`, and the suite runs in 0.30s with no cluster, no
+network and no model.) (The sixth
 entry arrived in the M2.2 final-review fix round: `policy-decision-service` was
 in neither the gate's loop nor this row until finding 1 showed both already
 *depended* on that component's generated stubs while collecting none of its
 tests. `scripts/smoke-test.sh` now runs `gen-stubs.sh` ahead of every suite and
-then runs the PDS's, and `_PER_SERVICE_SUITES` has a sixth row, so the 96 is
-measured by the same route as the other five rather than re-typed. See
+then runs the PDS's, and `_PER_SERVICE_SUITES` has a sixth row, so that figure
+is measured by the same route as the other five rather than re-typed — it was
+96 when that round wrote this sentence and is 105 today, re-measured for M3
+Task 5B. See
 limitation 10 below for what remains open. This row was stale at 19 for
 settlement-agent from before M1.2 Tasks 1-4 added the PydanticAI agent's own
 tests — `tests/unit/test_telemetry_contract_counts.py` cannot see per-service
@@ -569,6 +689,28 @@ approval payload). Every count in this paragraph was re-measured the same way
 as every entry before it: `.venv/bin/python -m pytest --collect-only -q
 tests` from each service's own directory, not carried forward from memory of
 a prior figure.
+Grown again after M3 Task 3, by that task's own review fix rounds and by Task
+4. **Every figure in the row above was re-measured from scratch for M3 Task
+5B**, with each service's own runner from its own directory, exactly as every
+entry before it — `.venv/bin/python -m pytest --collect-only -q tests` for the
+four Python services and `apps/reviewer-ui`, `GOTOOLCHAIN=local GOPROXY=off go
+test ./... -list '.*'` for payments-api, `node_modules/.bin/vitest list` for
+customer-ui. Which commit moved which suite was read from `git show --stat`,
+not from memory: `605ba8c` (the ledger check `execute_approved` performs before
+it executes, plus the PDS ingress lockdown) added tests to settlement-agent,
+payments-mcp and policy-decision-service; `5d56374` (refuse rejects a second
+refusal and confirms the requested amount, R12) to payments-api's
+`handlers_test.go`; `b394117` (the claim-id baggage on
+`settlement.execute_approved`, R16) to settlement-agent's
+`tests/test_execute_approved.py`; and `6690e49` created the whole seventh
+suite, `apps/reviewer-ui/tests/` (7 files). **The intermediate per-commit
+figures are deliberately not published here**, because they were not
+measured — reconstructing them would need a venv per service at each of those
+commits, and this row has been burned before by a number that was reasoned to
+rather than observed. What is published is what was observed: today's seven
+figures, and which commits touched which suite. claims-agent 16 and
+customer-ui 6 did not move, and that was measured the same way rather than
+inferred from the diff.
 customer-ui's suite includes its own
 A19 regression test for the traceparent-across-await fix described below
 (`apps/customer-ui/NOTES.md` §2) — worth naming explicitly, since it's the
@@ -2073,11 +2215,71 @@ For each: the evidence, whether upstream already has work in flight, and what we
   `a2a.*`/`gen_ai.*` attribute was invented anywhere in this repo to fill the
   gap in the meantime.
 
-### Gap 2: human-in-the-loop approval spans
+### Gap 2 (closed, M3): human-in-the-loop approval spans
 
-- **Evidence:** No convention found covering an approval, escalation or
-  human-interrupt step inside an agent trajectory.
-- **Status:** Deferred to M3, when we have a working implementation to argue from.
+- **Evidence:** No convention found, and re-checked for M3 rather than
+  assumed still true: OpenTelemetry's semantic conventions have no span, no
+  attribute namespace and no registry entry for an approval, an escalation, or
+  a human-interrupt step inside an agent trajectory. The GenAI conventions
+  cover the model call, the tool call and (in open proposals) agent-to-agent
+  identity; none of them has a place to say *a person decided this, at this
+  time, and the work resumed under a different principal*. The nearest
+  neighbours are about the principal (`user.id`, the deprecated `enduser.*`),
+  not about a decision — the same shape of absence Gap 3 found for policy
+  decisions. So `review.decision`, the six `review.*` attributes, and
+  `settlement.execute_approved`'s two `northstar.*` attributes are this
+  project's own to define, and there is nothing upstream to defer to or to
+  file against.
+- **Status: closed in M3, by defining them in the open — and the deferral it
+  replaces was honoured rather than quietly dropped.** This entry read
+  *"Deferred to M3, when we have a working implementation to argue from"* for
+  the whole of M2. M3 built the implementation, so the argument below is made
+  from what the spans actually carry, measured, rather than from what would be
+  nice:
+  - **`review.decision`** (SpanKind SERVER, on `reviewer-ui`) is the human
+    decision itself: which payment (`review.payment.id`), which way
+    (`review.decision`), who says so (`review.reviewer.id`), under which
+    workload identity (`review.reviewer.spiffe_id`), against which earlier
+    trace (`review.refused.trace_id`), and how long the human took
+    (`review.elapsed_ms`). The measured inventory is in "reviewer-ui's own
+    instrumentation" above.
+  - **`settlement.execute_approved`** (on `settlement-agent`) is the resumed
+    work, and it carries this project's first span **link** — to the span
+    that recorded the refusal, read back off the ledger's own
+    `refusedTraceId`/`refusedSpanId`. See "settlement-agent's own
+    instrumentation" above, including the measurement that forced a real span
+    id to be stored: a `Link` built from a `SpanContext` with `span_id=0` is
+    dropped by the SDK before any exporter sees it.
+  - **The link, not a parent, is the part a convention would have to get
+    right**, and it is the part this project has something to say about: a
+    human takes minutes, the original process is gone, and a span held open
+    across that gap would misstate both the duration and what was executing.
+    Two linked traces are the honest shape. Nothing upstream says so either
+    way; this is the recorded position, not a claimed convention.
+- **Why this is a closure and not an invented convention.** Same distinction
+  Gap 3's closure draws, applied unchanged: inventing telemetry *for a
+  third-party component* is forbidden without exception, and instrumenting our
+  own code where no framework does it for us is not the same act.
+  `reviewer-ui` and `settlement-agent` are both this repository's code, no
+  library emits an approval span, and the prefixes (`review.`, `northstar.`)
+  are chosen precisely so a reader can tell these apart from the `gen_ai.*`,
+  `mcp.*` and `http.*` attributes the frameworks emit. Nothing was renamed,
+  aliased or back-filled onto anyone else's spans: agentgateway's and the
+  PDS's spans are unchanged by this milestone.
+- **What would make this reopen.** Exactly what would reopen Gap 3. If
+  OpenTelemetry ever specifies a human-approval or agent-handoff convention,
+  these names become divergence rather than invention, and the honest move
+  then is to adopt theirs and record the rename here. Nothing in this project
+  would notice the day such a convention lands, which is worth knowing — and
+  the GenAI conventions are actively growing towards agent governance (see
+  Gap 1's four open A2A-identity proposals).
+- **What is still NOT covered, so the closure is not overread.** This closes
+  the *representation* gap for one approval shape: one reviewer, one decision,
+  one resumed execution. It says nothing about multi-party approval, an
+  approval that times out, a rejection that re-enters the trajectory, or
+  per-human identity in the SVID rather than in the payload — all of which
+  M3's own spec puts out of scope, and none of which this attribute set would
+  be sufficient for.
 
 ### Gap 3 (closed, M2.2): policy and autonomy decision spans
 
@@ -2387,6 +2589,20 @@ by the final whole-branch review, after Task 8 closed, and item 10 was rewritten
 in the same round because the review demonstrated that its stated cause was
 false.
 
+**M3 (Supervised) re-read all eleven and added none — but amended three, and
+one of those amendments is a finding rather than an update.** Item 3 said
+narrowing `_latch` was "M3's problem"; M3 sidestepped it instead, so the item
+stays open and now says which case is still exposed. Item 10's published PDS
+test count and its "what the gate does not run" list both moved, and it gained
+the M3 recurrence of its own defect (`reviewer-ui`, same omission, one
+milestone later). **Item 11's attribution turned out to be false**: it blames
+ruling R4 for the Policy Decision Service's image shipping `pytest`, and
+measuring all five Python Dockerfiles shows every service in this repository
+does the same and always has — the cause is a repo-wide convention, not that
+ruling, and the item describes five images rather than one. The correction is
+appended to the item rather than swapped into it. Everything else here was
+re-checked against the source or the live cluster and is unchanged.
+
 None of these is a telemetry-invention issue and none of them makes a
 published claim in this document false. They are the places a reader who
 pushes on this system will find its edges.
@@ -2435,6 +2651,23 @@ milestone wants a re-propose at a compliant amount, or an escalate-then-retry
 path after a human approves — both of which are legitimate follow-on calls
 that this latch would refuse. Narrowing it to the specific refused call is the
 fix, and it is M3's problem, not a bug today.
+
+**M3 update, and it is a sidestep rather than the fix this item asked for.**
+M3 did not narrow `_latch`; it is byte-identical. The escalate-then-retry path
+this item predicted would collide with it does not, and the reason is
+structural: `_latch` is called from exactly two places, the bodies of the two
+`@settlement_agent.tool` functions, and `execute_approved` **is not a model
+run** — it makes no model call, builds no `RunContext`, and calls
+`PaymentsTools.execute` directly, so the latch is not on that code path at
+all. (It also runs in a different process under a different identity,
+`senior-settlement-agent`, but that is not what saves it; a same-process
+approval would be equally unlatched.) The collision was avoided by the
+milestone's architecture rather than by a change here. **The item stays open
+exactly as written**: a *re-propose at a compliant amount by the original
+agent*, on the same claim, is still refused by this latch, and that is still
+the case a future milestone will hit. What has changed is only that M3 is no
+longer the milestone that was going to fix it (M3 Task 5B, re-read against
+`settlement.py`, not inferred).
 
 **4. `_leaf_exception` can drop a denial-bearing `McpError` in a mixed
 exception group.** `agents/settlement-agent/mcp_tools.py`'s unwrapper prefers a
@@ -2538,9 +2771,20 @@ and `README.md` compounded it by telling a new operator the PDS setup was
 *deliberately* not needed for the gate, which meant a fresh clone following the
 README verbatim could not run `scripts/smoke-test.sh` at all. That half is
 fixed: the gate now requires the PDS venv, runs `./gen-stubs.sh` ahead of every
-suite, and runs the PDS's 96 tests; `_PER_SERVICE_SUITES` has a sixth row; the
-README says what is actually true. The stubs were **not** committed — that
+suite, and runs the PDS's suite (96 tests when that round wrote this sentence;
+105 today, re-measured for M3 Task 5B); `_PER_SERVICE_SUITES` has a sixth row;
+the README says what is actually true. The stubs were **not** committed — that
 re-opens the image/repo divergence ruling R22 exists to prevent.
+
+**M3 Task 5B note: the same omission recurred one milestone later, with
+`reviewer-ui`, and was closed the same way.** M3 Task 4 shipped
+`apps/reviewer-ui` with 50 tests of its own, in neither the gate's per-service
+loop nor `_PER_SERVICE_SUITES` nor this document's per-service row. Unlike the
+PDS's case there was no hidden dependency running any of them, so the gate
+could have gone green with that component's suite entirely broken. All three
+sites now carry a seventh row. It is recorded here rather than only in the
+per-service row because *this* is the item a reader checking "what is the gate
+not running" would come to.
 
 **The real remaining gap, which is narrower and worth keeping.** This document
 calls `tests/unit` "the hermetic subset: no cluster, no API key, no network",
@@ -2599,6 +2843,40 @@ made. What is measured: the image runs as a non-root uid
 serving path spawns no subprocess at all — `grep -rn 'subprocess\|os.system'
 platform/policy-decision-service/pds/` returns nothing.
 
+**M3 Task 5B correction, left standing with this note rather than rewritten:
+this item's attribution is wrong, and it is wrong in the direction that makes
+the problem look smaller than it is.** It presents the shipped test tooling as
+"a consequence of ruling R4", i.e. as specific to the Policy Decision Service
+and to the decision that gave it one requirements file for runtime and test.
+That is not the cause. **Every Python service in this repository does the same
+thing, and always has** — measured by reading all five Dockerfiles and all
+five requirements files:
+
+| Service | Dockerfile install | `pytest` in that file |
+|---|---|---|
+| `agents/settlement-agent` | `pip install --no-cache-dir -r requirements.txt` | `pytest==9.0.3`, `pytest-asyncio==1.4.0` |
+| `agents/claims-agent` | same | `pytest==9.0.3`, `pytest-asyncio==1.4.0` |
+| `tools/payments-mcp` | same | `pytest==9.0.3` |
+| `platform/policy-decision-service` | same | `pytest==9.0.3` |
+| `apps/reviewer-ui` (M3 Task 4) | same | `pytest==9.0.3`, `pytest-asyncio==1.4.0` |
+
+So the pattern is this repository's uniform one-requirements-file convention,
+not R4; R4 only decided that the PDS would not be the exception. The `pytest`
+half of this item therefore describes five images, including the one M3 added.
+The **`grpcio-tools`/`setuptools`** half *is* PDS-specific and *is* a
+consequence of the `gen-stubs.sh` build layer, exactly as written — no other
+service generates anything at build time. And the sentence "this is the one
+place the component is broader than it needs to be" is true read narrowly (the
+PDS's ingress is minimised and this is where *that component* is broad) and
+misleading read at the speed a reader reads it, which is how it survived a
+whole-branch review.
+
+Not fixed, for the reason the item already gives and one more: splitting
+`requirements.txt` per service re-opens R4's two-closures problem five times
+over rather than once, and the same thing is still not claimed here that was
+not claimed before — nobody has measured whether any of it is exploitable.
+What is now accurate is the *scope*.
+
 ## Open questions
 
 ### OQ-1: Content capture is a trade, not a settled answer
@@ -2608,7 +2886,11 @@ reasoning that every attribute redacted is diagnostic capability spent. That
 reasoning is not the end of the discussion — it is the honest statement of
 one side of a trade this project makes deliberately and visibly, not a claim
 that ON is correct for every deployment. The open question this milestone
-leaves for M2/M3 to answer with more than a demo's worth of evidence:
+leaves to be answered with more than a demo's worth of evidence
+(**originally written as "for M2/M3 to answer"; M2 and M3 have both closed
+without answering it, and M3's own spec §8 moved it explicitly to M4, "where
+evals make the trade-off concrete" — restated here rather than left naming
+milestones that have already passed**):
 
 - Whether a real insurer would run this ON by default in production, given
   what capture ON actually puts in a telemetry backend as plaintext, for
@@ -2818,6 +3100,24 @@ and a human reviewer cannot approve or reject what they were never shown.
 Whichever way this trade is eventually resolved constrains how those two
 components get designed, not only how this milestone's one env var happens
 to default.
+
+**M3 update: that reviewer UI now exists, and the prediction above is half
+right in a way worth recording rather than claiming as a hit.** `reviewer-ui`
+does show the human what the model said — the refusal page renders the
+`narrative` verbatim — but it reads it from **payments-api's ledger**, not from
+telemetry: `settlement.py`'s refused branch POSTs the model's own
+`result.output` to `/payments/{id}/refuse`, the ledger stores it, and
+`apps/reviewer-ui/ledger.py` fetches it back over plain HTTP. So the reviewer's
+view of "what the agent said" is entirely independent of
+`NORTHSTAR_CAPTURE_CONTENT`: flipping capture OFF would strip
+`gen_ai.output.messages`' content and leave the reviewer page unchanged. That
+is not a refutation of the paragraph above — the reviewer still cannot see
+*what the agent was told*, only what it concluded, and "why €6,200?" is exactly
+as unanswerable to the human as it is to the trace at OFF. But the coupling the
+paragraph predicted did not materialise as a coupling: M3 routed the one piece
+of model prose a human needs through the ledger, where the honesty rule already
+governs it, instead of through spans. Recorded because the prediction is the
+kind that quietly gets read as confirmed.
 
 ### Ruling 5: retired (M2.1 Task 6), not applied a second milestone running
 

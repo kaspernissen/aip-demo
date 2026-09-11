@@ -532,7 +532,24 @@ _KEY_VALUE_LINE_RE = re.compile(r"^[a-z][a-z0-9_.]*\s+\S")
 # section; "on the `tools/call` SERVER span" does. Adding a section is
 # deliberately allowed by the guard below -- it is simply held to the same
 # claim rule -- but a *published* block must stay published, which is what
-# listing all six here buys.
+# listing all eight here buys.
+#
+# M3 Task 5B widened it from six to eight. M3 Tasks 3 and 4 published the two
+# new sections and, because adding a section is allowed, nothing required them
+# to be pinned -- so for the whole of M3 the milestone's own two owned spans
+# were the only published attribute blocks in this document that could have
+# been deleted without a test noticing. That is the "green through a real
+# regression" shape this module's own header warns about, one milestone later.
+# The lesson is in the constant's design rather than only in its contents: a
+# list that must be extended by hand for every new section will be forgotten
+# again, so the failure message names it explicitly and this comment records
+# that M4 has to do the same.
+#
+# Both new markers were checked for ambiguity against every current heading
+# before being added, which is what the len(matched) > 1 branch below demands:
+# neither "`settlement.execute_approved`" nor "`review.decision`" is a
+# substring of any other heading, and in particular "`review.decision`" does
+# not collide with the existing "`policy.decision`" marker.
 REQUIRED_ATTRIBUTE_SECTIONS = (
     "on the `tools/call` SERVER span",
     "CLIENT span",
@@ -540,6 +557,13 @@ REQUIRED_ATTRIBUTE_SECTIONS = (
     "`Guardrail`",
     "policy-denied",
     "`policy.decision`",
+    # M3 Task 3 -- the approved execution, and the span carrying the link back
+    # to the refusal.
+    "`settlement.execute_approved`",
+    # M3 Task 4 -- the human's click. Between them these two are what closes
+    # Gap 2, so a deletion here would un-close a gap this document declares
+    # closed.
+    "`review.decision`",
 )
 
 _KEY_COUNT_CLAIM_RE = re.compile(r"\b(?:(\d+)|([A-Za-z][A-Za-z-]*))\s+keys\b")

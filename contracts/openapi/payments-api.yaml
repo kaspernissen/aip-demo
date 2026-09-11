@@ -1,10 +1,30 @@
 openapi: 3.1.0
 info:
   title: Northstar Payments API
-  version: 1.0.0
+  version: 1.1.0
   description: >
     System of record for claim payments. Deliberately tiny. In M1 it has no
-    authorization of any kind: anything that can reach it can move money.
+    authorization of any kind: anything that can reach it can move money. That
+    is still true in M3 -- the decision about whether a payout may happen is
+    made upstream, at the gateway's policy hook, and this service records
+    facts rather than deciding them.
+
+
+    M3 (Supervised) adds the ledger half of putting a human in the loop: a
+    third status, `refused`, a `refusal` record beside the payment saying what
+    the platform decided and what the claimant was told, and a status-filtered
+    list so a reviewer UI can find the refusals. Nothing here approves
+    anything: `refused` is terminal-until-approved, and `executed` stays
+    reachable only through the execute route below.
+
+
+    NOTHING ENFORCES THIS FILE AGAINST THE IMPLEMENTATION, and that is why it
+    drifted: it went a whole milestone without `refused`, without either of
+    M3's two new routes, and without M3's new 409 causes. It was brought back
+    into agreement with `systems/payments-api/handlers.go` and `store.go` by
+    reading both, route by route, in M3 Task 5B (rulings R7/R20). Treat any
+    future disagreement between this file and those two as a defect in this
+    file.
 servers:
   - url: http://payments-api.northstar-systems.svc.cluster.local:8080
 paths:
@@ -105,6 +125,140 @@ paths:
           description: >
             Payment already executed, or the stated amount and currency do not
             match the recorded proposal
+  /payments/{paymentId}/refuse:
+    post:
+      operationId: refusePayment
+      description: >
+        Records WHY a payout was refused, beside the payout, so a human
+        reviewer has something to read (M3 Task 2). This service did not make
+        the decision -- the Policy Decision Service did, upstream, before the
+        execute call ever reached payments-mcp -- so this route only carries
+        what the settlement agent reports about it.
+
+
+        What the caller supplies and what the ledger supplies are deliberately
+        separate. `rule`, `limit` and `requested` are the PDS's own decision;
+        `narrative` is the model's own words to the claimant, stored verbatim
+        as a quotation of the model and never as a statement of what happened;
+        `refusedTraceId`/`refusedSpanId` name the trace and span that recorded
+        the refusal, which is what the approved execution's span link later
+        points at. `refusedAt` is NOT part of this request: the ledger stamps
+        it itself (`store.refuse`), so the time a human is measured against is
+        the ledger's clock rather than a caller's claim.
+
+
+        `requested` is confirmed against the recorded proposal with the same
+        half-cent tolerance the execute route uses, and a disagreement is a
+        409: any caller with a valid SVID can reach this route, and a refusal
+        record authored against a figure the ledger never proposed would
+        mislead the reviewer who releases the money (M3 Task 3 review, R12).
+        Currency is deliberately not confirmed here -- this request carries no
+        currency field to confirm against.
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rule]
+              properties:
+                rule:
+                  type: string
+                  description: The PDS rule that fired.
+                  examples: ["settlement-agent.assisted.execute_limit"]
+                limit:
+                  type: number
+                  description: The authority the caller held, per that rule.
+                  examples: [6000]
+                requested:
+                  type: number
+                  description: >
+                    What was asked for. Confirmed against the recorded
+                    proposal; a mismatch is a 409.
+                  examples: [6200]
+                narrative:
+                  type: string
+                  description: >
+                    The agent's own words to the claimant. Model output, not a
+                    ledger fact.
+                refusedTraceId:
+                  type: string
+                  examples: ["331edba8cb21223e9de2f244360c42ef"]
+                refusedSpanId:
+                  type: string
+                  examples: ["a4dc36d299704821"]
+      responses:
+        "200":
+          description: Refusal recorded. The payment now reads `refused`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "400":
+          description: >
+            Malformed JSON body (`{"error":"malformed JSON body"}`), or no
+            `rule` (`{"error":"rule is required"}`)
+        "404":
+          description: Unknown payment
+        "409":
+          description: >
+            Three distinct causes, each with its own message:
+            `{"error":"requested amount does not match the proposal"}` (the
+            confirmation check above refused it),
+            `{"error":"payment already executed"}` (the money has already
+            moved once, so a refusal record after it would misstate the
+            ledger -- the same `ErrExecuted` the execute route's own
+            already-executed conflict returns), and
+            `{"error":"payment already refused"}` (the record a reviewer reads
+            is not silently replaceable; a second refuse call would let a
+            caller repoint `refusedTraceId`/`refusedSpanId` at a trace of its
+            own choosing -- M3 Task 3 review, R12).
+
+
+            Unlike the execute route's two 409s, none of these sets
+            `northstar.payment.refusal_cause` on the span: that attribute is
+            scoped to the execute route's own two causes and is documented as
+            set nowhere else (`systems/payments-api/handlers.go`).
+  /payments:
+    get:
+      operationId: listPayments
+      description: >
+        Every payment, or only those in one status (M3 Task 2). This is what
+        `reviewer-ui` calls as `GET /payments?status=refused` to find the
+        refusals awaiting a human. The response is sorted by `paymentId`,
+        which is sequential and fixed-width, so the order is deterministic
+        across runs (`store.list`).
+
+
+        An unrecognised `status` is not an error: it simply matches nothing
+        and returns an empty array. Unlike every other route here this one
+        gets no claim-id baggage annotation on its span -- it lists across
+        every claim, so there is no single claim id to read (`newRouter`'s
+        `handleNoClaimID`).
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [proposed, executed, refused]
+          description: >
+            Omit, or pass empty, to list every payment.
+      responses:
+        "200":
+          description: The matching payments, sorted by `paymentId`.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Payment"
   /payments/{paymentId}:
     get:
       operationId: getPayment
@@ -140,4 +294,62 @@ components:
           type: string
         status:
           type: string
-          enum: [proposed, executed]
+          # M3 Task 2 added the third value. `refused` is reached only from
+          # `proposed`, only through POST /payments/{paymentId}/refuse, and it
+          # is terminal-until-approved rather than a new state machine:
+          # `executed` stays reachable only through the execute route, which
+          # accepts a refused payment exactly as it always accepted a proposed
+          # one (`store.go`'s own comment, and
+          # TestARefusedPaymentCanStillBeExecutedAfterwards).
+          enum: [proposed, executed, refused]
+        refusal:
+          description: >
+            Present on any payment that has EVER been refused -- which is not
+            the same as "present only when `status` is `refused`", and the
+            difference is the audit trail the whole human-in-the-loop step
+            exists to leave behind. Approval does not clear it: a payment that
+            was refused and then executed reads `status: executed` WITH this
+            object still attached. Omitted entirely on a payment that was never
+            refused (`omitempty`). Measured against the live ledger in M3 Task
+            5B rather than read off the struct tags: `GET /payments` returns
+            records with `"status":"executed"` and a populated `refusal`, and
+            an earlier draft of this very description claimed "present only on
+            a `refused` payment" and contradicted its own next sentence.
+          type: object
+          required:
+            [rule, limit, requested, narrative, refusedTraceId, refusedSpanId, refusedAt]
+          properties:
+            rule:
+              type: string
+              examples: ["settlement-agent.assisted.execute_limit"]
+            limit:
+              type: number
+              examples: [6000]
+            requested:
+              type: number
+              examples: [6200]
+            narrative:
+              type: string
+              description: >
+                The model's own words, stored verbatim. The one field on this
+                object that is not a ledger fact.
+            refusedTraceId:
+              type: string
+              examples: ["331edba8cb21223e9de2f244360c42ef"]
+            refusedSpanId:
+              type: string
+              description: >
+                The settlement-agent span active when the refusal was
+                recorded -- not the PDS's own `policy.decision` span. A span
+                link needs a real span id: one built with `span_id=0` is
+                silently dropped by the OpenTelemetry SDK before any exporter
+                sees it, which is why this travels alongside the trace id
+                (`store.go`'s `RefusedSpanID` doc comment).
+              examples: ["a4dc36d299704821"]
+            refusedAt:
+              type: string
+              description: >
+                RFC 3339, stamped by this service at the moment it records the
+                refusal. Never supplied by the caller -- it is what
+                `review.elapsed_ms` measures a human against.
+              examples: ["2026-09-11T05:37:26Z"]

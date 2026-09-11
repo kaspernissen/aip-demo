@@ -1,39 +1,51 @@
-# Northstar Architecture — M2.2 (Decided)
+# Northstar Architecture — M3 (Supervised)
 
-Status: **M2.2 (Decided)**, on branch `m2.2-decided`. The M2.2 content below
-was written and checked by Task 8 against commit `50fac07` — the last commit
-of the milestone's implementation — against the source tree and the live
-`kind-northstar` cluster at that point. M2.1's content keeps its own
-provenance (commit `b75b260`), and M1.1's and M1.2's keep theirs, stated in
-the next block; this document does not claim a single verification pass over
-all of it.
+Status: **M3 (Supervised)**, on branch `m3-supervised`. The M3 content below
+was written and checked by Task 5B against the branch's HEAD at that point —
+against the source tree and the live `kind-northstar` stage-3 cluster, with
+every endpoint capture, SPIRE entry list and pod count in it re-taken rather
+than carried forward. M2.2's content keeps its own provenance (commit
+`50fac07`, Task 8), M2.1's keeps `b75b260`, and M1.1's and M1.2's keep theirs,
+stated in the next block; this document does not claim a single verification
+pass over all of it.
 
 M1.1 was the walking skeleton: one claim, five components, one trace, no
 governance. M1.2 put a real model call inside that skeleton without changing
 its shape. M2.1 changed the shape for the first time — a proxy and an
 identity provider entered the picture, and one hop authenticated its caller
-cryptographically. **M2.2 is where the platform starts saying no.**
+cryptographically. M2.2 is where the platform started saying no. **M3 is where
+somebody can say yes anyway.**
 
-**The one-sentence version of M2.2, and the honest one:** *the model can
-request, the platform knows who is requesting, and the platform now decides
-whether the request becomes an effect.* Concretely, and measured live rather
-than described: submitting the pre-filled `CLM-1842` at €6,200 gets the
-payment **proposed and then refused**, the model narrates the refusal to the
-claimant in its own words and does not retry, and the decision is a span in
-the same trace. A second claim at €5,800 executes end to end. Both halves
-matter: a platform that refuses everything is not governance, it is an outage.
+**The one-sentence version of M3, and the honest one:** *a refusal is now a
+record a human can act on, and acting on it goes back through the same choke
+point under a different identity.* Concretely, and measured live rather than
+described: submitting the pre-filled `CLM-1842` at €6,200 gets the payment
+**proposed, refused, and written down as refused**; the model narrates the
+refusal to the claimant and does not retry; a human finds the refusal on the
+reviewer UI with the rule, the limit, the requested amount and that narrative;
+and one click executes the same €6,200 as `senior-settlement-agent`, which the
+Policy Decision Service permits on its own allowance row. A second claim at
+€5,800 still settles with no human involved. Both halves still matter, and the
+M3 version of that sentence is: a platform that asks a human about everything
+is not supervision, it is a queue.
 
-**What is still not decided, so the "authorized" claim is not overread.** One
-hop authorizes: `settlement-agent → agentgateway` on the MCP call. Hop 1
+**What is still not decided, so the "supervised" claim is not overread.** One
+hop authorizes: `settlement-agent → agentgateway` on the MCP call, and the
+approved execution crosses that same hop rather than a privileged one. Hop 1
 (browser → claims-agent), Hop 2 (claims-agent → settlement-agent) and Hop 4
 (payments-mcp → payments-api) carry no identity and no policy, and
-payments-api still moves money for anything that can reach it. See "What the
-system deliberately does not do", which M2.2 **sharpens again** — from
-*authenticated but not authorized* to *one hop authorized, on one rule* —
-rather than deleting.
+payments-api still moves money for anything that can reach it. Approval is one
+human, one click, once — and the human is not authenticated at all. See "What
+the system deliberately does not do", which M3 **sharpens for the fourth
+time** — from *one hop authorized, on one rule* to *one hop authorized, on
+three rules, with one refusal a human can overturn* — rather than deleting.
 
-**Two claims a reader might expect to find here and will not, because they
-are measurably false.**
+**Four claims a reader might expect to find here and will not, because they
+are measurably false.** (This intro said "Two" from M2.1 until M3 Task 5B,
+while the list beneath it ran to three — a third item was added in M2.2 and
+the count above it was not. Recorded rather than silently corrected, because
+it is the same stale-prose class this repository keeps catching in its own
+prose: a sentence true when written, falsified by an edit two lines below it.)
 
 1. *"One convention end to end."* Not true, and the true statement is
    stronger: **the trace holds together end to end across components that do
@@ -79,6 +91,18 @@ are measurably false.**
    that fired, the amount and the limit) and from agentgateway's own
    `otel.status_description` one span up — where agentgateway *does* set
    ERROR, because from its point of view the proxied call failed.
+4. *That the approval is in the same trace as the refusal.* **M3, and the
+   fourth item this list has needed.** It is not, and that is the design: the
+   human acts minutes later, from a different browser tab, in a process that
+   did not exist when the refusal happened. There are **two traces**, joined
+   by a span **link** from `settlement.execute_approved` back to the span that
+   recorded the refusal — which is why the ledger's `refusal` object persists
+   a trace id *and* a span id. A reader looking for one trace that contains
+   both the deny and the approved execution will not find it, and should not:
+   holding a span open across a human's coffee break would misstate both the
+   duration and what was executing. See "Gap 2 (closed, M3)" in
+   [`docs/telemetry-contract.md`](telemetry-contract.md) for the full argument
+   and for what the closure deliberately does not cover.
 
 **Provenance (fixed by the M1.2 final-review fix round, SF-6):** this
 document previously claimed every claim in it was checked against HEAD
@@ -147,6 +171,38 @@ names where it is described.
    gateway is the only path to a tool. See "The network, as the second
    defence".
 
+**What M3 changed, in the order it happened.** Same convention again: each
+item names where it is described, and each is folded into the hop-by-hop text
+below rather than left as a note outside it.
+
+1. **Task 2 — the refusal became a record.** `payments-api` grew a third
+   status (`refused`), a `refusal` object beside the payment, and two routes:
+   `POST /payments/{id}/refuse` and `GET /payments`. See "Hop 4", where both
+   are captured live. Nothing about it is authorization — it is the ledger
+   writing down what the platform decided.
+2. **Task 3 — a second identity, and an anti-bypass check.**
+   `senior-settlement-agent` is the settlement-agent image in a second
+   Deployment under a second ServiceAccount, so the Policy Decision Service
+   grants it €25,000 on its own allowance row. `refuse_payment` and
+   `get_payment` joined `UNLIMITED_TOOLS`; `refuse_payment` also became
+   caller-scoped. `execute_approved` refuses to execute unless the ledger
+   already shows a matching refusal (`UnverifiedApproval`), and both
+   settlement Deployments got Cilium **ingress** allowlists — they had
+   `Allow Ingress ANY` before, so anything reaching an A2A port could execute
+   any proposed payment. See "The decision the platform makes" and "Workload
+   identity".
+3. **Task 4 — the human.** `reviewer-ui`, a FastAPI page with no build step,
+   reading refusals straight from payments-api's REST API and POSTing an
+   approval to the senior agent over A2A. It emits the `review.decision` span
+   and mounts the Workload API socket only to read its own SPIFFE ID. See
+   "The components" and "See it yourself".
+4. **Task 5A — the seven exit criteria**, as `tests/e2e/test_supervised.py`,
+   six of its seven tests behind `RUN_BROWSER_TESTS=1`.
+5. **Task 5B — this revision**, plus the OQ-U1 measurement in
+   [`docs/upstream-findings.md`](upstream-findings.md) and a memory limit for
+   `reviewer-ui` set from a cgroup measurement after it was OOMKilled three
+   times during Task 5A.
+
 This document does not duplicate [`docs/telemetry-contract.md`](telemetry-contract.md),
 which is the authority on exactly what instrumentation is enabled, what it
 emits, and the convention gaps found in it. This document is about the
@@ -212,7 +268,36 @@ picking one silently.
                                                           └──────────────────┘
 ```
 
-This agrees with `README.md`'s one-line version; this diagram just names the
+**M3's approval path is a second picture, not another arrow in this one**, and
+drawing it separately is the accurate thing rather than the tidy thing. It
+starts minutes later, from a different browser tab, in a different trace:
+
+```text
+┌──────────┐   plain HTML    ┌─────────────┐   REST, no MCP  ┌──────────────────┐
+│  human   │────form POST───▶│ reviewer-ui │────────────────▶│   payments-api   │
+│ (browser)│                 │  (Python,   │  GET /payments  │  (the same one)  │
+│          │◀────────────────│   FastAPI)  │  ?status=refused└──────────────────┘
+└──────────┘   rendered HTML └──────┬──────┘
+                                    │  A2A/JSON-RPC over HTTP, message/send
+                                    │  carrying the approval and the refusal's
+                                    │  trace id and span id
+                                    ▼
+                         ┌──────────────────────────┐
+                         │ senior-settlement-agent  │
+                         │ (the settlement-agent    │──▶ agentgateway ──▶ Hop 3p ──▶ payments-mcp ──▶ payments-api
+                         │  image, second identity) │    (same gateway, same jwtAuth, same PDS,
+                         └──────────────────────────┘     different `jwt.sub`, different allowance row)
+```
+
+Two things that picture is making explicit. **reviewer-ui reaches payments-api
+directly and is forbidden from reaching the governed path at all** — no
+agentgateway, no payments-mcp, no Policy Decision Service — which is enforced
+by `reviewer-ui-egress-allowlist` rather than left to convention. And **the
+approval rejoins the original chain at exactly the choke point**, so the human
+override is authorized by the same mechanism as everything else; it is not a
+side door.
+
+This agrees with `README.md`'s one-line version; these diagrams just name the
 transport and the payload shape at each arrow, which the README's version
 doesn't attempt.
 
@@ -238,7 +323,19 @@ two groups: the Policy Decision Service is code this repository writes, but it
 is platform machinery rather than an application component, so it gets its own
 row in the platform table with that distinction stated in the cell.
 
-### The five application components
+**M3 adds two more, both application components, and one of them is a
+borderline case worth naming.** `reviewer-ui` is straightforwardly an
+application: new code, its own image, a surface a human touches.
+`senior-settlement-agent` is listed in the application table too, and it is
+the only row in this document that describes **no code and no image of its
+own** — it is `settlement-agent`'s image in a second Deployment. It earns a
+row because a reader following a trace will find a pod by that name, and
+because the interesting property of M3 is exactly that the difference between
+the two is an identity rather than a program. The alternative — mentioning it
+only in a footnote to `settlement-agent`'s row — would have hidden the thing
+the milestone is about.
+
+### The application components — five at M1.1, seven as of M3
 
 Namespaces, ports, and service DNS names below are read directly from
 `deploy/k8s/*.yaml`, not from memory or from the diagram above.
@@ -249,7 +346,9 @@ Namespaces, ports, and service DNS names below are read directly from
 | `claims-agent` | Python 3.13, `a2a-sdk[telemetry]==0.3.7` + Starlette | `northstar-agents` | `claims-agent.northstar-agents.svc.cluster.local:9001` | `localhost:5001/northstar/claims-agent:dev` | A2A server (inbound, from the browser) and A2A client (outbound, to settlement-agent). Parses the claim, delegates, returns settlement-agent's JSON verbatim. |
 | `settlement-agent` | Python 3.13, `a2a-sdk[telemetry]==0.3.7` + Starlette + `mcp==1.28.1` client (Task 7; was `1.9.4`) + `pydantic-ai-slim==2.41.0` (M1.2) | `northstar-agents` | `settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` | A2A server; MCP client. As of M1.2, the settlement decision itself is a real model call (see "The decision logic" below) — the model chooses whether and how to propose and execute the payment via payments-mcp. |
 | `payments-mcp` | Python 3.13, FastMCP 4.0.3 | `northstar-tools` | `payments-mcp.northstar-tools.svc.cluster.local:8000`, MCP endpoint at `/mcp` | `localhost:5001/northstar/payments-mcp:dev` | MCP server exposing two tools. An adapter over payments-api — it owns no state of its own (`server.py`'s own docstring: "This is an adapter over payments-api, not a system of record."). |
-| `payments-api` | Go 1.24, `otelhttp v0.66.0` / otel core `v1.41.0` | `northstar-systems` | `payments-api.northstar-systems.svc.cluster.local:8080` | `localhost:5001/northstar/payments-api:dev` | The system of record for payments. In-memory store, sequential IDs, no persistence. |
+| `payments-api` | Go 1.24, `otelhttp v0.66.0` / otel core `v1.41.0` | `northstar-systems` | `payments-api.northstar-systems.svc.cluster.local:8080` | `localhost:5001/northstar/payments-api:dev` | The system of record for payments. In-memory store, sequential IDs, no persistence. As of M3 it also records **why** a payout did not happen (`POST /refuse`) and lists them (`GET /payments`) — a record, not a gate. |
+| `reviewer-ui` **(M3 Task 4)** | Python 3.13, FastAPI 0.141.1 + uvicorn, server-rendered HTML strings — **no frontend toolchain and no build step**, deliberately unlike `customer-ui` | `northstar-agents` | `reviewer-ui.northstar-agents.svc.cluster.local:8080`, exposed as a `NodePort` (30081) mapped to host `8081` by `deploy/kind/stage3.yaml` | `localhost:5001/northstar/reviewer-ui:dev` | The page a human reads and clicks. Lists refusals straight from payments-api's REST API (never through the MCP path), and POSTs an approval to `senior-settlement-agent` over A2A. Emits the `review.decision` span. |
+| `senior-settlement-agent` **(M3 Task 3)** | **No image and no code of its own** — the `settlement-agent` image, byte-identical, in a second Deployment under a second ServiceAccount | `northstar-agents` | `senior-settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` (the same mutable `:dev` tag settlement-agent runs) | Executes what a human approved, under an identity the Policy Decision Service grants a higher limit. "Senior" is an *identity*, not a different program — which is the entire point, and the reason this row's Image cell repeats another row's. |
 
 **Namespace note, worth stating plainly:** `customer-ui` deploys into
 `northstar-agents` — the same namespace as `claims-agent` and
@@ -290,7 +389,28 @@ What each component is explicitly **not** responsible for:
   kind — see "What the system deliberately does not do" below; this is
   stated in its own OpenAPI contract (`contracts/openapi/payments-api.yaml`):
   *"Deliberately tiny. In M1 it has no authorization of any kind: anything
-  that can reach it can move money."*
+  that can reach it can move money."* M3 did not change that: it does not
+  decide whether a refusal was justified or whether an approval is real, it
+  writes down what it is told and refuses only self-contradictory
+  instructions.
+- **reviewer-ui** does not decide anything and does not touch the governed
+  path. It has no `EXECUTE_LIMITS` row, no MCP client, and no route to
+  agentgateway, payments-mcp or the Policy Decision Service — enforced, not
+  conventional (`reviewer-ui-egress-allowlist`). It reads the ledger, renders
+  it, and forwards a click. A `reject` is accepted and is inert by design: it
+  records a span and writes nothing.
+- **senior-settlement-agent** does not contain a higher limit, or any limit.
+  It is the same code; the difference is entirely in which SPIFFE ID the
+  Workload API hands its pod and which row the Policy Decision Service then
+  finds. Nothing in the image knows it is the senior one — and one consequence
+  is worth knowing before opening Jaeger: its `OTEL_SERVICE_NAME` is
+  `settlement-agent`, the same as the junior's (read from
+  `deploy/k8s/senior-settlement-agent.yaml`), so **its spans arrive under
+  `service.name=settlement-agent`**. The two are told apart in the trace by
+  `jwt.sub` on the gateway's span and by `policy.caller.spiffe_id` on the
+  PDS's decision, not by service name. That is a consistent choice rather than an
+  oversight — the service is the same service — but it is the one place where
+  "senior is only an identity" makes the telemetry read oddly.
 
 ### The platform components M2.1 and M2.2 add
 
@@ -630,8 +750,10 @@ and still read by nothing.
 ## Hop 4 — payments-mcp → payments-api: plain HTTP/JSON
 
 `payments_client.py`'s `httpx.Client` calls payments-api directly; no MCP,
-no A2A. Verified live against the deployed payments-api (port-forwarded),
-all four endpoints (`systems/payments-api/handlers.go`,
+no A2A. Verified live against the deployed payments-api (port-forwarded).
+**M3 Task 2 took this from four endpoints to six**, and both additions exist
+for the human: one writes down why a payout was refused, the other lists the
+refusals so a reviewer can find them (`systems/payments-api/handlers.go`,
 `contracts/openapi/payments-api.yaml`):
 
 | Method & path | Request body | Response | Status codes |
@@ -639,6 +761,8 @@ all four endpoints (`systems/payments-api/handlers.go`,
 | `GET /healthz` | — | `{"status":"ok"}` | `200` |
 | `POST /payments/propose` | `{"claimId","amount","currency"}` | `{"paymentId","claimId","amount","currency","status":"proposed"}` | `201` (created), `400` (malformed JSON, missing `claimId`, negative `amount`) |
 | `POST /payments/{paymentId}/execute` | `{"amount","currency"}` — required; `amount` is mandatory, `currency` defaults to `EUR` | `{"paymentId","claimId","amount","currency","status":"executed"}` or `{"error":"..."}` | `200` (executed), `400` (`{"error":"execution must state the amount it is paying"}` for an absent or unparseable body; `{"error":"amount is required"}` for a body that omits the amount), `404` (`{"error":"payment not found"}`, unknown id), `409` — **two distinct causes**: `{"error":"stated amount does not match the proposal"}` (the confirmation-of-intent check refused it) and `{"error":"payment already executed"}` |
+| `POST /payments/{paymentId}/refuse` **(M3)** | `{"rule","limit","requested","narrative","refusedTraceId","refusedSpanId"}` — only `rule` is required; `refusedAt` is *not* accepted, the ledger stamps its own clock | The payment, now `refused`, with a `refusal` object | `200`, `400` (`{"error":"malformed JSON body"}`, `{"error":"rule is required"}`), `404`, `409` — **three distinct causes**: `{"error":"requested amount does not match the proposal"}`, `{"error":"payment already executed"}`, `{"error":"payment already refused"}` |
+| `GET /payments` **(M3)** | — | Array of payment records, sorted by `paymentId` | `200` only. `?status=` filters; an **unrecognised status is not an error**, it matches nothing and returns `[]` |
 | `GET /payments/{paymentId}` | — | Payment record, or `{"error":"payment not found"}` | `200`, `404` |
 
 Verbatim from a live capture against the deployed pod (port-forward, one
@@ -667,6 +791,50 @@ by the same comparison rather than by schema validation, which is why
 `contracts/openapi/payments-api.yaml` deliberately does not put `enum: [EUR]`
 on the execute body's `currency` (it does on propose): the field is a claim to
 be checked, not an instruction to be validated.
+
+**M3's two routes, captured the same way** (M3 Task 5B, against the deployed
+pod on the branch's images, one sequence against a single freshly-proposed
+payment, then a second payment to reach the third 409):
+
+```
+POST /payments/propose  {"claimId":"CLM-DOC-TEST-M3","amount":9000,...} -> 201  {"paymentId":"PAY-000026",...,"status":"proposed"}
+POST /payments/PAY-000026/refuse                                  (no body) -> 400  {"error":"malformed JSON body"}
+POST /payments/PAY-000026/refuse  {"limit":6000,"requested":9000}           -> 400  {"error":"rule is required"}
+POST /payments/PAY-000026/refuse  {"rule":"execute_limit","requested":1234} -> 409  {"error":"requested amount does not match the proposal"}
+POST /payments/PAY-000026/refuse  {"rule":"execute_limit","limit":6000,"requested":9000,"narrative":"...","refusedTraceId":"aabb..","refusedSpanId":"0011.."}
+                                                                            -> 200  {...,"status":"refused","refusal":{...,"refusedAt":"2026-09-11T07:39:12Z"}}
+POST /payments/PAY-000026/refuse  (again, same body)                        -> 409  {"error":"payment already refused"}
+POST /payments/PAY-999999/refuse  {"rule":"execute_limit",...}              -> 404  {"error":"payment not found"}
+POST /payments/PAY-000026/execute {"amount":9000,"currency":"EUR"}          -> 200  {...,"status":"executed","refusal":{...}}
+GET  /payments?status=refused                                               -> 200  [ ... one record, PAY-000016 ... ]
+GET  /payments?status=nonsense                                              -> 200  []
+POST /payments/propose  {"claimId":"CLM-DOC-TEST-M3B","amount":100,...}     -> 201  {"paymentId":"PAY-000027",...}
+POST /payments/PAY-000027/execute {"amount":100,"currency":"EUR"}           -> 200  {...,"status":"executed"}
+POST /payments/PAY-000027/refuse  {"rule":"execute_limit","limit":50,"requested":100}
+                                                                            -> 409  {"error":"payment already executed"}
+```
+
+**Three things that capture settles, and the third one surprises people.**
+
+1. `refusedAt` came back on the 200 even though the request never sent it. The
+   ledger stamps its own clock, deliberately: the elapsed time a human reviewer
+   is measured against must not be a figure a caller can supply.
+2. An unrecognised `?status=` returns `200 []`, not `400`. `GET /payments` is
+   also the one route in this service whose span carries **no** claim-id
+   baggage annotation — it lists across every claim, so there is no single
+   claim id to read (`newRouter`'s `handleNoClaimID`).
+3. **Executing a `refused` payment succeeds — `200`, and it is not a bug.**
+   The eighth line above executes PAY-000026 after it was refused and gets
+   `status: executed` back with the `refusal` object still attached. That is
+   precisely how approval works: `refused` is terminal *until a human approves*,
+   not terminal outright, and the approved execution goes through this same
+   route. It also means the `refusal` object is present on any payment that has
+   ever been refused rather than only while `status` reads `refused` — a
+   distinction an earlier draft of the OpenAPI description got wrong, and which
+   only a live `GET /payments` showed. The ledger is not the authorization
+   point; the gateway and the Policy Decision Service are, which is the same
+   sentence "What the system deliberately does not do" has been making since
+   M1.1.
 
 Every route except `/healthz` is wrapped in `otelhttp.NewHandler(...)`
 individually so the span name is the route template (e.g.
@@ -800,14 +968,33 @@ reach around."* That claim is not left to prose:
 production source with `ast`, and fails on any policy vocabulary, any literal
 equal to a PDS allowance, or any unallowlisted comparison involving money.
 
-**The rule, in full, because it is one rule and hiding it would be worse than
-printing it** (`platform/policy-decision-service/pds/rules.py`):
+**The rules, in full, because there are few enough that hiding them would be
+worse than printing them** (`platform/policy-decision-service/pds/rules.py`).
+M2.2 shipped with one sentence here; M3 added a row and two tables, and none of
+it changed `decide()`:
 
-> `settlement-agent`, at autonomy level `assisted`, may **execute** up to
-> €6,000. Proposing is unlimited. Any other tool, any other caller, any other
-> autonomy level, and any amount that is not finite and positive: **denied**.
+> **Execute limits**, keyed on `(SPIFFE ID, autonomy level)`:
+> `settlement-agent`/`assisted` → €6,000; `settlement-agent`/`autonomous` →
+> €1,000,000 (reached by nothing today); and, **new in M3**,
+> `senior-settlement-agent`/`assisted` → €25,000 — the colleague with higher
+> approval authority the agent's own refusal narrative already promises.
+>
+> **Unlimited tools**, because they move no money and reverse nothing:
+> `propose_payment`, and — new in M3 — `refuse_payment` (recording *why* a
+> payment did not happen) and `get_payment` (reading the ledger back before
+> executing an approval, R11).
+>
+> **Caller-scoped tools**, also new in M3: `refuse_payment` is unlimited in
+> amount but restricted in *caller* to the two settlement identities. It had
+> been unconditional for any caller including `caller=None`, so any holder of a
+> valid SVID could author the refusal record a human reads (M3 Task 3 fix
+> round, R12b). This is one more table `decide()` looks up, never a tool-name
+> branch.
+>
+> Any other tool, any other caller, any other autonomy level, and any amount
+> that is not finite and positive: **denied**.
 
-Four properties of that rule are deliberate and each was argued:
+Four properties of the execute limit are deliberate and each was argued:
 
 - **Identity is structurally required, not merely consulted.** The allowance
   table is keyed on `(SPIFFE ID, autonomy level)`, so a decision cannot be
@@ -985,27 +1172,61 @@ policy can decide on. That is not hypothetical — it is what SPIRE minted for
 `settlement-agent`'s pod, on this cluster, before it was given a
 ServiceAccount of its own.
 
-**Only one of the three is ever fetched, and the other two are registered on
-purpose rather than by accident.** `settlement-agent` mounts the Workload API
-socket and fetches a JWT-SVID; neither agentgateway nor the Policy Decision
-Service has a `csi.spiffe.io` mount, and neither presents an SVID to anything.
-The gateway's entry exists because its SPIFFE ID is the **audience**
-settlement-agent's token is minted for, so that string has to name a real
-registered identity rather than an invented label. The PDS's entry exists for
-the same class of reason and one more: the ExtMCP hop between the gateway and
-the PDS is **plain gRPC today**, protected by a `CiliumNetworkPolicy` rather
-than by mTLS, and this entry is what makes the PDS's own certificate possible
-the day that hop is hardened — as well as being the identity a future audit
-record would name as the decider. An identity nothing registers is a string,
-not an identity.
+**M3 added two more identities, and deliberately not two more
+`ClusterSPIFFEID`s.** `senior-settlement-agent` (Task 3) and `reviewer-ui`
+(Task 4) each got a dedicated ServiceAccount and nothing else; the SPIRE
+chart's own catch-all `default` CR (`fallback: true`) derives their IDs from
+namespace + ServiceAccount using the same template, so registering them
+explicitly would have added a manifest that changed no outcome. Read back off
+the same live entry list:
 
-**A guard exists for these three strings specifically**, because a published
+```
+spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent
+spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui
+```
+
+**But the entries are not the same shape, and that is worth knowing before
+anyone relies on one.** The three explicit entries carry `k8s:ns:` **and**
+`k8s:sa:` selectors; the two fallback entries carry only `k8s:pod-uid:`
+(measured — `spire-server entry show` on the live server, M3 Task 5B). The
+resulting SPIFFE ID is identical either way, so nothing downstream behaves
+differently today, and it is the reason the Task 3 review's decision to make
+"senior" an *identity* works at all. What it means is that these two are
+attested to a pod instance rather than to a namespace-plus-service-account
+pair. Hardening them into explicit non-fallback entries is a one-manifest
+change nobody has needed yet.
+
+**Two of the five are fetched, and the other three are registered on purpose
+rather than by accident.** `settlement-agent` mounts the Workload API socket
+and fetches a JWT-SVID; so does `senior-settlement-agent`, which is the same
+image with the same `SPIFFE_ENDPOINT_SOCKET` and the same `csi.spiffe.io`
+volume — that is the entire mechanism by which the "senior" identity is real
+rather than a label, since the socket answers with whatever ID the calling
+pod attests to. `reviewer-ui` also mounts the socket, but for a narrower
+purpose and never as a credential: it reads its *own* ID back for the
+`review.decision` span's `review.reviewer.spiffe_id` attribute
+(`apps/reviewer-ui/identity.py`) and presents it to nothing. Neither
+agentgateway nor the Policy Decision Service has a `csi.spiffe.io` mount, and
+neither presents an SVID to anything. The gateway's entry exists because its
+SPIFFE ID is the **audience** settlement-agent's token is minted for, so that
+string has to name a real registered identity rather than an invented label.
+The PDS's entry exists for the same class of reason and one more: the ExtMCP
+hop between the gateway and the PDS is **plain gRPC today**, protected by a
+`CiliumNetworkPolicy` rather than by mTLS, and this entry is what makes the
+PDS's own certificate possible the day that hop is hardened — as well as being
+the identity a future audit record would name as the decider. An identity
+nothing registers is a string, not an identity.
+
+**A guard exists for these five strings specifically**, because a published
 identity nothing checks is a published identity that can go stale in the
 direction that looks like success:
 `tests/unit/test_stage2_spire_config.py::test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures`
 enumerates **every** `spiffe://` string in this document and in
 `docs/telemetry-contract.md` — prose, tables and fenced blocks alike — and
-fails on any that is not one of the three this repository actually registers.
+fails on any that is not one of the five this repository actually configures
+(three explicit, two from the chart's fallback — the list in that module grew
+by two in M3, which is why publishing the new IDs above is checked rather than
+merely asserted).
 
 **How the credential gets into the pod.** No secret, key or token is in any
 manifest. The `spiffe-csi-driver` bind-mounts the spire-agent's Workload API
@@ -1014,14 +1235,27 @@ and the agent's Kubernetes workload attestor identifies the calling container
 via kubelet before answering. `agents/settlement-agent/svid.py` asks that
 socket for a JWT-SVID scoped to one audience, caches it until 30s before
 expiry, and `mcp_tools.py` presents it as `Authorization: Bearer` on the MCP
-transport.
+transport. **`senior-settlement-agent` runs that identical code path and gets a
+different token**, because the socket answers with the attested identity of
+whichever pod is asking — no configuration selects the ID.
 
-**What the gateway checks.** `jwtAuth` in `mode: strict` — issuer, audience,
-signature (against SPIRE's JWKS, fetched from the OIDC discovery provider) and
-`exp`. Verification only: there is no `mcpAuthorization` and no `authorization`
-rule in the gateway's config, so every call it can authenticate it still
-permits. Deciding what an authenticated caller may do is a later milestone;
-this task's job was to make the "who" real so there is something to decide on.
+**What the gateway checks, and the sentence this paragraph had to give up.**
+`jwtAuth` in `mode: strict` — issuer, audience, signature (against SPIRE's
+JWKS, fetched from the OIDC discovery provider) and `exp`. Through M2.1 this
+paragraph continued: *"Verification only: there is no `mcpAuthorization` and no
+`authorization` rule in the gateway's config, so every call it can authenticate
+it still permits. Deciding what an authenticated caller may do is a later
+milestone."* That was true for exactly one milestone. **M2.2 made it false** —
+`mcpGuardrails` on the MCP route asks the Policy Decision Service about every
+`tools/call`, so an authenticated caller is emphatically not an authorized one
+(see "The decision the platform makes"). The mechanism is still not
+`mcpAuthorization` or an `authorization` rule, which is the half of the old
+sentence that survives: authorization here is an external gRPC hook rather than
+a rule in the gateway's own config, and *that* is the deliberate choice —
+policy lives in a service this project writes and tests, not in a proxy's
+config language. **M3 leaves that shape untouched and adds a caller**:
+`senior-settlement-agent` authenticates at the same hop, against the same
+audience, and is decided by the same service on its own allowance row.
 
 **Why a bearer token and not mTLS.** The spec permits either, and mTLS is the
 stronger choice: an mTLS peer certificate cannot be replayed by whoever
@@ -1041,8 +1275,19 @@ one hour (SPIRE's `default_jwt_svid_ttl`).
 2. **The other hops are still unauthenticated.** Hop 1 (browser →
    claims-agent), Hop 2 (claims-agent → settlement-agent) and Hop 4
    (payments-mcp → payments-api) carry no SVID at all. Hop 2's allow-list
-   still checks a *name*, exactly as described at Hop 2 above. Anything in the
-   cluster can still call settlement-agent's Service directly.
+   still checks a *name*, exactly as described at Hop 2 above. **The
+   reachability half of this item narrowed in M3 and the authentication half
+   did not.** Through M2.2 this read "anything in the cluster can still call
+   settlement-agent's Service directly", which was measured and true — both
+   settlement Deployments had `Allow Ingress ANY`, so anything that could
+   reach an A2A port could execute any proposed payment (M3 Task 3 review,
+   finding 1/R11). M3 Task 3 added `settlement-agent-ingress-allowlist`
+   (claims-agent plus the kubelet probe) and Task 4 added
+   `senior-settlement-agent-ingress-allowlist` (reviewer-ui plus the probe),
+   so today only the one measured caller of each can reach it. That is a
+   network control, not an identity one: a pod that satisfies the
+   `endpointSelector` still presents no credential, and `claims-agent` itself
+   has no ingress policy at all. Defence in depth, not the fix.
 3. **The JWKS endpoint is plain HTTP inside the cluster.**
    `spiffe-oidc-discovery-provider.tls.spire.enabled` is set to `false`, so the
    provider serves the key set over HTTP on port 80 via the chart's own nginx
@@ -1214,12 +1459,13 @@ back with `jsonpath` and compared by checksum against the repo file — a
 
 ## What the system deliberately does not do
 
-**M2.2 sharpens this section for the third time rather than deleting it. The
-position is now "one hop authorized, on one rule".** M1 was *no authorization
-anywhere*. M2.1 was *authenticated but not authorized*. M2.2 puts a real
-decision in the path of the one call that moves money — and the accurate
-summary is narrower than "the platform is governed", so here is what is
-actually decided and what is still not:
+**M3 sharpens this section for the fourth time rather than deleting it. The
+position is now "one hop authorized, on three rules, with one refusal a human
+can overturn".** M1 was *no authorization anywhere*. M2.1 was *authenticated
+but not authorized*. M2.2 put a real decision in the path of the one call that
+moves money. M3 adds the only thing a refusal was missing — somebody who can
+say yes anyway — and the accurate summary is narrower than "the platform is
+supervised", so here is what is actually decided and what is still not:
 
 **What is now authorized**, verified by reading the config and confirmed on
 live spans:
@@ -1238,6 +1484,14 @@ live spans:
   not reachable except through the gateway (ingress policy), and the agent
   contains no limit to disable. Removing the governance means changing the
   platform, not the agent.
+- **The human's override is authorized like everything else — M3.** The
+  approved execution does not bypass the gateway; it goes through it, with a
+  different SVID, and is decided by the same PDS on its own allowance row. So
+  "a human approved it" is not a privileged channel: if the amount exceeded
+  `senior-settlement-agent`'s €25,000 the approval would be refused too, and
+  `reviewer-ui`'s own SPIFFE ID has no allowance row at all, which
+  `tests/e2e/test_supervised.py`'s criterion 7 proves by minting a real SVID
+  for it and being denied `unknown_caller`.
 
 **What is still not authorized, and none of it is an oversight:**
 
@@ -1246,14 +1500,31 @@ live spans:
   carry no tool and no amount. The PDS denies any method other than
   `tools/call` if it is ever handed one, so widening the config fails loudly
   rather than silently permitting.
-- **Only one rule, one caller, one autonomy level.** The allowance table has
-  two entries and both name `settlement-agent`. Any other caller is
-  `unknown_caller` and denied — correct today, and nowhere near a general
-  authorization model.
+- **Three allowance rows, two callers, one autonomy level that is ever
+  used.** Through M2.2 this read "two entries and both name
+  `settlement-agent`". M3 added a third — `senior-settlement-agent` at
+  `assisted`, €25,000 — so the table now names two callers, and the
+  `autonomous` row that has been there since M2.2 is still reached by nothing.
+  Any caller not in the table is `unknown_caller` and denied. This is still
+  nowhere near a general authorization model, and the number that grew is the
+  least interesting part of M3: `decide()` itself was not touched, because
+  approval changes *who asks*, not what is allowed.
+- **Nothing in the policy knows a human approved anything.** The PDS sees a
+  second identity with a higher limit and decides exactly as it would for any
+  caller. The evidence that a human was involved lives in the ledger's refusal
+  record, which `execute_approved` reads and refuses to proceed without
+  (`UnverifiedApproval`) — an application-level check, in the agent, not a
+  platform decision. A reader who expects "the platform enforces that a human
+  approved" should read that sentence twice: the platform enforces *who may
+  pay how much*, and the agent enforces *that there is a refusal to overturn*.
 - **Hops 1, 2 and 4 carry no identity and no policy.** Hop 2's allow-list
-  still checks a target *name*, exactly as described at Hop 2 above. Anything
-  in the cluster can still call `settlement-agent`'s Service directly, and
-  `customer-ui` reaches `claims-agent` with no credential at all.
+  still checks a target *name*, exactly as described at Hop 2 above, and
+  `customer-ui` reaches `claims-agent` with no credential at all. The
+  reachability half of this changed in M3 without the identity half changing:
+  both settlement Deployments now have Cilium ingress allowlists (claims-agent
+  and reviewer-ui respectively), so "anything in the cluster can call
+  `settlement-agent`'s Service directly" — true and measured through M2.2 — is
+  no longer accurate. What reaches them presents no credential all the same.
 - **payments-mcp performs no check of its own** before calling payments-api,
   and sees no identity to check with — the gateway strips the credential on
   the outbound leg.
@@ -1265,9 +1536,37 @@ live spans:
   with `409` on disagreement. That is a confirmation of intent — it checks
   that an instruction agrees with itself — not a decision about whether the
   caller may pay. Anything in the cluster that can reach its Service can still
-  move money, as long as it states the right amount.
-- **No human is in the loop anywhere.** The platform refuses; nobody is asked
-  to approve, and there is no escalation path. That is M3.
+  move money, as long as it states the right amount. **M3 added two routes to
+  that service and neither is authorization either.** `POST /refuse` writes
+  down why a payout did not happen; `GET /payments` lists what happened.
+  Executing a payment that reads `refused` succeeds — measured, `200`, with
+  the refusal record still attached (see Hop 4) — because the ledger is a
+  record, not a gate, and the approved execution comes through that same route.
+- **Approval is one human, one click, once.** This is the whole of the "not
+  decided" list that M3 itself creates, and it is longer than the feature:
+  no second approver, no quorum, no timeout or expiry on a pending refusal,
+  no re-proposal path back to the original agent, and **no authenticated
+  human**. `reject` is accepted (`_VALID_DECISIONS = ("approve", "reject")`)
+  but it is inert by design: it records a `review.decision` span with
+  `review.decision=reject` and writes nothing to the ledger and tells nobody,
+  so the payment simply stays `refused` — which is what it already was. And
+  the identity of the person is not established anywhere:
+  `review.reviewer.id` is a string the request supplies, and
+  `review.reviewer.spiffe_id` is `reviewer-ui`'s **own** SPIFFE ID, so between
+  them the span records an unverified claim and the deployment that accepted
+  it, never *which person* approved. There is no login, no session and no
+  Keycloak — which the stage table above still lists as part of this stage,
+  and which is not installed.
+- **The refusal-to-approval join is a span link, and a link is not a
+  guarantee.** It survives only because Task 2 persisted both the trace id and
+  the span id in the ledger; a refusal recorded before those fields existed
+  gets no link at all, by design, rather than a link the OpenTelemetry SDK
+  would silently drop. Nothing reconciles the two traces if the ledger record
+  is lost.
+- **The `_latch` still does not cover the approved path**, and this is an open
+  limitation rather than a decision — see limitation 3 in
+  [`docs/telemetry-contract.md`](telemetry-contract.md), which M3 amended and
+  left open. M3 was the milestone that was going to fix it, and did not.
 
 **One M1.2 sentence in this section is now false and is corrected rather than
 left standing.** It quoted `executor.py`'s module docstring: *"There is no
@@ -1279,11 +1578,16 @@ M2.2 the check exists, but it is deliberately somewhere this code cannot reach
 around — the gateway's policy hook, deciding on the `tools/call` request
 itself."* The first clause survived; the conclusion inverted.
 
-Submitting the default form (`CLM-1842`, `€6,200`) now proposes the payment
-and is **refused** at the execute step, and the model explains why. That is
-the argument this demo has been building towards since M1.1, when the same
-form moved €6,200 through a real Go system of record because a JSON-RPC
-message asked for it.
+Submitting the default form (`CLM-1842`, `€6,200`) proposes the payment and is
+**refused** at the execute step, and the model explains why. That is the
+argument this demo has been building towards since M1.1, when the same form
+moved €6,200 through a real Go system of record because a JSON-RPC message
+asked for it. **As of M3 the demo does not end there**: the refusal is written
+down beside the payment, a human finds it on the reviewer UI, and one click
+executes the same €6,200 through the same choke point under an identity that is
+allowed to. The interesting part on stage is not that the money finally moves —
+it is that nothing about the refusal had to be undone or worked around for it
+to.
 
 **One claim in this section was true through M1.2 and is now false, so it is
 corrected rather than left standing.** Earlier revisions said *"There is no
@@ -1369,6 +1673,10 @@ propagation table itself is current.
 | payments-mcp (inbound) | FastMCP 4.0.3's own `extract_trace_context()` (`fastmcp/telemetry.py`) reads `traceparent`/`tracestate` out of `params._meta` | Yes | **No — FastMCP never reads the `baggage` key out of `_meta` at all.** This is the one place `northstar.claim.id` stops, and interposing the gateway did not change that. |
 | payments-mcp → payments-api | Ordinary HTTP header, via `HTTPXClientInstrumentor` | Yes | No — nothing to propagate; baggage never entered this process's ambient context |
 | payments-api (inbound) | `otelhttp` (Go), standard W3C header extraction | Yes | No, for the same reason |
+| **browser → reviewer-ui (M3)** | Nothing. A plain HTML form POST from a page reviewer-ui itself rendered, with no JavaScript and no instrumentation — deliberately unlike `customer-ui`, which hand-mints a root span in `telemetry.ts`. So `review.decision` is a **trace root**, and the reviewer's trace begins at the server rather than in the browser | No | No |
+| **reviewer-ui → payments-api (M3)** | `HTTPXClientInstrumentor`, on the direct REST reads (`GET /payments?status=refused`, `GET /payments/{id}`). Note which hop this is *not*: it never crosses agentgateway, payments-mcp or the PDS | Yes | No — reviewer-ui runs no `ClaimIdSpanProcessor` and never sees the claim id as baggage; it knows the payment id, which is what it renders |
+| **reviewer-ui → senior-settlement-agent (M3)** | `HTTPXClientInstrumentor` again, on the raw A2A JSON-RPC POST (`approval.py`, the same technique as `delegation.py`), so the senior agent's spans are children of `review.decision`'s trace. **The join back to the refused trace is carried in the request body, not in a header**: `refusedTraceId` and `refusedSpanId` travel as ordinary JSON fields and become a `Link` on `settlement.execute_approved` | Yes | No |
+| **senior-settlement-agent → agentgateway (M3)** | Identical to Hop 3a above, because it is the same code in the same image. The only difference on the wire is the `Authorization` bearer token, which carries this pod's own SPIFFE ID | Yes, twice over | Yes in `_meta`; yes in the `baggage` header — but there is no claim id in this process's baggage to carry, since the approval arrived without one |
 
 **`northstar.claim.id` is set exactly once**, at claims-agent's intake
 (`correlation.py`'s `set_claim_id`, called from `executor.py` right after
@@ -1422,6 +1730,7 @@ calling the tracer directly.
 | Surface | URL |
 |---|---|
 | Customer UI | http://localhost:8080 |
+| Reviewer UI (stage 3) | http://localhost:8081 |
 | Jaeger | http://localhost:16686 |
 
 1. Open the Customer UI. The form is pre-filled with claim `CLM-1842`,
@@ -1543,3 +1852,66 @@ calling the tracer directly.
    confirms 6 cases collected in total, the 5 refusals plus the 1 accepted
    control).
    See "Identity with teeth" above for the exact wire shape of each refusal.
+
+7. **Then approve the refusal — this is M3's part of the walkthrough.** After
+   step 1's €6,200 submission comes back `refused`, open the Reviewer UI at
+   http://localhost:8081. Unlike the four surfaces above it needs no
+   `kubectl port-forward`: its Service is a `NodePort` and
+   `deploy/kind/stage3.yaml` maps host 8081 to it, so it also survives a
+   redeploy.
+
+   The page lists every payment whose status is `refused`, each showing the
+   rule that fired, the limit the caller held, the amount
+   requested, and the model's own narrative — the same four facts the
+   `policy.decision` span carries, read back out of the ledger rather than out
+   of the trace. **That distinction is worth pausing on**: the human's
+   information path is the ledger, not telemetry. Turn `NORTHSTAR_CAPTURE_CONTENT`
+   off and this page is unchanged.
+
+   Type any reviewer id (the field is required but unverified — the
+   placeholder is `alex.mercer`) and click **Approve**. There is also a
+   **Reject** button, and it is honest about doing nothing: it records a
+   `review.decision` span with `review.decision=reject` and leaves the payment
+   exactly as refused. Within a second or two Approve shows the payment
+   executed. What just happened, and what to look for:
+
+   - In Jaeger, search service **`reviewer-ui`**, operation
+     **`review.decision`**. That span is a **trace root** — reviewer-ui does
+     not instrument FastAPI at all, so there is no framework entry span above
+     it, and the browser sends a plain HTML form with no trace context. Its
+     attributes: `review.payment.id`, `review.decision` (`approve`),
+     `review.reviewer.id` (the string you typed — unverified, by design),
+     `review.reviewer.spiffe_id` (**reviewer-ui's own** ID, read from the
+     Workload API, not the person's), `review.refused.trace_id`, and
+     `review.elapsed_ms` — the gap between the ledger's `refusedAt` stamp and
+     now, so it is measured on the ledger's clock rather than the reviewer's.
+   - Its descendant **`settlement.execute_approved`** carries a **span
+     link**, not a parent edge, pointing at the span that recorded the
+     refusal in step 1's trace. Jaeger renders it as a separate reference —
+     click through and you land in the original refused trace. The link is
+     deliberate: the human took minutes, in a process that no longer exists,
+     so a parent-child edge would misstate both the duration and what was
+     executing.
+   - Compare the **`policy.decision`** span in *this* trace with the one from
+     step 1. Same rule shape, same service, same code path —
+     `policy.caller.spiffe_id` now reads
+     `spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent`,
+     `policy.limit.amount` reads `25000`, and the verdict is `permit`. Nothing
+     was overridden; a different caller was asked about.
+   - One thing that will look wrong and is not: **the senior agent's spans
+     arrive under `service.name=settlement-agent`**, because its
+     `OTEL_SERVICE_NAME` is deliberately the same. Tell the two apart by
+     `jwt.sub` / `policy.caller.spiffe_id`, never by service name.
+
+8. **See M3's own refusals, also without spending a model call:**
+
+   ```bash
+   .venv/bin/python -m pytest tests/e2e/test_supervised.py -v -k criterion_7
+   ```
+
+   Criterion 7 mints a real SVID for **reviewer-ui's** identity and shows the
+   gateway's policy hook refusing it `unknown_caller` — because reviewer-ui has
+   no `EXECUTE_LIMITS` row at all. It is the stronger form of the claim: not
+   "reviewer-ui does not try to execute payments", but "it could not if it
+   did". The other six tests in that file drive a real browser and a real
+   model, and are gated behind `RUN_BROWSER_TESTS=1`.

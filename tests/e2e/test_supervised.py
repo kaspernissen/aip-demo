@@ -520,9 +520,17 @@ def test_criterion_1_clm_1842_is_refused_and_the_ledger_never_shows_it_executed(
     test asserts what the criterion actually says, not what M2.2 happened to
     observe before this milestone added a third status; asserting `==
     "proposed"` here would be testing a fact this milestone deliberately
-    changed. (Flagged in this task's report: `test_policy_denial.py`'s own
-    parallel assertion now appears stale for exactly this reason and was left
-    untouched -- editing it is outside this task's file list.)
+    changed.
+
+    **`test_policy_denial.py`'s parallel assertion has since been repaired**
+    (M3 Task 5B, ruling R28) and now reads `== "refused"`, so the sentence
+    above describes M2.2's version of that file rather than today's. The two
+    assertions are deliberately different and both are kept: that one pins the
+    exact status M3 produces, which is the stronger statement and the one that
+    also catches `_record_refusal` silently failing; this one pins the weaker
+    property the criterion's own words claim ("ledger still unexecuted"), so a
+    future milestone that legitimately renames or re-routes the terminal
+    status for a denial does not falsify this regression test on M2's promise.
     """
     reply = denial_run.reply
     trace = denial_run.trace
