@@ -142,6 +142,18 @@ spec:
           # needs. cpu is left at the original 25m -- nothing about the
           # OOMKills implicated it, and it was not measured, so it is not
           # changed.
+          #
+          # CONFIRMED AFTER THE FACT, against real traffic rather than a
+          # synthetic burst: read back immediately after the full gate run
+          # (`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh`, which drives real
+          # browser approvals through this page), `memory.peak` = 65,171,456 B
+          # = 62.2 MiB, `memory.max` = 268,435,456 B = 256 MiB as set, restart
+          # count 0. Two things follow. The new limit has roughly 4x headroom
+          # over the real workload, so it is not tight. And the old 64Mi limit
+          # left about 1.8 MiB against that same workload -- the gate would
+          # probably have passed on it this once, which is exactly why the
+          # OOMKills read as intermittent rather than as a limit that was
+          # simply too low.
           resources:
             requests:
               memory: 96Mi

@@ -69,15 +69,27 @@ moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
 **M3 (Supervised).** The gate row below is anchored on a run of
-`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` itself, once, to completion, on
-the long-running `kind-northstar` **stage 3** cluster — not on a freshly
-created one, and `teardown.sh` was not run — by M3 Task 5B, against that
-task's own tree: `220 passed, 1 xfailed` in 452.77s, exit code 0, final line
-"M3 smoke test passed." The whole `tests/` tree collects **221** at that
-tree, re-measured with `.venv/bin/python -m pytest --collect-only -q tests/`
-and itemised per file in the M3 table further down. The arithmetic behind each
-row, and which of the two is measured and which is derived, is in the bullet
-list further down this section — the same place it has always been stated.
+`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` to completion, on the
+long-running `kind-northstar` **stage 3** cluster — not on a freshly created
+one, and `teardown.sh` was not run — by M3 Task 5B, against that task's own
+tree: `220 passed, 1 xfailed` in **343.14s**, final line "M3 smoke test
+passed." The whole `tests/` tree collects **221** at that tree, re-measured
+with `.venv/bin/python -m pytest --collect-only -q tests/` and itemised per
+file in the M3 table further down. The arithmetic behind each row, and which
+of the two is measured and which is derived, is in the bullet list further
+down this section — the same place it has always been stated.
+
+**It took two runs, and saying so is the point.** The first ran the gate end
+to end and came back `1 failed, 219 passed, 1 xfailed` in 330.85s, exit 1, on
+`tests/e2e/test_payments_mcp_trace.py::test_tool_schema_matches_the_committed_contract`
+— a test that had been failing since M3 Task 3, because that task added
+`refuse_payment` and `get_payment` to `payments-mcp` without updating
+`contracts/mcp/payments-mcp.json`. Nothing to do with the documentation pass
+that run was meant to certify; the milestone had simply never run its own gate
+since Task 2. The contract was regenerated from the served `tools/list` and
+the gate re-run once. Both runs are stated because a published figure whose
+provenance is "the second attempt" and does not say so is exactly the kind of
+number this section exists to prevent.
 
 Three operational facts about that run, because the next person to reproduce
 it will hit all three: the gate does **not** create its own port-forwards — it
@@ -409,15 +421,24 @@ replace a known-wrong number with an unverified one.
   above accounts for the whole delta from `main`'s re-measured 214. This is
   the number both published rows are anchored on today.
 - **Measured (M3 Task 5B), gate row:** `RUN_BROWSER_TESTS=1
-  ./scripts/smoke-test.sh` run once, in full, on the live stage-3
-  `kind-northstar` cluster — the whole `tests/` tree, real browser, real
-  settlements, a real human-approved execution, all **seven** per-service
-  suites including `reviewer-ui`'s 50 — returning `220 passed, 1 xfailed`,
-  0 skipped, in 452.77s, exit code 0, final line "M3 smoke test passed." A
-  direct observation of the whole gate, including the two count guards that
-  check this very table. It cross-checks against the collected total by the
-  second route this document has always used: 221 collected − 0 skipped − 1
-  xfailed = 220.
+  ./scripts/smoke-test.sh` run in full on the live stage-3 `kind-northstar`
+  cluster — the whole `tests/` tree, real browser, real settlements, a real
+  human-approved execution, all **seven** per-service suites including
+  `reviewer-ui`'s 50 — returning `220 passed, 1 xfailed`, 0 skipped, in
+  343.14s, final line "M3 smoke test passed." A direct observation of the
+  whole gate, including the two count guards that check this very table. It
+  cross-checks against the collected total by the second route this document
+  has always used: 221 collected − 0 skipped − 1 xfailed = 220.
+
+  Two qualifications, both stated rather than smoothed over. This was the
+  **second** run; the first failed on a stale MCP tool contract that predated
+  this task (see the M3 provenance paragraph above). And the exit *code* is
+  reported here as unobserved rather than as 0: the passing invocation was
+  piped through `tail`, so the status captured was the pipeline's. What is
+  directly observed is the final line, and `scripts/smoke-test.sh` runs under
+  `set -euo pipefail` with that `echo` as its last statement, so no failing
+  run can reach it. The earlier milestones' rows below do state a measured
+  exit code, and the difference is deliberate.
 - **Derived (M3 Task 5B), default row, components shown:** 221 collected − 33
   gated − 1 xfailed = **`187 passed, 33 skipped, 1 xfailed`**. Every component
   is itself measured above (the 33 is the five-module gated count, read off
