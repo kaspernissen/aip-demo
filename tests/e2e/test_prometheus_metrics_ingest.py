@@ -13,8 +13,17 @@ expensive failure mode for this milestone is a FALSE negative: concluding "the
 framework emits nothing" from a query that would have returned empty whatever
 the framework did. So no test below asserts an absence without, in the same
 test, asserting a presence that could only be there if the path the absent
-metric would have travelled is working end to end. The controls, in the order
-the data crosses them:
+metric would have travelled is working end to end.
+
+That sentence was aspirational rather than true when this file shipped, and
+review finding F3 demonstrated it: three tests -- the five-absence
+parametrisation, the unpredicted-name backstop and the invented-metric check --
+read only the cached `metric_names` set and passed against a completely empty
+Prometheus. The file as a whole still went red in that situation, because the
+control tests below do not, but the claim was per-test and those three did not
+have it. They now call `_assert_the_genai_path_is_live()` as their own first
+assertion, so the sentence above is now literal for all fourteen. The controls,
+in the order the data crosses them:
 
   1. **Collector -> Prometheus.** `deploy/observability/prometheus/values.yaml`
      disables all ten of the chart's default scrape jobs, so this Prometheus
@@ -34,7 +43,12 @@ the data crosses them:
 *coherently* below stage 4 -- Prometheus absent AND the deployed collector
 config not naming the exporter. The incoherent middle (an exporter pointed at a
 Service that does not exist) fails here rather than skipping, because that is
-exactly review finding F10's shape.
+exactly review finding F10's shape. Fix round 1 closed the third case (finding
+F7): "absent" now means the API server said `NotFound`, and every other way
+`kubectl` can exit non-zero -- unreachable server, wrong context, expired
+credential, timeout -- is a hard failure. "I could not look" must never be
+recorded as "there was nothing to check", least of all in the single gate run
+that re-verifies this milestone's published negative.
 
 **This file drives no traffic of its own**, and that is a deliberate choice
 rather than laziness: a file that drove its own settlement would spend model
@@ -110,11 +124,50 @@ def _kubectl(*args: str, timeout: int = 60) -> subprocess.CompletedProcess:
     )
 
 
+def _absent_or_fail(result: subprocess.CompletedProcess, what: str) -> bool:
+    """True if `what` exists, False if the API server says it does not, and a
+    hard failure for every other way `kubectl` can exit non-zero.
+
+    **Review finding F7.** Both callers below used to read `returncode == 0`
+    and treat anything else as "absent". An unreachable API server, a missing
+    or misspelled context, an expired credential and a genuine `NotFound` are
+    all non-zero, so a transient kubectl failure made this file conclude the
+    cluster was "coherently below stage 4" and skip all fourteen tests --
+    silently removing the milestone's inventory re-verification from the one
+    gate run that performs it (M4 exit criterion 6). A skip that says "nothing
+    to check here" when the truth is "I could not look" is the same false
+    negative this file exists to prevent, one level up.
+
+    `NotFound` is matched on kubectl's own error text, which is stable across
+    resource kinds: `Error from server (NotFound): services "x" not found`.
+
+    The sibling `tests/e2e/test_opensearch_trace_ingest.py` still has the older
+    shape this was inherited from; F7 was raised against this file and is fixed
+    here rather than widened into Task 1's file without a review asking for it.
+    """
+    if result.returncode == 0:
+        return True
+    stderr = result.stderr or ""
+    if "NotFound" in stderr or "not found" in stderr.lower():
+        return False
+    raise AssertionError(
+        f"`kubectl` failed while checking whether {what} exists, and the "
+        "failure is not 'it does not exist' -- so this file cannot tell "
+        "whether the cluster is below stage 4 or simply unreachable, and it "
+        "must not guess. Exit code "
+        f"{result.returncode}; stderr:\n{stderr.strip() or '(empty)'}\n"
+        f"Context in use: {KUBE_CONTEXT!r}."
+    )
+
+
 def _prometheus_is_installed() -> bool:
-    return _kubectl(
-        "-n", OBSERVABILITY_NAMESPACE, "get", f"svc/{PROMETHEUS_SERVICE}",
-        "-o", "name", timeout=30,
-    ).returncode == 0
+    return _absent_or_fail(
+        _kubectl(
+            "-n", OBSERVABILITY_NAMESPACE, "get", f"svc/{PROMETHEUS_SERVICE}",
+            "-o", "name", timeout=30,
+        ),
+        f"svc/{PROMETHEUS_SERVICE} in the {OBSERVABILITY_NAMESPACE} namespace",
+    )
 
 
 def _deployed_collector_config() -> str:
@@ -122,7 +175,9 @@ def _deployed_collector_config() -> str:
         "-n", OBSERVABILITY_NAMESPACE, "get", "configmap", COLLECTOR_CONFIGMAP,
         "-o", "jsonpath={.data.collector-config\\.yaml}", timeout=30,
     )
-    return result.stdout if result.returncode == 0 else ""
+    if not _absent_or_fail(result, f"configmap/{COLLECTOR_CONFIGMAP}"):
+        return ""
+    return result.stdout
 
 
 def _metrics_pipeline_exports_to_prometheus() -> bool:
@@ -448,6 +503,46 @@ def test_each_service_demonstrably_gets_a_metric_all_the_way_to_prometheus(
     )
 
 
+def _assert_the_genai_path_is_live(prometheus_url: str, absence: str) -> None:
+    """The in-test positive control every absence below is paired with.
+
+    **Fix round 1, review finding F3.** This module's docstring claims that no
+    test asserts an absence "without, in the same test, asserting a presence".
+    That was false for three of the fourteen: they read only the cached
+    `metric_names` set and passed against a completely empty Prometheus. The
+    file as a whole still went red in that situation -- the control tests above
+    see to that -- but the claim was made per-test and the three did not have
+    it, and a docstring is exactly where a reader goes to decide whether a
+    published negative is trustworthy. Making the three honest is the better of
+    the two available fixes, because an absence assertion that passes against
+    an empty backend is the defect class this repo keeps re-finding.
+
+    The control is `gen_ai.client.token.usage`, not SPIRE, and deliberately so:
+    it is the single strongest one available for a `gen_ai.*` absence, because
+    it shares EVERY layer with the metric that is missing -- PydanticAI's own
+    meter, the process's MeterProvider, the PeriodicExportingMetricReader, the
+    OTLPMetricExporter, the collector's `metrics` pipeline, the
+    `otlp_http/prometheus` exporter, and Prometheus's OTLP receiver. If it is
+    present and recent, none of those layers can be the reason another
+    `gen_ai.*` name is not.
+    """
+    missing = [
+        name for name in _prometheus_histogram_names(EMITTED_GENAI_METRIC)
+        if not _recent_series(prometheus_url, f'{{__name__="{name}"}}')
+    ]
+    assert not missing, (
+        f"the positive control for this test is not in Prometheus: "
+        f"{EMITTED_GENAI_METRIC} is missing {missing} from the last "
+        f"{FRESH_WINDOW_S // 60} minutes. Until that is fixed this test's "
+        f"finding -- {absence} -- is UNPROVEN rather than true: an empty "
+        "answer from a broken path is indistinguishable from an empty answer "
+        "about a silent framework, which is the false negative this whole "
+        "file exists to prevent. Fix the path (see "
+        "test_the_one_genai_metric_any_framework_emits_is_present's message "
+        "for what to check), then re-read the absence."
+    )
+
+
 def test_the_one_genai_metric_any_framework_emits_is_present(
     prometheus_url, metric_names
 ):
@@ -503,6 +598,7 @@ def test_the_other_five_genai_metrics_are_emitted_by_nothing(
     docs/telemetry-contract.md, and say which version changed it -- do not
     delete the assertion.
     """
+    _assert_the_genai_path_is_live(prometheus_url, f"{metric} is emitted by nothing")
     candidates = set(_prometheus_histogram_names(metric)) | {metric.replace(".", "_")}
     present = sorted(candidates & metric_names)
     assert not present, (
@@ -515,7 +611,7 @@ def test_the_other_five_genai_metrics_are_emitted_by_nothing(
 
 
 def test_no_genai_metric_arrived_under_a_name_this_file_did_not_predict(
-    metric_names
+    prometheus_url, metric_names
 ):
     """The backstop for the test above, and the reason it is not circular.
 
@@ -526,6 +622,9 @@ def test_no_genai_metric_arrived_under_a_name_this_file_did_not_predict(
     `gen_ai`-ish name Prometheus actually holds and require it to be one this
     file already accounts for.
     """
+    _assert_the_genai_path_is_live(
+        prometheus_url, "the gen_ai inventory is closed at the names below"
+    )
     accounted = set(_prometheus_histogram_names(EMITTED_GENAI_METRIC))
     surprises = sorted(
         name for name in metric_names
@@ -540,7 +639,9 @@ def test_no_genai_metric_arrived_under_a_name_this_file_did_not_predict(
     )
 
 
-def test_no_metric_was_invented_to_fill_a_framework_gap(metric_names):
+def test_no_metric_was_invented_to_fill_a_framework_gap(
+    prometheus_url, metric_names
+):
     """§6's standing prohibition: "No metric is hand-rolled to fill a hole in a
     framework's coverage."
 
@@ -551,9 +652,23 @@ def test_no_metric_was_invented_to_fill_a_framework_gap(metric_names):
     same argument Gap 5 makes for not hand-setting
     `gen_ai.operation.name` on FastMCP's spans.
 
-    Nothing in this repo may author a `gen_ai.*` metric. The only `gen_ai`
-    series in Prometheus must be the one PydanticAI emits.
+    **What this test can and cannot see, stated precisely -- review finding
+    F5.** It reads Prometheus, so it can only say *which `gen_ai.*` names are
+    in the store*, never *who authored them*. A hand-rolled instrument in this
+    repo's own source under a name PydanticAI also emits would pass here, and
+    two committed documents used to cite this test as proving origin. That
+    citation was wrong and is corrected; the source-side half of §6's
+    prohibition -- no `gen_ai.`-prefixed instrument created anywhere under
+    `agents/`, `apps/`, `platform/`, `tools/` or `systems/` -- is enforced by
+    `tests/unit/test_metrics_wiring.py::test_no_service_authors_a_metric_under_a_convention_namespace`,
+    which needs no cluster. The two together are the guard; neither is alone.
+
+    What remains here, and is worth keeping: the store must hold no `gen_ai.*`
+    name beyond the one PydanticAI emits, whatever produced it.
     """
+    _assert_the_genai_path_is_live(
+        prometheus_url, "no gen_ai.* name beyond PydanticAI's is in the store"
+    )
     genai = {name for name in metric_names if name.startswith("gen_ai")}
     allowed = set(_prometheus_histogram_names(EMITTED_GENAI_METRIC))
     invented = sorted(genai - allowed)

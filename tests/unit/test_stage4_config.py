@@ -39,6 +39,21 @@ Two guards are new in the fix round:
 behavioural rather than textual: it runs the real script against fake
 `kubectl`/`lsof`/`curl` and asserts on what it did.
 
+**M4 Task 2 and its own fix round widened the file's subject from OpenSearch to
+"whatever is stage-4-only", which is now two backends rather than one.** Task 2
+added `prometheus` to the absent-services cases above, and its fix round added
+three guards for findings F1 and F2:
+
+* `test_below_stage_4_the_collector_config_names_no_prometheus_exporter` --
+  ruling M4-R8's *metrics* half, which had been unenforced. The strip was
+  correct and nothing said so, which is the state that lets the next
+  regression through silently.
+* `test_the_strip_message_names_every_backend_it_drops` -- the operator-facing
+  `echo` still described a one-backend strip after the commit that made it a
+  two-backend one. The list it must name is now DERIVED from the configs, so
+  the third bracketed region reddens a test instead of ageing a sentence.
+* (the third is the second parametrisation of the first.)
+
 The live end-to-end assertions -- span parity between Jaeger and OpenSearch,
 the decision span being queryable, and Jaeger keeping the canonical attribute
 names -- are in `tests/e2e/test_opensearch_trace_ingest.py`, which needs the
@@ -192,8 +207,9 @@ def _stage4_strip_expression() -> str:
     assert match, (
         "scripts/setup-kind.sh no longer defines STAGE4_ONLY_STRIP, so below "
         "stage 4 it is applying the collector config whole -- which deploys a "
-        "collector naming an OpenSearch that cluster does not have (review "
-        "finding F10, ruling M4-R8)"
+        "collector naming an OpenSearch AND a Prometheus that cluster does "
+        "not have (review finding F10, ruling M4-R8; the metrics half arrived "
+        "with M4 Task 2)"
     )
     return match.group(1)
 
@@ -206,7 +222,8 @@ def test_setup_kind_strips_the_stage_4_regions_below_stage_4():
     ), (
         "scripts/setup-kind.sh no longer branches on `STAGE -lt 4` around the "
         "collector ConfigMap assembly, so either every stage gets the "
-        "OpenSearch branch (finding F10) or no stage does"
+        "stage-4-only regions -- the OpenSearch branch and the Prometheus "
+        "metrics exporter (finding F10) -- or no stage does"
     )
     assert re.search(
         r'sed "\$STAGE4_ONLY_STRIP" "\$COLLECTOR_CONFIG" > "\$COLLECTOR_CONFIG_APPLIED"',
@@ -261,6 +278,183 @@ def test_below_stage_4_the_collector_config_names_no_opensearch(config):
             f"{exporter!r}, which its `exporters` section does not define -- "
             "the collector would refuse to start"
         )
+
+
+@pytest.mark.parametrize("config", COLLECTOR_CONFIGS, ids=lambda p: p.name)
+def test_below_stage_4_the_collector_config_names_no_prometheus_exporter(config):
+    """The metrics half of ruling M4-R8, added in M4 Task 2's fix round 1.
+
+    The guard above is the traces half and was the whole of it until M4 Task 2
+    bracketed a second stage-4-only region -- the `otlp_http/prometheus`
+    exporter and its entry in the `metrics` pipeline. Review finding F1: the
+    strip was correct, and nothing asserted it. Remove or misplace either
+    marker pair and a `--stage 1|2|3` cluster deploys a collector exporting
+    metrics to `prometheus.observability.svc.cluster.local:9090`, a Service
+    that does not exist -- F10's exact shape one signal over, with all of
+    `tests/unit` staying green through it.
+
+    **Why this is not `"prometheus" not in stripped`.** The metrics pipeline
+    legitimately keeps its `prometheus/spire` RECEIVER below stage 4 (M2.1 Task
+    4 scrapes SPIRE at every stage), so the broad word would false-positive on
+    a correct config. The assertion is the exporter id, and then the same
+    declared-ness walk the traces pipeline already gets.
+    """
+    stripped = subprocess.run(
+        ["sed", _stage4_strip_expression(), str(config)],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert "otlp_http/prometheus" not in stripped, (
+        f"stripping the stage-4-only regions of {config.name} leaves "
+        "`otlp_http/prometheus` behind, so a stage-1/2/3 cluster would deploy "
+        "a collector exporting metrics to a Prometheus it does not have "
+        "(ruling M4-R8, metrics half). Both the exporter's declaration and its "
+        "entry in the `metrics` pipeline's exporter list must sit between "
+        "`# BEGIN stage-4-only` and `# END stage-4-only` -- which is why that "
+        "list is written one-per-line."
+    )
+    parsed = yaml.safe_load(stripped)
+    metrics = parsed["service"]["pipelines"]["metrics"]
+    assert "debug" in metrics["exporters"], (
+        f"the stripped {config.name}'s metrics pipeline exports nowhere at "
+        "all. The strip took too much: below stage 4 the collector must behave "
+        f"exactly as it did before M4. Exporters left: {metrics['exporters']}"
+    )
+    assert "prometheus/spire" in metrics["receivers"], (
+        f"the stripped {config.name}'s metrics pipeline lost the "
+        "`prometheus/spire` receiver, which is not stage-4-only -- SPIRE has "
+        "been scraped at every stage since M2.1 Task 4"
+    )
+    for exporter in metrics["exporters"]:
+        assert exporter in parsed["exporters"], (
+            f"the stripped {config.name}'s metrics pipeline names exporter "
+            f"{exporter!r}, which its `exporters` section does not define -- "
+            "the collector would refuse to start"
+        )
+
+
+# Transport and sink names that say nothing about WHICH backend an exporter
+# writes to: `otlp_http/prometheus` is a Prometheus exporter, not an "otlp_http"
+# one. Everything else in an exporter id is treated as a backend name the
+# operator-facing message has to be able to say out loud.
+_GENERIC_EXPORTER_SEGMENTS = frozenset({
+    "otlp", "otlp_http", "otlp_grpc", "otlphttp", "otlpgrpc",
+    "debug", "file", "nop", "forward",
+})
+
+
+def test_the_strip_message_names_every_backend_it_drops():
+    """The operator-facing `echo` must name every backend the strip removes.
+
+    Review finding F2, and the structural half of its fix. M4 Task 2 added a
+    second stage-4-only exporter and left that message saying the strip drops
+    "the stage-4-only OpenSearch branch" -- true when written, false the moment
+    a second region was bracketed, in a file that same commit edited. Correcting
+    the sentence fixes today; this stops tomorrow, because the message is no
+    longer a restatement anyone has to remember to update.
+
+    The list is DERIVED, not duplicated: run the script's own sed program, diff
+    the `exporters` section before and after, and require each removed
+    exporter to contribute a recognisable backend word to the message. So
+    bracketing a third region reddens this with the missing word named, rather
+    than silently leaving the operator told about two of three.
+    """
+    setup = SETUP_KIND.read_text()
+    match = re.search(
+        r'^\s*echo -e "\$\{YELLOW\}(Stage .*?)\$\{NC\}"$', setup, re.MULTILINE
+    )
+    assert match, (
+        "scripts/setup-kind.sh no longer prints a `Stage N: dropping ...` "
+        "message when it strips the stage-4-only regions. The operator has no "
+        "other way to learn that the collector they are about to get is not "
+        "the collector in the repository."
+    )
+    message = match.group(1).lower()
+
+    expression = _stage4_strip_expression()
+    missing = {}
+    for config in COLLECTOR_CONFIGS:
+        full = yaml.safe_load(config.read_text())
+        stripped = yaml.safe_load(subprocess.run(
+            ["sed", expression, str(config)],
+            capture_output=True, text=True, check=True,
+        ).stdout)
+        removed = set(full.get("exporters") or {}) - set(stripped.get("exporters") or {})
+        for exporter in sorted(removed):
+            backends = [
+                segment for segment in exporter.split("/")
+                if segment not in _GENERIC_EXPORTER_SEGMENTS
+            ]
+            if not any(backend.lower() in message for backend in backends):
+                missing[exporter] = backends
+
+    assert not missing, (
+        "scripts/setup-kind.sh's stage-strip message does not name every "
+        "backend it drops. The message reads:\n"
+        f"  {match.group(1)}\n"
+        "but the strip also removes these exporters, and none of the backend "
+        "words in their names appears in it:\n"
+        + "\n".join(f"  {exporter} -> any of {backends}"
+                    for exporter, backends in sorted(missing.items()))
+        + "\nAdd the backend to the message (and to the comment above "
+          "STAGE4_ONLY_STRIP, which describes the same convention)."
+    )
+
+
+def test_the_stage_4_completion_message_names_everything_stage_4_installs():
+    """The same structural fix as the test above, one message over.
+
+    The `Stage 4 (Observable) is up: ...` line is the last thing an operator
+    reads, and it is where they learn what they now have. M4 Task 2 added a
+    third Helm release to the stage-4 block and left that line describing two
+    -- the same defect as finding F2, in the same file, found by sweeping for
+    it rather than by review. Restating an install list in prose is what keeps
+    producing this, so the list is derived instead: every
+    `helm upgrade --install <release>` between the `STAGE -ge 4` guard and that
+    block's closing `fi` must be named in the message.
+
+    Release names are matched case-insensitively, because the message spells
+    them as products (`OpenSearch`) and the script as Helm releases
+    (`opensearch`); a release whose name is genuinely absent from the message
+    fails regardless of case.
+    """
+    lines = SETUP_KIND.read_text().splitlines()
+
+    starts = [i for i, l in enumerate(lines) if re.match(r'if \[\[ "\$\{STAGE\}" -ge 4 \]\]; then', l)]
+    assert len(starts) == 1, (
+        "expected exactly one `if [[ \"${STAGE}\" -ge 4 ]]; then` block in "
+        f"scripts/setup-kind.sh, found {len(starts)} -- this guard reads that "
+        "block to learn what stage 4 installs"
+    )
+    start = starts[0]
+    ends = [i for i in range(start + 1, len(lines)) if lines[i] == "fi"]
+    assert ends, "the `STAGE -ge 4` block is never closed by a column-0 `fi`"
+    releases = [
+        m.group(1)
+        for l in lines[start:ends[0]]
+        if (m := re.search(r"helm upgrade --install (\S+)", l))
+    ]
+    assert releases, (
+        "the `STAGE -ge 4` block installs no Helm release at all, so either "
+        "stage 4 stopped installing anything or this guard is reading the "
+        "wrong block"
+    )
+
+    message = next(
+        (l for l in lines if "Stage 4 (Observable) is up" in l), None
+    )
+    assert message, (
+        "scripts/setup-kind.sh no longer prints a `Stage 4 (Observable) is "
+        "up: ...` completion message"
+    )
+    lowered = message.lower()
+    missing = [r for r in releases if r.lower() not in lowered]
+    assert not missing, (
+        f"stage 4 installs {releases}, but its completion message does not "
+        f"name {missing}. The operator is told about some of what they now "
+        "have and not the rest, which is how they end up not knowing a "
+        "backend is running. The message reads:\n  "
+        + message.strip()
+    )
 
 
 @pytest.mark.parametrize("config", COLLECTOR_CONFIGS, ids=lambda p: p.name)

@@ -454,9 +454,11 @@ cannot be traced" is the accurate statement. Its Prometheus metrics *are*
 enabled and scraped into the collector as `service.name=spire-server` /
 `spire-agent` — and since M4 Task 2 they leave the collector's `metrics`
 pipeline over OTLP like every other metric, so at stage 4 they land in
-Prometheus as well (271 `spire_*` series were counted there, which is what
-makes them the independent positive control for the collector→Prometheus
-hop). See [`docs/telemetry-contract.md`](telemetry-contract.md)'s "SPIRE
+Prometheus as well (271 distinct `spire_*` **metric names** were counted there
+— names, not series, which is the unit `/api/v1/label/__name__/values`
+returns; the series count is much larger. That is what makes them the
+independent positive control for the collector→Prometheus hop). See
+[`docs/telemetry-contract.md`](telemetry-contract.md)'s "SPIRE
 instrumentation, as measured".
 
 ## Hop 1 — browser → claims-agent: A2A over JSON-RPC 2.0

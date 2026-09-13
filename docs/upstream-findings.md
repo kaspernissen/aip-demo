@@ -2081,7 +2081,13 @@ INSTRUMENTS PydanticAI CREATED:
     ('tokens_histogram', 'gen_ai.client.token.usage', '{token}', '_Histogram')
 ```
 
-Three instruments. One is a convention metric this system records into
+Three instruments, and the `x5` above is not in tension with that: it counts
+`create_histogram(` **call sites**, and two of the five are `except TypeError`
+fallbacks for older OTel API versions
+(`pydantic_ai/models/instrumented.py:175/181` for `tokens_histogram`,
+`:195/201` for `time_to_first_chunk_histogram`) — two ways to create the same
+instrument, not two instruments. Read 2026-09-13 at the installed 2.42.0. One
+is a convention metric this system records into
 (`gen_ai.client.token.usage`); one is a convention metric recorded only for
 *streaming* requests, which this system does not make, so it exists and takes
 no measurement; one (`operation.cost`) is PydanticAI's own name in no OTel
@@ -2135,10 +2141,19 @@ not. No `gen_ai.*` metric was hand-rolled in this project to fill the gap, for
 the same reason Finding 2 gives for not hand-setting `gen_ai.operation.name`
 on FastMCP's spans: an invented metric under a convention namespace makes this
 project's telemetry disagree with what a future, fixed framework emits
-natively. `tests/e2e/test_prometheus_metrics_ingest.py::
-test_no_metric_was_invented_to_fill_a_framework_gap` asserts that no `gen_ai.*`
-series in Prometheus originates here. There is no workaround to recommend; the
-correct fix is for the frameworks to emit the metrics.
+natively. Two tests enforce that, at the two layers it takes — and the split is
+stated rather than glossed, because an earlier version of this paragraph cited
+only the first and claimed more for it than it can do (M4 Task 2 review finding
+F5). `tests/e2e/test_prometheus_metrics_ingest.py::
+test_no_metric_was_invented_to_fill_a_framework_gap` asserts that Prometheus
+holds **no `gen_ai.*` name beyond the one PydanticAI emits**; it reads a store,
+so it can see what a series is called and never who authored it.
+`tests/unit/test_metrics_wiring.py::
+test_no_service_authors_a_metric_under_a_convention_namespace` is the half that
+sees origin: it walks the AST of every Python file under `agents/`, `apps/`,
+`platform/`, `tools/` and `systems/` for an instrument created with a
+`gen_ai.`-prefixed name, and needs no cluster. There is no workaround to
+recommend; the correct fix is for the frameworks to emit the metrics.
 
 **Existing upstream activity (verified live, 2026-09-13, read-only — no issue,
 comment or pull request was posted anywhere):**

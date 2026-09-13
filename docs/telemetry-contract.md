@@ -68,12 +68,14 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-13 (M4 Task 2) — the current figures, and the gate row is DERIVED,
-not yet re-measured against a live run.** Task 2 added **34** tests, taking
-the collected count from 247 to **281**, re-measured with
+**2026-09-13 (M4 Task 2, including its review fix round 1) — the current
+figures, and the gate row is DERIVED, not yet re-measured against a live
+run.** Task 2 added **34** tests and its fix round added **6** more, taking
+the collected count from 247 to **287**, re-measured with
 `.venv/bin/python -m pytest --collect-only -q tests/`:
 
-* `tests/unit/test_metrics_wiring.py` — **20**. That every one of the five
+* `tests/unit/test_metrics_wiring.py` — **22** (20, then +2 in the fix
+  round). That every one of the five
   Python services *calls* the metrics wiring in `configure()` (not merely
   defines it — the first draft bound to the definition and stayed green when
   the call was deleted); that the five copies of that wiring have not
@@ -87,7 +89,32 @@ the collected count from 247 to **281**, re-measured with
   agrees between `scripts/setup-kind.sh` and
   `deploy/observability/prometheus/values.yaml`; that the values file enables
   the OTLP receiver and disables all ten scrape jobs; and that the collector's
-  deprecated `otlphttp` alias is not used anywhere.
+  deprecated `otlphttp` alias is not used anywhere. The fix round added the
+  two halves of "never sample" that an AST walk over five Python files
+  structurally cannot see (review findings F5 and F6): that no `deploy/k8s/`
+  manifest sets one of the five environment variables that change what the SDK
+  records from outside the source — `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`
+  and `OTEL_METRIC_EXPORT_INTERVAL` among them, both of which would falsify a
+  number this document publishes as measured — and that no service under
+  `agents/`, `apps/`, `platform/`, `tools/` or `systems/` *authors* an
+  instrument under a namespace an instrumentation library owns, which is the
+  only layer that can see §6's hand-rolling prohibition at all.
+* `tests/unit/test_stage4_config.py` — **17** (13, then +4 in the fix round),
+  closing review findings F1 and F2. The stage-<4 strip guard had a traces half
+  and no metrics half, so ruling M4-R8 was unenforced for
+  `otlp_http/prometheus`: the strip was correct and nothing said so. There is
+  now a per-config assertion that the stripped `metrics` pipeline names no
+  Prometheus exporter, still exports to `debug`, keeps its `prometheus/spire`
+  receiver (which is *not* stage-4-only, so the broad word "prometheus" would
+  false-positive), and declares everything it names. The third is structural:
+  the operator-facing message the script prints when it strips must name every
+  backend the strip actually removes, **derived by diffing the two configs
+  rather than restated** — which is what turns the next bracketed region into a
+  red test instead of another stale sentence. Sweeping for more of that class
+  found one the review had not: the `Stage 4 (Observable) is up: ...`
+  completion message still named two of the three Helm releases stage 4
+  installs. The fourth guard derives that list too, from the
+  `helm upgrade --install` lines inside the script's own `STAGE -ge 4` block.
 * `tests/e2e/test_prometheus_metrics_ingest.py` — **14**. The §6 inventory,
   kept honest: an OTLP-only ingestion control (SPIRE series in a Prometheus
   with zero scrape targets), a per-service positive control for each of the
@@ -99,23 +126,31 @@ the collected count from 247 to **281**, re-measured with
   `start`/`end`, so a stale TSDB cannot keep them green; the *absence*
   assertions are deliberately left unbounded, because a longer window only
   strengthens a negative. Like every other `tests/e2e` file these need the
-  live cluster, and they skip on a cluster below stage 4.
+  live cluster, and they skip on a cluster below stage 4. The fix round added
+  no test here but changed three of the fourteen (finding F3): the three that
+  assert an absence and asserted no presence — and so passed against a
+  completely empty Prometheus — now each begin by asserting the control the
+  module docstring always claimed they had. It also narrowed the skip (finding
+  F7): "below stage 4" now means the API server answered `NotFound`, and every
+  other non-zero `kubectl` exit is a hard failure, so an unreachable cluster
+  can no longer remove this file from the gate run silently.
 
 The per-service row below moves with them: `agents/settlement-agent` gained
 `tests/test_telemetry.py` (**4**), 110 → **114**. Those four are the only
 new tests outside `tests/`.
 
-Bare-suite row, derived from that same collection: 281 collected − 33 gated −
-1 xfailed = `247 passed, 33 skipped, 1 xfailed`. The 33 gated are the
+Bare-suite row, derived from that same collection: 287 collected − 33 gated −
+1 xfailed = `253 passed, 33 skipped, 1 xfailed`. The 33 gated are the
 `RUN_BROWSER_TESTS=1` browser tests, unchanged; the fourteen new e2e tests are
-not among them. Gate row: 281 collected − 1 xfailed = `280 passed, 1 xfailed`.
+not among them. Gate row: 287 collected − 1 xfailed = `286 passed, 1 xfailed`.
 This is arithmetic, not a live gate run, for the same reason and with the same
 standing as the M4 Task 1 row below: **Task 5 runs the milestone's one gate
 and converts this row to MEASURED.** What it rests on: Task 2 added a
 `MeterProvider` to five services and changed no span, no attribute and no
 application behaviour the gate already asserts on.
 
-`tests/unit` alone collects **151** (131 before this task).
+`tests/unit` alone collects **157** (151 before the fix round; 131 before this
+task).
 
 **2026-09-13 (M4 Task 1, after its two review fix rounds) — superseded by the
 row above, and kept the way every earlier row is: it was the current figure,
@@ -281,8 +316,8 @@ defect class, so each command is stated as it was actually run.)
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `247 passed, 33 skipped, 1 xfailed` (re-measured 2026-09-13, M4 Task 2: `pytest --collect-only -q tests/` → 281 collected) |
-| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `280 passed, 1 xfailed` (DERIVED 2026-09-13, M4 Task 2, not yet re-measured against a live run — see the note above; Task 5 runs the milestone's one gate) |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `253 passed, 33 skipped, 1 xfailed` (re-measured 2026-09-13, M4 Task 2 fix round 1: `pytest --collect-only -q tests/` → 287 collected) |
+| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `286 passed, 1 xfailed` (DERIVED 2026-09-13, M4 Task 2 fix round 1, not yet re-measured against a live run — see the note above; Task 5 runs the milestone's one gate) |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -2411,6 +2446,24 @@ Those two series are in the cluster's Prometheus and are named for what they
 are. They are a measurement artefact, not telemetry this system emits, and
 nothing queries them.
 
+**This evidence is point-in-time, and deliberately not turned into a standing
+test** (M4 Task 2 review finding F8). The probes were sent by hand on
+2026-09-13 and age out of Prometheus's 15-day retention
+(`--storage.tsdb.retention.time=15d`, read off the running container), so after
+2026-09-28 the two series above will not be in the store and nothing will go
+red about it. That is the honest state of this row rather than an oversight:
+`tests/e2e/test_prometheus_metrics_ingest.py::test_each_service_demonstrably_gets_a_metric_all_the_way_to_prometheus`
+parametrises the **four** services that record an instrument, and it cannot
+parametrise these two, because the thing being proved is precisely that they
+record nothing. The standing alternative would be a test that `kubectl exec`s
+a counter into two pods on every gate run — a suite that otherwise only reads
+the cluster would start writing to it, to re-prove a property the source
+already states and `tests/unit/test_metrics_wiring.py` already guards
+(`_configure_metrics` exists and is called in all five services). What a reader
+should take from this row is what it says: on 2026-09-13, both export paths
+carried a metric end to end. If that needs re-establishing later, re-send the
+probe — do not read an expired series as an absence.
+
 **`senior-settlement-agent` has no `job` of its own, by design.**
 `deploy/k8s/senior-settlement-agent.yaml` sets `OTEL_SERVICE_NAME=settlement-agent`
 deliberately — the demo's point is that the code is byte-identical and the
@@ -2456,16 +2509,27 @@ service" is only half-closed and should not be read as fully closed.
 
 `tests/e2e/test_prometheus_metrics_ingest.py` re-verifies the whole inventory
 against the live cluster, and is written so that a false negative cannot pass
-quietly: every absence assertion is paired with a positive control in the same
-run, the controls are bounded to a recent window (an unbounded check would stay
-green for Prometheus's full 15-day retention after everything stopped emitting),
-and a test fails if any `gen_ai` name turns up that the file does not already
-account for. If a framework implements one of the five, that file goes red and
-this table is what has to change. `tests/unit/test_metrics_wiring.py` covers
-what the cluster cannot show: that all five services install the provider, that
-the five copies of the wiring have not drifted, that nothing configures a view
-or temporality that would discard data, and that the chart pin and the
-collector's endpoint agree with each other.
+quietly: every absence assertion is paired with a positive control **in the
+same test** (it was "in the same run" until review finding F3 showed three
+tests passing against a completely empty store), the controls are bounded to a
+recent window (an unbounded check would stay green for Prometheus's full 15-day
+retention after everything stopped emitting), a test fails if any `gen_ai` name
+turns up that the file does not already account for, and "below stage 4" now
+means the API server answered `NotFound` rather than any non-zero `kubectl`
+exit, so an unreachable cluster cannot skip the whole file quietly (finding
+F7). If a framework implements one of the five, that file goes red and this
+table is what has to change.
+
+`tests/unit/test_metrics_wiring.py` covers what the cluster cannot show: that
+all five services install the provider, that the five copies of the wiring have
+not drifted, that nothing configures a view or temporality that would discard
+data, that the chart pin and the collector's endpoint agree with each other,
+that no `deploy/k8s/` manifest changes the temporality, the export interval or
+the exporter from outside the Python that was measured, and that nothing under
+`agents/`, `apps/`, `platform/`, `tools/` or `systems/` *authors* an instrument
+under a namespace an instrumentation library owns — the last two added in the
+fix round, and the second of them is the only layer that can see who wrote a
+metric at all.
 
 ## settlement-agent's own instrumentation: `execute_approved` (M3 Task 3)
 
@@ -3511,9 +3575,18 @@ For each: the evidence, whether upstream already has work in flight, and what we
   `gen_ai.*`-named instrument authored here would make this project's telemetry
   disagree with what a future, fixed framework emits natively, which is the
   same argument Gap 5 makes for not hand-setting `gen_ai.operation.name` on
-  FastMCP's spans. `tests/e2e/test_prometheus_metrics_ingest.py::
-  test_no_metric_was_invented_to_fill_a_framework_gap` asserts that nothing
-  under a `gen_ai.*` name in Prometheus came from this repository.
+  FastMCP's spans. **Two tests enforce that, because it takes two layers** —
+  and the split is stated because an earlier version of this bullet cited only
+  the first and claimed more for it than it can do (M4 Task 2 review finding
+  F5). `tests/e2e/test_prometheus_metrics_ingest.py::
+  test_no_metric_was_invented_to_fill_a_framework_gap` asserts that Prometheus
+  holds no `gen_ai.*` name beyond the one PydanticAI emits; it reads a store,
+  so it can see what a series is *called* and never who authored it.
+  `tests/unit/test_metrics_wiring.py::
+  test_no_service_authors_a_metric_under_a_convention_namespace` is the half
+  that sees origin — it walks the AST of every Python file under `agents/`,
+  `apps/`, `platform/`, `tools/` and `systems/` for an instrument created under
+  a namespace an instrumentation library owns, and runs without a cluster.
 
 ## Known limitations, recorded rather than fixed (M2.2)
 

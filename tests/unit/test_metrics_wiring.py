@@ -2,7 +2,8 @@
 
 The live half is `tests/e2e/test_prometheus_metrics_ingest.py`. This is what
 runs without a cluster, and it exists because the live file structurally cannot
-see three things:
+see five things -- three from the start, and two more that review finding F5
+and F6 showed it could not see either:
 
   * A service whose `_configure_metrics` was deleted, or never called, is
     indistinguishable in Prometheus from a service that simply recorded nothing
@@ -14,6 +15,14 @@ see three things:
     what never left the process.
   * The version pins, which are claims about the world rather than about this
     cluster.
+  * **Who authored a series.** Prometheus records what a metric is called,
+    never which source created it, so the live file cannot enforce §6's
+    prohibition on hand-rolling a `gen_ai.*` instrument -- two documents cited
+    it as though it could (finding F5).
+  * **A Deployment manifest that changes the SDK from outside the source.**
+    `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` and
+    `OTEL_METRIC_EXPORT_INTERVAL` falsify measured properties the contract
+    publishes without touching a line of Python (finding F6).
 
 **Everything here is parsed, never grepped.** The one substring check this file
 originally used -- for the Prometheus exporter in the deployed collector
@@ -238,18 +247,198 @@ def test_nothing_configures_a_view_or_a_temporality_that_would_drop_data(service
     )
 
 
+# Every environment variable that lets a Deployment manifest change what the
+# SDK records or how often, without touching a line of the Python this file
+# otherwise guards. Review finding F6: `agents/settlement-agent/bootstrap.py`
+# publishes CUMULATIVE temporality and a 60 000 ms export interval as measured
+# properties of this system, and both are settable from outside the source that
+# was measured -- so the guard protecting those sentences cannot live only in
+# the AST of the five bootstraps.
+#
+#   * `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` -- `delta` or
+#     `lowmemory` replaces CUMULATIVE, handing Prometheus increments it must
+#     re-total and falsifying the temporality the contract publishes.
+#   * `OTEL_METRIC_EXPORT_INTERVAL` -- lengthening it is not sampling, but it
+#     changes the published interval and the window `FRESH_WINDOW_S` in
+#     tests/e2e/test_prometheus_metrics_ingest.py is sized against.
+#   * `OTEL_METRICS_EXPORTER=none` and `OTEL_SDK_DISABLED=true` -- the two ways
+#     to switch the whole thing off while every source-level guard here stays
+#     green.
+#   * `OTEL_METRICS_EXEMPLAR_FILTER` -- narrows what is retained alongside.
+#
+# All five are absent from every manifest today, measured by this test.
+_FORBIDDEN_MANIFEST_ENV = frozenset({
+    "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE",
+    "OTEL_METRIC_EXPORT_INTERVAL",
+    "OTEL_METRICS_EXPORTER",
+    "OTEL_METRICS_EXEMPLAR_FILTER",
+    "OTEL_SDK_DISABLED",
+})
+
+
+def test_no_deployment_manifest_changes_what_the_sdk_records():
+    """The manifest-side half of "this demo never samples", metrics included.
+
+    The AST guard above can only see the five Python files. A Deployment that
+    sets `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: delta` changes the
+    same behaviour from outside them, with every unit test here staying green
+    and `docs/telemetry-contract.md`'s measured temporality quietly false.
+
+    Scoped to `deploy/k8s/`, the only place this repo sets application env.
+    Written as a text scan of the whole manifest rather than a parse of the
+    container `env:` lists on purpose: a variable set through `envFrom`, a
+    ConfigMap reference or a second container would evade the structured read
+    and would still take effect. Whole-line comments are stripped first, so a
+    manifest may explain why it does NOT set one of these.
+    """
+    manifests = sorted((REPO_ROOT / "deploy/k8s").glob("*.yaml"))
+    assert manifests, "deploy/k8s holds no manifests -- this guard has nothing to read"
+
+    offenders = []
+    for manifest in manifests:
+        text = "\n".join(
+            line for line in manifest.read_text().splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        for name in sorted(_FORBIDDEN_MANIFEST_ENV):
+            if name in text:
+                offenders.append(f"{manifest.name}: {name}")
+
+    assert not offenders, (
+        "these deploy/k8s manifests set an environment variable that changes "
+        f"what the metrics SDK records: {offenders}. This demo records 100% of "
+        "its telemetry, metrics included, and docs/telemetry-contract.md "
+        "publishes the temporality and the export interval as MEASURED "
+        "properties of the running system -- a manifest that overrides either "
+        "makes a published number false while every source-level guard in "
+        "this file stays green. If one is genuinely needed, re-measure the "
+        "contract in the same commit and amend this guard with the reason -- "
+        "do not delete it."
+    )
+
+
+# The Meter API's instrument factories, all seven
+# (`opentelemetry/metrics/_internal/__init__.py`, class `Meter`). Any metric
+# this repo ever authors is created by one of these.
+_INSTRUMENT_FACTORIES = frozenset({
+    "create_counter",
+    "create_up_down_counter",
+    "create_histogram",
+    "create_gauge",
+    "create_observable_counter",
+    "create_observable_up_down_counter",
+    "create_observable_gauge",
+})
+
+# Namespaces an instrumentation library owns. M4 spec §6: "No metric is
+# hand-rolled to fill a hole in a framework's coverage" -- a locally-invented
+# `gen_ai.invoke_agent.duration` would disagree with whatever a future, fixed
+# PydanticAI emits natively, and every dashboard built on it would have to be
+# rewritten twice. `northstar.*`, `policy.*`, `review.*` and `settlement.*` are
+# this project's own and are deliberately not here.
+_CONVENTION_NAMESPACES = ("gen_ai.", "mcp.", "http.", "rpc.", "db.", "messaging.")
+
+# Where this repo's own application code lives. `.venv` and `node_modules` are
+# excluded because they hold the frameworks themselves -- pydantic_ai really
+# does create `gen_ai.client.token.usage`, and that is the finding rather than
+# a violation.
+_SOURCE_ROOTS = ("agents", "apps", "platform", "tools", "systems")
+_EXCLUDED_DIRS = {".venv", "node_modules", "__pycache__", ".next", "dist", "build"}
+
+
+def _repo_python_sources() -> list[Path]:
+    files = []
+    for root in _SOURCE_ROOTS:
+        for path in (REPO_ROOT / root).rglob("*.py"):
+            if _EXCLUDED_DIRS & set(path.relative_to(REPO_ROOT).parts):
+                continue
+            files.append(path)
+    return sorted(files)
+
+
+def test_no_service_authors_a_metric_under_a_convention_namespace():
+    """§6's standing prohibition, enforced at the only layer that can see it.
+
+    **Review finding F5.** `docs/upstream-findings.md` Finding 12 and
+    `docs/telemetry-contract.md` Gap 8 both used to cite
+    `tests/e2e/test_prometheus_metrics_ingest.py::test_no_metric_was_invented_to_fill_a_framework_gap`
+    as proving that no `gen_ai.*` series "originates here". It cannot: it reads
+    Prometheus, and Prometheus records what a series is called, never who
+    authored it. A hand-rolled instrument under a name PydanticAI also emits
+    would have passed it, so the prohibition both documents leaned on was
+    enforced by nothing. This is the half that can see origin, and it needs no
+    cluster.
+
+    Bound to the instrument-creating CALL with a literal name, never to the
+    string anywhere in the file: this repo's own tests and documents name
+    `gen_ai.*` metrics constantly while describing the ones it does NOT emit,
+    and a guard those trip is a guard that gets deleted. That is the same
+    lesson `_FORBIDDEN_SDK_KNOBS` above records.
+
+    `systems/payments-api` is Go and has no Python to walk; it is also the one
+    service with no MeterProvider at all (docs/telemetry-contract.md's metrics
+    section scopes it out), so it can author no metric of any kind today.
+    """
+    offenders = []
+    for path in _repo_python_sources():
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            factory = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+            if factory not in _INSTRUMENT_FACTORIES:
+                continue
+            names = [
+                arg.value for arg in node.args
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+            ]
+            names += [
+                kw.value.value for kw in node.keywords
+                if kw.arg == "name" and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+            ]
+            for name in names:
+                if name.startswith(_CONVENTION_NAMESPACES):
+                    offenders.append(
+                        f"{path.relative_to(REPO_ROOT)}: {factory}({name!r})"
+                    )
+
+    assert not offenders, (
+        "these services author a metric under a namespace an instrumentation "
+        f"library owns: {offenders}. M4 spec §6 forbids hand-rolling a metric "
+        "to fill a hole in a framework's coverage -- an invented `gen_ai.*` "
+        "instrument makes this project's telemetry disagree with whatever the "
+        "framework emits once it implements the metric, which is the same "
+        "argument docs/telemetry-contract.md's Gap 5 makes for not "
+        "hand-setting `gen_ai.operation.name` on FastMCP's spans. Our own "
+        "components may author metrics -- under `northstar.*`, `policy.*` or "
+        "another prefix this project owns."
+    )
+
+
 def test_the_collector_metrics_pipeline_filters_nothing():
     """The collector-side half. `filter`, `tail_sampling` and
     `probabilistic_sampler` are the processors that would drop data points
     after the SDK already sent them; `transform` can too, by dropping metrics
-    in an OTTL statement. None belongs in this pipeline.
+    in an OTTL statement.
+
+    Three more were added in fix round 1 (review finding F6), because they
+    change or discard what Prometheus ends up storing just as effectively and
+    the first version of this set did not name them: `cumulativetodelta` and
+    `deltatocumulative` rewrite temporality *after* the SDK chose it, which
+    would falsify the measured CUMULATIVE property the contract publishes, and
+    `metricstransform` can drop or aggregate series outright. None belongs in
+    this pipeline.
 
     `tests/unit/test_no_sampling.py` makes the same assertion for traces and
     for the processor map as a whole; this one is specifically about what the
     `metrics` pipeline runs, because a processor can be declared and used in
     one pipeline only.
     """
-    forbidden = {"filter", "tail_sampling", "probabilistic_sampler", "transform"}
+    forbidden = {
+        "filter", "tail_sampling", "probabilistic_sampler", "transform",
+        "cumulativetodelta", "deltatocumulative", "metricstransform",
+    }
     for config in COLLECTOR_CONFIGS:
         parsed = yaml.safe_load(config.read_text())
         pipeline = parsed["service"]["pipelines"]["metrics"]

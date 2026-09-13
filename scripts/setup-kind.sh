@@ -389,14 +389,28 @@ fi
 # to avoid.
 #
 # The rule is one line of sed and one marker convention, not a YAML rewriter:
-# every OpenSearch-only region of both collector configs is bracketed by
-# `# BEGIN stage-4-only` / `# END stage-4-only`, including the single
-# `- forward/opensearch` entry in the traces pipeline's exporter list (which is
-# why that list is written one-per-line). Deleting those regions yields the
-# exact pre-M4 config -- verified by round-tripping both files through PyYAML.
+# every region of both collector configs that is stage-4-only is bracketed by
+# `# BEGIN stage-4-only` / `# END stage-4-only`. That is now TWO backends, not
+# one, and the convention is named after the stage rather than after OpenSearch
+# for exactly that reason:
+#   * M4 Task 1, traces -- the `opensearch/trace` exporter, the
+#     `attributes/opensearch-compat` processor, the `forward/opensearch`
+#     connector, the `traces/opensearch` branch pipeline, and the single
+#     `- forward/opensearch` entry in the traces pipeline's exporter list;
+#   * M4 Task 2, metrics -- the `otlp_http/prometheus` exporter and its entry
+#     in the metrics pipeline's exporter list.
+# Both entries are why those exporter lists are written one-per-line. Deleting
+# the bracketed regions yields the exact pre-M4 config -- verified by
+# round-tripping both files through PyYAML.
+#
 # tests/unit/test_stage4_config.py runs this same sed program (it reads the
-# expression out of this file, so the two cannot drift) and asserts the result
-# parses, still exports traces to Jaeger, and mentions OpenSearch nowhere.
+# expression out of this file, so the two cannot drift) and asserts, per
+# signal, that the result parses, still exports traces to Jaeger and metrics to
+# debug, keeps the `prometheus/spire` receiver (which is NOT stage-4-only), and
+# names neither `opensearch` nor `otlp_http/prometheus` anywhere. It also
+# asserts that the `echo` below names every backend the strip actually removes,
+# derived by diffing the two configs rather than restated -- which is what
+# turns the next third region into a red test instead of a stale sentence.
 STAGE4_ONLY_STRIP='/^[[:space:]]*# BEGIN stage-4-only$/,/^[[:space:]]*# END stage-4-only$/d'
 COLLECTOR_CONFIG_APPLIED="$COLLECTOR_CONFIG"
 if [[ "${STAGE}" -lt 4 ]]; then
@@ -411,7 +425,7 @@ if [[ "${STAGE}" -lt 4 ]]; then
   COLLECTOR_CONFIG_APPLIED="$(mktemp -t collector-config.XXXXXX)"
   trap 'rm -f "$COLLECTOR_CONFIG_APPLIED"' EXIT
   sed "$STAGE4_ONLY_STRIP" "$COLLECTOR_CONFIG" > "$COLLECTOR_CONFIG_APPLIED"
-  echo -e "${YELLOW}Stage ${STAGE}: dropping the stage-4-only OpenSearch branch from the collector config (OpenSearch is installed at stage 4 only).${NC}"
+  echo -e "${YELLOW}Stage ${STAGE}: dropping every stage-4-only region from the collector config -- the OpenSearch trace branch and the Prometheus metrics exporter (both backends are installed at stage 4 only).${NC}"
 fi
 
 kubectl create configmap otel-collector-config \
@@ -711,7 +725,7 @@ echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payment
 
 echo ""
 if [[ "${STAGE}" -eq 4 ]]; then
-  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workloads (reviewer-ui, senior-settlement-agent) on the same Cilium ${CILIUM_CHART_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- amendment A1, no cluster recreate -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces and OpenSearch Dashboards for reading them. Run ./scripts/start-demo.sh to reach Dashboards; it is not a kind host port.${NC}"
+  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workloads (reviewer-ui, senior-settlement-agent) on the same Cilium ${CILIUM_CHART_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- amendment A1, no cluster recreate -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them, and prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port.${NC}"
 elif [[ "${STAGE}" -eq 3 ]]; then
   echo -e "${GREEN}Stage 3 (Supervised) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity, plus reviewer-ui and senior-settlement-agent -- so a refused payment now has a human who can approve it.${NC}"
 elif [[ "${STAGE}" -ge 2 ]]; then
