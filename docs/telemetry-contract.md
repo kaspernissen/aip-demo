@@ -47,6 +47,16 @@ via the gate below, so the practical cost is one bare `pytest tests/` run's
 worth of tokens, not a new one — the fix here is documenting that reality
 plainly rather than restructuring around it.
 
+**Correction, M4 Task 3 fix round 1: "two" above is "three".**
+`test_claim_correlation.py` is a third ungated file that drives a settlement —
+its module-scoped `correlated_trace` fixture POSTs the same A2A
+`message/send` with `estimatedAmount: 6200` — and it was left out of the count
+when that paragraph was written. Measured by reading all three files'
+module-scoped fixtures while checking which tests a bare run actually pays
+for; none of the three carries a `RUN_BROWSER_TESTS` gate. The reasoning above
+is unaffected and deliberately not restructured here: only the number was
+wrong.
+
 **`./scripts/smoke-test.sh` — the actual M1.1 gate — has no default mode that
 skips this.** It runs one unconditional invocation,
 `RUN_BROWSER_TESTS=1 pytest tests -v`, over the whole `tests/` tree, every
@@ -68,9 +78,10 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-13 (M4 Task 3) — the current figures, and the gate row is DERIVED,
-not yet re-measured against a live run.** Task 3 added **6** tests, taking the
-collected count from 287 to **293**, re-measured with
+**2026-09-13 (M4 Task 3, including its review fix round 1) — the current
+figures, and the gate row is DERIVED, not yet re-measured against a live run.**
+Task 3 added **6** tests and its fix round added **3** more, taking the
+collected count from 287 to **296**, re-measured with
 `.venv/bin/python -m pytest --collect-only -q tests/`:
 
 * `tests/e2e/test_evidence_view.py` — **3**. The evidence view's *queries*,
@@ -88,10 +99,14 @@ collected count from 287 to **293**, re-measured with
   `test_prometheus_metrics_ingest.py`'s stricter stage gate — it imports that
   file's `_absent_or_fail` rather than copying it — and skips only on a cluster
   coherently below stage 4; a missing index on a stage-4 cluster is a
-  **failure**, verified by mutation.
-* `tests/unit/test_stage4_config.py` — **+3** (17 → 20). That
-  `deploy/observability/dashboards/evidence.ndjson` is a complete, importable
-  export (no dangling reference, every dashboard panel resolvable, the
+  **failure**, verified by mutation. The fix round put the whole file behind
+  `RUN_BROWSER_TESTS=1` (no browser is started; it rides the flag for the same
+  reason `test_settlement_llm_trace.py` does — it drives two settlements'
+  worth of model calls and executes a real €6,200 payment under the senior
+  identity), which is why the gated count below moves 33 → 36.
+* `tests/unit/test_stage4_config.py` — **+6** (17 → 23; 20, then +3 in the fix
+  round). That `deploy/observability/dashboards/evidence.ndjson` is a complete,
+  importable export (no dangling reference, every dashboard panel resolvable, the
   index-pattern naming the ss4o trace index with its cached field list intact);
   that its header panel still records the choice M4 had to make about the
   permitted claim's id, since NDJSON cannot hold a comment and that panel is
@@ -99,22 +114,56 @@ collected count from 287 to **293**, re-measured with
   committed file, inside the `STAGE -ge 4` block, checking the HTTP response
   rather than curl's exit code. The dashboard's id is cross-checked against
   `scripts/setup-kind.sh` and `docs/architecture.md` so a renamed dashboard
-  reddens a test instead of leaving two `#/view/<id>` links that 404.
+  reddens a test instead of leaving two `#/view/<id>` links that 404. The fix
+  round closed the gap that undercut the task's own premise (review finding
+  F4): the e2e file asserts the queries it *re-implements in Python*, and
+  nothing read the queries out of the shipped export at all, so the dashboard
+  could ship querying a field no test names. The three new guards read the
+  NDJSON itself — every panel's aggregated/controlled fields and its exact KQL
+  query, cross-checked both against the attribute-name constants the e2e files
+  declare (parsed out of their ASTs, so a renamed constant reddens here) and
+  against the index-pattern's own cached field list; the exact ordered list of
+  the six panels the dashboard ships; and that every `http://localhost:NNNN`
+  surface in `docs/architecture.md`'s table is actually printed by
+  `scripts/start-demo.sh`, which is what lets that document derive the list
+  rather than restate it.
 
 The per-service row is unchanged at **114**: Task 3 added no test outside
 `tests/`.
 
-Bare-suite row, derived from that same collection: 293 collected − 33 gated −
-1 xfailed = `259 passed, 33 skipped, 1 xfailed`. The 33 gated are the
-`RUN_BROWSER_TESTS=1` browser tests, unchanged; the three new e2e tests are not
-among them, and they do spend model tokens in a bare `pytest tests/` run — the
-same standing the two ungated chain files described at the top of this section
-already have. Gate row: 293 collected − 1 xfailed = `292 passed, 1 xfailed`.
-This is arithmetic, not a live gate run, with the same standing as the two rows
-below it: **Task 5 runs the milestone's one gate and converts this row to
-MEASURED.**
+Bare-suite row, derived from that same collection: 296 collected − 36 gated −
+1 xfailed = `259 passed, 36 skipped, 1 xfailed`. The 36 gated were 33 before
+this task's fix round; `tests/e2e/test_evidence_view.py`'s three tests are the
+other three, gated for cost rather than for a browser (see its bullet above).
+The gated figure is measured, not assumed: a `--collect-only` run with a plugin
+that counts items carrying a `skipif` whose reason names `RUN_BROWSER_TESTS`
+and whose condition is true with the variable unset reports 36 of 296, spread
+`test_browser_root_span.py` 8, `test_settlement_llm_trace.py` 9,
+`test_gateway_trace.py` 6, `test_supervised.py` 6, `test_policy_denial.py` 4,
+`test_evidence_view.py` 3. Gate row: 296 collected − 1 xfailed =
+`295 passed, 1 xfailed`. (This figure first went in wrapped *inside* its
+backticks, and `tests/unit/test_telemetry_contract_counts.py` — which read a
+space, not any whitespace — skipped past it and checked M4 Task 2's historical
+figure in its place, reporting drift against a number this edit never touched.
+The guard now tolerates the wrap; the hazard is recorded because it is the
+same one the guard's own docstring describes for a historical figure moved
+above a current one.)
+This is arithmetic, not a live gate run, with the same standing as
+the two rows below it: **Task 5 runs the milestone's one gate and converts this
+row to MEASURED.**
 
-`tests/unit` alone collects **160** (157 before this task).
+`tests/unit` alone collects **163** (157 before this task).
+
+**A residual this task did not fix, left for Task 5 to rule on.** Gating
+`test_evidence_view.py` narrows but does not close the repo-level gap the fix
+round's review named: a bare `pytest tests/` still drives live model-driven
+settlements, from the ungated chain files described at the top of this
+section. That gap predates this task and is unchanged by it — beyond the one
+file this task itself added, the fix round was told explicitly not to touch
+the others — but it means the sentence at the top of this section, that a bare
+run gets "the weaker, default result", should not be read as "the free one".
+Measuring it while gating this task's file turned up one correction to that
+paragraph, recorded there: the ungated settling files are **three**, not two.
 
 **2026-09-13 (M4 Task 2, including its review fix round 1) — superseded by the
 row above, and kept the way every earlier row is: it was the current figure,
@@ -365,8 +414,8 @@ defect class, so each command is stated as it was actually run.)
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `253 passed, 33 skipped, 1 xfailed` (re-measured 2026-09-13, M4 Task 2 fix round 1: `pytest --collect-only -q tests/` → 287 collected) |
-| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `286 passed, 1 xfailed` (DERIVED 2026-09-13, M4 Task 2 fix round 1, not yet re-measured against a live run — see the note above; Task 5 runs the milestone's one gate) |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `259 passed, 36 skipped, 1 xfailed` (re-derived 2026-09-13, M4 Task 3 fix round 1, from a re-measured `pytest --collect-only -q tests/` → 296 collected and a measured 36 gated) |
+| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `295 passed, 1 xfailed` (DERIVED 2026-09-13, M4 Task 3 fix round 1, not yet re-measured against a live run — see the note above; Task 5 runs the milestone's one gate) |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before

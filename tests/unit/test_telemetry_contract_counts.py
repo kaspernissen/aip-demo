@@ -79,7 +79,18 @@ def test_contracts_published_counts_match_what_pytest_actually_collects():
     collected = _collected_test_count()
     text = CONTRACT_PATH.read_text()
 
-    bare_match = re.search(r"`(\d+) passed, (\d+) skipped, (\d+) xfailed`", text)
+    # `\s+` rather than a literal space between the words: the contract is
+    # hard-wrapped prose, and a figure that happens to wrap *inside* its
+    # backticks is invisible to a space-only pattern -- so this check falls
+    # through to the next, historical figure and verifies that one instead,
+    # reporting drift against a number the author never touched. That is the
+    # same failure mode the module docstring describes for a historical figure
+    # moved above a current one, and it happened for real while M4 Task 3's fix
+    # round was updating the current row. Every historical figure sits *below*
+    # the current one, so tolerating a wrap cannot change which match is first.
+    bare_match = re.search(
+        r"`(\d+)\s+passed,\s+(\d+)\s+skipped,\s+(\d+)\s+xfailed`", text
+    )
     assert bare_match, (
         "expected to find the bare-suite result as "
         "'`<N> passed, <N> skipped, <N> xfailed`' in "
@@ -87,7 +98,7 @@ def test_contracts_published_counts_match_what_pytest_actually_collects():
     )
     bare_total = sum(int(g) for g in bare_match.groups())
 
-    gate_match = re.search(r"`(\d+) passed, (\d+) xfailed`", text)
+    gate_match = re.search(r"`(\d+)\s+passed,\s+(\d+)\s+xfailed`", text)
     assert gate_match, (
         "expected to find the gate's result as '`<N> passed, <N> xfailed`' "
         f"in {CONTRACT_PATH.relative_to(REPO_ROOT)}"

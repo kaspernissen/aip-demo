@@ -1152,10 +1152,39 @@ def test_setup_kind_imports_the_evidence_view_at_stage_4():
         "setup-kind.sh names the evidence file but never calls the saved "
         "objects import API with it"
     )
-    assert '"success":true' in setup, (
-        "the import's response is not checked. `curl` exits 0 on an HTTP 400, "
-        "so without this the script reports a complete stage-4 cluster while "
+    # Review finding F8: `'"success":true' in setup` was a substring test, and
+    # it stayed green for an INVERTED check -- `if [[ $X == *'"success":true'* ]];
+    # then exit 1; fi` contains the same substring and aborts on success. Bound
+    # to the guard's actual shape instead: the negative comparison, and an
+    # `exit 1` inside the block it opens.
+    guard = re.search(
+        r'if \[\[ "\$\{EVIDENCE_IMPORT\}" != \*\'"success":true\'\* \]\]; then(.*?)\n  fi',
+        setup,
+        re.S,
+    )
+    assert guard, (
+        "the import's response is not checked with a negative comparison "
+        "against '\"success\":true'. `curl` exits 0 on an HTTP 400, so without "
+        "that check the script reports a complete stage-4 cluster while "
         "Dashboards holds nothing."
+    )
+    assert "exit 1" in guard.group(1), (
+        "the import-response check exists but does not abort: the block it "
+        f"opens is {guard.group(1)!r}. A failed import that only prints is a "
+        "stage-4 cluster that looks complete and has no evidence view in it."
+    )
+
+    # The readiness poll finding F1 added, bound the same way: `--wait` on the
+    # Helm install is a TCP-accept probe (measured), so the saved-objects API
+    # can still answer 503 when the import runs.
+    assert "/api/status" in setup, (
+        "the import no longer waits for OpenSearch Dashboards' /api/status to "
+        "answer before posting. The chart's readiness probe is `tcpSocket` on "
+        "5601 (measured 2026-09-13 on the deployed object), which says nothing "
+        "about whether the saved-objects API is serving -- OSD answers 503 "
+        "'OpenSearch Dashboards server is not ready yet' for a window after "
+        "the socket binds, and a single unretried import would `exit 1` "
+        "mid-stage-4."
     )
 
     stage_4_block = re.search(
@@ -1171,3 +1200,215 @@ def test_setup_kind_imports_the_evidence_view_at_stage_4():
         "ungated import fails every `--stage 1|2|3` run -- finding F10's shape "
         "applied to a saved object."
     )
+
+
+# --- M4 Task 3 fix round 1: the SHIPPED panels' own fields and queries -------
+
+
+def _e2e_string_constants(*relative_paths: str) -> dict[str, str]:
+    """Module-level `NAME = "literal"` assignments from `tests/e2e` files, by AST.
+
+    Read rather than imported, for the reason every hermetic guard in this file
+    is: importing a `tests/e2e` module would pull in `httpx`, the Jaeger harness
+    and a pile of fixtures, and would make a unit test depend on the live
+    cluster's test surface. The same `ast` idiom `_pds_attribute_keys` uses.
+    """
+    constants: dict[str, str] = {}
+    for relative in relative_paths:
+        tree = ast.parse((REPO_ROOT / relative).read_text())
+        for node in tree.body:
+            if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+                continue
+            target = node.targets[0]
+            if isinstance(target, ast.Name) and isinstance(node.value, ast.Constant):
+                if isinstance(node.value.value, str):
+                    constants.setdefault(target.id, node.value.value)
+    return constants
+
+
+def _panel_fields_and_query(visualization: dict) -> tuple[set[str], str]:
+    """Every index field a visualization queries, and its own KQL query string."""
+    vis_state = json.loads(visualization["attributes"]["visState"])
+    fields = {
+        agg["params"]["field"]
+        for agg in vis_state.get("aggs", [])
+        if agg.get("params", {}).get("field")
+    }
+    fields |= {
+        control["fieldName"]
+        for control in vis_state.get("params", {}).get("controls", [])
+        if control.get("fieldName")
+    }
+    source = json.loads(
+        visualization["attributes"]["kibanaSavedObjectMeta"]["searchSourceJSON"]
+    )
+    return fields, (source.get("query") or {}).get("query", "")
+
+
+def test_the_shipped_panels_query_the_fields_the_evidence_tests_name():
+    """Review finding F4: assert the SAVED OBJECT's queries, not a copy of them.
+
+    `tests/e2e/test_evidence_view.py` re-implements the two-step join in Python
+    and asserts the instrumentation. That is what the brief asks for and it is
+    valuable -- but a re-implementation can agree with itself perfectly while
+    the shipped dashboard drifts. Before this test, changing panel 4's query off
+    `payments-api`, mistyping a rule field in panel 2, or deleting the money
+    panel outright left every test in this repository green while the dashboard
+    rendered blank or wrong. That is the exact failure
+    `test_evidence_view.py`'s own docstring says it exists to prevent, applied
+    to the artefact instead of the data.
+
+    Every name below is **derived from the e2e file's own constants**, read out
+    of its source by AST rather than restated here, so a renamed attribute has
+    to move the test file and the saved object in the same commit or this goes
+    red.
+
+    Cross-checking each field against the index-pattern's cached `fields` list
+    also closes the implementer's own concern 1 ("a *new* attribute will not
+    appear ... Nothing detects that today"): a panel that queries a field the
+    cached list does not carry now reddens here.
+    """
+    constants = _e2e_string_constants(
+        "tests/e2e/test_evidence_view.py",
+        "tests/e2e/test_policy_denial.py",
+        "tests/e2e/test_opensearch_trace_ingest.py",
+        "tests/e2e/test_supervised.py",
+    )
+
+    def keyword(attribute: str) -> str:
+        return f"attributes.{attribute}.keyword"
+
+    expected_fields = {
+        "northstar-evidence-controls": {"traceId.keyword"},
+        "northstar-evidence-claims": {
+            keyword(constants["ATTR_CLAIM_ID"]),
+            "traceId.keyword",
+        },
+        "northstar-evidence-decisions": {
+            keyword(constants["ATTR_POLICY_TOOL"]),
+            keyword(constants["ATTR_DECISION"]),
+            keyword(constants["ATTR_POLICY_RULE"]),
+            keyword(constants["ATTR_POLICY_CALLER"]),
+            f"attributes.{constants['ATTR_POLICY_AMOUNT']}",
+            f"attributes.{constants['ATTR_POLICY_LIMIT']}",
+        },
+        "northstar-evidence-review": {
+            keyword(constants["ATTR_REVIEW_DECISION"]),
+            keyword(constants["ATTR_REVIEW_REVIEWER"]),
+        },
+        "northstar-evidence-money": {"name.keyword", "traceId.keyword"},
+    }
+    expected_queries = {
+        "northstar-evidence-controls": "",
+        "northstar-evidence-claims": "",
+        "northstar-evidence-decisions": f'name:"{constants["DECISION_SPAN"]}"',
+        "northstar-evidence-review": f'name:"{constants["REVIEW_DECISION_SPAN"]}"',
+        "northstar-evidence-money": (
+            f'resource.service.name:"{constants["PAYMENTS_API"]}"'
+        ),
+    }
+
+    objects = {(o["type"], o["id"]): o for o in _evidence_objects()}
+    index_pattern = objects[("index-pattern", "northstar-evidence-traces")]
+    assert index_pattern["attributes"]["title"] == constants["TRACE_INDEX"], (
+        "the dashboard reads a different index than "
+        "tests/e2e/test_opensearch_trace_ingest.py's TRACE_INDEX: "
+        f"{index_pattern['attributes']['title']!r} vs "
+        f"{constants['TRACE_INDEX']!r}"
+    )
+    cached = {field["name"] for field in json.loads(index_pattern["attributes"]["fields"])}
+
+    for panel_id, fields in expected_fields.items():
+        panel = objects.get(("visualization", panel_id))
+        assert panel is not None, (
+            f"panel {panel_id!r} is not in "
+            f"{EVIDENCE_NDJSON.relative_to(REPO_ROOT)} at all"
+        )
+        actual_fields, actual_query = _panel_fields_and_query(panel)
+        missing = fields - actual_fields
+        assert not missing, (
+            f"panel {panel_id!r} no longer queries {sorted(missing)}. Those "
+            "names come from tests/e2e/test_evidence_view.py's own constants, "
+            "so either the dashboard drifted or an attribute was renamed in "
+            "one place and not the other -- and the panel now renders blank or "
+            f"wrong. It queries: {sorted(actual_fields)}"
+        )
+        assert actual_query == expected_queries[panel_id], (
+            f"panel {panel_id!r}'s query is {actual_query!r}, expected "
+            f"{expected_queries[panel_id]!r}. A panel filtered on the wrong "
+            "span name or service renders rows that are not evidence of "
+            "anything, and no e2e test can see it -- they read the index "
+            "directly, not this saved object."
+        )
+        uncached = {field for field in actual_fields if field not in cached}
+        assert not uncached, (
+            f"panel {panel_id!r} queries {sorted(uncached)}, which the "
+            "index-pattern's cached field list does not carry, so OpenSearch "
+            "Dashboards cannot resolve them and the aggregation 400s "
+            "(measured: `SavedObjectNotFound: Could not locate that "
+            "index-pattern-field`). Refresh the field list in the UI and "
+            "re-export."
+        )
+
+
+def test_the_evidence_view_ships_exactly_its_six_panels():
+    """Review finding F5: `>= 4` let two panels vanish silently.
+
+    `len(panels) >= 4` was satisfied by five, so the money panel -- the half of
+    the story a claim-id filter drops, and the reason the join has two steps at
+    all -- could be deleted without a single test noticing. The panels are now
+    named, in the order the dashboard lays them out.
+    """
+    dashboards = [o for o in _evidence_objects() if o["type"] == "dashboard"]
+    assert len(dashboards) == 1, dashboards
+    dashboard = dashboards[0]
+    by_name = {r["name"]: r["id"] for r in dashboard.get("references", [])}
+    panels = json.loads(dashboard["attributes"]["panelsJSON"])
+    shipped = [by_name[panel["panelRefName"]] for panel in panels]
+    assert shipped == [
+        "northstar-evidence-readme",
+        "northstar-evidence-controls",
+        "northstar-evidence-claims",
+        "northstar-evidence-decisions",
+        "northstar-evidence-review",
+        "northstar-evidence-money",
+    ], (
+        f"the evidence view's panels are now {shipped}. Each one is load-bearing "
+        "-- the header carries the only record of the claim-id choice, the "
+        "control is the Gap 4 join key, and panels 3 and 4 are the two whose "
+        "CONTENTS (a reviewer, or none) and whose EXISTENCE (the money hops a "
+        "claim-id filter drops) are the evidence. Add a panel deliberately by "
+        "adding it here too."
+    )
+
+
+def test_the_surface_table_and_start_demos_printed_list_agree():
+    """Review finding F3: prose that sent the reader to a shorter list.
+
+    `docs/architecture.md`'s "See it yourself" table told a reader to prefer
+    `scripts/start-demo.sh`'s printed output when the two disagree -- and that
+    output named neither the Customer UI nor Jaeger, rows 1 and 3 of the table,
+    which are the two URLs the walkthrough's first two steps open. Both were
+    added to the script; this is what stops them diverging again, in either
+    direction, rather than a third sentence asserting that they do not.
+    """
+    table = re.search(
+        r"^## See it yourself\n\n\| Surface \| URL \|\n\|---\|---\|\n((?:\|.*\n)+)",
+        ARCHITECTURE.read_text(),
+        re.M,
+    )
+    assert table, (
+        "could not find the 'See it yourself' surface table in "
+        f"{ARCHITECTURE.relative_to(REPO_ROOT)} -- it was renamed or "
+        "reformatted, and this guard cannot read it"
+    )
+    urls = re.findall(r"(http://localhost:\d+)", table.group(1))
+    assert len(urls) >= 4, f"only {len(urls)} surfaces parsed out of the table"
+    printed = START_DEMO.read_text()
+    for url in urls:
+        assert url in printed, (
+            f"{ARCHITECTURE.relative_to(REPO_ROOT)}'s surface table lists {url} "
+            "and scripts/start-demo.sh never prints it, while the prose under "
+            "that table tells the reader to prefer the script's output. One of "
+            "the two has to change."
+        )

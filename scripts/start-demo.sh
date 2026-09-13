@@ -256,6 +256,16 @@ else
   echo -e "${YELLOW}Some stage-gated surfaces are absent -- see the SKIPPED lines above.${NC}"
 fi
 echo ""
+# M4 Task 3 fix round 1 (review finding F3). docs/architecture.md's "See it
+# yourself" table tells the reader to prefer this list when the two disagree,
+# and this list did not name the Customer UI or Jaeger -- rows 1 and 3 of that
+# table, and the two URLs walkthrough steps 1 and 2 open with. They are kind
+# host ports mapped at cluster creation rather than forwards this script owns,
+# which is why they were absent and why they are labelled as such here. A unit
+# guard now requires every URL in that table to appear in this list, so the two
+# cannot drift again.
+echo "  Customer UI:               http://localhost:8080   (kind host port, not forwarded by this script)"
+echo "  Jaeger:                    http://localhost:16686  (kind host port, not forwarded by this script)"
 echo "  claims-agent (A2A):        http://localhost:19001"
 echo "  settlement-agent (A2A):    http://localhost:19002"
 echo "  payments-mcp:              http://localhost:18000/mcp"

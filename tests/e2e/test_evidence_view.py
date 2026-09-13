@@ -26,11 +26,27 @@ browser -- the claim goes to claims-agent as a direct A2A POST the way
 form POST because reviewer-ui renders server-side with no JavaScript at all
 (`apps/reviewer-ui/bootstrap.py`).
 
+**Gated behind `RUN_BROWSER_TESTS=1` even though it starts no browser** --
+`test_settlement_llm_trace.py`'s precedent, whose own `pytestmark` says the
+same thing: the flag is this repo's single cost gate and `scripts/smoke-test.sh`
+sets it unconditionally, so Task 5's gate run loses nothing. It was ungated when
+this file shipped, which made a bare `pytest tests/` drive **four** settlements
+instead of two and -- new in kind, not only in degree -- execute a real €6,200
+payment under `senior-settlement-agent`'s identity, because this is the first
+ungated file to drive the whole supervised path. `test_supervised.py` gates 6 of
+its 7 tests for exactly that reason. The wider question (two ungated chain files
+have spent tokens on every bare run since M1.2) is a repo-level policy call this
+file does not make; see docs/telemetry-contract.md's own section on it.
+
 **The time window is load-bearing, not hygiene.** `CLM-1842` is a fixed
 constant, so the index accumulates one set of traces per run of it forever;
 measured on this cluster 2026-09-13, a claim-id lookup for `CLM-1842` returned
 three traces spanning seven hours, one of them from before M4 Task 1's ingest
-fix and therefore carrying no `policy.decision` span at all. Every query below
+fix and therefore carrying no `policy.decision` span at all. By the end of the
+fix round that had grown to **20 traces / 2,372 documents**, which is past the
+1,000-document page `_spans_in_traces` reads and trips its own truncation
+guard — so the bound is what keeps these queries answerable at all, not only
+what keeps them correct. Every query below
 is bounded to the window this module opened, and the saved dashboard is bounded
 by OpenSearch Dashboards' own time picker, which is the same bound by a
 different name. Without it both would answer with whichever run happened to
@@ -57,6 +73,7 @@ not skipped.
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from types import SimpleNamespace
@@ -102,6 +119,12 @@ from tests.e2e.test_caller_identity import KUBE_CONTEXT
 from tests.e2e.test_prometheus_metrics_ingest import _absent_or_fail
 
 COLLECTOR_CONFIGMAP = "otel-collector-config"
+# The connector that tees the main `traces` pipeline into the OpenSearch-only
+# branch. Not exported by test_opensearch_trace_ingest.py, which only names the
+# exporter; the id is read off the deployed ConfigMap and pinned by
+# tests/unit/test_stage4_config.py::test_the_rename_is_confined_to_the_opensearch_branch,
+# which asserts it is `traces/opensearch`'s only receiver.
+OPENSEARCH_TEE_ID = "forward/opensearch"
 
 # The attribute the claim-id half of the join reads, and the only domain
 # attribute that reaches settlement-agent's spans at all. Canonical name from
@@ -149,7 +172,26 @@ EVIDENCE_SETTLE_TIMEOUT_S = 120.0
 # generous margin would hand that property back.
 WINDOW_SKEW_S = 30.0
 
+# One page is enough for a claim's whole story and the assertion below proves it
+# rather than assuming it. Measured 2026-09-13 over this cluster's four most
+# recent `CLM-1842` runs: a supervised pair (refusal trace + approval trace) is
+# **214-218 documents**, split 141-145 and 73. An earlier draft of this comment
+# said ~153, which was wrong; the count was re-measured per run rather than
+# carried forward, and the headroom is 4.6x rather than 6.5x.
+SPAN_PAGE_SIZE = 1000
+
 _WINDOW_START_MS: int | None = None
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_BROWSER_TESTS") != "1",
+    reason=(
+        "needs the live stage-4 cluster, spends two settlements' worth of "
+        "model tokens and executes a real payment under the senior identity; "
+        "gated behind the same RUN_BROWSER_TESTS=1 flag "
+        "scripts/smoke-test.sh sets unconditionally (no browser is started -- "
+        "test_settlement_llm_trace.py rides the same flag for the same reason)"
+    ),
+)
 
 
 def _search(body: dict) -> dict:
@@ -201,10 +243,14 @@ def _trace_ids_for_claim(claim_id: str) -> list[str]:
     payments-api spans never carry it; and the Policy Decision Service is
     reached over the gateway's guardrail hop, which carries no baggage either,
     so `policy.decision` spans never carry it. Measured on this cluster
-    2026-09-13: of the 75 documents a `CLM-1842` filter returns for one
-    supervised run, **zero** are from payments-api or the PDS -- i.e. the
-    claim-id filter alone drops every span that records the decision and every
-    span where money moved.
+    2026-09-13, and re-measured across the four most recent supervised runs in
+    the fix round rather than carried forward from one: a `CLM-1842` filter
+    returns **73-75 documents** per run (settlement-agent and claims-agent
+    only), while the two traces those runs actually span hold **214-218**.
+    **Zero** of the filtered documents are from payments-api or the PDS in any
+    of the four -- the filter drops all 5 payments-api and all 5
+    policy-decision-service documents every time, i.e. every span that records
+    the decision and every span where money moved.
     **The trace id is the join.** M4 does not close Gap 4 (spec §4: closing it
     means changing baggage propagation in the money path, a milestone's worth
     of risk for a milestone whose headline is elsewhere); it is built around
@@ -248,13 +294,32 @@ def _spans_in_traces(trace_ids: list[str]) -> list[dict]:
     """
     if not trace_ids:
         return []
-    hits = _search(
+    result = _search(
         {
-            "size": 1000,
+            "size": SPAN_PAGE_SIZE,
             "query": {"bool": {"filter": [{"terms": {"traceId": trace_ids}}, _window_filter()]}},
             "sort": [{"startTime": "asc"}],
+            "track_total_hits": True,
         }
-    )["hits"]["hits"]
+    )["hits"]
+    hits = result["hits"]
+    # Fix round 1, S1: a silent truncation here would present as a missing money
+    # hop -- a red, but one pointing at instrumentation instead of at this page
+    # size. Measured 2026-09-13: a supervised pair is 214-218 documents against
+    # a 1,000-document page (see SPAN_PAGE_SIZE), so this has headroom and is a
+    # tripwire rather than a live risk -- but it is not idle, either: run
+    # unbounded over this index's 20 accumulated `CLM-1842` traces it fires,
+    # 1,000 of 2,372, which is what the time window exists to prevent.
+    # `track_total_hits` is set because OpenSearch caps the
+    # reported total at 10,000 by default, which would make the comparison
+    # itself lie exactly when it matters.
+    total = (result.get("total") or {}).get("value", len(hits))
+    assert len(hits) == total, (
+        f"the trace-id join returned {len(hits)} of {total} matching documents "
+        f"-- `size` is {SPAN_PAGE_SIZE} and these traces no longer fit in one "
+        "page, so the evidence row below is built from a truncated span set. "
+        "Raise SPAN_PAGE_SIZE or paginate; do not read the short list."
+    )
     return [hit["_source"] for hit in hits]
 
 
@@ -374,16 +439,29 @@ def _opensearch_is_installed() -> bool:
 def _traces_pipeline_tees_to_opensearch() -> bool:
     """Whether the DEPLOYED collector actually routes traces to OpenSearch.
 
+    **Both halves of the tee are read, because either one missing means no span
+    reaches the index** -- and fix round 1 finding F2 is that the first version
+    of this function said exactly that sentence while reading only one half.
+    Measured on the deployed ConfigMap: the string `opensearch/trace` occurs in
+    exactly one pipeline's exporter list, `traces/opensearch`; the main `traces`
+    pipeline's exporters are
+    `['otlp_grpc/jaeger', 'forward/opensearch', 'otlp_grpc/dash0', 'debug']`.
+    So deleting `forward/opensearch` from the main pipeline -- which is what
+    actually feeds the branch, and is the Task 1 inheritance item a reader is
+    told is guarded here -- left the old version returning True.
+
+    Both are now required:
+
+      * some `traces*` pipeline exports to `opensearch/trace` (the branch that
+        writes to the index), and
+      * some `traces*` pipeline exports to `forward/opensearch` (the tee that
+        feeds that branch).
+
     Parsed, not grepped, for the reason
     `test_prometheus_metrics_ingest.py::_metrics_pipeline_exports_to_prometheus`
-    records from its own mutation run: the exporter id also occurs in the
-    `exporters:` block and in a comment, so a substring test stays true after
-    the pipeline entry that makes it do anything has been deleted.
-
-    The traces pipeline does not name `opensearch/trace` directly -- it names
-    the `forward/opensearch` connector, and the connector's own
-    `traces/opensearch` pipeline is what exports. Both halves are read, because
-    either one missing means no span reaches the index.
+    records from its own mutation run: each id also occurs under `exporters:`
+    and in a comment, so a substring test stays true after the pipeline entry
+    that makes it do anything has been deleted.
     """
     result = _kubectl(
         "-n", OBSERVABILITY_NAMESPACE, "get", "configmap", COLLECTOR_CONFIGMAP,
@@ -394,11 +472,13 @@ def _traces_pipeline_tees_to_opensearch() -> bool:
     pipelines = ((yaml.safe_load(result.stdout) or {}).get("service") or {}).get(
         "pipelines"
     ) or {}
-    return any(
-        OPENSEARCH_EXPORTER_ID in (pipeline.get("exporters") or [])
+    exporters = {
+        exporter
         for name, pipeline in pipelines.items()
         if name.startswith("traces")
-    )
+        for exporter in (pipeline.get("exporters") or [])
+    }
+    return OPENSEARCH_EXPORTER_ID in exporters and OPENSEARCH_TEE_ID in exporters
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -425,25 +505,29 @@ def stage_4_or_a_reason():
     exports = _traces_pipeline_tees_to_opensearch()
     if not installed and not exports:
         pytest.skip(
-            f"svc/{OPENSEARCH_SERVICE} is not installed and no traces pipeline "
-            f"in the deployed collector config exports to "
-            f"{OPENSEARCH_EXPORTER_ID!r}, so this cluster is coherently below "
-            "stage 4. Bring it up with ./scripts/setup-kind.sh --stage 4 to "
-            "run these."
+            f"svc/{OPENSEARCH_SERVICE} is not installed and the deployed "
+            f"collector config has no traces pipeline exporting to both "
+            f"{OPENSEARCH_TEE_ID!r} and {OPENSEARCH_EXPORTER_ID!r}, so this "
+            "cluster is coherently below stage 4. Bring it up with "
+            "./scripts/setup-kind.sh --stage 4 to run these."
         )
     assert installed, (
-        f"a traces pipeline in the deployed collector ConfigMap exports to "
-        f"{OPENSEARCH_EXPORTER_ID!r} but svc/{OPENSEARCH_SERVICE} does not "
+        f"the deployed collector ConfigMap tees traces to "
+        f"{OPENSEARCH_TEE_ID!r} and on to {OPENSEARCH_EXPORTER_ID!r} "
+        f"but svc/{OPENSEARCH_SERVICE} does not "
         f"exist in the {OBSERVABILITY_NAMESPACE} namespace. That is review "
         "finding F10: a pipeline exporting to a backend this cluster does not "
         "have, which fails permanently and logs into a file nobody reads."
     )
     assert exports, (
-        f"svc/{OPENSEARCH_SERVICE} is installed but no traces pipeline in the "
-        f"deployed collector ConfigMap exports to {OPENSEARCH_EXPORTER_ID!r}, "
-        "so no span can reach the index this dashboard reads. Re-run "
-        "./scripts/setup-kind.sh --stage 4, which applies the ConfigMap and "
-        "restarts the collector."
+        f"svc/{OPENSEARCH_SERVICE} is installed but the deployed collector "
+        f"ConfigMap does not carry BOTH halves of the tee -- some traces "
+        f"pipeline must export to {OPENSEARCH_TEE_ID!r} (the tee off the main "
+        f"pipeline) and some traces pipeline must export to "
+        f"{OPENSEARCH_EXPORTER_ID!r} (the branch that writes the index). "
+        "Without both, no span can reach the index this dashboard reads. "
+        "Re-run ./scripts/setup-kind.sh --stage 4, which applies the ConfigMap "
+        "and restarts the collector."
     )
 
 
@@ -524,7 +608,8 @@ def denied_claim(claims_agent_route, reviewer_ui_route):
     The reviewer id is unique per run (`REVIEWER_NAME_PREFIX` plus a uuid),
     which is M3's own precedent, taken for the reason `test_supervised.py`
     records rather than a paraphrase of it: payments-api's payment ids are
-    sequential only within one pod lifetime, so `review.payment.id` alone was
+    sequential only within one process lifetime (ruling 32), so
+    `review.payment.id` alone was
     not the unique key that file assumed, and its first live run read a stale
     `review.decision` trace from an unrelated earlier test. A per-run reviewer
     name is what made the key safe. Nothing here searches by that key -- the
@@ -552,6 +637,15 @@ def denied_claim(claims_agent_route, reviewer_ui_route):
         f"HTTP {approval.status_code} {approval.text[:400]!r}"
     )
 
+    # The settle check below is a *timing* precondition, and it has a
+    # consequence worth naming (fix round 1, F6): because it polls until these
+    # five are truthy, a regression that empties one of them reddens as an
+    # ERROR raised here after the 120s timeout -- naming the empty field and
+    # printing the whole row -- rather than as a FAILED at the assertion that
+    # reads it. The assertions' *values* still discriminate (`== "deny"`,
+    # `== EXECUTE_LIMIT_RULE`, `.endswith("/sa/senior-settlement-agent")`;
+    # mutation M8 demonstrates the last one). Both go red; only the label
+    # differs, and the message here is the more useful of the two.
     row = _settled_evidence(
         DENIED_CLAIM_ID,
         ("policy_decision", "rule", "reviewer", "executing_identity", "money_hops"),

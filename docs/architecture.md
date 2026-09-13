@@ -1850,10 +1850,13 @@ calling the tracer directly.
 | Jaeger | http://localhost:16686 |
 | OpenSearch Dashboards — the evidence view (stage 4) | http://localhost:5601 |
 
-The first three need no port-forward of their own. The fourth does, and
-`./scripts/start-demo.sh` is what starts it — that script owns every forward
-this demo needs and prints the full surface list at the end of its run, so
-consult its output rather than this table when the two disagree.
+The first three are kind host ports mapped at cluster creation and need no
+port-forward. The fourth does, and `./scripts/start-demo.sh` is what starts it —
+that script owns every forward this demo needs, and prints every URL in this
+table (plus the agent and tool ports the walkthrough does not open) at the end
+of its run. `tests/unit/test_stage4_config.py` requires the two lists to agree,
+so a surface added to one and not the other reddens a test rather than ageing a
+table.
 
 1. Open the Customer UI. The form is pre-filled with claim `CLM-1842`,
    policy `POL-77120`, €6,200. Click "Submit claim." Within a few seconds

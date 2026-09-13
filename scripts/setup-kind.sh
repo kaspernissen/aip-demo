@@ -541,14 +541,49 @@ if [[ "${STAGE}" -ge 4 ]]; then
   # forwards. A forward opened and closed inside this block would be a fifth
   # thing that can leave a socket behind for no gain.
   #
-  # `--wait` on the Helm install above is what makes the API ready here: the
-  # chart's readiness probe is Dashboards' own status endpoint.
+  # **`--wait` is NOT enough on its own, and fix round 1 corrected the claim
+  # that used to stand here.** That claim was "the chart's readiness probe is
+  # Dashboards' own status endpoint". Measured on the deployed object
+  # (`kubectl get deploy opensearch-dashboards -o jsonpath=
+  # '{.spec.template.spec.containers[0].readinessProbe}'`), it is
+  # `{"tcpSocket":{"port":5601},"initialDelaySeconds":10,"periodSeconds":20,
+  #   "timeoutSeconds":5,"failureThreshold":10}` -- a TCP accept, and
+  # dashboards-values.yaml overrides neither probe. A socket accepting is not
+  # the saved-objects API serving: OSD answers
+  # `503 {"statusCode":503,"error":"Service Unavailable",
+  # "message":"OpenSearch Dashboards server is not ready yet"}` for a window
+  # after the bind, and this cluster's own log shows the bind
+  # ("http server running at http://0.0.0.0:5601") 23s after container start.
   #
+  # So the readiness this block needs is polled for directly, against the API
+  # that actually receives the import. `/api/status` is what the OSD UI itself
+  # polls and it returns 200 only once the server is past "not ready yet".
+  # Without this the import ran once and `exit 1`ed on a 503, aborting
+  # `--stage 4` at step 8c2 -- before Prometheus is installed and before the
+  # collector restart below -- leaving a half-built cluster on the exact
+  # bring-up path this task's "reproducible rather than hand-made" headline
+  # depends on.
+  echo -e "${BLUE}Step 8c2/9 (stage 4): Importing the evidence view into OpenSearch Dashboards...${NC}"
+  DASHBOARDS_READY=""
+  for _ in $(seq 1 60); do
+    if kubectl --context "kind-${CLUSTER_NAME}" -n observability \
+        exec deploy/opensearch-dashboards -- \
+        curl -sf -o /dev/null "http://localhost:5601/api/status" 2>/dev/null; then
+      DASHBOARDS_READY="yes"
+      break
+    fi
+    sleep 3
+  done
+  if [[ -z "${DASHBOARDS_READY}" ]]; then
+    echo -e "${RED}OpenSearch Dashboards' /api/status never answered 200 within 180s, so the evidence view cannot be imported.${NC}" >&2
+    echo "  kubectl -n observability logs deploy/opensearch-dashboards" >&2
+    exit 1
+  fi
+
   # curl exits 0 on an HTTP 400, so the response is checked rather than the
   # exit code -- an import that silently failed would leave the operator with
   # a cluster that looks complete and a Dashboards with nothing in it, which is
   # this milestone's own favourite failure mode.
-  echo -e "${BLUE}Step 8c2/9 (stage 4): Importing the evidence view into OpenSearch Dashboards...${NC}"
   EVIDENCE_IMPORT=$(kubectl --context "kind-${CLUSTER_NAME}" -n observability \
     exec -i deploy/opensearch-dashboards -- \
     curl -sS -X POST "http://localhost:5601/api/saved_objects/_import?overwrite=true" \
@@ -583,7 +618,7 @@ if [[ "${STAGE}" -ge 4 ]]; then
   # restart is the one whose first export attempt can succeed.
   kubectl -n observability rollout restart deployment/otel-collector
   kubectl -n observability rollout status deployment/otel-collector --timeout=180s
-  echo -e "${GREEN}OpenSearch ${OPENSEARCH_CHART_VERSION} is up (single node, security plugin off, heap and resources set in deploy/observability/opensearch/values.yaml); Dashboards is up, reached by port-forward; Prometheus ${PROMETHEUS_CHART_VERSION} is up on OTLP ingest alone; the collector has been restarted against both.${NC}"
+  echo -e "${GREEN}OpenSearch ${OPENSEARCH_CHART_VERSION} is up (single node, security plugin off, heap and resources set in deploy/observability/opensearch/values.yaml); Dashboards is up, reached by port-forward, with the evidence view imported into it from deploy/observability/dashboards/evidence.ndjson; Prometheus ${PROMETHEUS_CHART_VERSION} is up on OTLP ingest alone; the collector has been restarted against both.${NC}"
 fi
 
 echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then starting port-forwards...${NC}"
@@ -765,7 +800,7 @@ echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payment
 
 echo ""
 if [[ "${STAGE}" -eq 4 ]]; then
-  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workloads (reviewer-ui, senior-settlement-agent) on the same Cilium ${CILIUM_CHART_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- amendment A1, no cluster recreate -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them, and prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port.${NC}"
+  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workloads (reviewer-ui, senior-settlement-agent) on the same Cilium ${CILIUM_CHART_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- amendment A1, no cluster recreate -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them with the evidence view already imported, and prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port, and the evidence view is at http://localhost:5601/app/dashboards#/view/northstar-evidence.${NC}"
 elif [[ "${STAGE}" -eq 3 ]]; then
   echo -e "${GREEN}Stage 3 (Supervised) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity, plus reviewer-ui and senior-settlement-agent -- so a refused payment now has a human who can approve it.${NC}"
 elif [[ "${STAGE}" -ge 2 ]]; then
