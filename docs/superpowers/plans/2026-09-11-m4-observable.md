@@ -64,7 +64,7 @@ kind.
 
 | Path | Responsibility | Task |
 |---|---|---|
-| `deploy/kind/stage4.yaml` | kind config, host port for OpenSearch Dashboards | 1 |
+| ~~`deploy/kind/stage4.yaml`~~ | **Not created — amendment A1.** Stage 4 reuses `deploy/kind/stage3.yaml`; Dashboards is reached by port-forward | 1 |
 | `scripts/setup-kind.sh` | `--stage 4`, installs OpenSearch + Prometheus | 1, 2 |
 | `deploy/observability/opensearch/values.yaml` | single-node OpenSearch, measured heap | 1 |
 | `deploy/observability/opensearch/dashboards-values.yaml` | OpenSearch Dashboards | 1 |
@@ -85,8 +85,20 @@ kind.
 The spec's §3 says this is first because everything downstream rests on it and
 the path is **not** established. Produce the measurement, then the config.
 
+> **Amendment A1, 2026-09-12 — the human partner declined the cluster recreate.**
+> Steps 1–3 below were written assuming a fifth host port mapping for OpenSearch
+> Dashboards, which `extraPortMappings` can only add at cluster creation. Asked
+> directly, the human partner chose **"No — port-forward Dashboards instead"**.
+> So: **no `deploy/kind/stage4.yaml` is created**, `--stage 4` reuses
+> `deploy/kind/stage3.yaml` unchanged, the running cluster is left alone, and
+> Dashboards is reached with `kubectl port-forward`. Steps 1–3 are replaced by
+> the single step A1 below; Step 9's guard changes accordingly. Everything from
+> Step 4 on is unaffected. The original steps are left struck through rather than
+> deleted, because what was planned and why it changed is the useful part of the
+> record.
+
 **Files:**
-- Create: `deploy/kind/stage4.yaml`, `deploy/observability/opensearch/values.yaml`, `deploy/observability/opensearch/dashboards-values.yaml`
+- Create: `deploy/observability/opensearch/values.yaml`, `deploy/observability/opensearch/dashboards-values.yaml`
 - Modify: `scripts/setup-kind.sh`, `deploy/observability/collector-config.yaml`
 - Test: `tests/unit/test_stage4_config.py`
 
@@ -96,34 +108,48 @@ the path is **not** established. Produce the measurement, then the config.
   system's traces, and Dashboards reachable from the host. Tasks 3 and 4 consume
   both.
 
-- [ ] **Step 1: Find out whether a cluster recreate is needed**
+- [ ] **Step A1 (replaces Steps 1–3): Point `--stage 4` at the existing stage-3 cluster config**
 
-```bash
-grep -n -A12 extraPortMappings deploy/kind/stage3.yaml
-```
+Already measured, 2026-09-12: `deploy/kind/stage3.yaml` has exactly four
+`extraPortMappings` (30080→8080 customer-ui, 30686→16686 jaeger, 30318→4318
+collector OTLP/HTTP, 30081→8081 reviewer-ui) and no spare. The human partner
+declined the recreate. **Create no `stage4.yaml`, touch no kind config, and do
+not delete or recreate the cluster.** `--stage 4` reuses `stage3.yaml`, and
+OpenSearch Dashboards is reached by port-forward via Step A2's script.
 
-OpenSearch Dashboards needs a host port. If `stage3.yaml` has no spare mapping,
-a recreate is required, because `extraPortMappings` is create-time only.
+- [ ] **Step A2 (new): Write `scripts/start-demo.sh`, which owns every port-forward**
 
-- [ ] **Step 2: STOP. Ask the human partner for permission to recreate the cluster.**
+This exists because port-forwards are this project's most-repeated operational
+failure: rulings R10 and R20 both came from them, **a dead `kubectl
+port-forward` keeps its listening socket bound so `lsof` reports it healthy**,
+and every M3 task re-established them by hand — one of them measured against
+dead ones without noticing.
 
-This is a hard gate — do not proceed without an explicit yes. Explain exactly
-what Step 1 found, that the mapping is create-time only, and that the M2.2 and M3
-baselines get re-verified immediately afterwards. If permission is refused, fall
-back to `kubectl port-forward` for Dashboards and record that decision; do not
-recreate anyway.
+Model it on the human partner's own
+`/Users/kaspernissen/dash0/demos/otel-platform-demo/01_start-demo.sh`: a `PIDS`
+array, background `kubectl port-forward` per surface, and a `cleanup` function
+on `trap ... EXIT INT TERM`. **Two deliberate differences from that reference,
+both required here:**
 
-- [ ] **Step 3: Write `deploy/kind/stage4.yaml`**
+1. **Do not add its `pkill -f "kubectl port-forward"` fallback.** It kills
+   forwards this script never started, including the human partner's own in
+   another terminal. The tracked `PIDS` array is the whole cleanup; this repo's
+   standing rule is to kill only the PIDs you started.
+2. **Liveness is a real HTTP request, never process existence.** A live PID
+   proves nothing — that is exactly what R20 measured. Reuse the two-question
+   shape `scripts/smoke-test.sh` already implements (`lsof`, then `curl`) rather
+   than inventing a second one.
 
-Copy `deploy/kind/stage3.yaml` verbatim and add one mapping. Change nothing else
-— not `disableDefaultCNI`, not the containerd registry patches, not the four
-existing mappings.
+Cover the four forwards `smoke-test.sh` checks for — 19001 claims-agent, 19002
+settlement-agent, 18000 payments-mcp, 18080 — plus the reviewer-ui one M3 added,
+and leave a clearly-marked place for Task 2's Prometheus and this task's
+OpenSearch Dashboards. Print the surface table (URL per surface) once everything
+is verified up.
 
-```yaml
-      - containerPort: 30601   # opensearch-dashboards
-        hostPort: 8082
-        protocol: TCP
-```
+Then change `scripts/smoke-test.sh`'s failure message to point at
+`./scripts/start-demo.sh` instead of a `kubectl port-forward` line the operator
+has to assemble. **`smoke-test.sh` still creates nothing** — that division is
+deliberate and predates this milestone; only the remedy text changes.
 
 - [ ] **Step 4: Add `--stage 4` to `scripts/setup-kind.sh`**
 
@@ -195,25 +221,49 @@ Record the trace id.
 
 - [ ] **Step 9: Write the config guard**
 
-```python
-def test_stage4_adds_only_the_dashboards_port_to_stage3():
-    """stage4.yaml is stage3.yaml plus exactly one mapping.
+Amendment A1 removed the `stage4.yaml` this step was going to guard. Guard what
+actually shipped instead — that stage 4 adds no kind config, and that the one
+document an operator reads to reach Dashboards names the script rather than a
+hand-assembled command.
 
-    Mutation-check this by deleting an unrelated line from stage4.yaml and
-    confirming this test goes red, not skipped.
+```python
+def test_stage_4_reuses_the_stage_3_cluster_config():
+    """Amendment A1: no stage4.yaml exists, deliberately.
+
+    The human partner declined a cluster recreate on 2026-09-12, so stage 4 runs
+    on stage 3's cluster and reaches OpenSearch Dashboards by port-forward. A
+    stage4.yaml appearing later means someone recreated the cluster without
+    asking -- which is a standing constraint, not a preference.
     """
-    stage3 = (REPO_ROOT / "deploy/kind/stage3.yaml").read_text()
-    stage4 = (REPO_ROOT / "deploy/kind/stage4.yaml").read_text()
-    assert "containerPort: 30601" in stage4, (
-        "stage4.yaml must map the OpenSearch Dashboards nodePort; without it "
-        "the dashboard is unreachable from the host and Task 3 cannot be shown"
+    assert not (REPO_ROOT / "deploy/kind/stage4.yaml").exists(), (
+        "deploy/kind/stage4.yaml exists. Stage 4 was deliberately built on "
+        "stage 3's cluster config (plan amendment A1) because extraPortMappings "
+        "is create-time only and the recreate was declined. If a recreate has "
+        "since been authorised, delete this test in the same commit that adds "
+        "the file, and say who authorised it."
     )
-    for line in stage3.splitlines():
-        if line.strip() and not line.strip().startswith("#"):
-            assert line in stage4, (
-                f"stage4.yaml dropped a line stage3.yaml has: {line!r}. "
-                "Stage 4 is stage 3 plus one port mapping and nothing else."
-            )
+    setup = (REPO_ROOT / "scripts/setup-kind.sh").read_text()
+    assert "stage3.yaml" in setup, (
+        "setup-kind.sh no longer references stage3.yaml, so --stage 4 has "
+        "nothing to bring a cluster up from"
+    )
+
+
+def test_the_port_forward_remedy_points_at_the_script():
+    """Step A2: smoke-test.sh tells the operator to run start-demo.sh.
+
+    Mutation-check: change the remedy text back to a bare kubectl line and
+    confirm this goes red rather than skipped.
+    """
+    smoke = (REPO_ROOT / "scripts/smoke-test.sh").read_text()
+    assert "start-demo.sh" in smoke, (
+        "smoke-test.sh's port-forward failure message must name "
+        "./scripts/start-demo.sh -- assembling a kubectl port-forward by hand is "
+        "what rulings R10/R20 came from"
+    )
+    assert (REPO_ROOT / "scripts/start-demo.sh").exists(), (
+        "scripts/start-demo.sh is referenced but missing"
+    )
 ```
 
 - [ ] **Step 10: Run `tests/unit` from the repo root, then commit**
