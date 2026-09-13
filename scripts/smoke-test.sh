@@ -95,6 +95,34 @@ kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
   echo "Run ./scripts/setup-kind.sh --stage 4 first." >&2
   exit 1
 }
+# RULING M4-R9 (re-review finding N3): the gate must PROVE it is running on a
+# stage-4 cluster rather than be told so by a README.
+#
+# tests/e2e/test_opensearch_trace_ingest.py is M4 Task 1's whole deliverable --
+# it is what catches a span silently failing to reach OpenSearch, which is the
+# defect that shipped at 955dd18 and that 119 green unit tests did not see. It
+# SKIPS on a coherently stage-3 cluster, deliberately: OpenSearch is a stage-4
+# component, and a test that failed for its absence would cry wolf on every
+# lower stage.
+#
+# But a skip is invisible in a green gate. Run this gate on a stage-3 cluster
+# and it reports that file's every assertion as a skip, exit 0, with the checks
+# this milestone rests on never executed and nothing anywhere going red. "A guard
+# that skips on the object it guards" is this repo's most recurrent defect
+# class; here the skip is the right behaviour for the test and the wrong
+# behaviour for the GATE, so the gate refuses to run below stage 4 instead of
+# running weaker and saying nothing about it.
+#
+# Asked of the cluster, not of a flag or an env var: the Service either exists
+# or it does not. tests/unit/test_smoke_test_gate.py pins that this check is
+# here and that it is not conditional.
+kubectl --context kind-northstar -n observability get svc/opensearch-cluster-master >/dev/null 2>&1 || {
+  echo -e "${RED}Error: svc/opensearch-cluster-master not found in the observability namespace.${NC}" >&2
+  echo "This cluster is below stage 4. The gate runs tests/e2e/test_opensearch_trace_ingest.py -- M4's trace-ingest guard -- and on a cluster without OpenSearch every one of its assertions SKIPs, so the gate would pass while proving nothing about them (ruling M4-R9)." >&2
+  echo "Bring the cluster to stage 4. No recreate is needed: stage 4 runs on stage 3's cluster config unchanged." >&2
+  echo "Run ./scripts/setup-kind.sh --stage 4 first." >&2
+  exit 1
+}
 # The e2e/browser assertions below need all five ports up. Four are
 # `kubectl port-forward`s that die after any redeploy and simply need
 # re-establishing (A9); the fifth (reviewer-ui, M3 Task 5A) is normally kept

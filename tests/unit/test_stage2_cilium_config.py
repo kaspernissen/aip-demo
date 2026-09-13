@@ -677,12 +677,27 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
     has recurred twice. It is added as coverage for the future, not as a
     claim that it would have found the two misses. The glob is deliberate:
     `stage4.yaml` is covered the day it is written, with no edit here.
+
+    **M4 Task 1 fix round 2 (re-review finding N1): the script list became a
+    glob too, for exactly the reason the kind one already was.** Raising
+    `CURRENT_STAGE` to 4 did not turn `scripts/start-demo.sh:213` red -- a
+    `./scripts/setup-kind.sh --stage 3` instruction written by the fix round
+    itself -- because the file list named three scripts by hand and
+    `start-demo.sh` was not one of them. It is the newest script in the repo,
+    created by this same milestone, and it is now the universal remedy both of
+    `smoke-test.sh`'s port-forward branches send an operator to; a stale stage
+    pointer in it is the most consequential place one can sit. Hand-listing
+    the files was the hole, so `scripts/*.sh` replaces it, with an explicit
+    assertion below that the glob still matches the scripts it is meant to.
+    That is the fourth recurrence of this class and the second time the fix
+    was "widen what the guard opens" rather than "correct the line".
     """
     CURRENT_STAGE = 4
     scripts_and_readme = [
-        REPO_ROOT / "scripts" / "smoke-test.sh",
-        REPO_ROOT / "scripts" / "rebuild-and-deploy.sh",
-        REPO_ROOT / "scripts" / "setup-kind.sh",
+        # A glob, not a hand-written list, for the same reason deploy/kind/ is
+        # one: see the N1 paragraph in the docstring. Every script this repo
+        # ships is covered the day it is written.
+        *sorted((REPO_ROOT / "scripts").glob("*.sh")),
         REPO_ROOT / "README.md",
         *sorted((REPO_ROOT / "deploy" / "kind").glob("*.yaml")),
     ]
@@ -691,6 +706,23 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
     ), (
         "deploy/kind/ matched no *.yaml at all, so this guard silently covers "
         "less than its docstring claims -- has the directory moved?"
+    )
+    # An empty or shrunken glob is how a guard silently stops guarding, so name
+    # the scripts that must be in it. These four are the ones that carried the
+    # needle at the time the glob replaced the hand-written list; a rename is
+    # fine, but it has to be a deliberate edit here rather than a silent drop.
+    script_names = {path.name for path in scripts_and_readme if path.suffix == ".sh"}
+    assert {
+        "smoke-test.sh",
+        "rebuild-and-deploy.sh",
+        "setup-kind.sh",
+        "start-demo.sh",
+    } <= script_names, (
+        "scripts/*.sh no longer matches every script this guard is meant to "
+        f"cover; it matched {sorted(script_names)}. A renamed or moved script "
+        "drops out of this guard silently, which is exactly how "
+        "scripts/start-demo.sh came to carry a fresh `--stage 3` instruction "
+        "through the fix round that raised CURRENT_STAGE to 4."
     )
     checked: list[tuple[Path, int]] = [
         (path, stage)

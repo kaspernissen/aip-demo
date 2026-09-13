@@ -210,7 +210,19 @@ fi
 if [[ -n "$REVIEWER_UI_AVAILABLE" ]]; then
   verify_existing_surface 8081 reviewer-ui "/healthz"
 else
-  echo -e "${YELLOW}  - reviewer-ui: SKIPPED, svc/reviewer-ui does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 3)${NC}"
+  # `--stage 4`, not `--stage 3`, even though reviewer-ui first appears at
+  # stage 3: stage 4 is the current stage and a strict superset of stage 3
+  # (the same cluster config, plus OpenSearch), and sending an operator to
+  # stage 3 lands them on a cluster where every one of
+  # tests/e2e/test_opensearch_trace_ingest.py's guards skips.
+  #
+  # Re-review finding N1: this line said `--stage 3`, which was the FOURTH
+  # recurrence of the class ruling M4-R7 exists for -- authored inside the fix
+  # for the third, in the one file
+  # tests/unit/test_stage2_cilium_config.py's guard did not open. Its file
+  # list is now a `scripts/*.sh` glob rather than four hand-listed paths, so
+  # this file is covered and so is the next script anyone adds.
+  echo -e "${YELLOW}  - reviewer-ui: SKIPPED, svc/reviewer-ui does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 4)${NC}"
 fi
 
 echo ""

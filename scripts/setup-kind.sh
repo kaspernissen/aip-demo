@@ -384,7 +384,15 @@ fi
 STAGE4_ONLY_STRIP='/^[[:space:]]*# BEGIN stage-4-only$/,/^[[:space:]]*# END stage-4-only$/d'
 COLLECTOR_CONFIG_APPLIED="$COLLECTOR_CONFIG"
 if [[ "${STAGE}" -lt 4 ]]; then
-  COLLECTOR_CONFIG_APPLIED="$(mktemp -t collector-config)"
+  # `.XXXXXX`, not a bare prefix (re-review finding N5). BSD/macOS `mktemp -t`
+  # appends its own random suffix to whatever prefix it is given, so a bare
+  # `collector-config` works here -- but GNU coreutils `mktemp -t` requires
+  # the template to end in at least three X and exits `too few X's in
+  # template`, which under `set -e` would kill every `--stage 1|2|3` run at
+  # this line on Linux. The explicit template works on both. This repo is
+  # macOS-only today (it documents bash 3.2 and no `declare -A`), so this was
+  # latent rather than live; it is one character class and not worth leaving.
+  COLLECTOR_CONFIG_APPLIED="$(mktemp -t collector-config.XXXXXX)"
   trap 'rm -f "$COLLECTOR_CONFIG_APPLIED"' EXIT
   sed "$STAGE4_ONLY_STRIP" "$COLLECTOR_CONFIG" > "$COLLECTOR_CONFIG_APPLIED"
   echo -e "${YELLOW}Stage ${STAGE}: dropping the stage-4-only OpenSearch branch from the collector config (OpenSearch is installed at stage 4 only).${NC}"

@@ -14,7 +14,10 @@ documents came from the policy decision service. **119 green unit tests saw
 none of it**, and the report that shipped it called the path verified.
 
 So ruling M4-R6: the re-measurement needs a guard, not a paragraph. Prose in a
-config comment is what failed last time. These four tests are the deliverable:
+config comment is what failed last time. These tests are the deliverable (the
+fourth arrived in fix round 2, as re-review finding N2's live-data half; the
+count is published in docs/telemetry-contract.md, where a guard checks it
+against `pytest --collect-only`, so it is not repeated here):
 
 1. every span Jaeger holds for one driven trace is in OpenSearch, compared as
    span-ID *sets* rather than counts, because "139 of 142" is a count that
@@ -22,11 +25,14 @@ config comment is what failed last time. These four tests are the deliverable:
 2. the `policy.decision` span is in OpenSearch by name, by service, and with
    its decision attribute readable -- that single span is what Task 3's
    evidence view and Task 4's policy-adherence scorer exist to query;
-3. Jaeger still receives the canonical attribute names (ruling M4-R5): the
+3. no attribute key the driven trace actually carries collides uncovered --
+   the unit guard reads this repo's own sources, and this reads what Jaeger
+   holds, which is the only end that sees third-party library keys;
+4. Jaeger still receives the canonical attribute names (ruling M4-R5): the
    OpenSearch-compat rewrite lives in the `traces/opensearch` branch only, and
    an evidence view whose field names differ from the trace an operator reads
    in Jaeger is worse than no evidence view;
-4. the collector logged no export rejection during the run -- read over the
+5. the collector logged no export rejection during the run -- read over the
    **whole** window since the run began, never a `--tail` of it. Finding F2 was
    a `--tail=200` against a 17,173-line log reported as "no errors at any point
    during or after the run".
@@ -488,6 +494,73 @@ def test_the_policy_decision_span_is_queryable_out_of_opensearch(ingest_run):
     )
 
 
+def test_no_attribute_key_in_the_driven_trace_collides_uncovered(ingest_run):
+    """Re-review finding N2, from the live-data end.
+
+    `tests/unit/test_stage4_config.py` scans every first-party service's
+    source for colliding attribute keys, but it cannot see keys emitted by
+    third-party libraries -- `gen_ai.*` from PydanticAI, `mcp.*` from the MCP
+    SDK, `http.*`/`url.*`/`asgi.*` from the ASGI and httpx instrumentations,
+    agentgateway's own. Those are the majority of the keys in a real trace,
+    and a library upgrade can introduce a collider without any source in this
+    repo changing.
+
+    So this asks Jaeger what keys the driven trace actually carries and
+    applies the same rule to them. It covers the services in this trace --
+    agentgateway, the PDS, payments-mcp, payments-api -- and not the ones it
+    does not reach (no model spans, no reviewer-ui, no customer-ui); the
+    whole-window log assertion below is what covers those, since a rejection
+    from any service exporting during the run reddens it.
+
+    A collision found here is not automatically a defect: it is only one if
+    the compat processor does not already rename the longer key. So the
+    assertion is "no *uncovered* collision", and the failure message says
+    which key to add.
+    """
+    keys = {
+        key
+        for span in ingest_run.trace.spans
+        for key in span.attrs
+        # Jaeger synthesises these onto every span; they are not OTLP
+        # attributes and never reach the exporter.
+        if key not in {"internal.span.format", "span.kind", "otel.scope.name",
+                       "otel.scope.version", "otel.status_code",
+                       "otel.status_description", "otel.library.name",
+                       "otel.library.version"}
+    }
+    assert len(keys) > 20, (
+        f"only {len(keys)} attribute keys in the driven trace, which is too "
+        "few for this check to mean anything -- has the trace shape changed?"
+    )
+    collisions = {
+        (shorter, longer)
+        for shorter in keys
+        for longer in keys
+        if longer != shorter and longer.startswith(shorter + ".")
+    }
+    # The keys the OpenSearch branch already renames away.
+    covered = {ATTR_RETRYABLE_CANONICAL}
+    uncovered = {(s, l) for s, l in collisions if l not in covered}
+    assert not uncovered, (
+        f"trace {ingest_run.trace_id} carries {len(uncovered)} attribute-key "
+        f"collision(s) the `attributes/opensearch-compat` processor does not "
+        f"rename: {sorted(uncovered)}.\n"
+        "OpenSearch expands dotted keys into nested objects at index time, so "
+        "each pair needs `attributes.<shorter>` to be a scalar and an object "
+        "at once, and it rejects the document permanently. Add a rename for "
+        "the longer key of each pair to `attributes/opensearch-compat` in "
+        "both deploy/observability/collector-config*.yaml, and add it to "
+        "`covered` here. Note the mapping is index-wide: the two keys need "
+        "not be on the same span."
+    )
+    assert (ATTR_DECISION, ATTR_RETRYABLE_CANONICAL) in collisions, (
+        "the known collision is no longer present in a driven trace. If "
+        f"{ATTR_RETRYABLE_CANONICAL!r} was renamed at the source, the compat "
+        "processor and this `covered` set should go in the same commit -- but "
+        "do not quietly shrink `covered` while the processor still renames it."
+    )
+
+
 def test_jaeger_still_receives_the_canonical_attribute_names(ingest_run):
     """Ruling M4-R5, asserted rather than assumed.
 
@@ -532,6 +605,21 @@ def test_the_collector_rejected_no_spans_during_the_run(ingest_run):
     message that carries `rejected_items` -- rather than on any line containing
     "error", so it cannot be tripped by an unrelated warning and cannot be
     quieted by one either.
+
+    **Scope, and why it stays wide (re-review finding N7).** This reddens on a
+    rejection from *any* exporter, not only `opensearch/trace`. That is
+    deliberate: the standing constraint is that nothing drops spans, and the
+    deployed collector also exports to Jaeger and Dash0, so narrowing this to
+    one component would make the guard blind to the same harm by another
+    route -- which is exactly how F1 shipped. It is also the only assertion
+    that covers a collision on a service this file's driven trace does not
+    reach.
+
+    The cost N7 names is real, though: a transient Dash0 outage during a gate
+    run would redden a test whose name says "the collector rejected no spans"
+    with a message that used to read as if OpenSearch were at fault. So the
+    failure message now names the component ids it actually found, and says
+    plainly when none of them is the OpenSearch exporter.
     """
     age_seconds = max(int(time.time() - ingest_run.started_at) + 30, 60)
     result = _kubectl(
@@ -543,9 +631,32 @@ def test_the_collector_rejected_no_spans_during_the_run(ingest_run):
     )
     lines = result.stdout.splitlines()
     rejections = [line for line in lines if "Exporting failed" in line]
+    components = sorted(
+        set(re.findall(r'"otelcol\.component\.id":\s*"([^"]+)"',
+                       "\n".join(rejections)))
+    )
+    if OPENSEARCH_EXPORTER_ID in components:
+        diagnosis = (
+            f"{OPENSEARCH_EXPORTER_ID!r} is among them, so this is M4 Task 1's "
+            "own path: check the `attributes/opensearch-compat` processor and "
+            "whether a new colliding attribute key has appeared."
+        )
+    elif components:
+        diagnosis = (
+            f"{OPENSEARCH_EXPORTER_ID!r} is NOT among them -- the rejecting "
+            f"component(s) are {components}. This test is named for the "
+            "OpenSearch path but asserts the repo-wide 'nothing drops spans' "
+            "constraint, so a Jaeger or Dash0 export failure reddens it too. "
+            "Look at the named component first, not at OpenSearch."
+        )
+    else:
+        diagnosis = (
+            "no component id could be parsed out of the lines below; read them "
+            "directly."
+        )
     assert not rejections, (
         f"the collector rejected data during this run -- {len(rejections)} "
         f"`Exporting failed` events in the {age_seconds}s window "
-        f"({len(lines)} lines read in full, not tailed):\n"
+        f"({len(lines)} lines read in full, not tailed). {diagnosis}\n"
         + "\n".join(rejections[:5])
     )

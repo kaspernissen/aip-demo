@@ -68,48 +68,57 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-13 (M4 Task 1, after its review fix round) — the current figures,
-and the gate row is DERIVED, not yet re-measured against a live run.** Task 1
-and its fix round added **13** tests in total, taking the collected count from
-228 to **243**, re-measured with
+**2026-09-13 (M4 Task 1, after its two review fix rounds) — the current
+figures, and the gate row is DERIVED, not yet re-measured against a live
+run.** Task 1 and its two fix rounds added **19** tests in total, taking the
+collected count from 228 to **247**, re-measured with
 `.venv/bin/python -m pytest --collect-only -q tests/`:
 
-* `tests/unit/test_stage4_config.py` — **11**. Two shipped with Task 1; the
-  fix round rewrote both (the review found each one inert against the edit it
+* `tests/unit/test_stage4_config.py` — **13**. Two shipped with Task 1; fix
+  round 1 rewrote both (the review found each one inert against the edit it
   claimed to catch) and added nine more, covering the stage-conditional
   collector-config strip, the marker convention it depends on, the attribute
   collision set, the OpenSearch-branch confinement of the rename, and
   `start-demo.sh`'s behaviour on a cluster without the stage-gated Services.
-  Two of the eleven run the real `start-demo.sh` against fake binaries, so
+  Fix round 2 added two: that the config **as shipped** declares every
+  component its pipelines name (including a connector used on both sides),
+  and — folded into the existing marker test — that markers never nest.
+  Two of the thirteen run the real `start-demo.sh` against fake binaries, so
   they are slower than a text assertion but not cluster-dependent.
-* `tests/e2e/test_opensearch_trace_ingest.py` — **4**. The fix round's
+* `tests/e2e/test_opensearch_trace_ingest.py` — **5**. The fix round's
   headline deliverable (ruling M4-R6): span-set parity between Jaeger and
   OpenSearch for one driven trace, the `policy.decision` span being queryable
-  out of OpenSearch, Jaeger keeping the canonical attribute names, and zero
-  `Exporting failed` events read over the whole collector-log window. These
-  need the live cluster like every other `tests/e2e` file, and they drive one
-  denial through the gateway with no model call and no browser. They **skip**
-  on a cluster coherently below stage 4 (no OpenSearch Service *and* no
-  `opensearch/trace` in the deployed collector config) and **fail** on the
-  incoherent middle — a collector configured to export to an OpenSearch that
-  is not installed.
+  out of OpenSearch, Jaeger keeping the canonical attribute names, no
+  uncovered attribute-key collision among the keys the driven trace actually
+  carries (fix round 2, which is the half that sees third-party library
+  keys), and zero `Exporting failed` events read over the whole collector-log
+  window. These need the live cluster like every other `tests/e2e` file, and
+  they drive one denial through the gateway with no model call and no
+  browser. They **skip** on a cluster coherently below stage 4 (no OpenSearch
+  Service *and* no `opensearch/trace` in the deployed collector config) and
+  **fail** on the incoherent middle — a collector configured to export to an
+  OpenSearch that is not installed.
+* `tests/unit/test_smoke_test_gate.py` — **+1** (2 → 3). Ruling M4-R9: the
+  gate itself must refuse to run below stage 4, so those five e2e assertions
+  cannot be skipped into a green run.
 
-Bare-suite row, derived from that same collection: 243 collected − 33 gated −
-1 xfailed = `209 passed, 33 skipped, 1 xfailed`. The 33 gated are the
-`RUN_BROWSER_TESTS=1` browser tests, unchanged; the four new e2e tests are not
-among them. Gate row: 243 collected − 1 xfailed = `242 passed, 1 xfailed`.
+Bare-suite row, derived from that same collection: 247 collected − 33 gated −
+1 xfailed = `213 passed, 33 skipped, 1 xfailed`. The 33 gated are the
+`RUN_BROWSER_TESTS=1` browser tests, unchanged; the five new e2e tests are not
+among them. Gate row: 247 collected − 1 xfailed = `246 passed, 1 xfailed`.
 
 This is arithmetic, not a live `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh`
 run. **Task 5 runs the milestone's one gate and converts this row to
-MEASURED.** Two things are worth stating as the expectations they are rather
-than as findings: the gate must be run on a **stage-4** cluster for the four
-new e2e tests to execute rather than skip (the README quick start and
-`smoke-test.sh`'s own prerequisite message both say `--stage 4` as of this
-round), and Task 1's changes touched no application code and no span the gate
-already asserts on. That is the same "derived" / "measured" distinction the M3
-rows below draw on their own.
+MEASURED.** The expectation the gate row rests on, stated as exactly that:
+Task 1's changes touched no application code and no span the gate already
+asserts on. The stage-4 requirement is no longer an expectation — as of ruling
+M4-R9 the gate checks for `svc/opensearch-cluster-master` in its prerequisite
+block and exits non-zero below stage 4, so a gate run that reports these
+numbers has necessarily run the five e2e assertions rather than skipped them.
+That is the same "derived" / "measured" distinction the M3 rows below draw on
+their own.
 
-`tests/unit` alone collects **128** (119 before the fix round).
+`tests/unit` alone collects **131** (119 before the fix rounds).
 
 **2026-09-11 (M3, remaining dependency bumps) — superseded by the row above,
 kept the same way every earlier row is: it was the current figures, and the
@@ -222,8 +231,8 @@ defect class, so each command is stated as it was actually run.)
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `209 passed, 33 skipped, 1 xfailed` (re-measured 2026-09-13, M4 Task 1 fix round: `pytest --collect-only -q tests/` → 243 collected) |
-| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `242 passed, 1 xfailed` (DERIVED 2026-09-13, M4 Task 1 fix round, not yet re-measured against a live run — see the note above; Task 5 runs the milestone's one gate) |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `213 passed, 33 skipped, 1 xfailed` (re-measured 2026-09-13, M4 Task 1 fix round 2: `pytest --collect-only -q tests/` → 247 collected) |
+| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `246 passed, 1 xfailed` (DERIVED 2026-09-13, M4 Task 1 fix round 2, not yet re-measured against a live run — see the note above; Task 5 runs the milestone's one gate) |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -1192,9 +1201,14 @@ symmetric with the others:**
   stage-4-only` when `--stage` is below 4, because OpenSearch is installed
   only at stage 4 and a collector exporting to a backend that does not exist
   fails permanently and silently (review finding F10, ruling M4-R8).
-* It is a **tee, not a fourth exporter on the main pipeline**. The `forward`
-  connector hands the main `traces` pipeline's output to a second pipeline,
-  so the OpenSearch branch cannot drift from what Jaeger and Dash0 receive.
+* It is a **tee, not a fourth backend on the main pipeline**. The table above
+  does list `forward/opensearch` among the `traces` pipeline's exporters, and
+  that is not a contradiction: a connector is *declared* in an exporter list
+  and is not a destination. It hands the main `traces` pipeline's output to
+  the second pipeline, which is what stops the OpenSearch branch drifting from
+  what Jaeger and Dash0 receive. (This bullet read "not a fourth *exporter*"
+  until M4 Task 1's second fix round, which contradicted the table thirty
+  lines above it — re-review finding N8.)
 * It is the **only** place in this system where an attribute is renamed in
   flight. `traces/opensearch` runs `attributes/opensearch-compat`, which
   rewrites `policy.decision.retryable` to `policy.decision_retryable` **for

@@ -98,13 +98,33 @@ processors:
   # tests/e2e/test_opensearch_trace_ingest.py asserts both halves of that
   # against the live cluster.
   #
-  # ONE key, because one is all that collides: of the 114 distinct span
-  # attribute keys emitted across all ten services in Jaeger (enumerated
-  # 2026-09-13 from /api/traces for every service), `policy.decision` ->
-  # `policy.decision.retryable` is the only pair where one key is a dotted
-  # prefix of another. No resource attribute and no span-event attribute
-  # collides at all. tests/unit/test_stage4_config.py pins that, so a second
-  # colliding key added later fails a unit test instead of a bulk request.
+  # ONE key, because one is all that collides. Measured 2026-09-13 by
+  # enumerating every attribute key Jaeger held across all ten of its services
+  # (/api/traces per service): 114 distinct span attribute keys, of which
+  # `policy.decision` -> `policy.decision.retryable` is the only pair where
+  # one key is a dotted prefix of another. No resource attribute and no
+  # span-event attribute collides at all.
+  #
+  # WHAT PINS THAT, stated precisely -- because the mapping is index-wide, so
+  # the two colliding keys need not be on the same span or even come from the
+  # same service, and an earlier version of this comment claimed a coverage it
+  # did not have (re-review finding N2: it said a unit test pinned the
+  # ten-service claim, while that test read only pds/telemetry.py):
+  #   * tests/unit/test_stage4_config.py now scans EVERY first-party service's
+  #     source -- agents/, apps/, platform/, systems/, tools/, 41 files -- for
+  #     attribute-shaped string literals, and fails if any collision among
+  #     them is not renamed here. It cannot see keys emitted by third-party
+  #     libraries.
+  #   * tests/e2e/test_opensearch_trace_ingest.py::
+  #     test_no_attribute_key_in_the_driven_trace_collides_uncovered applies
+  #     the same rule to every key Jaeger actually holds for a driven trace,
+  #     third-party keys included, for the services that trace reaches.
+  #   * ...and that file's log assertion reddens on a rejection from ANY
+  #     component that exported during the run, which is the backstop.
+  # The residual gap, named rather than papered over: a library upgrade that
+  # introduces a collider on a service the driven trace does not reach
+  # (settlement-agent's model spans, reviewer-ui, customer-ui) would be caught
+  # by the log assertion on the gate run, not before it.
   #
   # `insert` rather than `upsert` so a future real `policy.decision_retryable`
   # attribute would win over this copy rather than be silently overwritten.

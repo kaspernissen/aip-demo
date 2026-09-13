@@ -264,21 +264,121 @@ def test_below_stage_4_the_collector_config_names_no_opensearch(config):
 
 
 @pytest.mark.parametrize("config", COLLECTOR_CONFIGS, ids=lambda p: p.name)
-def test_the_stage_4_markers_are_balanced(config):
-    """An unbalanced marker pair deletes to end-of-file or not at all."""
+def test_the_stage_4_markers_are_balanced_and_never_nested(config):
+    """The markers must alternate strictly BEGIN, END, BEGIN, END, ...
+
+    An unbalanced pair deletes to end-of-file (missing END) or not at all.
+    **Nesting is the subtler case, and re-review finding N6 is that the first
+    version of this guard could not see it**: it counted BEGINs and ENDs and
+    zipped them, so `BEGIN, BEGIN, END, END` passed while `sed` pairs
+    `(BEGIN1 ... END1)` and leaves `BEGIN2` deleted and `END2` stranded in the
+    output -- a different deletion than the file intends. Walking the markers
+    in order and tracking depth is what actually models `sed`'s range
+    behaviour, so that is what this does now.
+    """
     lines = config.read_text().splitlines()
-    begins = [i for i, line in enumerate(lines) if line.strip() == "# BEGIN stage-4-only"]
-    ends = [i for i, line in enumerate(lines) if line.strip() == "# END stage-4-only"]
-    assert begins, f"{config.name} has no stage-4-only markers at all"
-    assert len(begins) == len(ends), (
-        f"{config.name} has {len(begins)} `# BEGIN stage-4-only` markers and "
-        f"{len(ends)} `# END stage-4-only` -- a sed range with a missing END "
-        "deletes everything to the end of the file"
+    markers = [
+        (i, line.strip())
+        for i, line in enumerate(lines)
+        if line.strip() in {"# BEGIN stage-4-only", "# END stage-4-only"}
+    ]
+    assert markers, f"{config.name} has no stage-4-only markers at all"
+
+    open_at = None
+    for index, marker in markers:
+        if marker.endswith("BEGIN stage-4-only"):
+            assert open_at is None, (
+                f"{config.name}: `# BEGIN stage-4-only` at line {index + 1} "
+                f"opens while the one at line {open_at + 1} is still open. "
+                "Nested markers do not do what they look like: sed closes the "
+                "outer range at the FIRST END, so the inner BEGIN is deleted "
+                "and the second END is left stranded in the output."
+            )
+            open_at = index
+        else:
+            assert open_at is not None, (
+                f"{config.name}: `# END stage-4-only` at line {index + 1} has "
+                "no matching BEGIN before it, so sed treats it as ordinary "
+                "text and whatever it was meant to close is not deleted."
+            )
+            open_at = None
+    assert open_at is None, (
+        f"{config.name}: `# BEGIN stage-4-only` at line {open_at + 1} is never "
+        "closed -- a sed range with a missing END deletes everything from "
+        "there to the end of the file."
     )
-    for begin, end in zip(begins, ends):
-        assert begin < end, (
-            f"{config.name}: a `# END stage-4-only` at line {end + 1} comes "
-            f"before its `# BEGIN` at line {begin + 1}"
+
+
+# --- Finding N4: the SHIPPED config must declare what its pipelines name ----
+
+
+@pytest.mark.parametrize("config", COLLECTOR_CONFIGS, ids=lambda p: p.name)
+def test_the_shipped_collector_config_declares_every_component_it_names(config):
+    """Re-review finding N4: the same check the stripped config already gets,
+    run over the config as shipped.
+
+    `test_below_stage_4_the_collector_config_names_no_opensearch` verifies
+    declared-ness only on the *stripped* output and only for the `traces`
+    pipeline. Nothing covered the stage-4 config itself, so deleting the
+    `connectors:` block from **both** files (the sync guard compares them to
+    each other, and `None == None` passes) or dropping `- forward/opensearch`
+    from the main traces exporter list left all unit tests green while the
+    collector refuses to start at stage 4.
+
+    A connector is the interesting case and the reason this is not merely
+    symmetry: it must be used as an exporter in one pipeline and as a receiver
+    in another. Declared and used on only one side is a startup failure, and
+    `test_the_rename_is_confined_to_the_opensearch_branch` only ever checked
+    the receiver side.
+    """
+    parsed = yaml.safe_load(config.read_text())
+    receivers = set(parsed.get("receivers") or {})
+    processors = set(parsed.get("processors") or {})
+    exporters = set(parsed.get("exporters") or {})
+    connectors = set(parsed.get("connectors") or {})
+
+    used_as_receiver: set[str] = set()
+    used_as_exporter: set[str] = set()
+    for name, pipeline in parsed["service"]["pipelines"].items():
+        for component in pipeline.get("receivers") or []:
+            assert component in receivers | connectors, (
+                f"{config.name}: pipeline {name!r} receives from "
+                f"{component!r}, which is declared neither as a receiver nor "
+                "as a connector. The collector refuses to start on this."
+            )
+            used_as_receiver.add(component)
+        for component in pipeline.get("processors") or []:
+            assert component in processors, (
+                f"{config.name}: pipeline {name!r} runs processor "
+                f"{component!r}, which the `processors` section does not "
+                "declare. The collector refuses to start on this."
+            )
+        for component in pipeline.get("exporters") or []:
+            assert component in exporters | connectors, (
+                f"{config.name}: pipeline {name!r} exports to {component!r}, "
+                "which is declared neither as an exporter nor as a connector. "
+                "The collector refuses to start on this."
+            )
+            used_as_exporter.add(component)
+
+    assert connectors, (
+        f"{config.name} declares no connectors at all. The OpenSearch branch "
+        "is a `forward/opensearch` tee off the main traces pipeline (spec "
+        "§3); without it, either the branch is gone or it has been "
+        "re-declared with its own receivers, which is the silent-drift shape "
+        "the tee exists to prevent."
+    )
+    for connector in connectors:
+        assert connector in used_as_exporter, (
+            f"{config.name}: connector {connector!r} is declared but no "
+            "pipeline exports to it, so nothing feeds it. A connector must be "
+            "used on both sides or the collector refuses to start."
+        )
+        assert connector in used_as_receiver, (
+            f"{config.name}: connector {connector!r} is declared but no "
+            "pipeline receives from it, so everything sent into it is "
+            "discarded. A connector must be used on both sides or the "
+            "collector refuses to start."
         )
 
 
@@ -291,8 +391,10 @@ def _pds_attribute_keys() -> set[str]:
     Parsed with `ast` rather than imported: this is a unit test and must not
     need the PDS's OpenTelemetry dependencies installed in the repo-root venv.
     `pds/telemetry.py` exists precisely so the guard tests and the contract
-    cite one source (its own comment says so), so reading it is reading the
-    source of truth.
+    cite one source (its own comment says so).
+
+    Kept as the *lower bound* the repo-wide scan below must contain. It is not
+    the scan's source of truth any more -- see `_first_party_attribute_keys`.
     """
     tree = ast.parse(PDS_TELEMETRY.read_text())
     keys = set()
@@ -308,6 +410,84 @@ def _pds_attribute_keys() -> set[str]:
                 keys.add(node.value.value)
     assert keys, f"no ATTR_* string constants found in {PDS_TELEMETRY}"
     return keys
+
+
+# Every directory holding a first-party service's source. The OpenSearch
+# mapping is index-wide, so a collision does not have to occur within one
+# span or even within one service: a scalar `x.y` on one service's span and an
+# object-valued `x.y.z` on another's, in the same index, is enough for the
+# second to be rejected permanently. Re-review finding N2 -- reading only the
+# PDS could never have seen that.
+SERVICE_SOURCE_DIRS = ["agents", "apps", "platform", "systems", "tools"]
+SERVICE_SOURCE_SUFFIXES = {".py", ".go", ".ts", ".tsx"}
+_SKIP_DIR_NAMES = {
+    "node_modules", ".venv", "venv", "tests", "__pycache__",
+    "dist", "build", ".next", "out",
+}
+
+# An OTel attribute key: lowercase dotted segments. Deliberately matched
+# against EVERY string literal rather than only the arguments of
+# `set_attribute` / `attribute.String` / `setAttribute` calls, because parsing
+# call shapes across Python, Go and TypeScript is where a scanner like this
+# quietly stops seeing things -- a constant defined in one file and used in
+# another, a dict passed to `start_as_current_span(attributes=...)`, a Go
+# `attribute.Key(...).String(...)`. Over-collecting is the safe direction: a
+# non-attribute literal that happens to look like a key (module paths such as
+# `mcp.client.streamable_http`, function references such as `rules.decide`)
+# can only ever ADD a pair to the collision set, so the failure mode is a red
+# test with a named pair a human can read -- never a silent hole. Measured
+# 2026-09-13: 41 files, 52 candidate keys, and exactly one collision.
+_ATTRIBUTE_KEY = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$")
+_STRING_LITERAL = re.compile(
+    r"\"([^\"\\\n]{1,120})\"|'([^'\\\n]{1,120})'|`([^`\\\n]{1,120})`"
+)
+
+
+def _first_party_attribute_keys() -> dict[str, set[str]]:
+    """Candidate attribute keys across every first-party service, with the
+    files each was found in (so a failure can name where to look).
+
+    **What this cannot see, stated because a guard that overclaims is the
+    defect this file keeps fixing:** keys computed at runtime (there are none
+    today -- every key in this repo is a literal or a constant bound to one),
+    and keys emitted by third-party libraries. The second is the larger set:
+    `gen_ai.*` from PydanticAI, `mcp.*` from the MCP SDK, `http.*`/`url.*`
+    from the ASGI and httpx instrumentations, and agentgateway's and SPIRE's
+    own. Those are covered from the other end, against live data, by
+    `tests/e2e/test_opensearch_trace_ingest.py`:
+    `test_no_attribute_key_in_the_driven_trace_collides_uncovered` reads every
+    key Jaeger actually holds for a driven trace, and
+    `test_the_collector_rejected_no_spans_during_the_run` reddens on a
+    rejection from any service that exported during the window.
+    """
+    found: dict[str, set[str]] = {}
+    scanned_dirs = set()
+    for directory in SERVICE_SOURCE_DIRS:
+        root = REPO_ROOT / directory
+        assert root.is_dir(), (
+            f"{directory}/ does not exist, so this guard silently covers less "
+            "than its docstring claims -- has a service moved?"
+        )
+        for path in sorted(root.rglob("*")):
+            if path.suffix not in SERVICE_SOURCE_SUFFIXES or not path.is_file():
+                continue
+            if any(part in _SKIP_DIR_NAMES for part in path.parts):
+                continue
+            scanned_dirs.add(directory)
+            text = path.read_text(errors="replace")
+            for match in _STRING_LITERAL.finditer(text):
+                literal = match.group(1) or match.group(2) or match.group(3)
+                if literal and _ATTRIBUTE_KEY.match(literal):
+                    found.setdefault(literal, set()).add(
+                        str(path.relative_to(REPO_ROOT))
+                    )
+    missing_dirs = set(SERVICE_SOURCE_DIRS) - scanned_dirs
+    assert not missing_dirs, (
+        f"no source files were scanned under {sorted(missing_dirs)}, so this "
+        "guard is silently covering less than it claims. Check "
+        "SERVICE_SOURCE_SUFFIXES and _SKIP_DIR_NAMES."
+    )
+    return found
 
 
 def _collisions(keys: set[str]) -> set[tuple[str, str]]:
@@ -330,22 +510,44 @@ def test_the_opensearch_compat_processor_covers_every_colliding_attribute():
     """Finding F1: the rename must cover every collider, not just today's one.
 
     The shipped ingest path rejected 100% of `policy.decision` spans because
-    the span sets both `policy.decision` and `policy.decision.retryable`. Of
-    the 114 distinct span attribute keys Jaeger held across all ten services
-    when this was measured (2026-09-13), that was the only such pair. A second
-    one added later would reintroduce the defect silently -- the export fails
-    permanently, per document, and only the collector log says so.
+    the span sets both `policy.decision` and `policy.decision.retryable`. A
+    second collider added later would reintroduce the defect silently -- the
+    export fails permanently, per document, and only the collector log says
+    so.
 
-    So this derives the collision set from the PDS's own declared attributes
-    and requires the `attributes/opensearch-compat` processor to delete each
-    colliding key and insert a replacement for it. Add `policy.decision.reason`
-    tomorrow and this goes red here, in a unit test, rather than in a bulk
-    request nobody is watching.
+    **Re-review finding N2 widened what this reads.** It used to derive the
+    collision set from `pds/telemetry.py` alone, while the comment it backed
+    in `collector-config.yaml` claimed ten services. That gap mattered rather
+    than being a scoping nit: the OpenSearch mapping is index-wide, so a
+    scalar `x.y` on one service's span and an object-valued `x.y.z` on
+    another's is enough for the second to be rejected -- and a collider added
+    anywhere but the PDS, or added to the PDS as an inline
+    `set_attribute("policy.decision.reason", ...)` rather than as an `ATTR_*`
+    constant, failed no unit test at all. It now scans every first-party
+    service's source; `_first_party_attribute_keys` documents exactly what
+    that can and cannot see, and the e2e file covers the rest against live
+    data.
+
+    Add `policy.decision.reason` in any service tomorrow and this goes red
+    here, in a unit test, rather than in a bulk request nobody is watching.
     """
-    collisions = _collisions(_pds_attribute_keys())
+    keys_by_file = _first_party_attribute_keys()
+    # The PDS's declared keys are the floor: if the repo-wide scan ever stops
+    # containing them, it has stopped working and every collision it reports
+    # is meaningless.
+    declared = _pds_attribute_keys()
+    missing = declared - set(keys_by_file)
+    assert not missing, (
+        f"the repo-wide attribute scan did not find {sorted(missing)}, which "
+        "pds/telemetry.py declares as ATTR_* constants. The scan is broken, "
+        "so its collision set cannot be trusted -- check "
+        "SERVICE_SOURCE_DIRS, SERVICE_SOURCE_SUFFIXES and _ATTRIBUTE_KEY."
+    )
+
+    collisions = _collisions(set(keys_by_file))
     assert collisions, (
-        "no dotted-prefix collision found among the PDS's attribute keys. If "
-        "the collision was genuinely removed at the source -- e.g. "
+        "no dotted-prefix collision found in any first-party service's "
+        "source. If the collision was genuinely removed at the source -- e.g. "
         "policy.decision.retryable was renamed in pds/telemetry.py -- then the "
         "attributes/opensearch-compat processor and this test can both go, in "
         "the same commit, with the telemetry contract updated to match. Do not "
@@ -363,13 +565,19 @@ def test_the_opensearch_compat_processor_covers_every_colliding_attribute():
             if action.get("from_attribute")
         }
         for shorter, longer in collisions:
+            where = ", ".join(
+                sorted(keys_by_file[shorter] | keys_by_file[longer])
+            )
             assert longer in deleted, (
                 f"{config.name}: attribute {longer!r} collides with "
                 f"{shorter!r} (OpenSearch would need attributes.{shorter} to "
                 "be both a scalar and an object), but the "
                 "attributes/opensearch-compat processor does not delete it on "
-                "the OpenSearch branch. Every span carrying both keys will be "
-                "rejected permanently -- that is review finding F1."
+                "the OpenSearch branch. Every document carrying both keys -- "
+                "and they need not be the same span, or even the same "
+                "service, because the mapping is index-wide -- will be "
+                f"rejected permanently. That is review finding F1. Seen in: "
+                f"{where}"
             )
             assert longer in copied_from, (
                 f"{config.name}: {longer!r} is deleted on the OpenSearch "

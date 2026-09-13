@@ -39,6 +39,22 @@ def _script_text() -> str:
     return SCRIPT_PATH.read_text()
 
 
+def _effective_script() -> str:
+    """The gate with the shebang and every whole-line comment removed.
+
+    Same tool, and the same reason, as `test_stage2_cilium_config.py` and
+    `test_stage4_config.py`: a comment must not be able to satisfy an
+    assertion. The stage-4 check below is described at length in a comment
+    block that names the Service, so without this the assertion would pass
+    against a script that had only the explanation and not the check.
+    """
+    return "\n".join(
+        line
+        for line in _script_text().splitlines()
+        if not line.lstrip().startswith("#")
+    )
+
+
 def test_gate_forces_run_browser_tests_unconditionally_not_via_a_conditional():
     """The brief's version gated the browser file behind an `if
     [[ "${RUN_BROWSER_TESTS:-}" == "1" ]]` check -- i.e. a caller who does not
@@ -97,4 +113,69 @@ def test_gate_pytest_target_is_the_whole_tests_tree_not_tests_e2e():
         '-k "not browser" deselects the browser tests by name even when '
         "RUN_BROWSER_TESTS=1 is set, silently reintroducing the exact gap "
         "this gate exists to close"
+    )
+
+
+def test_gate_refuses_to_run_below_stage_4():
+    """Ruling M4-R9 (re-review finding N3): a skip must not be how the gate
+    passes.
+
+    `tests/e2e/test_opensearch_trace_ingest.py` is M4 Task 1's deliverable --
+    the guard that catches spans silently failing to reach OpenSearch, which
+    is the defect that shipped at `955dd18` past 119 green unit tests. It
+    skips on a coherently stage-3 cluster, correctly: OpenSearch is a stage-4
+    component and failing for its absence would cry wolf on every lower stage.
+
+    That leaves the gate able to report exit 0 with that whole file skipped
+    and every one of its assertions unexecuted. `test_telemetry_contract_counts.py`
+    compares the published rows against `pytest --collect-only`, never against
+    an actual run, so nothing anywhere reddens. This is the same shape as the
+    defect class A22 exists for -- the gate passing because something did not
+    run -- one milestone later, which is why it belongs in this file rather
+    than in the M4 one.
+
+    So the gate asks the cluster whether OpenSearch is there, and refuses if
+    it is not. Asserted against the comment-stripped script: the check must be
+    a real command, not the paragraph above it explaining one.
+    """
+    script = _effective_script()
+
+    match = re.search(
+        r"^kubectl [^\n]*get svc/opensearch-cluster-master[^\n]*\|\| \{",
+        script,
+        re.MULTILINE,
+    )
+    assert match, (
+        "scripts/smoke-test.sh no longer refuses to run below stage 4. Its "
+        "prerequisite block must check that svc/opensearch-cluster-master "
+        "exists, unconditionally and at top level, before it runs the suite "
+        "-- otherwise every assertion in "
+        "tests/e2e/test_opensearch_trace_ingest.py skips on a stage-3 cluster "
+        "and the gate goes green having proved nothing about M4's "
+        "trace-ingest path (ruling M4-R9)."
+    )
+    check_line = match.group(0)
+    assert "-n observability" in check_line, (
+        "the stage-4 prerequisite check does not name the observability "
+        f"namespace, so it cannot find the Service it looks for: {check_line}"
+    )
+
+    # It must be a *prerequisite*, i.e. ahead of the run it protects. A check
+    # placed after the suite would let the gate spend five minutes producing
+    # the very skips it exists to prevent before saying so.
+    pytest_run = re.search(r"^RUN_BROWSER_TESTS=1\s", script, re.MULTILINE)
+    assert pytest_run, "the gate's own pytest invocation is missing"
+    assert match.start() < pytest_run.start(), (
+        "the stage-4 prerequisite check sits AFTER the gate's pytest run, so "
+        "the run it protects has already happened (and already skipped) by "
+        "the time it fires"
+    )
+
+    # And it must be unconditional -- wrapping it in a stage/env-var branch is
+    # how A22's browser gap was originally introduced.
+    preceding = script[: match.start()].rstrip().splitlines()
+    assert not preceding or not preceding[-1].strip().endswith("then"), (
+        "the stage-4 prerequisite check is inside a conditional. It must be "
+        "unconditional for the same reason RUN_BROWSER_TESTS=1 is: a check a "
+        "caller's environment can switch off is not a check."
     )
