@@ -11,6 +11,51 @@ Built from open standards and existing open-source projects, not a proprietary
 
 ## Status
 
+**M4 — Observable.** The question this milestone answers is *"can we prove why
+€5,800 was paid?"*, and the answer is a saved dashboard with **no new
+application code behind it**. Stage 4 adds OpenSearch, OpenSearch Dashboards,
+Prometheus and `eval-scorer`. Traces are teed into OpenSearch alongside Jaeger
+and are queryable there; metrics reach Prometheus **over OTLP with every one of
+the chart's ten default scrape jobs disabled**, so OTLP is the single ingestion
+path. The **evidence view** (`deploy/observability/dashboards/evidence.ndjson`,
+imported at stage 4) reconstructs both claims' audit trails out of spans the
+system already emitted — who decided, under which rule, at which limit,
+approved by whom, executed under which identity, and where the money went — and
+every query it makes is asserted by `tests/e2e/test_evidence_view.py` rather
+than eyeballed. **Policy-adherence scores** land per settlement as OTel spans
+inside the trajectory they judge, and a deliberately mis-routed run scores
+`0.0 retry-after-refusal` where the compliant one scores `1.0` — the
+anti-vacuity property that makes the other four scores worth reading.
+
+**What M4 measured and published rather than assumed.** Of the six GenAI agent
+metrics the OpenTelemetry conventions define, exactly **one** is emitted by
+anything in this system (`gen_ai.client.token.usage`, from PydanticAI); the
+other five are published as gaps, with the source-level sweep in
+[`docs/upstream-findings.md`](docs/upstream-findings.md) Finding 12 that says
+why. And **OQ-1 is answered** (it had been open since M2.1): with
+`NORTHSTAR_CAPTURE_CONTENT=false`, the evidence view loses **nothing** — not one
+panel field changes, because every field it reads is emitted by the *platform*
+rather than by the model. What is lost sits one step behind it: the agent's own
+statement of the amount it proposed, which at capture-ON is the only
+independent corroboration of the amount the policy engine judged. The default is
+**unchanged and still ON**; see `docs/telemetry-contract.md`'s OQ-1 section for
+the matched-pair measurement.
+
+**What is deliberately still not decided in M4.** Gap 4 is not closed —
+`northstar.claim.id` still stops at the MCP boundary, so the evidence view is
+built *around* a two-step trace-id join rather than pretending a claim-id filter
+works. There is no LLM-as-judge; the five scorers are deterministic functions
+over the decision spans. And two carried gaps are now written down beside the
+criteria they are the complement of, rather than quietly inherited: **network
+policy stops at the agent plane** (of `northstar-platform`'s six Cilium
+endpoints only the Policy Decision Service enforces anything, and nothing in the
+cluster has egress enforcement outside `northstar-agents`), and **`claims-agent`
+and `customer-ui` share one SPIFFE ID**. Both are pre-existing, both are
+measured, and both are M5's. See §9 of
+[the M4 design spec](docs/superpowers/specs/2026-09-11-northstar-m4-observable-design.md).
+
+---
+
 **M3 — Supervised.** A refused payment is no longer the end of the story. The
 claim flows end to end and produces one correlated trace; agentgateway sits in
 the MCP path, verifies a SPIRE-minted JWT-SVID on every call, and asks a Policy
@@ -185,7 +230,7 @@ survives a redeploy.
 
 Tear down with `./scripts/teardown.sh`.
 
-### Running the tests directly costs money
+### Running the tests directly
 
 `./scripts/smoke-test.sh` is the supported way to run the suite. If you invoke
 pytest yourself, know what you are paying for:
@@ -193,35 +238,66 @@ pytest yourself, know what you are paying for:
 | Command | Cluster | Anthropic tokens |
 |---|---|---|
 | `.venv/bin/python -m pytest tests/unit -q` | not needed | none |
-| `.venv/bin/python -m pytest tests/ -q` | **required** | **yes — three live settlements** |
+| `.venv/bin/python -m pytest tests/ -q` | **required** | none, since M4 Task 5 |
 | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | required | yes — the full gate |
 
-A bare `pytest tests/` is **not** free and **not** cluster-independent. Since
-M1.2 made the settlement a real model call, `tests/e2e/test_settlement_agent_trace.py`
-and `tests/e2e/test_claims_chain_trace.py` each drive a live model-driven
-settlement — three Anthropic turns apiece — from a module-scoped fixture, and
-they are deliberately left ungated so the default suite still proves the chain
-end to end. (`tests/e2e/test_claim_correlation.py` is a **third** ungated file
-that drives one, found while measuring this for M4 Task 3 — see
-`docs/telemetry-contract.md`, which carries the correction and the reasoning.)
+A bare `pytest tests/` is **not** cluster-independent — it needs the cluster and
+the port-forwards `./scripts/start-demo.sh` owns, and without them the e2e
+modules fail with `httpx.ConnectError` rather than skipping. That is deliberate;
+see "The first run of `pytest tests/`" in `docs/telemetry-contract.md`.
 
-**Seven** modules sit behind `RUN_BROWSER_TESTS=1`, **41** tests in all —
-re-measured for M4 Task 4 by walking pytest's collected items and reading each
-item's own `skipif` marker, the same way M3 Task 5B measured the five-module,
-33-test figure this replaces: `tests/e2e/test_settlement_llm_trace.py` (9),
-`tests/e2e/test_browser_root_span.py` (8), `tests/e2e/test_gateway_trace.py`
-(6), 6 of the 7 in `tests/e2e/test_supervised.py`, `tests/e2e/test_policy_scores.py`
-(5, M4 Task 4), 4 of the 6 in `tests/e2e/test_policy_denial.py`, and
-`tests/e2e/test_evidence_view.py` (3, M4 Task 3). The two partly-gated ones are
-`test_supervised.py` and `test_policy_denial.py`. Only three of the seven need
-a browser; the rest ride the flag because they spend model tokens.
+It is, however, **free** as of M4 Task 5, which closed ruling M4-R15 by gating
+the last three e2e files that drove a live settlement:
+`test_settlement_agent_trace.py`, `test_claims_chain_trace.py` and
+`test_claim_correlation.py`, one module-scoped driving fixture each, all at
+€6,200. The cost of that is stated rather than hidden, and it turned out to be
+larger than the first reading of it: a bare run no longer proves the A2A chain
+end to end, because the three files that proved it are the three that were
+paying for it — **and it no longer re-proves the GenAI metric inventory
+either**, because the positive control every `gen_ai.*` absence in
+`test_prometheus_metrics_ingest.py` is paired with is a histogram only a model
+call produces. Nine of that file's fourteen tests ride the flag for that reason;
+seven of them were found by running the bare suite and reading the failures, not
+by reasoning about them. Set `RUN_BROWSER_TESTS=1` to get all of it back.
+
+**Eleven** modules sit behind `RUN_BROWSER_TESTS=1`, **71** tests in all —
+and that figure is now *re-measured by a test* rather than by hand.
+`tests/unit/test_telemetry_contract_counts.py` walks pytest's collected items,
+reads each item's own `skipif` marker, and fails against this sentence and
+against `docs/telemetry-contract.md`; before M4 Task 5 nothing did, so deleting
+a gate from a settlement-driving file moved no published number and reddened no
+test. The M4 Task 4 figure it replaces was seven modules and 41 tests. The
+spread: `tests/e2e/test_settlement_llm_trace.py` (9), 9 of the 14 in
+`tests/e2e/test_prometheus_metrics_ingest.py` (M4 Task 5 — every control whose
+metric exists only if a model call happened minutes earlier),
+`tests/e2e/test_browser_root_span.py` (8),
+`tests/e2e/test_settlement_agent_trace.py` (8, M4 Task 5),
+`tests/e2e/test_claims_chain_trace.py` (7, M4 Task 5),
+`tests/e2e/test_claim_correlation.py` (6, M4 Task 5),
+`tests/e2e/test_gateway_trace.py` (6), 6 of the 7 in
+`tests/e2e/test_supervised.py`, `tests/e2e/test_policy_scores.py` (5, M4 Task
+4), 4 of the 6 in `tests/e2e/test_policy_denial.py`, and
+`tests/e2e/test_evidence_view.py` (3, M4 Task 3).
+The three partly-gated ones are `test_supervised.py`, `test_policy_denial.py`
+and `test_prometheus_metrics_ingest.py`. Only **one** of the eleven needs a
+browser; the other ten ride the flag because they spend model tokens or need
+something that does.
 `test_policy_denial.py`'s two ungated tests spend nothing: one reads source
 structurally, and the other drives two direct MCP calls with different SPIFFE
 identities and no model call at all. `test_supervised.py`'s one ungated test is
 its criterion 7, which spends nothing for the same reason: it speaks MCP to the
 gateway directly with a minted SVID for reviewer-ui's own identity, no browser
-and no model call. Without a live cluster and port-forwards those e2e files
-fail rather than skip.
+and no model call.
+
+**Three ungated tests still write an `executed` row to the ledger, on purpose.**
+Measured by ledger delta across live runs, not inferred:
+`test_payments_api_trace.py` and `test_payments_mcp_trace.py` each execute one
+€6,200 payment, neither of them through agentgateway, so no policy decision is
+made on them at all; and `test_policy_denial.py`'s criterion 5 executes €100,
+which is that test's whole assertion. Nothing gates them, because payments-api's
+ledger is an in-memory, per-process store on a kind cluster — the row costs
+nobody anything, and gating it would remove the only ungated coverage of the
+money path from a bare run.
 
 `tests/unit` is the hermetic subset: no cluster, no API key, no network. It is
 not, however, self-sufficient on a fresh clone — its per-service count guard
@@ -274,7 +350,7 @@ the laptop runs one stage at a time.
 | 1 | Connected | agents, MCP servers, systems of record, customer UI, collector, Jaeger |
 | 2 | Governed | agentgateway, SPIFFE/SPIRE, Policy Decision Service, Kyverno, Cilium — **as of M2.2 `--stage 2` installs Cilium (M2.1 Task 3, with M2.2 Task 7 adding ingress and `toFQDNs` egress policies), agentgateway (M2.1 Task 3, in the MCP path between settlement-agent and payments-mcp), SPIRE (M2.1 Task 4, verifying a JWT-SVID at the gateway) and the Policy Decision Service (M2.2 Task 4, deciding every `tools/call` through the gateway's `mcpGuardrails` hook) — Kyverno is NOT installed yet**, on a cluster created with kind's default CNI disabled |
 | 3 | Supervised | Dapr Workflow, reviewer UI, Keycloak — **as of M3 `--stage 3` installs the reviewer UI (Task 4, the page a human reads and clicks) and `senior-settlement-agent` (Task 3, the settlement-agent image in a second Deployment under a second ServiceAccount, so "senior" is an identity rather than a different program) on top of everything stage 2 installs — Dapr Workflow and Keycloak are NOT installed**, on a cluster created with a fourth host port reserved for the reviewer UI |
-| 4 | Observable | OpenSearch + Agent Evals, Prometheus — **as of M4 Task 2 `--stage 4` installs OpenSearch (single node, security plugin off), OpenSearch Dashboards and Prometheus on top of everything stage 3 installs, adds an OpenSearch branch to the collector's traces pipeline, and routes the collector's metrics pipeline to Prometheus over OTLP — Agent Evals (M4 Task 4) are NOT installed yet**. Prometheus is OTLP-ingest only: every one of the chart's ten default scrape jobs is disabled, so OTLP is its single ingestion path (M4 exit criterion 5). All of it runs on stage 3's cluster config unchanged: there is deliberately no `deploy/kind/stage4.yaml` (plan amendment A1), and both Dashboards and Prometheus are reached by port-forward via `./scripts/start-demo.sh` rather than a kind host port. M4 Task 3 adds the evidence view itself, imported into Dashboards from `deploy/observability/dashboards/evidence.ndjson` at this stage — see `docs/architecture.md`'s "See it yourself" step 9 |
+| 4 | Observable | OpenSearch + Agent Evals, Prometheus — **as of M4, `--stage 4` installs OpenSearch (single node, security plugin off), OpenSearch Dashboards, Prometheus and `eval-scorer` on top of everything stage 3 installs, adds an OpenSearch branch to the collector's traces pipeline, and routes the collector's metrics pipeline to Prometheus over OTLP. Stage 4 is complete: Agent Evals arrived with `platform/eval-scorer` in M4 Task 4** — this row said they were "NOT installed yet" until M4 Task 5's doc pass, which is the milestone's own headline feature going unannounced in the table a reader checks first. Prometheus is OTLP-ingest only: every one of the chart's ten default scrape jobs is disabled, so OTLP is its single ingestion path (M4 exit criterion 5). **Measured memory: 5.06 GiB** against the ~8 GB budget (M1 spec §12) — `docker stats northstar-control-plane`, three readings 3s apart on the complete stage-4 cluster with 30 pods Running, all of OpenSearch, Dashboards, Prometheus, eval-scorer and the demo workloads up: `5.062 / 5.061 / 5.061 GiB`. That is the kind node container's whole footprint, page cache included; the node cgroup's `anon` alone is 3.79 GiB, so 5.06 is the conservative end of the range and the budget holds either way. All of it runs on stage 3's cluster config unchanged: there is deliberately no `deploy/kind/stage4.yaml` (plan amendment A1), and both Dashboards and Prometheus are reached by port-forward via `./scripts/start-demo.sh` rather than a kind host port. M4 Task 3 adds the evidence view itself, imported into Dashboards from `deploy/observability/dashboards/evidence.ndjson` at this stage — see `docs/architecture.md`'s "See it yourself" step 9 |
 | 5 | Progressive autonomy | OpenFeature / flagd |
 | 6 | Golden path | Crossplane `Agent` CRD, Argo CD, Backstage |
 

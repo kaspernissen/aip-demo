@@ -34,9 +34,14 @@ this file shipped, which made a bare `pytest tests/` drive **four** settlements
 instead of two and -- new in kind, not only in degree -- execute a real €6,200
 payment under `senior-settlement-agent`'s identity, because this is the first
 ungated file to drive the whole supervised path. `test_supervised.py` gates 6 of
-its 7 tests for exactly that reason. The wider question (two ungated chain files
-have spent tokens on every bare run since M1.2) is a repo-level policy call this
-file does not make; see docs/telemetry-contract.md's own section on it.
+its 7 tests for exactly that reason. **The wider question is settled**: it was a
+repo-level policy call this file did not make, and M4 Task 5 made it (ruling
+M4-R15 amended). The three chain files that had spent tokens on every bare run
+since M1.2 -- `test_claim_correlation.py`, `test_claims_chain_trace.py`,
+`test_settlement_agent_trace.py` -- now carry the same gate, so a bare
+`pytest tests/` spends nothing at all. See docs/telemetry-contract.md's own
+section on it for the measurement and for what the bare run gives up in
+exchange.
 
 **The time window is load-bearing, not hygiene.** `CLM-1842` is a fixed
 constant, so the index accumulates one set of traces per run of it forever;
@@ -57,11 +62,13 @@ sort first.
 `deploy/observability/dashboards/evidence.ndjson`.
 
 **Stage gate, and why it is not a way to hide.** OpenSearch is a stage-4
-component. This file follows the *stricter* of the two shapes in the repo --
-`test_prometheus_metrics_ingest.py`'s, whose `_absent_or_fail` is imported
-rather than re-implemented: "absent" means the API server said `NotFound`, and
-every other way `kubectl` can exit non-zero is a hard failure, because "I could
-not look" must never be recorded as "there was nothing to check". The
+component. There is now exactly one skip shape in this repo --
+`tests/harness/kube.py`'s `absent_or_fail`, which this file imports rather than
+re-implements. It was the stricter of the two this milestone carried, and M4
+Task 5 retired the looser one against it (ruling M4-R14): "absent" means the API
+server said `NotFound`, and every other way `kubectl` can exit non-zero is a
+hard failure, because "I could not look" must never be recorded as "there was
+nothing to check". The
 discriminator is deliberately a **different object** than the one under test:
 whether this is a stage-4 cluster is decided by the OpenSearch Service and the
 deployed collector's traces pipeline; the index
@@ -81,7 +88,6 @@ from types import SimpleNamespace
 import httpx
 import pytest
 import requests
-import yaml
 
 # Reuse, not re-implementation -- the same convention test_supervised.py states
 # for its own imports. These are the claim, the amounts and the route fixtures
@@ -116,7 +122,18 @@ from tests.e2e.test_opensearch_trace_ingest import (
     _opensearch,
 )
 from tests.e2e.test_caller_identity import KUBE_CONTEXT
-from tests.e2e.test_prometheus_metrics_ingest import _absent_or_fail
+# Ruling M4-R14, discharged in M4 Task 5: this was
+# `from tests.e2e.test_prometheus_metrics_ingest import _absent_or_fail`. The
+# helper moved out of that file into the shared harness so that neither of the
+# two e2e modules that need it owns it, and so the loose shape
+# `test_opensearch_trace_ingest.py` carried could be retired against the same
+# one definition rather than against a copy.
+from tests.harness.kube import absent_or_fail
+# Same move, same reason, one milestone's mutation later: the parsed reading of
+# the deployed pipelines used to live here as a private function while the
+# oldest of the three callers still grepped the config text. See
+# tests/harness/collector.py.
+from tests.harness.collector import pipeline_exporters
 
 COLLECTOR_CONFIGMAP = "otel-collector-config"
 # The connector that tees the main `traces` pipeline into the OpenSearch-only
@@ -427,7 +444,7 @@ def _settled_evidence(claim_id: str, required: tuple[str, ...]) -> dict:
 
 
 def _opensearch_is_installed() -> bool:
-    return _absent_or_fail(
+    return absent_or_fail(
         _kubectl(
             "-n", OBSERVABILITY_NAMESPACE, "get", f"svc/{OPENSEARCH_SERVICE}",
             "-o", "name", timeout=30,
@@ -467,17 +484,9 @@ def _traces_pipeline_tees_to_opensearch() -> bool:
         "-n", OBSERVABILITY_NAMESPACE, "get", "configmap", COLLECTOR_CONFIGMAP,
         "-o", "jsonpath={.data.collector-config\\.yaml}", timeout=30,
     )
-    if not _absent_or_fail(result, f"configmap/{COLLECTOR_CONFIGMAP}"):
+    if not absent_or_fail(result, f"configmap/{COLLECTOR_CONFIGMAP}"):
         return False
-    pipelines = ((yaml.safe_load(result.stdout) or {}).get("service") or {}).get(
-        "pipelines"
-    ) or {}
-    exporters = {
-        exporter
-        for name, pipeline in pipelines.items()
-        if name.startswith("traces")
-        for exporter in (pipeline.get("exporters") or [])
-    }
+    exporters = pipeline_exporters(result.stdout, "traces")
     return OPENSEARCH_EXPORTER_ID in exporters and OPENSEARCH_TEE_ID in exporters
 
 

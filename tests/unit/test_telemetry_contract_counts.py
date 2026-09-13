@@ -371,3 +371,100 @@ def test_per_service_counts_match_what_each_suites_own_runner_collects():
         "(this is the third recurrence of exactly this defect -- see the "
         "module docstring):\n" + "\n".join(mismatches)
     )
+
+
+# --- M4 Task 5: the gated figure, which was published and unguarded ----------
+
+
+def _gated_test_count() -> tuple[int, dict[str, int]]:
+    """How many collected tests are gated behind `RUN_BROWSER_TESTS=1`, asked
+    of pytest rather than of a document.
+
+    Same shape as `_collected_test_count` above -- `--collect-only`, no cluster,
+    no `.env`, no port-forwards -- with a tiny in-process plugin that reads each
+    item's own `skipif` markers. A marker counts when its reason names
+    `RUN_BROWSER_TESTS` *and* its condition is true with the variable unset,
+    which is exactly the question "would a bare `pytest tests/` skip this?".
+
+    `RUN_BROWSER_TESTS` is removed from the child's environment rather than set
+    to something falsy: this test may itself be running inside the gate, where
+    it is set to 1, and a condition evaluated under that would report zero
+    gated tests and make every assertion below vacuously true. That is the
+    failure mode this file exists to catch, one level up.
+    """
+    plugin = REPO_ROOT / "tests" / "unit" / "_count_gated_plugin.py"
+    env = dict(os.environ)
+    env.pop("RUN_BROWSER_TESTS", None)
+    env["PYTHONPATH"] = str(plugin.parent) + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    result = subprocess.run(
+        [
+            sys.executable, "-m", "pytest", "--collect-only", "-q", "tests/",
+            "-p", "no:cacheprovider", "-p", "_count_gated_plugin",
+        ],
+        cwd=REPO_ROOT, capture_output=True, text=True, env=env, timeout=300,
+    )
+    assert result.returncode == 0, (
+        "collection failed while counting gated tests:\n"
+        f"{result.stdout[-3000:]}\n{result.stderr[-2000:]}"
+    )
+    marker = re.search(r"^GATED-COUNT (\d+) (\{.*\})$", result.stdout, re.M)
+    assert marker, (
+        "the gated-count plugin printed nothing. Its output line is the only "
+        "channel between it and this test, so a plugin that failed to load "
+        "would otherwise look like 'zero tests are gated'.\n"
+        f"{result.stdout[-3000:]}"
+    )
+    import ast
+
+    return int(marker.group(1)), ast.literal_eval(marker.group(2))
+
+
+def test_the_contracts_gated_figure_is_what_pytest_would_actually_skip():
+    """The gated count was published in three documents and re-measured by
+    nobody.
+
+    `docs/telemetry-contract.md` and `README.md` both state how many tests sit
+    behind `RUN_BROWSER_TESTS=1`, and the contract's own prose says the figure
+    "is measured ... a `--collect-only` run with a plugin that counts items
+    carrying a `skipif` whose reason names `RUN_BROWSER_TESTS`". It was --
+    once, by hand, per milestone. Nothing re-ran it, so **deleting a
+    `pytestmark` from a settlement-driving e2e file changed no published number
+    and reddened no test**: the bare and gate rows above both sum to the
+    *collected* total, which a removed gate does not move. A repo whose whole
+    cost model is "one flag gates every model call" had no guard on the flag.
+
+    M4 Task 5 moved that figure from 41 to 64 by gating three files and two
+    parametrised controls, which is exactly the kind of change that should not
+    be checkable only by re-reading prose.
+    """
+    gated, per_file = _gated_test_count()
+    text = CONTRACT_PATH.read_text()
+
+    published = re.search(r"and reports (\d+) of (\d+),", text)
+    assert published, (
+        "expected docs/telemetry-contract.md's current block to state the "
+        "gated figure as 'and reports <N> of <M>,'"
+    )
+    assert int(published.group(1)) == gated, (
+        f"the contract publishes {published.group(1)} gated tests; a "
+        f"--collect-only run with RUN_BROWSER_TESTS unset finds {gated}. "
+        f"Per file: {per_file}"
+    )
+    assert int(published.group(2)) == _collected_test_count(), (
+        f"the contract's gated figure is stated 'of {published.group(2)}' but "
+        f"pytest collects {_collected_test_count()}"
+    )
+
+    readme = (REPO_ROOT / "README.md").read_text()
+    readme_figure = re.search(
+        r"modules sit behind `RUN_BROWSER_TESTS=1`, \*\*(\d+)\*\* tests in all", readme
+    )
+    assert readme_figure, (
+        "expected README.md to state '<word> modules sit behind "
+        "`RUN_BROWSER_TESTS=1`, **<N>** tests in all'"
+    )
+    assert int(readme_figure.group(1)) == gated, (
+        f"README.md publishes {readme_figure.group(1)} gated tests and pytest "
+        f"finds {gated}. Per file: {per_file}"
+    )

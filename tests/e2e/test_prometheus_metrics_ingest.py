@@ -48,7 +48,11 @@ F7): "absent" now means the API server said `NotFound`, and every other way
 `kubectl` can exit non-zero -- unreachable server, wrong context, expired
 credential, timeout -- is a hard failure. "I could not look" must never be
 recorded as "there was nothing to check", least of all in the single gate run
-that re-verifies this milestone's published negative.
+that re-verifies this milestone's published negative. M4 Task 5 moved that
+discriminator out of this file into `tests/harness/kube.py` and retired the
+looser shape `test_opensearch_trace_ingest.py` still carried against it (ruling
+M4-R14): the behaviour here is unchanged, and there is now one definition
+rather than one per caller.
 
 **This file drives no traffic of its own**, and that is a deliberate choice
 rather than laziness: a file that drove its own settlement would spend model
@@ -65,16 +69,68 @@ for up to `CONTROL_POLL_TIMEOUT_S`**, while the absence assertions are
 deliberately left unbounded, where a longer window only makes the negative
 stronger. On an idle cluster the controls fail and say to drive traffic; they
 never pass on two-week-old data.
+
+**M4 Task 5: nine of this file's fourteen items now declare the traffic they
+need, and the count got there in two measured steps.** Every control that turns
+on `gen_ai.client.token.usage` has the same real precondition -- *a settlement
+was driven minutes ago* -- because that histogram exists only when a model call
+happened. It was being supplied by accident: three ungated e2e files drove
+settlements earlier in the alphabet than this one. Ruling M4-R15 (amended)
+gated all three, and the accident became failures here.
+
+The first pass gated the two items the failure list showed at the time: the
+`settlement-agent` row of the per-service control, and
+`test_the_one_genai_metric_any_framework_emits_is_present`. That was
+**incomplete, and the run that proved it is the reason this paragraph is
+longer**. `pytest tests/e2e/test_opensearch_trace_ingest.py
+tests/e2e/test_prometheus_metrics_ingest.py` on a bare run, 2026-09-14,
+finished `7 failed, 10 passed, 2 skipped in 3178.17s` -- the two gated items
+skipped as intended and **seven more failed**, all with the same message:
+`_assert_the_genai_path_is_live` could not find
+`gen_ai_client_token_usage_{bucket,count,sum}` in the last 15 minutes. Those
+seven are the three tests fix round 1 attached that control to (finding F3) --
+the five-metric absence parametrisation, the unpredicted-name backstop and the
+invented-metric check. Their control is the same histogram; gating two of its
+consumers and not the other three was an inconsistency that only a real bare
+run could show, and the lesson is the standing one here: **the second-order
+effect of a gate is measured, not reasoned about.**
+
+All nine now carry `_MODEL_TRAFFIC_REQUIRED`, the same `RUN_BROWSER_TESTS=1`
+flag `scripts/smoke-test.sh` sets unconditionally -- so the gate, which is the
+run M4 exit criterion 6 is proven by and in which `test_policy_scores.py`
+drives settlements immediately before this file, is unchanged. This is not a
+guard skipping on the object it guards: the object is the metrics path, and the
+flag gates the *traffic* the control needs, not the Prometheus state it reads.
+An absence assertion whose positive control cannot be satisfied is not a
+cheaper version of itself -- by this file's own design it is **unproven**, which
+is what its failure message says. The five items that need no model call --
+SPIRE's series, the no-scrape proof and the claims-agent, payments-mcp and
+reviewer-ui rows of the per-service control, which read HTTP metrics the
+remaining ungated traffic still produces -- still run on a bare `pytest
+tests/`, and all five passed on that same run.
 """
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import time
 
 import pytest
-import yaml
+
+# Ruling M4-R14: the one definition of this repo's skip-or-fail
+# discriminator, moved out of this file so that neither of its two callers
+# owns it. The shape is unchanged -- it is this file's, and it is the strict
+# one; see tests/harness/kube.py's module docstring for why it moved.
+from tests.harness.kube import absent_or_fail
+
+# The parsed form of "what does the deployed collector route?", argued for in
+# _metrics_pipeline_exports_to_prometheus's docstring below on the strength of
+# this file's own mutation run. M4 Task 5 moved it out for the same reason as
+# absent_or_fail: the third caller was still holding the substring version the
+# mutation disproved. See tests/harness/collector.py.
+from tests.harness.collector import pipeline_exporters
 
 KUBE_CONTEXT = "kind-northstar"
 OBSERVABILITY_NAMESPACE = "observability"
@@ -124,44 +180,8 @@ def _kubectl(*args: str, timeout: int = 60) -> subprocess.CompletedProcess:
     )
 
 
-def _absent_or_fail(result: subprocess.CompletedProcess, what: str) -> bool:
-    """True if `what` exists, False if the API server says it does not, and a
-    hard failure for every other way `kubectl` can exit non-zero.
-
-    **Review finding F7.** Both callers below used to read `returncode == 0`
-    and treat anything else as "absent". An unreachable API server, a missing
-    or misspelled context, an expired credential and a genuine `NotFound` are
-    all non-zero, so a transient kubectl failure made this file conclude the
-    cluster was "coherently below stage 4" and skip all fourteen tests --
-    silently removing the milestone's inventory re-verification from the one
-    gate run that performs it (M4 exit criterion 6). A skip that says "nothing
-    to check here" when the truth is "I could not look" is the same false
-    negative this file exists to prevent, one level up.
-
-    `NotFound` is matched on kubectl's own error text, which is stable across
-    resource kinds: `Error from server (NotFound): services "x" not found`.
-
-    The sibling `tests/e2e/test_opensearch_trace_ingest.py` still has the older
-    shape this was inherited from; F7 was raised against this file and is fixed
-    here rather than widened into Task 1's file without a review asking for it.
-    """
-    if result.returncode == 0:
-        return True
-    stderr = result.stderr or ""
-    if "NotFound" in stderr or "not found" in stderr.lower():
-        return False
-    raise AssertionError(
-        f"`kubectl` failed while checking whether {what} exists, and the "
-        "failure is not 'it does not exist' -- so this file cannot tell "
-        "whether the cluster is below stage 4 or simply unreachable, and it "
-        "must not guess. Exit code "
-        f"{result.returncode}; stderr:\n{stderr.strip() or '(empty)'}\n"
-        f"Context in use: {KUBE_CONTEXT!r}."
-    )
-
-
 def _prometheus_is_installed() -> bool:
-    return _absent_or_fail(
+    return absent_or_fail(
         _kubectl(
             "-n", OBSERVABILITY_NAMESPACE, "get", f"svc/{PROMETHEUS_SERVICE}",
             "-o", "name", timeout=30,
@@ -175,7 +195,7 @@ def _deployed_collector_config() -> str:
         "-n", OBSERVABILITY_NAMESPACE, "get", "configmap", COLLECTOR_CONFIGMAP,
         "-o", "jsonpath={.data.collector-config\\.yaml}", timeout=30,
     )
-    if not _absent_or_fail(result, f"configmap/{COLLECTOR_CONFIGMAP}"):
+    if not absent_or_fail(result, f"configmap/{COLLECTOR_CONFIGMAP}"):
         return ""
     return result.stdout
 
@@ -197,13 +217,9 @@ def _metrics_pipeline_exports_to_prometheus() -> bool:
     Reading the pipeline means a comment cannot satisfy it and neither can a
     dangling declaration.
     """
-    raw = _deployed_collector_config()
-    if not raw:
-        return False
-    parsed = yaml.safe_load(raw)
-    pipelines = ((parsed or {}).get("service") or {}).get("pipelines") or {}
-    exporters = (pipelines.get("metrics") or {}).get("exporters") or []
-    return PROMETHEUS_EXPORTER_ID in exporters
+    return PROMETHEUS_EXPORTER_ID in pipeline_exporters(
+        _deployed_collector_config(), "metrics"
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -441,39 +457,71 @@ def test_prometheus_itself_scrapes_nothing(prometheus_url):
 # (deploy/k8s/senior-settlement-agent.yaml's own header -- the demo's point is
 # that the code is byte-identical and the platform tells the two apart by
 # identity), so it has no `job` of its own by design.
+#
+# **The settlement-agent row carries the cost gate, and only that row** (M4 Task
+# 5). Its known metric is the one that exists only because a *model call*
+# happened -- PydanticAI records it per turn -- and `_recent_series` deliberately
+# refuses a stale sample, so this row's real precondition is "a settlement has
+# been driven in the last few minutes". Until M4 Task 5 that precondition was
+# supplied by accident: three ungated e2e files drove settlements earlier in the
+# alphabet than this one. Ruling M4-R15 (amended) gated those three, so the
+# accident is gone, and this row now states its own precondition instead of
+# inheriting it. In the gate -- the run that proves M4 exit criterion 6 --
+# `RUN_BROWSER_TESTS=1` is set, `test_policy_scores.py` and
+# `test_policy_denial.py` drive settlements immediately before this file, and
+# the row runs exactly as it did. The other three rows stay ungated: their
+# metrics come from ordinary HTTP traffic that the ungated e2e files still
+# generate, measured -- all three passed on the bare run in which this one
+# failed.
+_MODEL_TRAFFIC_REQUIRED = pytest.mark.skipif(
+    os.environ.get("RUN_BROWSER_TESTS") != "1",
+    reason=(
+        "needs a model call within the freshness window, which only a "
+        "settlement produces; gated behind the same RUN_BROWSER_TESTS=1 flag "
+        "scripts/smoke-test.sh sets unconditionally (ruling M4-R15 amended, "
+        "discharged in M4 Task 5)"
+    ),
+)
+
 SERVICES_WITH_A_KNOWN_METRIC = (
-    (
+    pytest.param(
         "settlement-agent",
         "gen_ai_client_token_usage_count",
         "PydanticAI records it on every model turn "
         "(pydantic_ai/models/instrumented.py::record_metrics)",
+        marks=_MODEL_TRAFFIC_REQUIRED,
+        id="settlement-agent",
     ),
-    (
+    pytest.param(
         "claims-agent",
         "http_server_request_duration_seconds_count",
         "the ASGI/Starlette instrumentation records it on every inbound request",
+        id="claims-agent",
     ),
-    (
+    pytest.param(
         "payments-mcp",
         "http_client_request_duration_seconds_count",
         "HTTPXClientInstrumentor records it on every call to payments-api",
+        id="payments-mcp",
     ),
-    (
+    pytest.param(
         "reviewer-ui",
         "http_client_duration_milliseconds_count",
         "HTTPXClientInstrumentor records it on every ledger read -- note the "
         "LEGACY name: reviewer-ui is the one service whose manifest sets no "
         "OTEL_SEMCONV_STABILITY_OPT_IN, measured 2026-09-13 and recorded in "
         "docs/telemetry-contract.md",
+        id="reviewer-ui",
     ),
 )
 
 
-@pytest.mark.parametrize(
-    "job,known_metric,why",
-    SERVICES_WITH_A_KNOWN_METRIC,
-    ids=[row[0] for row in SERVICES_WITH_A_KNOWN_METRIC],
-)
+# No `ids=` derived from the rows: each row carries its own `id=` instead. The
+# derived form was `ids=[row[0] for row in SERVICES_WITH_A_KNOWN_METRIC]`, which
+# restated the job name a second time and broke outright the moment a row became
+# a `pytest.param` (M4 Task 5, adding the cost gate to the settlement-agent row):
+# `row[0]` is then the whole value tuple, and pytest refuses it at collection.
+@pytest.mark.parametrize("job,known_metric,why", SERVICES_WITH_A_KNOWN_METRIC)
 def test_each_service_demonstrably_gets_a_metric_all_the_way_to_prometheus(
     prometheus_url, job, known_metric, why
 ):
@@ -543,6 +591,7 @@ def _assert_the_genai_path_is_live(prometheus_url: str, absence: str) -> None:
     )
 
 
+@_MODEL_TRAFFIC_REQUIRED
 def test_the_one_genai_metric_any_framework_emits_is_present(
     prometheus_url, metric_names
 ):
@@ -573,6 +622,7 @@ def test_the_one_genai_metric_any_framework_emits_is_present(
     )
 
 
+@_MODEL_TRAFFIC_REQUIRED
 @pytest.mark.parametrize(
     "metric",
     [m for m in SIX_GENAI_METRICS if m != EMITTED_GENAI_METRIC],
@@ -610,6 +660,7 @@ def test_the_other_five_genai_metrics_are_emitted_by_nothing(
     )
 
 
+@_MODEL_TRAFFIC_REQUIRED
 def test_no_genai_metric_arrived_under_a_name_this_file_did_not_predict(
     prometheus_url, metric_names
 ):
@@ -639,6 +690,7 @@ def test_no_genai_metric_arrived_under_a_name_this_file_did_not_predict(
     )
 
 
+@_MODEL_TRAFFIC_REQUIRED
 def test_no_metric_was_invented_to_fill_a_framework_gap(
     prometheus_url, metric_names
 ):

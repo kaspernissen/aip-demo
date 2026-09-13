@@ -7,8 +7,18 @@ Service, the `policy.decision` span (which closes Gap 3), and agentgateway's
 own guardrail telemetry, and through **M3 (Supervised)** for the two spans
 this repo owns outright on the human-in-the-loop path —
 `settlement.execute_approved` (with this project's first span link) and
-`review.decision` — which between them close Gap 2. Revised at every
-milestone.
+`review.decision` — which between them close Gap 2, and through **M4
+(Observable)** for the metrics this system actually emits (one of six GenAI
+agent metrics, the rest published as gaps), the trace-ingest path into
+OpenSearch, the evidence view's queries, the policy-adherence score spans, and
+**OQ-1, answered**. Revised at every milestone.
+
+**This line stopped at M3 for the whole of M4** until Task 5's doc pass, while
+five M4 sections were added below it. Recorded rather than silently fixed: it
+is the same class the count-and-inventory guards in
+`tests/unit/test_telemetry_contract_counts.py` and
+`tests/unit/test_telemetry_contract_attribute_counts.py` exist for, in the one
+part of the file no guard reads.
 
 ## The governing rule
 
@@ -18,34 +28,50 @@ paper over it with a bespoke convention.
 
 ## What the default suite proves, and what only the full run proves
 
-A bare `pytest tests/` run (no environment variable set) skips
-`tests/e2e/test_browser_root_span.py` entirely — that file's own `pytestmark`
-is gated behind `RUN_BROWSER_TESTS=1` (it needs a real Chromium via
-Playwright). That default run proves the chain from claims-agent down to
-payments-api: claims-agent → settlement-agent → payments-mcp → payments-api,
-one trace, no orphans, `northstar.claim.id` correlated as far as the boundary
-below states. **It proves nothing about the browser.** It does not start a
-browser, does not exercise CORS, and does not confirm the root span the
-milestone's whole claim depends on — that customer-ui, not a test harness,
-owns the trace root.
+**M4 Task 5 changed what this section describes, so the current state comes
+first and the overturned reasoning is kept below it rather than deleted.**
 
-**Fix round (final-review.md SF-8): that default run needs the live cluster
+A bare `pytest tests/` run (no environment variable set) now costs **no model
+tokens at all**. Ten modules sit behind `RUN_BROWSER_TESTS=1`; only one of them
+needs a browser. The other nine ride the flag because they spend Anthropic
+tokens, and as of Task 5 that set is closed: every e2e file that drives a
+settlement is gated. What a bare run therefore no longer proves is the A2A
+chain — claims-agent → settlement-agent → payments-mcp → payments-api, one
+trace, no orphans, `northstar.claim.id` correlated to the boundary below —
+because the three files that prove it are the three that were driving the
+settlements. It proves nothing about the browser either, and never did.
+
+**Ruling M4-R15 (amended), discharged in M4 Task 5.** The cost of being wrong
+each way is what decided it. Gate them, and a developer's quick run covers less
+and they set one environment variable to get it back. Leave them, and every
+bare `pytest tests/` — including a newcomer's, following this repo's own
+README — silently spends three settlements' worth of tokens on someone's
+account. The second is worse, and `scripts/smoke-test.sh` sets the flag
+unconditionally, so the gate is unchanged. The measured before-and-after
+figures, and the separate question of which ungated tests move the *ledger*
+(three, deliberately still ungated, because an in-memory ledger row costs
+nobody anything), are in the M4 Task 5 block below.
+
+---
+
+*Overturned by the ruling above; kept because the reasoning it replaced was
+explicit and a later reader should be able to see what changed.*
+
+~~**Fix round (final-review.md SF-8): that default run needs the live cluster
 by design (always has, since M1.1) and, since M1.2, is no longer
-token-free.** `test_settlement_agent_trace.py` and `test_claims_chain_trace.py`
-are the two ungated files that prove the chain described above; Tasks 2-3
-turned settlement-agent's decision into a real three-turn Claude call, so
-every bare `pytest tests/` invocation now drives two live model-driven
+token-free.**~~ `test_settlement_agent_trace.py` and `test_claims_chain_trace.py`
+were the two ungated files that proved the chain described above; M1.2's Tasks
+2-3 turned settlement-agent's decision into a real three-turn Claude call, so
+every bare `pytest tests/` invocation then drove two live model-driven
 settlements as a side effect of proving that chain — genuine cross-task
-drift Task 4's cost-gate rationale (below) did not account for, since it
-only reasoned about the one new gated file. This is deliberately left
-ungated rather than folded behind `RUN_BROWSER_TESTS=1`: gating them would
-make a bare `pytest tests/` prove nothing about the backend chain at all,
-which is the property this section exists to describe, in exchange for
-token-freedom this run was never actually free of at the cluster-dependency
-level. `scripts/smoke-test.sh` already spends these tokens unconditionally
-via the gate below, so the practical cost is one bare `pytest tests/` run's
-worth of tokens, not a new one — the fix here is documenting that reality
-plainly rather than restructuring around it.
+drift M1.2 Task 4's cost-gate rationale did not account for, since it
+only reasoned about the one new gated file. It was ~~deliberately left
+ungated~~ rather than folded behind `RUN_BROWSER_TESTS=1`, on the argument that
+gating them would make a bare `pytest tests/` prove nothing about the backend
+chain at all, in exchange for token-freedom this run was never actually free of
+at the cluster-dependency level. That argument survives as a *cost*, and M4
+Task 5 paid it knowingly: the bare run does now prove nothing about the backend
+chain, and what it buys is that the bare run costs nothing.
 
 **Correction, M4 Task 3 fix round 1: "two" above is "three".**
 `test_claim_correlation.py` is a third ungated file that drives a settlement —
@@ -53,9 +79,34 @@ its module-scoped `correlated_trace` fixture POSTs the same A2A
 `message/send` with `estimatedAmount: 6200` — and it was left out of the count
 when that paragraph was written. Measured by reading all three files'
 module-scoped fixtures while checking which tests a bare run actually pays
-for; none of the three carries a `RUN_BROWSER_TESTS` gate. The reasoning above
-is unaffected and deliberately not restructured here: only the number was
-wrong.
+for; at the time, none of the three carried a `RUN_BROWSER_TESTS` gate. All
+three carry one now.
+
+### The first run of `pytest tests/`, and why it is left failing
+
+**Ruled on in M4 Task 5 rather than carried as a concern.** With no cluster and
+no port-forwards, a bare `pytest tests/` does not skip — it fails, with
+`httpx.ConnectError` and `kubectl` errors across the e2e modules. That is not a
+regression, and it is deliberately not being turned into a skip. A suite that
+skips when it cannot reach the thing it asserts on is this repo's single most
+recurrent defect class — rulings M4-R9 and M4-R14 both exist because of it —
+and the cure for an ugly first run cannot be to introduce that class at the top
+level for tidiness. **A red run saying "I could not reach the cluster" is the
+correct answer to "are these assertions true?" when the cluster is not there.**
+
+What was worth fixing was not the failure but its legibility, and that is what
+this task did. The remedy — `./scripts/start-demo.sh`, which owns every
+port-forward the suite needs — is now named in the README's own test table
+beside the command that produces the failure; and `scripts/smoke-test.sh` has
+probed all five surfaces with a real HTTP request, before running a single
+test, since M2.2 (ruling R20: a dead `kubectl port-forward` keeps its listening
+socket, so `lsof` alone calls it healthy). The supported entry point is the
+gate. A developer who invokes pytest directly gets a failure that names the one
+command which fixes it.
+
+`tests/unit` is the subset that needs none of this: no cluster, no API key, no
+network — and as of this task, no model tokens are spent by the wider `tests/`
+run either.
 
 **`./scripts/smoke-test.sh` — the actual M1.1 gate — has no default mode that
 skips this.** It runs one unconditional invocation,
@@ -78,8 +129,208 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-13 (M4 Task 4, including its review fix round 1) — the current
-figures, and the gate row is DERIVED, not yet re-measured against a live run.**
+**2026-09-13 (M4 Task 5) — the current figures, and the gate row is MEASURED:
+the milestone's one gate run.**
+Task 5 added **34** tests under `tests/`, taking the collected count from 309 to
+**343**, re-measured with `.venv/bin/python -m pytest --collect-only -q tests/`.
+The gated figure moved much further than the collected one — **41 → 64** — and
+that is the ruling below, not an accident of the new tests.
+
+Twenty-nine of the thirty-four are there because the task went looking for
+*published facts and reconciled rulings that nothing re-checks*, and found
+three:
+
+* `tests/unit/test_mutation_protocol.py` — **+3** (7 → 10), and the shape of
+  the file changed more than the count did. One substring assertion became four
+  tests that *run* `scripts/mutate-guard.sh`: that it refuses a mutation whose
+  text is absent, that it refuses one identical to the original, that it refuses
+  a pattern matching more than one line, and — the positive control, without
+  which a script that refused everything would pass the other three — that a
+  unique pattern really is on disk while the test command runs and really is
+  restored afterwards. The non-unique refusal is the fix for the defect M4 Task
+  4 hit: the script replaced the **first** match silently, a mutation landed in
+  a line the test command never ran, and the round recorded GREEN — the tool
+  built to stop false GREENs produced one. The behavioural form is deliberate:
+  the old test matched the literal `if old not in text`, which is exactly the
+  condition the fix had to rewrite, so it would have reddened for a correct
+  change while a rewrite that deleted the check and kept the words stayed green.
+
+* `tests/unit/test_stage4_config.py` — **+2** (23 → 25), both guards on
+  operator-facing prose that had already gone stale.
+  `test_the_gates_banner_names_the_milestone_it_actually_proves` **derives** the
+  current milestone from the newest design spec in `docs/superpowers/specs/` and
+  checks `scripts/smoke-test.sh`'s banner and sign-off against it. It went red
+  on the commit that added it: the gate still announced `=== Northstar M3 smoke
+  test ===` while running four new files of M4 assertions — the **third**
+  recurrence of a rename whose own in-file comment ended "No test pins either
+  string". One does now, and nothing has to be retyped next milestone.
+  `test_the_bare_run_failure_names_the_command_that_fixes_it` pins the remedy the
+  first-run ruling above rests on: leaving a bare `pytest tests/` failing is
+  defensible only while `./scripts/start-demo.sh` is named where the reader is.
+
+* `tests/unit/test_telemetry_contract_counts.py` — **+1**, and it is the figure
+  in the paragraph you are reading. This document and `README.md` both publish
+  how many tests sit behind `RUN_BROWSER_TESTS=1`, and until this task **nothing
+  re-measured it**: the two rows the existing guard checks each sum to the
+  *collected* total, which deleting a `pytestmark` does not move. So the gate
+  that this repo's entire cost story rests on could be removed from a
+  settlement-driving file and every test would stay green. It is measured now
+  the same way the prose says it is — the counting plugin lives at
+  `tests/unit/_count_gated_plugin.py` and is run by the test — with
+  `RUN_BROWSER_TESTS` *removed* from the child environment rather than set
+  falsy, because this test also runs inside the gate, where the variable is `1`
+  and every condition would evaluate false and report zero gated tests.
+
+* `tests/unit/test_kube_helper.py` — **+15**, new. Ruling M4-R14 reconciled two
+  skip shapes into one definition (`tests/harness/kube.py::absent_or_fail`) on
+  the argument that the strict one is worth keeping, and then asserted that
+  argument nowhere: every caller is itself skipped below stage 4, so a
+  regression widening it back to "any non-zero exit means absent" would show up
+  as a green run. The rows are real `kubectl` failure texts — connection
+  refused, unknown context, Forbidden, dial timeout, a non-zero exit with empty
+  stderr — each required to *raise* rather than return absent. **One of them
+  found a live defect rather than confirming a belief**: the helper matched a
+  bare, case-insensitive `not found` anywhere in stderr, so `kubectl: command
+  not found` — a machine with no kubectl at all — read as "the object does not
+  exist" and skipped the milestone's assertions. It now requires kubectl's own
+  shape, a quoted object name followed by `not found`, or the `NotFound` API
+  reason. A last test walks `tests/e2e` and fails if any module defines its own
+  copy, because "one definition" is a property of the repo and was previously
+  maintained by attention.
+
+* `tests/unit/test_collector_pipeline_helper.py` — **+13**, new, and behind it a
+  third caller that had been left holding a shape this repo had already measured
+  inert. `test_prometheus_metrics_ingest.py` records in its own docstring that
+  `EXPORTER_ID in <the config text>` stays **true** after the pipeline entry
+  that routes the signal is deleted, because the id also occurs under
+  `exporters:` and in the comment above it. That finding was fixed in two of the
+  three stage gates that ask this question and not in the third —
+  `test_opensearch_trace_ingest.py`, the oldest, still read the substring until
+  this task. Re-measured here on the live ConfigMap: `forward/opensearch` occurs
+  **4** times in the deployed text, and deleting the one occurrence that routes
+  anything leaves 3. All three now call one function,
+  `tests/harness/collector.py::pipeline_exporters`, which parses
+  `service.pipelines` and matches the signal on the pipeline name's leading
+  segment so that `traces` covers the `traces/opensearch` branch (and does not
+  cover `metrics/traces`). The mutation that defeated the substring form is a
+  unit test now, so it stays defeated with no cluster.
+
+**The skip-path mutation pass, run against the live cluster on 2026-09-14.**
+Every cluster-dependent test this milestone added is guarded by a module-scoped
+`stage_4_or_a_reason` fixture, and in all four the discriminator is a *different
+object* than the thing under test: the OpenSearch or Prometheus Service plus the
+deployed collector's pipelines, never the index, the documents, the series or
+`eval-scorer` — so a stage-4 cluster whose data never arrives reddens rather
+than skips, and a missing `eval-scorer` on a stage-4 cluster is a failure with
+no skip path at all. To show that is true rather than intended, the deployed
+`otel-collector-config` ConfigMap had the two lines that route the signals —
+`- forward/opensearch` from the `traces` pipeline and `- otlp_http/prometheus`
+from `metrics` — deleted and re-applied, one signal at a time and then both.
+Result, in each case a **failure naming the missing route**, never a skip:
+
+| File | Mutation | Outcome |
+|---|---|---|
+| `test_opensearch_trace_ingest.py` | tee removed from `traces` | `ERROR … assert exports` — "traces pipelines do not export to both `forward/opensearch` … and `opensearch/trace`" |
+| `test_prometheus_metrics_ingest.py` | exporter removed from `metrics` | `ERROR … tests/e2e/test_prometheus_metrics_ingest.py:226` |
+| `test_evidence_view.py` | tee removed from `traces` | `ERROR … "does not carry BOTH halves of the tee"` |
+| `test_policy_scores.py` | tee removed from `traces` | `ERROR … tests/e2e/test_policy_scores.py:200` |
+
+The same mutated text, read both ways, is why this pass was worth running:
+`'opensearch/trace' in <text>` → **True**, `pipeline_exporters(text, 'traces')
+⊇ {tee, exporter}` → **False**. The old gate would have passed. The collector
+itself was never restarted (`restarts=0` throughout), so only the ConfigMap the
+gates read was affected, and the original was re-applied and diffed
+byte-identical after each mutation.
+
+**One real failure was found and fixed, and it would have failed this gate.**
+`test_policy_denial.py::test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp`
+compares the production change surface in `agents/settlement-agent` and
+`tools/payments-mcp` since `m2.1-verified` against an allow-list, and M4 Task 2
+added a MeterProvider to `tools/payments-mcp/bootstrap.py` without extending it.
+Nothing caught it for three tasks because that assertion lives in `tests/e2e`
+and no task in this milestone was permitted a gate run — four green `pytest
+tests/unit` reports could not see it. The file is now on the allow-list with its
+reason (an OTel SDK MeterProvider and an OTLP exporter, the same shape
+`tests/unit/test_metrics_wiring.py` asserts is identical across five services,
+and nothing else); parts 1–3 of that test still read the same file's AST for
+policy vocabulary, allowance literals and money comparisons on every run, so
+only the change-surface clause was widened. Its failure message now derives the
+file count from the allow-list as well — it read "the six files … each of the
+five" and was therefore wrong in one half whichever number a later edit
+corrected.
+
+**Ruling M4-R15 (amended), discharged: the three remaining model-spending e2e
+files are now gated, and the money-moving ones deliberately are not.** Measured
+in this task rather than reasoned about:
+
+* Three ungated files drove a real settlement on every bare `pytest tests/` —
+  `test_claim_correlation.py`, `test_claims_chain_trace.py` and
+  `test_settlement_agent_trace.py`, one module-scoped driving fixture each, all
+  at €6,200. That is three settlements' worth of Anthropic tokens, on someone's
+  account, from the command this repo presents as the ordinary way to run the
+  suite. All three now carry the same `pytestmark` the other cost-gated modules
+  carry. `RUN_BROWSER_TESTS=1` is this repo's **cost** gate, not a browser gate:
+  **ten of the eleven** gated modules start no browser (this read "six of the
+  ten" until M4 Task 5's stale-prose pass — it was M4 Task 4's figure, left
+  behind by the same task that added the four new gated modules two paragraphs
+  above it). `README.md` carries the same fact as "only one of the eleven needs
+  a browser"; the module list itself is in `README.md` only, and this is a
+  count of it.
+* **Three ungated tests still write an `executed` row to the ledger, and that is
+  the intended state.** Measured by ledger delta over live runs, not inferred:
+  `pytest tests/e2e/test_payments_api_trace.py tests/e2e/test_payments_mcp_trace.py`
+  moved the ledger 138 → 140 with two `executed` rows of €6,200 — neither file
+  goes through agentgateway, so no policy decision is made on them at all — and
+  `test_policy_denial.py::test_criterion_5_the_decision_changes_when_the_callers_spiffe_id_changes`
+  moved it 140 → 142, executing €100, which is that test's whole assertion.
+  Those cost nothing: payments-api's ledger is an in-memory, per-process store
+  on a kind cluster (ruling 32), so "money moved" is a demo fiction. Gating them
+  would buy a developer nothing and would remove the only ungated coverage of
+  the money path from a bare run. **The gate's second-order effect had to be
+  measured too, and the first reading of it was wrong.** Gating those three
+  files removed the settlement traffic that
+  `test_prometheus_metrics_ingest.py`'s positive controls had been living on by
+  accident. Two items were gated in response, from the failure list available at
+  the time; a full bare run of that file on 2026-09-14 (`7 failed, 10 passed, 2
+  skipped in 3178.17s`, alongside `test_opensearch_trace_ingest.py`) then showed
+  **seven more**, every one of them `_assert_the_genai_path_is_live` unable to
+  find `gen_ai_client_token_usage_*` in its 15-minute window — the three tests
+  fix round 1 attached that control to. Nine of that file's fourteen items now
+  carry the flag, and the gated figure is **71**, not the 64 this document
+  published an hour earlier. An absence whose positive control cannot run is
+  unproven by that file's own design, so this is the gate declaring a real
+  precondition rather than a test being hidden: the five items needing no model
+  call still run bare, and did pass. **Tokens are the externality; tokens are what
+  this flag gates.**
+
+Bare-suite row, derived from that same collection: 343 collected − 71 gated −
+1 xfailed = `271 passed, 71 skipped, 1 xfailed`. The gated figure is measured
+the same way every figure below it was — a `--collect-only` run with a plugin
+that counts items carrying a `skipif` whose reason names `RUN_BROWSER_TESTS`
+and whose condition is true with the variable unset — and reports 71 of 343,
+spread `test_settlement_llm_trace.py` 9,
+`test_prometheus_metrics_ingest.py` 9, `test_browser_root_span.py` 8,
+`test_settlement_agent_trace.py` 8, `test_claims_chain_trace.py` 7,
+`test_claim_correlation.py` 6, `test_gateway_trace.py` 6, `test_supervised.py`
+6, `test_policy_scores.py` 5, `test_policy_denial.py` 4,
+`test_evidence_view.py` 3. **That measurement is no longer a one-off
+performed by hand**: `tests/unit/test_telemetry_contract_counts.py::test_the_contracts_gated_figure_is_what_pytest_would_actually_skip`
+re-derives it from pytest on every unit run and fails against this paragraph
+and against `README.md`. It is what caught 64 → 71 above. Gate row: **measured,
+not derived** — `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` on 2026-09-14 ran
+to completion in **417.83s** and finished `342 passed, 1 xfailed`, exit 0, final
+line `Northstar M4 smoke test passed.`, with **zero skipped**. The prediction
+from collection (343 − 1 xfailed = 342) and the run agree, and they are recorded
+as two separate facts because a milestone where they *disagreed* would be the
+interesting one: a gate that silently skips lands short of its own collection
+and still prints green.
+
+`tests/unit` alone collects **205** (171 before this task): every one of the 34
+new tests is a unit test.
+
+**2026-09-13 (M4 Task 4, including its review fix round 1) — superseded by the
+row above, and kept the way every earlier row is: it was the current figure,
+with a DERIVED gate row, at the time it was written.**
 Task 4 added **6** tests under `tests/` and its fix round added **7** more,
 taking the collected count from 296 to **309**, re-measured with
 `.venv/bin/python -m pytest --collect-only -q tests/`:
@@ -148,8 +399,8 @@ thirteen new tests are gated and the other eight are unit tests, so the
 skipped figure moved by five and the rest went to the bare-run *passed*
 figure. Gate row: 309 collected − 1 xfailed = `308 passed, 1 xfailed`.
 This is arithmetic, not a live gate run, with the same standing as every row
-below it: **Task 5 runs the milestone's one gate and converts this row to
-MEASURED.** What it rests on: Task 4 added a new deployment that reads
+below it: **Task 5 ran the milestone's one gate; the MEASURED figure is the current
+block at the top of this section and the gate row in the table below.** What it rests on: Task 4 added a new deployment that reads
 OpenSearch and writes spans of its own, and changed no span, no attribute and
 no behaviour of any service the gate already asserts on — the one shared file
 it touches is `scripts/setup-kind.sh`, inside the existing `STAGE -ge 4` block.
@@ -163,8 +414,10 @@ ruling R22 requires went into *existing*
 one entry.
 
 **The residual named below is unchanged and this task did not widen it.** A
-bare `pytest tests/` still drives live model-driven settlements from three
-ungated files; `test_policy_scores.py` is not a fourth.
+bare `pytest tests/` still drove live model-driven settlements from three
+ungated files; `test_policy_scores.py` was not a fourth. (M4 Task 5 gated all
+three and closed that residual — ruling M4-R15 amended, discharged; see the
+current block at the top of this section.)
 
 **2026-09-13 (M4 Task 3, including its review fix round 1) — superseded by the
 row above, and kept the way every earlier row is: it was the current figure,
@@ -184,11 +437,15 @@ collected count from 287 to **296**, re-measured with
   settlements itself (two model calls, no browser: a direct A2A POST to
   claims-agent and a plain form POST to reviewer-ui) and bounds every query to
   the window it opened, because `CLM-1842` is a fixed id and the index holds
-  one set of traces per run of it. It follows
-  `test_prometheus_metrics_ingest.py`'s stricter stage gate — it imports that
-  file's `_absent_or_fail` rather than copying it — and skips only on a cluster
-  coherently below stage 4; a missing index on a stage-4 cluster is a
-  **failure**, verified by mutation. The fix round put the whole file behind
+  one set of traces per run of it. It follows the repo's one stage-gate shape —
+  `tests/harness/kube.py`'s `absent_or_fail`, imported rather than copied — and
+  skips only on a cluster coherently below stage 4; a missing index on a
+  stage-4 cluster is a **failure**, verified by mutation. (That helper lived in
+  `test_prometheus_metrics_ingest.py` until M4 Task 5 discharged ruling M4-R14:
+  it was the stricter of two shapes the milestone carried, and Task 5 moved it
+  to the harness and retired the looser one in
+  `test_opensearch_trace_ingest.py` against it, so there is one definition and
+  not a copy per caller.) The fix round put the whole file behind
   `RUN_BROWSER_TESTS=1` (no browser is started; it rides the flag for the same
   reason `test_settlement_llm_trace.py` does — it drives two settlements'
   worth of model calls and executes a real €6,200 payment under the senior
@@ -238,7 +495,7 @@ The guard now tolerates the wrap; the hazard is recorded because it is the
 same one the guard's own docstring describes for a historical figure moved
 above a current one.)
 This is arithmetic, not a live gate run, with the same standing as
-the two rows below it: **Task 5 runs the milestone's one gate and converts this
+the two rows below it: **Task 5 ran the milestone's one gate and converted this
 row to MEASURED.**
 
 `tests/unit` alone collects **163** (157 before this task).
@@ -331,7 +588,7 @@ Bare-suite row, derived from that same collection: 287 collected − 33 gated �
 `RUN_BROWSER_TESTS=1` browser tests, unchanged; the fourteen new e2e tests are
 not among them. Gate row: 287 collected − 1 xfailed = `286 passed, 1 xfailed`.
 This is arithmetic, not a live gate run, for the same reason and with the same
-standing as the M4 Task 1 row below: **Task 5 runs the milestone's one gate
+standing as the M4 Task 1 row below: **Task 5 ran the milestone's one gate
 and converts this row to MEASURED.** What it rests on: Task 2 added a
 `MeterProvider` to five services and changed no span, no attribute and no
 application behaviour the gate already asserts on.
@@ -380,8 +637,8 @@ Bare-suite row, derived from that same collection: 247 collected − 33 gated �
 among them. Gate row: 247 collected − 1 xfailed = `246 passed, 1 xfailed`.
 
 This is arithmetic, not a live `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh`
-run. **Task 5 runs the milestone's one gate and converts this row to
-MEASURED.** The expectation the gate row rests on, stated as exactly that:
+run. **Task 5 ran the milestone's one gate; the MEASURED figure is the current
+block at the top of this section and the gate row in the table below.** The expectation the gate row rests on, stated as exactly that:
 Task 1's changes touched no application code and no span the gate already
 asserts on. The stage-4 requirement is no longer an expectation — as of ruling
 M4-R9 the gate checks for `svc/opensearch-cluster-master` in its prerequisite
@@ -503,8 +760,8 @@ defect class, so each command is stated as it was actually run.)
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `267 passed, 41 skipped, 1 xfailed` (re-derived 2026-09-13, M4 Task 4 fix round 1, from a re-measured `pytest --collect-only -q tests/` → 309 collected and a measured 41 gated) |
-| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `308 passed, 1 xfailed` (DERIVED 2026-09-13, M4 Task 4 fix round 1, not yet re-measured against a live run — see the note above; Task 5 runs the milestone's one gate) |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `271 passed, 71 skipped, 1 xfailed` (re-derived 2026-09-14, M4 Task 5, from a re-measured `pytest --collect-only -q tests/` → 343 collected and a **measured** 71 gated — the gated half is now re-measured by a test on every unit run, not by hand) |
+| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | **`342 passed, 1 xfailed in 417.83s (0:06:57)`, exit 0, final line `Northstar M4 smoke test passed.` — MEASURED 2026-09-14, M4 Task 5, the milestone's one gate run, on the long-running stage-4 `kind-northstar` cluster (not recreated; `teardown.sh` not run). **Zero skips**, which is the figure to read first: a skip is invisible in a green gate (ruling M4-R9), and this milestone gated eleven modules, so "342 passed" would mean nothing without it.** |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -4194,7 +4451,121 @@ What is now accurate is the *scope*.
 
 ## Open questions
 
-### OQ-1: Content capture is a trade, not a settled answer
+### OQ-1: Content capture is a trade — ANSWERED 2026-09-13 (M4 Task 5), default unchanged
+
+**Answered, not acted on.** `NORTHSTAR_CAPTURE_CONTENT` still defaults to `true`
+in `deploy/k8s/settlement-agent.yaml` and
+`deploy/k8s/senior-settlement-agent.yaml`, and M4 changed neither. What follows
+is the deliverable M4 spec §7.7 asked for: *exactly* which claims the evidence
+view can no longer support at `NORTHSTAR_CAPTURE_CONTENT=false`. The four-step
+experiment's shape is preserved below, along with everything M2.1 Task 3
+measured; this section is the answer on top of it.
+
+#### The answer, stated as narrowly as it was measured
+
+**Zero. The evidence view loses nothing.** Every field of every panel is
+populated identically at OFF.
+
+Measured as a matched pair on this cluster, both runs the same supervised
+`CLM-1842` story at €6,200 — refused by `settlement-agent`, escalated,
+approved by a human, executed by `senior-settlement-agent` — and read back
+through `tests/e2e/test_evidence_view.py::evidence_for`, which is the function
+whose docstring maps each key to the panel of `evidence.ndjson` that renders
+it. So this is the dashboard's own query path, not a paraphrase of it. Mode was
+read off the **running pods** with `jsonpath` before each run, never off the
+Deployment spec (`kubectl diff` cannot prove a pod is serving a value; M2.1's
+step 5 records why).
+
+| Panel field | ON (`5ba013da…`, `69b3186f…`) | OFF (`6084d46e…`, `8e3be791…`) |
+|---|---|---|
+| 1 · trace ids | 2 | 2 |
+| 2 · `policy_decision` / `rule` | `deny` / `settlement-agent.assisted.execute_limit` | identical |
+| 2 · `limit` / `requested` | 6000 / 6200 | identical |
+| 3 · `reviewer` / `review_decision` | present / `approve` | present / `approve` |
+| 2 · `executing_identity` | `spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent` | identical |
+| 2 · `executing_rule` | `settlement-agent.assisted.execute_limit` | identical |
+| 4 · `money_hops` | propose → refuse → GET → GET → execute | identical |
+| spans in the join | 214 | 216 |
+
+**That result is the finding, and it is a statement about the design rather
+than about redaction.** Not one of the evidence view's panels reads a `gen_ai.*`
+attribute — every field it aggregates on is `attributes.policy.*`,
+`attributes.review.*`, `attributes.northstar.claim.id`, `traceId`, `name` or
+`resource.service.name`, all of them emitted by the platform (the PDS, the
+reviewer UI, payments-api) and none of them gated on `include_content`. The
+audit trail this milestone's headline rests on is reconstructed from what the
+*platform decided*, not from what the *model said*. Content capture is
+orthogonal to it.
+
+#### What is lost, one step behind the view
+
+The same pair, same traces, measured on the `gen_ai.*` layer an operator
+reaches by following a trace id out of panel 1 — 28 distinct keys at ON, 25 at
+OFF, reproducing M2.1 Task 3's figures on this milestone's own runs and index:
+
+1. **"Did the agent ask for the amount the platform judged?"**
+   `gen_ai.tool.call.arguments` carries `{"amount":6200,"currency":"EUR"}` on
+   `execute_tool propose_payment` and
+   `{"payment_id":"PAY-000137","amount":6200,"currency":"EUR"}` on
+   `execute_tool execute_payment` at ON; at OFF the key is absent from the whole
+   trace. Panel 2 still shows `requested: 6200` — that is the PDS's own record
+   of the request — so what is lost is not the number but the **independent
+   corroboration** of it. At OFF, the platform's account of what was asked for
+   is the only account there is, and nothing in telemetry can contradict it.
+   This is the one genuinely load-bearing loss, and it is an audit property,
+   not a debugging convenience.
+2. **"What was the agent told it could do about *this* claim?"**
+   `gen_ai.system_instructions` absent at OFF.
+   `model_request_parameters` survives (1,974 characters, identical in both
+   modes) and holds the static instructions and both tool schemas — what the
+   agent was told it could do *in general*. The claim-specific half is gone.
+3. **"What did the ledger say back?"** `gen_ai.tool.call.result` absent at OFF —
+   so neither what the model proposed nor what the ledger recorded survives on
+   the `execute_tool` spans.
+
+Plus the gutting that key-level survival hides, re-measured on this pair:
+`gen_ai.input.messages` text/thinking parts carrying `content` **5 of 5 → 0 of
+5**; its `tool_call` parts carrying `arguments` **3 of 3 → 0 of 3**;
+`gen_ai.output.messages` **2 of 2 → 0 of 2** and **2 of 2 → 0 of 2**;
+`pydantic_ai.all_messages` **1,857 → 657 characters**.
+
+**Restored and verified.** Both Deployments were returned by
+`kubectl apply -f` of the committed manifests, and the serving pods read back
+`NORTHSTAR_CAPTURE_CONTENT=true` via `jsonpath` — with the pod-template hashes
+back at `58bc5d8988` and `559785b65b`, the same hashes as before the
+experiment, which is independent proof the spec is byte-identical to what was
+committed rather than merely carrying the same value.
+
+#### The working alternative, cited as a measured example rather than a hypothesis
+
+The all-or-nothing switch is not the only shape available, and the middle
+ground this section has called for since M2.1 already exists in the project
+owner's own `otel-platform-demo`: the **traces** pipeline there carries an
+`attributes/redact` processor with `action: hash` on `user.email`
+(`infrastructure/collector/deployment-values.yaml:166-169`). That is redaction
+in the collector, per attribute, after the span is emitted — so the SDK keeps
+emitting everything, the backend never sees the sensitive field, and the choice
+is made once in the platform rather than once per service in an env var. It is
+the concrete answer to the "narrower middle ground" bullet below, and M4 records
+it as an existing, running example rather than proposing it. Building it here is
+not M4's (spec §2 rejected redaction-as-a-demo-beat to keep the milestone at
+three things); knowing it works is.
+
+#### Why this closes as *answered* rather than as *decided*
+
+The trade is now sized in the one place that matters for this demo: the
+governance story — who decided, under which rule, at which limit, approved by
+whom, executed under which identity, and where the money went — survives full
+content redaction intact. The **model's own account of itself** does not. An
+insurer that wants the first and not the second can run OFF today and lose
+nothing this repo puts on a dashboard. Whether it *should* is still a decision
+its owner makes, and this document does not make it: the default stays ON,
+because on this demo the second question ("why that amount?") is the one the
+talk is about.
+
+---
+
+*The original statement of the question, preserved.*
 
 Task 5 flips the default to ON (see "Content capture" above), on the
 reasoning that every attribute redacted is diagnostic capability spent. That
@@ -4249,8 +4620,11 @@ could do*; it does not tell them what the agent was told about *this claim*,
 or what it chose to do with it. Those two are genuinely different facts, and
 only one of them survives full redaction.
 
-**The experiment this open question calls for, and has not yet run** (the
-project owner's own framing, preserved verbatim as the shape of the test):
+**The experiment this open question called for** (the project owner's own
+framing, preserved verbatim as the shape of the test). M4 Task 5 ran the
+OFF/ON comparison at step 4's level of detail — see "The answer" above — on a
+*successful* run rather than an induced failure, which is the one departure
+from this shape and is named as such:
 
 1. Induce a genuine settlement failure or a wrong-amount run.
 2. Attempt root-cause diagnosis from the trace with capture **off**. Record
@@ -4264,8 +4638,12 @@ project owner's own framing, preserved verbatim as the shape of the test):
 
 #### What M2.1 Task 3 measured, and what it deliberately did not decide
 
-**OQ-1 stays open. `NORTHSTAR_CAPTURE_CONTENT` still defaults to `true`
-(`deploy/k8s/settlement-agent.yaml`) and nothing below changes it.** What
+**Superseded as the answer by M4 Task 5's section above; kept because every
+figure below is still the measurement it was, and because the attribute-level
+detail here is what the M4 answer rests on rather than repeats.** At the time
+it was written, OQ-1 was open. `NORTHSTAR_CAPTURE_CONTENT` still defaults to
+`true` (`deploy/k8s/settlement-agent.yaml`) and nothing below changes it —
+that part has not changed and M4 did not change it either.** What
 follows sizes the trade; it does not resolve it. The four-step experiment above
 is still unrun — steps 1 and 2 need an *induced failure*, and nothing here
 induced one. What was run is the narrower, cheaper half that was worth doing on

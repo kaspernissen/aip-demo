@@ -1448,3 +1448,88 @@ def test_the_surface_table_and_start_demos_printed_list_agree():
             "that table tells the reader to prefer the script's output. One of "
             "the two has to change."
         )
+
+
+# --- M4 Task 5: two operator-facing strings that kept going stale ------------
+
+SPECS_DIR = REPO_ROOT / "docs/superpowers/specs"
+README = REPO_ROOT / "README.md"
+CONTRACT = REPO_ROOT / "docs/telemetry-contract.md"
+
+
+def _current_milestone() -> str:
+    """The milestone this repo is on, derived from the newest design spec.
+
+    Not a constant. `scripts/smoke-test.sh`'s banner has now been renamed three
+    times by hand -- `8c0e980` took it from M2.2 to M3, M3 Task 5B's commit
+    message called that rename "the same stale-prose class the final review
+    found thirteen times", and it then sat at M3 for the whole of M4 while the
+    gate grew four new e2e files' worth of M4 assertions. The specs are named
+    `<date>-northstar-<milestone>-<name>-design.md` and sort by date, so the
+    milestone is a fact this directory already knows and nobody has to retype.
+    """
+    specs = sorted(SPECS_DIR.glob("*-northstar-m*-design.md"))
+    assert specs, f"no design specs found in {SPECS_DIR.relative_to(REPO_ROOT)}"
+    match = re.search(r"-northstar-(m[0-9.]+)-", specs[-1].name)
+    assert match, f"cannot read a milestone out of {specs[-1].name}"
+    return match.group(1).upper()
+
+
+def test_the_gates_banner_names_the_milestone_it_actually_proves():
+    """The gate announces which milestone a green run signs off on, and it has
+    to be the current one.
+
+    A gate that prints `=== Northstar M3 smoke test ===` while running M4's
+    OpenSearch ingest, Prometheus, evidence-view and policy-score assertions
+    misreports what a passing run proved -- which is the precise reason
+    `8c0e980` renamed it from M2.2 in the first place, and the reason its own
+    comment gives. That comment then noted "no test pins either string". This
+    is that test, and it derives the expected milestone rather than restating
+    it, so the next milestone does not have to remember either.
+    """
+    milestone = _current_milestone()
+    script = SMOKE_TEST.read_text()
+    banner = re.search(r"=== Northstar (\S+) smoke test ===", script)
+    assert banner, (
+        "scripts/smoke-test.sh no longer prints a `=== Northstar <milestone> "
+        "smoke test ===` banner; this guard cannot tell what a green run "
+        "claims to prove"
+    )
+    signoff = re.search(r"\bNorthstar (\S+) smoke test passed\.", script)
+    assert signoff, (
+        "scripts/smoke-test.sh no longer prints a `<milestone> smoke test "
+        "passed.` sign-off"
+    )
+    assert banner.group(1) == milestone and signoff.group(1) == milestone, (
+        f"scripts/smoke-test.sh announces {banner.group(1)!r} and signs off as "
+        f"{signoff.group(1)!r}, but the newest design spec in "
+        f"{SPECS_DIR.relative_to(REPO_ROOT)} is {milestone}'s. A gate that "
+        "names an older milestone tells an operator that a green run proved "
+        "less than it did -- and this is the third time the pair has gone "
+        "stale. Update both strings; the expected value is derived, so nothing "
+        "else needs touching."
+    )
+
+
+def test_the_bare_run_failure_names_the_command_that_fixes_it():
+    """A bare `pytest tests/` fails without port-forwards, deliberately (see
+    the contract's "The first run of `pytest tests/`" section). The ruling that
+    leaves it failing is only defensible while the remedy is one command away
+    in the two documents a reader has open, so the remedy is pinned rather than
+    trusted to survive an edit.
+    """
+    readme = README.read_text()
+    contract = CONTRACT.read_text()
+    assert "The first run of `pytest tests/`" in contract, (
+        "docs/telemetry-contract.md no longer carries the section that rules "
+        "on the bare-run failure. If the ruling changed, change this guard "
+        "with it; do not drop the ruling silently."
+    )
+    for name, text in (("README.md", readme), ("docs/telemetry-contract.md", contract)):
+        assert "./scripts/start-demo.sh" in text, (
+            f"{name} no longer names ./scripts/start-demo.sh, which is the "
+            "single remedy for the ConnectError failures a bare `pytest "
+            "tests/` produces without port-forwards. Leaving that run failing "
+            "was ruled acceptable *because* the fix is named where the reader "
+            "is; without the name it is just a broken first run."
+        )

@@ -318,6 +318,35 @@ times.
 - **M2 criterion 7** — direct agent → model-provider egress is still allowed.
   Closing it means routing model traffic through agentgateway's LLM path. Owned
   by no spec since M2.
+- **Network policy stops at the agent plane, and the platform plane has none**
+  (ruling M4-R17; measured 2026-09-13 with `cilium-dbg endpoint list -o json`
+  on the live cluster, reading each endpoint's realized `policy-enabled`, not
+  read off the manifests). Of `northstar-platform`'s six Cilium endpoints,
+  exactly one — `policy-decision-service` — is enforcing anything, and it is
+  `ingress` only. `agentgateway`, `eval-scorer` and the three SPIRE workloads
+  (`spire-server`, `spiffe-csi-driver`, `spiffe-oidc-discovery-provider`) are
+  `enforcement=none`. **No endpoint anywhere in the cluster has egress
+  enforcement except the five in `northstar-agents`**, and `payments-api` —
+  the component that holds the money — has no policy of any kind. This is
+  **not a regression**: M2's criterion was agent-plane egress, and
+  `deploy/platform/cilium/`'s own header says so. It has simply never been
+  written down beside the criterion it is the complement of, which is how a
+  reader comes away believing the mesh is enforced. Owned by M5 alongside
+  criterion 7; the two are the same piece of work.
+- **Two workloads share one SPIFFE ID** (ruling M4-R18; measured 2026-09-13 in
+  `spire-server entry show`). `claims-agent` and `customer-ui` both run as
+  `sa/default` in `northstar-agents`, and SPIRE holds **two separate
+  registration entries that both issue
+  `spiffe://northstar.local/ns/northstar-agents/sa/default`** — so an
+  authorization decision made on that ID cannot tell the browser-facing UI from
+  the agent that files claims. In a repo whose thesis is workload identity that
+  is worth stating out loud. Three more entries share
+  `.../ns/observability/sa/default` the same way (jaeger, opensearch,
+  otel-collector), and `payments-api` and `payments-mcp` each run as their
+  namespace's `default`. Pre-existing, not M4's, and not fixable by M4: giving
+  each workload its own ServiceAccount changes every `ClusterSPIFFEID`
+  selector, the PDS's caller table and the gateway's audience list at once.
+  Owned by M5.
 - **`senior-settlement-agent` serves an agent card naming the junior**
   (`contracts/agent-cards/settlement-agent.json` is baked into the shared
   image). Latent: nothing does card discovery today, but a future client

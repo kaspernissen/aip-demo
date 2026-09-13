@@ -1,20 +1,38 @@
-# Northstar Architecture — M3 (Supervised)
+# Northstar Architecture — M4 (Observable)
 
-Status: **M3 (Supervised)**, on branch `m3-supervised`. The M3 content below
-was written and checked by Task 5B against the branch's HEAD at that point —
-against the source tree and the live `kind-northstar` stage-3 cluster, with
-every endpoint capture, SPIRE entry list and pod count in it re-taken rather
-than carried forward. M2.2's content keeps its own provenance (commit
-`50fac07`, Task 8), M2.1's keeps `b75b260`, and M1.1's and M1.2's keep theirs,
-stated in the next block; this document does not claim a single verification
-pass over all of it.
+Status: **M4 (Observable)**, on branch `m4-observable`. **This header and the
+line below it said "M3 (Supervised)" until M4 Task 5's doc pass, while the
+sections beneath them had already grown `eval-scorer`'s SPIFFE ID, its Cilium
+and SPIRE entries, the stage-4 surfaces and "See it yourself" step 9** — the
+same stale-prose class this document's own intro records catching a few
+paragraphs down, this time in the one line a reader reads first. Recorded
+rather than silently corrected, per the convention the rest of this file
+follows.
+
+The M4 content was written and checked by that milestone's tasks against the
+live `kind-northstar` **stage-4** cluster as each was written, and M4 Task 5
+re-measured the Cilium enforcement table, the SPIRE entry list and the stage-4
+memory figure rather than carrying any of them forward. The M3 content keeps
+its own provenance (Task 5B, against the branch's HEAD at that point and a
+stage-3 cluster, with every endpoint capture, SPIRE entry list and pod count
+re-taken); M2.2's keeps commit `50fac07`, Task 8; M2.1's keeps `b75b260`; and
+M1.1's and M1.2's keep theirs, stated in the next block. **This document does
+not claim a single verification pass over all of it** — the per-section
+provenance is what makes that honest rather than vague.
 
 M1.1 was the walking skeleton: one claim, five components, one trace, no
 governance. M1.2 put a real model call inside that skeleton without changing
 its shape. M2.1 changed the shape for the first time — a proxy and an
 identity provider entered the picture, and one hop authenticated its caller
-cryptographically. M2.2 is where the platform started saying no. **M3 is where
-somebody can say yes anyway.**
+cryptographically. M2.2 is where the platform started saying no. M3 is where
+somebody can say yes anyway. **M4 is where you can prove, from telemetry alone,
+which of the two happened and why.**
+
+**The one-sentence version of M4:** *the audit trail is reconstructed from what
+the platform decided, not from what the model said.* That is why the evidence
+view needed no new application code to exist, and why turning content capture
+off changes nothing on it — the measured answer to OQ-1, in
+[`docs/telemetry-contract.md`](telemetry-contract.md).
 
 **The one-sentence version of M3, and the honest one:** *a refusal is now a
 record a human can act on, and acting on it goes back through the same choke

@@ -1335,11 +1335,27 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
         "agents/settlement-agent/bootstrap.py",
         "tools/payments-mcp/server.py",
         "tools/payments-mcp/payments_client.py",
+        # M4 Task 2's MeterProvider. Added by M4 Task 5, because the run that
+        # would have caught it is the one Task 5 makes: this assertion lives in
+        # `tests/e2e`, and no task in this milestone was permitted a gate run,
+        # so four tasks' green `pytest tests/unit` reports could not see it.
+        # The file gained `_metric_reader()` and `_configure_metrics()` -- an
+        # OTel SDK MeterProvider and an OTLP exporter, the same shape
+        # `tests/unit/test_metrics_wiring.py` asserts is identical across all
+        # five services -- and nothing else. No comparison, no allowance, no
+        # policy vocabulary: parts 1-3 of this test read this same file's AST
+        # on every run, so this entry widens the change-surface clause alone
+        # and leaves the substantive ones exactly as strict.
+        "tools/payments-mcp/bootstrap.py",
     }
     assert production_changed <= expected, (
         "production source changed in these components since m2.1-verified, "
-        "beyond the six files this criterion accounts for (see this test's "
-        "docstring for why each of the five is not policy logic). This "
+        f"beyond the {len(expected)} files this criterion accounts for (see "
+        "this test's docstring for why none of them is policy logic). The "
+        "count is derived from the set rather than typed: this sentence read "
+        "'the six files ... each of the five' and was therefore wrong in one "
+        "of its two halves no matter which number a later edit corrected. "
+        "This "
         "message named M2.2 alone until the M3 final-review fix round; the "
         "window this comparison actually covers is m2.1-verified..HEAD, which "
         "is every milestone since, M3 included. New: "

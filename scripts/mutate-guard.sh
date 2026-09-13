@@ -44,20 +44,46 @@
 #     '"assisted"): 6000.0' '"assisted"): 6500.0' \
 #     bash -c 'cd platform/eval-scorer && .venv/bin/python -m pytest tests -q'
 #
-# <file> is relative to the repo root. The first occurrence of <old-text> is
-# replaced. The file is restored on every exit path, including a failed or
+# <file> is relative to the repo root. <old-text> must occur EXACTLY ONCE in
+# it. The file is restored on every exit path, including a failed or
 # interrupted test run. Exit 0 means the suite stayed GREEN, which for a
 # mutation means the guard is INERT and you have found something.
 #
 # It refuses a no-op replacement rather than reporting a green run for a
 # mutation that never happened -- the same failure the `.pyc` trap produces,
 # reached by a different route.
+#
+# ---------------------------------------------------------------------------
+# AND IT REFUSES A NON-UNIQUE PATTERN, which is the third route to a false
+# GREEN and the one this script itself produced.
+#
+# Until M4 Task 5 this replaced the FIRST occurrence and said nothing about the
+# others. M4 Task 4 mutated `decisionCount >= 5` in an e2e file where the
+# identical line also appears in the COMPLIANT test, earlier in the file. The
+# edit landed there; the <test command> ran the non-compliant test; the suite
+# stayed green; and the round recorded GREEN -- "no guard covers this" -- about
+# a line that was never mutated. (It was re-run anchored on surrounding text and
+# went red with `assert 5 >= 99`, so the guard was fine. The tool was not.)
+# The tool built to stop false GREENs produced one.
+#
+# Picking the first match is a silent choice made on the operator's behalf, and
+# a mutation round's whole value is that no choice in it is silent. So a
+# pattern that matches more than once is an error with the count in it: narrow
+# the pattern until it identifies the one line you mean, or mutate each
+# occurrence in its own run.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [[ $# -lt 4 ]]; then
-  sed -n '2,50p' "${BASH_SOURCE[0]}"
+  # Every comment line from line 2 down to the first line that is not one --
+  # i.e. the whole header, however long it grows. It was `sed -n '2,50p'`
+  # until M4 Task 5, and the paragraph that task appended pushed the header
+  # past 50 lines, so the usage text this branch prints stopped mid-sentence
+  # and the reader never saw the rule the exit-2 below most often fires for.
+  # A line range written by hand is one more fact to keep in sync; deriving it
+  # is the fix this repo keeps reaching for.
+  awk 'NR == 1 { next } /^#/ { print; next } { exit }' "${BASH_SOURCE[0]}"
   exit 2
 fi
 
@@ -80,12 +106,25 @@ import os, pathlib, sys
 path = pathlib.Path(sys.argv[1])
 text = path.read_text()
 old, new = os.environ["OLD"], os.environ["NEW"]
-if old not in text:
+occurrences = text.count(old)
+if occurrences == 0:
     sys.exit(f"mutation text not found in {path}, so nothing would change:\n  {old!r}")
 if old == new:
     sys.exit("the replacement is identical to the original: this would report a "
              "green run for a mutation that never happened")
-path.write_text(text.replace(old, new, 1))
+if occurrences > 1:
+    lines = [n for n, line in enumerate(text.splitlines(), 1) if old in line]
+    sys.exit(
+        f"the mutation text occurs {occurrences} times in {path}"
+        + (f" (lines {', '.join(map(str, lines))})" if lines else "")
+        + f":\n  {old!r}\n"
+        "This script used to replace the FIRST one and say nothing, which is how "
+        "M4 Task 4 recorded a GREEN for a mutation that landed in a line its test "
+        "command never ran. Narrow the pattern until it identifies the one line "
+        "you mean -- include the surrounding text -- or mutate each occurrence in "
+        "its own run."
+    )
+path.write_text(text.replace(old, new))
 PY
 
 purge_caches

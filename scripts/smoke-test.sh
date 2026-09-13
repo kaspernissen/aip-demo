@@ -16,15 +16,23 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
-# M3 Task 5B: renamed from "M2.2" here and on the success line at the bottom,
-# following the precedent 8c0e980 set for the same reason -- the gate now
-# covers M3's refusal record, reviewer UI and approved-execution assertions, so
-# a banner and a sign-off naming M2.2 misreported what a passing run had
-# proven. That commit's own message called it "the same stale-prose class the
-# final review found thirteen times". No test pins either string; the only
-# references are this file's own two echoes (re-checked with grep across the
-# repo, not assumed).
-echo -e "${BLUE}=== Northstar M3 smoke test ===${NC}"
+# M4 Task 5: renamed from "M3", which is the THIRD time this pair has gone
+# stale -- 8c0e980 took it from M2.2 to M3, M3 Task 5B repeated the rename, and
+# it then sat at M3 through the whole of M4 while this gate grew four new e2e
+# files of M4 assertions (OpenSearch trace ingest, Prometheus over OTLP, the
+# evidence view, the policy-adherence scores). A banner and a sign-off naming
+# an older milestone misreport what a passing run proved, which is the reason
+# 8c0e980 gives for the first rename.
+#
+# The M3 comment here ended "No test pins either string". That is now false and
+# deliberately so: tests/unit/test_stage4_config.py::
+# test_the_gates_banner_names_the_milestone_it_actually_proves DERIVES the
+# expected milestone from the newest design spec in docs/superpowers/specs/ and
+# checks both echoes against it. The next milestone does not have to remember
+# to come here -- the guard reddens when the spec lands. The sign-off also
+# gained the word "Northstar" so the two strings match one pattern instead of
+# two.
+echo -e "${BLUE}=== Northstar M4 smoke test ===${NC}"
 
 echo -e "${BLUE}--- Checking prerequisites ---${NC}"
 command_exists go || { echo -e "${RED}go is required${NC}" >&2; exit 1; }
@@ -332,4 +340,4 @@ echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included 
 RUN_BROWSER_TESTS=1 "$ROOT/.venv/bin/python" -m pytest "$ROOT/tests" -v
 
 echo ""
-echo -e "${GREEN}M3 smoke test passed.${NC}"
+echo -e "${GREEN}Northstar M4 smoke test passed.${NC}"

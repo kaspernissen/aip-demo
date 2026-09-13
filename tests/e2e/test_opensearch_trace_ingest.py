@@ -53,11 +53,30 @@ honours an inbound `traceparent` and the whole chain lands under it.
 
 **Stage gate, and why it is not a way to hide.** OpenSearch is a stage-4
 component, so on a stage-1/2/3 cluster there is nothing to compare against.
-This file skips only when the OpenSearch Service is absent *and* the deployed
-collector ConfigMap does not name the `opensearch/trace` exporter -- i.e. only
+This file skips only when the OpenSearch Service is absent *and* no traces
+pipeline in the deployed collector ConfigMap routes to OpenSearch -- i.e. only
 when the cluster is coherently below stage 4. A collector configured to export
 to an OpenSearch that is not installed is finding F10's exact broken state, and
 that combination **fails** here rather than skipping.
+
+Until M4 Task 5 the second half of that read `'opensearch/trace' in <the config
+text>`, which is the inert shape `test_prometheus_metrics_ingest.py` measured
+and recorded and which had been fixed in both other callers but not in this,
+the oldest, one: the id occurs three times in that text, so deleting the one
+occurrence that routes anything left the gate satisfied. It now reads the
+pipelines, via `tests/harness/collector.py`, and requires both halves of the
+tee.
+
+M4 Task 5 closed the third case here too, discharging ruling M4-R14: "absent"
+means the API server said `NotFound`, and every other way `kubectl` can exit
+non-zero -- unreachable server, wrong context, expired credential, timeout --
+is a hard failure. Until then this file read `returncode == 0`, so a kubectl
+that could not reach the API server produced "the cluster is coherently below
+stage 4" and skipped every assertion in it. That shape was
+`test_prometheus_metrics_ingest.py`'s review finding F7, fixed there and
+deliberately not widened into this file without a ruling; the ruling is
+M4-R14, and the single definition both files now import is
+`tests/harness/kube.py`'s `absent_or_fail`.
 """
 from __future__ import annotations
 
@@ -80,15 +99,36 @@ from tests.e2e.test_caller_identity import (
     _json_body,
 )
 from tests.harness.jaeger import JaegerClient
+# Ruling M4-R14, discharged in M4 Task 5. This file used to read
+# `returncode == 0` as "it exists" and every other exit as "it is absent", so
+# an unreachable API server made the fixture below skip all of this file's
+# assertions as "coherently below stage 4" -- the loose half of the two skip
+# shapes M4 carried. The strict one (Task 2's review finding F7) is now the
+# only one, and it lives in neither caller.
+from tests.harness.kube import absent_or_fail
+# M4 Task 5, the second half of the same finding: this file's stage gate asked
+# whether the exporter id occurred *anywhere in the config text*, which the
+# mutation recorded in test_prometheus_metrics_ingest.py had already shown
+# stays true after the pipeline entry that makes it do anything is deleted.
+# Both other callers had been fixed; this one had not. One definition now, in
+# tests/harness/collector.py.
+from tests.harness.collector import pipeline_exporters
 
 OBSERVABILITY_NAMESPACE = "observability"
 OPENSEARCH_SERVICE = "opensearch-cluster-master"
 COLLECTOR_DEPLOYMENT = "deploy/otel-collector"
 COLLECTOR_CONFIGMAP = "otel-collector-config"
 
-# The exporter id both collector configs use, and the string the stage gate
-# below looks for in the *deployed* ConfigMap rather than in the repo.
+# The exporter id both collector configs use, read out of the *deployed*
+# ConfigMap's traces pipelines rather than out of the repo -- and out of the
+# pipelines rather than out of the text.
 OPENSEARCH_EXPORTER_ID = "opensearch/trace"
+# The connector that tees the main `traces` pipeline into the OpenSearch-only
+# branch. Named here for the same reason test_evidence_view.py names it: the
+# exporter alone is not the route. `opensearch/trace` is listed by
+# `traces/opensearch`, and that branch's only receiver is this tee, so an
+# exporter present while the tee is gone routes nothing.
+OPENSEARCH_TEE_ID = "forward/opensearch"
 
 # The index the `opensearch` exporter's default ss4o mapping mode writes traces
 # to: `ss4o_traces-<dataset>-<namespace>`, both defaulting to "default" and
@@ -165,10 +205,13 @@ def _opensearch(path: str, body: dict | None = None) -> dict:
 
 
 def _opensearch_is_installed() -> bool:
-    return _kubectl(
-        "-n", OBSERVABILITY_NAMESPACE, "get", f"svc/{OPENSEARCH_SERVICE}",
-        "-o", "name", timeout=30,
-    ).returncode == 0
+    return absent_or_fail(
+        _kubectl(
+            "-n", OBSERVABILITY_NAMESPACE, "get", f"svc/{OPENSEARCH_SERVICE}",
+            "-o", "name", timeout=30,
+        ),
+        f"svc/{OPENSEARCH_SERVICE} in the {OBSERVABILITY_NAMESPACE} namespace",
+    )
 
 
 def _deployed_collector_config() -> str:
@@ -176,24 +219,41 @@ def _deployed_collector_config() -> str:
         "-n", OBSERVABILITY_NAMESPACE, "get", "configmap", COLLECTOR_CONFIGMAP,
         "-o", "jsonpath={.data.collector-config\\.yaml}", timeout=30,
     )
-    return result.stdout if result.returncode == 0 else ""
+    if not absent_or_fail(result, f"configmap/{COLLECTOR_CONFIGMAP}"):
+        return ""
+    return result.stdout
 
 
 @pytest.fixture(scope="module", autouse=True)
 def stage_4_or_a_reason():
-    """Skip below stage 4; fail on finding F10's incoherent middle state."""
+    """Skip below stage 4; fail on finding F10's incoherent middle state.
+
+    The discriminator is the OpenSearch Service and the deployed collector's
+    traces pipelines -- **not** the index, the documents or the attribute names
+    on them, which are what this file asserts. A stage-4 cluster whose spans
+    never arrive reddens `_opensearch_spans`, and must.
+
+    M4 Task 5 replaced `EXPORTER_ID in <config text>` here with a read of the
+    pipelines themselves, and requires both halves of the tee: the id occurs
+    three times in that text -- under `exporters:`, in a comment, and in the
+    `traces/opensearch` branch -- so the substring form stayed true after the
+    only occurrence that routes anything was deleted.
+    """
     installed = _opensearch_is_installed()
-    exports = OPENSEARCH_EXPORTER_ID in _deployed_collector_config()
+    exporters = pipeline_exporters(_deployed_collector_config(), "traces")
+    exports = OPENSEARCH_EXPORTER_ID in exporters and OPENSEARCH_TEE_ID in exporters
     if not installed and not exports:
         pytest.skip(
-            f"svc/{OPENSEARCH_SERVICE} is not installed and the deployed "
-            f"collector config does not name {OPENSEARCH_EXPORTER_ID!r}, so "
-            "this cluster is coherently below stage 4. Bring it up with "
+            f"svc/{OPENSEARCH_SERVICE} is not installed and no traces pipeline "
+            f"in the deployed collector config exports to both "
+            f"{OPENSEARCH_TEE_ID!r} and {OPENSEARCH_EXPORTER_ID!r}, so this "
+            "cluster is coherently below stage 4. Bring it up with "
             "./scripts/setup-kind.sh --stage 4 to run these."
         )
     assert installed, (
-        f"the deployed collector ConfigMap names the {OPENSEARCH_EXPORTER_ID!r} "
-        f"exporter but svc/{OPENSEARCH_SERVICE} does not exist in the "
+        f"the deployed collector ConfigMap tees traces to "
+        f"{OPENSEARCH_TEE_ID!r} and on to {OPENSEARCH_EXPORTER_ID!r} "
+        f"but svc/{OPENSEARCH_SERVICE} does not exist in the "
         f"{OBSERVABILITY_NAMESPACE} namespace. That is review finding F10: a "
         "traces pipeline exporting to a backend this cluster does not have, "
         "which fails permanently and logs into a file nobody reads. "
@@ -202,9 +262,13 @@ def stage_4_or_a_reason():
     )
     assert exports, (
         f"svc/{OPENSEARCH_SERVICE} is installed but the deployed collector "
-        f"ConfigMap does not name the {OPENSEARCH_EXPORTER_ID!r} exporter, so "
-        "no span can possibly reach it. Re-run ./scripts/setup-kind.sh "
-        "--stage 4, which applies the ConfigMap and restarts the collector."
+        f"ConfigMap's traces pipelines do not export to both "
+        f"{OPENSEARCH_TEE_ID!r} (the tee off the main pipeline) and "
+        f"{OPENSEARCH_EXPORTER_ID!r} (the branch that writes to the index), so "
+        f"no span can possibly reach it. They export to: "
+        f"{sorted(exporters) or 'nothing -- the ConfigMap is absent or empty'}. "
+        "Re-run ./scripts/setup-kind.sh --stage 4, which applies the ConfigMap "
+        "and restarts the collector."
     )
 
 

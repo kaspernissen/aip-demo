@@ -55,6 +55,41 @@ import httpx
 import pytest
 
 from tests.harness.jaeger import JaegerClient, assert_attr_on_all_spans
+# --- RULING M4-R15 (amended), discharged in M4 Task 5 -------------------------
+#
+# `RUN_BROWSER_TESTS=1` is this repo's COST gate, not a browser gate. Four
+# modules already ride it with no browser (`test_settlement_llm_trace.py`,
+# `test_gateway_trace.py`, `test_evidence_view.py`, `test_policy_scores.py`),
+# each saying so in its own `pytestmark`; `scripts/smoke-test.sh` sets the flag
+# unconditionally, so the gate loses nothing.
+#
+# This file was one of THREE that drove a real settlement on a bare
+# `pytest tests/` -- three settlements' worth of Anthropic tokens, on someone's
+# account, from a command the README presents as the ordinary way to run the
+# suite. Measured in M4 Task 5, not inferred: the three are this file,
+# `test_claims_chain_trace.py` and `test_settlement_agent_trace.py`, one
+# module-scoped driving fixture each.
+#
+# What is deliberately NOT gated, and why the line is drawn at tokens: three
+# ungated tests still write an `executed` row to the ledger -- measured by
+# ledger delta over a bare run, 2 x EUR 6,200 from `test_payments_api_trace.py`
+# and `test_payments_mcp_trace.py` (neither goes through agentgateway, so no
+# policy decision is made at all) and 1 x EUR 100 from
+# `test_policy_denial.py::test_criterion_5...`, which is that test's whole
+# assertion. Those cost nothing: payments-api's ledger is an in-memory,
+# per-process store on a kind cluster (ruling 32), so "money moved" is a demo
+# fiction and gating it would buy a developer nothing while removing the only
+# ungated coverage of the money path from a bare run. Tokens are the real
+# externality, and they are what this flag gates.
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_BROWSER_TESTS") != "1",
+    reason=(
+        "drives a real settlement (model tokens) on the live cluster; gated "
+        "behind the same RUN_BROWSER_TESTS=1 flag scripts/smoke-test.sh sets "
+        "unconditionally -- no browser is started (ruling M4-R15 amended, "
+        "discharged in M4 Task 5)"
+    ),
+)
 
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 CLAIMS_URL = os.environ.get("CLAIMS_AGENT_URL", "http://localhost:19001")

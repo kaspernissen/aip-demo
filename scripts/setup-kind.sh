@@ -104,7 +104,7 @@ Usage: setup-kind.sh [--stage N]
                           workloads. This paragraph read "no M3 workload
                           exists yet" from M3 Task 1 until Task 5B; that was
                           true when written and false from Task 4 onward]
-  --stage 4   Observable:           + OpenSearch, Prometheus
+  --stage 4   Observable:           + OpenSearch, Prometheus, eval-scorer
                           [as of M4 Task 1: OpenSearch (single node,
                           security plugin off) and OpenSearch Dashboards are
                           installed, and the trace-ingest path into
@@ -116,7 +116,15 @@ Usage: setup-kind.sh [--stage N]
                           Dashboards from
                           deploy/observability/dashboards/evidence.ndjson, so
                           it survives a cluster recreate instead of living
-                          only in a pod's volume.
+                          only in a pod's volume. As of M4 Task 4 eval-scorer
+                          is deployed here too -- the service that scores a
+                          settlement's trajectory against the five
+                          policy-adherence properties -- which completes the
+                          stage. The one-line summary above says
+                          "+ OpenSearch, Prometheus" and this paragraph is
+                          where the rest of the stage is listed; M4 Task 5's
+                          doc pass added this sentence, the same doc-lag the
+                          M3 note two paragraphs up records for stage 3.
                           Runs on stage 3's cluster config
                           UNCHANGED -- see the KIND_CONFIG note below --
                           Dashboards is reached by port-forward

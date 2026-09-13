@@ -24,11 +24,22 @@ A convention recorded only in prose is a convention that gets dropped in a
 tidy-up, which is the failure this whole file exists against: the two lines
 that make the script sound are load-bearing and look like boilerplate.
 
-Reads two files. No cluster, no network, no subprocess.
+Reads two files, and runs `scripts/mutate-guard.sh` itself against a target
+in pytest's `tmp_path` -- outside the working tree, so a round that failed to
+restore cannot leave a mutant in the repo. No cluster, no network, no model.
+
+The four behavioural tests at the bottom are behavioural on purpose. This
+file's own first version asserted the no-op refusal by matching the literal
+`if old not in text`, and M4 Task 5's fix for the non-unique-pattern defect
+rewrote exactly that condition -- so the substring guard would have reddened
+for a correct change while a rewrite that deleted the check and kept the
+words would have stayed green. A guard on a script's behaviour is worth more
+than a guard on its source when running it costs a subprocess and a second.
 """
 import os
 import re
 import stat
+import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -138,15 +149,132 @@ def test_the_mutation_script_restores_the_file_on_every_exit_path():
     )
 
 
-def test_the_mutation_script_refuses_a_replacement_that_changes_nothing():
+def _run_guard(*args: str) -> subprocess.CompletedProcess:
+    """The script itself, run. See this file's docstring on why these four are
+    behavioural where everything above is a substring match."""
+    return subprocess.run(
+        [str(SCRIPT_PATH), *args],
+        capture_output=True, text=True, timeout=60, cwd=REPO_ROOT,
+    )
+
+
+def _target(tmp_path: Path, text: str) -> tuple[Path, str]:
+    """A mutation target outside the repo, and the repo-relative path the
+    script takes. `..`-relative rather than absolute because the script joins
+    `$ROOT/$TARGET`; nothing is written inside the working tree."""
+    path = tmp_path / "target.txt"
+    path.write_text(text)
+    return path, os.path.relpath(path, REPO_ROOT)
+
+
+def test_the_mutation_script_refuses_a_replacement_that_changes_nothing(tmp_path):
     """A no-op mutation runs a green suite and looks like a passing guard --
     the same false-green the `.pyc` trap produces, reached by a different
     route. It has to be refused rather than reported."""
-    script = _effective_script()
-    assert "if old not in text" in script and "if old == new" in script, (
-        "scripts/mutate-guard.sh no longer refuses a mutation that would "
-        "change nothing (text absent, or replacement identical). Either is a "
-        "green run for a mutation that never happened."
+    path, rel = _target(tmp_path, "limit = 6000\n")
+
+    absent = _run_guard(rel, "limit = 9999", "limit = 1", "true")
+    assert absent.returncode == 2, (
+        "scripts/mutate-guard.sh ran the test command for a mutation whose "
+        f"text is not in the file, so a green run would have been recorded for "
+        f"a mutation that never happened.\n{absent.stdout}{absent.stderr}"
+    )
+    assert "not found" in (absent.stdout + absent.stderr)
+
+    identical = _run_guard(rel, "limit = 6000", "limit = 6000", "true")
+    assert identical.returncode == 2, (
+        "scripts/mutate-guard.sh accepted a replacement identical to the "
+        f"original.\n{identical.stdout}{identical.stderr}"
+    )
+    assert path.read_text() == "limit = 6000\n", "the target was not left as it was found"
+
+
+def test_the_mutation_script_refuses_a_pattern_that_is_not_unique(tmp_path):
+    """**The defect M4 Task 4 hit, and the reason this test is behavioural.**
+
+    The script replaced the FIRST match and said nothing about the others, so a
+    mutation whose text also appears in a test the command does not run lands
+    there instead, the suite stays green, and the round records GREEN -- "no
+    guard covers this" -- about a line that was never mutated. The tool built
+    to stop false GREENs produced one.
+
+    Asserted by running it, not by grepping for the check: the previous version
+    of this file's no-op test matched the literal `if old not in text`, and
+    rewriting that condition to `text.count(old)` -- which is exactly the change
+    that fixed this -- would have reddened it for no reason while a rewrite that
+    dropped the check entirely and kept the words would have stayed green.
+    """
+    path, rel = _target(tmp_path, "assert count >= 5\nfiller\nassert count >= 5\n")
+    result = _run_guard(rel, "assert count >= 5", "assert count >= 99", "true")
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 2, (
+        "scripts/mutate-guard.sh accepted a pattern matching two lines. It "
+        "either silently picked one of them -- which is how a mutation round "
+        "records GREEN for a line it never touched -- or replaced both without "
+        f"saying so.\n{output}"
+    )
+    assert "occurs 2 times" in output, (
+        "the refusal does not say how many times the pattern matched, which is "
+        f"the one fact that tells the operator how to narrow it.\n{output}"
+    )
+    assert path.read_text() == "assert count >= 5\nfiller\nassert count >= 5\n", (
+        "the target was modified by a run that refused to mutate it"
+    )
+
+
+def test_the_mutation_script_really_mutates_and_really_restores(tmp_path):
+    """The positive control for the two refusals above.
+
+    Without it, a script that refused *everything* would pass both of them --
+    the vacuity failure this repo keeps finding. The test command reads the
+    file while the run is in progress, so a GREEN here proves the mutant was
+    on disk when the command ran, and the assertion after it proves the
+    original came back.
+    """
+    path, rel = _target(tmp_path, "limit = 6000\n")
+    result = _run_guard(
+        rel, "limit = 6000", "limit = 6500",
+        "grep", "-q", "limit = 6500", str(path),
+    )
+    assert result.returncode == 0, (
+        "the test command could not see the mutation on disk while it ran, so "
+        "this script does not actually mutate the file it reports on.\n"
+        f"{result.stdout}{result.stderr}"
+    )
+    assert "GREEN" in result.stdout, (
+        "a surviving mutation must be reported as GREEN and named as a "
+        f"finding.\n{result.stdout}"
+    )
+    assert path.read_text() == "limit = 6000\n", (
+        "scripts/mutate-guard.sh left the mutation on disk. A round that does "
+        "this makes the repo silently wrong and the next command run look "
+        "broken."
+    )
+
+
+def test_the_usage_help_prints_the_whole_header(tmp_path):
+    """Called with too few arguments, the script prints its header as usage.
+
+    That range used to be the hand-written `sed -n '2,50p'`, and the paragraph
+    M4 Task 5 appended pushed the header past 50 lines -- so the usage text
+    stopped mid-sentence, several paragraphs before the uniqueness rule that is
+    the most common reason for the exit-2 it was printed by. It derives the
+    range now, and this pins that it still covers the last line of the header.
+    """
+    result = _run_guard("only", "three", "args")
+    assert result.returncode == 2
+    printed = result.stdout
+    header = [
+        line for line in _script_text().splitlines()[1:]
+        if line.startswith("#")
+    ]
+    assert header, "the script has no comment header for the usage branch to print"
+    assert header[0].lstrip("# ") in printed, "the usage text does not start at the header"
+    assert header[-1].lstrip("# ") in printed, (
+        "the usage text stops before the end of the header, so the rules added "
+        "most recently -- which are the ones a reader has not seen -- are the "
+        "ones cut off. Do not re-hardcode a line range; derive it."
     )
 
 
