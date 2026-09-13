@@ -170,11 +170,25 @@ def test_the_anchor_is_the_root_of_the_earliest_trace():
     assert anchor.trace_id == fixtures.REFUSAL_TRACE
 
 
-def test_the_anchor_falls_back_to_the_earliest_span_when_no_root_is_present():
+def test_the_anchor_is_the_earliest_span_whose_parent_was_not_retrieved():
     """A partial query can return a trace's middle without its root. The
     scores still have to attach to something real -- a bare trace id would
     make the SDK derive a parent span id that does not exist (see
-    `scorer/emit.py`)."""
+    `scorer/emit.py`).
+
+    **This test was named `..._falls_back_to_the_earliest_span_when_no_root_is
+    _present` and did not reach that fallback**, which a review found by
+    mutation: `fixtures.decision()` gives every document the same
+    `parentSpanId` (`c962ce9a2686600c`, absent from the set), so `anchor()`
+    returns on its *first* branch -- the earliest span whose parent is not
+    present -- and `return self.spans[0]` was never executed. The assertion
+    passed because the earliest span is the answer either way. Replacing
+    `self.spans[0]` with `None` left this test green.
+
+    So it is named for the branch it actually exercises, and the fallback has
+    a test of its own below. Both branches now have one, and neither test's
+    name describes the other's.
+    """
     trajectory = Trajectory.from_documents(
         "CLM-X",
         [
@@ -184,6 +198,47 @@ def test_the_anchor_falls_back_to_the_earliest_span_when_no_root_is_present():
     )
     anchor = trajectory.anchor()
     assert anchor is not None and anchor.span_id == "0000000000000f11"
+
+
+def test_the_anchor_falls_back_to_the_earliest_span_when_every_parent_is_present():
+    """The `return self.spans[0]` branch, genuinely reached.
+
+    Reaching it needs every span's parent to be inside the set, which a
+    well-formed acyclic trace can never produce: the topmost span retrieved
+    always has a parent outside it. The one shape that does is a document the
+    index returned **without a `spanId`** -- `Span.from_document` reads that as
+    `""`, `""` joins the present set, and every root span's empty
+    `parentSpanId` then looks "present". That is not hypothetical tidiness: it
+    is the difference between the anchor being a real span and being `None`,
+    and `emit.py` refuses to emit at all when the anchor's ids are not W3C ids
+    (`UnattachableScore`), so a `None` here would silently drop a whole score
+    set rather than mis-attach it.
+
+    What this pins is that the fallback returns the earliest **real** span, so
+    the malformed document cannot become the thing five scores hang from.
+    """
+    malformed = fixtures.decision(4.0, "execute_payment", "permit", amount=1.0)
+    malformed["spanId"] = ""
+    malformed["parentSpanId"] = "9007a5da00000001"
+
+    trajectory = Trajectory.from_documents(
+        "CLM-X", [fixtures.root(0.0), malformed]
+    )
+    present = {span.span_id for span in trajectory.spans}
+    assert "" in present, (
+        "this fixture only reaches the fallback if the malformed document "
+        "puts an empty span id into the present set -- if that stops being "
+        "true, this test is exercising the first branch again and is the "
+        "defect it was written to fix"
+    )
+    assert all(span.parent_span_id in present for span in trajectory.spans), (
+        "every parent must be present for `anchor()` to reach its fallback; "
+        "otherwise this test passes on the first branch, which the test above "
+        "already covers"
+    )
+
+    anchor = trajectory.anchor()
+    assert anchor is not None and anchor.span_id == "9007a5da00000001"
 
 
 def test_an_empty_trajectory_has_no_anchor_and_no_decisions():

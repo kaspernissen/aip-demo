@@ -78,9 +78,10 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-13 (M4 Task 4) — the current figures, and the gate row is DERIVED,
-not yet re-measured against a live run.** Task 4 added **6** tests under
-`tests/`, taking the collected count from 296 to **302**, re-measured with
+**2026-09-13 (M4 Task 4, including its review fix round 1) — the current
+figures, and the gate row is DERIVED, not yet re-measured against a live run.**
+Task 4 added **6** tests under `tests/` and its fix round added **7** more,
+taking the collected count from 296 to **309**, re-measured with
 `.venv/bin/python -m pytest --collect-only -q tests/`:
 
 * `tests/e2e/test_policy_scores.py` — **5**. The policy-adherence scores of
@@ -111,22 +112,41 @@ not yet re-measured against a live run.** Task 4 added **6** tests under
   re-reading the script. The new guard reddens on either historical case when
   replayed: removing reviewer-ui's invocation fails it by name.
 
-The per-service row moves: `platform/eval-scorer` is the **eighth** suite, 106
-tests, added to that row and to `scripts/smoke-test.sh` in this same task. None
-of those 106 is collected by `pytest tests/`, so they do not appear in the
-figures here.
+* `tests/unit/test_mutation_protocol.py` — **+7** (the fix round's whole
+  addition under `tests/`). This repo's convention is that a guard is not
+  trusted until it has been mutated and watched go red for the reason it
+  names, and M4 Task 4 found that the naive edit/run/revert loop is unsound:
+  CPython validates a cached `.pyc` on `(int(source_mtime), source_size)`
+  alone, so a length-preserving mutation reverted inside the same integer
+  second leaves the *mutant* bytecode executing against reverted source. Both
+  error directions — a false green and a false red — were reproduced from
+  scratch. `scripts/mutate-guard.sh` is the protocol as a tool rather than a
+  paragraph, and this file pins the two lines that make it sound
+  (`PYTHONDONTWRITEBYTECODE=1` on the run itself, and a `__pycache__` purge on
+  both sides of it), the restore-on-every-exit-path trap, the refusal of a
+  no-op mutation, and the README section that tells anyone it exists. They
+  look like boilerplate, which is how they would be lost.
 
-Bare-suite row, derived from that same collection: 302 collected − 41 gated −
-1 xfailed = `260 passed, 41 skipped, 1 xfailed`. The gated figure is measured
+The per-service row moves: `platform/eval-scorer` is the **eighth** suite, **128**
+tests, added to that row and to `scripts/smoke-test.sh` in this same task. None
+of those 128 is collected by `pytest tests/`, so they do not appear in the
+figures here. (It was 106 before the fix round, which added 21 tests for the
+HTTP surface — `Handler` had no test of any kind, including the `emit`-must-be-
+a-boolean guard and the 502-vs-500 split that the source's own comments call
+load-bearing — and one for `anchor()`'s fallback branch, which a review showed
+the test named for it never reached.)
+
+Bare-suite row, derived from that same collection: 309 collected − 41 gated −
+1 xfailed = `267 passed, 41 skipped, 1 xfailed`. The gated figure is measured
 the same way the 36 below was — a `--collect-only` run with a plugin that
 counts items carrying a `skipif` whose reason names `RUN_BROWSER_TESTS` and
-whose condition is true with the variable unset — and reports 41 of 302, spread
+whose condition is true with the variable unset — and reports 41 of 309, spread
 `test_settlement_llm_trace.py` 9, `test_browser_root_span.py` 8,
 `test_gateway_trace.py` 6, `test_supervised.py` 6, `test_policy_scores.py` 5,
-`test_policy_denial.py` 4, `test_evidence_view.py` 3. Five of this task's six
-new tests are gated and the sixth is a unit test, so the bare-run *passed*
-figure moves by one and the skipped figure by five. Gate row: 302 collected −
-1 xfailed = `301 passed, 1 xfailed`.
+`test_policy_denial.py` 4, `test_evidence_view.py` 3. Five of this task's
+thirteen new tests are gated and the other eight are unit tests, so the
+skipped figure moved by five and the rest went to the bare-run *passed*
+figure. Gate row: 309 collected − 1 xfailed = `308 passed, 1 xfailed`.
 This is arithmetic, not a live gate run, with the same standing as every row
 below it: **Task 5 runs the milestone's one gate and converts this row to
 MEASURED.** What it rests on: Task 4 added a new deployment that reads
@@ -134,8 +154,9 @@ OpenSearch and writes spans of its own, and changed no span, no attribute and
 no behaviour of any service the gate already asserts on — the one shared file
 it touches is `scripts/setup-kind.sh`, inside the existing `STAGE -ge 4` block.
 
-`tests/unit` alone collects **164** (163 before this task): five of the six new
-tests are e2e and the sixth is the gate guard above. The SPIFFE registration
+`tests/unit` alone collects **171** (163 before this task): five of the thirteen
+new tests are e2e; the other eight are the gate guard above and
+`test_mutation_protocol.py`'s seven. The SPIFFE registration
 ruling R22 requires went into *existing*
 `tests/unit/test_stage2_spire_config.py` tests rather than a new one — its
 `REGISTERED_CLUSTER_SPIFFEIDS` map and its published-ID allow-list both grew by
@@ -482,8 +503,8 @@ defect class, so each command is stated as it was actually run.)
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `260 passed, 41 skipped, 1 xfailed` (re-derived 2026-09-13, M4 Task 4, from a re-measured `pytest --collect-only -q tests/` → 302 collected and a measured 41 gated) |
-| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `301 passed, 1 xfailed` (DERIVED 2026-09-13, M4 Task 4, not yet re-measured against a live run — see the note above; Task 5 runs the milestone's one gate) |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `267 passed, 41 skipped, 1 xfailed` (re-derived 2026-09-13, M4 Task 4 fix round 1, from a re-measured `pytest --collect-only -q tests/` → 309 collected and a measured 41 gated) |
+| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `308 passed, 1 xfailed` (DERIVED 2026-09-13, M4 Task 4 fix round 1, not yet re-measured against a live run — see the note above; Task 5 runs the milestone's one gate) |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -978,8 +999,8 @@ the plan defect described two paragraphs up).
 Per-service unit suites (all eight run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 114, payments-mcp 16, payments-api (Go) 31,
 customer-ui (vitest) 6, policy-decision-service 105,
-reviewer-ui 56, eval-scorer 106 — all passing.
-(**2026-09-13, M4 Task 4: the eighth entry, `platform/eval-scorer` 106**,
+reviewer-ui 56, eval-scorer 128 — all passing.
+(**2026-09-13, M4 Task 4: the eighth entry, `platform/eval-scorer` 128**,
 measured with `.venv/bin/python -m pytest --collect-only -q tests` from that
 service's own directory. It is added in the task that added the service, which
 is what the sixth and seventh entries' own notes below say should happen and
@@ -2438,7 +2459,9 @@ in any Python or Go service, no `OTEL_METRICS_*` in any manifest, and a
 collector `metrics` pipeline exporting to `debug` alone — so SPIRE's scrape
 (the section above) was received and discarded, and nothing else was produced.
 
-M4 Task 2 installs a `MeterProvider` in all five Python services and routes the
+M4 Task 2 installs a `MeterProvider` in all five Python services then in the
+repo — `platform/eval-scorer` arrived in Task 4 and has none, by the argument in
+limitation 2 below — and routes the
 collector's `metrics` pipeline to Prometheus over OTLP. That is the wiring. The
 *finding* is what turned up once the wiring existed, and it is a gap report
 rather than a dashboard full of green — which spec §6 predicted in advance, in
@@ -2672,12 +2695,20 @@ M4 Task 2**, deliberately: setting that variable also changes reviewer-ui's
 assertions read, so it is a telemetry-contract change that belongs in its own
 task rather than as a side effect of adding a MeterProvider.
 
-**2. `systems/payments-api` (Go) still has no `MeterProvider`.** M4 Task 2
-covered the five Python services only. payments-api emits spans and no metrics,
-so the money path has no metric of its own. None of §6's six metrics is a Go
-concern — every one is GenAI, and no agent runs there — so this does not affect
-the inventory above, but the spec's "no `MeterProvider` in any Python **or Go**
+**2. Two services still have no `MeterProvider`: `systems/payments-api` (Go)
+and `platform/eval-scorer` (Python).** M4 Task 2 covered the five Python
+services that existed then. payments-api emits spans and no metrics, so the
+money path has no metric of its own; `eval-scorer` (M4 Task 4) installs a
+`TracerProvider` and deliberately no `MeterProvider`, the reasoning in its own
+`scorer/emit.py::configure`. None of §6's six metrics is a concern for either —
+every one is GenAI, and no agent runs in either — so this does not affect the
+inventory above, but the spec's "no `MeterProvider` in any Python **or Go**
 service" is only half-closed and should not be read as fully closed.
+
+(This entry named payments-api alone until M4 Task 4's fix round. The commit
+that added the second one said so in `scorer/emit.py` and updated neither this
+limitation nor `tests/unit/test_metrics_wiring.py`'s docstring, which also said
+"the one service".)
 
 ### How this is kept true
 
@@ -3819,7 +3850,9 @@ For each: the evidence, whether upstream already has work in flight, and what we
 ### Gap 8 (M4 Task 2): five of the six §6 GenAI metrics are emitted by nothing
 
 - **Evidence:** with a `MeterProvider` installed in all five Python services
-  and Prometheus receiving OTLP directly, exactly **one** of the six metrics M4
+  that existed at M4 Task 2 (`platform/eval-scorer` arrived in Task 4 with
+  none — limitation 2) and Prometheus receiving OTLP directly, exactly **one**
+  of the six metrics M4
   spec §6 asks about reaches it — `gen_ai.client.token.usage`, from
   PydanticAI. `gen_ai.invoke_agent.duration`,
   `gen_ai.invoke_agent.inference_calls`, `gen_ai.invoke_agent.tool_calls`,

@@ -62,6 +62,15 @@ COLLECTOR_CONFIGS = [
 # `opentelemetry` import anywhere under apps/customer-ui). `systems/payments-api`
 # is Go and is covered by the scope note in docs/telemetry-contract.md's metrics
 # section, not by this list.
+#
+# `platform/eval-scorer` (M4 Task 4) is Python and is also deliberately NOT
+# here: `scorer/emit.py::configure` installs a TracerProvider and no
+# MeterProvider, argued in that function. It is still walked by
+# `test_no_service_authors_a_metric_under_a_convention_namespace` below, which
+# reads every `.py` under `_SOURCE_ROOTS` -- so the prohibition covers it even
+# though the wiring requirement does not. That split is the point: a service
+# with no provider is precisely where a hand-rolled instrument would be the
+# tempting shortcut.
 METRICS_BOOTSTRAPS = {
     "settlement-agent": REPO_ROOT / "agents/settlement-agent/bootstrap.py",
     "claims-agent": REPO_ROOT / "agents/claims-agent/bootstrap.py",
@@ -375,9 +384,21 @@ def test_no_service_authors_a_metric_under_a_convention_namespace():
     and a guard those trip is a guard that gets deleted. That is the same
     lesson `_FORBIDDEN_SDK_KNOBS` above records.
 
-    `systems/payments-api` is Go and has no Python to walk; it is also the one
-    service with no MeterProvider at all (docs/telemetry-contract.md's metrics
-    section scopes it out), so it can author no metric of any kind today.
+    `systems/payments-api` is Go and has no Python to walk. It is also one of
+    the **two** services with no MeterProvider at all -- `platform/eval-scorer`
+    (M4 Task 4) is the other, by the argument in its own
+    `scorer/emit.py::configure` -- so neither can author a metric of any kind
+    today. (This said "the one service" until M4 Task 4's fix round; the
+    commit that made it two carried a source comment saying so and did not
+    correct this docstring.) docs/telemetry-contract.md's metrics section
+    scopes both out.
+
+    Note that eval-scorer IS walked by this particular guard -- it reads
+    every `.py` under `_SOURCE_ROOTS`, `platform/` included -- and that is
+    correct: having no MeterProvider is exactly the state in which a
+    hand-rolled `gen_ai.*` instrument would be the tempting shortcut. What it
+    is absent from is `METRICS_BOOTSTRAPS`, the list of services that must
+    install one.
     """
     offenders = []
     for path in _repo_python_sources():

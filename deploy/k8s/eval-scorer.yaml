@@ -52,7 +52,9 @@
 # than measured. Those two are in `northstar-agents`; the catch-all CR's
 # namespaceSelector excludes `northstar-platform` by name, so this pod had a
 # ServiceAccount, an allow-listed ID string and no SPIRE entry whatsoever
-# (`spire-server entry show`: twelve entries, none of them its). Namespace
+# (`spire-server entry show` listed an entry for every other workload and
+# none for it; the count that stood here grows with the cluster's stage, so
+# it is the absence that is reproducible, not the number). Namespace
 # decides, not the ServiceAccount.
 #
 # Grants no RBAC. This pod makes no Kubernetes API calls.

@@ -43,7 +43,7 @@ pytest==9.0.3
 
 # --- the rest of this file's transitive closure ---
 #
-# Nine of these thirteen are byte-for-byte the pins `platform/policy-decision-service`
+# Nine of them are byte-for-byte the pins `platform/policy-decision-service`
 # and `apps/reviewer-ui` already carry for the same packages (certifi,
 # charset-normalizer, googleapis-common-protos, grpcio, idna, protobuf,
 # requests, typing-extensions, urllib3), plus pytest's own four (iniconfig,

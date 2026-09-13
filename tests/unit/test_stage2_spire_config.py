@@ -166,8 +166,8 @@ REVIEWER_UI_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/reviewe
 # are in `northstar-agents`; eval-scorer is in `northstar-platform`, and the
 # chart's catch-all CR *excludes* that namespace by name (`NotIn
 # [northstar-platform, spire-server, spire-system]`, read off the live CR). So
-# no entry was ever created: `spire-server entry show` listed twelve, none of
-# them eval-scorer's. The workload had a ServiceAccount, this constant, an
+# no entry was ever created: `spire-server entry show` listed an entry for
+# every other workload and none for it. The workload had a ServiceAccount, this constant, an
 # allow-list entry -- and no identity. It was inferred from the two nearest
 # precedents instead of being measured, which is exactly the defect class this
 # milestone keeps finding, committed inside the guard written against it.
@@ -616,8 +616,8 @@ def test_the_registered_spiffe_ids_are_built_from_this_projects_trust_domain():
     (measured on the live CR: `NotIn [northstar-platform, spire-server,
     spire-system]`), so a workload added there without a CR of its own gets
     **no identity at all**, silently. eval-scorer ran in that state:
-    `spire-server entry show` on this cluster listed twelve entries and none of
-    them was its. Nothing went red, because every SPIFFE check in this file
+    `spire-server entry show` on this cluster listed an entry for every other
+    workload and none for it. Nothing went red, because every SPIFFE check in this file
     compares strings the documents publish against configuration the repo
     writes, and an identity that was never registered appears in neither.
     Registering it here is the fix; publishing the ID in `docs/architecture.md`

@@ -663,8 +663,20 @@ _SKIP_DIR_NAMES = {
 # non-attribute literal that happens to look like a key (module paths such as
 # `mcp.client.streamable_http`, function references such as `rules.decide`)
 # can only ever ADD a pair to the collision set, so the failure mode is a red
-# test with a named pair a human can read -- never a silent hole. Measured
-# 2026-09-13: 41 files, 52 candidate keys, and exactly one collision.
+# test with a named pair a human can read -- never a silent hole.
+#
+# The figure worth publishing is the collision count, and the test below
+# asserts it rather than this comment stating it: there is exactly one
+# collision (`policy.decision` / `policy.decision.retryable`) and the
+# `attributes/opensearch-compat` processor must rename it.
+#
+# The scan's file and key totals are NOT written down any more. This said
+# "Measured 2026-09-13: 41 files, 52 candidate keys" and was falsified the
+# same day by the seven `platform/eval-scorer/scorer/*.py` files added in the
+# same commit -- re-derived, 48 files and 68 candidate keys. Nothing reddened,
+# because those totals change whenever any service gains a source file and no
+# assertion could usefully pin them. A number that moves on every unrelated
+# commit is a number that will be stale on most of them.
 _ATTRIBUTE_KEY = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$")
 _STRING_LITERAL = re.compile(
     r"\"([^\"\\\n]{1,120})\"|'([^'\\\n]{1,120})'|`([^`\\\n]{1,120})`"

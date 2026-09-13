@@ -104,10 +104,23 @@ ahead of time:
 
 ```bash
 uv venv --python 3.13 .venv && uv pip install -r tests/requirements.txt && .venv/bin/playwright install chromium
-for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui; do
+for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui platform/eval-scorer; do
   (cd "$svc" && uv venv --python 3.13 .venv && uv pip install -r requirements.txt)
 done
 ```
+
+**That list and `scripts/smoke-test.sh`'s own prerequisite loop must hold the
+same services, and a test now asserts it** —
+`tests/unit/test_smoke_test_gate.py::test_the_gate_runs_every_per_service_suite_the_contract_publishes`
+reads all three places (the contract's per-service row, the gate's loop, and
+this code block) and fails if they disagree. Adding a service to the gate and
+not here is one defect that has now happened four times: the Policy Decision
+Service in M2.2, `apps/reviewer-ui` in M3 Task 5B, and `platform/eval-scorer`
+in M4 Task 4, which added the venv requirement to the gate and left this block
+behind — so a fresh clone that followed the README was stopped at
+`Error: …/platform/eval-scorer/.venv not found`. The list is still written out
+in two places, because both are things a human copies; what changed is that
+the two copies are checked against each other rather than against nobody.
 
 `apps/reviewer-ui` joined that loop in M3 Task 5B, and — exactly like the
 Policy Decision Service one milestone earlier — it was an existing dependency
@@ -115,12 +128,12 @@ finally being declared rather than a new one. `tests/unit`'s per-service count
 guard shells out to reviewer-ui's own suite through `apps/reviewer-ui/.venv`,
 so the gate already could not pass without this venv; it just failed four
 minutes in, inside a unit test, complaining about a published count. The gate
-now requires it up front and runs reviewer-ui's 59 tests alongside the other
-six suites. (That read 50 until the M3 final-review fix round, which added
-nine — the `review.queue` span and the trace-flags workaround described in
-`docs/telemetry-contract.md`'s "reviewer-ui's own instrumentation". That
-document's per-service row is the measured source, and a unit test
-re-measures it against the suite on every run.)
+now requires it up front and runs reviewer-ui's suite alongside the rest.
+(No count is written here. It read **50** and then **59**, and the measured
+figure is **56** — `docs/telemetry-contract.md`'s per-service row is the
+source, a unit test re-measures that row against the suite on every run, and a
+third copy in this paragraph was only ever a way to be wrong in a place
+nothing checks.)
 
 **The Policy Decision Service is in that loop, and it is not optional.** An
 earlier version of this section said it was "deliberately not in that loop"
@@ -180,7 +193,7 @@ pytest yourself, know what you are paying for:
 | Command | Cluster | Anthropic tokens |
 |---|---|---|
 | `.venv/bin/python -m pytest tests/unit -q` | not needed | none |
-| `.venv/bin/python -m pytest tests/ -q` | **required** | **yes — two live settlements** |
+| `.venv/bin/python -m pytest tests/ -q` | **required** | **yes — three live settlements** |
 | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | required | yes — the full gate |
 
 A bare `pytest tests/` is **not** free and **not** cluster-independent. Since
@@ -188,14 +201,20 @@ M1.2 made the settlement a real model call, `tests/e2e/test_settlement_agent_tra
 and `tests/e2e/test_claims_chain_trace.py` each drive a live model-driven
 settlement — three Anthropic turns apiece — from a module-scoped fixture, and
 they are deliberately left ungated so the default suite still proves the chain
-end to end. **Five** modules sit behind `RUN_BROWSER_TESTS=1`, **33** tests in
-all — re-measured for M3 Task 5B by walking pytest's collected items and
-reading each item's own `skipif` marker, not counted by hand and not carried
-forward from M2.2's four-module, 27-test figure:
+end to end. (`tests/e2e/test_claim_correlation.py` is a **third** ungated file
+that drives one, found while measuring this for M4 Task 3 — see
+`docs/telemetry-contract.md`, which carries the correction and the reasoning.)
+
+**Seven** modules sit behind `RUN_BROWSER_TESTS=1`, **41** tests in all —
+re-measured for M4 Task 4 by walking pytest's collected items and reading each
+item's own `skipif` marker, the same way M3 Task 5B measured the five-module,
+33-test figure this replaces: `tests/e2e/test_settlement_llm_trace.py` (9),
 `tests/e2e/test_browser_root_span.py` (8), `tests/e2e/test_gateway_trace.py`
-(6), `tests/e2e/test_settlement_llm_trace.py` (9), 4 of the 6 tests in
-`tests/e2e/test_policy_denial.py`, and 6 of the 7 in
-`tests/e2e/test_supervised.py` (M3). Those last two are the partly-gated ones.
+(6), 6 of the 7 in `tests/e2e/test_supervised.py`, `tests/e2e/test_policy_scores.py`
+(5, M4 Task 4), 4 of the 6 in `tests/e2e/test_policy_denial.py`, and
+`tests/e2e/test_evidence_view.py` (3, M4 Task 3). The two partly-gated ones are
+`test_supervised.py` and `test_policy_denial.py`. Only three of the seven need
+a browser; the rest ride the flag because they spend model tokens.
 `test_policy_denial.py`'s two ungated tests spend nothing: one reads source
 structurally, and the other drives two direct MCP calls with different SPIFFE
 identities and no model call at all. `test_supervised.py`'s one ungated test is
@@ -211,6 +230,39 @@ which need the generated ExtMCP stubs, so run `(cd
 platform/policy-decision-service && ./gen-stubs.sh)` once first. It fails
 loudly and names that command if you do not (limitation 10 in
 `docs/telemetry-contract.md`).
+
+### Mutation-testing a guard — use `scripts/mutate-guard.sh`
+
+A guard in this repo is not trusted until it has been mutated and watched go
+red **for the reason it names**. Many of the tests here exist because an
+earlier guard passed while the thing it claimed to check was broken, so this
+is the standing convention, not a nicety.
+
+Do not hand-roll the edit/run/revert loop. Run:
+
+```bash
+./scripts/mutate-guard.sh <file> <old-text> <new-text> <test command...>
+```
+
+It restores the file on every exit path, refuses a replacement that changes
+nothing, and — the part that matters — sets **`PYTHONDONTWRITEBYTECODE=1`** and
+purges `__pycache__` around the run.
+
+That last part is not hygiene. CPython validates a cached `.pyc` against
+`(int(source_mtime), source_size)` and nothing else, so a mutation that keeps
+the file's byte length (`6000` → `6500`, `==` → `!=`) and lands in the same
+integer second as the cached write gives you **either** a false green, where
+the mutant is on disk and the original bytecode runs, **or** a false red, where
+the revert is on disk and the mutant bytecode runs and every later mutation in
+the round reddens for the *previous* one's reason. Both directions were
+reproduced from scratch during M4. The faster the suite, the likelier it is:
+`platform/eval-scorer`'s runs in 0.15s, so the whole cycle fits inside a
+second. pytest's rewritten test-module caches invalidate on the same pair, so
+mutating a *test* file is exposed too; only non-Python targets (YAML, Markdown,
+shell) are structurally immune.
+
+`tests/unit/test_mutation_protocol.py` pins both halves of this, so the script
+cannot quietly lose them.
 
 ## Stages
 

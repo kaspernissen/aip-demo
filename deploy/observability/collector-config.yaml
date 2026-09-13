@@ -111,7 +111,7 @@ processors:
   # did not have (re-review finding N2: it said a unit test pinned the
   # ten-service claim, while that test read only pds/telemetry.py):
   #   * tests/unit/test_stage4_config.py now scans EVERY first-party service's
-  #     source -- agents/, apps/, platform/, systems/, tools/, 41 files -- for
+  #     source -- agents/, apps/, platform/, systems/, tools/ -- for
   #     attribute-shaped string literals, and fails if any collision among
   #     them is not renamed here. It cannot see keys emitted by third-party
   #     libraries.

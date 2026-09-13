@@ -1223,8 +1223,8 @@ to get wrong.** The chart's catch-all fallback CR selects namespaces `NotIn
 workload placed in `northstar-platform` with no CR of its own gets **no
 identity at all**, and nothing says so. M4 Task 4 proved that the expensive
 way: `eval-scorer` ran with a dedicated ServiceAccount and a SPIFFE ID written
-into this repo's own allow-list while `spire-server entry show` listed twelve
-entries, none of them its. The two M3 identities below are the misleading
+into this repo's own allow-list while `spire-server entry show` listed an
+entry for every other workload and none for it. The two M3 identities below are the misleading
 precedent — they need no CR because they are in `northstar-agents`, which the
 fallback does cover. **Namespace decides, not the ServiceAccount.**
 
@@ -1281,16 +1281,26 @@ that cannot itself be named is a poor auditor. An identity nothing registers is
 a string, not an identity — which M4 Task 4 confirmed literally, having written
 one down in three places before noticing SPIRE had never minted it.
 
-**A guard exists for these five strings specifically**, because a published
+**A guard exists for these strings specifically**, because a published
 identity nothing checks is a published identity that can go stale in the
 direction that looks like success:
 `tests/unit/test_stage2_spire_config.py::test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures`
 enumerates **every** `spiffe://` string in this document and in
 `docs/telemetry-contract.md` — prose, tables and fenced blocks alike — and
-fails on any that is not one of the five this repository actually configures
-(three explicit, two from the chart's fallback — the list in that module grew
-by two in M3, which is why publishing the new IDs above is checked rather than
-merely asserted).
+fails on any that is not one this repository actually configures. Some come
+from an explicit `ClusterSPIFFEID` and some from the chart's fallback; which
+is which is stated above, per identity, and the guard's `permitted` set is the
+one place the membership lives.
+
+**No count is written in this paragraph, and that is deliberate.** It said
+"these five strings" and "one of the five … (three explicit, two from the
+chart's fallback — the list in that module grew by two in M3)" while the guard
+already held six and `registration.yaml` already held four. Both numbers were
+correct when written and both were falsified by a later task adding an
+identity — twice, by M3 and then by M4 Task 4, which corrected that same
+stale-count paragraph *in the guard's own docstring* and left this one behind.
+The guard checks membership, never cardinality, so nothing here can redden on
+a count; the fix is to stop writing one.
 
 **How the credential gets into the pod.** No secret, key or token is in any
 manifest. The `spiffe-csi-driver` bind-mounts the spire-agent's Workload API

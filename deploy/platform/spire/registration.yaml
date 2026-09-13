@@ -24,7 +24,16 @@
 # With `watchClassless: false`, a ClusterSPIFFEID carrying no className is
 # ignored outright: `kubectl apply` succeeds, the CR sits there with an empty
 # status, no entry is ever created, and the only symptom is a workload that
-# cannot fetch an SVID. Both CRs below set it explicitly.
+# cannot fetch an SVID. **Every CR below sets it**, and
+# `tests/unit/test_stage2_spire_config.py::test_every_cluster_spiffeid_sets_the_controller_managers_class_name`
+# is what makes that true rather than intended -- it walks every
+# ClusterSPIFFEID in this file and fails on a missing className.
+#
+# (This line read "Both CRs below set it explicitly" through the third CR
+# and the fourth. Worse than a stale count, because the claim is about a
+# SILENT failure -- a classless CR is never reconciled and the only symptom
+# is a workload that cannot fetch an SVID -- so a reader adding a fifth CR
+# had been told by this file that they were covered.)
 # ---------------------------------------------------------------------------
 #
 # Why these and not every workload: the chart's own `default` ClusterSPIFFEID
@@ -121,8 +130,11 @@ spec:
 # doing only that would have been inert twice over: the allow-list checks IDs
 # the *documents* publish, and nothing published this one -- and, more to the
 # point, the identity did not exist. `spire-server entry show` on this cluster,
-# after eval-scorer had been running for hours, listed twelve entries and none
-# of them was eval-scorer's.
+# after eval-scorer had been running for hours, listed an entry for every
+# other workload and none for it. (The count that stood here -- twelve --
+# was true when taken and is not reproducible: the list grows with the
+# cluster's stage. What matters is the absence, which is reproducible by
+# grepping that output for `eval-scorer`.)
 #
 # The reason is in this file's own header, one namespace further than it went:
 # the chart's catch-all `default` CR excludes `northstar-platform`

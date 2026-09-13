@@ -267,11 +267,39 @@ def _component_contexts() -> list[str]:
         "an empty context list"
     )
     contexts = [m.group(2) for m in _COMPONENT_ENTRY_RE.finditer(block.group(1))]
-    assert len(contexts) >= 7, (
-        "parsed only "
-        f"{len(contexts)} component(s) out of {SCRIPT_RELATIVE_PATH}'s "
-        "COMPONENTS array; there were 8 when this was written, and a sudden "
-        f"drop means the parse broke rather than the script shrank: {contexts}"
+
+    # Parse sanity, derived rather than written down. A floor (`>= 7`, with
+    # "there were 8 when this was written" in its message) stood here and had
+    # the defect the whole change was against: a silent drop to seven passed,
+    # and the number would have to be edited by hand on the ninth component.
+    #
+    # What is checked instead is that the parse agrees with the array it read
+    # -- every non-blank, non-comment line inside `COMPONENTS=( ... )` must
+    # have yielded a context -- and that every context is a real directory. A
+    # regex that stops matching leaves lines unaccounted for; a typo'd path
+    # leaves a context that does not exist. Neither needs a number.
+    entries = [
+        line for line in block.group(1).splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert len(contexts) == len(entries), (
+        f"{SCRIPT_RELATIVE_PATH}'s COMPONENTS array holds {len(entries)} "
+        f"entry line(s) but only {len(contexts)} parsed as "
+        '"name:context:namespace": the parse is missing some, so a sandbox '
+        "built from it would silently stop covering a component.\n"
+        f"  unparsed: {[l for l in entries if not _COMPONENT_ENTRY_RE.match(l)]}"
+    )
+    assert contexts, (
+        f"{SCRIPT_RELATIVE_PATH}'s COMPONENTS array parsed empty, so the "
+        "sandbox below would be built with no build contexts and every test "
+        "using it would pass vacuously"
+    )
+    absent = [c for c in contexts if not (REPO_ROOT / c).is_dir()]
+    assert not absent, (
+        f"{SCRIPT_RELATIVE_PATH} names build context(s) that do not exist: "
+        f"{absent}. A bare run of that script would hard-error on them "
+        "(amendment A15a), so this is a real defect in the script rather "
+        "than in this parse."
     )
     return contexts
 

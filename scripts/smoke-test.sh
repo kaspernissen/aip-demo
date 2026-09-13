@@ -60,8 +60,14 @@ command_exists npx || { echo -e "${RED}npx (Node.js) is required${NC}" >&2; exit
 # the reviewer-ui row is its `_PER_SERVICE_SUITES` entry. (Those were cited by
 # line number until M4 Task 4 and both numbers had already drifted — the row had
 # moved from :296 to :312 — so they are cited by name now, which is the one form
-# that survives an edit to the file above it.) Its own 56-test suite is run
-# below alongside the other six.
+# that survives an edit to the file above it.) Its own suite is run below
+# alongside the rest.
+#
+# No counts in this comment. It said "its own 50-test suite ... alongside the
+# other six", then M4 Task 4 updated the 50 to 56 and left "the other six"
+# in the same sentence while adding the seventh other suite 236 lines below.
+# docs/telemetry-contract.md's per-service row is the one place the figures
+# live and tests/unit/test_telemetry_contract_counts.py re-measures it.
 #
 # `platform/eval-scorer` joins the loop in M4 Task 4, the task that creates it,
 # rather than a milestone later. The two services before it were both added
@@ -278,19 +284,28 @@ echo -e "${YELLOW}policy-decision-service${NC}"
 echo -e "${YELLOW}customer-ui${NC}"
 (cd "$ROOT/apps/customer-ui" && npx vitest run)
 
-# M3 Task 5B: the seventh per-service suite, and the last one still outside the
-# gate. Same shape as the PDS row above -- the venv is required in the
-# prerequisite loop, so reaching here means it exists. 50 tests, 0.36s measured,
-# so this costs the gate nothing. docs/telemetry-contract.md's per-service row
-# publishes all seven figures and tests/unit/test_telemetry_contract_counts.py
-# re-measures each of them, which means this suite's count was already gating
-# before its assertions were.
+# M3 Task 5B: reviewer-ui, which was the last per-service suite still outside
+# the gate when it was added. Same shape as the PDS row above -- the venv is
+# required in the prerequisite loop, so reaching here means it exists, and the
+# suite is hermetic and sub-second, so this costs the gate nothing.
+# docs/telemetry-contract.md's per-service row publishes every figure and
+# tests/unit/test_telemetry_contract_counts.py re-measures each of them, which
+# means this suite's count was gating before its assertions were.
+#
+# (Counts removed in M4 Task 4's fix round: "50 tests, 0.36s" was stale at 56
+# from M3, and "all seven figures" was falsified by the eighth row added eight
+# lines below this comment, in the same commit that left this one alone.)
 echo -e "${YELLOW}reviewer-ui${NC}"
 (cd "$ROOT/apps/reviewer-ui" && .venv/bin/python -m pytest tests -q)
 
 # M4 Task 4: the eighth per-service suite, added in the same task as the
-# service. 106 tests, 0.15s measured, and every one of them is a pure function
-# over a span list -- no cluster, no collector, no OpenSearch, no model. The
+# service. Sub-second, and every test is either a pure function over a span
+# list or a request to a handler on an ephemeral port -- no cluster, no
+# collector, no OpenSearch, no model. (No count in this comment. The figure
+# lives in docs/telemetry-contract.md's per-service row, which
+# tests/unit/test_telemetry_contract_counts.py re-measures against the suite;
+# a second copy in a shell comment is only a way to be wrong somewhere nothing
+# checks, and this one said 106 the day the suite reached 128.) The
 # anti-vacuity half of M4 spec §7.4 lives here (tests/test_anti_vacuity.py):
 # the same trajectory with one call moved scores 1.0 and 0.0, so a scorer that
 # regressed to always-compliant reddens on every commit rather than at the next
