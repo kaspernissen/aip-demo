@@ -60,6 +60,7 @@ names -- are in `tests/e2e/test_opensearch_trace_ingest.py`, which needs the
 cluster.
 """
 import ast
+import json
 import os
 import re
 import signal
@@ -80,6 +81,15 @@ COLLECTOR_CONFIGS = [
     REPO_ROOT / "deploy/observability/collector-config-dash0.yaml",
 ]
 PDS_TELEMETRY = REPO_ROOT / "platform/policy-decision-service/pds/telemetry.py"
+
+# M4 Task 3's deliverable, and the three names every other reference to it
+# derives from rather than restates.
+EVIDENCE_NDJSON = REPO_ROOT / "deploy/observability/dashboards/evidence.ndjson"
+EVIDENCE_DASHBOARD_ID = "northstar-evidence"
+EVIDENCE_README_ID = "northstar-evidence-readme"
+# The index the `opensearch` exporter's ss4o mapping mode writes traces to.
+EVIDENCE_INDEX = "ss4o_traces-default-namespace"
+ARCHITECTURE = REPO_ROOT / "docs/architecture.md"
 
 
 def _without_comments(path: Path) -> str:
@@ -978,3 +988,186 @@ def test_start_demo_forwards_the_stage_4_surfaces_when_they_do_exist(tmp_path):
     assert "http://localhost:5601" in output, output
     assert "http://localhost:8081" in output, output
     assert "http://localhost:9090" in output, output
+
+
+# --- M4 Task 3: the evidence view, and the two things that make it real -----
+
+
+def _evidence_objects() -> list[dict]:
+    """Every saved object in the committed export, with the summary line dropped.
+
+    Parses the file the way the importer does -- line by line, each line a JSON
+    object -- which is also the assertion that no line is a comment. NDJSON has
+    no comment syntax, and measured against this cluster's Dashboards a single
+    leading `// ...` line makes the import fail outright with
+    `400 Bad Request, Unexpected token '/'`. That is why the view's own header
+    is a markdown panel inside the file rather than a comment above it.
+    """
+    objects = []
+    for number, line in enumerate(EVIDENCE_NDJSON.read_text().splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError as exc:  # pragma: no cover -- diagnostic path
+            raise AssertionError(
+                f"{EVIDENCE_NDJSON.relative_to(REPO_ROOT)} line {number} is not "
+                f"JSON, so `POST /api/saved_objects/_import` will reject the "
+                f"whole file with a 400 and import nothing: {exc}. NDJSON has "
+                "no comment syntax -- the view's header is the "
+                "`northstar-evidence-readme` markdown panel, not a comment."
+            ) from exc
+        # The exporter's own trailing summary, which the importer ignores.
+        if "type" not in parsed and "exportedCount" in parsed:
+            continue
+        objects.append(parsed)
+    return objects
+
+
+def test_the_evidence_view_is_a_complete_importable_export():
+    """Every panel the dashboard names is in the file, and nothing dangles.
+
+    An export with a missing reference imports "successfully" and then renders
+    an empty frame where a panel should be -- the exact silent-blank failure
+    `tests/e2e/test_evidence_view.py` exists to prevent on the data side, one
+    layer out.
+    """
+    objects = _evidence_objects()
+    by_id = {(obj["type"], obj["id"]): obj for obj in objects}
+    dashboards = [obj for obj in objects if obj["type"] == "dashboard"]
+    assert len(dashboards) == 1, (
+        f"expected exactly one dashboard in "
+        f"{EVIDENCE_NDJSON.relative_to(REPO_ROOT)}, found "
+        f"{[d['id'] for d in dashboards]}"
+    )
+    assert dashboards[0]["id"] == EVIDENCE_DASHBOARD_ID, (
+        f"the dashboard's id changed to {dashboards[0]['id']!r}; the URL "
+        "scripts/setup-kind.sh prints and docs/architecture.md links both "
+        f"name {EVIDENCE_DASHBOARD_ID!r}"
+    )
+    # The id appears in exactly three places and they are checked against each
+    # other, rather than each restating a URL that ages on its own. Stale prose
+    # is this repo's other recurring defect; a `#/view/<id>` link that 404s is
+    # its worst form, because the reader concludes the demo is broken.
+    for document in (SETUP_KIND, ARCHITECTURE):
+        assert EVIDENCE_DASHBOARD_ID in document.read_text(), (
+            f"{document.relative_to(REPO_ROOT)} does not name "
+            f"{EVIDENCE_DASHBOARD_ID!r}, so the link it gives a reader no "
+            "longer points at the dashboard this file imports"
+        )
+
+    for obj in objects:
+        for reference in obj.get("references", []):
+            assert (reference["type"], reference["id"]) in by_id, (
+                f"{obj['type']}/{obj['id']} references "
+                f"{reference['type']}/{reference['id']}, which is not in "
+                f"{EVIDENCE_NDJSON.relative_to(REPO_ROOT)} -- the export was "
+                "taken without `includeReferencesDeep`, and that panel will "
+                "import to an empty frame"
+            )
+
+    panels = json.loads(dashboards[0]["attributes"]["panelsJSON"])
+    referenced = {r["name"] for r in dashboards[0].get("references", [])}
+    assert len(panels) >= 4, f"the evidence view lost panels: {len(panels)}"
+    for panel in panels:
+        assert panel["panelRefName"] in referenced, (
+            f"dashboard panel {panel['panelRefName']!r} has no matching "
+            "reference, so it will render as an empty frame"
+        )
+
+    index_patterns = [obj for obj in objects if obj["type"] == "index-pattern"]
+    assert len(index_patterns) == 1, index_patterns
+    attributes = index_patterns[0]["attributes"]
+    assert attributes["title"] == EVIDENCE_INDEX, (
+        f"the evidence view reads {attributes['title']!r}; the index the "
+        f"`opensearch` exporter's ss4o mapping mode writes to is "
+        f"{EVIDENCE_INDEX!r} (tests/e2e/test_opensearch_trace_ingest.py's own "
+        "TRACE_INDEX)"
+    )
+    assert attributes["timeFieldName"] == "startTime", attributes
+    assert attributes.get("fields"), (
+        "the index-pattern carries no cached field list. Measured 2026-09-13: "
+        "without it every `min(startTime)` agg on this dashboard throws "
+        "`SavedObjectNotFound: Could not locate that index-pattern-field "
+        "(id: startTime)` and the panel 400s. Re-export from the UI rather "
+        "than hand-trimming the file."
+    )
+
+
+def test_the_evidence_views_header_records_the_permitted_claim_id_choice():
+    """Spec §4 left the €5,800 claim's id to the plan; the choice is recorded.
+
+    Both options were defensible -- a fixed fixture id, or a parameterised
+    dashboard -- and an *unrecorded* choice is not. The record lives in the
+    markdown panel because the file cannot hold a comment (see
+    `_evidence_objects`), which also puts it in front of the person reading
+    the evidence rather than in front of whoever next opens the export.
+    """
+    readme = [
+        obj
+        for obj in _evidence_objects()
+        if obj["type"] == "visualization" and obj["id"] == EVIDENCE_README_ID
+    ]
+    assert len(readme) == 1, (
+        f"{EVIDENCE_README_ID!r} is missing from "
+        f"{EVIDENCE_NDJSON.relative_to(REPO_ROOT)} -- that panel IS this "
+        "file's header and the only place the claim-id choice is recorded"
+    )
+    markdown = json.loads(readme[0]["attributes"]["visState"])["params"]["markdown"]
+    for required in (
+        # The choice itself, and the precedent it rests on.
+        "parameterise, do not pin a fixture id",
+        "test_supervised.py",
+        # The constraint the two-step layout exists for.
+        "Gap 4",
+        "trace id is the join",
+    ):
+        assert required in markdown, (
+            f"the evidence view's header no longer states {required!r}. It is "
+            "the only record of why the permitted claim has no fixed id and "
+            "why the control selects trace ids rather than claim ids; a "
+            "reader who loses it will 'simplify' the dashboard into one that "
+            "silently drops the decision and the money spans."
+        )
+
+
+def test_setup_kind_imports_the_evidence_view_at_stage_4():
+    """The dashboard is imported from the committed file, at stage 4, checked.
+
+    Three separate claims, because each one has failed somewhere in this repo
+    before: the script names the committed file (not some other path), the
+    import is inside the stage-4 block (not run unconditionally against a
+    cluster that has no Dashboards), and the HTTP response is checked (curl
+    exits 0 on a 400, so an import that imported nothing would otherwise leave
+    a cluster that looks complete and a Dashboards that is empty).
+    """
+    setup = _without_comments(SETUP_KIND)
+    relative = str(EVIDENCE_NDJSON.relative_to(REPO_ROOT))
+    assert relative in setup, (
+        f"scripts/setup-kind.sh does not name {relative} outside of a "
+        "comment, so the committed evidence view is never imported and the "
+        "dashboard exists only wherever someone made it by hand"
+    )
+    assert "/api/saved_objects/_import" in setup, (
+        "setup-kind.sh names the evidence file but never calls the saved "
+        "objects import API with it"
+    )
+    assert '"success":true' in setup, (
+        "the import's response is not checked. `curl` exits 0 on an HTTP 400, "
+        "so without this the script reports a complete stage-4 cluster while "
+        "Dashboards holds nothing."
+    )
+
+    stage_4_block = re.search(
+        r'if \[\[ "\$\{STAGE\}" -ge 4 \]\]; then(.*?)\nfi\n', setup, re.S
+    )
+    assert stage_4_block, (
+        "could not find the `STAGE -ge 4` block in the comment-stripped "
+        "setup-kind.sh, so this test cannot tell whether the import is gated"
+    )
+    assert relative in stage_4_block.group(1), (
+        "the evidence-view import is not inside the `STAGE -ge 4` block. "
+        "Below stage 4 there is no OpenSearch Dashboards to import into, so an "
+        "ungated import fails every `--stage 1|2|3` run -- finding F10's shape "
+        "applied to a saved object."
+    )

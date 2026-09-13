@@ -112,6 +112,11 @@ Usage: setup-kind.sh [--stage N]
                           installed too, OTLP-ingest only: every default
                           scrape job is off, so the only way a series reaches
                           it is the collector's otlp_http/prometheus exporter.
+                          As of M4 Task 3 the evidence view is imported into
+                          Dashboards from
+                          deploy/observability/dashboards/evidence.ndjson, so
+                          it survives a cluster recreate instead of living
+                          only in a pod's volume.
                           Runs on stage 3's cluster config
                           UNCHANGED -- see the KIND_CONFIG note below --
                           Dashboards is reached by port-forward
@@ -520,6 +525,41 @@ if [[ "${STAGE}" -ge 4 ]]; then
     --kube-context "kind-${CLUSTER_NAME}" \
     --values "$ROOT/deploy/observability/opensearch/dashboards-values.yaml" \
     --wait --timeout 5m
+
+  # M4 Task 3: the evidence view, imported rather than hand-made.
+  #
+  # This milestone's claim is that the audit trail already exists and M4 only
+  # makes it queryable -- so the view that reads it has to be reproducible too.
+  # A dashboard that lives only in the Dashboards pod's volume is gone at the
+  # next `kind delete cluster`, and "we had one, you had to be there" is not
+  # evidence of anything.
+  #
+  # Done by `kubectl exec` into the Dashboards pod rather than through a
+  # port-forward: the image ships curl (`command -v curl` -> /usr/bin/curl,
+  # checked 2026-09-13), the API is on localhost:5601 inside the pod, and this
+  # repo's standing rule is that `scripts/start-demo.sh` owns the demo's
+  # forwards. A forward opened and closed inside this block would be a fifth
+  # thing that can leave a socket behind for no gain.
+  #
+  # `--wait` on the Helm install above is what makes the API ready here: the
+  # chart's readiness probe is Dashboards' own status endpoint.
+  #
+  # curl exits 0 on an HTTP 400, so the response is checked rather than the
+  # exit code -- an import that silently failed would leave the operator with
+  # a cluster that looks complete and a Dashboards with nothing in it, which is
+  # this milestone's own favourite failure mode.
+  echo -e "${BLUE}Step 8c2/9 (stage 4): Importing the evidence view into OpenSearch Dashboards...${NC}"
+  EVIDENCE_IMPORT=$(kubectl --context "kind-${CLUSTER_NAME}" -n observability \
+    exec -i deploy/opensearch-dashboards -- \
+    curl -sS -X POST "http://localhost:5601/api/saved_objects/_import?overwrite=true" \
+    -H 'osd-xsrf: true' -F 'file=@-;filename=evidence.ndjson' \
+    < "$ROOT/deploy/observability/dashboards/evidence.ndjson")
+  if [[ "${EVIDENCE_IMPORT}" != *'"success":true'* ]]; then
+    echo -e "${RED}Importing deploy/observability/dashboards/evidence.ndjson failed.${NC}" >&2
+    echo "${EVIDENCE_IMPORT}" >&2
+    exit 1
+  fi
+  echo -e "${GREEN}Evidence view imported. Open it with ./scripts/start-demo.sh and browse to http://localhost:5601/app/dashboards#/view/northstar-evidence${NC}"
 
   # M4 Task 2: Prometheus, installed in the SAME stage-4 block and BEFORE the
   # collector restart below, for exactly the reason the OpenSearch install is.

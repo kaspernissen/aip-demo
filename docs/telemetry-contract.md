@@ -68,10 +68,59 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-13 (M4 Task 2, including its review fix round 1) — the current
-figures, and the gate row is DERIVED, not yet re-measured against a live
-run.** Task 2 added **34** tests and its fix round added **6** more, taking
-the collected count from 247 to **287**, re-measured with
+**2026-09-13 (M4 Task 3) — the current figures, and the gate row is DERIVED,
+not yet re-measured against a live run.** Task 3 added **6** tests, taking the
+collected count from 287 to **293**, re-measured with
+`.venv/bin/python -m pytest --collect-only -q tests/`:
+
+* `tests/e2e/test_evidence_view.py` — **3**. The evidence view's *queries*,
+  asserted rather than its pixels (M4 spec §4 puts screenshots explicitly out
+  of scope): that one claim-id lookup returns both stories with the fields the
+  saved dashboard renders, that both claims' `execute_payment` decisions name
+  the **same** rule at the limits each identity holds, and that the trace-id
+  half of the join is what reaches the `payments-api` spans — asserted from
+  both sides, so collapsing the two-step join into a single claim-id filter
+  reddens a test instead of silently emptying two panels. The file drives both
+  settlements itself (two model calls, no browser: a direct A2A POST to
+  claims-agent and a plain form POST to reviewer-ui) and bounds every query to
+  the window it opened, because `CLM-1842` is a fixed id and the index holds
+  one set of traces per run of it. It follows
+  `test_prometheus_metrics_ingest.py`'s stricter stage gate — it imports that
+  file's `_absent_or_fail` rather than copying it — and skips only on a cluster
+  coherently below stage 4; a missing index on a stage-4 cluster is a
+  **failure**, verified by mutation.
+* `tests/unit/test_stage4_config.py` — **+3** (17 → 20). That
+  `deploy/observability/dashboards/evidence.ndjson` is a complete, importable
+  export (no dangling reference, every dashboard panel resolvable, the
+  index-pattern naming the ss4o trace index with its cached field list intact);
+  that its header panel still records the choice M4 had to make about the
+  permitted claim's id, since NDJSON cannot hold a comment and that panel is
+  the only place the record lives; and that `scripts/setup-kind.sh` imports the
+  committed file, inside the `STAGE -ge 4` block, checking the HTTP response
+  rather than curl's exit code. The dashboard's id is cross-checked against
+  `scripts/setup-kind.sh` and `docs/architecture.md` so a renamed dashboard
+  reddens a test instead of leaving two `#/view/<id>` links that 404.
+
+The per-service row is unchanged at **114**: Task 3 added no test outside
+`tests/`.
+
+Bare-suite row, derived from that same collection: 293 collected − 33 gated −
+1 xfailed = `259 passed, 33 skipped, 1 xfailed`. The 33 gated are the
+`RUN_BROWSER_TESTS=1` browser tests, unchanged; the three new e2e tests are not
+among them, and they do spend model tokens in a bare `pytest tests/` run — the
+same standing the two ungated chain files described at the top of this section
+already have. Gate row: 293 collected − 1 xfailed = `292 passed, 1 xfailed`.
+This is arithmetic, not a live gate run, with the same standing as the two rows
+below it: **Task 5 runs the milestone's one gate and converts this row to
+MEASURED.**
+
+`tests/unit` alone collects **160** (157 before this task).
+
+**2026-09-13 (M4 Task 2, including its review fix round 1) — superseded by the
+row above, and kept the way every earlier row is: it was the current figure,
+with the same DERIVED gate row, at the time it was written.** Task 2 added
+**34** tests and its fix round added **6** more, taking the collected count
+from 247 to **287**, re-measured with
 `.venv/bin/python -m pytest --collect-only -q tests/`:
 
 * `tests/unit/test_metrics_wiring.py` — **22** (20, then +2 in the fix
@@ -3331,7 +3380,15 @@ For each: the evidence, whether upstream already has work in flight, and what we
   `@pytest.mark.xfail(strict=True)` (S3; see "What the default suite proves"
   above for why), narrowed to this one assertion per a review finding — a
   fixture-setup failure upstream of it now surfaces as an ordinary `ERROR`,
-  not a false-quiet `xfailed`.
+  not a false-quiet `xfailed`. **Pinned from the other side too, since M4
+  Task 3:** `tests/e2e/test_evidence_view.py::
+  test_the_trace_id_join_is_what_reaches_the_money_hops` asserts that a
+  claim-id filter over the OpenSearch trace index reaches neither
+  `payments-api` nor the Policy Decision Service, and that the trace-id join
+  does. That is not a second recording of the same fact — it is the
+  constraint the M4 evidence view is *built around*, so if this gap is ever
+  closed, that test names itself, the saved dashboard's two-step layout and
+  this section as the three things that have to change together.
 
 ### Gap 5: FastMCP never emits `gen_ai.operation.name` on tool-call spans
 

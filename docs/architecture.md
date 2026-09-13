@@ -1848,6 +1848,12 @@ calling the tracer directly.
 | Customer UI | http://localhost:8080 |
 | Reviewer UI (stage 3) | http://localhost:8081 |
 | Jaeger | http://localhost:16686 |
+| OpenSearch Dashboards — the evidence view (stage 4) | http://localhost:5601 |
+
+The first three need no port-forward of their own. The fourth does, and
+`./scripts/start-demo.sh` is what starts it — that script owns every forward
+this demo needs and prints the full surface list at the end of its run, so
+consult its output rather than this table when the two disagree.
 
 1. Open the Customer UI. The form is pre-filled with claim `CLM-1842`,
    policy `POL-77120`, €6,200. Click "Submit claim." Within a few seconds
@@ -2032,3 +2038,55 @@ calling the tracer directly.
    "reviewer-ui does not try to execute payments", but "it could not if it
    did". The other six tests in that file drive a real browser and a real
    model, and are gated behind `RUN_BROWSER_TESTS=1`.
+
+9. **Finally, prove why the money moved — from telemetry alone.** This is M4's
+   part of the walkthrough, and the question it answers is *"can we prove why
+   €5,800 was paid?"*
+
+   Run `./scripts/start-demo.sh` (it starts the forward Dashboards needs) and
+   open **http://localhost:5601/app/dashboards#/view/northstar-evidence**. The
+   dashboard is not made by hand: it is imported from
+   `deploy/observability/dashboards/evidence.ndjson` by
+   `./scripts/setup-kind.sh --stage 4`, so it survives a cluster recreate, and
+   `tests/unit/test_stage4_config.py` fails if that import is removed or
+   ungated.
+
+   Read its own top-left panel first — it is the file's header, and it records
+   two decisions this walkthrough depends on. Then:
+
+   - Set the time range to cover the two submissions from step 1 (the picker
+     defaults to the last hour). The range is not cosmetic: `CLM-1842` is a
+     fixed id, so the index holds one set of traces per run of it, going back
+     as far as retention does.
+   - **Panel 1, "Claims in this window"**, lists each claim id against the
+     trace ids it touched. The €6,200 claim has **two**: the refusal, and the
+     human approval that followed. The €5,800 claim has one.
+   - Select those trace ids in the control at the top. **This is the join, and
+     it is trace id rather than claim id on purpose.** `northstar.claim.id`
+     stops at the MCP boundary (Gap 4 in `docs/telemetry-contract.md`) and
+     never reaches the Policy Decision Service either, so a claim-id filter
+     would blank exactly the two panels that matter. Panel 1 is where you make
+     the hop from the number a human has to the id the telemetry joins on.
+   - **Panel 2, "What the platform decided"**, is the milestone's sentence in
+     table form. Both claims' `execute_payment` decisions name the **same
+     rule**, `settlement-agent.assisted.execute_limit`: €5,800 permitted
+     against a €6,000 limit for `settlement-agent`, €6,200 denied against the
+     same limit, and then permitted against `senior-settlement-agent`'s
+     €25,000. Same rule, different caller, different answer.
+   - **Panel 3, "Was a human in the loop?"**, is empty for the €5,800 claim —
+     and that emptiness *is* the evidence, which is why the panel is on the
+     dashboard rather than only its contents. For `CLM-1842` it names the
+     reviewer, the decision, and how long the refusal waited.
+   - **Panel 4, "What reached the ledger"**, is every `payments-api` server
+     span in the selected traces. For the €5,800 claim that is
+     `propose → execute` and nothing else. For `CLM-1842` it is
+     `propose → refuse`, then the reviewer page's own ledger reads, then
+     `execute` — the state changes and the reads that led to them. Not one of
+     these spans carries a claim id; they are here only because of the
+     trace-id join, which is the whole reason the join has two steps.
+
+   The queries behind all four panels are asserted against the live cluster by
+   `tests/e2e/test_evidence_view.py`, which drives both settlements itself. The
+   dashboard's *pixels* are deliberately not tested — but a dashboard that
+   silently goes blank because instrumentation regressed is worse than no
+   dashboard, so the fields it renders redden a test instead.

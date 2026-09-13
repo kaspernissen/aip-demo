@@ -93,7 +93,9 @@ raised to 4 — which is what turned this line, `smoke-test.sh` (twice) and
 
 Stage 4 runs on **stage 3's cluster config unchanged**, so moving from stage 3
 to stage 4 needs no cluster recreate: it adds OpenSearch, OpenSearch
-Dashboards and Prometheus, and restarts the collector against them.
+Dashboards and Prometheus, restarts the collector against them, and imports
+the evidence view into Dashboards from
+`deploy/observability/dashboards/evidence.ndjson`.
 
 `smoke-test.sh` additionally requires a repo-root Python venv, a venv per
 Python service, and a Playwright Chromium install — see the actionable error
@@ -220,7 +222,7 @@ the laptop runs one stage at a time.
 | 1 | Connected | agents, MCP servers, systems of record, customer UI, collector, Jaeger |
 | 2 | Governed | agentgateway, SPIFFE/SPIRE, Policy Decision Service, Kyverno, Cilium — **as of M2.2 `--stage 2` installs Cilium (M2.1 Task 3, with M2.2 Task 7 adding ingress and `toFQDNs` egress policies), agentgateway (M2.1 Task 3, in the MCP path between settlement-agent and payments-mcp), SPIRE (M2.1 Task 4, verifying a JWT-SVID at the gateway) and the Policy Decision Service (M2.2 Task 4, deciding every `tools/call` through the gateway's `mcpGuardrails` hook) — Kyverno is NOT installed yet**, on a cluster created with kind's default CNI disabled |
 | 3 | Supervised | Dapr Workflow, reviewer UI, Keycloak — **as of M3 `--stage 3` installs the reviewer UI (Task 4, the page a human reads and clicks) and `senior-settlement-agent` (Task 3, the settlement-agent image in a second Deployment under a second ServiceAccount, so "senior" is an identity rather than a different program) on top of everything stage 2 installs — Dapr Workflow and Keycloak are NOT installed**, on a cluster created with a fourth host port reserved for the reviewer UI |
-| 4 | Observable | OpenSearch + Agent Evals, Prometheus — **as of M4 Task 2 `--stage 4` installs OpenSearch (single node, security plugin off), OpenSearch Dashboards and Prometheus on top of everything stage 3 installs, adds an OpenSearch branch to the collector's traces pipeline, and routes the collector's metrics pipeline to Prometheus over OTLP — Agent Evals (M4 Task 4) are NOT installed yet**. Prometheus is OTLP-ingest only: every one of the chart's ten default scrape jobs is disabled, so OTLP is its single ingestion path (M4 exit criterion 5). All of it runs on stage 3's cluster config unchanged: there is deliberately no `deploy/kind/stage4.yaml` (plan amendment A1), and both Dashboards and Prometheus are reached by port-forward via `./scripts/start-demo.sh` rather than a kind host port |
+| 4 | Observable | OpenSearch + Agent Evals, Prometheus — **as of M4 Task 2 `--stage 4` installs OpenSearch (single node, security plugin off), OpenSearch Dashboards and Prometheus on top of everything stage 3 installs, adds an OpenSearch branch to the collector's traces pipeline, and routes the collector's metrics pipeline to Prometheus over OTLP — Agent Evals (M4 Task 4) are NOT installed yet**. Prometheus is OTLP-ingest only: every one of the chart's ten default scrape jobs is disabled, so OTLP is its single ingestion path (M4 exit criterion 5). All of it runs on stage 3's cluster config unchanged: there is deliberately no `deploy/kind/stage4.yaml` (plan amendment A1), and both Dashboards and Prometheus are reached by port-forward via `./scripts/start-demo.sh` rather than a kind host port. M4 Task 3 adds the evidence view itself, imported into Dashboards from `deploy/observability/dashboards/evidence.ndjson` at this stage — see `docs/architecture.md`'s "See it yourself" step 9 |
 | 5 | Progressive autonomy | OpenFeature / flagd |
 | 6 | Golden path | Crossplane `Agent` CRD, Argo CD, Backstage |
 
