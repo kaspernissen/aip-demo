@@ -68,22 +68,48 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-13 (M4 Task 1) — the current figures, and the gate row is DERIVED,
-not yet re-measured against a live run.** Task 1 added exactly two new unit
-tests (`tests/unit/test_stage4_config.py`), neither gated nor skipped under
-any condition -- they read only committed file and text state, no cluster --
-so the collected total rises by exactly 2, to **230**, re-measured with
-`.venv/bin/python -m pytest --collect-only -q tests/`. Bare-suite row,
-derived from that same collection: 230 collected − 33 gated − 1 xfailed =
-`196 passed, 33 skipped, 1 xfailed`. Gate row: the two new tests are
-unconditional, so they add the same +2 to the gate's own passed count;
-227 + 2 = `229 passed, 1 xfailed`. This is arithmetic, not a live
-`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` run -- Task 1's own changes
-(a new, additive OpenSearch install and its own trace-export branch behind
-the existing collector pipelines; no application code touched, no span the
-gate already asserts on changed) give no reason to expect the run itself to
-behave differently, but that expectation is stated as exactly that: the same
-"derived" / "measured" distinction the M3 rows below draw on their own.
+**2026-09-13 (M4 Task 1, after its review fix round) — the current figures,
+and the gate row is DERIVED, not yet re-measured against a live run.** Task 1
+and its fix round added **13** tests in total, taking the collected count from
+228 to **243**, re-measured with
+`.venv/bin/python -m pytest --collect-only -q tests/`:
+
+* `tests/unit/test_stage4_config.py` — **11**. Two shipped with Task 1; the
+  fix round rewrote both (the review found each one inert against the edit it
+  claimed to catch) and added nine more, covering the stage-conditional
+  collector-config strip, the marker convention it depends on, the attribute
+  collision set, the OpenSearch-branch confinement of the rename, and
+  `start-demo.sh`'s behaviour on a cluster without the stage-gated Services.
+  Two of the eleven run the real `start-demo.sh` against fake binaries, so
+  they are slower than a text assertion but not cluster-dependent.
+* `tests/e2e/test_opensearch_trace_ingest.py` — **4**. The fix round's
+  headline deliverable (ruling M4-R6): span-set parity between Jaeger and
+  OpenSearch for one driven trace, the `policy.decision` span being queryable
+  out of OpenSearch, Jaeger keeping the canonical attribute names, and zero
+  `Exporting failed` events read over the whole collector-log window. These
+  need the live cluster like every other `tests/e2e` file, and they drive one
+  denial through the gateway with no model call and no browser. They **skip**
+  on a cluster coherently below stage 4 (no OpenSearch Service *and* no
+  `opensearch/trace` in the deployed collector config) and **fail** on the
+  incoherent middle — a collector configured to export to an OpenSearch that
+  is not installed.
+
+Bare-suite row, derived from that same collection: 243 collected − 33 gated −
+1 xfailed = `209 passed, 33 skipped, 1 xfailed`. The 33 gated are the
+`RUN_BROWSER_TESTS=1` browser tests, unchanged; the four new e2e tests are not
+among them. Gate row: 243 collected − 1 xfailed = `242 passed, 1 xfailed`.
+
+This is arithmetic, not a live `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh`
+run. **Task 5 runs the milestone's one gate and converts this row to
+MEASURED.** Two things are worth stating as the expectations they are rather
+than as findings: the gate must be run on a **stage-4** cluster for the four
+new e2e tests to execute rather than skip (the README quick start and
+`smoke-test.sh`'s own prerequisite message both say `--stage 4` as of this
+round), and Task 1's changes touched no application code and no span the gate
+already asserts on. That is the same "derived" / "measured" distinction the M3
+rows below draw on their own.
+
+`tests/unit` alone collects **128** (119 before the fix round).
 
 **2026-09-11 (M3, remaining dependency bumps) — superseded by the row above,
 kept the same way every earlier row is: it was the current figures, and the
@@ -196,8 +222,8 @@ defect class, so each command is stated as it was actually run.)
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `196 passed, 33 skipped, 1 xfailed` (re-measured 2026-09-13, M4 Task 1: `pytest --collect-only -q tests/` → 230 collected) |
-| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `229 passed, 1 xfailed` (DERIVED 2026-09-13, M4 Task 1, not yet re-measured against a live run — see the note above) |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `209 passed, 33 skipped, 1 xfailed` (re-measured 2026-09-13, M4 Task 1 fix round: `pytest --collect-only -q tests/` → 243 collected) |
+| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `242 passed, 1 xfailed` (DERIVED 2026-09-13, M4 Task 1 fix round, not yet re-measured against a live run — see the note above; Task 5 runs the milestone's one gate) |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -1111,7 +1137,7 @@ That prediction held, and this is where M1.2 changes it: PydanticAI's own
 opened by a library specifically to represent *our own agent's reasoning*,
 not a network call our code happened to make.
 
-## Export destinations: Jaeger and Dash0, and they are not symmetric
+## Export destinations: Jaeger, OpenSearch and Dash0, and they are not symmetric
 
 This has been live and correct since before M1.2 started, and was previously
 undocumented — recorded here rather than changed, because nothing about it
@@ -1131,22 +1157,57 @@ fi
 ```
 
 Read directly from `deploy/observability/collector-config-dash0.yaml`'s own
-pipeline definitions — **the two pipelines are not symmetric**:
+pipeline definitions, re-read after M4 Task 1 changed them — **the pipelines
+are not symmetric**:
 
-| Signal | Exporters |
+| Pipeline | Exporters |
 |---|---|
-| Traces | `otlp_grpc/jaeger`, `otlp_grpc/dash0`, `debug` |
-| Metrics | `otlp_grpc/dash0`, `debug` |
-| Logs | `otlp_grpc/dash0`, `debug` |
+| `traces` | `otlp_grpc/jaeger`, `forward/opensearch`, `otlp_grpc/dash0`, `debug` |
+| `traces/opensearch` (stage 4 only) | `opensearch/trace` |
+| `metrics` | `otlp_grpc/dash0`, `debug` |
+| `logs` | `otlp_grpc/dash0`, `debug` |
 
-**Traces go to both Jaeger and Dash0; metrics and logs go to Dash0 only.**
-Jaeger is a traces-only backend by design, so it was never a candidate for
-the other two signals — this is not an oversight, it is what "traces to a
+**Traces go to Jaeger, OpenSearch and Dash0; metrics and logs go to Dash0
+only.** Jaeger is a traces-only backend by design, so it was never a candidate
+for the other two signals — this is not an oversight, it is what "traces to a
 vendor-neutral OSS backend, everything else to whichever vendor is
 configured" looks like when the OSS backend genuinely can't carry metrics or
 logs. **Dash0 is therefore strictly richer than the on-stage Jaeger view**:
 anyone looking at Dash0 sees the same traces plus metrics and logs that never
 reach Jaeger at all.
+
+**This table said "Traces: `otlp_grpc/jaeger`, `otlp_grpc/dash0`, `debug`" and
+concluded "Traces go to both Jaeger and Dash0" until M4 Task 1's fix round.**
+That was true until M4 Task 1 added the OpenSearch branch to this very file,
+in the same commit that edited this document for the test counts — review
+finding F4, and the reason it is worth recording rather than silently
+correcting: "read directly from" is a provenance claim, and it decays the
+moment the file it names changes.
+
+**Three things about the OpenSearch branch a reader needs, none of them
+symmetric with the others:**
+
+* It is **stage 4 only**. `scripts/setup-kind.sh` strips every region of both
+  collector configs bracketed by `# BEGIN stage-4-only` / `# END
+  stage-4-only` when `--stage` is below 4, because OpenSearch is installed
+  only at stage 4 and a collector exporting to a backend that does not exist
+  fails permanently and silently (review finding F10, ruling M4-R8).
+* It is a **tee, not a fourth exporter on the main pipeline**. The `forward`
+  connector hands the main `traces` pipeline's output to a second pipeline,
+  so the OpenSearch branch cannot drift from what Jaeger and Dash0 receive.
+* It is the **only** place in this system where an attribute is renamed in
+  flight. `traces/opensearch` runs `attributes/opensearch-compat`, which
+  rewrites `policy.decision.retryable` to `policy.decision_retryable` **for
+  OpenSearch only**. OpenSearch expands dotted keys into nested objects at
+  index time, so a document carrying both `policy.decision` (a string) and
+  `policy.decision.retryable` (a bool) would need `attributes.policy.decision`
+  to be a scalar and an object at once; it answers `can't merge a non object
+  mapping [attributes.policy.decision] with an object mapping` and rejects the
+  document permanently. Jaeger and Dash0 export upstream of the tee and keep
+  the canonical name this document defines. See "The policy decision, as
+  measured (M2.2) — Gap 3, closed" for the attribute itself, and
+  `tests/e2e/test_opensearch_trace_ingest.py` for the guard that asserts both
+  halves against the live cluster.
 
 Verified live, not inferred, 2026-09-08: `dash0-secrets` present with all
 four keys; the collector pod carries all four `DASH0_*` env vars; the
@@ -1962,6 +2023,16 @@ outside:
   than only in the response body because it is the field the agent keys its
   terminal branch off. A denial the agent may retry is a denial it can sit on
   stage retrying.
+  **It is also the one attribute in this system that any backend has refused
+  to store** (M4 Task 1): its key is a dotted prefix of `policy.decision`'s,
+  and OpenSearch expands dotted keys into nested objects at index time, so a
+  single document cannot hold both. It reaches Jaeger and Dash0 under the name
+  above — the name this contract defines — and reaches OpenSearch as
+  `policy.decision_retryable`, rewritten by the `attributes/opensearch-compat`
+  processor in the collector's OpenSearch-only branch. Of the 114 distinct
+  span attribute keys Jaeger held across all ten services when this was
+  measured (2026-09-13), it is the only such collision; nothing else is
+  renamed for any destination. See "Export destinations" above.
 - **`policy.caller.spiffe_id` is the *caller's* attested identity**, not the
   PDS's own and not the audience — the same string the gateway records as
   `jwt.sub` one span up, handed to the PDS through the guardrail's

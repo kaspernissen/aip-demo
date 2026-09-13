@@ -78,7 +78,18 @@ trap cleanup EXIT INT TERM
 # before).
 verify_owned_forward() {
   local port="$1" pid="$2" name="$3" path="$4"
-  if ! lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $2}' | grep -qx "${pid}"; then
+  # `grep -x ... >/dev/null` and NOT `grep -qx` (review suspicion S1, and the
+  # identical construct in scripts/setup-kind.sh is fixed the same way). Under
+  # `set -o pipefail`, `grep -q` exits the moment it matches, which can SIGPIPE
+  # the `awk` still writing to it; awk then exits 141 and pipefail reports 141
+  # for the whole pipeline even though grep matched. That turns a healthy
+  # forward into "never bound" and exits 1 -- whose EXIT trap then kills the
+  # forwards this script had already established. Dropping -q makes grep drain
+  # its input, so nothing upstream can be signalled. It is a race rather than a
+  # certainty (lsof's output is small enough that the write usually completes
+  # first), which is exactly why it is worth removing rather than reasoning
+  # about.
+  if ! lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $2}' | grep -x "${pid}" >/dev/null; then
     echo -e "${RED}Error: the port-forward for ${name} (expected PID ${pid} listening on ${port}) never bound.${NC}" >&2
     echo "Another process may already hold that port -- check: lsof -nP -iTCP:${port} -sTCP:LISTEN" >&2
     exit 1
@@ -106,6 +117,31 @@ verify_existing_surface() {
   fi
 }
 
+# Review finding F8: this script is now the universal remedy smoke-test.sh
+# sends an operator to, and it was unconditional -- it forwarded
+# svc/opensearch-dashboards on every cluster. On a stage-1/2/3 cluster that
+# Service does not exist, the forward never binds, verify_owned_forward exits
+# 1, and the EXIT trap then kills the four good forwards it had just created:
+# the remedy for a dead port-forward would leave the operator with no
+# port-forwards at all.
+#
+# So the two stage-gated surfaces are asked for rather than assumed. The four
+# stage-1 surfaces below are NOT optional -- a cluster without them is broken,
+# not merely younger -- and nothing here is silently skipped: each skip prints
+# the stage that would provide it.
+service_exists() {
+  kubectl -n "$1" get "svc/$2" -o name >/dev/null 2>&1
+}
+
+DASHBOARDS_AVAILABLE=""
+if service_exists observability opensearch-dashboards; then
+  DASHBOARDS_AVAILABLE=1
+fi
+REVIEWER_UI_AVAILABLE=""
+if service_exists northstar-agents reviewer-ui; then
+  REVIEWER_UI_AVAILABLE=1
+fi
+
 echo -e "${BLUE}=== Starting Northstar port-forwards ===${NC}"
 
 echo "  - claims-agent       (19001 -> 9001)"
@@ -128,19 +164,28 @@ kubectl -n northstar-systems port-forward svc/payments-api 18080:8080 >/dev/null
 API_PID=$!
 PIDS+=("$API_PID")
 
-echo "  - OpenSearch Dashboards (5601 -> 5601)"
 # M4 Task 1, plan amendment A1: Dashboards has no kind host port --
 # extraPortMappings is create-time only and the human partner declined the
 # cluster recreate that would have added a fifth one -- so this is the ONLY
-# way to reach it.
-kubectl -n observability port-forward svc/opensearch-dashboards 5601:5601 >/dev/null 2>&1 &
-DASHBOARDS_PID=$!
-PIDS+=("$DASHBOARDS_PID")
+# way to reach it. Stage 4 installs it; below stage 4 it does not exist, and
+# forwarding it anyway is finding F8.
+DASHBOARDS_PID=""
+if [[ -n "$DASHBOARDS_AVAILABLE" ]]; then
+  echo "  - OpenSearch Dashboards (5601 -> 5601)"
+  kubectl -n observability port-forward svc/opensearch-dashboards 5601:5601 >/dev/null 2>&1 &
+  DASHBOARDS_PID=$!
+  PIDS+=("$DASHBOARDS_PID")
+else
+  echo -e "${YELLOW}  - OpenSearch Dashboards: SKIPPED, svc/opensearch-dashboards does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 4)${NC}"
+fi
 
 # --- Task 2's Prometheus goes here -------------------------------------
 # Clearly-marked place for the next M4 task: add its `kubectl port-forward`,
 # its PID variable, and its `verify_owned_forward` call below, the same shape
-# as the five above.
+# as the five above. Prometheus is stage 4 only, like Dashboards, so copy
+# Dashboards' `service_exists` guard rather than the four unconditional
+# forwards -- an unconditional forward for a Service a lower stage does not
+# have is review finding F8.
 # ------------------------------------------------------------------------
 
 # Give the forwards a moment to establish before checking them (same
@@ -153,23 +198,42 @@ verify_owned_forward 19001 "${CLAIMS_PID}" claims-agent "/.well-known/agent-card
 verify_owned_forward 19002 "${SETTLEMENT_PID}" settlement-agent "/.well-known/agent-card.json"
 verify_owned_forward 18000 "${MCP_PID}" payments-mcp "/mcp"
 verify_owned_forward 18080 "${API_PID}" payments-api "/healthz"
-verify_owned_forward 5601 "${DASHBOARDS_PID}" opensearch-dashboards "/"
+if [[ -n "$DASHBOARDS_PID" ]]; then
+  verify_owned_forward 5601 "${DASHBOARDS_PID}" opensearch-dashboards "/"
+fi
 # reviewer-ui: covered here for the same reason smoke-test.sh covers it --
 # it is normally already live via deploy/kind/stage3.yaml's NodePort mapping,
 # not a forward this script starts, but an operator running this script
-# wants to know ALL five surfaces smoke-test.sh will check are actually up,
-# not just the four this script itself launched.
-verify_existing_surface 8081 reviewer-ui "/healthz"
+# wants to know ALL the surfaces smoke-test.sh will check are actually up,
+# not just the ones this script itself launched. Stage 3 installs it; on a
+# stage-1/2 cluster there is nothing to verify (finding F8 again).
+if [[ -n "$REVIEWER_UI_AVAILABLE" ]]; then
+  verify_existing_surface 8081 reviewer-ui "/healthz"
+else
+  echo -e "${YELLOW}  - reviewer-ui: SKIPPED, svc/reviewer-ui does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 3)${NC}"
+fi
 
 echo ""
-echo -e "${GREEN}All surfaces verified up.${NC}"
+if [[ -n "$DASHBOARDS_AVAILABLE" && -n "$REVIEWER_UI_AVAILABLE" ]]; then
+  echo -e "${GREEN}All surfaces verified up.${NC}"
+else
+  echo -e "${GREEN}Every surface this cluster has is verified up.${NC}"
+  echo -e "${YELLOW}Some stage-gated surfaces are absent -- see the SKIPPED lines above.${NC}"
+fi
 echo ""
 echo "  claims-agent (A2A):        http://localhost:19001"
 echo "  settlement-agent (A2A):    http://localhost:19002"
 echo "  payments-mcp:              http://localhost:18000/mcp"
 echo "  payments-api:              http://localhost:18080"
-echo "  reviewer-ui:               http://localhost:8081"
-echo "  OpenSearch Dashboards:     http://localhost:5601"
+# Written as `if` blocks rather than `[[ ... ]] && echo ...`: under `set -e` a
+# bare `test && cmd` list whose test fails is the classic way a script exits on
+# a condition simply being false.
+if [[ -n "$REVIEWER_UI_AVAILABLE" ]]; then
+  echo "  reviewer-ui:               http://localhost:8081"
+fi
+if [[ -n "$DASHBOARDS_AVAILABLE" ]]; then
+  echo "  OpenSearch Dashboards:     http://localhost:5601"
+fi
 echo ""
 echo "Press Ctrl+C to stop the port-forwards this script started."
 

@@ -73,17 +73,27 @@ cp .env.template .env
 # three DASH0_* siblings are optional — see the comments in .env.template for
 # exactly which variables are required.
 
-./scripts/setup-kind.sh --stage 3
+./scripts/setup-kind.sh --stage 4
 ./scripts/smoke-test.sh
 ```
 
-**`--stage 3`, not `--stage 2`, as of M3 Task 5B.** This said `--stage 2` for
-the whole of M3, which was correct until Task 4 and false afterwards: stage 3
-now installs reviewer-ui and senior-settlement-agent on top of stage 2, and
+**`--stage 4`, not `--stage 3`, as of M4 Task 1.** Same defect one stage later,
+and the third time this class has recurred here. It said `--stage 2` for the
+whole of M3, which was correct until Task 4 and false afterwards: stage 3
+installs reviewer-ui and senior-settlement-agent on top of stage 2, and
 `smoke-test.sh`'s own prerequisite check requires reviewer-ui to answer on
 port 8081 — so following the old instruction rebuilt a cluster the very next
-command then rejected. `tests/unit/test_stage2_cilium_config.py::test_no_operator_facing_instruction_still_points_at_an_older_stage`
-now pins this across every script and this file.
+command then rejected. M4 Task 1 made stage 4 real and left this line at
+`--stage 3`; the review caught it, and ruling M4-R7 assigned the correction
+here rather than to the milestone's closing doc pass.
+`tests/unit/test_stage2_cilium_config.py::test_no_operator_facing_instruction_still_points_at_an_older_stage`
+now pins this across every script and this file, with its `CURRENT_STAGE`
+raised to 4 — which is what turned this line, `smoke-test.sh` (twice) and
+`rebuild-and-deploy.sh` red.
+
+Stage 4 runs on **stage 3's cluster config unchanged**, so moving from stage 3
+to stage 4 needs no cluster recreate: it adds OpenSearch and OpenSearch
+Dashboards and restarts the collector against them.
 
 `smoke-test.sh` additionally requires a repo-root Python venv, a venv per
 Python service, and a Playwright Chromium install — see the actionable error
@@ -210,7 +220,7 @@ the laptop runs one stage at a time.
 | 1 | Connected | agents, MCP servers, systems of record, customer UI, collector, Jaeger |
 | 2 | Governed | agentgateway, SPIFFE/SPIRE, Policy Decision Service, Kyverno, Cilium — **as of M2.2 `--stage 2` installs Cilium (M2.1 Task 3, with M2.2 Task 7 adding ingress and `toFQDNs` egress policies), agentgateway (M2.1 Task 3, in the MCP path between settlement-agent and payments-mcp), SPIRE (M2.1 Task 4, verifying a JWT-SVID at the gateway) and the Policy Decision Service (M2.2 Task 4, deciding every `tools/call` through the gateway's `mcpGuardrails` hook) — Kyverno is NOT installed yet**, on a cluster created with kind's default CNI disabled |
 | 3 | Supervised | Dapr Workflow, reviewer UI, Keycloak — **as of M3 `--stage 3` installs the reviewer UI (Task 4, the page a human reads and clicks) and `senior-settlement-agent` (Task 3, the settlement-agent image in a second Deployment under a second ServiceAccount, so "senior" is an identity rather than a different program) on top of everything stage 2 installs — Dapr Workflow and Keycloak are NOT installed**, on a cluster created with a fourth host port reserved for the reviewer UI |
-| 4 | Observable | OpenSearch + Agent Evals, Prometheus |
+| 4 | Observable | OpenSearch + Agent Evals, Prometheus — **as of M4 Task 1 `--stage 4` installs OpenSearch (single node, security plugin off) and OpenSearch Dashboards on top of everything stage 3 installs, and adds an OpenSearch branch to the collector's traces pipeline — Prometheus (M4 Task 2) and Agent Evals (M4 Task 4) are NOT installed yet**, on stage 3's cluster config unchanged: there is deliberately no `deploy/kind/stage4.yaml` (plan amendment A1), and Dashboards is reached by port-forward via `./scripts/start-demo.sh` rather than a kind host port |
 | 5 | Progressive autonomy | OpenFeature / flagd |
 | 6 | Golden path | Crossplane `Agent` CRD, Argo CD, Backstage |
 

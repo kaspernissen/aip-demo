@@ -627,10 +627,25 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
     loop requires reviewer-ui on 8081, a workload no stage-2 cluster has, so
     following the instruction guaranteed a failure on the very next check.
 
-    `CURRENT_STAGE` below is the single number M4 has to change. It is also the
-    reason this test is parameter-free rather than parameterised: adding a stage
-    must not change how many tests this module collects, since
-    `docs/telemetry-contract.md` publishes that count.
+    `CURRENT_STAGE` below is the single number each milestone that adds a
+    stage has to change. It is also the reason this test is parameter-free
+    rather than parameterised: adding a stage must not change how many tests
+    this module collects, since `docs/telemetry-contract.md` publishes that
+    count.
+
+    **M4 Task 1: it recurred a third time, and the number was not raised.**
+    Stage 4 shipped at `955dd18` with `CURRENT_STAGE` still at 3, so this
+    guard checked only stages 1 and 2 and stayed green over four live
+    `--stage 3` instructions: `README.md`'s quick start, `smoke-test.sh`
+    twice (one of them written by the very commit that made stage 4 real),
+    and `rebuild-and-deploy.sh`. Task 1's review found it; ruling M4-R7
+    assigned the correction to Task 1's fix round rather than to M4's closing
+    doc pass, because this docstring names M4 as the owner of the number and
+    because the commit that made stage 4 current is the commit that authored
+    a fresh offender. Raising it to 4 turned all four red, which is the point
+    -- they were found by a test rather than by a reader. (The review
+    predicted three of the four; `rebuild-and-deploy.sh` is the one this
+    guard added on its own once the number moved.)
 
     Two deliberate exclusions:
 
@@ -663,7 +678,7 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
     claim that it would have found the two misses. The glob is deliberate:
     `stage4.yaml` is covered the day it is written, with no edit here.
     """
-    CURRENT_STAGE = 3
+    CURRENT_STAGE = 4
     scripts_and_readme = [
         REPO_ROOT / "scripts" / "smoke-test.sh",
         REPO_ROOT / "scripts" / "rebuild-and-deploy.sh",

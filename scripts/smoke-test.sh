@@ -85,7 +85,14 @@ kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
   # `test_no_operator_facing_instruction_still_points_at_an_older_stage` now
   # pins both numbers, so the M4 recurrence is caught by a test rather than by
   # a reader.
-  echo "Run ./scripts/setup-kind.sh --stage 3 first." >&2
+  #
+  # M4 Task 1 fix round 1: it recurred, and the guard caught it. This line
+  # said `--stage 3` after stage 4 became real; raising the guard's
+  # CURRENT_STAGE to 4 (ruling M4-R7) is what turned it red. Stage 4 is a
+  # superset of stage 3 -- same cluster config, plus OpenSearch -- so an
+  # operator following this still gets the reviewer-ui the port loop below
+  # requires, and also gets the OpenSearch the M4 assertions need.
+  echo "Run ./scripts/setup-kind.sh --stage 4 first." >&2
   exit 1
 }
 # The e2e/browser assertions below need all five ports up. Four are
@@ -154,13 +161,20 @@ for probe in \
     # remedy is one command, not a line an operator has to get right five
     # times. This file still creates nothing itself -- that division
     # predates this milestone and is unchanged; only the remedy text below
-    # points somewhere new. (Deliberately not named a second time in this
-    # comment: tests/unit/test_stage4_config.py's
-    # test_the_port_forward_remedy_points_at_the_script checks for the
-    # script's name via a plain substring match, so this comment does not
-    # also carry it -- otherwise reverting only the echo below would still
-    # leave that guard green.)
-    echo "Port-forwards die after a redeploy and need re-establishing: ./scripts/start-demo.sh (or re-run ./scripts/setup-kind.sh --stage 3 first if the cluster itself is gone)." >&2
+    # points somewhere new.
+    #
+    # This comment used to claim that leaving the script's name out of it was
+    # what kept the guard honest -- "otherwise reverting only the echo below
+    # would still leave that guard green". Review finding F7: that was false
+    # as written. The remedy at the end of the `curl` branch below names the
+    # script too, so reverting *this* echo alone always left the old
+    # substring guard green regardless of what this comment said. The
+    # precaution is still worth keeping (a comment must not be able to satisfy
+    # a guard), but the guard is what was actually fixed:
+    # tests/unit/test_stage4_config.py now strips whole-line comments and
+    # requires BOTH remedies to name the script, so reverting either one goes
+    # red on its own.
+    echo "Port-forwards die after a redeploy and need re-establishing: ./scripts/start-demo.sh (or re-run ./scripts/setup-kind.sh --stage 4 first if the cluster itself is gone)." >&2
     exit 1
   }
   # -o /dev/null: the body is irrelevant, only whether one arrived.

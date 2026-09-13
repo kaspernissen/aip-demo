@@ -32,7 +32,9 @@ command_exists docker || { echo -e "${RED}docker is required${NC}" >&2; exit 1; 
 command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1; }
 
 if ! docker ps --format '{{.Names}}' | grep -qx kind-registry; then
-  echo -e "${RED}kind-registry is not running. Run scripts/setup-kind.sh --stage 3 first.${NC}" >&2
+  # M4 Task 1 fix round 1 (ruling M4-R7): stage 4 is the current stage, so
+  # this points there. It said `--stage 3` until stage 4 became real.
+  echo -e "${RED}kind-registry is not running. Run scripts/setup-kind.sh --stage 4 first.${NC}" >&2
   exit 1
 fi
 

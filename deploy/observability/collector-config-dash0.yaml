@@ -47,6 +47,30 @@ processors:
     detectors: [env]
     override: false
 
+  # BEGIN stage-4-only
+  # M4 Task 1, fix round 1 (finding F1): see collector-config.yaml's own
+  # comment on this processor for the full measurement and for why exactly one
+  # attribute key is rewritten. This file must carry the identical block --
+  # tests/unit/test_collector_configs_in_sync.py requires the two files'
+  # `processors` sections to be equal.
+  #
+  # Ruling M4-R5 is why this is a *processor in the OpenSearch branch* rather
+  # than a change to what the services emit: in THIS file, `otlp_grpc/dash0`
+  # exports from the main `traces` pipeline, upstream of the
+  # `forward/opensearch` tee, so Dash0 receives the canonical
+  # `policy.decision.retryable` exactly as Jaeger does. The
+  # `traces/opensearch` pipeline below deliberately does NOT list
+  # `otlp_grpc/dash0`, which is the one documented exception to this repo's
+  # "every pipeline gets the Dash0 exporter too" rule.
+  attributes/opensearch-compat:
+    actions:
+      - key: policy.decision_retryable
+        from_attribute: policy.decision.retryable
+        action: insert
+      - key: policy.decision.retryable
+        action: delete
+  # END stage-4-only
+
 exporters:
   otlp_grpc/jaeger:
     endpoint: jaeger.observability.svc.cluster.local:4317
@@ -60,20 +84,50 @@ exporters:
   debug:
     verbosity: normal
 
+  # BEGIN stage-4-only
   # M4 Task 1: see collector-config.yaml's own comment on this exporter for
   # the full measurement -- this file must carry the identical block
-  # (tests/unit/test_collector_configs_in_sync.py enforces byte-for-byte
-  # agreement on every exporter except otlp_grpc/dash0).
+  # (tests/unit/test_collector_configs_in_sync.py enforces agreement on every
+  # exporter except otlp_grpc/dash0).
   opensearch/trace:
     http:
       endpoint: http://opensearch-cluster-master.observability.svc.cluster.local:9200
+  # END stage-4-only
+
+# BEGIN stage-4-only
+# The spec's `forward/` tee (§3). Identical to collector-config.yaml's; see
+# that file for why.
+connectors:
+  forward/opensearch: {}
+# END stage-4-only
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [resource_detection, batch]
-      exporters: [otlp_grpc/jaeger, opensearch/trace, otlp_grpc/dash0, debug]
+      # One exporter per line so scripts/setup-kind.sh can strip the
+      # stage-4-only entry below stage 4 with the same marker rule it uses for
+      # every other block here.
+      exporters:
+        - otlp_grpc/jaeger
+        # BEGIN stage-4-only
+        - forward/opensearch
+        # END stage-4-only
+        - otlp_grpc/dash0
+        - debug
+    # BEGIN stage-4-only
+    # No `otlp_grpc/dash0` here, deliberately, and it is the one pipeline in
+    # either file without it: this branch carries the OpenSearch-compat
+    # rewrite, and ruling M4-R5 says Dash0 must receive the canonical
+    # attribute names. Adding Dash0 here would both duplicate every span in
+    # Dash0 and duplicate it under a renamed attribute.
+    # tests/unit/test_collector_configs_in_sync.py encodes that exception.
+    traces/opensearch:
+      receivers: [forward/opensearch]
+      processors: [attributes/opensearch-compat]
+      exporters: [opensearch/trace]
+    # END stage-4-only
     metrics:
       receivers: [otlp, prometheus/spire]
       processors: [batch]

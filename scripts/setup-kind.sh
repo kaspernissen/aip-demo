@@ -109,14 +109,17 @@ Usage: setup-kind.sh [--stage N]
 Each stage installs only what that stage of the demo needs, so the laptop
 runs exactly one stage at a time.
 
-Stage 2 and stage 3 both need `networking.disableDefaultCNI`, a create-time
-kind flag: it cannot be applied to a cluster that already exists, so each
-must be created FROM its own deploy/kind/stageN.yaml (stage 3's only
-difference from stage 2's is the reviewer-ui port reservation), and this
-script refuses rather than layering Cilium on a running default CNI. Note
-that --stage defaults to 1, so a bare `./scripts/setup-kind.sh` builds a
-stage-1 (kindnet) cluster -- pass --stage 2 or --stage 3 explicitly for the
-Cilium dataplane.
+Stages 2, 3 and 4 all need `networking.disableDefaultCNI`, a create-time kind
+flag: it cannot be applied to a cluster that already exists, so the cluster
+must be created FROM a kind config that sets it -- deploy/kind/stage2.yaml or
+deploy/kind/stage3.yaml (whose only difference from stage 2's is the
+reviewer-ui port reservation; stage 4 reuses stage 3's, see below) -- and this
+script refuses rather than layering Cilium on a running default CNI. Note that
+--stage defaults to 1, so a bare `./scripts/setup-kind.sh` builds a stage-1
+(kindnet) cluster -- pass --stage 2, 3 or 4 explicitly for the Cilium
+dataplane. (This paragraph said "Stage 2 and stage 3 both" and listed only
+those two until M4 Task 1's fix round; stage 4 needs the create-time flag for
+exactly the same reason, because it runs on stage 3's config.)
 
 Stage 4 is the one exception to "each stage brings its own deploy/kind/
 stageN.yaml": there is deliberately no stage4.yaml. OpenSearch Dashboards
@@ -358,9 +361,38 @@ else
   echo -e "${YELLOW}DASH0_AUTH_TOKEN not set: exporting to Jaeger only (vendor-neutral default).${NC}"
 fi
 
+# M4 Task 1, fix round 1 (review finding F10, ruling M4-R8): below stage 4 the
+# collector must not name a backend this cluster does not have.
+#
+# OpenSearch is installed only at `-ge 4` (Step 8c below), but the collector
+# config is chosen on DASH0_AUTH_TOKEN and never on stage -- so as shipped,
+# `--stage 1|2|3` deployed a collector whose traces pipeline named
+# `opensearch/trace`. Jaeger still received everything (the fanout is
+# per-exporter), so it degraded to permanent export failures logged into a file
+# nobody reads, which is precisely the silently-broken shape this repo exists
+# to avoid.
+#
+# The rule is one line of sed and one marker convention, not a YAML rewriter:
+# every OpenSearch-only region of both collector configs is bracketed by
+# `# BEGIN stage-4-only` / `# END stage-4-only`, including the single
+# `- forward/opensearch` entry in the traces pipeline's exporter list (which is
+# why that list is written one-per-line). Deleting those regions yields the
+# exact pre-M4 config -- verified by round-tripping both files through PyYAML.
+# tests/unit/test_stage4_config.py runs this same sed program (it reads the
+# expression out of this file, so the two cannot drift) and asserts the result
+# parses, still exports traces to Jaeger, and mentions OpenSearch nowhere.
+STAGE4_ONLY_STRIP='/^[[:space:]]*# BEGIN stage-4-only$/,/^[[:space:]]*# END stage-4-only$/d'
+COLLECTOR_CONFIG_APPLIED="$COLLECTOR_CONFIG"
+if [[ "${STAGE}" -lt 4 ]]; then
+  COLLECTOR_CONFIG_APPLIED="$(mktemp -t collector-config)"
+  trap 'rm -f "$COLLECTOR_CONFIG_APPLIED"' EXIT
+  sed "$STAGE4_ONLY_STRIP" "$COLLECTOR_CONFIG" > "$COLLECTOR_CONFIG_APPLIED"
+  echo -e "${YELLOW}Stage ${STAGE}: dropping the stage-4-only OpenSearch branch from the collector config (OpenSearch is installed at stage 4 only).${NC}"
+fi
+
 kubectl create configmap otel-collector-config \
   --namespace observability \
-  --from-file=collector-config.yaml="$COLLECTOR_CONFIG" \
+  --from-file=collector-config.yaml="$COLLECTOR_CONFIG_APPLIED" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl apply -f "$ROOT/deploy/observability/jaeger.yaml"
@@ -421,13 +453,20 @@ if [[ "${STAGE}" -ge 4 ]]; then
   # was measured against (Task 1 report has the full command transcript);
   # Dashboards is the UI a human reads it through, reached by port-forward
   # (./scripts/start-demo.sh) rather than a kind host port -- see the
-  # KIND_CONFIG note above (plan amendment A1). `--wait` on both installs is
-  # load-bearing the same way it is for Cilium/SPIRE above: the collector
-  # ConfigMap this script applies at Step 7 already names the `opensearch/
-  # trace` exporter, so a collector restart before OpenSearch's Service
-  # exists would just mean the first export retries until it does -- not a
-  # hard ordering requirement, but the explicit wait keeps this step's own
-  # success message honest.
+  # KIND_CONFIG note above (plan amendment A1).
+  #
+  # `--wait` on both installs, and then a SECOND collector restart below, and
+  # the ordering between them is a real requirement rather than tidiness.
+  # Fix round 1 corrected the claim that used to stand here -- "a collector
+  # restart before OpenSearch's Service exists would just mean the first
+  # export retries until it does". Nothing measured that, and the collector's
+  # own message in this cluster is `Exporting failed. Rejecting data. Try
+  # enabling sending_queue to survive temporary failures.`, i.e. this exporter
+  # has no sending queue to survive anything with. Step 8 above has already
+  # restarted the collector by the time this runs, so at stage 4 the restart
+  # here is what guarantees the collector's first export attempt happens after
+  # OpenSearch is serving, instead of guessing about retry behaviour nobody
+  # has measured.
   echo -e "${BLUE}Step 8c/9 (stage 4): Installing OpenSearch ${OPENSEARCH_CHART_VERSION}...${NC}"
   helm repo add opensearch "${OPENSEARCH_HELM_REPO}" --force-update >/dev/null
   helm repo update opensearch >/dev/null
@@ -443,7 +482,13 @@ if [[ "${STAGE}" -ge 4 ]]; then
     --kube-context "kind-${CLUSTER_NAME}" \
     --values "$ROOT/deploy/observability/opensearch/dashboards-values.yaml" \
     --wait --timeout 5m
-  echo -e "${GREEN}OpenSearch ${OPENSEARCH_CHART_VERSION} is up (single node, security plugin off, heap and resources set in deploy/observability/opensearch/values.yaml); Dashboards is up, reached by port-forward.${NC}"
+
+  # See the ordering note above: the collector has already been restarted once,
+  # against a cluster with no OpenSearch in it. This restart is the one whose
+  # first export attempt can succeed.
+  kubectl -n observability rollout restart deployment/otel-collector
+  kubectl -n observability rollout status deployment/otel-collector --timeout=180s
+  echo -e "${GREEN}OpenSearch ${OPENSEARCH_CHART_VERSION} is up (single node, security plugin off, heap and resources set in deploy/observability/opensearch/values.yaml); Dashboards is up, reached by port-forward; the collector has been restarted against it.${NC}"
 fi
 
 echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then starting port-forwards...${NC}"
@@ -604,7 +649,14 @@ sleep 4
 # listening there.
 verify_port_forward() {
   local port="$1" pid="$2" name="$3"
-  if ! lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $2}' | grep -qx "${pid}"; then
+  # `grep -x ... >/dev/null`, not `grep -qx` -- see the identical note in
+  # scripts/start-demo.sh::verify_owned_forward. Under `pipefail`, `grep -q`
+  # can SIGPIPE the upstream `awk`, making the pipeline exit 141 on a
+  # successful match and reporting a healthy forward as "never bound". This
+  # instance predates M4; it is fixed here in the same change that fixed the
+  # copy in start-demo.sh, because leaving one of two identical constructs
+  # broken is how it comes back.
+  if ! lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $2}' | grep -x "${pid}" >/dev/null; then
     echo -e "${RED}Error: the port-forward for ${name} (expected PID ${pid} listening on ${port}) never bound.${NC}" >&2
     echo "Another process may already hold that port — check: lsof -nP -iTCP:${port} -sTCP:LISTEN (amendment A9)." >&2
     exit 1
@@ -628,10 +680,13 @@ else
 fi
 echo "  Customer UI:         http://localhost:8080"
 if [[ "${STAGE}" -ge 3 ]]; then
-  # Only at stage 3: the host port is reserved by deploy/kind/stage3.yaml, so
-  # on a stage-1 or stage-2 cluster this URL answers nothing and printing it
+  # Stage 3 and above: the host port is reserved by deploy/kind/stage3.yaml,
+  # which stage 4 also runs on (amendment A1), so both stages answer here. On
+  # a stage-1 or stage-2 cluster this URL answers nothing and printing it
   # would be the same class of false instruction this block's sibling in
-  # scripts/smoke-test.sh checks for.
+  # scripts/smoke-test.sh checks for. (This comment read "Only at stage 3"
+  # until M4 Task 1's fix round -- true while 3 was the maximum, and the
+  # branch condition was `-ge 3` even then.)
   echo "  Reviewer UI:         http://localhost:8081"
 fi
 echo "  Jaeger UI:           http://localhost:16686"
