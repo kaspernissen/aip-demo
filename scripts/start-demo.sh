@@ -141,6 +141,10 @@ REVIEWER_UI_AVAILABLE=""
 if service_exists northstar-agents reviewer-ui; then
   REVIEWER_UI_AVAILABLE=1
 fi
+PROMETHEUS_AVAILABLE=""
+if service_exists observability prometheus; then
+  PROMETHEUS_AVAILABLE=1
+fi
 
 echo -e "${BLUE}=== Starting Northstar port-forwards ===${NC}"
 
@@ -179,14 +183,26 @@ else
   echo -e "${YELLOW}  - OpenSearch Dashboards: SKIPPED, svc/opensearch-dashboards does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 4)${NC}"
 fi
 
-# --- Task 2's Prometheus goes here -------------------------------------
-# Clearly-marked place for the next M4 task: add its `kubectl port-forward`,
-# its PID variable, and its `verify_owned_forward` call below, the same shape
-# as the five above. Prometheus is stage 4 only, like Dashboards, so copy
-# Dashboards' `service_exists` guard rather than the four unconditional
-# forwards -- an unconditional forward for a Service a lower stage does not
-# have is review finding F8.
-# ------------------------------------------------------------------------
+# M4 Task 2, filling the place the previous task marked for it. Prometheus has
+# no kind host port either (same create-time `extraPortMappings` constraint as
+# Dashboards, plan amendment A1), so a forward is the only way to reach it --
+# and it is stage 4 only, so it takes Dashboards' `service_exists` guard rather
+# than the four unconditional forwards above (review finding F8).
+#
+# 9090 -> 9090 and not an offset like the 1xxxx ports above: the Service's own
+# port is 9090 (`server.service.servicePort` in
+# deploy/observability/prometheus/values.yaml overrides the chart's default of
+# 80), and every command in the M4 Task 2 report queries
+# http://localhost:9090, so the host side is kept identical to the cluster side.
+PROMETHEUS_PID=""
+if [[ -n "$PROMETHEUS_AVAILABLE" ]]; then
+  echo "  - Prometheus         (9090 -> 9090)"
+  kubectl -n observability port-forward svc/prometheus 9090:9090 >/dev/null 2>&1 &
+  PROMETHEUS_PID=$!
+  PIDS+=("$PROMETHEUS_PID")
+else
+  echo -e "${YELLOW}  - Prometheus: SKIPPED, svc/prometheus does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 4)${NC}"
+fi
 
 # Give the forwards a moment to establish before checking them (same
 # allowance setup-kind.sh's own port-forward block uses).
@@ -200,6 +216,13 @@ verify_owned_forward 18000 "${MCP_PID}" payments-mcp "/mcp"
 verify_owned_forward 18080 "${API_PID}" payments-api "/healthz"
 if [[ -n "$DASHBOARDS_PID" ]]; then
   verify_owned_forward 5601 "${DASHBOARDS_PID}" opensearch-dashboards "/"
+fi
+if [[ -n "$PROMETHEUS_PID" ]]; then
+  # `/-/healthy` rather than `/`: with every scrape job disabled
+  # (deploy/observability/prometheus/values.yaml) the root page still renders,
+  # but the health endpoint is the one that answers without the UI bundle and
+  # is what Prometheus itself documents as its liveness path.
+  verify_owned_forward 9090 "${PROMETHEUS_PID}" prometheus "/-/healthy"
 fi
 # reviewer-ui: covered here for the same reason smoke-test.sh covers it --
 # it is normally already live via deploy/kind/stage3.yaml's NodePort mapping,
@@ -226,7 +249,7 @@ else
 fi
 
 echo ""
-if [[ -n "$DASHBOARDS_AVAILABLE" && -n "$REVIEWER_UI_AVAILABLE" ]]; then
+if [[ -n "$DASHBOARDS_AVAILABLE" && -n "$REVIEWER_UI_AVAILABLE" && -n "$PROMETHEUS_AVAILABLE" ]]; then
   echo -e "${GREEN}All surfaces verified up.${NC}"
 else
   echo -e "${GREEN}Every surface this cluster has is verified up.${NC}"
@@ -245,6 +268,9 @@ if [[ -n "$REVIEWER_UI_AVAILABLE" ]]; then
 fi
 if [[ -n "$DASHBOARDS_AVAILABLE" ]]; then
   echo "  OpenSearch Dashboards:     http://localhost:5601"
+fi
+if [[ -n "$PROMETHEUS_AVAILABLE" ]]; then
+  echo "  Prometheus:                http://localhost:9090"
 fi
 echo ""
 echo "Press Ctrl+C to stop the port-forwards this script started."

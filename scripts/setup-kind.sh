@@ -40,6 +40,19 @@ SPIFFE_HELM_REPO="https://spiffe.github.io/helm-charts-hardened/"
 # headers.
 OPENSEARCH_CHART_VERSION="3.8.0"
 OPENSEARCH_HELM_REPO="https://opensearch-project.github.io/helm-charts"
+# M4 Task 2: Prometheus. Verified 2026-09-13 against TWO independent sources,
+# not a local Helm cache -- Artifact Hub's prometheus-community/prometheus
+# package (version "29.29.0", app_version "v3.14.0", prerelease false) and
+# https://api.github.com/repos/prometheus-community/helm-charts/releases
+# (tag prometheus-29.29.0, published 2026-09-12T23:55:41Z, prerelease false,
+# the newest `prometheus-*` entry; that repo tags per chart, so the many
+# `prometheus-<exporter>-*` tags alongside it are unrelated series). Unlike
+# the OpenSearch chart, chart version and appVersion are independent here:
+# 29.29.0 installs Prometheus v3.14.0. The same numbers and the same evidence
+# are recorded in deploy/observability/prometheus/values.yaml's header, and
+# pinned by tests/unit/test_metrics_wiring.py so the two cannot drift.
+PROMETHEUS_CHART_VERSION="29.29.0"
+PROMETHEUS_HELM_REPO="https://prometheus-community.github.io/helm-charts"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -95,8 +108,11 @@ Usage: setup-kind.sh [--stage N]
                           [as of M4 Task 1: OpenSearch (single node,
                           security plugin off) and OpenSearch Dashboards are
                           installed, and the trace-ingest path into
-                          OpenSearch is live. Prometheus arrives in a later
-                          M4 task. Runs on stage 3's cluster config
+                          OpenSearch is live. As of M4 Task 2 Prometheus is
+                          installed too, OTLP-ingest only: every default
+                          scrape job is off, so the only way a series reaches
+                          it is the collector's otlp_http/prometheus exporter.
+                          Runs on stage 3's cluster config
                           UNCHANGED -- see the KIND_CONFIG note below --
                           Dashboards is reached by port-forward
                           (./scripts/start-demo.sh), never by a kind host
@@ -491,12 +507,29 @@ if [[ "${STAGE}" -ge 4 ]]; then
     --values "$ROOT/deploy/observability/opensearch/dashboards-values.yaml" \
     --wait --timeout 5m
 
+  # M4 Task 2: Prometheus, installed in the SAME stage-4 block and BEFORE the
+  # collector restart below, for exactly the reason the OpenSearch install is.
+  # `otlp_http/prometheus` is a plain otlphttp exporter with no sending queue
+  # configured, so its first export attempt after a restart either lands or is
+  # dropped -- restarting the collector while this Service does not yet exist
+  # would throw the first minute of every service's metrics away and report it
+  # only in a log nobody reads. `--wait` is what makes "exists" mean "serving".
+  echo -e "${BLUE}Step 8d/9 (stage 4): Installing Prometheus ${PROMETHEUS_CHART_VERSION} (OTLP ingest, no scrape jobs)...${NC}"
+  helm repo add prometheus-community "${PROMETHEUS_HELM_REPO}" --force-update >/dev/null
+  helm repo update prometheus-community >/dev/null
+  helm upgrade --install prometheus prometheus-community/prometheus \
+    --version "${PROMETHEUS_CHART_VERSION}" \
+    --namespace observability \
+    --kube-context "kind-${CLUSTER_NAME}" \
+    --values "$ROOT/deploy/observability/prometheus/values.yaml" \
+    --wait --timeout 5m
+
   # See the ordering note above: the collector has already been restarted once,
-  # against a cluster with no OpenSearch in it. This restart is the one whose
-  # first export attempt can succeed.
+  # against a cluster with neither OpenSearch nor Prometheus in it. This
+  # restart is the one whose first export attempt can succeed.
   kubectl -n observability rollout restart deployment/otel-collector
   kubectl -n observability rollout status deployment/otel-collector --timeout=180s
-  echo -e "${GREEN}OpenSearch ${OPENSEARCH_CHART_VERSION} is up (single node, security plugin off, heap and resources set in deploy/observability/opensearch/values.yaml); Dashboards is up, reached by port-forward; the collector has been restarted against it.${NC}"
+  echo -e "${GREEN}OpenSearch ${OPENSEARCH_CHART_VERSION} is up (single node, security plugin off, heap and resources set in deploy/observability/opensearch/values.yaml); Dashboards is up, reached by port-forward; Prometheus ${PROMETHEUS_CHART_VERSION} is up on OTLP ingest alone; the collector has been restarted against both.${NC}"
 fi
 
 echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then starting port-forwards...${NC}"

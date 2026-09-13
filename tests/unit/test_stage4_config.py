@@ -730,13 +730,22 @@ def test_start_demo_skips_stage_gated_surfaces_that_do_not_exist(tmp_path):
     Asserted by running the script, not by reading it.
     """
     output, _ = _run_start_demo(
-        tmp_path, absent_services="opensearch-dashboards reviewer-ui"
+        tmp_path, absent_services="opensearch-dashboards reviewer-ui prometheus"
     )
     assert "verified up" in output, (
         "start-demo.sh did not get as far as verifying its surfaces on a "
         "cluster without the stage-gated Services:\n" + output
     )
-    for surface in ("OpenSearch Dashboards: SKIPPED", "reviewer-ui: SKIPPED"):
+    # `prometheus` joined this list in M4 Task 2, in the same commit that added
+    # its forward. It is the third stage-gated surface and takes the same
+    # `service_exists` guard as the other two; leaving it off the absent list
+    # here would have let an unconditional Prometheus forward -- finding F8
+    # exactly -- ship green.
+    for surface in (
+        "OpenSearch Dashboards: SKIPPED",
+        "reviewer-ui: SKIPPED",
+        "Prometheus: SKIPPED",
+    ):
         assert surface in output, (
             f"start-demo.sh did not say {surface.split(':')[0]!r} was being "
             "skipped. A skip must be loud -- a silently missing surface is how "
@@ -750,6 +759,10 @@ def test_start_demo_skips_stage_gated_surfaces_that_do_not_exist(tmp_path):
     assert "http://localhost:8081" not in output, (
         "start-demo.sh printed a reviewer-ui URL for a cluster that has no "
         f"reviewer-ui:\n{output}"
+    )
+    assert "http://localhost:9090" not in output, (
+        "start-demo.sh printed a Prometheus URL for a cluster that has no "
+        f"Prometheus:\n{output}"
     )
     # The four stage-1 surfaces are not optional and must still be there.
     for url in (
@@ -770,3 +783,4 @@ def test_start_demo_forwards_the_stage_4_surfaces_when_they_do_exist(tmp_path):
     )
     assert "http://localhost:5601" in output, output
     assert "http://localhost:8081" in output, output
+    assert "http://localhost:9090" in output, output

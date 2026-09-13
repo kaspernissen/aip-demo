@@ -68,10 +68,60 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-13 (M4 Task 1, after its two review fix rounds) — the current
-figures, and the gate row is DERIVED, not yet re-measured against a live
-run.** Task 1 and its two fix rounds added **19** tests in total, taking the
-collected count from 228 to **247**, re-measured with
+**2026-09-13 (M4 Task 2) — the current figures, and the gate row is DERIVED,
+not yet re-measured against a live run.** Task 2 added **34** tests, taking
+the collected count from 247 to **281**, re-measured with
+`.venv/bin/python -m pytest --collect-only -q tests/`:
+
+* `tests/unit/test_metrics_wiring.py` — **20**. That every one of the five
+  Python services *calls* the metrics wiring in `configure()` (not merely
+  defines it — the first draft bound to the definition and stayed green when
+  the call was deleted); that the five copies of that wiring have not
+  drifted; that nothing anywhere configures a `View`, a `DropAggregation`, a
+  `preferred_temporality`, a `preferred_aggregation` or an `attribute_keys`
+  that would discard a series (walked over the AST, not grepped, because the
+  substring version reddened on a docstring that *names* those knobs while
+  explaining why none is set); that the collector's `metrics` pipeline
+  filters nothing and exports to Prometheus; that the exporter's endpoint
+  matches the Service the chart actually publishes; that the chart version
+  agrees between `scripts/setup-kind.sh` and
+  `deploy/observability/prometheus/values.yaml`; that the values file enables
+  the OTLP receiver and disables all ten scrape jobs; and that the collector's
+  deprecated `otlphttp` alias is not used anywhere.
+* `tests/e2e/test_prometheus_metrics_ingest.py` — **14**. The §6 inventory,
+  kept honest: an OTLP-only ingestion control (SPIRE series in a Prometheus
+  with zero scrape targets), a per-service positive control for each of the
+  four services that record instruments, the one GenAI metric that does
+  arrive, the five that do not (one test each), and two tests that would
+  catch a GenAI metric arriving under a name this file did not predict or a
+  hand-rolled metric invented to fill a framework gap. Every *positive*
+  assertion is bounded to a 900-second window via `/api/v1/series`'s
+  `start`/`end`, so a stale TSDB cannot keep them green; the *absence*
+  assertions are deliberately left unbounded, because a longer window only
+  strengthens a negative. Like every other `tests/e2e` file these need the
+  live cluster, and they skip on a cluster below stage 4.
+
+The per-service row below moves with them: `agents/settlement-agent` gained
+`tests/test_telemetry.py` (**4**), 110 → **114**. Those four are the only
+new tests outside `tests/`.
+
+Bare-suite row, derived from that same collection: 281 collected − 33 gated −
+1 xfailed = `247 passed, 33 skipped, 1 xfailed`. The 33 gated are the
+`RUN_BROWSER_TESTS=1` browser tests, unchanged; the fourteen new e2e tests are
+not among them. Gate row: 281 collected − 1 xfailed = `280 passed, 1 xfailed`.
+This is arithmetic, not a live gate run, for the same reason and with the same
+standing as the M4 Task 1 row below: **Task 5 runs the milestone's one gate
+and converts this row to MEASURED.** What it rests on: Task 2 added a
+`MeterProvider` to five services and changed no span, no attribute and no
+application behaviour the gate already asserts on.
+
+`tests/unit` alone collects **151** (131 before this task).
+
+**2026-09-13 (M4 Task 1, after its two review fix rounds) — superseded by the
+row above, and kept the way every earlier row is: it was the current figure,
+with the same DERIVED gate row, at the time it was written.** Task 1 and its
+two fix rounds added **19** tests in total, taking the collected count from
+228 to **247**, re-measured with
 `.venv/bin/python -m pytest --collect-only -q tests/`:
 
 * `tests/unit/test_stage4_config.py` — **13**. Two shipped with Task 1; fix
@@ -231,8 +281,8 @@ defect class, so each command is stated as it was actually run.)
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `213 passed, 33 skipped, 1 xfailed` (re-measured 2026-09-13, M4 Task 1 fix round 2: `pytest --collect-only -q tests/` → 247 collected) |
-| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `246 passed, 1 xfailed` (DERIVED 2026-09-13, M4 Task 1 fix round 2, not yet re-measured against a live run — see the note above; Task 5 runs the milestone's one gate) |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `247 passed, 33 skipped, 1 xfailed` (re-measured 2026-09-13, M4 Task 2: `pytest --collect-only -q tests/` → 281 collected) |
+| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `280 passed, 1 xfailed` (DERIVED 2026-09-13, M4 Task 2, not yet re-measured against a live run — see the note above; Task 5 runs the milestone's one gate) |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before
@@ -725,9 +775,18 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (all seven run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 110, payments-mcp 16, payments-api (Go) 31,
+claims-agent 16, settlement-agent 114, payments-mcp 16, payments-api (Go) 31,
 customer-ui (vitest) 6, policy-decision-service 105,
 reviewer-ui 56 — all passing.
+(**2026-09-13, M4 Task 2: settlement-agent 110 → 114.**
+`agents/settlement-agent/tests/test_telemetry.py`, four tests, re-measured
+with `.venv/bin/python -m pytest --collect-only -q tests` from that service's
+own directory: that `configure()` installs an SDK `MeterProvider`, that the
+provider exports over OTLP on a `PeriodicExportingMetricReader`, that the
+endpoint comes from the standard `OTEL_EXPORTER_OTLP_ENDPOINT` env var, and
+that no `View` drops an instrument. settlement-agent carries these for all
+five services because it is the copy the shared wiring's rationale lives in;
+`tests/unit/test_metrics_wiring.py` is what holds the other four to it.)
 (**2026-09-11, M3 remaining-bumps: settlement-agent 108 → 109 → 110**, one test
 per step, both in `agents/settlement-agent/tests/test_pins.py` and both for the
 same reason — a bump introduced a second distribution that must not drift away
@@ -1173,17 +1232,28 @@ are not symmetric**:
 |---|---|
 | `traces` | `otlp_grpc/jaeger`, `forward/opensearch`, `otlp_grpc/dash0`, `debug` |
 | `traces/opensearch` (stage 4 only) | `opensearch/trace` |
-| `metrics` | `otlp_grpc/dash0`, `debug` |
+| `metrics` | `otlp_http/prometheus` (stage 4 only), `otlp_grpc/dash0`, `debug` |
 | `logs` | `otlp_grpc/dash0`, `debug` |
 
-**Traces go to Jaeger, OpenSearch and Dash0; metrics and logs go to Dash0
-only.** Jaeger is a traces-only backend by design, so it was never a candidate
-for the other two signals — this is not an oversight, it is what "traces to a
-vendor-neutral OSS backend, everything else to whichever vendor is
-configured" looks like when the OSS backend genuinely can't carry metrics or
-logs. **Dash0 is therefore strictly richer than the on-stage Jaeger view**:
-anyone looking at Dash0 sees the same traces plus metrics and logs that never
-reach Jaeger at all.
+**Traces go to Jaeger, OpenSearch and Dash0; metrics go to Prometheus and
+Dash0; logs go to Dash0 only.** Jaeger is a traces-only backend by design, so
+it was never a candidate for the other two signals — this is not an oversight,
+it is what "traces to a vendor-neutral OSS backend, everything else to whichever
+vendor is configured" looks like when the OSS backend genuinely can't carry
+metrics or logs. Prometheus is the vendor-neutral OSS backend for the signal
+Jaeger cannot take, added at M4 Task 2 and stage-4 only; below stage 4 the
+`metrics` row is `otlp_grpc/dash0`, `debug` again, because
+`scripts/setup-kind.sh` strips the stage-4-only region and a collector must not
+name a backend its cluster does not have (ruling M4-R8).
+
+**The metrics row read `otlp_grpc/dash0`, `debug` and this paragraph read
+"metrics and logs go to Dash0 only" until M4 Task 2**, which is the second time
+this exact table has been falsified by a change to the file it claims to be read
+from — review finding F4 recorded the first, one task earlier. The lesson stands
+where it was written: "read directly from" is a provenance claim, and it decays
+the moment the file it names changes. **Dash0 is still strictly richer than the
+on-stage Jaeger view**: anyone looking at Dash0 sees the same traces plus
+metrics and logs that never reach Jaeger at all.
 
 **This table said "Traces: `otlp_grpc/jaeger`, `otlp_grpc/dash0`, `debug`" and
 concluded "Traces go to both Jaeger and Dash0" until M4 Task 1's fix round.**
@@ -1347,8 +1417,10 @@ M1.1, unaffected by any of this):
 
 Two things worth recording because the governing rule is to write down what
 was measured, not what was expected: `gen_ai.aggregated_usage.*` is a
-pydantic-ai extension with no counterpart in the GenAI semantic conventions,
-carrying per-run token roll-ups on the `invoke_agent` span; and
+pydantic-ai extension with no counterpart in the GenAI semantic conventions
+(`open-telemetry/semantic-conventions-genai` — pydantic-ai's own source agrees,
+calling it "a custom namespace, not part of the OpenTelemetry Semantic
+Conventions"), carrying per-run token roll-ups on the `invoke_agent` span; and
 `gen_ai.tool.definitions` is **not** redacted by `include_content=False` —
 see "Content capture" for what it carries and why that means neither
 `include_content` nor `include_model_request_parameters` is, on its own, a
@@ -2149,6 +2221,252 @@ produces different numbers. What is stable, and what this section actually
 claims, is the *series* — the metric names and their label keys, which is the
 part a dashboard or an alert would be built on.
 
+## Metrics, as measured (M4 Task 2) — and the five that nothing emits
+
+**Until M4 Task 2 this system emitted no metric at all.** Measured during the
+M4 design (spec §6) and true of every commit before this one: no `MeterProvider`
+in any Python or Go service, no `OTEL_METRICS_*` in any manifest, and a
+collector `metrics` pipeline exporting to `debug` alone — so SPIRE's scrape
+(the section above) was received and discarded, and nothing else was produced.
+
+M4 Task 2 installs a `MeterProvider` in all five Python services and routes the
+collector's `metrics` pipeline to Prometheus over OTLP. That is the wiring. The
+*finding* is what turned up once the wiring existed, and it is a gap report
+rather than a dashboard full of green — which spec §6 predicted in advance, in
+writing, so this is not a disappointment being dressed up as a result.
+
+### Where the conventions live now
+
+The GenAI semantic conventions are **no longer in the main
+`open-telemetry/semantic-conventions` repository**. They live in
+[`open-telemetry/semantic-conventions-genai`](https://github.com/open-telemetry/semantic-conventions-genai),
+which also carries the **MCP** conventions this document cites elsewhere. This
+is not an inference from where the files happen to be: the old location says so
+itself. `docs/gen-ai/README.md` and `docs/gen-ai/gen-ai-metrics.md` in the main
+repo are now both stubs titled "Moved: Generative AI semantic conventions",
+carrying one sentence and no definitions (fetched 2026-09-13):
+
+> GenAI semantic conventions have moved to the
+> [OpenTelemetry GenAI semantic conventions repository](https://github.com/open-telemetry/semantic-conventions-genai).
+> This page has moved and is no longer maintained in this repository.
+
+Worth knowing because the old URLs still return **200**, not 404 — a reader
+following a stale link lands on a page that looks authoritative and is
+explicitly unmaintained. Every convention claim in this section was read from
+the new repository at `main` (`0c87594975`, 2026-09-10), with
+`docs/gen-ai/gen-ai-metrics.md` last changed at `8d3e4a0f3c34`, 2026-08-10.
+
+`open-telemetry/semantic-conventions-genai` defines **twelve** GenAI metrics.
+**Every one is Development stability**, and that qualifier is load-bearing
+rather than decorative: a Development metric can be renamed upstream, and a
+sentence written without it becomes false at the next bump with nothing here to
+catch it. Spec §6 asks about six of the twelve; the other six
+(`gen_ai.client.operation.time_to_first_chunk`,
+`gen_ai.client.operation.time_per_output_chunk`, `gen_ai.server.request.duration`,
+`gen_ai.server.time_per_output_token`, `gen_ai.server.time_to_first_token`,
+`gen_ai.invoke_workflow.duration`) are named here so a reader knows the six
+below are a chosen subset, not the whole convention.
+
+### The §6 inventory, per metric, with the layer each verdict was verified at
+
+| Metric (OTel name) | Type | Unit | Stability | Emitted? | Verified at |
+|---|---|---|---|---|---|
+| `gen_ai.invoke_agent.duration` | Histogram | `s` | Development | **No** | SDK — created by nothing |
+| `gen_ai.invoke_agent.inference_calls` | Histogram | `{inference_call}` | Development | **No** | SDK — created by nothing |
+| `gen_ai.invoke_agent.tool_calls` | Histogram | `{tool_call}` | Development | **No** | SDK — created by nothing |
+| `gen_ai.execute_tool.duration` | Histogram | `s` | Development | **No** | SDK — created by nothing |
+| `gen_ai.client.token.usage` | Histogram | `{token}` | Development | **Yes** | Prometheus — series present |
+| `gen_ai.client.operation.duration` | Histogram | `s` | Development | **No** | SDK — created by nothing |
+
+**One of six.** "Created by nothing" is the precise claim and it is the
+strongest of the available ones: the metric is not merely absent from
+Prometheus, it is never brought into existence in any process in this system,
+so no reader, exporter, collector pipeline or Prometheus receiver is a candidate
+explanation. Measured 2026-09-13 by reading the four installed frameworks'
+source — not one of those five names appears anywhere in `pydantic-ai-slim`
+2.42.0, `a2a-sdk` 0.3.7, `fastmcp` 4.0.3 or `mcp` 2.2.0, and the last three
+contain no `get_meter(` call at all. The full sweep, and the argument for why
+this is a framework gap rather than a scope boundary, is
+[`docs/upstream-findings.md`](upstream-findings.md) **Finding 12**.
+
+### What PydanticAI 2.42.0 actually creates — all three of them
+
+Read out of the deployed image rather than a local venv, by constructing this
+project's own `InstrumentationSettings` inside the running pod and enumerating
+the instruments it built:
+
+```
+$ kubectl -n northstar-agents exec deploy/senior-settlement-agent -- python -c '...'
+pydantic_ai version: 2.42.0
+provider: opentelemetry.sdk.metrics._internal.MeterProvider
+INSTRUMENTS PydanticAI CREATED:
+    ('cost_histogram', 'operation.cost', '{USD}', '_Histogram')
+    ('time_to_first_chunk_histogram', 'gen_ai.client.operation.time_to_first_chunk', 's', '_Histogram')
+    ('tokens_histogram', 'gen_ai.client.token.usage', '{token}', '_Histogram')
+```
+
+| Instrument | Unit | In the conventions? | Reaches Prometheus? |
+|---|---|---|---|
+| `gen_ai.client.token.usage` | `{token}` | Yes — Development | **Yes** |
+| `gen_ai.client.operation.time_to_first_chunk` | `s` | Yes — Development | **No**, and not because anything is broken |
+| `operation.cost` | `{USD}` | **No** — PydanticAI's own name, in no OTel namespace | **Yes** |
+
+Two of those rows need their reason stated rather than left to be guessed at.
+
+**`gen_ai.client.operation.time_to_first_chunk` is created and never recorded
+into.** `record_metrics` guards it with `if time_to_first_chunk is not None`
+(`pydantic_ai/models/instrumented.py`), and that value is only produced for a
+*streaming* request. This demo streams nothing, so the histogram takes no
+measurement, and the OTel SDK exports no data point for an instrument with
+none. **Created is not emitted**, and this row is the reason that distinction is
+drawn explicitly everywhere in this section: a survey that equated the two
+would have published this metric as supported, and a dashboard built on it
+would have been permanently empty.
+
+**`operation.cost` is a real series and a non-convention name.** It carries the
+model call's monetary cost (the same figure the `chat` span's `operation.cost`
+attribute carries, recorded above under "PydanticAI instrumentation"). It is
+published here because it is measured and present, and flagged because a reader
+building on it should know it is PydanticAI's invention, not a convention, and
+carries none of a convention's stability promise — PydanticAI's own source says
+as much about its sibling `gen_ai.aggregated_usage.*` namespace: *"a custom
+namespace, not part of the OpenTelemetry Semantic Conventions. It may be updated
+if OTel introduces an official convention."*
+
+### `gen_ai.client.token.usage`, as it actually arrives
+
+The one row of §6's table that is not a gap. Read from Prometheus's
+`/api/v1/series`, one series verbatim, whitespace only reformatted:
+
+```
+{"__name__": "gen_ai_client_token_usage_sum",
+ "gen_ai_operation_name": "chat",
+ "gen_ai_provider_name": "anthropic",
+ "gen_ai_request_model": "claude-sonnet-5",
+ "gen_ai_response_model": "claude-sonnet-5",
+ "gen_ai_system": "anthropic",
+ "gen_ai_token_type": "input",
+ "instance": "98dec6ce-a261-4647-8614-2532c564cee6",
+ "job": "settlement-agent"}
+```
+
+34 series in total across the histogram's `_bucket`/`_sum`/`_count` families and
+the two `gen_ai.token.type` values (`input`, `output`). `gen_ai_system` is the
+**deprecated** spelling of `gen_ai_provider_name` and both appear, exactly as
+they do on the `chat` span — `version=5` emits both, which this document already
+records for spans and which is now also true of this metric's attributes.
+
+**Names: OTel's and Prometheus's are not the same, and both are published here
+deliberately.** Prometheus v3.14.0's default OTLP translation strategy is
+`UnderscoreEscapingWithSuffixes` (`config/config.go:280`), which this cluster
+leaves at its default. So the dotted OTel name becomes underscores plus a
+histogram suffix, and dotted *attributes* become underscored *labels*. The OTel
+name is what the SDK emits and what a convention claim is about; the Prometheus
+name is what a query has to use. A document publishing only one of them would
+mislead whichever reader needed the other.
+
+| OTel name | Prometheus series |
+|---|---|
+| `gen_ai.client.token.usage` | `gen_ai_client_token_usage_bucket`, `_sum`, `_count` |
+| `operation.cost` | `operation_cost_bucket`, `_sum`, `_count` |
+
+### Which services emit anything at all, and why that question is the whole method
+
+**A "no such metric" result is worthless unless the path it would have taken is
+known to work.** M4 Task 1 shipped a milestone-blocking defect of exactly this
+shape — "no errors" concluded from a 200-line tail of a 17,173-line log — so
+every absence above is paired with a presence measured in the same window.
+Measured 2026-09-13, per `job` label (Prometheus's rendering of OTLP's
+`service.name`):
+
+| `job` | Distinct metric names | Control — what proves its path works |
+|---|---|---|
+| `spire-server`, `spire-agent` | 271 `spire_*` plus 40 Go-runtime | Collector-scraped, pushed over OTLP; **no Python service involved**, so it proves the collector→Prometheus hop on its own |
+| `settlement-agent` | 20 | `gen_ai_client_token_usage_*` and `operation_cost_*` from real model calls |
+| `claims-agent` | 14 | `http_server_*`/`http_client_*` from the ASGI and httpx instrumentations |
+| `payments-mcp` | 4 | `http_client_request_duration_seconds_*` on every call to payments-api |
+| `reviewer-ui` | 4 | `http_client_duration_milliseconds_*` on every ledger read |
+| `policy-decision-service` | 1 | **No metric of its own exists to find**, so a probe was sent instead — see below |
+
+`payments-mcp`'s row is the one that decides `gen_ai.execute_tool.duration`:
+tool execution happens in that process, under FastMCP, so that is where the
+metric would be recorded. Its MeterProvider demonstrably gets other metrics all
+the way to Prometheus in the same window, which is what makes the absence
+FastMCP's rather than ours.
+
+**The two services with nothing to find got a sent probe rather than a found
+one**, because an empty result from a service that records nothing is
+indistinguishable from an empty result from a broken exporter. A counter named
+`northstar.meterprovider.probe` was recorded inside each pod, through that
+service's own telemetry module, and arrived:
+
+```
+{"__name__": "northstar_meterprovider_probe_total", "job": "policy-decision-service",
+ "northstar_probe_reason": "prove-pds-export-path", "instance": "0b212e42-..."}
+{"__name__": "northstar_meterprovider_probe_total", "job": "settlement-agent",
+ "northstar_probe_reason": "prove-senior-agent-export-path", "instance": "856688d9-..."}
+```
+
+Those two series are in the cluster's Prometheus and are named for what they
+are. They are a measurement artefact, not telemetry this system emits, and
+nothing queries them.
+
+**`senior-settlement-agent` has no `job` of its own, by design.**
+`deploy/k8s/senior-settlement-agent.yaml` sets `OTEL_SERVICE_NAME=settlement-agent`
+deliberately — the demo's point is that the code is byte-identical and the
+platform tells the two identities apart by *identity*, on the `policy.decision`
+span, not by service name. So its probe above lands under
+`job="settlement-agent"` with its own `instance`, which is the expected result
+and not a misconfiguration.
+
+### Two gaps in our own configuration, found by measuring metrics
+
+Neither is an upstream defect; both are this project's own, recorded here
+rather than quietly fixed or quietly ignored.
+
+**1. `reviewer-ui` emits the LEGACY HTTP metric name.** It is the only service
+whose Deployment sets no `OTEL_SEMCONV_STABILITY_OPT_IN`, measured
+2026-09-13 across all four manifests:
+
+```
+reviewer-ui       | OTEL_SEMCONV_STABILITY_OPT_IN = None
+settlement-agent  | OTEL_SEMCONV_STABILITY_OPT_IN = http
+claims-agent      | OTEL_SEMCONV_STABILITY_OPT_IN = http
+payments-mcp      | OTEL_SEMCONV_STABILITY_OPT_IN = http
+```
+
+The consequence was invisible while this system emitted no metrics and is
+visible now: `reviewer-ui` reports `http_client_duration_milliseconds_*`
+(legacy, milliseconds) where every other service reports
+`http_client_request_duration_seconds_*` (stable, seconds). A panel summing
+"HTTP client latency" across services would silently mix units. **Not fixed in
+M4 Task 2**, deliberately: setting that variable also changes reviewer-ui's
+*span* attributes, which this document pins elsewhere and which several e2e
+assertions read, so it is a telemetry-contract change that belongs in its own
+task rather than as a side effect of adding a MeterProvider.
+
+**2. `systems/payments-api` (Go) still has no `MeterProvider`.** M4 Task 2
+covered the five Python services only. payments-api emits spans and no metrics,
+so the money path has no metric of its own. None of §6's six metrics is a Go
+concern — every one is GenAI, and no agent runs there — so this does not affect
+the inventory above, but the spec's "no `MeterProvider` in any Python **or Go**
+service" is only half-closed and should not be read as fully closed.
+
+### How this is kept true
+
+`tests/e2e/test_prometheus_metrics_ingest.py` re-verifies the whole inventory
+against the live cluster, and is written so that a false negative cannot pass
+quietly: every absence assertion is paired with a positive control in the same
+run, the controls are bounded to a recent window (an unbounded check would stay
+green for Prometheus's full 15-day retention after everything stopped emitting),
+and a test fails if any `gen_ai` name turns up that the file does not already
+account for. If a framework implements one of the five, that file goes red and
+this table is what has to change. `tests/unit/test_metrics_wiring.py` covers
+what the cluster cannot show: that all five services install the provider, that
+the five copies of the wiring have not drifted, that nothing configures a view
+or temporality that would discard data, and that the chart pin and the
+collector's endpoint agree with each other.
+
 ## settlement-agent's own instrumentation: `execute_approved` (M3 Task 3)
 
 M3 Task 3 adds one span this repo owns outright -- not agentgateway's, not
@@ -2428,11 +2746,30 @@ child of reviewer-ui's own CLIENT span.
 
 ## Conventions adopted
 
-- **GenAI semconv** for model calls, exercised as of M1.2 — see "PydanticAI
-  instrumentation, as measured" above for the full attribute inventory.
+**Where each one lives, corrected M4 Task 2.** This list used to name "GenAI
+semconv" and "MCP semconv" without saying which repository defines them, which
+left a reader to assume the main `open-telemetry/semantic-conventions` — where
+neither has been maintained for some time. Both now live in
+[`open-telemetry/semantic-conventions-genai`](https://github.com/open-telemetry/semantic-conventions-genai),
+and the old paths in the main repo are stubs that still return 200 while saying
+"This page has moved and is no longer maintained in this repository". The
+evidence, and the revision every convention claim in this document was read at,
+is in "Metrics, as measured (M4 Task 2)" above.
+
+- **GenAI semconv** (`open-telemetry/semantic-conventions-genai`) for model
+  calls, exercised as of M1.2 — see "PydanticAI instrumentation, as measured"
+  above for the full attribute inventory, and "Metrics, as measured (M4 Task 2)"
+  for which of its twelve metrics anything actually emits (one).
 - **MCP semconv** (`mcp.method.name`, `mcp.session.id`, `mcp.protocol.version`),
-  with tool names in `gen_ai.tool.name`. `mcp.tool.name` does not exist.
-- **HTTP semconv** for the Go system of record and A2A's transport spans.
+  with tool names in `gen_ai.tool.name`. `mcp.tool.name` does not exist. Also
+  `open-telemetry/semantic-conventions-genai`, at `docs/gen-ai/mcp.md` — that
+  repository's own README lists MCP among what it carries, and the main repo
+  has no `docs/mcp/` at all (checked 2026-09-13: 404).
+- **HTTP semconv** for the Go system of record and A2A's transport spans. This
+  one *is* the main `open-telemetry/semantic-conventions` repository — the move
+  is GenAI's and MCP's, not a general one. Note the one service that does not
+  opt in to the stable HTTP spelling, and what it costs, under "Two gaps in our
+  own configuration" above.
 - **MCP trace context via `params._meta`** (SEP-414), keys unprefixed. Not HTTP headers.
 
 ## Domain attributes we own
@@ -2936,9 +3273,14 @@ For each: the evidence, whether upstream already has work in flight, and what we
 
 - **Evidence:** FastMCP 4.0.3's `tools/call propose_payment`/`execute_payment`
   spans carry `gen_ai.tool.name` (e.g. `execute_payment`) correctly, but never
-  `gen_ai.operation.name`, where the GenAI semconv specifies `execute_tool`
+  `gen_ai.operation.name`, where the GenAI semconv
+  (`open-telemetry/semantic-conventions-genai`) specifies `execute_tool`
   for a tool invocation (`tools/payments-mcp/NOTES.md` §2). The sibling
   attribute is done properly; the operation classifier is simply absent.
+  **M4 Task 2 found the metrics-side counterpart of this gap**: the same
+  FastMCP 4.0.3 records no `gen_ai.execute_tool.duration` either — indeed no
+  metric of any kind, since the package contains no `get_meter(` call at all.
+  See Gap 8 below.
 - **Upstream check:** Already filed and open —
   [`PrefectHQ/fastmcp#3534` "Support GenAI semantic convention in open
   telemetry"](https://github.com/PrefectHQ/fastmcp/issues/3534), which asks
@@ -3141,6 +3483,37 @@ For each: the evidence, whether upstream already has work in flight, and what we
   M1.2 Task 8 did exactly that; the omission was this project's, never an
   upstream gap. See `docs/upstream-findings.md` Finding 5 for the full
   write-up in that document's format, updated to match.
+
+### Gap 8 (M4 Task 2): five of the six §6 GenAI metrics are emitted by nothing
+
+- **Evidence:** with a `MeterProvider` installed in all five Python services
+  and Prometheus receiving OTLP directly, exactly **one** of the six metrics M4
+  spec §6 asks about reaches it — `gen_ai.client.token.usage`, from
+  PydanticAI. `gen_ai.invoke_agent.duration`,
+  `gen_ai.invoke_agent.inference_calls`, `gen_ai.invoke_agent.tool_calls`,
+  `gen_ai.execute_tool.duration` and `gen_ai.client.operation.duration` are not
+  merely absent from Prometheus: **not one of those names appears anywhere in
+  `pydantic-ai-slim` 2.42.0, `a2a-sdk` 0.3.7, `fastmcp` 4.0.3 or `mcp` 2.2.0**,
+  and the last three contain no `get_meter(` call at all, so they create no
+  instrument of any kind. The full per-metric table, the per-service positive
+  controls that make the negatives readable, and the two probes sent to prove
+  the export path of the services that record nothing, are under "Metrics, as
+  measured (M4 Task 2)" above.
+- **Upstream check:** the conventions are not in draft — all twelve GenAI
+  metrics, these six included, are published in
+  `open-telemetry/semantic-conventions-genai` at Development stability. So this
+  is a framework-coverage gap against a published convention, not this project
+  asking for something unspecified. The trackers were searched; see
+  `docs/upstream-findings.md` **Finding 12** for what was found and what was
+  not.
+- **Action:** nothing hand-rolled. §6's standing rule is that no metric is
+  invented to fill a hole in a framework's coverage, and none was — a
+  `gen_ai.*`-named instrument authored here would make this project's telemetry
+  disagree with what a future, fixed framework emits natively, which is the
+  same argument Gap 5 makes for not hand-setting `gen_ai.operation.name` on
+  FastMCP's spans. `tests/e2e/test_prometheus_metrics_ingest.py::
+  test_no_metric_was_invented_to_fill_a_framework_gap` asserts that nothing
+  under a `gen_ai.*` name in Prometheus came from this repository.
 
 ## Known limitations, recorded rather than fixed (M2.2)
 

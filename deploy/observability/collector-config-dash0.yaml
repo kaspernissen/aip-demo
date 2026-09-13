@@ -94,6 +94,53 @@ exporters:
       endpoint: http://opensearch-cluster-master.observability.svc.cluster.local:9200
   # END stage-4-only
 
+  # BEGIN stage-4-only
+  # M4 Task 2: Prometheus, fed by the collector rather than scraping anything.
+  # M4 exit criterion 5 is "Prometheus receives metrics over OTLP with no
+  # application change to the routing and no scrape configuration", and this
+  # exporter is that whole routing change -- the services below it set no
+  # `OTEL_METRICS_*` variable and know nothing about Prometheus; they export
+  # OTLP to this collector exactly as they already did for traces.
+  #
+  # The endpoint's shape is copied from the user's own otel-platform-demo,
+  # which reaches Prometheus at `/api/v1/otlp`. It is a BASE path: the
+  # otlp_http exporter appends the signal's own suffix, so what is actually
+  # POSTed is `/api/v1/otlp/v1/metrics`, which is the path Prometheus v3.14.0
+  # serves once `--web.enable-otlp-receiver` is passed (see
+  # deploy/observability/prometheus/values.yaml, which reads that flag's
+  # spelling out of v3.14.0's own cmd/prometheus/main.go:475 rather than from
+  # memory).
+  #
+  # `9090`, and the Service really is called `prometheus`: both are overrides
+  # in that values file, not chart defaults -- the chart would publish
+  # `prometheus-server` on port 80. If this endpoint ever stops resolving,
+  # check `server.fullnameOverride` and `server.service.servicePort` there
+  # first.
+  #
+  # `tls.insecure: true` is carried over verbatim from the reference config
+  # and is INERT for this endpoint: the scheme in `endpoint` decides, and
+  # `http://` never negotiates TLS for the setting to relax. It is kept rather
+  # than trimmed so this block matches the prior art it came from, and named as
+  # inert here so nobody later reads it as evidence that a TLS listener exists.
+  # `otlp_http/`, not the reference config's `otlphttp/`. The pinned collector
+  # image (otel/opentelemetry-collector-contrib:0.158.0, see .env) accepts both
+  # and says so on startup, verbatim from
+  # `kubectl -n observability logs deploy/otel-collector`:
+  #
+  #   warn  builders/builders.go:40  "otlphttp" alias is deprecated; use
+  #   "otlp_http" instead  {... "otelcol.component.id": "otlp_http/prometheus",
+  #   "otelcol.component.kind": "exporter", "otelcol.signal": "metrics"}
+  #
+  # The deprecated spelling was what shipped first here and produced exactly
+  # that line. It is renamed rather than left to warn, which also puts it in
+  # step with the two exporters above it -- this file has said `otlp_grpc/` and
+  # not `otlpgrpc/` since M1.
+  otlp_http/prometheus:
+    endpoint: http://prometheus.observability.svc.cluster.local:9090/api/v1/otlp
+    tls:
+      insecure: true
+  # END stage-4-only
+
 # BEGIN stage-4-only
 # The spec's `forward/` tee (§3). Identical to collector-config.yaml's; see
 # that file for why.
@@ -131,7 +178,18 @@ service:
     metrics:
       receivers: [otlp, prometheus/spire]
       processors: [batch]
-      exporters: [otlp_grpc/dash0, debug]
+      # One exporter per line, for the same reason the traces pipeline above is
+      # written that way: scripts/setup-kind.sh strips the stage-4-only entry
+      # below stage 4 with a line-range sed, and it cannot edit inside a flow
+      # sequence. Below stage 4 this list is `otlp_grpc/dash0` and `debug`
+      # only -- exactly what it was before M4 Task 2 (ruling M4-R8: the
+      # collector must not name a backend the cluster does not have).
+      exporters:
+        # BEGIN stage-4-only
+        - otlp_http/prometheus
+        # END stage-4-only
+        - otlp_grpc/dash0
+        - debug
     logs:
       receivers: [otlp]
       processors: [batch]

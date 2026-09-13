@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import os
 
-from opentelemetry import trace
+from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.httpx import (
     HTTPX2ClientInstrumentor,
@@ -28,6 +29,8 @@ from opentelemetry.instrumentation.httpx import (
 )
 from opentelemetry.propagate import set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -50,10 +53,25 @@ def configure() -> None:
         )
 
     service_name = os.environ.get("OTEL_SERVICE_NAME", "settlement-agent")
-    provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
+    resource = Resource.create({"service.name": service_name})
+    provider = TracerProvider(resource=resource)
     provider.add_span_processor(ClaimIdSpanProcessor())
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
+
+    # M4 Task 2. **Ordering is load-bearing here, not stylistic**: this call
+    # must precede `_instrument_pydantic_ai()` below and both httpx
+    # instrumentors. Each of those resolves a meter once, at instrumentation
+    # time -- PydanticAI in `InstrumentationSettings.__init__`
+    # (`pydantic_ai/models/instrumented.py:146`: `meter_provider or
+    # get_meter_provider()`, then `create_histogram` immediately after), the
+    # httpx instrumentors in their own `_instrument` (`get_meter(...)` at
+    # `opentelemetry/instrumentation/httpx/__init__.py:775` and three sibling
+    # call sites). Resolving before a provider is set yields the API's proxy
+    # meter; the proxy does rebind when `set_meter_provider` runs later, but
+    # depending on that rebinding is depending on an implementation detail of
+    # the API package for the one property this whole task rests on.
+    _configure_metrics(resource)
 
     # W3C trace-context + baggage, explicitly, matching payments-api's Go
     # side (systems/payments-api/telemetry.go:
@@ -93,6 +111,61 @@ def configure() -> None:
     HTTPX2ClientInstrumentor().instrument()
 
     _instrument_pydantic_ai()
+
+
+def _metric_reader() -> PeriodicExportingMetricReader:
+    """The single reader this service's metrics leave through.
+
+    Split out of `_configure_metrics` so a test can build one under a
+    controlled environment. The reader `configure()` installs is constructed at
+    import, before any test can set `OTEL_EXPORTER_OTLP_ENDPOINT`, so reading
+    its endpoint back could only ever show the ambient default -- see
+    `tests/test_telemetry.py::
+    test_the_metrics_endpoint_comes_from_the_standard_otel_env_var`.
+    """
+    return PeriodicExportingMetricReader(OTLPMetricExporter())
+
+
+def _configure_metrics(resource: Resource) -> None:
+    """Install a MeterProvider. Endpoint and protocol come from the standard
+    `OTEL_EXPORTER_OTLP_*` variables, as for traces, so the deployment manifest
+    stays the only place either is named.
+
+    `resource` is the TracerProvider's own, passed in rather than rebuilt: a
+    metric whose `service.name` disagreed with the spans from the same process
+    would not join to them, and joining is the whole point of M4.
+
+    **Until this existed, `metrics.get_meter_provider()` returned the API's
+    `_ProxyMeterProvider`** -- an object that forwards to a real provider if one
+    is ever set and silently discards every measurement if one is not. M4 §6
+    measured that state across the whole system during design, and it is why the
+    milestone's agent-health question could not previously be asked at all:
+    PydanticAI creates its histograms against whatever provider is installed
+    when `InstrumentationSettings` is constructed, so with none installed,
+    "the framework emits nothing" and "we installed nothing" looked identical.
+
+    **Nothing is configured beyond the reader, deliberately.** This demo records
+    100% of its telemetry, and as of M4 that includes metrics:
+
+      * No `views=`. A `View` carrying `DropAggregation` is the metrics-side
+        tail sampler, and one narrowing `attribute_keys` discards series just
+        as effectively. `tests/test_telemetry.py::test_no_view_drops_an_instrument`
+        asserts the absence rather than trusting it, the argument
+        `tests/unit/test_no_sampling.py` already makes for traces.
+      * No temporality preference. Measured on the installed
+        `opentelemetry-exporter-otlp-proto-http==1.44.0`:
+        `OTLPMetricExporter()._preferred_temporality` is
+        `AggregationTemporality.CUMULATIVE` (`2`) for all six instrument kinds.
+        Cumulative is also what Prometheus's OTLP receiver stores directly, so
+        preferring DELTA would hand it increments it has to re-total.
+      * Export interval left at the SDK default, 60 000 ms
+        (`OTEL_METRIC_EXPORT_INTERVAL`; read off a constructed reader,
+        `_export_interval_millis == 60000.0`). That is a flush cadence, not a
+        filter -- measurements between flushes are aggregated, never dropped.
+    """
+    metrics.set_meter_provider(
+        MeterProvider(resource=resource, metric_readers=[_metric_reader()])
+    )
 
 
 def capture_content_enabled() -> bool:

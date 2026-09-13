@@ -1,0 +1,169 @@
+# Prometheus, OTLP-ingest only, M4 Task 2 -- the destination the collector's
+# `otlp_http/prometheus` exporter writes to, and the store the §6 agent-health
+# inventory was read out of.
+#
+# CHART VERSION: pinned to 29.29.0, the prometheus-community/helm-charts repo's
+# newest non-prerelease `prometheus-*` tag as of 2026-09-13 -- verified against
+# TWO independent sources, not a local Helm cache (this repo's standing rule):
+#   * Artifact Hub, `helm/prometheus-community/prometheus` package: `version`
+#     "29.29.0", `app_version` "v3.14.0", `prerelease` false.
+#   * `https://api.github.com/repos/prometheus-community/helm-charts/releases`:
+#     `prometheus-29.29.0`, published 2026-09-12T23:55:41Z, prerelease false --
+#     the newest `prometheus-*` entry (29.28.1 is the one before it). That repo
+#     tags per chart, so the many `prometheus-<exporter>-*` tags in the same
+#     list are unrelated series.
+# Unlike the OpenSearch chart, chart version and appVersion are independent
+# here: 29.29.0 installs Prometheus **v3.14.0**, and every claim below was read
+# at that tag rather than from "latest" docs.
+#
+# THE OTLP RECEIVER IS A SERVER FLAG, NOT A CHART BOOLEAN. The chart has no
+# `otlp.enabled` key -- grepping the pulled 29.29.0 chart for "otlp" finds
+# exactly two things: `server.otlp` (values.yaml:296), which is the Prometheus
+# *config-file* `otlp:` section (translation strategy, resource-attribute
+# promotion), and the `templates/cm.yaml` lines that render it. Neither turns
+# the receiver on. The receiver is enabled by a command-line flag, which this
+# chart passes through `server.extraFlags` (`templates/deploy.yaml:211`
+# renders each entry as `--{{ . }}`).
+#
+# The flag's exact spelling was read out of Prometheus v3.14.0's own source,
+# `cmd/prometheus/main.go:475`:
+#
+#   a.Flag("web.enable-otlp-receiver", "Enable API endpoint accepting OTLP
+#   write requests.").
+#
+# It is a first-class flag at 3.x, **not** `--enable-feature=otlp-write-receiver`
+# (the 2.x spelling): the `enable-feature` list at main.go:645 no longer
+# contains it. `web.enable-lifecycle` below is the chart's own default entry,
+# restated because `extraFlags` replaces the list rather than appending to it.
+server:
+  # The Service must be reachable at exactly
+  # `prometheus.observability.svc.cluster.local:9090`, because that is what
+  # `deploy/observability/collector-config.yaml`'s `otlp_http/prometheus`
+  # exporter names. Two chart defaults are wrong for that, and both are
+  # overridden here rather than worked around in the exporter:
+  #   * the Service is named `<release>-server` by default
+  #     (`templates/_helpers.tpl:110`, `prometheus.server.fullname`), so a
+  #     `prometheus` release would publish `prometheus-server`;
+  #   * `server.service.servicePort` defaults to **80**, not 9090.
+  fullnameOverride: prometheus
+  service:
+    servicePort: 9090
+
+  extraFlags:
+    - web.enable-lifecycle
+    - web.enable-otlp-receiver
+
+  # MEASURED, not guessed. `server.resources` is `{}` in the chart, i.e. no
+  # request and no limit at all, which on a single-node kind cluster means the
+  # pod is BestEffort and is the first thing evicted under pressure -- not a
+  # property stage 4's ~8 GB budget (M4 spec §3) should be left to chance.
+  #
+  # The method is the one Task 1 established, because this cluster has no
+  # metrics-server (`kubectl top` answers "Metrics API not available" --
+  # checked, not assumed), so usage is read from the same cgroup data
+  # metrics-server itself would, via the container runtime directly:
+  #   docker exec northstar-control-plane crictl stats -o json
+  # Read 2026-09-13, after this Prometheus had ingested the whole §6
+  # measurement run (340 metric names, 271 of them SPIRE's):
+  #   prometheus-server                 workingSetBytes 25,669,632 (24.5 MiB),
+  #                                     usageNanoCores 2,876,591 (2.9 mCPU)
+  #   prometheus-server-configmap-reload  workingSetBytes 12,513,280 (11.9 MiB),
+  #                                     usageNanoCores 128,981 (0.1 mCPU)
+  # ~36 MiB for the pod against the 256Mi request below. The request is set
+  # well above the measurement on purpose: this is a 15d-retention TSDB whose
+  # working set grows with series count, and the measured figure is the first
+  # ten minutes of one. The limit is the number that matters for the budget,
+  # and 1Gi is what stage 4 can afford next to OpenSearch's 2Gi.
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+  # Left at the chart's `8Gi` default on this cluster's only StorageClass
+  # ("standard", rancher.io/local-path, already marked default) -- the same
+  # choice and the same reasoning as
+  # `deploy/observability/opensearch/values.yaml`: a single-node kind cluster
+  # restarting this pod should not lose the series the §6 inventory cites. 8Gi
+  # is the PVC's requested size, not memory, and local-path provisions it
+  # thinly from the node's own disk.
+  persistentVolume:
+    enabled: true
+
+  # `otlp: {}` is the chart default and is left alone DELIBERATELY, which is
+  # worth a sentence because it decides what the published inventory's metric
+  # names look like.
+  #
+  # Prometheus v3.14.0's default OTLP translation strategy is
+  # `UnderscoreEscapingWithSuffixes` (`config/config.go:280`), so
+  # `gen_ai.client.token.usage` (a histogram, unit `{token}`) is stored as
+  # `gen_ai_client_token_usage_{bucket,sum,count}`. Three other strategies are
+  # accepted (`config.go:115-123`) and `NoUTF8EscapingWithSuffixes` would keep
+  # the dotted OTel spelling -- v3.14.0's default
+  # `metric_name_validation_scheme` is `utf8` (`config.go:190`), so it would be
+  # permitted here rather than rejected. It is not set, because choosing it
+  # would be an unmeasured preference: the default is what a reader installing
+  # this chart gets, and `docs/telemetry-contract.md`'s metrics section
+  # publishes BOTH names for every metric -- the OTel name the SDK emits and
+  # the series name Prometheus stores -- so nothing is hidden by keeping it.
+  otlp: {}
+
+# EVERY DEFAULT SCRAPE JOB IS OFF, and that is the point rather than a saving.
+#
+# M4 exit criterion 5 is that "Prometheus receives metrics over OTLP with no
+# application change to the routing and no scrape configuration". With all ten
+# of the chart's default jobs disabled, this Prometheus has no ingestion path
+# except the OTLP receiver -- so any series in it, `gen_ai_*` included, can
+# only have arrived over OTLP from the collector. That is what makes the §6
+# measurement unambiguous: an empty result cannot be blamed on a scrape job
+# that did or did not fire, and a non-empty one proves the OTLP hop end to end.
+#
+# The chart's own mechanism is used (`enabled: false` per job, values.yaml:809:
+# "Each can be disabled by setting 'enabled' to 'false'"), not a wholesale
+# `serverFiles` override, so the ten names below stay greppable against the
+# chart if it ever adds an eleventh.
+#
+# Note what this does NOT turn off: SPIRE's metrics still reach this
+# Prometheus. They are scraped by the *collector*'s `prometheus/spire`
+# receiver (M2.1 Task 4) and leave the collector's `metrics` pipeline over
+# OTLP like everything else -- which is exactly why they serve as the
+# independent positive control the Task 2 report describes.
+scrapeConfigs:
+  prometheus:
+    enabled: false
+  kubernetes-api-servers:
+    enabled: false
+  kubernetes-nodes:
+    enabled: false
+  kubernetes-nodes-cadvisor:
+    enabled: false
+  kubernetes-service-endpoints:
+    enabled: false
+  kubernetes-service-endpoints-slow:
+    enabled: false
+  prometheus-pushgateway:
+    enabled: false
+  kubernetes-services:
+    enabled: false
+  kubernetes-pods:
+    enabled: false
+  kubernetes-pods-slow:
+    enabled: false
+
+# The four sub-charts, all `enabled: true` in the chart's own values, all off
+# here. Nothing in this demo alerts, and with every scrape job disabled above
+# there is nothing for a node exporter or kube-state-metrics to be scraped BY
+# -- installing them would add four Deployments/DaemonSets to a stage whose
+# whole budget is ~8 GB, to produce series no query in this repo reads. This is
+# a scope boundary, not a sampling decision: no telemetry this system emits is
+# discarded by any of these four being absent.
+alertmanager:
+  enabled: false
+kube-state-metrics:
+  enabled: false
+prometheus-node-exporter:
+  enabled: false
+prometheus-pushgateway:
+  enabled: false

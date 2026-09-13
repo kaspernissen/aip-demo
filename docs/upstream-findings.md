@@ -22,7 +22,18 @@ questions" at the end of this document for the probe, the evidence, and what
 it does and does not settle. The finding is **Finding 11**, added 2026-09-11:
 `opentelemetry-sdk` 1.44.0 emits a W3C Trace Context Level 2 flag byte that
 `go.opentelemetry.io/otel` v1.41.0 rejects outright, so the hop silently
-starts a second trace. **Eleven findings, still none filed.**
+starts a second trace.
+
+**M4 (Observable) adds one more, and it is the first here that is about an
+absence rather than a misbehaviour.** **Finding 12**, added 2026-09-13 by M4
+Task 2: once a `MeterProvider` finally existed in every Python service, exactly
+one of the twelve GenAI metrics the conventions define turned out to be emitted
+by anything in this system, and three of the four frameworks in the path create
+no metric instrument at all. It is also the first finding here whose write-up
+quotes an upstream maintainer arguing the *other* way — PydanticAI treats
+agent-level telemetry as a span concern deliberately — because a finding that
+suppressed the best counter-argument would be advocacy rather than evidence.
+**Twelve findings, still none filed.**
 
 > **Corrected 2026-09-11, when Finding 11 was written.** This paragraph opened
 > *"**M3 (Supervised) adds no finding.** It adds a *measurement*"* and closed
@@ -57,7 +68,8 @@ own history.
 ## A note on numbering
 
 `docs/telemetry-contract.md`'s "Confirmed convention gaps" section numbers
-seven items, 1 through 7 (M1.2 added Gap 7). Two of those are not findings
+eight items, 1 through 8 (M1.2 added Gap 7; M4 Task 2 added Gap 8, the
+metrics-side counterpart of Finding 12). Two of those are not findings
 about a third-party library's behaviour at all — they were open design
 questions this project had not yet answered itself, and **as of M3 both are
 closed, each in the milestone it said it would be**:
@@ -1984,6 +1996,200 @@ observation — that the Level 1/Level 2 boundary drops trace context silently
 between two current, correct OpenTelemetry SDKs — and whether that is worth
 raising with either project is a decision for this project's maintainers, not
 one an implementation task takes unilaterally.
+
+---
+
+## Finding 12: of the twelve GenAI metrics the conventions define, the four frameworks in this system emit exactly one between them — and three of them create no instrument at all
+
+**The problem, plainly:** `open-telemetry/semantic-conventions-genai` defines
+twelve GenAI metrics, all at Development stability — token usage, operation
+duration, per-agent invocation duration, inference-call and tool-call counts,
+tool-execution duration, and server-side latencies. A system built from an
+agent framework, an agent-to-agent protocol SDK and two MCP libraries emits
+**one** of them: `gen_ai.client.token.usage`. Three of the four packages
+contain no OpenTelemetry metrics instrumentation whatsoever — not a partial
+implementation, not a gated one, no `get_meter(` call anywhere in the
+distribution. Their spans are instrumented; their metrics surface does not
+exist.
+
+The practical consequence is specific and not obvious from the span coverage:
+there is no metrics-only path to "how long does an agent invocation take", "how
+many tool calls does a run make", or "how long do tool executions take". Those
+questions are answerable only by reconstructing them from spans, which requires
+a tracing backend and a join, and which is exactly what the metric definitions
+exist to make unnecessary.
+
+**Projects and versions:** `pydantic-ai-slim==2.42.0`, `a2a-sdk==0.3.7`,
+`fastmcp==4.0.3`, `mcp==2.2.0` — the versions this repository pins and runs.
+
+**What the convention says should happen:** read 2026-09-13 from
+`open-telemetry/semantic-conventions-genai` at `main` (`0c87594975`), file
+`docs/gen-ai/gen-ai-metrics.md` (last changed `8d3e4a0f3c34`, 2026-08-10).
+Note the repository: the GenAI conventions are no longer in the main
+`open-telemetry/semantic-conventions`, whose `docs/gen-ai/README.md` and
+`docs/gen-ai/gen-ai-metrics.md` are now stubs reading *"GenAI semantic
+conventions have moved to the OpenTelemetry GenAI semantic conventions
+repository. This page has moved and is no longer maintained in this
+repository."* Both old paths still return HTTP 200, so a stale link leads to an
+unmaintained page rather than to an error.
+
+The six this project measured against (M4 spec §6's table), all Histogram, all
+**Development**:
+
+| Metric | Unit |
+|---|---|
+| `gen_ai.invoke_agent.duration` | `s` |
+| `gen_ai.invoke_agent.inference_calls` | `{inference_call}` |
+| `gen_ai.invoke_agent.tool_calls` | `{tool_call}` |
+| `gen_ai.execute_tool.duration` | `s` |
+| `gen_ai.client.token.usage` | `{token}` |
+| `gen_ai.client.operation.duration` | `s` |
+
+**What we observed instead.** Two independent measurements, at two different
+layers, agreeing.
+
+*(1) At the source.* Every `.py` file in each installed distribution, scanned
+for the six names and for any metrics instrumentation at all:
+
+```
+pydantic_ai (2.42.0): 328 .py files | get_meter( x1 | create_<instrument>( x5
+   gen_ai.invoke_agent.duration               ABSENT
+   gen_ai.invoke_agent.inference_calls        ABSENT
+   gen_ai.invoke_agent.tool_calls             ABSENT
+   gen_ai.execute_tool.duration               ABSENT
+   gen_ai.client.token.usage                  ['models/instrumented.py']
+   gen_ai.client.operation.duration           ABSENT
+
+a2a (a2a-sdk 0.3.7):   80 .py files | get_meter( x0 | create_<instrument>( x0
+   (all six ABSENT)
+
+fastmcp (4.0.3):      257 .py files | get_meter( x0 | create_<instrument>( x0
+   (all six ABSENT)
+
+mcp (2.2.0):          123 .py files | get_meter( x0 | create_<instrument>( x0
+   (all six ABSENT)
+```
+
+*(2) At runtime, in the deployed images.* PydanticAI's instrumentation settings
+constructed inside the running pod, and every instrument it builds enumerated:
+
+```
+pydantic_ai version: 2.42.0
+INSTRUMENTS PydanticAI CREATED:
+    ('cost_histogram', 'operation.cost', '{USD}', '_Histogram')
+    ('time_to_first_chunk_histogram', 'gen_ai.client.operation.time_to_first_chunk', 's', '_Histogram')
+    ('tokens_histogram', 'gen_ai.client.token.usage', '{token}', '_Histogram')
+```
+
+Three instruments. One is a convention metric this system records into
+(`gen_ai.client.token.usage`); one is a convention metric recorded only for
+*streaming* requests, which this system does not make, so it exists and takes
+no measurement; one (`operation.cost`) is PydanticAI's own name in no OTel
+namespace at all.
+
+**Why this is not a measurement artefact, stated because a false negative here
+would be the expensive kind of wrong.** Every service in the system was given a
+`MeterProvider` first, and each one's export path was demonstrated working in
+the same window before any absence was recorded:
+
+* SPIRE's 271 metric names reach the same Prometheus through the same
+  collector, with every Prometheus scrape job disabled, so the
+  collector→Prometheus hop is proved by data no Python service produced.
+* `settlement-agent`, `claims-agent`, `payments-mcp` and `reviewer-ui` each have
+  their own series in Prometheus under their own `job` label.
+  `payments-mcp` is the decisive one: tool execution happens in that process,
+  under FastMCP, so that is where `gen_ai.execute_tool.duration` would be
+  recorded — and other metrics from that same process arrive.
+* `policy-decision-service` records nothing of its own, so a probe counter was
+  sent from inside its pod through its own telemetry module, and arrived.
+* The collector's and every service's logs were read over their **whole**
+  windows (`--since` covering pod start, never a `--tail`): zero export
+  failures, zero errors, zero warnings.
+
+The full transcript is in
+[`docs/telemetry-contract.md`](telemetry-contract.md)'s "Metrics, as measured
+(M4 Task 2)".
+
+**Why it matters, beyond this project:** the GenAI metric set is what an
+operator would build a cost and latency SLO on without needing a trace store.
+With only `gen_ai.client.token.usage` available, per-model token volume is
+measurable and *agent* behaviour is not: no invocation duration, no tool-call
+rate, no tool-execution latency. For MCP servers the gap is total — FastMCP and
+the reference `mcp` package emit no metric at all, so a fleet of MCP servers has
+no metric-level health signal of its own, only spans. And because every one of
+these metrics is at **Development** stability, an implementer today is aiming at
+a target that can still be renamed, which is a plausible part of why coverage is
+thin.
+
+**What a fix would need to do:** for PydanticAI, create and record
+`gen_ai.invoke_agent.duration`, `.inference_calls` and `.tool_calls` around the
+agent-run it already creates an `invoke_agent` *span* for, and
+`gen_ai.client.operation.duration` alongside the existing client histograms —
+the timing data is already computed for the spans. For FastMCP and `mcp`, the
+work is larger because there is no meter at all: a `MeterProvider`-derived meter
+and `gen_ai.execute_tool.duration` around the tool-invocation path their spans
+already wrap.
+
+**How we worked around it, and whether it should be adopted upstream:** we did
+not. No `gen_ai.*` metric was hand-rolled in this project to fill the gap, for
+the same reason Finding 2 gives for not hand-setting `gen_ai.operation.name`
+on FastMCP's spans: an invented metric under a convention namespace makes this
+project's telemetry disagree with what a future, fixed framework emits
+natively. `tests/e2e/test_prometheus_metrics_ingest.py::
+test_no_metric_was_invented_to_fill_a_framework_gap` asserts that no `gen_ai.*`
+series in Prometheus originates here. There is no workaround to recommend; the
+correct fix is for the frameworks to emit the metrics.
+
+**Existing upstream activity (verified live, 2026-09-13, read-only — no issue,
+comment or pull request was posted anywhere):**
+
+* [`PrefectHQ/fastmcp#3733`](https://github.com/PrefectHQ/fastmcp/issues/3733)
+  ("Support mcp.server.* OTEL metrics") — **open**, filed by a third party
+  (`verdie-g`), assigned to a maintainer (`strawgate`), and exactly on point:
+  its entire body asks FastMCP to "Emit OTEL metrics following the OTEL semconv
+  for MCP server". Independent confirmation that FastMCP's metrics surface does
+  not exist and that upstream knows.
+* [`PrefectHQ/fastmcp#3887`](https://github.com/PrefectHQ/fastmcp/issues/3887)
+  ("OTEL: Instrument all MCP methods, not just tools/call, resources/read,
+  prompts/get") and
+  [`#3891`](https://github.com/PrefectHQ/fastmcp/issues/3891) ("OTEL: Instrument
+  ctx.sample() / sampling loop with spans and metrics") — both **open**, both
+  adjacent.
+* [`pydantic/pydantic-ai#6204`](https://github.com/pydantic/pydantic-ai/issues/6204)
+  ("Option to emit `gen_ai.agent.name` as a dimension on GenAI client metrics")
+  — **open**, filed and assigned to a maintainer (`dmontagu`). It does not ask
+  for the missing metrics, but it **corroborates this finding's central
+  measurement from the maintainers' own side**, naming the complete set as
+  "the existing `gen_ai.client.token.usage` and `operation.cost` histograms"
+  plus the streaming `gen_ai.client.operation.time_to_first_chunk` — the same
+  three instruments enumerated above, and no others.
+* **And it supplies the reason, which changes how this finding should be
+  read.** That issue states, as PydanticAI's position: *"The semconv metric
+  attribute group for GenAI client metrics deliberately excludes agent identity
+  today; `gen_ai.agent.name` is only specified for spans (`invoke_agent`)"*, and
+  separately that *"per-agent aggregation on the platform comes from spans
+  (`model_calls` joined to agent runs), which is higher fidelity"*. So the
+  absence of the `gen_ai.invoke_agent.*` metrics from PydanticAI is at least
+  partly a **deliberate architectural position** — agent-level telemetry as a
+  span concern — and not simply an unnoticed omission. That is recorded here
+  rather than left out because it is the strongest available argument *against*
+  this finding, and a finding that omits it would be advocacy rather than
+  evidence.
+* No open issue was found in any of the four trackers asking specifically for
+  `gen_ai.invoke_agent.duration`, `.inference_calls`, `.tool_calls` or
+  `gen_ai.execute_tool.duration` by name. Searched
+  `pydantic/pydantic-ai`, `PrefectHQ/fastmcp` and `a2aproject/a2a-python` for
+  each of those names and for "metrics"/"OpenTelemetry", open and closed,
+  issues and pull requests.
+
+**Status: not filed by this project.** The FastMCP half is already upstream,
+filed by someone else, open and precisely on point, so a second issue would
+duplicate it. The PydanticAI half is a gap this project measured and upstream
+has not been asked about by name — and filing is a decision this project
+reserves for its maintainers, not one an implementation task takes
+unilaterally, exactly as Findings 1-11 record. Nothing was posted to any
+tracker; every issue above was read, never written to. No workaround was added
+to this project's own code in the meantime.
 
 ---
 

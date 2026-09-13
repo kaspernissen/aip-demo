@@ -452,8 +452,11 @@ in-memory sink. **So SPIRE emits no spans, and this document publishes no
 SPIRE span attribute anywhere, because there are none to publish.** "It
 cannot be traced" is the accurate statement. Its Prometheus metrics *are*
 enabled and scraped into the collector as `service.name=spire-server` /
-`spire-agent`; see
-[`docs/telemetry-contract.md`](telemetry-contract.md)'s "SPIRE
+`spire-agent` — and since M4 Task 2 they leave the collector's `metrics`
+pipeline over OTLP like every other metric, so at stage 4 they land in
+Prometheus as well (271 `spire_*` series were counted there, which is what
+makes them the independent positive control for the collector→Prometheus
+hop). See [`docs/telemetry-contract.md`](telemetry-contract.md)'s "SPIRE
 instrumentation, as measured".
 
 ## Hop 1 — browser → claims-agent: A2A over JSON-RPC 2.0
@@ -1423,7 +1426,8 @@ SPIRE 1.15.3 has no OpenTelemetry support of any kind — no OTLP exporter and
 no tracing. Its telemetry configuration offers Prometheus, DogStatsD, Statsd,
 M3 and an in-memory sink and nothing else. So SPIRE adds no spans to the
 trace, and none are invented for it. Its Prometheus metrics *are* enabled and
-scraped into the collector; see
+scraped into the collector — and, from M4 Task 2, forwarded on to Prometheus
+over OTLP with everything else in the `metrics` pipeline; see
 [`docs/telemetry-contract.md`](telemetry-contract.md)'s "SPIRE
 instrumentation, as measured".
 

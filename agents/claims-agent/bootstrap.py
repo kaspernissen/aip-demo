@@ -20,12 +20,15 @@ from __future__ import annotations
 
 import os
 
-from opentelemetry import trace
+from opentelemetry import metrics, trace
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.propagate import set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -47,10 +50,19 @@ def configure() -> None:
         )
 
     service_name = os.environ.get("OTEL_SERVICE_NAME", "claims-agent")
-    provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
+    resource = Resource.create({"service.name": service_name})
+    provider = TracerProvider(resource=resource)
     provider.add_span_processor(ClaimIdSpanProcessor())
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
+
+    # M4 Task 2, before HTTPXClientInstrumentor below rather than after it:
+    # that instrumentor resolves a meter once, inside `_instrument`
+    # (`get_meter(...)`, opentelemetry/instrumentation/httpx/__init__.py:775
+    # and three sibling call sites), so a provider installed afterwards is
+    # reached only via the API proxy's rebinding path. See
+    # agents/settlement-agent/bootstrap.py for the full note on that ordering.
+    _configure_metrics(resource)
 
     # W3C trace-context + baggage, explicitly, matching payments-api's Go side
     # and settlement-agent's bootstrap.py (A18). This is already OTel
@@ -67,6 +79,38 @@ def configure() -> None:
     # NOTES.md for the captured attribute spelling (A13) and confirmation of
     # whether the injected header actually reaches settlement-agent.
     HTTPXClientInstrumentor().instrument()
+
+
+def _metric_reader() -> PeriodicExportingMetricReader:
+    """The single reader this service's metrics leave through.
+
+    Split out so a test can build one under a controlled environment; see
+    `agents/settlement-agent/bootstrap.py`'s copy for why that split is needed.
+    """
+    return PeriodicExportingMetricReader(OTLPMetricExporter())
+
+
+def _configure_metrics(resource: Resource) -> None:
+    """Install a MeterProvider (M4 Task 2). Endpoint and protocol come from the
+    standard `OTEL_EXPORTER_OTLP_*` variables, as for traces.
+
+    Identical in shape to every other Python service here.
+    **`agents/settlement-agent/bootstrap.py`'s copy carries the full
+    rationale** -- why no `views=`, why no temporality preference, and what the
+    export interval does and does not drop. This docstring stays a pointer
+    rather than a second copy that can drift from it;
+    `tests/unit/test_metrics_wiring.py` asserts the five copies stay identical.
+
+    **Why this service gets one even though it runs no model.** M4 §6 asks
+    which GenAI metrics the frameworks emit, and an answer of "none" is only
+    worth publishing if it was measured. Without a provider here, claims-agent
+    emitting nothing would say nothing about `a2a-sdk` or about the httpx
+    instrumentation -- it would only say this process had nowhere to put a
+    measurement. The absence is the finding, so the absence has to be real.
+    """
+    metrics.set_meter_provider(
+        MeterProvider(resource=resource, metric_readers=[_metric_reader()])
+    )
 
 
 configure()
