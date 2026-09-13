@@ -1193,9 +1193,10 @@ What is installed, pinned (`deploy/platform/spire/`):
 | trust domain | `northstar.local` | every SPIFFE ID in this system |
 | cluster name | `northstar` | the k8s node attestor's cluster |
 
-**Three** identities are registered, declaratively, as `ClusterSPIFFEID`
-resources — two from M2.1 Task 4 and a third added by M2.2, all in
-`deploy/platform/spire/registration.yaml`, all rendered from the same
+**Four** identities are registered, declaratively, as `ClusterSPIFFEID`
+resources — two from M2.1 Task 4, a third added by M2.2 and a fourth by M4
+Task 4, all in `deploy/platform/spire/registration.yaml`, all rendered from the
+same
 `spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}`
 template. Read back off the live SPIRE server's own entry list, not from the
 manifest alone:
@@ -1204,9 +1205,10 @@ manifest alone:
 spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
 spiffe://northstar.local/ns/northstar-platform/sa/agentgateway
 spiffe://northstar.local/ns/northstar-platform/sa/policy-decision-service
+spiffe://northstar.local/ns/northstar-platform/sa/eval-scorer
 ```
 
-All three are attested on namespace **and** Kubernetes service account
+All four are attested on namespace **and** Kubernetes service account
 (`k8s:ns:...` plus `k8s:sa:...` selectors on the entry, alongside the
 controller-manager's own `k8s:pod-uid:`), which is why each workload got a
 dedicated ServiceAccount: without one, each attested as `.../sa/default`, and
@@ -1214,6 +1216,17 @@ an identity whose service-account component reads "default" is not something a
 policy can decide on. That is not hypothetical — it is what SPIRE minted for
 `settlement-agent`'s pod, on this cluster, before it was given a
 ServiceAccount of its own.
+
+**Why the fourth one had to be an explicit CR, which is the part that is easy
+to get wrong.** The chart's catch-all fallback CR selects namespaces `NotIn
+[northstar-platform, spire-server, spire-system]` — read off the live CR — so a
+workload placed in `northstar-platform` with no CR of its own gets **no
+identity at all**, and nothing says so. M4 Task 4 proved that the expensive
+way: `eval-scorer` ran with a dedicated ServiceAccount and a SPIFFE ID written
+into this repo's own allow-list while `spire-server entry show` listed twelve
+entries, none of them its. The two M3 identities below are the misleading
+precedent — they need no CR because they are in `northstar-agents`, which the
+fallback does cover. **Namespace decides, not the ServiceAccount.**
 
 **M3 added two more identities, and deliberately not two more
 `ClusterSPIFFEID`s.** `senior-settlement-agent` (Task 3) and `reviewer-ui`
@@ -1229,9 +1242,11 @@ spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui
 ```
 
 **But the entries are not the same shape, and that is worth knowing before
-anyone relies on one.** The three explicit entries carry `k8s:ns:` **and**
+anyone relies on one.** The four explicit entries carry `k8s:ns:` **and**
 `k8s:sa:` selectors; the two fallback entries carry only `k8s:pod-uid:`
-(measured — `spire-server entry show` on the live server, M3 Task 5B). The
+(measured — `spire-server entry show` on the live server, M3 Task 5B;
+re-measured for `eval-scorer`'s entry in M4 Task 4, `k8s:ns:northstar-platform`
++ `k8s:sa:eval-scorer` + the controller-manager's `k8s:pod-uid:`). The
 resulting SPIFFE ID is identical either way, so nothing downstream behaves
 differently today, and it is the reason the Task 3 review's decision to make
 "senior" an *identity* works at all. What it means is that these two are
@@ -1239,8 +1254,9 @@ attested to a pod instance rather than to a namespace-plus-service-account
 pair. Hardening them into explicit non-fallback entries is a one-manifest
 change nobody has needed yet.
 
-**Two of the five are fetched, and the other three are registered on purpose
-rather than by accident.** `settlement-agent` mounts the Workload API socket
+**Three of the six mount the Workload API socket; the other three are
+registered on purpose rather than by accident.** `settlement-agent` mounts the
+Workload API socket
 and fetches a JWT-SVID; so does `senior-settlement-agent`, which is the same
 image with the same `SPIFFE_ENDPOINT_SOCKET` and the same `csi.spiffe.io`
 volume — that is the entire mechanism by which the "senior" identity is real
@@ -1248,17 +1264,22 @@ rather than a label, since the socket answers with whatever ID the calling
 pod attests to. `reviewer-ui` also mounts the socket, but for a narrower
 purpose and never as a credential: it reads its *own* ID back for the
 `review.decision` span's `review.reviewer.spiffe_id` attribute
-(`apps/reviewer-ui/identity.py`) and presents it to nothing. Neither
-agentgateway nor the Policy Decision Service has a `csi.spiffe.io` mount, and
-neither presents an SVID to anything. The gateway's entry exists because its
+(`apps/reviewer-ui/identity.py`) and presents it to nothing. None of
+agentgateway, the Policy Decision Service and `eval-scorer` has a
+`csi.spiffe.io` mount, and none presents an SVID to anything. The gateway's
+entry exists because its
 SPIFFE ID is the **audience** settlement-agent's token is minted for, so that
 string has to name a real registered identity rather than an invented label.
 The PDS's entry exists for the same class of reason and one more: the ExtMCP
 hop between the gateway and the PDS is **plain gRPC today**, protected by a
 `CiliumNetworkPolicy` rather than by mTLS, and this entry is what makes the
 PDS's own certificate possible the day that hop is hardened — as well as being
-the identity a future audit record would name as the decider. An identity
-nothing registers is a string, not an identity.
+the identity a future audit record would name as the decider. `eval-scorer`'s
+entry exists for the narrower reason its own CR comment gives: it is the
+service whose whole job is to judge what other identities did, and an auditor
+that cannot itself be named is a poor auditor. An identity nothing registers is
+a string, not an identity — which M4 Task 4 confirmed literally, having written
+one down in three places before noticing SPIRE had never minted it.
 
 **A guard exists for these five strings specifically**, because a published
 identity nothing checks is a published identity that can go stale in the

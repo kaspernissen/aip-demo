@@ -310,6 +310,20 @@ _PER_SERVICE_SUITES = [
     # own `pytest.ini`, and its suite is hermetic -- no cluster, no network, no
     # model, 0.3s.
     ("reviewer-ui", REPO_ROOT / "apps" / "reviewer-ui", _pytest_collected_count),
+    # The eighth row, added in M4 Task 4 -- in the same task that added the
+    # service, which is what the sixth and seventh rows' comments above both say
+    # should happen and what neither of them did. `platform/eval-scorer` ships
+    # in `deploy/k8s/eval-scorer.yaml`, so the rule quoted two comments up
+    # ("Adding a service to `deploy/k8s/` means adding it here, in the same
+    # task") is the one that applies.
+    #
+    # `_pytest_collected_count` needs no special case: like the five Python
+    # services above it has its own `.venv`, its own pinned `requirements.txt`
+    # and a `tests/` directory it collects from its own root, and the suite is
+    # hermetic by construction -- `scorer/trajectory.py`, `scorer/authority.py`
+    # and `scorer/scores.py` import nothing outside the standard library, so
+    # collection touches no cluster, no network and no model.
+    ("eval-scorer", REPO_ROOT / "platform" / "eval-scorer", _pytest_collected_count),
 ]
 
 

@@ -590,6 +590,35 @@ M1 is done when:
   the same OTLP pipeline, plus `evaluate()`, `Benchmark` and `OpenSearchTraceRetriever`.
   Because scores ride OTLP, the optional Dash0 export receives them at no extra cost.
 
+  **Correction, 2026-09-13 (M4 Task 4), measured against the installed
+  package.** The conclusion held — the SDK is real, the scores do ride the same
+  OTLP pipeline, and M4 Task 4 ships them — but the **signature written above is
+  wrong**, and wrong in a way that does not merely read oddly: calling it as
+  written raises. At `0.2.8` it is
+
+  ```
+  score(name, value=None, *, trace_id=None, span_id=None, label=None,
+        explanation=None, response_id=None, attributes=None) -> None
+  ```
+
+  Only `name` and `value` are positional; everything after the `*` is
+  keyword-only, and there is an eighth parameter (`attributes`) this record does
+  not mention, which is the one that carries `northstar.claim.id` onto the score
+  span. It also returns `None` rather than a span or an id. Three further
+  behaviours were measured because each one can silently produce a score that
+  looks right and is not: `explanation` is truncated to 500 characters; passing
+  `trace_id` *without* `span_id` derives a parent span id from the lower 64 bits
+  of the trace id, which attaches the score to a span that may not exist; and an
+  id the SDK cannot parse as hex is not an error — it logs one WARNING and emits
+  the span with **no trace context at all**, so the scores land in the index,
+  still saying "compliant", attached to nothing.
+  `platform/eval-scorer/scorer/emit.py` therefore always passes both ids and
+  refuses non-W3C ones before the SDK sees them
+  (`UnattachableScore`), and `platform/eval-scorer/tests/test_emit.py` asserts
+  the real signature *and* that this record's six-positional call shape raises
+  `TypeError` — so the correction is pinned by a test rather than only by this
+  note.
+
 ---
 
 ## 14. Decisions log

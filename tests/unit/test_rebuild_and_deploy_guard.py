@@ -50,6 +50,7 @@ called with) and pins the restart, plus a RED demonstration that emptying
 `COMPANION_DEPLOYMENTS` really does redden it.
 """
 import os
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -242,6 +243,38 @@ echo "kubectl $*" >> "$FAKE_CMD_LOG"
 exit 0
 """
 
+# `  "name:context:namespace"` lines inside the COMPONENTS array. Anchored on
+# the opening `COMPONENTS=(` and stopped at the closing `)` so the identically
+# shaped COMPANION_DEPLOYMENTS array below it cannot be swept up.
+_COMPONENTS_BLOCK_RE = re.compile(r"^COMPONENTS=\(\n(.*?)^\)", re.M | re.S)
+_COMPONENT_ENTRY_RE = re.compile(r'^\s*"([^:"]+):([^:"]+):([^:"]+)"\s*$', re.M)
+
+
+def _component_contexts() -> list[str]:
+    """Every build context `scripts/rebuild-and-deploy.sh` walks on a bare run.
+
+    Read from the script so a sandbox built from it covers whatever COMPONENTS
+    actually holds today, rather than whatever it held when the test was
+    written -- see `test_a_bare_full_run_also_restarts_the_companion` for the
+    drift that prompted this.
+    """
+    text = (REPO_ROOT / SCRIPT_RELATIVE_PATH).read_text()
+    block = _COMPONENTS_BLOCK_RE.search(text)
+    assert block, (
+        "could not find a `COMPONENTS=(` ... `)` array in "
+        f"{SCRIPT_RELATIVE_PATH} -- this helper builds the sandbox from it, so "
+        "a rewritten array must be re-read here rather than silently yielding "
+        "an empty context list"
+    )
+    contexts = [m.group(2) for m in _COMPONENT_ENTRY_RE.finditer(block.group(1))]
+    assert len(contexts) >= 7, (
+        "parsed only "
+        f"{len(contexts)} component(s) out of {SCRIPT_RELATIVE_PATH}'s "
+        "COMPONENTS array; there were 8 when this was written, and a sudden "
+        f"drop means the parse broke rather than the script shrank: {contexts}"
+    )
+    return contexts
+
 
 def _deploying_sandbox(
     tmp_path: Path, build_contexts: list[str], script_text: str | None = None
@@ -333,17 +366,20 @@ def test_rebuilding_settlement_agent_also_restarts_its_companion_senior_deployme
 def test_a_bare_full_run_also_restarts_the_companion(tmp_path):
     """The other calling convention, and the likelier one before a demo: no
     arguments at all. Every component's build context is present here, so the
-    script walks the whole COMPONENTS list."""
-    contexts = [
-        "systems/payments-api",
-        "tools/payments-mcp",
-        "agents/settlement-agent",
-        "agents/claims-agent",
-        "apps/customer-ui",
-        "platform/policy-decision-service",
-        "apps/reviewer-ui",
-    ]
-    script_copy, env, log = _deploying_sandbox(tmp_path, contexts)
+    script walks the whole COMPONENTS list.
+
+    The context list is **read out of the script** rather than restated here.
+    It was restated, as seven hard-coded paths, until M4 Task 4 appended an
+    eighth component -- at which point this test failed with
+    "eval-scorer's build context platform/eval-scorer does not exist", which is
+    the sandbox being stale rather than anything being wrong with the script.
+    A stale sandbox that fails loudly is the benign version; the malign one is
+    a sandbox that stops covering a component and says nothing, which is what
+    would have happened had the loop been over whatever happened to exist.
+    `_components()` asserts it parsed something, so a rewritten COMPONENTS
+    block reddens here instead of emptying this test.
+    """
+    script_copy, env, log = _deploying_sandbox(tmp_path, _component_contexts())
     result = _run(script_copy, env, [])
     assert result.returncode == 0, (
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"

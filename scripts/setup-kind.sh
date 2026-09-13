@@ -619,6 +619,43 @@ if [[ "${STAGE}" -ge 4 ]]; then
   kubectl -n observability rollout restart deployment/otel-collector
   kubectl -n observability rollout status deployment/otel-collector --timeout=180s
   echo -e "${GREEN}OpenSearch ${OPENSEARCH_CHART_VERSION} is up (single node, security plugin off, heap and resources set in deploy/observability/opensearch/values.yaml); Dashboards is up, reached by port-forward, with the evidence view imported into it from deploy/observability/dashboards/evidence.ndjson; Prometheus ${PROMETHEUS_CHART_VERSION} is up on OTLP ingest alone; the collector has been restarted against both.${NC}"
+
+  # M4 Task 4: eval-scorer, the component that scores a settlement's
+  # trajectory against the five policy-adherence properties spec §5 names.
+  #
+  # Deployed HERE, at the end of the stage-4 block, rather than after Step 9
+  # with the other workloads. Both of the things it needs were made ready in
+  # the lines directly above -- the OpenSearch it reads trajectories out of,
+  # and the collector it emits score spans into -- and nothing between here
+  # and the end of this script asks it for a score, so neither order would
+  # leave a real request failing. This order means the window does not exist
+  # if a future step ever does. What it needs from the earlier steps (the kind
+  # registry, Step 1; the `northstar-platform` namespace, Step 6) has existed
+  # since long before this block.
+  #
+  # Its SPIFFE ID comes from an explicit ClusterSPIFFEID in
+  # deploy/platform/spire/registration.yaml, applied by the stage-2 block
+  # above and so already in place by the time this runs.
+  #
+  # **Not** from the SPIRE chart's catch-all `default` CR, which is what this
+  # comment claimed until someone measured it. That CR's namespaceSelector
+  # excludes `northstar-platform` by name, which makes reviewer-ui and
+  # senior-settlement-agent (both in `northstar-agents`) the wrong precedent
+  # for anything deployed here: a platform workload with no CR of its own gets
+  # no identity at all and nothing says so. eval-scorer ran in exactly that
+  # state until `spire-server entry show` was read rather than assumed.
+  #
+  # deploy/platform/cilium-policies.yaml, on the other hand, names no
+  # rule selecting it, so -- in Cilium, where policy is per-endpoint and an
+  # endpoint no rule selects is unrestricted -- it reaches OpenSearch and the
+  # collector without one. That is a posture gap recorded in this task's
+  # report rather than an oversight: writing an egress allow-list makes the
+  # endpoint default-deny, which is the hazard that file's own header names
+  # twice, and it is the kind of change this milestone cannot safely verify
+  # without recreating the cluster.
+  echo -e "${BLUE}Step 8e/9 (stage 4): Building and deploying eval-scorer...${NC}"
+  "$ROOT/scripts/rebuild-and-deploy.sh" eval-scorer
+  echo -e "${GREEN}eval-scorer is up on 8300, reading ss4o_traces-default-namespace.${NC}"
 fi
 
 echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then starting port-forwards...${NC}"
@@ -800,7 +837,7 @@ echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payment
 
 echo ""
 if [[ "${STAGE}" -eq 4 ]]; then
-  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workloads (reviewer-ui, senior-settlement-agent) on the same Cilium ${CILIUM_CHART_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- amendment A1, no cluster recreate -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them with the evidence view already imported, and prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port, and the evidence view is at http://localhost:5601/app/dashboards#/view/northstar-evidence.${NC}"
+  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workloads (reviewer-ui, senior-settlement-agent) on the same Cilium ${CILIUM_CHART_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- amendment A1, no cluster recreate -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them with the evidence view already imported, prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone, and eval-scorer scoring a settlement's trajectory against the five policy-adherence properties and emitting each score back into the trace it judges. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port, and the evidence view is at http://localhost:5601/app/dashboards#/view/northstar-evidence.${NC}"
 elif [[ "${STAGE}" -eq 3 ]]; then
   echo -e "${GREEN}Stage 3 (Supervised) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity, plus reviewer-ui and senior-settlement-agent -- so a refused payment now has a human who can approve it.${NC}"
 elif [[ "${STAGE}" -ge 2 ]]; then

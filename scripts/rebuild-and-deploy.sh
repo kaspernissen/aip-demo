@@ -76,6 +76,19 @@ COMPONENTS=(
   # M3 final-review fix round: "applied by hand" was only half the story, and
   # the missing half was a real hazard -- see COMPANION_DEPLOYMENTS below.
   "reviewer-ui:apps/reviewer-ui:northstar-agents"
+  # M4 Task 4: eval-scorer. Registered here for the same reason
+  # policy-decision-service's own addition comment argues -- a component
+  # outside this list keeps running whatever image happened to be pushed last,
+  # silently, and this one's source is the audit.
+  #
+  # It is a STAGE 4 component (it reads `ss4o_traces-default-namespace`, which
+  # does not exist below stage 4), which is why scripts/setup-kind.sh names it
+  # inside the `STAGE -ge 4` block rather than adding it to the stage-1 list
+  # at Step 9. A bare `./scripts/rebuild-and-deploy.sh` with no arguments does
+  # still build it, exactly as it still builds policy-decision-service: this
+  # script has no notion of stages and never has, and against a stage-1
+  # cluster this component's apply would fail on the missing namespace.
+  "eval-scorer:platform/eval-scorer:northstar-platform"
 )
 
 # component:companion-deployment:namespace

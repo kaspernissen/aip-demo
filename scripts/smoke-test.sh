@@ -55,10 +55,22 @@ command_exists npx || { echo -e "${RED}npx (Node.js) is required${NC}" >&2; exit
 # `<service>/.venv/bin/python` exists before it will count anything. So without
 # this venv the gate already failed -- just four minutes later, inside a unit
 # test, with a message about a contract count rather than about a missing
-# prerequisite. Measured, not assumed: the helper is at
-# tests/unit/test_telemetry_contract_counts.py:143-148 and the reviewer-ui row
-# at :296. Its own 50-test suite is run below alongside the other six.
-for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui; do
+# prerequisite. Measured, not assumed: the helper's venv assertion is
+# `_pytest_collected_count` in tests/unit/test_telemetry_contract_counts.py and
+# the reviewer-ui row is its `_PER_SERVICE_SUITES` entry. (Those were cited by
+# line number until M4 Task 4 and both numbers had already drifted — the row had
+# moved from :296 to :312 — so they are cited by name now, which is the one form
+# that survives an edit to the file above it.) Its own 56-test suite is run
+# below alongside the other six.
+#
+# `platform/eval-scorer` joins the loop in M4 Task 4, the task that creates it,
+# rather than a milestone later. The two services before it were both added
+# late, both for the same stated reason, and both times the gap meant a suite
+# that nothing ran: the same `_pytest_collected_count` helper re-measures its
+# published per-service row, so without this line the gate would fail inside a
+# unit test about a contract count rather than here, about a missing
+# prerequisite.
+for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui platform/eval-scorer; do
   [[ -x "$ROOT/$svc/.venv/bin/python" ]] || {
     echo -e "${RED}Error: $ROOT/$svc/.venv not found.${NC}" >&2
     echo "Create it: (cd $svc && uv venv --python 3.13 .venv && uv pip install -r requirements.txt)" >&2
@@ -275,6 +287,16 @@ echo -e "${YELLOW}customer-ui${NC}"
 # before its assertions were.
 echo -e "${YELLOW}reviewer-ui${NC}"
 (cd "$ROOT/apps/reviewer-ui" && .venv/bin/python -m pytest tests -q)
+
+# M4 Task 4: the eighth per-service suite, added in the same task as the
+# service. 106 tests, 0.15s measured, and every one of them is a pure function
+# over a span list -- no cluster, no collector, no OpenSearch, no model. The
+# anti-vacuity half of M4 spec §7.4 lives here (tests/test_anti_vacuity.py):
+# the same trajectory with one call moved scores 1.0 and 0.0, so a scorer that
+# regressed to always-compliant reddens on every commit rather than at the next
+# live demo.
+echo -e "${YELLOW}eval-scorer${NC}"
+(cd "$ROOT/platform/eval-scorer" && .venv/bin/python -m pytest tests -q)
 
 echo ""
 echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included ---${NC}"

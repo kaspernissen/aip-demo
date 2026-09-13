@@ -564,6 +564,15 @@ REQUIRED_ATTRIBUTE_SECTIONS = (
     # Gap 2, so a deletion here would un-close a gap this document declares
     # closed.
     "`review.decision`",
+    # M4 Task 4 -- the policy-adherence score span, and the ninth marker. The
+    # comment above records that M3's own two sections went a whole milestone
+    # unpinned and says in as many words that M4 has to do the same; this is
+    # that, done in the task that published the section rather than in a later
+    # sweep. Checked for ambiguity against every current heading before being
+    # added, which is what the len(matched) > 1 branch below demands: "score
+    # span" is a substring of no other `Attributes on ...` heading, and none of
+    # the eight markers above is a substring of this one.
+    "score span",
 )
 
 _KEY_COUNT_CLAIM_RE = re.compile(r"\b(?:(\d+)|([A-Za-z][A-Za-z-]*))\s+keys\b")

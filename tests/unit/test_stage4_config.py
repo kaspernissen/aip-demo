@@ -426,6 +426,18 @@ def test_the_stage_4_completion_message_names_everything_stage_4_installs():
     them as products (`OpenSearch`) and the script as Helm releases
     (`opensearch`); a release whose name is genuinely absent from the message
     fails regardless of case.
+
+    **M4 Task 4 widened "installs" past Helm.** The block gained a workload
+    that is not a chart at all -- `scripts/rebuild-and-deploy.sh eval-scorer`,
+    a container image built, pushed and applied -- and a helm-only derivation
+    cannot see it, so the very defect this test was written for (a completion
+    message describing less than the block installs) was reachable again one
+    task after it was closed. Components deployed through
+    `rebuild-and-deploy.sh` *inside this block* are now derived too. Only
+    inside it: Step 9's unconditional `rebuild-and-deploy.sh payments-api ...`
+    line deploys the stage-1 workloads at every stage, and requiring the
+    stage-4 message to name those would be requiring it to restate the whole
+    system.
     """
     lines = SETUP_KIND.read_text().splitlines()
 
@@ -438,9 +450,10 @@ def test_the_stage_4_completion_message_names_everything_stage_4_installs():
     start = starts[0]
     ends = [i for i in range(start + 1, len(lines)) if lines[i] == "fi"]
     assert ends, "the `STAGE -ge 4` block is never closed by a column-0 `fi`"
+    block = lines[start:ends[0]]
     releases = [
         m.group(1)
-        for l in lines[start:ends[0]]
+        for l in block
         if (m := re.search(r"helm upgrade --install (\S+)", l))
     ]
     assert releases, (
@@ -448,6 +461,17 @@ def test_the_stage_4_completion_message_names_everything_stage_4_installs():
         "stage 4 stopped installing anything or this guard is reading the "
         "wrong block"
     )
+    # The non-Helm half: every component name passed to rebuild-and-deploy.sh
+    # inside this block. `\S+` per argument so a multi-component invocation is
+    # read as the several workloads it is, and comment lines are excluded so
+    # prose mentioning the script cannot inflate the list.
+    installed = list(releases)
+    for l in block:
+        if l.lstrip().startswith("#"):
+            continue
+        m = re.search(r"rebuild-and-deploy\.sh\"?\s+(.+)$", l)
+        if m:
+            installed.extend(m.group(1).split())
 
     message = next(
         (l for l in lines if "Stage 4 (Observable) is up" in l), None
@@ -457,9 +481,9 @@ def test_the_stage_4_completion_message_names_everything_stage_4_installs():
         "up: ...` completion message"
     )
     lowered = message.lower()
-    missing = [r for r in releases if r.lower() not in lowered]
+    missing = [r for r in installed if r.lower() not in lowered]
     assert not missing, (
-        f"stage 4 installs {releases}, but its completion message does not "
+        f"stage 4 installs {installed}, but its completion message does not "
         f"name {missing}. The operator is told about some of what they now "
         "have and not the rest, which is how they end up not knowing a "
         "backend is running. The message reads:\n  "

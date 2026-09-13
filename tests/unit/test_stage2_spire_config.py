@@ -155,6 +155,67 @@ SENIOR_SETTLEMENT_SPIFFE_ID = (
     f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/senior-settlement-agent"
 )
 REVIEWER_UI_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/reviewer-ui"
+# M4 Task 4: the sixth registered workload, and the third in
+# `northstar-platform`.
+#
+# **This comment said something false for most of the task that wrote it**, and
+# the correction is the useful part. It read: "`deploy/k8s/eval-scorer.yaml`
+# gives it a dedicated ServiceAccount, so SPIRE's `spiffeIDTemplate` derives
+# this ID from the chart's catch-all `default` CR without any new registration
+# -- exactly as it does for the two M3 identities above". The two M3 identities
+# are in `northstar-agents`; eval-scorer is in `northstar-platform`, and the
+# chart's catch-all CR *excludes* that namespace by name (`NotIn
+# [northstar-platform, spire-server, spire-system]`, read off the live CR). So
+# no entry was ever created: `spire-server entry show` listed twelve, none of
+# them eval-scorer's. The workload had a ServiceAccount, this constant, an
+# allow-list entry -- and no identity. It was inferred from the two nearest
+# precedents instead of being measured, which is exactly the defect class this
+# milestone keeps finding, committed inside the guard written against it.
+# `deploy/platform/spire/registration.yaml` now carries an explicit
+# non-fallback ClusterSPIFFEID for it, like agentgateway's and the PDS's.
+#
+# Added in the SAME task as the workload, which is the whole point of this
+# block's own account of ruling R22: two M3 tasks created an identity, found
+# this allow-list rejecting the correct new ID, and edited their *documents*
+# to substitute a placeholder rather than widen the list. The guard was
+# passing while both documents had been made less true.
+#
+# Registered, but NOT fetched, the same relationship
+# `policy-decision-service` has with its own: eval-scorer's pod carries no
+# Workload API mount, because it presents no credential to anything -- it
+# reads OpenSearch (security plugin off on this cluster) and writes OTLP to
+# the collector (unauthenticated). The identity exists so that the day
+# something does check one, the answer is this workload's own name rather than
+# `.../sa/default`.
+EVAL_SCORER_SPIFFE_ID = (
+    f"spiffe://{TRUST_DOMAIN}/ns/northstar-platform/sa/eval-scorer"
+)
+
+# Every ClusterSPIFFEID `deploy/platform/spire/registration.yaml` must contain,
+# by CR name -> (namespace, service account, the ID its template must render).
+# Two tests read this: one checks the set and the rendering, the other checks
+# the count and the className. Kept in one place because they were two places
+# and the second was a hand-written `== 3`, which is the shape that drifts.
+#
+# `senior-settlement-agent` and `reviewer-ui` are deliberately NOT here: they
+# are in `northstar-agents`, which the chart's catch-all fallback CR does
+# cover, so they genuinely need no registration of their own. Namespace is what
+# decides -- see this file's EVAL_SCORER_SPIFFE_ID comment for the measurement
+# that established it, and what believing otherwise cost.
+REGISTERED_CLUSTER_SPIFFEIDS = {
+    "northstar-settlement-agent": (
+        "northstar-agents", "settlement-agent", SETTLEMENT_SPIFFE_ID,
+    ),
+    "northstar-agentgateway": (
+        "northstar-platform", "agentgateway", GATEWAY_SPIFFE_ID,
+    ),
+    "northstar-policy-decision-service": (
+        "northstar-platform", "policy-decision-service", PDS_SPIFFE_ID,
+    ),
+    "northstar-eval-scorer": (
+        "northstar-platform", "eval-scorer", EVAL_SCORER_SPIFFE_ID,
+    ),
+}
 # The workload-facing Workload API socket, as READ from the pinned chart's
 # rendered output rather than assumed: `helm template spire spiffe/spire
 # --version 0.30.1` renders the spiffe-oidc-discovery-provider (the chart's own
@@ -481,14 +542,24 @@ def test_every_cluster_spiffeid_sets_the_controller_managers_class_name():
     (deploy/platform/spire/registration.yaml). The check's intent is unchanged
     -- every ClusterSPIFFEID in this file must carry the controller-manager's
     className -- and the count is what makes a silently *absent* CR fail here
-    as well as a classless one. It is still an exact count, deliberately: a
-    fourth identity appearing in this trust domain without review still fails.
+    as well as a classless one. It is still an exact count, deliberately: an
+    identity appearing in this trust domain without review still fails.
+
+    **M4 Task 4 widened it to four**, adding eval-scorer, and the count is now
+    read from `test_the_registered_spiffe_ids_are_built_from_this_projects_
+    trust_domain`'s `expected` map rather than restated -- that map already
+    names every CR this file must contain, and keeping a second hand-written
+    number beside it is how the two drift. It went red on the fourth CR before
+    that change, which is the guard working; deriving it means the *next* one
+    is reviewed in one place instead of two.
     """
     docs = _yaml_docs(SPIRE_REGISTRATION)
     crs = [d for d in docs if d.get("kind") == "ClusterSPIFFEID"]
-    assert len(crs) == 3, (
-        f"expected exactly three ClusterSPIFFEID resources (settlement-agent, "
-        f"agentgateway and policy-decision-service); found {len(crs)}"
+    assert len(crs) == len(REGISTERED_CLUSTER_SPIFFEIDS), (
+        "expected exactly "
+        f"{len(REGISTERED_CLUSTER_SPIFFEIDS)} ClusterSPIFFEID resources "
+        f"({', '.join(sorted(REGISTERED_CLUSTER_SPIFFEIDS))}); found "
+        f"{len(crs)}: {sorted(d['metadata']['name'] for d in crs)}"
     )
     for cr in crs:
         name = cr["metadata"]["name"]
@@ -536,21 +607,29 @@ def test_the_registered_spiffe_ids_are_built_from_this_projects_trust_domain():
 
     **M2.2 Task 4 widened `expected` from two entries to three**, adding the
     Policy Decision Service. Nothing about the check's shape changed: it is
-    still an exact set comparison, so an unreviewed fourth identity fails, and
-    each entry's template is still rendered rather than matched as a string.
+    still an exact set comparison, so an unreviewed identity fails, and each
+    entry's template is still rendered rather than matched as a string.
+
+    **M4 Task 4 widened it to four**, adding eval-scorer -- and the reason is
+    worth keeping, because it is the thing no guard in this file could see. The
+    chart's catch-all `default` CR excludes the `northstar-platform` namespace
+    (measured on the live CR: `NotIn [northstar-platform, spire-server,
+    spire-system]`), so a workload added there without a CR of its own gets
+    **no identity at all**, silently. eval-scorer ran in that state:
+    `spire-server entry show` on this cluster listed twelve entries and none of
+    them was its. Nothing went red, because every SPIFFE check in this file
+    compares strings the documents publish against configuration the repo
+    writes, and an identity that was never registered appears in neither.
+    Registering it here is the fix; publishing the ID in `docs/architecture.md`
+    in the same task is what makes the allow-list further down this file live
+    rather than decorative.
     """
     crs = {
         d["metadata"]["name"]: d["spec"]
         for d in _yaml_docs(SPIRE_REGISTRATION)
         if d.get("kind") == "ClusterSPIFFEID"
     }
-    expected = {
-        "northstar-settlement-agent": ("northstar-agents", "settlement-agent", SETTLEMENT_SPIFFE_ID),
-        "northstar-agentgateway": ("northstar-platform", "agentgateway", GATEWAY_SPIFFE_ID),
-        "northstar-policy-decision-service": (
-            "northstar-platform", "policy-decision-service", PDS_SPIFFE_ID,
-        ),
-    }
+    expected = REGISTERED_CLUSTER_SPIFFEIDS
     assert set(crs) == set(expected), (
         f"unexpected ClusterSPIFFEID names: {sorted(crs)} vs {sorted(expected)}"
     )
@@ -807,14 +886,21 @@ def test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures(doc):
     Two things follow from that about the shape of this check.
 
     It is an **allow-list over every occurrence**, not an equality check on the
-    one line review happened to name. The value appears in three places in that
-    file today and two in `architecture.md`; a check pinned to a line number,
-    or to the attribute block alone, would leave the others exactly as
-    unguarded as they were. So the enumeration unit is "every SPIFFE ID
-    anywhere in the document", and the permitted set is the three IDs this repo
-    actually registers (M2.2 added the Policy Decision Service's) -- which
-    makes a wrong trust domain, a wrong namespace and a wrong service account
-    all fail, not only `sa/default`.
+    one line review happened to name. The value appears in several places in
+    that file and in `architecture.md`; a check pinned to a line number, or to
+    the attribute block alone, would leave the others exactly as unguarded as
+    they were. So the enumeration unit is "every SPIFFE ID anywhere in the
+    document", and the permitted set is every ID this repo actually configures
+    -- which makes a wrong trust domain, a wrong namespace and a wrong service
+    account all fail, not only `sa/default`.
+
+    **No count is written here, deliberately.** This paragraph said "the three
+    IDs this repo actually registers" while `permitted` already held five, and
+    said "three places in that file" without anything checking it. Both were
+    the stale-prose class this milestone keeps finding, in the docstring of a
+    guard written against exactly that failure. The set below is the single
+    place the answer lives; prose that restates its size only goes stale
+    again.
 
     And it enumerates over the **raw text**, deliberately including prose,
     tables and fenced blocks. A published measurement is wrong wherever it
@@ -828,20 +914,24 @@ def test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures(doc):
         "guard would be checking nothing. If the identity documentation moved, "
         "point this at where it went rather than deleting the check."
     )
-    # Three as of M2.2, not two. `PDS_SPIFFE_ID` was registered by Task 4 and
-    # is already checked against the CR's own rendered template by
-    # `test_every_cluster_spiffeid_renders_the_identity_it_claims` -- but it
-    # was missing from *this* allow-list, so the moment a document published
-    # the third identity this repository genuinely configures, the guard would
-    # have called a correct document an offender. A guard that fails on a
+    # Every identity this repository configures, whether or not it has a
+    # ClusterSPIFFEID of its own. `PDS_SPIFFE_ID` was registered by M2.2 Task 4
+    # and checked against the CR's own rendered template by
+    # `test_the_registered_spiffe_ids_are_built_from_this_projects_trust_domain`
+    # -- but it was missing from *this* allow-list, so the moment a document
+    # published an identity this repository genuinely configures, the guard
+    # would have called a correct document an offender. A guard that fails on a
     # correct document is as harmful as one that passes a wrong one: both
-    # teach a reader to edit the document to match the test.
+    # teach a reader to edit the document to match the test. M3 added the two
+    # `northstar-agents` identities and M4 Task 4 added eval-scorer's, each in
+    # the task that created the workload (ruling R22).
     permitted = {
         SETTLEMENT_SPIFFE_ID,
         GATEWAY_SPIFFE_ID,
         PDS_SPIFFE_ID,
         SENIOR_SETTLEMENT_SPIFFE_ID,
         REVIEWER_UI_SPIFFE_ID,
+        EVAL_SCORER_SPIFFE_ID,
     }
     offenders = sorted({one for one in found if one not in permitted})
     assert not offenders, (

@@ -1,0 +1,15 @@
+# The build context is this directory, and `.venv` alone is hundreds of
+# megabytes of the wrong interpreter's packages. Nothing here is COPYied by
+# the Dockerfile; excluding it keeps the context small and makes the image's
+# contents exactly what the COPY lines name.
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+# `tests/` is excluded for the ordinary reason, and for one specific to this
+# service: `tests/test_authority_matches_the_policy.py` reads
+# `../policy-decision-service/pds/rules.py`, which is outside this build
+# context and therefore unreadable in the image. That is the point -- see
+# `scorer/authority.py`'s header. The image must carry the audit's own copy
+# of the allowances and no route to the policy's.
+tests/

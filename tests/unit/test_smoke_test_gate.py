@@ -179,3 +179,54 @@ def test_gate_refuses_to_run_below_stage_4():
         "unconditional for the same reason RUN_BROWSER_TESTS=1 is: a check a "
         "caller's environment can switch off is not a check."
     )
+
+
+def test_the_gate_runs_every_per_service_suite_the_contract_publishes():
+    """A suite nothing runs, caught here instead of a milestone later.
+
+    This repo has shipped that defect three times.
+    `platform/policy-decision-service` went a milestone with 105 tests and no
+    runner (M2.2 finding 1, ruling R42); `apps/reviewer-ui` went a milestone
+    with 50 and no runner (M3 Task 5B), and its own note in
+    `tests/unit/test_telemetry_contract_counts.py` says in as many words that
+    "adding a service to `deploy/k8s/` means adding it here, in the same
+    task". Both times the *count* guard was satisfied -- it asserts the
+    published figure matches what the suite collects, which stays true whether
+    or not anything ever runs it -- and both times the gap was found by a human
+    re-reading the script.
+
+    M4 Task 4 added an eighth service and mutation-tested its own work:
+    deleting `(cd "$ROOT/platform/eval-scorer" && ... pytest tests -q)` from
+    the gate left `tests/unit` completely green. That is the third recurrence
+    of this class and the first one caught by mutating rather than by reading,
+    so the check goes in here rather than being reported as a residual.
+
+    Derived from `_PER_SERVICE_SUITES`, not restated: that list is what the
+    contract's per-service row is measured against, so the two cannot describe
+    different sets of services. Asserted against the comment-stripped script,
+    because this file's whole subject is checks that a comment could satisfy.
+    """
+    from test_telemetry_contract_counts import _PER_SERVICE_SUITES
+
+    script = _effective_script()
+    repo_root = SCRIPT_PATH.resolve().parents[1]
+
+    missing = []
+    for name, service_dir, _counter in _PER_SERVICE_SUITES:
+        relative = service_dir.relative_to(repo_root).as_posix()
+        # The gate runs each suite as `(cd "$ROOT/<dir>" && <runner> ...)`.
+        # Matching on the directory rather than on the service's published
+        # name is deliberate: two services could share a display name, and it
+        # is the directory that decides which tests actually execute.
+        if not re.search(rf'cd "\$ROOT/{re.escape(relative)}"\s*&&', script):
+            missing.append(f"{name} ({relative})")
+
+    assert not missing, (
+        "scripts/smoke-test.sh does not run the per-service suite(s) for: "
+        + ", ".join(missing)
+        + ". docs/telemetry-contract.md publishes a test count for each of "
+        "them and tests/unit/test_telemetry_contract_counts.py re-measures "
+        "it, so the count is gating while the assertions are not -- which is "
+        "the exact state policy-decision-service and reviewer-ui were each "
+        "found in, one milestone after they shipped."
+    )
