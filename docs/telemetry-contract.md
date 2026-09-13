@@ -68,8 +68,27 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-11 (M3, remaining dependency bumps) — the current figures, and the
-gate row is now MEASURED.** The three bumps of this round (`mcp` → 2.2.0,
+**2026-09-13 (M4 Task 1) — the current figures, and the gate row is DERIVED,
+not yet re-measured against a live run.** Task 1 added exactly two new unit
+tests (`tests/unit/test_stage4_config.py`), neither gated nor skipped under
+any condition -- they read only committed file and text state, no cluster --
+so the collected total rises by exactly 2, to **230**, re-measured with
+`.venv/bin/python -m pytest --collect-only -q tests/`. Bare-suite row,
+derived from that same collection: 230 collected − 33 gated − 1 xfailed =
+`196 passed, 33 skipped, 1 xfailed`. Gate row: the two new tests are
+unconditional, so they add the same +2 to the gate's own passed count;
+227 + 2 = `229 passed, 1 xfailed`. This is arithmetic, not a live
+`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` run -- Task 1's own changes
+(a new, additive OpenSearch install and its own trace-export branch behind
+the existing collector pipelines; no application code touched, no span the
+gate already asserts on changed) give no reason to expect the run itself to
+behave differently, but that expectation is stated as exactly that: the same
+"derived" / "measured" distinction the M3 rows below draw on their own.
+
+**2026-09-11 (M3, remaining dependency bumps) — superseded by the row above,
+kept the same way every earlier row is: it was the current figures, and the
+gate row was MEASURED, at the time it was written.** The three bumps of this
+round (`mcp` → 2.2.0,
 `pydantic-ai-slim`/`pydantic-graph` → 2.42.0, `a2a-sdk` held at 0.3.7) added
 no tests and removed none, so the collected total is unchanged at **228**,
 re-measured with `.venv/bin/python -m pytest --collect-only -q tests/`.
@@ -177,8 +196,8 @@ defect class, so each command is stated as it was actually run.)
 
 | Run | Command | Result |
 |---|---|---|
-| Default (bypasses the gate) | `pytest tests/` (no env var) | `194 passed, 33 skipped, 1 xfailed` |
-| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `227 passed, 1 xfailed` (measured 2026-09-11, exit 0, 346.46s, zero skips — see the note above; this row read "derived … not yet re-measured against a live run" until that run) |
+| Default (bypasses the gate) | `pytest tests/` (no env var) | `196 passed, 33 skipped, 1 xfailed` (re-measured 2026-09-13, M4 Task 1: `pytest --collect-only -q tests/` → 230 collected) |
+| The gate itself | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | `229 passed, 1 xfailed` (DERIVED 2026-09-13, M4 Task 1, not yet re-measured against a live run — see the note above) |
 
 (Second final-review round, finding 3: these two rows previously read `49
 passed, 6 skipped, 1 xfailed` and `55 passed, 1 xfailed` — stale from before

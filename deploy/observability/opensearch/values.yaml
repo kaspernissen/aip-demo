@@ -1,0 +1,85 @@
+# OpenSearch, single node, M4 Task 1 -- the destination Task 1's trace-ingest
+# measurement (see the task report) targets, and the store Tasks 3/4 query.
+#
+# CHART VERSION: pinned to 3.8.0, the opensearch-project/helm-charts repo's
+# newest non-prerelease tag as of 2026-09-13 -- verified against TWO
+# independent sources, not a local Helm cache (this repo's standing rule):
+#   * Artifact Hub, `helm/opensearch-project-helm-charts/opensearch` package:
+#     `version` and `app_version` both read "3.8.0".
+#   * `https://api.github.com/repos/opensearch-project/helm-charts/releases`:
+#     `opensearch-3.8.0`, published 2026-08-05T00:05:16Z, prerelease: false --
+#     the newest tag in the list (2.38.0 published one release earlier is the
+#     2.x line, not newer).
+# appVersion is also 3.8.0: unlike Cilium/SPIRE, this chart's releases are
+# tagged 1:1 with the OpenSearch version it installs.
+#
+# SINGLE NODE: `singleNode: true` forces `discovery.type: single-node` and the
+# chart forces `replicas: 1` whenever it is set (opensearch/values.yaml:6-9 of
+# the pulled 3.8.0 chart) -- stage 4 has no second node to spread a cluster
+# across, so `replicas: 1` below is redundant with `singleNode` but stated
+# anyway so a reader does not have to open the chart to know the shape.
+#
+# SECURITY PLUGIN DISABLED (DISABLE_SECURITY_PLUGIN=true), not left on with
+# demo config: this is a local kind cluster with no ingress and no host port
+# for OpenSearch itself (only Dashboards is port-forwarded, via
+# scripts/start-demo.sh). The chart's own default already ships the security
+# plugin ENABLED and, as of OpenSearch 2.12+ (this appVersion, 3.8.0, well
+# past that), refuses to start at all without a strong
+# OPENSEARCH_INITIAL_ADMIN_PASSWORD -- managing that password plus the
+# demo TLS certs the plugin also wants buys this stage nothing. The chart's
+# own commented-out "Start/End OpenSearch Security Demo Configuration" block
+# in its default opensearch.yml (values.yaml:59-96 of the pulled chart) is
+# left commented -- i.e. off -- deliberately: turning it ON would be MORE
+# demo security config, the opposite of what this needs. Consequence measured
+# in the Task 1 report: the endpoint is plain HTTP, not HTTPS, so
+# deploy/observability/collector-config.yaml's `opensearch/trace` exporter
+# points at `http://`, not the `https://` shape the prior-art log exporter
+# uses (that reference keeps the security plugin on and authenticates
+# against it; this cluster does not carry that plugin at all).
+#
+# HEAP: explicitly set here rather than left to the chart's own
+# `-Xmx512M -Xms512M` default (values.yaml:146 of the pulled chart), because
+# an unpinned heap is one future edit away from silently drifting, and stage
+# 4's own budget is ~8 GB total (docs/superpowers/specs/2026-09-11-northstar-
+# m4-observable-design.md §3) -- OpenSearch is that budget's single most
+# expensive tenant, so its heap is the one setting in this file that must
+# never be a guess.
+#
+# MEASURED (Task 1 report has the full command and output). This cluster has
+# no metrics-server (`kubectl -n observability top pod ...` answers "error:
+# Metrics API not available" -- checked before reaching for a substitute, not
+# assumed), so the figure below comes from the same cgroup data
+# metrics-server itself would read, via the container runtime directly:
+#   docker exec northstar-control-plane crictl stats -o json
+# Filtered to the `opensearch` container, after the pod reached Ready and had
+# ingested the denial-scenario settlement driven for Step 6/8's measurement:
+# workingSetBytes 1,484,222,464 (1415.5 MiB), usageNanoCores 43,190,591
+# (43.2 millicores) -- comfortably inside the 2Gi container limit set below,
+# and inside stage 4's ~8 GB total budget.
+clusterName: opensearch-cluster
+nodeGroup: master
+
+singleNode: true
+replicas: 1
+
+opensearchJavaOpts: "-Xms1024m -Xmx1024m"
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "1Gi"
+  limits:
+    cpu: "1000m"
+    memory: "2Gi"
+
+extraEnvs:
+  - name: DISABLE_SECURITY_PLUGIN
+    value: "true"
+
+# persistence.enabled defaults to true in the chart, and needs no
+# storageClassName override: `kubectl get storageclass` shows this cluster's
+# only StorageClass, "standard" (rancher.io/local-path), already marked
+# (default) -- exactly what an unset storageClassName resolves to (the
+# chart's own comment at values.yaml:213). Left at the chart default
+# deliberately: a single-node kind cluster restarting the pod should not lose
+# the indices Task 1 just proved are reachable.

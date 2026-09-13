@@ -29,6 +29,17 @@ CILIUM_HELM_REPO="https://helm.cilium.io/"
 SPIRE_CRDS_CHART_VERSION="0.6.1"
 SPIRE_CHART_VERSION="0.30.1"
 SPIFFE_HELM_REPO="https://spiffe.github.io/helm-charts-hardened/"
+# M4 Task 1: OpenSearch. Verified 2026-09-13 against TWO independent sources,
+# not a local Helm cache -- Artifact Hub's opensearch-project-helm-charts/
+# opensearch package (version AND app_version both "3.8.0") and
+# https://api.github.com/repos/opensearch-project/helm-charts/releases
+# (tag opensearch-3.8.0, published 2026-08-05, prerelease: false, the newest
+# entry). Unlike Cilium/SPIRE this chart's tags equal its appVersion. The
+# same number and the same evidence are recorded in
+# deploy/observability/opensearch/values.yaml and dashboards-values.yaml's
+# headers.
+OPENSEARCH_CHART_VERSION="3.8.0"
+OPENSEARCH_HELM_REPO="https://opensearch-project.github.io/helm-charts"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -81,7 +92,15 @@ Usage: setup-kind.sh [--stage N]
                           exists yet" from M3 Task 1 until Task 5B; that was
                           true when written and false from Task 4 onward]
   --stage 4   Observable:           + OpenSearch, Prometheus
-                          [not implemented -- exits]
+                          [as of M4 Task 1: OpenSearch (single node,
+                          security plugin off) and OpenSearch Dashboards are
+                          installed, and the trace-ingest path into
+                          OpenSearch is live. Prometheus arrives in a later
+                          M4 task. Runs on stage 3's cluster config
+                          UNCHANGED -- see the KIND_CONFIG note below --
+                          Dashboards is reached by port-forward
+                          (./scripts/start-demo.sh), never by a kind host
+                          port]
   --stage 5   Progressive autonomy: + flagd
                           [not implemented -- exits]
   --stage 6   Golden path:          + Crossplane, Argo CD, Backstage
@@ -98,6 +117,14 @@ script refuses rather than layering Cilium on a running default CNI. Note
 that --stage defaults to 1, so a bare `./scripts/setup-kind.sh` builds a
 stage-1 (kindnet) cluster -- pass --stage 2 or --stage 3 explicitly for the
 Cilium dataplane.
+
+Stage 4 is the one exception to "each stage brings its own deploy/kind/
+stageN.yaml": there is deliberately no stage4.yaml. OpenSearch Dashboards
+would have needed a fifth host port (extraPortMappings is create-time only,
+same rule as above), and the human partner declined a cluster recreate for
+it on 2026-09-12 (M4 Task 1, plan amendment A1) -- so stage 4 reuses stage
+3's cluster config unchanged and reaches Dashboards by port-forward instead.
+tests/unit/test_stage4_config.py pins that no stage4.yaml appears.
 EOF
 }
 
@@ -115,8 +142,8 @@ if ! [[ "$STAGE" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-if [[ "${STAGE}" -gt 3 ]]; then
-  echo "Stage $STAGE is not implemented yet. Stages 1 (Connected), 2 (Governed: Cilium) and 3 (Supervised) are implemented; stages 4-6 arrive in later milestones." >&2
+if [[ "${STAGE}" -gt 4 ]]; then
+  echo "Stage $STAGE is not implemented yet. Stages 1 (Connected), 2 (Governed: Cilium), 3 (Supervised) and 4 (Observable) are implemented; stages 5-6 arrive in later milestones." >&2
   exit 1
 fi
 
@@ -169,6 +196,15 @@ echo -e "${BLUE}Step 2/9: Creating kind cluster '${CLUSTER_NAME}'...${NC}"
 # stage 2's is one extra host port reservation for reviewer-ui — see
 # deploy/kind/stage3.yaml's header.
 KIND_CONFIG="$ROOT/deploy/kind/stage${STAGE}.yaml"
+# M4 Task 1, plan amendment A1: there is no stage4.yaml, deliberately. A
+# fifth host port mapping (for OpenSearch Dashboards) can only be added at
+# cluster CREATION -- same create-time rule as disableDefaultCNI above -- and
+# the human partner declined a cluster recreate on 2026-09-12. So --stage 4
+# reuses stage 3's cluster config unchanged; Dashboards is reached by
+# port-forward (./scripts/start-demo.sh) instead of a host port.
+if [[ "${STAGE}" -eq 4 ]]; then
+  KIND_CONFIG="$ROOT/deploy/kind/stage3.yaml"
+fi
 [[ -f "$KIND_CONFIG" ]] || { echo -e "${RED}Error: ${KIND_CONFIG} not found.${NC}" >&2; exit 1; }
 
 if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
@@ -379,6 +415,37 @@ if [[ "${STAGE}" -ge 2 ]]; then
   echo -e "${GREEN}SPIRE ${SPIRE_CHART_VERSION} is ready (trust domain northstar.local).${NC}"
 fi
 
+if [[ "${STAGE}" -ge 4 ]]; then
+  # M4 Task 1: OpenSearch is the destination
+  # deploy/observability/collector-config.yaml's `opensearch/trace` exporter
+  # was measured against (Task 1 report has the full command transcript);
+  # Dashboards is the UI a human reads it through, reached by port-forward
+  # (./scripts/start-demo.sh) rather than a kind host port -- see the
+  # KIND_CONFIG note above (plan amendment A1). `--wait` on both installs is
+  # load-bearing the same way it is for Cilium/SPIRE above: the collector
+  # ConfigMap this script applies at Step 7 already names the `opensearch/
+  # trace` exporter, so a collector restart before OpenSearch's Service
+  # exists would just mean the first export retries until it does -- not a
+  # hard ordering requirement, but the explicit wait keeps this step's own
+  # success message honest.
+  echo -e "${BLUE}Step 8c/9 (stage 4): Installing OpenSearch ${OPENSEARCH_CHART_VERSION}...${NC}"
+  helm repo add opensearch "${OPENSEARCH_HELM_REPO}" --force-update >/dev/null
+  helm repo update opensearch >/dev/null
+  helm upgrade --install opensearch opensearch/opensearch \
+    --version "${OPENSEARCH_CHART_VERSION}" \
+    --namespace observability \
+    --kube-context "kind-${CLUSTER_NAME}" \
+    --values "$ROOT/deploy/observability/opensearch/values.yaml" \
+    --wait --timeout 5m
+  helm upgrade --install opensearch-dashboards opensearch/opensearch-dashboards \
+    --version "${OPENSEARCH_CHART_VERSION}" \
+    --namespace observability \
+    --kube-context "kind-${CLUSTER_NAME}" \
+    --values "$ROOT/deploy/observability/opensearch/dashboards-values.yaml" \
+    --wait --timeout 5m
+  echo -e "${GREEN}OpenSearch ${OPENSEARCH_CHART_VERSION} is up (single node, security plugin off, heap and resources set in deploy/observability/opensearch/values.yaml); Dashboards is up, reached by port-forward.${NC}"
+fi
+
 echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then starting port-forwards...${NC}"
 "$ROOT/scripts/rebuild-and-deploy.sh" \
   payments-api payments-mcp settlement-agent claims-agent customer-ui
@@ -550,7 +617,9 @@ verify_port_forward 18080 "${API_PF_PID}" payments-api
 echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payments-mcp, payments-api.${NC}"
 
 echo ""
-if [[ "${STAGE}" -eq 3 ]]; then
+if [[ "${STAGE}" -eq 4 ]]; then
+  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workloads (reviewer-ui, senior-settlement-agent) on the same Cilium ${CILIUM_CHART_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- amendment A1, no cluster recreate -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces and OpenSearch Dashboards for reading them. Run ./scripts/start-demo.sh to reach Dashboards; it is not a kind host port.${NC}"
+elif [[ "${STAGE}" -eq 3 ]]; then
   echo -e "${GREEN}Stage 3 (Supervised) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity, plus reviewer-ui and senior-settlement-agent -- so a refused payment now has a human who can approve it.${NC}"
 elif [[ "${STAGE}" -ge 2 ]]; then
   echo -e "${GREEN}Stage 2 (Governed) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity.${NC}"

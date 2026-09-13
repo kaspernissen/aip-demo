@@ -1,0 +1,34 @@
+# OpenSearch Dashboards, M4 Task 1 -- reached by port-forward
+# (scripts/start-demo.sh), never by a kind host port. Amendment A1: the fifth
+# host port this originally would have needed is create-time-only
+# (extraPortMappings), the human partner declined the cluster recreate that
+# would add it, so this stays off the kind config entirely and is only ever
+# reached through `kubectl port-forward`.
+#
+# CHART VERSION: 3.8.0, same evidence as values.yaml's header (Artifact Hub
+# + the upstream releases API, both checked 2026-09-13) -- opensearch-project/
+# helm-charts tags `opensearch` and `opensearch-dashboards` together at every
+# release, and both read 3.8.0 here.
+#
+# opensearchHosts overridden from the chart's own default
+# ("https://opensearch-cluster-master:9200", values.yaml:8 of the pulled
+# chart) to plain HTTP, matching values.yaml's DISABLE_SECURITY_PLUGIN=true --
+# a Dashboards pointed at https on a backend serving plain HTTP fails the TLS
+# handshake outright, which is exactly backwards from a config that is
+# supposed to be simpler for having security off.
+opensearchHosts: "http://opensearch-cluster-master.observability.svc.cluster.local:9200"
+replicaCount: 1
+
+# The Dashboards-side half of DISABLE_SECURITY_PLUGIN: without this, Dashboards
+# still runs its own security plugin and tries to authenticate against a
+# backend that no longer has one to answer it.
+extraEnvs:
+  - name: DISABLE_SECURITY_DASHBOARDS_PLUGIN
+    value: "true"
+
+# resources: left at the chart's own default (512M request, 512M limit,
+# values.yaml:192-198 of the pulled chart) -- Task 1 only measured
+# OpenSearch itself (the "expensive tenant" the spec names); Dashboards is a
+# read-only UI a human drives occasionally, not a component on the trace-
+# ingest path, so it did not need its own measurement to stay inside stage
+# 4's ~8 GB budget.

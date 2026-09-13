@@ -307,18 +307,21 @@ def test_stages_above_the_implemented_one_still_refuse_to_run():
     supplied by prose.
 
     The threshold moves with the milestones, and this test moves with it: M2.1
-    set it at 2, M3 Task 1 raised it to 3 when `--stage 3` became real. Raising
-    the gate in `setup-kind.sh` without raising it here reddens this test, which
-    is the intent -- the gate's threshold is a claim about what exists, and it
-    should not be possible to change one without the other.
+    set it at 2, M3 Task 1 raised it to 3, M4 Task 1 raised it to 4 when
+    `--stage 4` became real. Raising the gate in `setup-kind.sh` without
+    raising it here reddens this test, which is the intent -- the gate's
+    threshold is a claim about what exists, and it should not be possible to
+    change one without the other. (M3 ruling R5: this exact omission left the
+    branch red across two commits before, which is why Task 1's own brief
+    calls this test out by name.)
     """
     text = _effective_script()
-    assert re.search(r'"\$\{STAGE\}" -gt 3', text), (
-        "the stage gate must refuse stages above 3; expected an effective "
-        '`"${STAGE}" -gt 3` test'
+    assert re.search(r'"\$\{STAGE\}" -gt 4', text), (
+        "the stage gate must refuse stages above 4; expected an effective "
+        '`"${STAGE}" -gt 4` test'
     )
-    assert not re.search(r'"\$\{?STAGE\}?" -gt 2', text), (
-        "the stage gate must no longer refuse stage 3, which M3 Task 1 "
+    assert not re.search(r'"\$\{?STAGE\}?" -gt 3', text), (
+        "the stage gate must no longer refuse stage 4, which M4 Task 1 "
         "implemented"
     )
 

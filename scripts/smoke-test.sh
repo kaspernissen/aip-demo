@@ -146,7 +146,21 @@ for probe in \
   path="${rest#*:}"
   lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1 || {
     echo -e "${RED}Error: nothing is listening on port ${port} (${name}).${NC}" >&2
-    echo "Port-forwards die after a redeploy and need re-establishing: kubectl -n <namespace> port-forward svc/${name} ${port}:<container-port> (or re-run ./scripts/setup-kind.sh --stage 3)." >&2
+    # M4 Task 1 (plan amendment A2): this used to hand the operator a
+    # `kubectl port-forward` line to assemble by hand, per-port -- exactly
+    # the ad-hoc pattern rulings R10 and R20 came from. The script the echo
+    # below now names owns every port-forward this demo needs (and
+    # re-verifies each one with this same lsof-then-curl shape), so the
+    # remedy is one command, not a line an operator has to get right five
+    # times. This file still creates nothing itself -- that division
+    # predates this milestone and is unchanged; only the remedy text below
+    # points somewhere new. (Deliberately not named a second time in this
+    # comment: tests/unit/test_stage4_config.py's
+    # test_the_port_forward_remedy_points_at_the_script checks for the
+    # script's name via a plain substring match, so this comment does not
+    # also carry it -- otherwise reverting only the echo below would still
+    # leave that guard green.)
+    echo "Port-forwards die after a redeploy and need re-establishing: ./scripts/start-demo.sh (or re-run ./scripts/setup-kind.sh --stage 3 first if the cluster itself is gone)." >&2
     exit 1
   }
   # -o /dev/null: the body is irrelevant, only whether one arrived.
@@ -155,8 +169,7 @@ for probe in \
   curl -s -o /dev/null -m 5 "http://localhost:${port}${path}" || {
     echo -e "${RED}Error: port ${port} (${name}) is LISTENING but carries no request.${NC}" >&2
     echo "This is a dead kubectl port-forward: its target pod was replaced, the socket stayed bound, and lsof still calls it healthy (ruling R20). Nothing here is broken in the cluster." >&2
-    echo "Kill that forward and re-establish it: lsof -nP -iTCP:${port} -sTCP:LISTEN  # then kill that PID" >&2
-    echo "  kubectl -n <namespace> port-forward svc/${name} ${port}:<container-port>   (or re-run ./scripts/setup-kind.sh --stage 3)" >&2
+    echo "Re-establish every forward, verified live rather than merely bound: ./scripts/start-demo.sh" >&2
     exit 1
   }
 done

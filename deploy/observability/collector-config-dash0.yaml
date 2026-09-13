@@ -60,12 +60,20 @@ exporters:
   debug:
     verbosity: normal
 
+  # M4 Task 1: see collector-config.yaml's own comment on this exporter for
+  # the full measurement -- this file must carry the identical block
+  # (tests/unit/test_collector_configs_in_sync.py enforces byte-for-byte
+  # agreement on every exporter except otlp_grpc/dash0).
+  opensearch/trace:
+    http:
+      endpoint: http://opensearch-cluster-master.observability.svc.cluster.local:9200
+
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [resource_detection, batch]
-      exporters: [otlp_grpc/jaeger, otlp_grpc/dash0, debug]
+      exporters: [otlp_grpc/jaeger, opensearch/trace, otlp_grpc/dash0, debug]
     metrics:
       receivers: [otlp, prometheus/spire]
       processors: [batch]

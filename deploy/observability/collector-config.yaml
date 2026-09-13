@@ -55,12 +55,39 @@ exporters:
   debug:
     verbosity: normal
 
+  # M4 Task 1: the trace-ingest path, MEASURED rather than assumed (spec §3).
+  # The user's own otel-platform-demo (infrastructure/collector/
+  # deployment-values.yaml) proves the `opensearch` exporter for LOGS only --
+  # its traces pipeline goes to otlp/dash0 and otlp/jaeger, never to
+  # OpenSearch. Reuse was tried against traces first anyway (the user's own
+  # instruction), and it worked with no Data Prepper needed: the
+  # opensearchexporter README for THIS pinned collector image
+  # (otel/opentelemetry-collector-contrib:0.158.0, see .env) documents its
+  # default `ss4o` mapping mode as supporting both Logs and Traces -- the
+  # prior art's repo just never exercised the traces half. Verified end to
+  # end (Task 1 report has the full command transcript): after driving the
+  # M3 denial scenario, `ss4o_traces-default-namespace` exists in
+  # `_cat/indices` and every one of that trace's 139 spans is queryable out
+  # of it by `traceId`, with `resource.service.name`, `spanId`,
+  # `parentSpanId` and every span `attributes.*` key (e.g. `gen_ai.tool.name`,
+  # `mcp.method.name`, `http.route`) intact -- checked field by field against
+  # the raw document, not assumed from the index existing.
+  #
+  # `http://`, not the reference's `https://` + basicauth: this cluster's
+  # OpenSearch (deploy/observability/opensearch/values.yaml) runs with
+  # DISABLE_SECURITY_PLUGIN=true, so there is no TLS listener and no auth to
+  # satisfy -- a plain HTTP endpoint is the correct one for THIS cluster, not
+  # a simplification of the reference's shape.
+  opensearch/trace:
+    http:
+      endpoint: http://opensearch-cluster-master.observability.svc.cluster.local:9200
+
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [resource_detection, batch]
-      exporters: [otlp_grpc/jaeger, debug]
+      exporters: [otlp_grpc/jaeger, opensearch/trace, debug]
     metrics:
       receivers: [otlp, prometheus/spire]
       processors: [batch]
