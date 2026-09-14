@@ -214,6 +214,39 @@ for component in "${targets[@]}"; do
     [[ -n "$companion" ]] || continue
     companion_ns="${companion##*:}"
     companion_name="${companion%%:*}"
+    # M5-R27. A companion that does not exist YET is not an error, and until
+    # 2026-09-14 it killed every cold bring-up. setup-kind.sh's Step 9/9 runs
+    # this script for the five stage-1 components; the manifest that CREATES
+    # senior-settlement-agent is not applied until Step 9d, later in that same
+    # script. Warm, the Deployment was always already there, so the ordering
+    # was never exercised -- stages 4 and 5 were only ever applied over an
+    # existing cluster (amendment A1). Cold, `rollout restart` hit a
+    # non-existent Deployment and `set -e` took the run down at the first of
+    # five components. That mattered more than it looked: this repo has no git
+    # remote, so rebuilding from scratch is the only recovery path there is,
+    # and it did not work.
+    #
+    # Skipping is correct here and costs nothing: a Deployment created AFTER
+    # this push pulls the image this step just pushed, by definition, so no
+    # restart is owed. Step 9d creates it moments later.
+    #
+    # What this must NOT become is a silent skip -- "skips instead of failing
+    # on the object it guards" is this repo's most-repeated defect (M2.2, four
+    # times). So only a genuine NotFound is tolerated: an unreachable API
+    # server, an RBAC denial, or any other kubectl failure still aborts loudly
+    # rather than being mistaken for "not created yet", which would quietly
+    # leave a companion serving a stale image -- the exact hazard
+    # COMPANION_DEPLOYMENTS exists to prevent.
+    if ! companion_probe_err="$(kubectl -n "$companion_ns" get "deployment/${companion_name}" 2>&1 >/dev/null)"; then
+      if [[ "$companion_probe_err" == *NotFound* || "$companion_probe_err" == *"not found"* ]]; then
+        echo -e "${YELLOW}Step ${step}/${total}: companion deployment/${companion_name} does not exist yet -- skipping its restart; whatever creates it will already be running this image.${NC}"
+        continue
+      fi
+      echo -e "${RED}Error: could not determine whether deployment/${companion_name} exists in namespace ${companion_ns}.${NC}" >&2
+      echo "${companion_probe_err}" >&2
+      echo "Refusing to continue: treating this as 'not created yet' could leave the companion on a stale image." >&2
+      exit 1
+    fi
     echo -e "${BLUE}Step ${step}/${total}: Restarting companion deployment/${companion_name} (same image, second identity)${NC}"
     kubectl -n "$companion_ns" rollout restart "deployment/${companion_name}"
     kubectl -n "$companion_ns" rollout status "deployment/${companion_name}" --timeout=180s

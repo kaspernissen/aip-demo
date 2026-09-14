@@ -664,6 +664,35 @@ git commit -m "feat(m5): the autonomy level comes from the contract, and the rul
 
 ## Task 4: Two records per evaluation, and a logs pipeline that goes somewhere
 
+> **Dated correction, 2026-09-14 (ruling M5-R28). Four claims in this section
+> are wrong. They are left in place deliberately, as a dated record** — the same
+> convention the M2.2 plan follows for its inverted `failureMode` default — **and
+> the corrections, measured against the installed venv, live in
+> `.superpowers/sdd/2026-09-14-m5-progressive-autonomy/task-4-brief.md` and in
+> M5-R28. In summary:**
+>
+> 1. **Step 2's code sketch does not compile.** `opentelemetry._events` and
+>    `opentelemetry.sdk._events` both raise `ModuleNotFoundError` on the pinned
+>    `opentelemetry-api`/`-sdk` **1.44.0** — the standalone Events API was folded
+>    into the Logs API. The event is emitted as a **log record carrying
+>    `event_name`**, via `opentelemetry.sdk._logs.LoggerProvider` +
+>    `BatchLogRecordProcessor` + the HTTP `OTLPLogExporter`.
+> 2. **The PDS exports OTLP over HTTP, not gRPC** —
+>    `opentelemetry-exporter-otlp-proto-grpc` is not installed at all, and
+>    `-proto-http` already is, so no new pin was needed.
+> 3. **There was no logs pipeline in `pds/telemetry.py` at all.** Task 4 added a
+>    third signal rather than extending an existing one — more work than Step 2
+>    implies.
+> 4. **Step 3 retypes the four deprecated spellings as literals,** breaking the
+>    derive-never-retype rule inside the very guard meant to catch drift. They
+>    are derived from `semconv`'s own deprecation markers instead.
+>
+> As built, Task 4 also **omits** `feature_flag.version` and
+> `feature_flag.set.id` rather than emitting nulls: both measure `None` for every
+> real evaluation, because the `autonomy-level` flag defines no `flag_metadata`.
+> **Task 5 must not expect to read `feature_flag.version` off this event** — see
+> M5-R6 for the route the audit takes instead.
+
 **Files:**
 - Modify: `platform/policy-decision-service/pds/telemetry.py`, `pds/autonomy.py`
 - Modify: `deploy/observability/collector-config.yaml`

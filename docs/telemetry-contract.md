@@ -161,24 +161,42 @@ gated figure below is unchanged.
 That takes the collected count from **355 to 362**, re-measured with
 `.venv/bin/python -m pytest --collect-only -q tests/`.
 
-Bare-suite row, derived from that same collection: 362 collected − 71 gated −
-**0** xfailed = `291 passed, 71 skipped, 0 xfailed`.
+**Dated note, 2026-09-14 (M5-R27, after Task 4):** the figures in this section
+moved again after the sentence above was written, and the rows below are the
+current ones. Closing the cold-bring-up ordering defect added **three** tests to
+`tests/unit/test_rebuild_and_deploy_guard.py` (a NotFound companion is skipped;
+any other probe failure aborts; a RED demonstration against the naive
+`|| continue`), taking collection **362 → 365**. None is gated, so the gated
+figure is untouched. The "355 to 362" above is left standing as Task 4's dated
+record, the way the M2.2 plan's inverted `failureMode` default is.
 
-The gated figure is unchanged at **71** (all seven new tests — two in
-`tests/unit`, five in `tests/e2e` — carry no `skipif` naming
-`RUN_BROWSER_TESTS`, so none is gated) — and reports 71 of 362, with the same
-per-module spread as the row beneath this one. The browser split is unchanged
-too: **3 of the 11 launch a browser** and **8 of the 11 start no browser**.
+Bare-suite row, derived from that same collection: 365 collected − 71 gated −
+**0** xfailed = `294 passed, 71 skipped, 0 xfailed`.
+
+The gated figure is unchanged at **71** (all seven of Task 4's new tests — two
+in `tests/unit`, five in `tests/e2e` — and all three of M5-R27's carry no
+`skipif` naming `RUN_BROWSER_TESTS`, so none is gated) — and reports 71 of 365,
+with the same per-module spread as the row beneath this one. The browser split
+is unchanged too: **3 of the 11 launch a browser** and **8 of the 11 start no
+browser**.
 
 Gate row: **PREDICTED, NOT MEASURED**, unchanged from the row below -- this
 branch's gate run was at commit `b215426` (the M4 final-review fix wave
 further below), and it is measured against no later tree than that one. This
 task changes files under `gate_paths` (`platform/`, `deploy/`, `tests/`,
 `docs/`) without a new gate run to back it. The prediction from collection
-(362 − 1 xfailed = 361) is `361 passed, 1 xfailed`; nothing claims that
+(365 − 1 xfailed = 364) is `364 passed, 1 xfailed`; nothing claims that
 figure was measured against this tree.
 
-`tests/unit` alone collects **219** (217 before this task).
+**A bare `pytest tests/` does not currently reach that prediction**, and the
+gap is not this section's doing: two e2e tests fail against the live stage-5
+cluster — `test_policy_denial.py`'s criterion 4 and
+`test_prometheus_metrics_ingest.py`'s reviewer-ui assertion. Both were found
+failing by M5 Task 4, both predate it, and neither touches a file Task 4 or
+M5-R27 modified. They are recorded here rather than left for the gate run to
+discover, and they are **unclaimed** — see the ledger.
+
+`tests/unit` alone collects **222** (219 after Task 4, 217 before it).
 
 **A defect this task found and fixed, worth stating here rather than only in
 `pds/autonomy.py`'s own comment: the first live-driven `feature_flag.evaluation`

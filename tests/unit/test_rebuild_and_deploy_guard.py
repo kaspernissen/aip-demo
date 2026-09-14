@@ -458,3 +458,170 @@ def test_the_companion_guard_goes_red_when_the_mapping_is_emptied(tmp_path):
         "the corrupted script still restarted the companion, so the tests "
         f"above would not go red against this reintroduction: {calls}"
     )
+
+
+# ---------------------------------------------------------------------------
+# M5-R27: the cold-bring-up ordering, and the silent-skip shape it must not
+# be fixed with.
+#
+# Found by actually running `setup-kind.sh --stage 5` cold on 2026-09-14,
+# after the northstar cluster was destroyed by another demo's cleanup. Step
+# 9/9 runs rebuild-and-deploy.sh for the five stage-1 components; the manifest
+# that CREATES senior-settlement-agent is not applied until Step 9d, later in
+# that same script. So `rollout restart deployment/senior-settlement-agent`
+# hit a Deployment that did not exist and `set -e` killed the run at the first
+# of five components. Warm -- which is the only way stages 4 and 5 had ever
+# been brought up, per amendment A1 -- the Deployment was always already
+# there, so the ordering was never exercised.
+#
+# The fix tolerates a genuine NotFound and nothing else. The tempting version
+# (`kubectl get ... >/dev/null 2>&1 || continue`) is the shape this repo has
+# been bitten by four times in M2.2 alone: a skip where a failure belongs.
+# It would also swallow an unreachable API server or an RBAC denial and leave
+# the companion serving a stale image -- the exact hazard COMPANION_DEPLOYMENTS
+# was added to prevent. The third test below is the RED demonstration that
+# these guards actually catch that shape.
+
+_CONFIGURABLE_KUBECTL = """#!/usr/bin/env bash
+echo "kubectl $*" >> "$FAKE_CMD_LOG"
+# Everything succeeds exactly as the always-succeeding fake does, EXCEPT the
+# existence probe, which the two env vars below can make fail in the two
+# distinguishable ways the script must treat differently.
+if [[ "$3" == "get" ]]; then
+  if [[ -n "${KUBECTL_GET_NOTFOUND:-}" && "$4" == "deployment/${KUBECTL_GET_NOTFOUND}" ]]; then
+    echo "Error from server (NotFound): deployments.apps \\"${KUBECTL_GET_NOTFOUND}\\" not found" >&2
+    exit 1
+  fi
+  if [[ -n "${KUBECTL_GET_UNREACHABLE:-}" && "$4" == "deployment/${KUBECTL_GET_UNREACHABLE}" ]]; then
+    echo "The connection to the server 127.0.0.1:6443 was refused - did you specify the right host or port?" >&2
+    exit 1
+  fi
+fi
+exit 0
+"""
+
+
+def _cold_sandbox(tmp_path: Path, script_text: str | None = None):
+    """`_deploying_sandbox`, but with the configurable kubectl swapped in."""
+    script_copy, env, log = _deploying_sandbox(
+        tmp_path, ["agents/settlement-agent"], script_text=script_text
+    )
+    bin_dir = tmp_path / "fakebin"
+    _make_executable(bin_dir / "kubectl", _CONFIGURABLE_KUBECTL)
+    return script_copy, env, log
+
+
+def test_a_companion_that_does_not_exist_yet_is_skipped_rather_than_fatal(tmp_path):
+    """The cold-bring-up case (M5-R27). A NotFound on the companion must not
+    kill the run: whatever creates that Deployment later pulls the image this
+    step just pushed, by definition, so no restart is owed.
+
+    This repo has no git remote, so a cold rebuild is the only recovery path
+    that exists -- which is why this is guarded rather than left to the next
+    person to rediscover at the worst possible moment.
+    """
+    script_copy, env, log = _cold_sandbox(tmp_path)
+    env["KUBECTL_GET_NOTFOUND"] = "senior-settlement-agent"
+
+    result = _run(script_copy, env, ["settlement-agent"])
+    assert result.returncode == 0, (
+        "a companion that does not exist yet must not fail the run -- this is "
+        "exactly what took down the cold --stage 5 bring-up on 2026-09-14.\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+
+    calls = log.read_text().splitlines()
+    assert any(
+        "rollout restart deployment/settlement-agent" in call for call in calls
+    ), f"the component itself must still be deployed: {calls}"
+    assert not any(
+        "rollout restart deployment/senior-settlement-agent" in call
+        for call in calls
+    ), (
+        "the script tried to restart a Deployment it had just been told does "
+        f"not exist: {calls}"
+    )
+    assert "skipping its restart" in result.stdout, (
+        "the skip must be announced -- a silent skip is indistinguishable "
+        f"from the companion having been restarted.\nstdout:\n{result.stdout}"
+    )
+
+
+def test_a_companion_probe_failure_that_is_not_notfound_aborts_loudly(tmp_path):
+    """The half that makes the skip above safe. An unreachable API server is
+    NOT 'not created yet': treating it as such would skip the restart and
+    leave senior-settlement-agent serving the previous build of an image whose
+    byte-identity is the premise M3's whole argument rests on.
+    """
+    script_copy, env, log = _cold_sandbox(tmp_path)
+    env["KUBECTL_GET_UNREACHABLE"] = "senior-settlement-agent"
+
+    result = _run(script_copy, env, ["settlement-agent"])
+    assert result.returncode != 0, (
+        "a probe failure that is not NotFound must abort, not be mistaken for "
+        f"'not created yet'.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    combined = result.stdout + result.stderr
+    assert "connection to the server" in combined, (
+        "the underlying kubectl error must be surfaced, not swallowed: "
+        f"{combined}"
+    )
+    calls = log.read_text().splitlines()
+    assert not any(
+        "rollout restart deployment/senior-settlement-agent" in call
+        for call in calls
+    ), f"it aborted, so it must not also have restarted the companion: {calls}"
+
+
+def test_these_guards_go_red_against_the_naive_silent_skip(tmp_path):
+    """RED demonstration, in the shape this file already uses for A15a.
+
+    The tempting one-liner -- `kubectl get ... || continue` -- passes the
+    cold-bring-up test above and silently swallows every other failure with
+    it. If that shape can be reintroduced without a test reddening, these
+    guards are decoration. Here the real script's probe block is replaced with
+    exactly that one-liner and the abort test's condition is re-asserted.
+    """
+    real_text = (REPO_ROOT / SCRIPT_RELATIVE_PATH).read_text()
+    marker = 'if ! companion_probe_err="$(kubectl -n "$companion_ns" get "deployment/${companion_name}" 2>&1 >/dev/null)"; then'
+    assert marker in real_text, (
+        "expected the companion existence probe to still open with this line "
+        "-- if the probe was rewritten, update this RED demonstration "
+        "alongside it rather than deleting it"
+    )
+    start = real_text.index(marker)
+    # Anchored on the leading newline so it lands on the OUTER `fi` (4 spaces),
+    # not the inner one (6 spaces): "    fi\n" is a substring of "      fi\n",
+    # and matching that leaves a dangling `fi` and a bash syntax error instead
+    # of the silent-skip shape this demonstration is meant to build. The first
+    # draft of this test did exactly that and "went red" for a syntax error --
+    # a RED for the wrong reason, which is the thing this file's own A15a
+    # history warns about.
+    closing = "\n    fi\n"
+    end = real_text.index(closing, start) + len(closing)
+    corrupted_text = real_text[:start] + (
+        '    kubectl -n "$companion_ns" get "deployment/${companion_name}" '
+        ">/dev/null 2>&1 || continue\n"
+    ) + real_text[end:]
+    assert corrupted_text != real_text
+
+    script_copy, env, log = _cold_sandbox(tmp_path, script_text=corrupted_text)
+    env["KUBECTL_GET_UNREACHABLE"] = "senior-settlement-agent"
+    result = _run(script_copy, env, ["settlement-agent"])
+
+    assert result.returncode == 0, (
+        "sanity check on the corruption: the naive `|| continue` should "
+        "swallow the unreachable-API failure and exit cleanly -- if it does "
+        "not, this demonstration is not exercising the shape it claims to.\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    calls = log.read_text().splitlines()
+    assert not any(
+        "rollout restart deployment/senior-settlement-agent" in call
+        for call in calls
+    ), (
+        "the corrupted script skipped the companion restart on an unreachable "
+        "API server, exactly as predicted -- which is what "
+        "`test_a_companion_probe_failure_that_is_not_notfound_aborts_loudly` "
+        f"exists to catch: {calls}"
+    )
