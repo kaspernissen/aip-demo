@@ -32,7 +32,7 @@ command_exists() {
 # to come here -- the guard reddens when the spec lands. The sign-off also
 # gained the word "Northstar" so the two strings match one pattern instead of
 # two.
-echo -e "${BLUE}=== Northstar M4 smoke test ===${NC}"
+echo -e "${BLUE}=== Northstar M5 smoke test ===${NC}"
 
 echo -e "${BLUE}--- Checking prerequisites ---${NC}"
 command_exists go || { echo -e "${RED}go is required${NC}" >&2; exit 1; }
@@ -119,7 +119,7 @@ kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
   # superset of stage 3 -- same cluster config, plus OpenSearch -- so an
   # operator following this still gets the reviewer-ui the port loop below
   # requires, and also gets the OpenSearch the M4 assertions need.
-  echo "Run ./scripts/setup-kind.sh --stage 4 first." >&2
+  echo "Run ./scripts/setup-kind.sh --stage 5 first." >&2
   exit 1
 }
 # RULING M4-R9 (re-review finding N3): the gate must PROVE it is running on a
@@ -147,7 +147,7 @@ kubectl --context kind-northstar -n observability get svc/opensearch-cluster-mas
   echo -e "${RED}Error: svc/opensearch-cluster-master not found in the observability namespace.${NC}" >&2
   echo "This cluster is below stage 4. The gate runs tests/e2e/test_opensearch_trace_ingest.py -- M4's trace-ingest guard -- and on a cluster without OpenSearch every one of its assertions SKIPs, so the gate would pass while proving nothing about them (ruling M4-R9)." >&2
   echo "Bring the cluster to stage 4. No recreate is needed: stage 4 runs on stage 3's cluster config unchanged." >&2
-  echo "Run ./scripts/setup-kind.sh --stage 4 first." >&2
+  echo "Run ./scripts/setup-kind.sh --stage 5 first." >&2
   exit 1
 }
 # The e2e/browser assertions below need all five ports up. Four are
@@ -229,7 +229,7 @@ for probe in \
     # tests/unit/test_stage4_config.py now strips whole-line comments and
     # requires BOTH remedies to name the script, so reverting either one goes
     # red on its own.
-    echo "Port-forwards die after a redeploy and need re-establishing: ./scripts/start-demo.sh (or re-run ./scripts/setup-kind.sh --stage 4 first if the cluster itself is gone)." >&2
+    echo "Port-forwards die after a redeploy and need re-establishing: ./scripts/start-demo.sh (or re-run ./scripts/setup-kind.sh --stage 5 first if the cluster itself is gone)." >&2
     exit 1
   }
   # -o /dev/null: the body is irrelevant, only whether one arrived.
@@ -393,4 +393,4 @@ if [[ "$SKIPPED" -ne 0 ]]; then
 fi
 
 echo ""
-echo -e "${GREEN}Northstar M4 smoke test passed.${NC}"
+echo -e "${GREEN}Northstar M5 smoke test passed.${NC}"

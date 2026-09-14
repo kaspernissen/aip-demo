@@ -97,7 +97,7 @@ def live_gateway_config_text() -> str:
         pytest.skip(
             f"needs the live cluster: cannot reach {KUBE_CONTEXT} "
             f"({reachable.stderr.strip() or 'no output'}); "
-            "run ./scripts/setup-kind.sh --stage 4"
+            "run ./scripts/setup-kind.sh --stage 5"
         )
 
     # The stage-2 probe, deliberately NOT the object under test. If the gateway
@@ -112,7 +112,7 @@ def live_gateway_config_text() -> str:
             f"no {GATEWAY_DEPLOYMENT} Deployment in {PLATFORM_NAMESPACE}, so "
             "this is not a stage-2 cluster and no gateway config is deployed "
             f"({deployment.stderr.strip() or 'no output'}); "
-            "run ./scripts/setup-kind.sh --stage 4"
+            "run ./scripts/setup-kind.sh --stage 5"
         )
 
     proc = _kubectl(
@@ -170,7 +170,7 @@ def test_the_live_gateway_configmap_parses_identically_to_the_committed_file(
         f"  committed top-level keys: {sorted(committed)}\n"
         f"  live frontendPolicies:    {live.get('frontendPolicies')!r}\n"
         f"  committed frontendPolicies: {committed.get('frontendPolicies')!r}\n"
-        "Re-run ./scripts/setup-kind.sh --stage 4 to recreate the ConfigMap "
+        "Re-run ./scripts/setup-kind.sh --stage 5 to recreate the ConfigMap "
         "from the committed file and restart the gateway (the restart is "
         "mandatory: a mounted ConfigMap change is invisible to a running "
         "gateway), or commit the change the cluster is right about."

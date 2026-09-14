@@ -134,8 +134,45 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-14 (M5 Task 1) — the current figures, and the gate row is
-PREDICTED again.**
+**2026-09-14 (M5 Task 2) — the current figures, and the gate row is still
+PREDICTED.**
+Task 2 stands up stage 5's machinery (cert-manager, the Open Feature
+Operator, flagd, the `northstar-autonomy` contract) and adds one new hermetic
+suite, `tests/unit/test_autonomy_contract.py`, two tests: the contract's
+`defaultVariant` is fail-closed, and every variant it can hand back has a row
+in `pds/rules.py`'s policy table. Nothing else this task touched adds or
+removes a test.
+
+That takes the collected count from **352 to 354**, re-measured with
+`.venv/bin/python -m pytest --collect-only -q tests/`.
+
+Bare-suite row, derived from that same collection: 354 collected − 71 gated −
+**0** xfailed = `283 passed, 71 skipped, 0 xfailed`.
+
+The gated figure is unchanged at **71** (re-measured the same way as every
+figure below it, `tests/unit/_count_gated_plugin.py` against a bare
+`RUN_BROWSER_TESTS`-unset collection — both new tests live under
+`tests/unit` with no `skipif`, so neither is gated) — and reports 71 of 354,
+with the same per-module spread as the row beneath this one. The browser
+split is unchanged too: **3 of the 11 launch a browser** and **8 of the 11
+start no browser**.
+
+Gate row: **PREDICTED, NOT MEASURED**, unchanged from the row above -- this
+branch's gate run was at commit `b215426` (the M4 final-review fix wave
+below), and it is measured against no later tree than that one. Task 2 did
+not run `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` (reserved for one run
+at the end of the milestone, per M5's own standing rule), and this task's
+commit changes files under `gate_paths` (`scripts/`, `tests/`, `deploy/`)
+without a new gate run to back them. The prediction from collection (354 − 1
+xfailed = 353) is `353 passed, 1 xfailed`; nothing claims that figure was
+measured against this tree.
+
+`tests/unit` alone collects **216** (214 before this task).
+
+---
+
+**2026-09-14 (M5 Task 1) — superseded by the row above, and kept the way every
+earlier row is: it was the current figure at the time it was written.**
 M4 §9 scheduled six behaviour-neutral fixes and three version bumps as one
 carried batch, because every one of them lands inside the staleness guard's
 `gate_paths` below and each alone would have re-labelled the gate row

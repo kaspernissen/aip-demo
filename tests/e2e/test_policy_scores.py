@@ -198,7 +198,7 @@ def stage_4_or_a_reason():
         pytest.skip(
             f"needs the live cluster: cannot reach {KUBE_CONTEXT} "
             f"({reachable.stderr.strip() or 'no output'}); "
-            "run ./scripts/setup-kind.sh --stage 4"
+            "run ./scripts/setup-kind.sh --stage 5"
         )
 
     installed = _opensearch_is_installed()
@@ -215,7 +215,7 @@ def stage_4_or_a_reason():
         f"named: opensearch installed={installed}, collector tees "
         f"traces={exports}. One without the other means either a pipeline "
         "exporting to a backend that does not exist, or an index nothing "
-        "writes to. Re-run ./scripts/setup-kind.sh --stage 4."
+        "writes to. Re-run ./scripts/setup-kind.sh --stage 5."
     )
 
     deployment = _kubectl(

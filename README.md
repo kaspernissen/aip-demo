@@ -132,7 +132,7 @@ cp .env.template .env
 # three DASH0_* siblings are optional — see the comments in .env.template for
 # exactly which variables are required.
 
-./scripts/setup-kind.sh --stage 4
+./scripts/setup-kind.sh --stage 5
 ./scripts/smoke-test.sh
 ```
 

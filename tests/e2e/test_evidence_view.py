@@ -507,7 +507,7 @@ def stage_4_or_a_reason():
         pytest.skip(
             f"needs the live cluster: cannot reach {KUBE_CONTEXT} "
             f"({reachable.stderr.strip() or 'no output'}); "
-            "run ./scripts/setup-kind.sh --stage 4"
+            "run ./scripts/setup-kind.sh --stage 5"
         )
 
     installed = _opensearch_is_installed()
@@ -535,7 +535,7 @@ def stage_4_or_a_reason():
         f"pipeline) and some traces pipeline must export to "
         f"{OPENSEARCH_EXPORTER_ID!r} (the branch that writes the index). "
         "Without both, no span can reach the index this dashboard reads. "
-        "Re-run ./scripts/setup-kind.sh --stage 4, which applies the ConfigMap "
+        "Re-run ./scripts/setup-kind.sh --stage 5, which applies the ConfigMap "
         "and restarts the collector."
     )
 

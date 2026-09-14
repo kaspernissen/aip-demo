@@ -353,7 +353,7 @@ def reviewer_ui_route():
         pytest.skip(
             f"needs the live cluster: cannot reach {KUBE_CONTEXT} "
             f"({reachable.stderr.strip() or 'no output'}); "
-            "run ./scripts/setup-kind.sh --stage 4"
+            "run ./scripts/setup-kind.sh --stage 5"
         )
 
     if not _stage3_workload_present():

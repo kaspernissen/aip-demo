@@ -216,7 +216,7 @@ if [[ -n "$DASHBOARDS_AVAILABLE" ]]; then
   DASHBOARDS_PID=$!
   PIDS+=("$DASHBOARDS_PID")
 else
-  echo -e "${YELLOW}  - OpenSearch Dashboards: SKIPPED, svc/opensearch-dashboards does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 4)${NC}"
+  echo -e "${YELLOW}  - OpenSearch Dashboards: SKIPPED, svc/opensearch-dashboards does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
 fi
 
 # M4 Task 2, filling the place the previous task marked for it. Prometheus has
@@ -237,7 +237,7 @@ if [[ -n "$PROMETHEUS_AVAILABLE" ]]; then
   PROMETHEUS_PID=$!
   PIDS+=("$PROMETHEUS_PID")
 else
-  echo -e "${YELLOW}  - Prometheus: SKIPPED, svc/prometheus does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 4)${NC}"
+  echo -e "${YELLOW}  - Prometheus: SKIPPED, svc/prometheus does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
 fi
 
 # M4 final review, finding L5: eval-scorer was reachable from nothing a reader
@@ -260,7 +260,7 @@ if [[ -n "$EVAL_SCORER_AVAILABLE" ]]; then
   EVAL_SCORER_PID=$!
   PIDS+=("$EVAL_SCORER_PID")
 else
-  echo -e "${YELLOW}  - eval-scorer: SKIPPED, svc/eval-scorer does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 4)${NC}"
+  echo -e "${YELLOW}  - eval-scorer: SKIPPED, svc/eval-scorer does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
 fi
 
 # Give the forwards a moment to establish before checking them (same
@@ -312,7 +312,7 @@ else
   # tests/unit/test_stage2_cilium_config.py's guard did not open. Its file
   # list is now a `scripts/*.sh` glob rather than four hand-listed paths, so
   # this file is covered and so is the next script anyone adds.
-  echo -e "${YELLOW}  - reviewer-ui: SKIPPED, svc/reviewer-ui does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 4)${NC}"
+  echo -e "${YELLOW}  - reviewer-ui: SKIPPED, svc/reviewer-ui does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
 fi
 
 echo ""

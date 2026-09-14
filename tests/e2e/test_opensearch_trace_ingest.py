@@ -267,7 +267,7 @@ def stage_4_or_a_reason():
         f"{OPENSEARCH_EXPORTER_ID!r} (the branch that writes to the index), so "
         f"no span can possibly reach it. They export to: "
         f"{sorted(exporters) or 'nothing -- the ConfigMap is absent or empty'}. "
-        "Re-run ./scripts/setup-kind.sh --stage 4, which applies the ConfigMap "
+        "Re-run ./scripts/setup-kind.sh --stage 5, which applies the ConfigMap "
         "and restarts the collector."
     )
 

@@ -50,6 +50,15 @@ spec:
       labels:
         app: policy-decision-service
         northstar.io/plane: platform
+      # M5 Task 2: these two annotations are what the Open Feature Operator's
+      # mutating webhook reads to inject the flagd sidecar into this pod at
+      # admission time. `featureflagsource` names
+      # deploy/platform/openfeature/featureflagsource.yaml, whose `port: 8013`
+      # is what makes the sidecar answer on localhost:8013 -- the address
+      # Task 3's PDS code resolves the `autonomy-level` flag against.
+      annotations:
+        openfeature.dev/enabled: "true"
+        openfeature.dev/featureflagsource: "northstar-autonomy-source"
     spec:
       serviceAccountName: policy-decision-service
       containers:

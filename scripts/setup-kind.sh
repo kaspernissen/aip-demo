@@ -53,6 +53,29 @@ OPENSEARCH_HELM_REPO="https://opensearch-project.github.io/helm-charts"
 # pinned by tests/unit/test_metrics_wiring.py so the two cannot drift.
 PROMETHEUS_CHART_VERSION="29.29.0"
 PROMETHEUS_HELM_REPO="https://prometheus-community.github.io/helm-charts"
+# M5 Task 2: cert-manager and the Open Feature Operator (OFO). Both verified
+# 2026-09-14 against the upstream releases API directly --
+# `curl -s https://api.github.com/repos/<org>/<repo>/releases/latest | grep
+# tag_name` -- not against OFO's own installation docs, which as of this same
+# date still pin cert-manager `v1.14.3` (seven minor releases stale; see
+# docs/installation.md in the open-feature-operator repo). cert-manager's
+# latest release is `v1.21.2`; OFO's is `v0.9.3`, chart version literally
+# tagged with the "v" prefix (confirmed with `helm search repo
+# openfeature/open-feature-operator --versions`, unlike every other chart
+# pinned in this file). Neither had moved from the plan's expected values.
+#
+# flagd itself is not installed by a line in this script -- OFO's chart
+# injects it as a sidecar, at whatever image tag its own values pin. The
+# newest flagd release is `v0.16.3` (`flagd/v0.16.3` in that repo's release
+# tags, which mix flagd, flagd-proxy and core under one series -- filter on
+# the `flagd/` prefix specifically). OFO v0.9.3's chart defaults
+# `sidecarConfiguration.image.tag` to `v0.16.2`, one patch behind (`helm show
+# values openfeature/open-feature-operator --version v0.9.3`, checked
+# 2026-09-14) -- recorded here rather than silently overridden, since Task 2's
+# brief pins the OFO chart version, not the sidecar image inside it.
+CERT_MANAGER_VERSION="1.21.2"
+OPENFEATURE_CHART_VERSION="v0.9.3"
+OPENFEATURE_HELM_REPO="https://open-feature.github.io/open-feature-operator/"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -134,32 +157,58 @@ Usage: setup-kind.sh [--stage N]
                           (./scripts/start-demo.sh), never by a kind host
                           port]
   --stage 5   Progressive autonomy: + flagd
-                          [not implemented -- exits]
+                          [as of M5 Task 2: cert-manager (a prerequisite the
+                          Open Feature Operator's webhooks need for TLS, not
+                          used by anything else in this cluster) and the Open
+                          Feature Operator are installed, then the
+                          FeatureFlag/FeatureFlagSource pair in
+                          deploy/platform/openfeature/ is applied. The
+                          operator's mutating webhook injects a flagd sidecar
+                          into the Policy Decision Service pod (its pod
+                          template in deploy/k8s/policy-decision-service.yaml
+                          carries the openfeature.dev/* annotations that
+                          trigger it), answering on localhost:8013 inside
+                          that pod. Runs on stage 3's cluster config
+                          UNCHANGED -- see the KIND_CONFIG note below -- no
+                          host port is needed, the sidecar is reached only
+                          from inside its own pod]
   --stage 6   Golden path:          + Crossplane, Argo CD, Backstage
                           [not implemented -- exits]
 
 Each stage installs only what that stage of the demo needs, so the laptop
 runs exactly one stage at a time.
 
-Stages 2, 3 and 4 all need `networking.disableDefaultCNI`, a create-time kind
-flag: it cannot be applied to a cluster that already exists, so the cluster
-must be created FROM a kind config that sets it -- deploy/kind/stage2.yaml or
-deploy/kind/stage3.yaml (whose only difference from stage 2's is the
-reviewer-ui port reservation; stage 4 reuses stage 3's, see below) -- and this
-script refuses rather than layering Cilium on a running default CNI. Note that
---stage defaults to 1, so a bare `./scripts/setup-kind.sh` builds a stage-1
-(kindnet) cluster -- pass --stage 2, 3 or 4 explicitly for the Cilium
-dataplane. (This paragraph said "Stage 2 and stage 3 both" and listed only
-those two until M4 Task 1's fix round; stage 4 needs the create-time flag for
-exactly the same reason, because it runs on stage 3's config.)
+Stages 2, 3, 4 and 5 all need `networking.disableDefaultCNI`, a create-time
+kind flag: it cannot be applied to a cluster that already exists, so the
+cluster must be created FROM a kind config that sets it -- deploy/kind/
+stage2.yaml or deploy/kind/stage3.yaml (whose only difference from stage 2's
+is the reviewer-ui port reservation; stages 4 and 5 both reuse stage 3's, see
+below) -- and this script refuses rather than layering Cilium on a running
+default CNI. Note that --stage defaults to 1, so a bare
+`./scripts/setup-kind.sh` builds a stage-1 (kindnet) cluster -- pass --stage
+2, 3, 4 or 5 explicitly for the Cilium dataplane. (This paragraph said "Stage
+2 and stage 3 both" and listed only those two until M4 Task 1's fix round;
+stage 4 needs the create-time flag for exactly the same reason, because it
+runs on stage 3's config; M5 Task 2 added stage 5 to the list for the same
+reason again.)
 
-Stage 4 is the one exception to "each stage brings its own deploy/kind/
+Stage 4 is the first exception to "each stage brings its own deploy/kind/
 stageN.yaml": there is deliberately no stage4.yaml. OpenSearch Dashboards
 would have needed a fifth host port (extraPortMappings is create-time only,
 same rule as above), and the human partner declined a cluster recreate for
 it on 2026-09-12 (M4 Task 1, plan amendment A1) -- so stage 4 reuses stage
 3's cluster config unchanged and reaches Dashboards by port-forward instead.
 tests/unit/test_stage4_config.py pins that no stage4.yaml appears.
+
+Stage 5 is the second: there is deliberately no stage5.yaml either. Nothing
+M5 Task 2 installs (cert-manager, the Open Feature Operator, the flagd
+sidecar) needs a host port -- the sidecar answers only inside its own pod, at
+localhost:8013 -- so stage 5 reuses stage 3's cluster config unchanged too,
+the same amendment-A1 reasoning stage 4 already established. The live cluster
+this task ran against was already at that config (brought up as `--stage 4`),
+so `--stage 5` over it takes the "cluster already exists, skipping creation"
+path below and never re-evaluates KIND_CONFIG for cluster creation at all --
+the assignment below only has to be right for a cold `--stage 5` bring-up.
 EOF
 }
 
@@ -177,8 +226,8 @@ if ! [[ "$STAGE" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-if [[ "${STAGE}" -gt 4 ]]; then
-  echo "Stage $STAGE is not implemented yet. Stages 1 (Connected), 2 (Governed: Cilium), 3 (Supervised) and 4 (Observable) are implemented; stages 5-6 arrive in later milestones." >&2
+if [[ "${STAGE}" -gt 5 ]]; then
+  echo "Stage $STAGE is not implemented yet. Stages 1 (Connected), 2 (Governed: Cilium), 3 (Supervised), 4 (Observable) and 5 (Progressive autonomy) are implemented; stage 6 arrives in a later milestone." >&2
   exit 1
 fi
 
@@ -237,7 +286,14 @@ KIND_CONFIG="$ROOT/deploy/kind/stage${STAGE}.yaml"
 # the human partner declined a cluster recreate on 2026-09-12. So --stage 4
 # reuses stage 3's cluster config unchanged; Dashboards is reached by
 # port-forward (./scripts/start-demo.sh) instead of a host port.
-if [[ "${STAGE}" -eq 4 ]]; then
+#
+# M5 Task 2: there is no stage5.yaml either, for the same amendment-A1
+# reasoning -- nothing this stage installs (cert-manager, the Open Feature
+# Operator, the flagd sidecar) needs a host port, so it reuses stage 3's
+# config too. Written as `-eq 4 || -eq 5` rather than `-ge 4`: whether stage 6
+# also needs no new host port is not something this task measured, so this
+# does not silently decide it.
+if [[ "${STAGE}" -eq 4 || "${STAGE}" -eq 5 ]]; then
   KIND_CONFIG="$ROOT/deploy/kind/stage3.yaml"
 fi
 [[ -f "$KIND_CONFIG" ]] || { echo -e "${RED}Error: ${KIND_CONFIG} not found.${NC}" >&2; exit 1; }
@@ -669,6 +725,56 @@ if [[ "${STAGE}" -ge 4 ]]; then
   echo -e "${GREEN}eval-scorer is up on 8300, reading ss4o_traces-default-namespace.${NC}"
 fi
 
+if [[ "${STAGE}" -ge 5 ]]; then
+  # M5 Task 2: the machinery that turns the autonomy level from a constant
+  # compiled into the Policy Decision Service into a contract living in a
+  # Kubernetes resource. This block installs the machinery only -- cert-manager,
+  # the Open Feature Operator (OFO), and the two CRs -- and writes no
+  # application code; Task 3 is what makes the PDS read the flag.
+  #
+  # Ordered, and deliberately run here rather than folded into the `-ge 2`
+  # block above: it must finish before Step 9b below builds and deploys the
+  # PDS, because that pod's template (deploy/k8s/policy-decision-service.yaml)
+  # now carries the openfeature.dev/* annotations OFO's mutating webhook reads
+  # at admission time. A PDS pod created before that webhook exists gets no
+  # sidecar injected and no error either -- an annotation a webhook does not
+  # yet exist to act on is just metadata -- so the ordering is load-bearing in
+  # the same "wrong order fails silently" way Cilium-before-workloads and
+  # SPIRE-before-workloads already are above.
+  echo -e "${BLUE}Step 8f/9 (stage 5): Installing cert-manager ${CERT_MANAGER_VERSION}...${NC}"
+  # cert-manager itself needs no `--kube-context`: this releases's own
+  # manifest is namespace-scoped (it creates `cert-manager` and everything in
+  # it), and `kubectl apply -f <url>` runs against the current context, which
+  # is `kind-${CLUSTER_NAME}` immediately after `kind create cluster` /
+  # `kubectl cluster-info` above set it. Every other command in this block
+  # names the context explicitly, the same as the rest of this script, because
+  # `kubectl apply -f <url>` is the one command shape here that has no
+  # `--context` flag to give it.
+  kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/download/v${CERT_MANAGER_VERSION}/cert-manager.yaml"
+  kubectl --context "kind-${CLUSTER_NAME}" wait --for=condition=Available=True deploy --all -n cert-manager --timeout=300s
+  echo -e "${GREEN}cert-manager ${CERT_MANAGER_VERSION} is ready.${NC}"
+
+  echo -e "${BLUE}Step 8g/9 (stage 5): Installing the Open Feature Operator ${OPENFEATURE_CHART_VERSION}...${NC}"
+  # No `--namespace` flag: this chart hardcodes its own resources into
+  # `open-feature-operator-system` regardless of what namespace the release
+  # metadata is recorded under (verified with `helm template
+  # openfeature/open-feature-operator --version v0.9.3 --namespace
+  # <anything>` -- the rendered Namespace object and every Deployment's
+  # `namespace:` stay `open-feature-operator-system` either way), so passing
+  # one would only be decorative.
+  helm repo add openfeature "${OPENFEATURE_HELM_REPO}" --force-update >/dev/null
+  helm repo update openfeature >/dev/null
+  helm upgrade --install openfeature openfeature/open-feature-operator \
+    --version "${OPENFEATURE_CHART_VERSION}" \
+    --kube-context "kind-${CLUSTER_NAME}" \
+    --wait --timeout 5m
+  echo -e "${GREEN}Open Feature Operator ${OPENFEATURE_CHART_VERSION} is ready.${NC}"
+
+  echo -e "${BLUE}Step 8h/9 (stage 5): Applying the autonomy contract (FeatureFlag + FeatureFlagSource)...${NC}"
+  kubectl --context "kind-${CLUSTER_NAME}" apply -f "$ROOT/deploy/platform/openfeature/"
+  echo -e "${GREEN}northstar-autonomy / northstar-autonomy-source applied -- flagd will be injected into any pod carrying the openfeature.dev/* annotations, PDS included, when it is (re)created below.${NC}"
+fi
+
 echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then starting port-forwards...${NC}"
 "$ROOT/scripts/rebuild-and-deploy.sh" \
   payments-api payments-mcp settlement-agent claims-agent customer-ui
@@ -847,7 +953,9 @@ verify_port_forward 18080 "${API_PF_PID}" payments-api
 echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payments-mcp, payments-api.${NC}"
 
 echo ""
-if [[ "${STAGE}" -eq 4 ]]; then
+if [[ "${STAGE}" -eq 5 ]]; then
+  echo -e "${GREEN}Stage 5 (Progressive autonomy) is up: stage 4's workloads and backends, unchanged (amendment A1, no cluster recreate), plus cert-manager ${CERT_MANAGER_VERSION}, the Open Feature Operator ${OPENFEATURE_CHART_VERSION}, and the northstar-autonomy FeatureFlag/FeatureFlagSource pair. The PDS pod carries a flagd sidecar answering on localhost:8013 inside it, serving flag 'autonomy-level' (variants assisted/autonomous, targeted on evaluation-context key spiffeId) -- still resolved nowhere yet, since Task 2 stands up the machinery only.${NC}"
+elif [[ "${STAGE}" -eq 4 ]]; then
   echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workloads (reviewer-ui, senior-settlement-agent) on the same Cilium ${CILIUM_CHART_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- amendment A1, no cluster recreate -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them with the evidence view already imported, prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone, and eval-scorer scoring a settlement's trajectory against the five policy-adherence properties and emitting each score back into the trace it judges. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port, and the evidence view is at http://localhost:5601/app/dashboards#/view/northstar-evidence.${NC}"
 elif [[ "${STAGE}" -eq 3 ]]; then
   echo -e "${GREEN}Stage 3 (Supervised) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity, plus reviewer-ui and senior-settlement-agent -- so a refused payment now has a human who can approve it.${NC}"

@@ -250,7 +250,7 @@ def stage_4_or_a_reason():
         "Note this reads the PIPELINE, not the file: an exporter that is "
         "declared but listed in no pipeline is inert, and is what the "
         "mutation described on _metrics_pipeline_exports_to_prometheus "
-        "produced. Re-run ./scripts/setup-kind.sh --stage 4, which applies "
+        "produced. Re-run ./scripts/setup-kind.sh --stage 5, which applies "
         "the ConfigMap and restarts the collector."
     )
 

@@ -316,12 +316,12 @@ def test_stages_above_the_implemented_one_still_refuse_to_run():
     calls this test out by name.)
     """
     text = _effective_script()
-    assert re.search(r'"\$\{STAGE\}" -gt 4', text), (
-        "the stage gate must refuse stages above 4; expected an effective "
-        '`"${STAGE}" -gt 4` test'
+    assert re.search(r'"\$\{STAGE\}" -gt 5', text), (
+        "the stage gate must refuse stages above 5; expected an effective "
+        '`"${STAGE}" -gt 5` test'
     )
-    assert not re.search(r'"\$\{?STAGE\}?" -gt 3', text), (
-        "the stage gate must no longer refuse stage 4, which M4 Task 1 "
+    assert not re.search(r'"\$\{?STAGE\}?" -gt 4', text), (
+        "the stage gate must no longer refuse stage 5, which M5 Task 2 "
         "implemented"
     )
 
@@ -692,7 +692,7 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
     That is the fourth recurrence of this class and the second time the fix
     was "widen what the guard opens" rather than "correct the line".
     """
-    CURRENT_STAGE = 4
+    CURRENT_STAGE = 5
     scripts_and_readme = [
         # A glob, not a hand-written list, for the same reason deploy/kind/ is
         # one: see the N1 paragraph in the docstring. Every script this repo

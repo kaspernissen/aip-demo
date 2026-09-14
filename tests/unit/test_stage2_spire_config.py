@@ -471,24 +471,33 @@ def test_spires_own_prometheus_telemetry_is_enabled_on_both_server_and_agent():
         )
 
 
-def test_cert_manager_is_not_installed_anywhere():
+def test_cert_manager_is_not_installed_below_stage_5():
     """The M2 spec includes cert-manager "only to the extent SPIRE actually
-    needs it". The pinned chart needs it for nothing this install enables --
-    the OIDC provider's ingress TLS, spire-server federation TLS, and the
-    `certManager` upstreamAuthority, all off -- so it is not installed.
+    needs it". The pinned SPIRE chart needs it for nothing this install
+    enables -- the OIDC provider's ingress TLS, spire-server federation TLS,
+    and the `certManager` upstreamAuthority, all off -- so SPIRE's own values
+    must never configure it.
 
-    Asserted as an absence so a later reader cannot "restore" it from the
-    roadmap: a component installed because a document named it, rather than
-    because something needs it, is exactly what this project's stage profiling
-    exists to avoid.
+    **M5 Task 2 gave this guard a second half.** Until then the whole
+    assertion was an absence -- cert-manager was not installed anywhere in
+    this script, full stop, and this test's own docstring told the next task
+    that genuinely needed it to "install it pinned and record why, then
+    update this guard" rather than delete it. M5 Task 2 is that task: the
+    Open Feature Operator's webhooks need cert-manager for TLS, so
+    `scripts/setup-kind.sh` now installs it, pinned (`CERT_MANAGER_VERSION`),
+    inside the `"${STAGE}" -ge 5` block. What must stay true is narrower than
+    before but not gone: SPIRE (stage 2+) still needs no certManager-backed
+    feature, and nothing below stage 5 may invoke cert-manager tooling --
+    installing it a stage early would be the same "component installed
+    because a document named it" defect this guard has always existed to
+    catch, just moved one stage later.
 
     Scoped to *invocations* rather than to any mention of the string, on
-    purpose. `setup-kind.sh --help` says out loud that cert-manager is not
-    installed and not needed, and that sentence is the kind of honest operator
-    text this repo wants to keep; a guard that forbade the word would forbid
-    saying so. The counterpart behavioural check
-    (`test_stage_two_installs_no_cert_manager`) is the one nothing textual can
-    satisfy.
+    purpose. `setup-kind.sh --help` says out loud when cert-manager arrives
+    and why, and that sentence is the kind of honest operator text this repo
+    wants to keep; a guard that forbade the word would forbid saying so. The
+    counterpart behavioural check (`test_stage_two_installs_no_cert_manager`)
+    is the one nothing textual can satisfy.
     """
     # Walked over the parsed values rather than searched for in the file text.
     # As a text search this was defeatable in the harmless direction and
@@ -510,17 +519,43 @@ def test_cert_manager_is_not_installed_anywhere():
         "the SPIRE values must not configure any certManager-backed feature; "
         f"found {enabled}"
     )
+
+    text = _effective_script()
     installs = [
         line
-        for line in _effective_script().splitlines()
+        for line in text.splitlines()
         if re.search(r"cert-?[Mm]anager", line)
         and re.search(r"\b(helm|kubectl|jetstack)\b", line)
     ]
-    assert not installs, (
-        "setup-kind.sh must not install cert-manager: nothing in this install "
-        "needs it. If a future task genuinely needs it, install it pinned and "
-        "record why, then update this guard. Offending lines:\n  "
-        + "\n  ".join(line.strip() for line in installs)
+    assert installs, (
+        "setup-kind.sh no longer invokes cert-manager tooling at all -- if M5 "
+        "Task 2's install was removed, this guard's other half (SPIRE must "
+        "configure no certManager feature) still applies, but this half "
+        "should be deleted or rewritten rather than trivially satisfied"
+    )
+
+    # Every such line must sit inside the `-ge 5` gate, not merely somewhere
+    # in the file: a stage-5-only feature installed unconditionally would
+    # bring cert-manager to a stage-2/3/4 cluster too, silently.
+    gate = re.search(
+        r'if \[\[ "\$\{STAGE\}" -ge 5 \]\]; then\n(.*?)\nfi\n', text, re.DOTALL
+    )
+    assert gate, (
+        "expected an effective `if [[ \"${STAGE}\" -ge 5 ]]; then ... fi` "
+        "block -- cert-manager's install must be gated behind it"
+    )
+    gated_lines = set(gate.group(1).splitlines())
+    ungated = [line for line in installs if line not in gated_lines]
+    assert not ungated, (
+        "these cert-manager invocations sit outside the `-ge 5` gate, so a "
+        "cluster below stage 5 would install cert-manager too:\n  "
+        + "\n  ".join(line.strip() for line in ungated)
+    )
+
+    assert 'CERT_MANAGER_VERSION="' in text, (
+        "cert-manager's version must be a pinned variable, not a literal "
+        "inlined into the install line -- the same convention every other "
+        "chart/release version in this script follows"
     )
 
 
@@ -1541,7 +1576,7 @@ def test_spire_is_installed_before_the_workloads_that_mount_its_socket(tmp_path)
 
 @_bash_only
 def test_stage_two_installs_no_cert_manager(tmp_path):
-    """The behavioural half of `test_cert_manager_is_not_installed_anywhere`.
+    """The behavioural half of `test_cert_manager_is_not_installed_below_stage_5`.
 
     That one reads the script and so could in principle be satisfied by
     something textual; this one asserts on what the script actually invoked,

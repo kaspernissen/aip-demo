@@ -121,19 +121,25 @@ def test_stage_4_reuses_the_stage_3_cluster_config():
     cluster without asking -- which is a standing constraint, not a preference.
 
     The second assertion is the one finding F6 rewrote. The edit it has to
-    catch is the deletion of these three lines in `setup-kind.sh`:
+    catch is the deletion of the conditional in `setup-kind.sh` that maps
+    `--stage 4` onto `deploy/kind/stage3.yaml`. Delete it and `--stage 4`
+    falls through to `deploy/kind/stage${STAGE}.yaml`, fails the
+    `[[ -f ... ]]` check with "deploy/kind/stage4.yaml not found", and cannot
+    bring a cluster up at all. The old assertion -- `"stage3.yaml" in setup`
+    -- stayed green through that edit, because the filename also appears in
+    the help text, in two comments and in an `echo`. This one binds to the
+    conditional and the assignment together, in the comment-stripped script.
 
-        if [[ "${STAGE}" -eq 4 ]]; then
-          KIND_CONFIG="$ROOT/deploy/kind/stage3.yaml"
-        fi
-
-    Delete them and `--stage 4` falls through to
-    `deploy/kind/stage${STAGE}.yaml`, fails the `[[ -f ... ]]` check with
-    "deploy/kind/stage4.yaml not found", and cannot bring a cluster up at all.
-    The old assertion -- `"stage3.yaml" in setup` -- stayed green through that
-    edit, because the filename also appears in the help text, in two comments
-    and in an `echo`. This one binds to the conditional and the assignment
-    together, in the comment-stripped script.
+    **M5 Task 2 widened both halves to stage 5, for the same amendment-A1
+    reasoning stage 4 already established: nothing that task installs needs a
+    new host port either.** The conditional this test binds to used to be a
+    bare `if [[ "${STAGE}" -eq 4 ]]; then`; it is now
+    `if [[ "${STAGE}" -eq 4 || "${STAGE}" -eq 5 ]]; then`, and this test's
+    regex is written to match that combined form specifically, not a
+    generic `-eq 4` fragment -- so a future edit that split it back into two
+    separate `if` blocks, or that dropped the `-eq 5` disjunct while leaving
+    `-eq 4` alone, reddens here rather than passing on a coincidental
+    substring match.
     """
     assert not (REPO_ROOT / "deploy/kind/stage4.yaml").exists(), (
         "deploy/kind/stage4.yaml exists. Stage 4 was deliberately built on "
@@ -142,22 +148,31 @@ def test_stage_4_reuses_the_stage_3_cluster_config():
         "since been authorised, delete this test in the same commit that adds "
         "the file, and say who authorised it."
     )
+    assert not (REPO_ROOT / "deploy/kind/stage5.yaml").exists(), (
+        "deploy/kind/stage5.yaml exists. M5 Task 2 deliberately built stage 5 "
+        "on stage 3's cluster config too (nothing it installs needs a new "
+        "host port) -- the same amendment-A1 reasoning stage 4 already "
+        "established. If a recreate has since been authorised, delete this "
+        "test in the same commit that adds the file, and say who authorised "
+        "it."
+    )
     setup = _without_comments(SETUP_KIND)
     mapping = re.search(
-        r'if \[\[ "\$\{STAGE\}" -eq 4 \]\]; then\s*\n'
+        r'if \[\[ "\$\{STAGE\}" -eq 4 \|\| "\$\{STAGE\}" -eq 5 \]\]; then\s*\n'
         r'\s*KIND_CONFIG="\$ROOT/deploy/kind/stage3\.yaml"\s*\n'
         r"\s*fi",
         setup,
     )
     assert mapping, (
-        "scripts/setup-kind.sh no longer maps `--stage 4` onto "
-        "deploy/kind/stage3.yaml. Without that mapping KIND_CONFIG falls "
-        "through to deploy/kind/stage4.yaml, which amendment A1 says must "
-        "never exist, so `--stage 4` cannot create a cluster at all -- it dies "
-        "at the `[[ -f \"$KIND_CONFIG\" ]]` check. (This assertion used to be "
-        "a bare `\"stage3.yaml\" in setup`, which five other mentions of the "
-        "filename kept green through exactly that deletion: review finding "
-        "F6.)"
+        "scripts/setup-kind.sh no longer maps both `--stage 4` and `--stage "
+        "5` onto deploy/kind/stage3.yaml via one combined condition. Without "
+        "that mapping KIND_CONFIG falls through to "
+        "deploy/kind/stage${STAGE}.yaml, which amendment A1 says must never "
+        "exist for either stage, so the affected `--stage N` cannot create a "
+        "cluster at all -- it dies at the `[[ -f \"$KIND_CONFIG\" ]]` check. "
+        "(This assertion used to be a bare `\"stage3.yaml\" in setup`, which "
+        "five other mentions of the filename kept green through exactly that "
+        "deletion: review finding F6.)"
     )
 
 

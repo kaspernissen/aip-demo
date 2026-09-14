@@ -1,0 +1,44 @@
+# M5 Task 2: the contract, as a resource. This FeatureFlag is what Task 3's
+# Policy Decision Service resolves against -- the autonomy level is no longer
+# a constant compiled into pds/server.py, it is read from here at request
+# time through the flagd sidecar (deploy/k8s/policy-decision-service.yaml's
+# openfeature.dev/* annotations wire the sidecar in).
+#
+# `defaultVariant: assisted` is fail-closed, deliberately: EXECUTE_LIMITS in
+# pds/rules.py has no permissive fallback, and a FeatureFlag that fails to
+# parse, or a resource this cluster cannot fetch, must deny rather than
+# permit. The restrictive level is the default for exactly the reason
+# tests/unit/test_autonomy_contract.py's
+# test_the_contract_defaults_to_the_restrictive_variant names.
+#
+# RULING M5-R8 -- read before "fixing" the targeting rule below. Both
+# branches of the `if` currently evaluate to "assisted", which makes the rule
+# a no-op today: every caller, whoever `spiffeId` names, resolves to
+# `assisted`. That is deliberate, not sloppy. This resource ships in the
+# demo's *refusing* state on purpose, so that Task 6's demonstration of
+# progressive autonomy is a one-word diff -- flipping the first branch's
+# value to "autonomous" -- rather than a resource authored from scratch on
+# stage. Leave the no-op as written; do not delete the targeting block or
+# collapse it into a bare `defaultVariant` lookup, and do not "fix" the
+# duplicate branch value.
+apiVersion: core.openfeature.dev/v1beta1
+kind: FeatureFlag
+metadata:
+  name: northstar-autonomy
+  namespace: northstar-platform
+spec:
+  flagSpec:
+    flags:
+      autonomy-level:
+        state: ENABLED
+        variants:
+          assisted: "assisted"
+          autonomous: "autonomous"
+        defaultVariant: assisted
+        targeting:
+          if:
+            - in:
+                - var: spiffeId
+                - - "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
+            - "assisted"
+            - "assisted"
