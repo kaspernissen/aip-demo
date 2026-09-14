@@ -66,6 +66,42 @@ def test_the_response_carries_all_five_scores_with_value_label_and_explanation()
         assert score["value"] in (0.0, 1.0), name
 
 
+def test_an_unscorable_dimension_does_not_take_the_other_four_down_with_it():
+    """I3 (fix round 1; ledger ruling M5-R32): before this, `scores_for`'s
+    dict comprehension had no isolation between scorers, so ONE dimension
+    raising `contract.TrajectoryUnscorable` -- a contract-version divergence
+    that only `identity_had_authority` reads -- erased all five. This
+    constructs exactly that divergence (a decision recording `version="v2"`
+    while `CURRENT_CONTRACT_VERSION` is `None`, M5-R29) and asserts the
+    other four score normally, with `identity_had_authority` named in
+    `unscorable` rather than silently missing or scored 1.0."""
+    documents = [
+        fixtures.root(0.0),
+        fixtures.decision(2.0, "propose_payment", "permit", amount=5800.0),
+        fixtures.decision(
+            4.0, "execute_payment", "permit", amount=5800.0, limit=6000.0,
+            version="v2",
+        ),
+    ]
+    row = score_claim(
+        FakeClient(documents), fixtures.CLAIM_ID, SINCE_MS, emit_spans=False
+    )
+    assert set(row["scores"]) == {
+        "proposed_before_executed",
+        "stopped_when_refused",
+        "narrated_the_refusal",
+        "amount_executed_matches_approved",
+    }
+    assert row["unscorable"] == ["identity_had_authority"]
+
+
+def test_the_unscorable_field_is_empty_when_nothing_was_omitted():
+    row = score_claim(
+        FakeClient(SUPERVISED_DOCUMENTS), fixtures.CLAIM_ID, SINCE_MS, emit_spans=False
+    )
+    assert row["unscorable"] == []
+
+
 def test_the_response_reports_what_it_read_so_an_empty_answer_is_visible():
     """`spanCount`, `decisionCount` and `traceIds` are on the response for one
     reason: five `not-applicable` 1.0s look identical whether the settlement

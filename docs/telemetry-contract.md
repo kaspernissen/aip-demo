@@ -1600,7 +1600,63 @@ the plan defect described two paragraphs up).
 Per-service unit suites (all eight run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 114, payments-mcp 16, payments-api (Go) 31,
 customer-ui (vitest) 6, policy-decision-service 127,
-reviewer-ui 56, eval-scorer 152 — all passing.
+reviewer-ui 56, eval-scorer 160 — all passing.
+(**2026-09-14, M5 Task 5 fix round 1: eval-scorer 152 → 160.**
+Re-measured with `.venv/bin/python -m pytest --collect-only -q tests` from
+that service's own directory. Task 5's opus review returned NOT APPROVED (1
+Critical, 4 Important); this closes all four, plus a required ruling on a
+fifth. **C1 (Critical):** `Decision.autonomy` was `str`, and `from_span`
+parsed an absent `policy.autonomy.level` to `""` -- falsy, so
+`if execution.autonomy and execution.autonomy != level:` skipped the
+mismatch check entirely for a decision recording no level at all, and the
+money check alone could then score it 1.0 compliant (measured pre-M5-Task-5:
+0.0 unknown-identity for the identical case). `Decision.autonomy` is now
+`str | None` with no `or ""`; absence is its own finding,
+`no-level-recorded`, checked before the mismatch and money checks rather
+than folded into either. One test, mutated (`if execution.autonomy is
+None:` -> `if False:` reddens it). **I1:** the temporal guard's production
+wiring (`resolve_level`'s default lambda) was untested -- the only test
+exercising the refusal injected a double, so mutating
+`now_version=CURRENT_CONTRACT_VERSION` to `now_version=version` left all
+152 tests GREEN. One test now drives the real default lambda with a
+fixture `version="v2"` and no override; the same mutation now reddens.
+**I2:** route 2's dormancy (M5-R29) was hoped for, not enforced --
+`pds/server.py` writes `feature_flag.version` unconditionally, so adding a
+flag `metadata` block to `featureflag.yaml` (route 1, left for later) would
+make every decision carry a version while `CURRENT_CONTRACT_VERSION` stayed
+`None`, refusing every trajectory. One build-time test in
+`tests/test_contract.py`, parsed from the file (not retyped), asserts no
+flag `metadata` block exists while `CURRENT_CONTRACT_VERSION is None`;
+adding one to `featureflag.yaml` reddens it (confirmed, then restored --
+the live resource and `featureflag.yaml` are both untouched by this fix
+round). **I4:** the third S-b instance, `opensearch.py`'s
+`aggregation.get("doc_count_error_upper_bound") or 0`, eight lines below
+`sum_other_doc_count`'s own M5-Task-5 fix, in the same method -- closed the
+same way, and folded in Minor M1 (a present-but-null value, for both
+fields, must also raise: a presence check alone is not enough). Three
+tests, two mutations (the shared presence check, and the shared
+numeric-type check), both reddening for both fields.
+
+**I3, handed over as a decision rather than left as a note (ledger ruling
+M5-R32):** `TrajectoryUnscorable` answered HTTP 500 on a
+`# pragma: no cover` branch while its own docstring claimed 502 parity with
+`TrajectoryTruncated`, and it suppressed all five scores, not the one
+dimension it concerned. `scorer/scores.py::scores_for` now runs each
+scorer independently and omits only the one whose `TrajectoryUnscorable`
+it catches; `scorer/server.py`'s `/score` response gains an `unscorable`
+field naming any such dimension explicitly, so a caller cannot mistake
+four scores for a complete five. `scorer/server.py` also answers 502 for
+`TrajectoryUnscorable` directly, as defense in depth for a path that
+should no longer be reachable in the designed flow. Re-measured the
+review's own mutation K (`CURRENT_CONTRACT_VERSION = None` -> a real
+string, simulating the contract and the deployed flag going out of step):
+**before** this fix, 21 failed, 131 passed, including every
+`test_server.py` test -- the whole service went dark. **After**, the
+identical mutation: 17 failed, 142 passed, 1 skipped -- only tests that
+depend on `identity_had_authority` fail; every other `test_server.py` test
+(window pass-through, anchor-span reporting, emit/flush ordering) now
+passes, because `score_claim` still returns a row. Two tests added for
+this specifically.)
 (**2026-09-14, M5 Task 5: eval-scorer 135 → 152.**
 Re-measured with `.venv/bin/python -m pytest --collect-only -q tests` from
 that service's own directory. `score_identity_had_authority` used to look

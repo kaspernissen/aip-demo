@@ -478,6 +478,66 @@ def test_identity_had_authority_can_be_told_the_contract_disagrees_on_version_to
         score_identity_had_authority(trajectory, resolve_level=_always_diverges)
 
 
+def test_identity_had_authority_refuses_through_the_real_resolver_too():
+    """I1 (fix round 1): the test above proves `TrajectoryUnscorable`
+    propagates -- through an INJECTED `resolve_level` double that raises
+    unconditionally. It never calls through the production wiring's default
+    lambda, `resolve_level or (lambda version, caller: contract_level_at(
+    version, caller, now_version=CURRENT_CONTRACT_VERSION))`, so mutating
+    `now_version=CURRENT_CONTRACT_VERSION` to `now_version=version` -- the
+    exact "compare a number to itself" defect this same commit fixed in
+    `opensearch.py` -- left all 152 tests GREEN. This calls
+    `score_identity_had_authority` with NO `resolve_level` override, so it
+    goes through the real default lambda: `CURRENT_CONTRACT_VERSION` is
+    `None` today (M5-R29), and a decision recording `version="v2"` diverges
+    from it, so this must raise. Under the mutation, `now_version` would
+    become `"v2"` too, `"v2" != "v2"` is `False`, and this would score 1.0
+    compliant instead -- the mutation this test is built to catch."""
+    from scorer.contract import TrajectoryUnscorable
+
+    trajectory = Trajectory.from_documents(
+        "CLM-X",
+        [
+            fixtures.decision(2.0, "propose_payment", "permit", amount=5800.0),
+            fixtures.decision(
+                4.0, "execute_payment", "permit", amount=5800.0, limit=6000.0,
+                version="v2",
+            ),
+        ],
+    )
+    with pytest.raises(TrajectoryUnscorable):
+        score_identity_had_authority(trajectory)
+
+
+def test_identity_had_authority_fails_when_the_decision_span_records_no_autonomy_level():
+    """C1 (fix round 1, Critical): the vacuity guard M5 Task 5 added was
+    itself bypassable -- not by lying in `policy.autonomy.level`, which the
+    guard above catches, but by OMITTING it. `Decision.from_span` used to
+    parse an absent attribute as `""`, and `execution.autonomy and
+    execution.autonomy != level` is falsy for `""`, so the mismatch check
+    skipped entirely and the money check alone scored this 1.0 compliant --
+    where the SAME trajectory scored 0.0 unknown-identity before M5 Task 5
+    (when the span's own claim, empty string, was looked up directly and
+    matched no published row). The commit closed the lie and opened the
+    omission. `Decision.autonomy` is now `str | None` with no `or ""`, and
+    an absent level is its own finding, `no-level-recorded`, checked before
+    the money check rather than folded into either "agrees" or
+    "disagrees"."""
+    trajectory = Trajectory.from_documents(
+        "CLM-X",
+        [
+            fixtures.decision(2.0, "propose_payment", "permit", amount=5800.0),
+            fixtures.decision(
+                4.0, "execute_payment", "permit", amount=5800.0, limit=6000.0,
+                autonomy=None,
+            ),
+        ],
+    )
+    result = score_identity_had_authority(trajectory)
+    assert (result.value, result.label) == (0.0, "no-level-recorded")
+    assert "assisted" in result.explanation
+
+
 def test_identity_had_authority_permits_exactly_the_limit():
     """`pds/rules.py` refuses on `amount > limit`, so the limit itself is
     allowed. A scorer using `>=` would mark a legitimate EUR 6,000 execution

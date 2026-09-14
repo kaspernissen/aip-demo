@@ -230,6 +230,53 @@ def test_step_one_refuses_when_sum_other_doc_count_is_entirely_absent():
     assert "sum_other_doc_count" in str(excinfo.value)
 
 
+def test_step_one_refuses_when_sum_other_doc_count_is_null():
+    """M1 (task-5 review), folded into this fix round: a presence check
+    alone still let a PRESENT `None` through, because `if dropped:` is
+    falsy for `None` exactly as it is for an absent key defaulted to 0."""
+    client = RecordingClient([_trace_bucket_response("aaaa", sum_other_doc_count=None)])
+    with pytest.raises(TrajectoryTruncated) as excinfo:
+        client.trace_ids_for_claim("CLM-1842", SINCE_MS)
+    assert "sum_other_doc_count" in str(excinfo.value)
+
+
+def test_step_one_refuses_when_doc_count_error_upper_bound_is_entirely_absent():
+    """I4 (task-5 review, closed this fix round): the third S-b instance,
+    `aggregation.get("doc_count_error_upper_bound") or 0`, eight lines below
+    `sum_other_doc_count`'s own fix in the same method -- not named at the
+    time, and not closed by it."""
+    client = RecordingClient(
+        [
+            {
+                "aggregations": {
+                    "traces": {
+                        "sum_other_doc_count": 0,
+                        # No `doc_count_error_upper_bound` key at all.
+                        "buckets": [
+                            {
+                                "key": "aaaa",
+                                "doc_count": 10,
+                                "first": {"value": SINCE_MS},
+                            }
+                        ],
+                    }
+                }
+            }
+        ]
+    )
+    with pytest.raises(TrajectoryTruncated) as excinfo:
+        client.trace_ids_for_claim("CLM-1842", SINCE_MS)
+    assert "doc_count_error_upper_bound" in str(excinfo.value)
+
+
+def test_step_one_refuses_when_doc_count_error_upper_bound_is_null():
+    """M1's other half, folded in alongside I4."""
+    client = RecordingClient([_trace_bucket_response("aaaa", error_bound=None)])
+    with pytest.raises(TrajectoryTruncated) as excinfo:
+        client.trace_ids_for_claim("CLM-1842", SINCE_MS)
+    assert "doc_count_error_upper_bound" in str(excinfo.value)
+
+
 def test_step_two_refuses_when_total_is_entirely_absent():
     """S-b's other half: `(result.get("total") or {}).get("value",
     len(hits))` compared `len(hits)` to itself whenever `total` (or

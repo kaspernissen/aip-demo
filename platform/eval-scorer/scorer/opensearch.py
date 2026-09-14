@@ -102,6 +102,43 @@ class TrajectoryTruncated(OpenSearchError):
     """
 
 
+def _numeric_aggregation_field(
+    aggregation: dict, key: str, claim_id: str, purpose: str
+) -> float:
+    """`aggregation[key]`, refusing both an ABSENT key and a non-numeric one.
+
+    Shared by `trace_ids_for_claim`'s two truncation guards (S-b, I4/M1 --
+    fix round 1) so both hold the same standard: `.get(key) or 0` reads a
+    missing key and an honest zero identically, and a presence check alone
+    (`key not in aggregation`) still reads a PRESENT `None` the same as an
+    honest zero, because `if value:` is falsy for both. Either shape is "I
+    could not look", not "there was nothing to find", and this guard must
+    not skip where it should fail.
+
+    `bool` is excluded from the numeric check on purpose even though
+    `isinstance(True, int)` is `True` in Python -- a boolean here would be a
+    stranger response shape than a missing key, not a number this guard
+    should ever treat as a legitimate count.
+    """
+    if key not in aggregation:
+        raise TrajectoryTruncated(
+            f"claim {claim_id!r}: the trace aggregation carries no {key!r} "
+            f"key at all, so this read cannot tell whether {purpose}. "
+            "Defaulting an absent field to zero would record 'I could not "
+            "look' as 'nothing was dropped'. No score is emitted."
+        )
+    value = aggregation[key]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TrajectoryTruncated(
+            f"claim {claim_id!r}: {key!r} is {value!r}, not a number, so "
+            f"this read cannot tell whether {purpose}. A present-but-null "
+            "(or otherwise non-numeric) value is 'I could not look' in a "
+            "different disguise than an absent key, not an honest zero. No "
+            "score is emitted."
+        )
+    return value
+
+
 class OpenSearchClient:
     def __init__(self, base_url: str | None = None, timeout: float = 30.0):
         self.base_url = (
@@ -204,16 +241,18 @@ class OpenSearchClient:
         # on a real terms aggregation. But a field this guard's correctness
         # depends on must raise on absence, not silently assume the value
         # that happens to make the guard pass.
-        if "sum_other_doc_count" not in aggregation:
-            raise TrajectoryTruncated(
-                f"claim {claim_id!r}: the trace aggregation carries no "
-                "`sum_other_doc_count` key at all, so this read cannot tell "
-                "whether OpenSearch had to drop any bucket to honour "
-                "`size`. Defaulting an absent field to zero would record "
-                "'I could not look' as 'nothing was dropped'. No score is "
-                "emitted."
-            )
-        dropped = aggregation["sum_other_doc_count"]
+        #
+        # M1 (task-5 review, folded in here and into `doc_count_error_upper_
+        # bound` below, fix round 1): a presence check alone still lets a
+        # PRESENT-BUT-NULL value through -- `if "key" not in aggregation`
+        # passes for `{"key": None}`, after which `if dropped:` is falsy for
+        # `None` exactly as it is for an absent key defaulted to 0. Checked
+        # via `_numeric_aggregation_field` so both guards in this method hold
+        # the same standard: present, AND a real number.
+        dropped = _numeric_aggregation_field(
+            aggregation, "sum_other_doc_count", claim_id,
+            "OpenSearch had to drop any bucket to honour `size`",
+        )
         if dropped:
             raise TrajectoryTruncated(
                 f"claim {claim_id!r} touched more than "
@@ -235,7 +274,14 @@ class OpenSearchClient:
         # being something this read can assert. Measured 0 on this
         # single-shard index; checked anyway, because the value that makes it
         # non-zero is a chart setting nobody would connect to a score.
-        error_bound = aggregation.get("doc_count_error_upper_bound") or 0
+        #
+        # I4 (task-5 review, closed here): the third S-b instance,
+        # `.get(...) or 0`, eight lines below `sum_other_doc_count`'s own fix
+        # -- same defect, same method, not named or noticed at the time.
+        error_bound = _numeric_aggregation_field(
+            aggregation, "doc_count_error_upper_bound", claim_id,
+            "bucket counts are exact",
+        )
         if error_bound:
             raise TrajectoryTruncated(
                 f"claim {claim_id!r}: the trace aggregation reports "

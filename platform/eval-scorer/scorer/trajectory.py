@@ -192,7 +192,7 @@ class Decision:
     amount: float | None
     currency: str
     limit: float | None
-    autonomy: str
+    autonomy: str | None
     version: str | None
 
     @property
@@ -216,16 +216,25 @@ class Decision:
             amount=None if amount is None else float(amount),
             currency=str(attributes.get(ATTR_CURRENCY) or ""),
             limit=None if limit is None else float(limit),
-            autonomy=str(attributes.get(ATTR_AUTONOMY) or ""),
-            # No `or ""` here, unlike the fields above: those are measured to
-            # always be present on a real `policy.decision` span, so an
-            # absence is a parsing bug worth hiding behind an empty string
-            # for the moment. `feature_flag.version` is measured to be
-            # ABSENT on every live decision today (see `ATTR_FLAG_VERSION`'s
-            # comment) -- collapsing that into `""` would make "no version"
-            # and "the empty-string version" the same value, which is exactly
-            # the "missing recorded as nothing to find" pattern this repo
-            # keeps a rule against.
+            # No `or ""` here, as of fix round 1 (C1) -- and none for
+            # `version` below either, for the reason this comment used to
+            # give only for `version`: collapsing an ABSENT
+            # `policy.autonomy.level` into `""` made "no level recorded" and
+            # "the empty-string level" the same value. `""` is falsy, so
+            # `scores.py`'s mismatch check (`execution.autonomy and
+            # execution.autonomy != level`) read a missing attribute as "the
+            # check does not apply" -- i.e. as silent agreement with
+            # whatever the contract resolves. That is the exact "missing
+            # recorded as nothing to find" pattern this repo keeps a rule
+            # against, reintroduced by the very guard meant to close it.
+            # `caller`, `decision` and `tool` above keep their `or ""`
+            # deliberately: those are measured to always be present on a
+            # real `policy.decision` span, so an absence there is a parsing
+            # bug, not a signal `scores.py` needs to act on.
+            autonomy=attributes.get(ATTR_AUTONOMY),
+            # `feature_flag.version` is measured to be ABSENT on every live
+            # decision today (see `ATTR_FLAG_VERSION`'s comment) -- the same
+            # argument as `autonomy` above, made first.
             version=attributes.get(ATTR_FLAG_VERSION),
         )
 

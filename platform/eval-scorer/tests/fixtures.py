@@ -64,7 +64,7 @@ def decision(
     *,
     amount: float | None = None,
     limit: float | None = None,
-    autonomy: str = "assisted",
+    autonomy: str | None = "assisted",
     currency: str = "EUR",
     trace: str = REFUSAL_TRACE,
     span_id: str | None = None,
@@ -74,12 +74,18 @@ def decision(
         "policy.decision": outcome,
         "policy.tool.name": tool,
         "policy.caller.spiffe_id": caller,
-        "policy.autonomy.level": autonomy,
         # Measured: the PDS emits this in OpenSearch under the M4-R10 name.
         # Present so a fixture cannot accidentally prove that the scorers
         # tolerate its absence when the real documents always carry it.
         "policy.decision_retryable": False,
     }
+    # `autonomy=None` (fix round 1, C1) omits the attribute entirely rather
+    # than writing an empty string -- the shape a real PDS produces when it
+    # never sets `policy.autonomy.level` at all, which is exactly what
+    # `test_identity_had_authority_fails_when_the_decision_span_records_no_autonomy_level`
+    # needs to construct.
+    if autonomy is not None:
+        attributes["policy.autonomy.level"] = autonomy
     if amount is not None:
         attributes["policy.request.amount"] = amount
         attributes["policy.request.currency"] = currency
@@ -306,3 +312,38 @@ def featureflag_targeting_branch_values() -> list[str]:
         f"found {branches} in {FEATUREFLAG}"
     )
     return branches
+
+
+def featureflag_flag_declares_metadata() -> bool:
+    """Whether `spec.flagSpec.flags`'s flag(s) declare their OWN `metadata:`
+    block -- I2, fix round 1.
+
+    Distinct from the file's ROOT Kubernetes object `metadata:` (name,
+    namespace), which sits above and outside `flags:` at a shallower indent
+    and is a different thing entirely: OFO's per-flag `metadata` is free
+    text that could carry a real ruleset version (`scorer/contract.py`'s
+    module docstring names this as route 1's mechanism); the Kubernetes
+    object's `metadata` never could.
+
+    Scans every line at or more deeply indented than `flags:`'s first
+    child, from `flags:` to the first line that dedents back out of the
+    block, for a `metadata:` key at any depth in that range -- the same
+    indentation walk `featureflag_variants` and
+    `featureflag_targeting_branch_values` use, deliberately looser here
+    (no fixed indent to match) because a flag's `metadata:` may nest at any
+    depth under its own entry, and this only needs to know whether one
+    exists anywhere under `flags:`, not to parse its contents.
+    """
+    text = FEATUREFLAG.read_text()
+    header = re.search(r"^( *)flags:\s*$", text, re.MULTILINE)
+    assert header, f"no `flags:` block found in {FEATUREFLAG}"
+    flags_indent = len(header.group(1)) + 2
+    for line in text[header.end():].splitlines():
+        if not line.strip():
+            continue
+        this_indent = len(line) - len(line.lstrip(" "))
+        if this_indent < flags_indent:
+            break
+        if re.match(r"metadata:\s*$", line.strip()):
+            return True
+    return False

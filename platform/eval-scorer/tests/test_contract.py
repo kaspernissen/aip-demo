@@ -133,6 +133,43 @@ def test_the_refusal_names_both_versions_and_the_caller():
     assert TARGETED_CALLER in message
 
 
+def test_no_flag_declares_metadata_while_the_contract_has_no_version():
+    """I2 (fix round 1): route 2's dormancy was hoped for, not enforced.
+
+    `pds/server.py` writes `feature_flag.version` onto every decision span
+    whenever flagd resolves ANY version, with no check that
+    `CURRENT_CONTRACT_VERSION` is real. So the day `featureflag.yaml` gains
+    a flag `metadata` block -- the very route 1 this module's docstring
+    names as a future possibility, and the only thing that would make flagd
+    resolve a version at all -- every decision starts carrying one while
+    this module still resolves `None`, and `contract_level_at` refuses
+    EVERY trajectory (`decision_version != None` for all of them). Measured
+    by the task-5 review: adding such a block left all 152 tests GREEN
+    before this guard existed, and the review's mutation K showed the
+    blast radius if the two ever go out of step for real -- 21 tests
+    failing, all of `test_server.py` among them. This is the build-time
+    half that keeps it from shipping silently: the two edits (the metadata
+    block, and `CURRENT_CONTRACT_VERSION`) must land in the same commit, the
+    same discipline `test_current_level_matches_the_feature_flags_targeting_branches`
+    already holds `CURRENT_LEVEL` to.
+    """
+    if CURRENT_CONTRACT_VERSION is not None:
+        pytest.skip(
+            "CURRENT_CONTRACT_VERSION is no longer None -- route 1 has been "
+            "taken for real, and a flag metadata block is now expected. "
+            "This specific guard's job ends here; see the module docstring "
+            "for what replaces it."
+        )
+    assert not fixtures.featureflag_flag_declares_metadata(), (
+        f"{fixtures.FEATUREFLAG} now declares a flag `metadata` block while "
+        "CURRENT_CONTRACT_VERSION is still None. Every policy.decision span "
+        "would carry a feature_flag.version this contract has nothing to "
+        "compare it against, and contract_level_at would refuse every "
+        "trajectory. Update CURRENT_CONTRACT_VERSION (route 1, see this "
+        "module's docstring) in the same commit that adds the block."
+    )
+
+
 def test_the_currently_published_contract_version_is_none():
     """Pinned so a future change to `CURRENT_CONTRACT_VERSION` is a
     deliberate edit, not a silent one: if this ever stops being `None`, route

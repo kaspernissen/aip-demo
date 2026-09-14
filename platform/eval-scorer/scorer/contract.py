@@ -68,6 +68,27 @@ close -- it looks principled while scoring nothing, ever.
    actually publishes a version. It does not claim protection it does not
    have.
 
+   **Its cost is not merely "dormant" (I2, fix round 1).**
+   `pds/server.py` writes `feature_flag.version` onto every decision span
+   whenever flagd resolves ANY version, unconditionally -- not only when
+   `CURRENT_CONTRACT_VERSION` is real. So the day route 1 above is taken --
+   adding a flag `metadata` block, exactly the thing this section names as a
+   future possibility -- every decision starts carrying a version while this
+   module still resolves `None`, and `contract_level_at` refuses EVERY
+   trajectory (measured: mutation J, `152 passed` -> unaffected build, but
+   adding the metadata block for real turns `21` of those tests failing --
+   the whole audit going dark, not merely failing to notice something).
+   Route 2 is not just dormant protection; it is **one resource edit away
+   from turning the audit off**, and nothing before this fix round enforced
+   the two edits (the metadata block, and `CURRENT_CONTRACT_VERSION`) moving
+   together. `tests/test_contract.py`'s
+   `test_no_flag_declares_metadata_while_the_contract_has_no_version` is the
+   build-time guard that closes this: it fails the moment `featureflag.yaml`
+   gains a flag `metadata` block while `CURRENT_CONTRACT_VERSION` is still
+   `None`, forcing the two edits into the same commit the way
+   `test_current_level_matches_the_feature_flags_targeting_branches` already
+   forces `CURRENT_LEVEL` to move with the targeting branches.
+
 **What this means for Task 6.** Flipping the targeting block's first branch
 to `"autonomous"` changes `current_level`'s answer for `TARGETED_CALLER` --
 and this module's `CURRENT_LEVEL` constant must be updated in the same
@@ -124,10 +145,27 @@ class TrajectoryUnscorable(Exception):
     level describes a different moment than the decision it would be judging
     against -- and reporting a disagreement then would really just be
     reporting that time passed, not that anything went wrong. Emitting no
-    score beats both a flattering one and a false alarm; `scores.py` lets
-    this propagate out of `/score` rather than catching it, the same
+    score beats both a flattering one and a false alarm -- the same
     discipline ruling H1 established for a truncated OpenSearch read one
     function away (`scorer/opensearch.py::TrajectoryTruncated`).
+
+    **I3 (fix round 1; ledger ruling M5-R32) corrects two things this
+    docstring used to claim without them being true.** First: this is
+    deliberately NOT an `OpenSearchError` subclass -- a contract-version
+    divergence is not "the store could not be reached", it is a genuine
+    business refusal, and subclassing `OpenSearchError` for the sake of the
+    502 status code would misname what happened. `scorer/server.py`'s HTTP
+    handler catches this class by name instead, and answers 502, so the H1
+    parity this docstring claims is now real rather than accidental (it
+    used to fall through to the generic `except Exception` and answer 500,
+    logged as "scoring failed" -- a refusal reported as a bug). Second: this
+    is left to propagate out of `score_identity_had_authority` uncaught, as
+    before, but it no longer propagates out of `/score` as a whole --
+    `scorer/scores.py::scores_for` catches it one level up and omits only
+    the one dimension it concerns, so a contract-version divergence no
+    longer costs all five scores. See `scores_for`'s own docstring and
+    M5-R32 for why the blast radius is scoped there rather than by
+    widening what a `Score` can hold.
     """
 
 
