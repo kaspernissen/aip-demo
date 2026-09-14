@@ -66,6 +66,7 @@ was already gone:
 The values-file guards were never part of the inert class: they all parse the
 YAML with `yaml.safe_load`, which discards comments before any assertion runs.
 """
+import ast
 import os
 import re
 import shutil
@@ -748,9 +749,41 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
     # module is mostly prose *about* the stages -- "the ordering
     # `setup-kind.sh --stage 2` must preserve" is a correct sentence that must
     # stay correct forever -- and a guard that reddened on it would be a guard
-    # people satisfy by rewriting true sentences (ruling R22). So only the
-    # imperative form is checked: `run`/`re-run` immediately before the
-    # command, which is what an operator is told to type.
+    # people satisfy by rewriting true sentences (ruling R22). So only a fixed
+    # set of instruction lead-ins is checked, immediately before the command --
+    # what an operator is actually told to type or read as "the fix".
+    #
+    # **Ruling M5-R17.** Six such instructions survived a `CURRENT_STAGE` raise
+    # uncaught, because this loop used to read *physical* source lines
+    # (`path.read_text().splitlines()`) and match `(?:[Rr]e-?)?run\s+...` on a
+    # single line. Python does not require an instruction to stay on one
+    # source line: `"Re-run "` `"./scripts/setup-kind.sh --stage 4 to ..."` is
+    # two adjacent string literals the interpreter concatenates into one
+    # string, and four more sites used a lead-in this pattern never covered at
+    # all ("Bring it up with", "the fix is") -- both defeats are the same
+    # "stale prose survives because the guard's needle doesn't see the whole
+    # sentence" class this project has hit eight times before (M4 alone), just
+    # arrived at by two different routes.
+    #
+    # The fix parses each file with `ast` rather than reading physical lines,
+    # and searches `ast.Constant` string values instead. This is not a
+    # heuristic join: CPython's tokenizer concatenates adjacent string
+    # literals -- plain-to-plain, and plain-to-f-string via `ast.JoinedStr`'s
+    # own `Constant` children -- before the parser ever produces a node, so
+    # `node.value` already reads as one sentence regardless of how many source
+    # lines or literal fragments it was written across, and a `#` comment can
+    # never appear in it at all (comments are not AST nodes), which is a
+    # correctness property no per-line text scan had. Confirmed directly
+    # against this file's own six offenders plus a seventh
+    # (`test_supervised.py` wraps the *digit* onto its own line instead of the
+    # lead-in -- "run ./scripts/setup-kind.sh " / "--stage 3 ...` -- a
+    # different wrap point the same fix closes for the same reason) before
+    # this docstring was written.
+    _INSTRUCTION_LEADINS = r"(?:(?:[Rr]e-?)?run|[Bb]ring it up with|[Tt]he fix is)"
+    _STAGE_INSTRUCTION_RE = re.compile(
+        _INSTRUCTION_LEADINS
+        + r"\s+`?\.?/?scripts/setup-kind\.sh`?\s*--stage\s+(\d+)"
+    )
     test_files = sorted((REPO_ROOT / "tests").glob("**/*.py"))
     assert len(test_files) >= 20, (
         "tests/**/*.py matched only "
@@ -760,22 +793,18 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
 
     offenders = []
     for path in test_files:
-        lines = path.read_text().splitlines()
-        for i, line in enumerate(lines):
-            match = re.search(
-                # `(?:[Rr]e-?)?run`, not `[Rr]e-?run`: the first draft of this
-                # pattern required the "re", so it matched the one "Re-run"
-                # site and silently ignored the five plain "run" ones -- and
-                # the mutation round caught it, GREEN, against a test whose
-                # remedy had been put back to `--stage 3`.
-                r"(?:[Rr]e-?)?run\s+\.?/?scripts/setup-kind\.sh --stage (\d+)", line
-            )
-            if not match or int(match.group(1)) >= CURRENT_STAGE:
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
                 continue
-            offenders.append(
-                f"{path.relative_to(REPO_ROOT)}:{i + 1} (stage "
-                f"{match.group(1)}): {line.strip()}"
-            )
+            for match in _STAGE_INSTRUCTION_RE.finditer(node.value):
+                stage = int(match.group(1))
+                if stage >= CURRENT_STAGE:
+                    continue
+                offenders.append(
+                    f"{path.relative_to(REPO_ROOT)}:{node.lineno} (stage "
+                    f"{stage}): {match.group(0)!r}"
+                )
 
     for path, stage in checked:
         if not path.exists():

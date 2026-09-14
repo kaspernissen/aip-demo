@@ -128,7 +128,7 @@ def live_gateway_config_text() -> str:
         f"{CONFIGMAP_NAME} key {CONFIGMAP_KEY!r} is missing or empty. The "
         "gateway reads its config once at startup, so it is enforcing "
         "something -- and this repository has no way to see what. Re-run "
-        "./scripts/setup-kind.sh --stage 4 to recreate the ConfigMap from the "
+        "./scripts/setup-kind.sh --stage 5 to recreate the ConfigMap from the "
         f"committed file and restart the gateway ({proc.stderr.strip() or 'no output'})"
     )
     return proc.stdout
@@ -141,7 +141,7 @@ def test_the_live_gateway_configmap_parses_identically_to_the_committed_file(
 
     One assertion, on `yaml.safe_load` of both sides. If it fails, the cluster
     is running a gateway configuration that was never reviewed, and the fix is
-    `./scripts/setup-kind.sh --stage 4` (which recreates the ConfigMap from the
+    `./scripts/setup-kind.sh --stage 5` (which recreates the ConfigMap from the
     committed file and restarts the deployment) or a deliberate commit of
     whatever the cluster is right about.
     """

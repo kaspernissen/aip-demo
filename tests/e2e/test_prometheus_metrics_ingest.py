@@ -232,7 +232,7 @@ def stage_4_or_a_reason():
             f"svc/{PROMETHEUS_SERVICE} is not installed and the deployed "
             f"collector config does not name {PROMETHEUS_EXPORTER_ID!r}, so "
             "this cluster is coherently below stage 4. Bring it up with "
-            "./scripts/setup-kind.sh --stage 4 to run these."
+            "./scripts/setup-kind.sh --stage 5 to run these."
         )
     assert installed, (
         f"the deployed collector ConfigMap names the {PROMETHEUS_EXPORTER_ID!r} "

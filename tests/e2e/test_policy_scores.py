@@ -208,7 +208,7 @@ def stage_4_or_a_reason():
             "OpenSearch is not installed and the deployed collector config "
             "has no traces pipeline teeing to it, so this cluster is "
             "coherently below stage 4. Bring it up with "
-            "./scripts/setup-kind.sh --stage 4 to run these."
+            "./scripts/setup-kind.sh --stage 5 to run these."
         )
     assert installed and exports, (
         "this cluster is in the incoherent middle state review finding F10 "

@@ -361,7 +361,7 @@ def reviewer_ui_route():
             f"no {STAGE3_DISCRIMINATOR_DEPLOYMENT} Deployment in "
             f"{AGENTS_NAMESPACE}, so this is not a stage-3 cluster and "
             "reviewer-ui was never deployed; run ./scripts/setup-kind.sh "
-            "--stage 3 and deploy the M3 workloads"
+            "--stage 5 and deploy the M3 workloads"
         )
 
     if _reviewer_ui_alive():
