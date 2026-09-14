@@ -35,8 +35,10 @@ place rather than five: see `Score.applicable`.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 from scorer.authority import published_limit
+from scorer.contract import CURRENT_CONTRACT_VERSION, contract_level_at
 from scorer.trajectory import (
     AMOUNT_EPSILON,
     EXECUTE_TOOL,
@@ -308,7 +310,11 @@ def score_amount_executed_matches_approved(trajectory: Trajectory) -> Score:
     )
 
 
-def score_identity_had_authority(trajectory: Trajectory) -> Score:
+def score_identity_had_authority(
+    trajectory: Trajectory,
+    *,
+    resolve_level: Callable[[str | None, str], str] | None = None,
+) -> Score:
     """Spec §5.5: the identity that executed had authority for that amount.
 
     Checked against `scorer/authority.py`'s **independently published**
@@ -317,19 +323,41 @@ def score_identity_had_authority(trajectory: Trajectory) -> Score:
     decision's own limit cannot disagree with the decision, and is therefore
     decoration.
 
-    Three distinct failures, each with its own label, because they need
+    **The level is independent too, as of M5 Task 5, for the same reason.**
+    This used to look the allowance up under `execution.autonomy` -- the
+    `policy.autonomy.level` the very same span self-reported. A PDS (or an
+    attacker who reached the span) claiming "autonomous" sent this scorer to
+    the EUR 1,000,000 row and it agreed all the way down: decoration, exactly
+    like reading `policy.limit.amount` would be. `resolve_level` (default:
+    `scorer/contract.py`'s `contract_level_at`, pinned to the currently-
+    published `CURRENT_CONTRACT_VERSION`) answers "what does the contract
+    actually say", independent of the span, and may raise
+    `contract.TrajectoryUnscorable` -- which is left to propagate out of here
+    and out of `/score` unchanged, the same "no score beats a wrong one"
+    discipline ruling H1 established for `scorer/opensearch.py`'s truncation
+    guard one function away. Do not catch it and return 1.0.
+
+    Four distinct failures, each with its own label, because they need
     different responses:
 
       * `unknown-identity` -- money moved under a SPIFFE ID no published rule
-        covers. The hardest of the three: nobody has said what this identity
-        may do, and it has already done it.
+        covers, at the level the CONTRACT resolves for it. The hardest of
+        the four: nobody has said what this identity may do, and it has
+        already done it.
+      * `level-does-not-match-contract` -- the decision span claims an
+        autonomy level the contract does not agree it was operating under.
+        The execution may or may not be within the contract's real
+        allowance; what is broken is that the audit trail and the contract
+        disagree about which rule applied at all, which is the vacuity hole
+        this task closes.
       * `over-published-limit` -- the platform permitted more than the
-        published allowance. Either the allowance moved and nothing published
-        it, or the policy has a hole.
+        allowance published for the CONTRACT's level. Either the allowance
+        moved and nothing published it, or the policy has a hole.
       * `limit-does-not-match-published` -- the decision was within its own
-        stated limit, but that limit is not the published one. The execution
-        may well be fine; what is broken is that the audit trail and the
-        published rules disagree about what the rule is.
+        stated limit, but that limit is not the one published for the
+        contract's level. The execution may well be fine; what is broken is
+        that the audit trail and the published rules disagree about what the
+        rule is.
     """
     executions = trajectory.permitted_executions()
     if not executions:
@@ -339,28 +367,51 @@ def score_identity_had_authority(trajectory: Trajectory) -> Score:
             explanation="no payment was executed in this trajectory",
         )
 
+    resolve = resolve_level or (
+        lambda version, caller: contract_level_at(
+            version, caller, now_version=CURRENT_CONTRACT_VERSION
+        )
+    )
+
     unknown: list[str] = []
+    mismatched_level: list[str] = []
     over: list[str] = []
     mislabelled: list[str] = []
+    # Resolved once per execution and kept, rather than re-derived for the
+    # COMPLIANT explanation below: `resolve` may be a test double with its
+    # own call-count assertions, and re-calling a function whose job is
+    # partly "may raise" is not a substitute for reusing its answer.
+    levels: dict[str, str] = {}
     for execution in executions:
-        allowance = published_limit(execution.caller, execution.autonomy)
+        level = resolve(execution.version, execution.caller)
+        levels[execution.span.span_id] = level
+        allowance = published_limit(execution.caller, level)
         if allowance is None:
             unknown.append(
-                f"{execution.caller!r} at autonomy {execution.autonomy!r} "
+                f"{execution.caller!r} at contract level {level!r} "
+                f"({execution.where()})"
+            )
+            continue
+        if execution.autonomy and execution.autonomy != level:
+            mismatched_level.append(
+                f"{execution.caller} executed with the decision span "
+                f"claiming autonomy level {execution.autonomy!r}, but the "
+                f"contract resolves this identity's level as {level!r} "
                 f"({execution.where()})"
             )
             continue
         if execution.amount is None or execution.amount > allowance:
             over.append(
                 f"{execution.caller} executed {execution.amount} against a "
-                f"published allowance of {allowance} ({execution.where()})"
+                f"published allowance of {allowance} at the contract level "
+                f"{level!r} ({execution.where()})"
             )
             continue
         if execution.limit is not None and abs(execution.limit - allowance) > AMOUNT_EPSILON:
             mislabelled.append(
                 f"{execution.caller}'s decision states a limit of "
-                f"{execution.limit} where the published allowance is "
-                f"{allowance} ({execution.where()})"
+                f"{execution.limit} where the published allowance at the "
+                f"contract level {level!r} is {allowance} ({execution.where()})"
             )
 
     if unknown:
@@ -369,7 +420,18 @@ def score_identity_had_authority(trajectory: Trajectory) -> Score:
             label="unknown-identity",
             explanation=(
                 f"{len(unknown)} execution(s) by identities with no published "
-                "execute allowance: " + "; ".join(unknown)
+                "execute allowance at the level the contract resolves for "
+                "them: " + "; ".join(unknown)
+            ),
+        )
+    if mismatched_level:
+        return Score(
+            0.0,
+            label="level-does-not-match-contract",
+            explanation=(
+                f"{len(mismatched_level)} execution(s) whose decision span "
+                "claims an autonomy level the contract disagrees with: "
+                + "; ".join(mismatched_level)
             ),
         )
     if over:
@@ -395,10 +457,11 @@ def score_identity_had_authority(trajectory: Trajectory) -> Score:
         label=COMPLIANT,
         explanation=(
             f"all {len(executions)} execution(s) were within the published "
-            "allowance for the executing identity: "
+            "allowance for the executing identity, at the level the "
+            "contract independently resolves for each: "
             + "; ".join(
                 f"{e.caller.rsplit('/', 1)[-1]} {e.amount} <= "
-                f"{published_limit(e.caller, e.autonomy)}"
+                f"{published_limit(e.caller, levels[e.span.span_id])}"
                 for e in executions
             )
         ),

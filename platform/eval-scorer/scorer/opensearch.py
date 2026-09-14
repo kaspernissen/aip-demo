@@ -195,7 +195,25 @@ class OpenSearchClient:
         # Buckets OpenSearch had to drop to honour `size`. Any value above zero
         # means this list is not the claim's trajectory, it is the busiest part
         # of it.
-        dropped = aggregation.get("sum_other_doc_count") or 0
+        #
+        # Ruling S-b (M4 debt list, closed here): `.get(...) or 0` reads a
+        # genuinely ABSENT key the same as a present, honest zero -- "I could
+        # not look" recorded as "there was nothing to find", the exact rule
+        # `search()`'s own `"error" in payload` check enforces ten lines
+        # above. Defensive rather than live: OpenSearch always sends this key
+        # on a real terms aggregation. But a field this guard's correctness
+        # depends on must raise on absence, not silently assume the value
+        # that happens to make the guard pass.
+        if "sum_other_doc_count" not in aggregation:
+            raise TrajectoryTruncated(
+                f"claim {claim_id!r}: the trace aggregation carries no "
+                "`sum_other_doc_count` key at all, so this read cannot tell "
+                "whether OpenSearch had to drop any bucket to honour "
+                "`size`. Defaulting an absent field to zero would record "
+                "'I could not look' as 'nothing was dropped'. No score is "
+                "emitted."
+            )
+        dropped = aggregation["sum_other_doc_count"]
         if dropped:
             raise TrajectoryTruncated(
                 f"claim {claim_id!r} touched more than "
@@ -257,7 +275,24 @@ class OpenSearchClient:
         # `track_total_hits` is set because OpenSearch caps the reported total
         # at 10,000 by default, which would make this comparison itself lie
         # exactly when it matters.
-        total = (result.get("total") or {}).get("value", len(hits))
+        #
+        # Ruling S-b (M4 debt list, closed here): the previous read,
+        # `(result.get("total") or {}).get("value", len(hits))`, defaulted a
+        # missing `total` (or a missing `total.value`) to `len(hits)` itself
+        # -- comparing that number to itself always passes, which makes the
+        # very next line's truncation check vacuously false exactly when the
+        # response is too malformed to trust. Absence must raise, not stand
+        # in for "definitely not truncated".
+        total_block = result.get("total")
+        if not isinstance(total_block, dict) or "value" not in total_block:
+            raise TrajectoryTruncated(
+                "the trace-id join's response carries no `hits.total.value` "
+                "-- `track_total_hits` was requested, so its absence means "
+                "this read cannot confirm the page was not truncated. "
+                "Defaulting to len(hits) would compare a number to itself "
+                "and always pass. No score is emitted."
+            )
+        total = total_block["value"]
         if len(hits) != total:
             raise TrajectoryTruncated(
                 f"the trace-id join returned {len(hits)} of {total} matching "

@@ -16,12 +16,24 @@ cannot drift apart quietly.
 """
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from scorer.authority import SENIOR_SETTLEMENT_AGENT, SETTLEMENT_AGENT
 from scorer.trajectory import (
     DECISION_SPAN,
     EXECUTE_APPROVED_SPAN,
     REVIEW_SPAN,
     Trajectory,
+)
+
+# platform/eval-scorer/tests/ -> eval-scorer/ -> platform/ -> repo root
+FEATUREFLAG = (
+    Path(__file__).resolve().parents[3]
+    / "deploy"
+    / "platform"
+    / "openfeature"
+    / "featureflag.yaml"
 )
 
 CLAIM_ID = "CLM-1842"
@@ -56,6 +68,7 @@ def decision(
     currency: str = "EUR",
     trace: str = REFUSAL_TRACE,
     span_id: str | None = None,
+    version: str | None = None,
 ) -> dict:
     attributes = {
         "policy.decision": outcome,
@@ -72,6 +85,14 @@ def decision(
         attributes["policy.request.currency"] = currency
     if limit is not None:
         attributes["policy.limit.amount"] = limit
+    # `None` by default, deliberately -- measured 2026-09-14 (M5 Task 5):
+    # every real `policy.decision` span carries no `feature_flag.version`
+    # today, because nothing in `featureflag.yaml` defines flag metadata for
+    # `contract_level_at` to read one from. A fixture that defaulted this to
+    # a string would make every test exercise a shape the live cluster never
+    # produces.
+    if version is not None:
+        attributes["feature_flag.version"] = version
     return {
         "traceId": trace,
         "spanId": span_id or f"dec1{int(order * 10):012d}",
@@ -211,3 +232,77 @@ def retry_after_refusal(amount: float = 6200.0) -> Trajectory:
             ),
         ],
     )
+
+
+# --- reading `featureflag.yaml`, without a YAML dependency this service does
+# not otherwise carry -----------------------------------------------------
+#
+# `platform/eval-scorer/.venv` has no `pyyaml` (measured: `import yaml` in
+# that venv raises `ModuleNotFoundError`), and the non-negotiable for this
+# task is to use that venv as it is, not install into it for three lines of a
+# controlled, hand-authored file. `tests/unit/test_stage2_spire_config.py`
+# made the same trade for its own SPIFFE-literal check, for the same reason:
+# a full parser is a dependency to read a handful of known-shape lines.
+# Shared here (rather than duplicated in `test_contract.py` and
+# `test_authority_matches_the_policy.py`, which both read this file) so the
+# two independent build-time checks cannot themselves drift apart on how they
+# read the thing they are both checking.
+
+
+def featureflag_variants() -> set[str]:
+    """The `autonomy-level` flag's declared variant names.
+
+    Reads the indented block under `variants:` and collects every key at
+    that block's own indentation, stopping at the first line back out to a
+    shallower indent (`defaultVariant:`).
+    """
+    text = FEATUREFLAG.read_text()
+    header = re.search(r"^( *)variants:\s*$", text, re.MULTILINE)
+    assert header, f"no `variants:` block found in {FEATUREFLAG}"
+    indent = len(header.group(1)) + 2
+    variants: set[str] = set()
+    for line in text[header.end():].splitlines():
+        if not line.strip():
+            continue
+        this_indent = len(line) - len(line.lstrip(" "))
+        if this_indent < indent:
+            break
+        if this_indent != indent:
+            continue
+        match = re.match(r"([\w-]+):", line.strip())
+        if match:
+            variants.add(match.group(1))
+    assert variants, f"parsed no variants at all from {FEATUREFLAG}"
+    return variants
+
+
+def featureflag_targeting_branch_values() -> list[str]:
+    """The targeting `if` block's literal branch values, in file order.
+
+    `deploy/platform/openfeature/featureflag.yaml`'s `if` is a two-branch
+    jsonlogic list: `[condition, then_value, else_value]`. This returns
+    `[then_value, else_value]` -- the two quoted string literals at the same
+    indentation as the condition's own `- in:` list item, ignoring the
+    condition's own (more deeply indented) contents.
+    """
+    text = FEATUREFLAG.read_text()
+    header = re.search(r"^( *)if:\s*$", text, re.MULTILINE)
+    assert header, f"no targeting `if:` block found in {FEATUREFLAG}"
+    item_indent = len(header.group(1)) + 2
+    branches: list[str] = []
+    for line in text[header.end():].splitlines():
+        if not line.strip():
+            continue
+        this_indent = len(line) - len(line.lstrip(" "))
+        if this_indent < item_indent:
+            break
+        if this_indent != item_indent:
+            continue
+        match = re.match(r'- "([^"]*)"$', line.strip())
+        if match:
+            branches.append(match.group(1))
+    assert len(branches) == 2, (
+        f"expected exactly 2 branch values in the targeting `if` block, "
+        f"found {branches} in {FEATUREFLAG}"
+    )
+    return branches

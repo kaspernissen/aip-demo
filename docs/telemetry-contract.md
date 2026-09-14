@@ -170,15 +170,35 @@ any other probe failure aborts; a RED demonstration against the naive
 figure is untouched. The "355 to 362" above is left standing as Task 4's dated
 record, the way the M2.2 plan's inverted `failureMode` default is.
 
-Bare-suite row, derived from that same collection: 365 collected − 71 gated −
-**0** xfailed = `294 passed, 71 skipped, 0 xfailed`.
+**Dated note, 2026-09-14 (fixing an unclaimed pre-existing e2e failure, found
+before Task 6): the gated figure below moves from 71 to 72.**
+`test_prometheus_metrics_ingest.py`'s reviewer-ui row of the per-service
+positive control
+(`test_each_service_demonstrably_gets_a_metric_all_the_way_to_prometheus
+[reviewer-ui]`) was asserting presence unconditionally although nothing
+ungated ever drives reviewer-ui traffic: every e2e file that reaches its
+`GET /` or `POST /review/{id}` (`test_evidence_view.py`,
+`test_policy_scores.py`, `test_supervised.py` criteria 1-6) is itself gated
+behind `RUN_BROWSER_TESTS=1`, and reviewer-ui's own readiness probe
+deliberately makes no ledger call. The row failed every bare run for that
+reason (`assert []`, not staleness) -- confirmed pre-existing (no file it or
+its traffic sources depend on changed between `0ae64f9`'s parent and this
+note). It now carries its own gate, `_REVIEWER_UI_TRAFFIC_REQUIRED`, taking
+`test_prometheus_metrics_ingest.py`'s own count from 9 to 10. The rows below
+are the updated ones; the "71" figures above this note are left standing as
+Task 4/M5-R27's dated record.
 
-The gated figure is unchanged at **71** (all seven of Task 4's new tests — two
-in `tests/unit`, five in `tests/e2e` — and all three of M5-R27's carry no
-`skipif` naming `RUN_BROWSER_TESTS`, so none is gated) — and reports 71 of 365,
-with the same per-module spread as the row beneath this one. The browser split
-is unchanged too: **3 of the 11 launch a browser** and **8 of the 11 start no
-browser**.
+Bare-suite row, derived from that same collection: 365 collected − 72 gated −
+**0** xfailed = `293 passed, 72 skipped, 0 xfailed`.
+
+The gated figure is **72** (all seven of Task 4's new tests — two in
+`tests/unit`, five in `tests/e2e` — and all three of M5-R27's carry no
+`skipif` naming `RUN_BROWSER_TESTS`, so none of those ten is gated; the one
+new gate is the reviewer-ui row above) — and reports 72 of 365, with the same
+per-module spread as the row beneath this one. The browser split is
+unchanged: **3 of the 11 launch a browser** and **8 of the 11 start no
+browser** -- the module was already gated and already browser-less, so this
+moved a test count within it, not a module count.
 
 Gate row: **PREDICTED, NOT MEASURED**, unchanged from the row below -- this
 branch's gate run was at commit `b215426` (the M4 final-review fix wave
@@ -1580,7 +1600,50 @@ the plan defect described two paragraphs up).
 Per-service unit suites (all eight run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 114, payments-mcp 16, payments-api (Go) 31,
 customer-ui (vitest) 6, policy-decision-service 127,
-reviewer-ui 56, eval-scorer 135 — all passing.
+reviewer-ui 56, eval-scorer 152 — all passing.
+(**2026-09-14, M5 Task 5: eval-scorer 135 → 152.**
+Re-measured with `.venv/bin/python -m pytest --collect-only -q tests` from
+that service's own directory. `score_identity_had_authority` used to look
+the published execute allowance up under `policy.autonomy.level` -- the
+`policy.decision` span's OWN self-reported level -- so a PDS (or an
+attacker who reached the span) claiming "autonomous" sent it to the
+EUR 1,000,000 row and it agreed all the way down: decoration, by spec §5's
+own criterion. A new module, `scorer/contract.py`, holds the audit's
+independent answer to "what level does the contract actually say", the same
+pattern `scorer/authority.py`'s docstring argues for the limit table, and
+`scores.py` now consults it instead of trusting the span. Seventeen tests:
+eleven new in `tests/test_contract.py` for `contract_level_at`'s temporal
+guard (all four presence/absence quadrants, not just the two the plan's
+sketch considered) and `current_level`'s build-time parity with
+`featureflag.yaml`; two new in `tests/test_scores.py` reproducing the exact
+vacuity scenario (a span claiming "autonomous" against a contract that says
+"assisted") and proving `TrajectoryUnscorable` propagates out of the scorer
+uncaught; one new in `tests/test_authority_matches_the_policy.py` extending
+the build-time check to `featureflag.yaml`'s declared variants; three new in
+`tests/test_opensearch.py` closing S-b (M4 debt list) -- both truncation
+guards read a genuinely absent field (`sum_other_doc_count`,
+`hits.total.value`) the same as an honest zero/match, which is "I could not
+look" recorded as "there was nothing to find". All of it was run through
+`scripts/mutate-guard.sh` and confirmed RED before being left green,
+including the temporal guard, the level-mismatch check, both S-b guards,
+and the build-time YAML parity check (mutating `featureflag.yaml`'s
+targeting branch itself, then confirming the file was restored to its
+M5-R8 refusing state afterward).
+
+**The `feature_flag.version` STOP, decided here rather than in the plan's
+sketch.** Measured against the live cluster on 2026-09-14:
+`kubectl -n northstar-platform get featureflag northstar-autonomy -o
+jsonpath='{.spec.flagSpec.flags.autonomy-level}'` returns no `metadata`
+block at all, so `AutonomyResolution.version` (and this span's
+`feature_flag.version`) is `None` for every real decision -- the plan's
+sketch (raise whenever `decision_version` is `None`) would refuse to score
+every trajectory, always. `scorer/contract.py`'s module docstring records
+the two routes considered and why route 2 was taken: treat "no version on
+either side" as agreement, not divergence, and refuse only when the two
+disagree while at least one is actually present. This keeps the module
+callable today and is honest that its temporal half is dormant until
+something publishes a real version -- it does not touch `featureflag.yaml`,
+so M5-R8's ship-in-refusing-state is untouched by this task.)
 (**2026-09-14, M5 Task 4: policy-decision-service 124 → 127.**
 Re-measured with `.venv/bin/python -m pytest --collect-only -q tests` from
 that service's own directory. Three tests in `tests/test_autonomy.py` close

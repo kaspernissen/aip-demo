@@ -25,6 +25,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import fixtures
 from scorer.authority import PUBLISHED_EXECUTE_LIMITS
 
 # platform/eval-scorer/tests/ -> platform/ -> policy-decision-service/pds
@@ -94,4 +95,40 @@ def test_the_guard_reads_a_table_with_something_in_it():
         "EXECUTE_LIMITS must stay keyed by (SPIFFE ID, autonomy level) -- "
         "scorer/authority.py's lookup is keyed the same way, and a change of "
         f"key shape here silently breaks it: {sorted(policy)}"
+    )
+
+
+# --- M5 Task 5, Step 5: the flag source joins the check -------------------
+#
+# `scorer/contract.py` now resolves the LEVEL `score_identity_had_authority`
+# looks the allowance up under, independent of the span. That table lookup
+# (`published_limit`) is only ever safe if every level `featureflag.yaml`
+# could actually hand out has a row in the published table for the caller
+# the flag governs -- otherwise a future variant this flag starts returning
+# would make a compliant execution read as `unknown-identity`, for a reason
+# with nothing to do with the identity at all. Parsed via
+# `fixtures.featureflag_variants` (regex, not `ast` -- this is YAML, not
+# Python, and `platform/eval-scorer/.venv` carries no `pyyaml`; see that
+# helper's docstring), never retyped.
+
+
+def test_every_flag_variant_has_a_row_in_both_limit_tables():
+    variants = fixtures.featureflag_variants()
+    assert variants, "parsed no variants at all from featureflag.yaml"
+
+    published_levels = {level for _, level in PUBLISHED_EXECUTE_LIMITS}
+    policy_levels = {level for _, level in _execute_limits_from_rules()}
+
+    missing_from_published = variants - published_levels
+    missing_from_policy = variants - policy_levels
+    assert not missing_from_published, (
+        f"featureflag.yaml declares variant(s) {missing_from_published} that "
+        "scorer/authority.py's PUBLISHED_EXECUTE_LIMITS has no row for at "
+        "any caller -- a decision resolved to one of these levels would "
+        "score `unknown-identity` regardless of who executed it."
+    )
+    assert not missing_from_policy, (
+        f"featureflag.yaml declares variant(s) {missing_from_policy} that "
+        "pds/rules.py's EXECUTE_LIMITS has no row for at any caller -- the "
+        "contract can hand out a level the policy itself has never priced."
     )

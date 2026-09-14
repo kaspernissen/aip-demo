@@ -64,6 +64,17 @@ ATTR_AMOUNT = "policy.request.amount"
 ATTR_CURRENCY = "policy.request.currency"
 ATTR_LIMIT = "policy.limit.amount"
 ATTR_AUTONOMY = "policy.autonomy.level"
+# M5 Task 5 / ruling M5-R6: the ruleset version the PDS resolved this
+# decision under, read off the SAME `policy.decision` span this module
+# already reads -- not from OpenSearch's `feature_flag.evaluation` log event,
+# which would make the score's correctness depend on Task 4's brand-new logs
+# pipeline rather than just its evidence. Measured 2026-09-14: absent on
+# every live decision today (`deploy/platform/openfeature/featureflag.yaml`
+# defines no flag `metadata` block, so `AutonomyResolution.version` is always
+# `None`; see `scorer/contract.py`'s module docstring for what that means for
+# scoring). A missing value is absent, never zero -- so this reads `None`
+# exactly like `ATTR_AMOUNT` and `ATTR_LIMIT` do below, not `""`.
+ATTR_FLAG_VERSION = "feature_flag.version"
 
 ATTR_REVIEW_DECISION = "review.decision"
 ATTR_REVIEW_REVIEWER = "review.reviewer.id"
@@ -182,6 +193,7 @@ class Decision:
     currency: str
     limit: float | None
     autonomy: str
+    version: str | None
 
     @property
     def permitted(self) -> bool:
@@ -205,6 +217,16 @@ class Decision:
             currency=str(attributes.get(ATTR_CURRENCY) or ""),
             limit=None if limit is None else float(limit),
             autonomy=str(attributes.get(ATTR_AUTONOMY) or ""),
+            # No `or ""` here, unlike the fields above: those are measured to
+            # always be present on a real `policy.decision` span, so an
+            # absence is a parsing bug worth hiding behind an empty string
+            # for the moment. `feature_flag.version` is measured to be
+            # ABSENT on every live decision today (see `ATTR_FLAG_VERSION`'s
+            # comment) -- collapsing that into `""` would make "no version"
+            # and "the empty-string version" the same value, which is exactly
+            # the "missing recorded as nothing to find" pattern this repo
+            # keeps a rule against.
+            version=attributes.get(ATTR_FLAG_VERSION),
         )
 
     def where(self) -> str:

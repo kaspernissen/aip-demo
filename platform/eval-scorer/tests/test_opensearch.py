@@ -201,6 +201,56 @@ def test_step_one_refuses_an_approximate_bucket_count():
     assert "doc_count_error_upper_bound" in str(excinfo.value)
 
 
+def test_step_one_refuses_when_sum_other_doc_count_is_entirely_absent():
+    """S-b (M4 debt list, closed M5 Task 5): a genuinely missing
+    `sum_other_doc_count` must not be read the same as a present, honest
+    zero. `_trace_bucket_response`'s default supplies the key (OpenSearch
+    always sends it); this test builds a response without it at all."""
+    client = RecordingClient(
+        [
+            {
+                "aggregations": {
+                    "traces": {
+                        # No `sum_other_doc_count` key at all.
+                        "doc_count_error_upper_bound": 0,
+                        "buckets": [
+                            {
+                                "key": "aaaa",
+                                "doc_count": 10,
+                                "first": {"value": SINCE_MS},
+                            }
+                        ],
+                    }
+                }
+            }
+        ]
+    )
+    with pytest.raises(TrajectoryTruncated) as excinfo:
+        client.trace_ids_for_claim("CLM-1842", SINCE_MS)
+    assert "sum_other_doc_count" in str(excinfo.value)
+
+
+def test_step_two_refuses_when_total_is_entirely_absent():
+    """S-b's other half: `(result.get("total") or {}).get("value",
+    len(hits))` compared `len(hits)` to itself whenever `total` (or
+    `total.value`) was missing, which can never redden. This constructs that
+    exact shape and proves it now raises instead."""
+    client = RecordingClient(
+        [{"hits": {"hits": [{"_source": fixtures.root(0.0)}]}}]  # no "total" key
+    )
+    with pytest.raises(TrajectoryTruncated) as excinfo:
+        client.spans_in_traces(["aaaa"], SINCE_MS)
+    assert "total" in str(excinfo.value).lower()
+
+
+def test_step_two_refuses_when_total_has_no_value_key():
+    client = RecordingClient(
+        [{"hits": {"hits": [{"_source": fixtures.root(0.0)}], "total": {}}}]
+    )
+    with pytest.raises(TrajectoryTruncated):
+        client.spans_in_traces(["aaaa"], SINCE_MS)
+
+
 def test_an_untruncated_read_is_not_refused():
     """The positive control, without which every test above passes against a
     method that raises unconditionally.

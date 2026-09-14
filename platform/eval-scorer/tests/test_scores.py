@@ -404,10 +404,18 @@ def test_identity_had_authority_fails_when_the_stated_limit_is_not_the_published
     assert (result.value, result.label) == (0.0, "limit-does-not-match-published")
 
 
-def test_identity_had_authority_fails_at_an_unpublished_autonomy_level():
-    """`(caller, autonomy)` is the key, exactly as `EXECUTE_LIMITS` is keyed.
-    An identity with an allowance at `assisted` has none at a level nobody
-    published one for -- which is precisely what M5 will make reachable."""
+def test_identity_had_authority_fails_when_the_span_claims_a_level_the_contract_disagrees_with():
+    """The vacuity hole M5 Task 5 closes. Until this task,
+    `score_identity_had_authority` read `policy.autonomy.level` off the very
+    span it was judging and looked the published allowance up under THAT
+    label -- so a PDS (or an attacker who reached the span) claiming
+    "autonomous" sent this scorer to the published EUR 1,000,000 row and it
+    agreed all the way down. The level now comes from `scorer/contract.py`'s
+    own resolution (`current_level`, "assisted" for every caller today per
+    M5-R8), independent of what the span says -- so a span claiming
+    "supervised-by-nobody" (an autonomy string nobody published ANY row for,
+    at ANY level) is caught not because that string is unpublished, but
+    because it disagrees with what the contract itself says applied."""
     trajectory = Trajectory.from_documents(
         "CLM-X",
         [
@@ -419,7 +427,55 @@ def test_identity_had_authority_fails_at_an_unpublished_autonomy_level():
         ],
     )
     result = score_identity_had_authority(trajectory)
-    assert (result.value, result.label) == (0.0, "unknown-identity")
+    assert (result.value, result.label) == (0.0, "level-does-not-match-contract")
+    assert "contract" in result.explanation.lower()
+
+
+def test_identity_had_authority_fails_when_the_pds_invents_a_more_permissive_level():
+    """The exact scenario the STOP section's evidence names: a PDS claiming
+    "autonomous" (the EUR 1,000,000 row) while the contract -- resolved
+    independently of the span -- says "assisted" (EUR 6,000). Reading the
+    span's own claimed level, as this scorer did before M5 Task 5, would
+    score this 1.0 (6,200 <= 1,000,000). It must not."""
+    trajectory = Trajectory.from_documents(
+        "CLM-X",
+        [
+            fixtures.decision(2.0, "propose_payment", "permit", amount=6200.0),
+            fixtures.decision(
+                4.0, "execute_payment", "permit", amount=6200.0,
+                limit=1_000_000.0, autonomy="autonomous",
+            ),
+        ],
+    )
+    result = score_identity_had_authority(trajectory)
+    assert result.value == 0.0
+    assert result.label == "level-does-not-match-contract"
+    assert "contract" in result.explanation.lower()
+
+
+def test_identity_had_authority_can_be_told_the_contract_disagrees_on_version_too():
+    """`resolve_level` is the injection point production wires to
+    `contract.contract_level_at`; here it is overridden to simulate a
+    version divergence without needing a live flagd or a second
+    `featureflag.yaml` fixture. `TrajectoryUnscorable` must propagate all the
+    way out of `score_identity_had_authority`, uncaught -- `/score` must
+    emit no score for this dimension, not a flattering 1.0."""
+    from scorer.contract import TrajectoryUnscorable
+
+    def _always_diverges(version, caller):
+        raise TrajectoryUnscorable("the ruleset moved")
+
+    trajectory = Trajectory.from_documents(
+        "CLM-X",
+        [
+            fixtures.decision(2.0, "propose_payment", "permit", amount=5800.0),
+            fixtures.decision(
+                4.0, "execute_payment", "permit", amount=5800.0, limit=6000.0
+            ),
+        ],
+    )
+    with pytest.raises(TrajectoryUnscorable):
+        score_identity_had_authority(trajectory, resolve_level=_always_diverges)
 
 
 def test_identity_had_authority_permits_exactly_the_limit():
