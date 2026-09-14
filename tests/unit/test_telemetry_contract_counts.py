@@ -48,6 +48,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = REPO_ROOT / "docs" / "telemetry-contract.md"
 
+# Module-level (M5 Task 1, V2) so it can be asserted on directly, not only
+# through the one property test that reads it. See the comment beside its use
+# in test_a_predicted_gate_row_is_labelled_as_one for why that test alone is
+# not enough.
+GATE_PATHS = ["agents", "apps", "contracts", "deploy", "platform", "scripts", "tests", "systems", "tools"]
+
 
 def _collected_test_count() -> int:
     # A5: the bare `python3` on PATH is the too-old system 3.10.4, which
@@ -628,6 +634,68 @@ def test_the_bare_rows_xfail_term_accounts_for_gating():
         )
 
 
+def test_gate_paths_widened_list_actually_sees_systems_and_tools():
+    """M5 Task 1 (V2), the mutation round's own finding.
+
+    Mutating `"systems", "tools"` out of the list this file uses to decide
+    gate-row staleness left `test_a_predicted_gate_row_is_labelled_as_one`
+    GREEN -- because a task branch's own working tree, while this task is in
+    progress, always has plenty of OTHER `gate_paths` files changed too
+    (`scripts/`, `tests/`, ...), so "did anything change" stays true either
+    way and that test cannot tell `systems`/`tools` apart from the rest. A
+    guard that only asks "did anything change" is not the same guard as one
+    that asks "did the right thing get looked at", and V2 was supposed to be
+    the second.
+
+    So this checks the two things the mutation proved neither of the other
+    tests here actually cover: that `GATE_PATHS` names both directories, and
+    that doing so is not decorative -- against the real commit `716d70c`,
+    which changed exactly one file, `tools/payments-mcp/bootstrap.py`, and
+    nothing under any of the other seven `GATE_PATHS` entries. Step 4's manual
+    verification (narrow list: 0, widened list: 1), encoded so it is not
+    manual the next time someone touches this list.
+    """
+    assert "systems" in GATE_PATHS and "tools" in GATE_PATHS, (
+        "GATE_PATHS must include both 'systems' and 'tools': "
+        "scripts/smoke-test.sh runs `(cd \"$ROOT/systems/payments-api\" && "
+        "go test ./...)` and `(cd \"$ROOT/tools/payments-mcp\" && pytest "
+        "tests -q)`, so a change under either one moves what the gate "
+        "actually proves"
+    )
+
+    result = subprocess.run(
+        ["git", "diff", "--name-only", "716d70c^..716d70c", "--", "systems", "tools"],
+        cwd=REPO_ROOT, capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, (
+        f"`git diff 716d70c^..716d70c -- systems tools` failed:\n{result.stderr}"
+    )
+    changed = [line for line in result.stdout.splitlines() if line.strip()]
+    assert changed == ["tools/payments-mcp/bootstrap.py"], (
+        "expected commit 716d70c to have changed exactly "
+        f"['tools/payments-mcp/bootstrap.py'] under systems/ or tools/; got "
+        f"{changed}. If this repo's history changed, point this test at a "
+        "different real commit that changes only one of these two "
+        "directories rather than deleting the check."
+    )
+
+    other_gate_paths = [p for p in GATE_PATHS if p not in ("systems", "tools")]
+    narrow = subprocess.run(
+        ["git", "diff", "--name-only", "716d70c^..716d70c", "--", *other_gate_paths],
+        cwd=REPO_ROOT, capture_output=True, text=True, timeout=60,
+    )
+    assert narrow.returncode == 0, f"git diff failed: {narrow.stderr}"
+    narrow_hits = [
+        line for line in narrow.stdout.splitlines()
+        if line.strip() and (line.startswith("systems/") or line.startswith("tools/"))
+    ]
+    assert not narrow_hits, (
+        "the pre-fix (narrow) path list should not have been able to see "
+        f"anything under systems/ or tools/ for commit 716d70c; found "
+        f"{narrow_hits}"
+    )
+
+
 def test_a_predicted_gate_row_is_labelled_as_one():
     """M4's final review asked whether the fix wave warrants a new gate run.
 
@@ -641,7 +709,8 @@ def test_a_predicted_gate_row_is_labelled_as_one():
     the two apart afterwards.
 
     So the row carries the commit it was measured at, and this test compares
-    that to `HEAD`:
+    that to the **working tree** (see the comment on `gate_paths` below for
+    why `HEAD` would have been satisfied by the fix wave itself):
 
     * they differ  -> the row must be labelled `PREDICTED, NOT MEASURED`;
     * they match   -> the label must be **gone**, so a stale label cannot sit
@@ -674,8 +743,18 @@ def test_a_predicted_gate_row_is_labelled_as_one():
     # Scoped to what the gate runs and deploys. `docs/` is deliberately absent:
     # this very document is edited by every task that touches the figures, and
     # a rule that demanded a 7-minute cluster run for a typo is a rule people
-    # delete. `systems/` and `tools/` are not executed by the gate.
-    gate_paths = ["agents", "apps", "contracts", "deploy", "platform", "scripts", "tests"]
+    # delete. `systems/` and `tools/` ARE executed by the gate --
+    # scripts/smoke-test.sh runs `(cd "$ROOT/systems/payments-api" && go test
+    # ./...)` and `(cd "$ROOT/tools/payments-mcp" && pytest tests -q)`, so a
+    # change under either one moves what the gate actually proves and this
+    # guard was silent about it (M5 Task 1). The list is module-level
+    # (`GATE_PATHS`) so `test_gate_paths_widened_list_actually_sees_systems_and_tools`
+    # below can check its membership directly -- mutating "systems", "tools"
+    # out of it left every test in THIS function green, because this task's
+    # own working tree always has other gate_paths files changed too, and
+    # this function only asks "did anything change", never "did the right
+    # thing get looked at". That was a real gap, found by mutating.
+    gate_paths = GATE_PATHS
 
     diff = subprocess.run(
         ["git", "diff", "--name-only", measured_sha, "--", *gate_paths],

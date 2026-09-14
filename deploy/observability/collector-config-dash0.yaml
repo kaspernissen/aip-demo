@@ -123,7 +123,7 @@ exporters:
   # than trimmed so this block matches the prior art it came from, and named as
   # inert here so nobody later reads it as evidence that a TLS listener exists.
   # `otlp_http/`, not the reference config's `otlphttp/`. The pinned collector
-  # image (otel/opentelemetry-collector-contrib:0.158.0, see .env) accepts both
+  # image (otel/opentelemetry-collector-contrib:0.160.0, see .env) accepts both
   # and says so on startup, verbatim from
   # `kubectl -n observability logs deploy/otel-collector`:
   #

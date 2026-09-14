@@ -71,7 +71,7 @@ def test_no_fastmcp_in_this_service():
 
 
 def test_pytest_is_still_pinned_to_the_version_that_cleared_pysec_2026_1845():
-    assert md.version("pytest") == "9.0.3"
+    assert md.version("pytest") == "9.1.1"
 
 
 def test_pytest_asyncio_is_still_pinned_to_the_version_pytest_9_requires():

@@ -90,13 +90,39 @@ verify_owned_forward() {
   # first), which is exactly why it is worth removing rather than reasoning
   # about.
   if ! lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $2}' | grep -x "${pid}" >/dev/null; then
-    echo -e "${RED}Error: the port-forward for ${name} (expected PID ${pid} listening on ${port}) never bound.${NC}" >&2
-    echo "Another process may already hold that port -- check: lsof -nP -iTCP:${port} -sTCP:LISTEN" >&2
+    # V11 (M5 Task 1): the port is held by something other than the PID this
+    # script just launched -- a foreign forward, possibly left over from an
+    # earlier run (A9). Refusing on an UNVERIFIED holder is correct (ruling
+    # R20: a dead `kubectl port-forward` keeps its socket bound, so "something
+    # is bound" is not evidence) -- but a foreign holder that actually answers
+    # is not a problem to fix. Ask it the same question verify_existing_surface
+    # already asks of reviewer-ui's NodePort, rather than inventing a second
+    # liveness check.
+    if curl -s -o /dev/null -m 5 "http://localhost:${port}${path}"; then
+      echo -e "${YELLOW}  - ${name}: port ${port} is already held by another process and it answers -- accepting it instead of starting a second forward.${NC}"
+      # This script's own kubectl process for this surface never bound (the
+      # port was already taken); it is doing nothing and is not worth leaving
+      # around.
+      kill "${pid}" 2>/dev/null || true
+      return 0
+    fi
+    echo -e "${RED}Error: the port-forward for ${name} (expected PID ${pid} listening on ${port}) never bound, and whatever already holds ${port} does not answer.${NC}" >&2
+    echo "Another process holds that port without serving anything through it -- check: lsof -nP -iTCP:${port} -sTCP:LISTEN" >&2
+    # Do NOT fire the EXIT trap for this refusal: the forwards already
+    # verified for the OTHER surfaces are healthy, and the previous behaviour
+    # -- exit under `set -e`, EXIT trap fires, cleanup kills every PID this
+    # script started -- left an operator with one stray, unresponsive holder
+    # ending up with FEWER live forwards than before they ran this script.
+    # Refusing to proceed on this one surface must not undo the others.
+    trap - EXIT
     exit 1
   fi
   if ! curl -s -o /dev/null -m 5 "http://localhost:${port}${path}"; then
     echo -e "${RED}Error: port ${port} (${name}) is LISTENING but carries no request.${NC}" >&2
     echo "This is a dead kubectl port-forward: its target pod was replaced, the socket stayed bound, and lsof still calls it healthy (ruling R20)." >&2
+    # Same reasoning as above: this refusal must not tear down the other
+    # surfaces this script already verified live.
+    trap - EXIT
     exit 1
   fi
 }
@@ -125,10 +151,13 @@ verify_existing_surface() {
 # the remedy for a dead port-forward would leave the operator with no
 # port-forwards at all.
 #
-# So the three stage-gated surfaces -- reviewer-ui, OpenSearch Dashboards and
-# Prometheus -- are asked for rather than assumed. ("Two" until M4's final
-# review: Prometheus was added by M4 Task 2 and the sentence counting them was
-# not.) The four
+# So the four stage-gated surfaces -- reviewer-ui, OpenSearch Dashboards,
+# Prometheus and eval-scorer -- are asked for rather than assumed, one
+# `service_exists` call each below. ("Two" until M4's final review: Prometheus
+# was added by M4 Task 2 and the sentence counting them was not; "three" until
+# M5 Task 1, for the same reason one milestone later -- eval-scorer joined
+# this block in M4 final review finding L5 and the count beside it was not
+# re-derived then either.) The four
 # stage-1 surfaces below are NOT optional -- a cluster without them is broken,
 # not merely younger -- and nothing here is silently skipped: each skip prints
 # the stage that would provide it.

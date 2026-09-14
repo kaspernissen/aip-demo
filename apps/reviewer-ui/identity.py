@@ -33,7 +33,7 @@ from spiffe import WorkloadApiClient
 # Matches deploy/k8s/reviewer-ui.yaml's SPIFFE_ENDPOINT_SOCKET, which in turn
 # matches every other workload in this repo that mounts the csi.spiffe.io
 # volume (see deploy/k8s/settlement-agent.yaml's own comment for how that
-# path was read off the rendered spiffe/spire 0.30.1 chart).
+# path was read off the rendered spiffe/spire 0.30.2 chart).
 _DEFAULT_ENDPOINT_SOCKET = "unix:///spiffe-workload-api/spire-agent.sock"
 
 _cached_spiffe_id: str | None = None

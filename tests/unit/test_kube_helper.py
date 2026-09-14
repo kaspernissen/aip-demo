@@ -15,13 +15,30 @@ branch deterministically.
 """
 from __future__ import annotations
 
+import ast
 import subprocess
+import textwrap
 
 import pytest
 
 from tests.harness.kube import _context_of, absent_or_fail
 
 ARGV = ["kubectl", "--context", "kind-northstar", "get", "svc", "opensearch"]
+
+
+def _reads_returncode(expr) -> bool:
+    """A raw `.returncode` comparison, by structure rather than by name.
+
+    Module-level (M5 Task 1, V9) so the vacuity control below can call the
+    same function the repo walk uses, rather than a second copy that could
+    silently drift from it.
+    """
+    return any(
+        isinstance(inner, ast.Compare)
+        and isinstance(inner.left, ast.Attribute)
+        and inner.left.attr == "returncode"
+        for inner in ast.walk(expr)
+    )
 
 # The functions allowed to decide a skip from a raw `kubectl` exit code, each
 # with the reason it is not ruling M4-R14's defect. Every one is a
@@ -56,6 +73,27 @@ _RAW_RETURNCODE_SKIPS_ALLOWED = {
     ("test_gateway_is_the_only_route.py", "_probe"),
     ("test_gateway_is_the_only_route.py", "datapath_ingress"),
 }
+
+
+def test_the_walk_detects_a_known_offender():
+    """Vacuity control (M5 Task 1, V9): the walk in
+    `test_every_e2e_caller_uses_the_shared_definition_and_not_a_local_copy`
+    would pass green forever if `_reads_returncode` stopped matching anything
+    -- an allow-list of zero real hits is indistinguishable from a broken
+    detector. This asserts the helper still finds a source written to offend
+    it.
+    """
+    offending = textwrap.dedent(
+        """
+        def probe():
+            result = run(["kubectl", "get", "thing"])
+            return result.returncode == 0
+        """
+    )
+    assert _reads_returncode(ast.parse(offending)), (
+        "the walk found nothing in a source written to offend it -- "
+        "it is guarding nothing"
+    )
 
 
 def _result(returncode: int, stderr: str = "", args=None) -> subprocess.CompletedProcess:
@@ -230,7 +268,6 @@ def test_every_e2e_caller_uses_the_shared_definition_and_not_a_local_copy():
     object exists by reading a raw `.returncode`, which is the weaker
     discriminator M4-R14 retired, whatever it is called.
     """
-    import ast
     import pathlib
 
     e2e = pathlib.Path(__file__).resolve().parents[1] / "e2e"
@@ -256,14 +293,11 @@ def test_every_e2e_caller_uses_the_shared_definition_and_not_a_local_copy():
             # an existence check reported those two as defects. Flagging a
             # correct construct teaches readers to edit the code to please the
             # test, which is the failure mode ruling R22 exists for.
-            def _reads_returncode(expr) -> bool:
-                return any(
-                    isinstance(inner, ast.Compare)
-                    and isinstance(inner.left, ast.Attribute)
-                    and inner.left.attr == "returncode"
-                    for inner in ast.walk(expr)
-                )
-
+            #
+            # `_reads_returncode` itself is module-level and has its own
+            # vacuity control below (V9): this walk finding zero offenders
+            # forever if the helper silently stopped matching anything is
+            # exactly the failure mode ruling R22 exists for, one level up.
             for inner in ast.walk(node):
                 decides_a_skip = (
                     isinstance(inner, ast.If)

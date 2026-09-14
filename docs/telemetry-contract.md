@@ -134,6 +134,61 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
+**2026-09-14 (M5 Task 1) — the current figures, and the gate row is
+PREDICTED again.**
+M4 §9 scheduled six behaviour-neutral fixes and three version bumps as one
+carried batch, because every one of them lands inside the staleness guard's
+`gate_paths` below and each alone would have re-labelled the gate row
+`PREDICTED, NOT MEASURED` and demanded its own fresh gate run. This task
+closed that batch in one commit, which is exactly the case the label exists
+for.
+
+Of the nine items, two change what `pytest --collect-only -q tests/`
+collects, both added while mutating this task's own guard fixes rather than
+scoped in advance:
+
+* V9 added a vacuity control,
+  `tests/unit/test_kube_helper.py::test_the_walk_detects_a_known_offender`,
+  asserting the repo walk that guards ruling M4-R14 still finds a source
+  written to offend it — the walk finding nothing forever if its own
+  detector silently stopped matching is indistinguishable from a passing
+  gate.
+* V2's own mutation round found a real gap: removing `"systems", "tools"`
+  from the widened path list left every test in
+  `tests/unit/test_telemetry_contract_counts.py` GREEN, because this task's
+  working tree always has other `gate_paths` files changed too, so
+  `test_a_predicted_gate_row_is_labelled_as_one` cannot tell the difference
+  -- it only asks "did anything change". `test_gate_paths_widened_list_actually_sees_systems_and_tools`
+  closes that gap by checking the list's membership directly and by
+  encoding Step 4's manual, real-commit verification (`716d70c`) as a
+  standing test rather than a one-off.
+
+Neither of the other seven items (one other guard fix, the three pins, and
+the four citation/prose corrections) touches a test body or a fixture. That
+takes the collected count from 350 to **352**, re-measured with
+`.venv/bin/python -m pytest --collect-only -q tests/`.
+
+Bare-suite row, derived from that same collection: 352 collected − 71 gated −
+**0** xfailed = `281 passed, 71 skipped, 0 xfailed`.
+
+The gated figure is unchanged at **71** (both new tests live under
+`tests/unit`, not behind `RUN_BROWSER_TESTS=1`) — measured the same way as
+every figure below it, and reports 71 of 352, with the same per-module
+spread as the row beneath this one. The browser split is unchanged too:
+**3 of the 11 launch a browser** and **8 of the 11 start no browser**.
+
+Gate row: **PREDICTED, NOT MEASURED** — this branch's gate run was at commit `b215426`
+(the M4 final-review fix wave below). This task's commit changes files
+under `gate_paths` (`scripts/`, `tests/`, plus the pinned
+`requirements.txt`/`test_pins.py`/chart-version sites `deploy/` and the
+services carry, all reached by the gate or its image build) without a new
+`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` run to back them. The prediction
+from collection (352 − 1 xfailed = 351) is `351 passed, 1 xfailed`; nothing
+claims that figure was measured against this tree. M5's own scheduled gate
+run is what turns this back into a measurement.
+
+`tests/unit` alone collects **214** (212 before this task).
+
 **2026-09-14 (M4 final-review fix wave) — the current figures, and the gate row
 is MEASURED: ruling M4-R22 bought this milestone a second run, because the
 first one no longer measured a build that exists.**

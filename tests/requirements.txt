@@ -2,7 +2,7 @@
 # and PYSEC-2026-1617/-1618/-3482/-3483 (pip-audit). No pytest-asyncio here:
 # this tree's async calls all go through synchronous anyio.run(), not
 # @pytest.mark.asyncio (see tests/e2e/test_payments_mcp_trace.py).
-pytest==9.0.3
+pytest==9.1.1
 # requests 2.32.3 -> 2.34.2: not one of the two pins this task's brief
 # scoped in (mcp, pytest), but pip-audit against this file (run as part of
 # this task's own Step 2 pass) surfaced it as a *third*, previously-unnoted

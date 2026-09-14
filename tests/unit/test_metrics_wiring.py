@@ -618,7 +618,7 @@ def test_the_prometheus_chart_version_agrees_between_script_and_values():
 
 
 def test_the_deprecated_otlphttp_alias_is_not_used():
-    """The pinned collector image (otel-collector-contrib 0.158.0) accepts
+    """The pinned collector image (otel-collector-contrib 0.160.0) accepts
     `otlphttp` and warns, verbatim:
 
         "otlphttp" alias is deprecated; use "otlp_http" instead

@@ -69,7 +69,7 @@ opentelemetry-instrumentation-starlette==0.65b0
 # pytest<8.4 (its own metadata), so it was already the ceiling on the pytest
 # bump; 1.4.0 is pytest-asyncio's own current release and declares
 # pytest<10,>=8.4, satisfied by 9.0.3.
-pytest==9.0.3
+pytest==9.1.1
 pytest-asyncio==1.4.0
 
 # M2.1 Task 4: workload identity. `svid.py` needs this to fetch a JWT-SVID

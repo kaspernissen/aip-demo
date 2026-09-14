@@ -17,7 +17,7 @@ import importlib.metadata as md
 
 
 def test_pytest_is_pinned_clear_of_pysec_2026_1845():
-    assert md.version("pytest") == "9.0.3"
+    assert md.version("pytest") == "9.1.1"
 
 
 def test_pytest_asyncio_is_pinned_to_the_version_pytest_9_requires():

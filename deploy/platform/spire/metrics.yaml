@@ -3,7 +3,7 @@
 # Why these exist at all: SPIRE 1.15.3 has no OpenTelemetry support -- no OTLP
 # exporter, no tracing (see deploy/platform/spire/values.yaml's telemetry
 # comment for where that was read from). Prometheus metrics on :9988 are the
-# only real telemetry it emits, and `spiffe/spire` 0.30.1 exposes them on the
+# only real telemetry it emits, and `spiffe/spire` 0.30.2 exposes them on the
 # pods' containerPort but gives them no Service: the chart's own
 # `spire-server` Service publishes only grpc/443, and the spire-agent
 # DaemonSet has no Service at all. Without something addressable, the
@@ -29,7 +29,7 @@ metadata:
     northstar.io/plane: platform
 spec:
   # Selector read off the rendered spire-server StatefulSet's pod template
-  # (`helm template spire spiffe/spire --version 0.30.1`), not guessed: the
+  # (`helm template spire spiffe/spire --version 0.30.2`), not guessed: the
   # chart sets nameOverride `server`, so the pod label is
   # app.kubernetes.io/name: server -- NOT "spire-server".
   selector:

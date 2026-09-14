@@ -22,7 +22,7 @@ import importlib.metadata as md
 
 
 def test_pytest_is_pinned_clear_of_pysec_2026_1845():
-    assert md.version("pytest") == "9.0.3"
+    assert md.version("pytest") == "9.1.1"
 
 
 def test_the_scoring_sdk_is_the_version_this_services_call_shape_was_read_from():

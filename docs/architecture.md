@@ -178,7 +178,7 @@ instead, so the document describes the system that is actually deployed:
    hops — **Hop 3a** and **Hop 3b** below. The chain remains one distributed
    trace, with the gateway a visible node in it rather than a fracture.
 4. **Task 4** made workload identity real on that hop: **SPIRE 1.15.3**
-   (charts `spiffe/spire-crds` 0.6.1 then `spiffe/spire` 0.30.1) issues
+   (charts `spiffe/spire-crds` 0.6.1 then `spiffe/spire` 0.30.2) issues
    `settlement-agent` a JWT-SVID and the gateway verifies it. See "Workload
    identity: what is real and what is deferred".
 5. **Task 5** proved the verification is load-bearing rather than
@@ -476,7 +476,7 @@ the six SPIRE sub-images, including the one carrying the hazard recorded under
 |---|---|---|---|
 | `agentgateway` | Rust MCP/A2A/LLM proxy. A **Linux Foundation** project — **not** CNCF | `cr.agentgateway.dev/agentgateway:v1.5.0` (note the leading `v`; the tag `1.5.0` does not exist on that registry, though the binary reports `1.5.0` as its internal version) | Interposed on the MCP hop. Verifies the caller's JWT-SVID (`jwtAuth`), asks the Policy Decision Service about every `tools/call` (`mcpGuardrails`), and forwards to `payments-mcp` **only** if the answer is permit. |
 | `policy-decision-service` | **This project's own code** (Python 3.13, `grpcio`), not third-party — listed here because it is platform machinery rather than an application component. Serves agentgateway's `agentgateway.dev.ext_mcp.ExtMcp` contract, from a proto vendored verbatim at v1.5.0 (`platform/policy-decision-service/proto/ext_mcp.proto`, `d459d88`) | `localhost:5001/northstar/policy-decision-service:dev`, `policy-decision-service.northstar-platform.svc.cluster.local:9100` | Answers permit or deny on caller identity plus amount. Holds the milestone's one rule and emits the `policy.decision` span. Makes no Kubernetes API calls and holds no RBAC; nothing in `northstar-agents` can reach it. |
-| SPIRE server / agent | SPIFFE runtime, chart `spiffe/spire` 0.30.1 from the hardened repo | appVersion SPIRE **1.15.3**; `ghcr.io/spiffe/spire-server:1.15.3`, `spire-agent:1.15.3` | Issues the JWT-SVID. Trust domain `northstar.local`, cluster name `northstar`. |
+| SPIRE server / agent | SPIFFE runtime, chart `spiffe/spire` 0.30.2 from the hardened repo | appVersion SPIRE **1.15.3**; `ghcr.io/spiffe/spire-server:1.15.3`, `spire-agent:1.15.3` | Issues the JWT-SVID. Trust domain `northstar.local`, cluster name `northstar`. |
 | SPIRE CRDs | chart `spiffe/spire-crds` 0.6.1, installed first | — | The `spire.spiffe.io` CRDs the `ClusterSPIFFEID` resources need. |
 | `spire-controller-manager` | ships inside the SPIRE chart | `ghcr.io/spiffe/spire-controller-manager:0.7.0` | Reconciles `ClusterSPIFFEID` resources into real registration entries. |
 | `spiffe-csi-driver` (+ `node-driver-registrar`) | ships inside the SPIRE chart | `ghcr.io/spiffe/spiffe-csi-driver:0.2.7`, `registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.15.0` | Bind-mounts the Workload API socket into `settlement-agent`'s pod at `/spiffe-workload-api/spire-agent.sock`. |
@@ -492,7 +492,7 @@ standalone binary reading one file is both the smaller thing and the more
 legible one for a document like this to describe.
 
 **Two versions of SPIRE, and they are not the same number.** The *chart* is
-0.30.1 and the *product* is 1.15.3. `spiffe/spire` and `spiffe/spire-crds`
+0.30.2 and the *product* is 1.15.3. `spiffe/spire` and `spiffe/spire-crds`
 are independent tag series on the same repository, which is why
 `deploy/platform/spire/values.yaml` pins two chart versions rather than one.
 
@@ -1242,7 +1242,7 @@ What is installed, pinned (`deploy/platform/spire/`):
 | Piece | Version | Role |
 |---|---|---|
 | `spiffe/spire-crds` chart | 0.6.1 | the `spire.spiffe.io` CRDs, installed first |
-| `spiffe/spire` chart | 0.30.1 (appVersion SPIRE 1.15.3) | server, agent, CSI driver, controller-manager, OIDC discovery provider |
+| `spiffe/spire` chart | 0.30.2 (appVersion SPIRE 1.15.3) | server, agent, CSI driver, controller-manager, OIDC discovery provider |
 | trust domain | `northstar.local` | every SPIFFE ID in this system |
 | cluster name | `northstar` | the k8s node attestor's cluster |
 
@@ -1440,7 +1440,7 @@ is how findings get lost. Neither is a defect in this project's own work.
 
 **5. Four of the SPIRE chart's sub-image tags are behind upstream — and the
 standing decision is to leave them alone.** All six sub-images the
-`spiffe/spire` 0.30.1 chart brings resolve to an exact tag or digest and
+`spiffe/spire` 0.30.2 chart brings resolve to an exact tag or digest and
 nothing floats (verified by enumerating every pod's
 `.spec.initContainers` *and* `.spec.containers`; two of the six *are* init
 containers, which is why `containerStatuses` is the wrong thing to

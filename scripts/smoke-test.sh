@@ -366,9 +366,17 @@ if [[ $PYTEST_STATUS -ne 0 ]]; then
   exit "$PYTEST_STATUS"
 fi
 
-# Counted off the summary line rather than by grepping for "SKIPPED", which
-# also matches the word inside a test name or a failure message.
-SKIPPED=$(grep -cE "^[^ ]+::[^ ]+ SKIPPED" "$SKIP_LOG" || true)
+# Counted off pytest's own summary line ("N skipped"), not by grepping for
+# per-test verdict lines ("^path::test SKIPPED"). The per-test form misses a
+# collection-time module skip -- which prints no `path::test` line at all,
+# the largest possible instance of what this check exists for -- and any
+# parametrised id containing a space, which this tree already has
+# (test_no_stray_core_networkpolicy_shadows_the_cilium_one[kind: NetworkPolicy]).
+# The old objection to a bare `grep SKIPPED` -- that it also matches the word
+# inside a test name -- does not apply to the summary line: pytest's own
+# tally is the one place that word means what this check needs it to mean.
+SKIPPED=$(sed -n 's/.*=\{2,\}.*[^0-9]\([0-9][0-9]*\) skipped.*/\1/p' "$SKIP_LOG" | tail -1)
+SKIPPED=${SKIPPED:-0}
 if [[ "$SKIPPED" -ne 0 ]]; then
   echo "" >&2
   echo -e "${RED}The gate passed with ${SKIPPED} skipped test(s), which is a failure.${NC}" >&2

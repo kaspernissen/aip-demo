@@ -21,13 +21,13 @@ CILIUM_HELM_REPO="https://helm.cilium.io/"
 # -- not the older spiffe/helm-charts location, which does not carry these
 # charts at all. Resolved from `helm search repo spiffe/spire --versions` and
 # cross-checked against the upstream releases API: the repo tags PER CHART
-# (`spire-0.30.1` and `spire-crds-0.6.1` are independent tag series), so these
-# two numbers are unrelated to each other. `spire` 0.30.1's appVersion is SPIRE
+# (`spire-0.30.2` and `spire-crds-0.6.1` are independent tag series), so these
+# two numbers are unrelated to each other. `spire` 0.30.2's appVersion is SPIRE
 # 1.15.3. Both versions are also recorded in
 # deploy/platform/spire/values.yaml's header and pinned by
 # tests/unit/test_stage2_spire_config.py so the two cannot drift.
 SPIRE_CRDS_CHART_VERSION="0.6.1"
-SPIRE_CHART_VERSION="0.30.1"
+SPIRE_CHART_VERSION="0.30.2"
 SPIFFE_HELM_REPO="https://spiffe.github.io/helm-charts-hardened/"
 # M4 Task 1: OpenSearch. Verified 2026-09-13 against TWO independent sources,
 # not a local Helm cache -- Artifact Hub's opensearch-project-helm-charts/

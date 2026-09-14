@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: collector
-          image: otel/opentelemetry-collector-contrib:0.158.0
+          image: otel/opentelemetry-collector-contrib:0.160.0
           args: ["--config=/conf/collector-config.yaml"]
           env:
             - name: DASH0_AUTH_TOKEN

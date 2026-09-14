@@ -22,7 +22,7 @@ opentelemetry-exporter-otlp-proto-http==1.44.0
 
 # Test path, matched to the pytest version already current across every
 # other requirements.txt in this repo (post the PYSEC-2026-1845 fix round).
-pytest==9.0.3
+pytest==9.1.1
 
 # The rest of this file's transitive closure, pinned exactly as resolved by
 # `uv pip compile` against the seven direct dependencies above, into this

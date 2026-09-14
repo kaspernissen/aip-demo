@@ -107,7 +107,7 @@ spec:
             # than depending on library defaulting.
             #
             # The path is READ from the chart's rendered output, not assumed:
-            # `helm template spire spiffe/spire --version 0.30.1` renders the
+            # `helm template spire spiffe/spire --version 0.30.2` renders the
             # spiffe-oidc-discovery-provider -- the chart's OWN Workload API
             # consumer -- with `workload_api.socket_path:
             # /spiffe-workload-api/spire-agent.sock`, a volumeMount at
@@ -171,7 +171,7 @@ spec:
               mountPath: /spiffe-workload-api
               readOnly: true
       volumes:
-        # The SPIFFE CSI driver, installed by the `spiffe/spire` 0.30.1 chart
+        # The SPIFFE CSI driver, installed by the `spiffe/spire` 0.30.2 chart
         # (`spiffe-csi-driver.enabled`, default true). It bind-mounts the
         # spire-agent's Workload API socket into this pod, so the agent's
         # kubelet-based workload attestor can identify the calling container

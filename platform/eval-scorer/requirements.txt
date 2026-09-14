@@ -39,7 +39,7 @@ opentelemetry-exporter-otlp-proto-http==1.44.0
 
 # --- test-only, gated by the same advisory-pin discipline as every other
 # service's test_pins.py (agents/settlement-agent/tests/test_pins.py) ---
-pytest==9.0.3
+pytest==9.1.1
 
 # --- the rest of this file's transitive closure ---
 #

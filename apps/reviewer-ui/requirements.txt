@@ -44,7 +44,7 @@ spiffe==0.3.1
 
 # --- test-only, gated by the same advisory-pin discipline as every other
 # service's test_pins.py (agents/settlement-agent/tests/test_pins.py) ---
-pytest==9.0.3
+pytest==9.1.1
 pytest-asyncio==1.4.0
 
 # --- the rest of this file's transitive closure, pinned exactly as resolved

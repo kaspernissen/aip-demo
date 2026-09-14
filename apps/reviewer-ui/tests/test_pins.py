@@ -36,7 +36,7 @@ def test_spiffe_is_pinned_to_the_version_settlement_agents_svid_py_uses():
 
 
 def test_pytest_is_pinned():
-    assert md.version("pytest") == "9.0.3"
+    assert md.version("pytest") == "9.1.1"
 
 
 def test_pytest_asyncio_is_pinned():

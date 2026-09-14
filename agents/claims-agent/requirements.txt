@@ -42,7 +42,7 @@ opentelemetry-instrumentation-starlette==0.65b0
 # in Task 7 (settlement-agent's pytest advisory), applied here because Task 7
 # only touched the two files its own brief named and this service's copy of
 # the same advisory went unnoticed until the final review.
-pytest==9.0.3
+pytest==9.1.1
 pytest-asyncio==1.4.0
 # pytest 9.0.3 declares pygments>=2.7.2 as an unconditional dependency, so it
 # is now a pinned transitive here. pytest==8.3.4 declared it too, but only

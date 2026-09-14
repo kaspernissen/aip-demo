@@ -28,7 +28,7 @@ opentelemetry-instrumentation-httpx==0.65b0
 # @pytest.mark.asyncio (verified: `grep -rn "async def test_\|pytest.mark.asyncio"
 # tools/payments-mcp/tests/` finds none), so there is no paired plugin bump to
 # make.
-pytest==9.0.3
+pytest==9.1.1
 
 # M2.1 Task 6 (spec §11): the rest of this file's transitive closure, left
 # floating since this file was created -- this is the file the spec's §11

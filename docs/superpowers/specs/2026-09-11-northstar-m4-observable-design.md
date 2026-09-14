@@ -541,7 +541,7 @@ Recorded so a later reader can tell what was measured from what was reasoned.
   existing pipeline (M1 spec §13, spike-verified).
 - Gap 4: `northstar.claim.id` does not cross the MCP boundary
   (`docs/telemetry-contract.md`).
-- Stage 4's ~8 GB budget (M1 spec §12).
+- Stage 4's ~8 GB budget (M1 spec §9, "Cluster and deployment", row 5).
 
 **Not yet established, and gating §3:** whether the collector's `opensearch`
 exporter can carry traces usefully, or whether Data Prepper is required.

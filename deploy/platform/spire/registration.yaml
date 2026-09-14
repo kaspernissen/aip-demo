@@ -8,7 +8,7 @@
 #
 # These are `ClusterSPIFFEID` custom resources, reconciled into real SPIRE
 # registration entries by the spire-controller-manager that ships inside the
-# `spiffe/spire` 0.30.1 chart (`spire-server.controllerManager.enabled`,
+# `spiffe/spire` 0.30.2 chart (`spire-server.controllerManager.enabled`,
 # default true). They are declarative and idempotent, which is what lets
 # scripts/setup-kind.sh apply them on every run; `spire-server entry create`
 # is neither, and its entries live only in the server's datastore where

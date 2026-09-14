@@ -36,7 +36,7 @@ from spiffe import WorkloadApiClient
 _REFRESH_MARGIN_SECONDS = 30
 
 # Default matches deploy/k8s/settlement-agent.yaml's SPIFFE_ENDPOINT_SOCKET,
-# which in turn matches the path the `spiffe/spire` 0.30.1 chart's own
+# which in turn matches the path the `spiffe/spire` 0.30.2 chart's own
 # Workload API consumers use (read from the chart's rendered output; see that
 # manifest's comment for how, and for the two similar-looking paths in the
 # chart's values that are NOT this one).

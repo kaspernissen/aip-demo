@@ -117,9 +117,9 @@ DOCS_PUBLISHING_SPIFFE_IDS = (
 # Resolved from `helm search repo spiffe/spire --versions` against the HARDENED
 # charts repo, and cross-checked against that repo's upstream releases API
 # (which tags per chart, so these two version series are independent):
-# spire 0.30.1 (appVersion SPIRE 1.15.3) and spire-crds 0.6.1 are each the
+# spire 0.30.2 (appVersion SPIRE 1.15.3) and spire-crds 0.6.1 are each the
 # newest.
-PINNED_SPIRE_CHART_VERSION = "0.30.1"
+PINNED_SPIRE_CHART_VERSION = "0.30.2"
 PINNED_SPIRE_CRDS_CHART_VERSION = "0.6.1"
 PINNED_SPIRE_APP_VERSION = "1.15.3"
 HARDENED_CHARTS_REPO = "https://spiffe.github.io/helm-charts-hardened/"
@@ -218,7 +218,7 @@ REGISTERED_CLUSTER_SPIFFEIDS = {
 }
 # The workload-facing Workload API socket, as READ from the pinned chart's
 # rendered output rather than assumed: `helm template spire spiffe/spire
-# --version 0.30.1` renders the spiffe-oidc-discovery-provider (the chart's own
+# --version 0.30.2` renders the spiffe-oidc-discovery-provider (the chart's own
 # Workload API consumer) with `workload_api.socket_path:
 # /spiffe-workload-api/spire-agent.sock`, a `mountPath: /spiffe-workload-api`,
 # and a `csi.spiffe.io` volume.

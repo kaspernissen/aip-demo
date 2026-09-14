@@ -30,6 +30,9 @@ do, since a stale contract paragraph used to argue for exactly that -- see
 the B1 finding in task-8-review.md) fails here rather than shipping silently.
 """
 import re
+import shlex
+import subprocess
+import tempfile
 from pathlib import Path
 
 SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "smoke-test.sh"
@@ -322,6 +325,23 @@ def test_the_gate_fails_when_the_suite_skips_anything():
     that make the check real rather than decorative: the output is captured,
     pytest's own exit status survives the pipe, and a non-zero skip count
     exits non-zero.
+
+    **M5 Task 1 (V5) folded a fourth check in here, of the *property* rather
+    than of a literal regex.** This test used to also pin the exact string
+    `grep -cE "^[^ ]+::[^ ]+ SKIPPED"` -- the per-test verdict form. That form
+    has a real gap: a collection-time module skip prints no `path::test` line
+    at all (the largest possible instance of what this check exists for), and
+    neither does a parametrised id containing a space, which this tree
+    already has
+    (`test_no_stray_core_networkpolicy_shadows_the_cilium_one[kind: NetworkPolicy]`).
+    Pinning that literal string would have kept this test green while the
+    gate it guards silently undercounted skips. So instead this extracts
+    whatever expression the script actually uses to compute `SKIPPED` and
+    evaluates it against two synthetic pytest-shaped logs: one whose only
+    skip is a collection-time module skip, and one whose only skip carries a
+    space in its parametrised id. Both must be counted as 1 -- the same shape
+    as Step 6's scratch-file check, enforced here on every future edit rather
+    than once by hand.
     """
     text = _effective_script()
 
@@ -337,16 +357,56 @@ def test_the_gate_fails_when_the_suite_skips_anything():
         "nothing in the gate looks for skipped tests any more (M4 final "
         "review, finding L2)"
     )
-    assert re.search(r'grep\s+-cE\s+"\^\[\^ \]\+::\[\^ \]\+ SKIPPED"', text), (
-        "the skip count must be taken off pytest's own per-test verdict lines "
-        "(`path::test SKIPPED`), not a bare `grep SKIPPED` -- the bare form "
-        "also matches the word inside a test name, a docstring echoed in a "
-        "failure message, or this very check's own error text, and would fail "
-        "the gate for saying the word."
-    )
     assert re.search(r'\$SKIPPED"?\]?\]?\s*-ne\s*0|"\$SKIPPED"\s*-ne\s*0', text), (
         "the gate must exit non-zero when the skip count is not zero"
     )
+
+    raw_text = _script_text()
+    match = re.search(r'SKIPPED=\$\(([^\n]+)\)\n', raw_text)
+    assert match, (
+        "expected a `SKIPPED=$(...)` assignment in scripts/smoke-test.sh "
+        "computing the skip count"
+    )
+    pipeline = match.group(1)
+
+    module_skip_log = (
+        "collected 5 items\n"
+        "tests/unit/test_thing.py::test_a PASSED\n"
+        "tests/unit/test_thing.py::test_b PASSED\n"
+        "SKIPPED [1] tests/unit/test_module_skip.py:3: module needs a live cluster\n"
+        "========== 4 passed, 1 skipped in 0.42s ==========\n"
+    )
+    space_id_log = (
+        "collected 5 items\n"
+        "tests/unit/test_a.py::test_a PASSED\n"
+        "tests/unit/test_b.py::test_no_stray_core_networkpolicy_shadows_the_cilium_one[kind: NetworkPolicy] SKIPPED\n"
+        "========== 4 passed, 1 skipped in 0.42s ==========\n"
+    )
+
+    for name, log_text in (
+        ("collection-time module skip", module_skip_log),
+        ("space-containing parametrised id", space_id_log),
+    ):
+        with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as fh:
+            fh.write(log_text)
+            log_path = fh.name
+        try:
+            result = subprocess.run(
+                ["bash", "-c", f'SKIP_LOG={shlex.quote(log_path)}; SKIPPED=$({pipeline}); echo "$SKIPPED"'],
+                capture_output=True, text=True, timeout=10,
+            )
+        finally:
+            Path(log_path).unlink()
+        assert result.returncode == 0, (
+            f"the extracted SKIPPED pipeline failed on the {name} case:\n"
+            f"{result.stderr}"
+        )
+        reported = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
+        assert reported == "1", (
+            f"the {name} case has 1 skip in pytest's own summary line, but "
+            f"the gate's SKIPPED pipeline reported {reported!r} for it:\n"
+            f"{log_text}"
+        )
 
 
 def test_the_skip_check_cannot_be_satisfied_by_a_run_that_never_happened():
@@ -365,7 +425,7 @@ def test_the_skip_check_cannot_be_satisfied_by_a_run_that_never_happened():
     )
     run_at = text.index('tee "$SKIP_LOG"')
     status_at = text.index("PYTEST_STATUS")
-    count_at = text.index("SKIPPED=$(grep")
+    count_at = text.index("SKIPPED=$(")
     assert run_at < status_at < count_at, (
         "the order must be: run and capture, then check pytest's exit status, "
         "then count skips. Counting skips before failing on a non-zero exit "

@@ -56,12 +56,12 @@ processors:
   # WHAT BREAKS WITHOUT IT, measured on this cluster 2026-09-13:
   # the `policy.decision` span sets BOTH `policy.decision` (a string) and
   # `policy.decision.retryable` (a bool) -- ATTR_DECISION and ATTR_RETRYABLE in
-  # platform/policy-decision-service/pds/telemetry.py, as ATTR_DECISION and
-  # ATTR_RETRYABLE -- cited by NAME rather than by line, the one form that
-  # survives an edit to the file above them. The line numbers here were 32,40
-  # and were wrong by M4's final review: those are SPAN_NAME and ATTR_CURRENCY.
-  # In the comment explaining the milestone's central mechanism. OpenSearch expands
-  # dotted keys into objects at index time, so one document would need
+  # platform/policy-decision-service/pds/telemetry.py -- cited by NAME rather
+  # than by line, the one form that survives an edit to the file above them.
+  # The line numbers here were 32,40 and were wrong by M4's final review:
+  # those are SPAN_NAME and ATTR_CURRENCY, in the comment explaining the
+  # milestone's central mechanism. OpenSearch expands dotted keys into
+  # objects at index time, so one document would need
   # `attributes.policy.decision` to be a scalar and an object at once. It
   # refuses the bulk item permanently, per document, forever:
   #   kubectl -n observability logs deploy/otel-collector --since=48h \
@@ -156,7 +156,7 @@ exporters:
   # its traces pipeline goes to otlp/dash0 and otlp/jaeger, never to
   # OpenSearch. Reuse was tried against traces first anyway (the user's own
   # instruction), and no Data Prepper was needed: the opensearchexporter for
-  # THIS pinned collector image (otel/opentelemetry-collector-contrib:0.158.0,
+  # THIS pinned collector image (otel/opentelemetry-collector-contrib:0.160.0,
   # see .env) supports Traces in its default `ss4o` mapping mode -- the prior
   # art's repo just never exercised the traces half.
   #
@@ -211,7 +211,7 @@ exporters:
   # than trimmed so this block matches the prior art it came from, and named as
   # inert here so nobody later reads it as evidence that a TLS listener exists.
   # `otlp_http/`, not the reference config's `otlphttp/`. The pinned collector
-  # image (otel/opentelemetry-collector-contrib:0.158.0, see .env) accepts both
+  # image (otel/opentelemetry-collector-contrib:0.160.0, see .env) accepts both
   # and says so on startup, verbatim from
   # `kubectl -n observability logs deploy/otel-collector`:
   #
