@@ -22,13 +22,19 @@ imported at stage 4) reconstructs both claims' audit trails out of spans the
 system already emitted — who decided, under which rule, at which limit,
 approved by whom, executed under which identity, and where the money went — and
 every query it makes is asserted by `tests/e2e/test_evidence_view.py` rather
-than eyeballed. **Policy-adherence scores** land per settlement as OTel spans
-inside the trajectory they judge, and a deliberately mis-routed run scores
-`0.0 retry-after-refusal` where the compliant one scores `1.0` — the
-anti-vacuity property that makes the other four scores worth reading.
+than eyeballed. **Policy-adherence scores** are written as OTel
+spans inside the trajectory they judge, and a deliberately mis-routed run
+scores `0.0 retry-after-refusal` where the compliant one scores `1.0` — the
+anti-vacuity property that makes the other four scores worth reading. They are
+**pull-only**: `platform/eval-scorer` scores a claim when something asks it to,
+over `POST /score`, and nothing scores a settlement as it happens.
+`./scripts/start-demo.sh` forwards it on 18300 at stage 4; `docs/architecture.md`'s
+"See it yourself" step 10 is the walkthrough.
 
-**What M4 measured and published rather than assumed.** Of the six GenAI agent
-metrics the OpenTelemetry conventions define, exactly **one** is emitted by
+**What M4 measured and published rather than assumed.** Of the six GenAI
+metrics M4's spec §6 puts in scope — a chosen subset of the **twelve** the
+OpenTelemetry conventions define, and only three of the six are *agent*
+metrics — exactly **one** is emitted by
 anything in this system (`gen_ai.client.token.usage`, from PydanticAI); the
 other five are published as gaps, with the source-level sweep in
 [`docs/upstream-findings.md`](docs/upstream-findings.md) Finding 12 that says
@@ -51,7 +57,10 @@ policy stops at the agent plane** (of `northstar-platform`'s six Cilium
 endpoints only the Policy Decision Service enforces anything, and nothing in the
 cluster has egress enforcement outside `northstar-agents`), and **`claims-agent`
 and `customer-ui` share one SPIFFE ID**. Both are pre-existing, both are
-measured, and both are M5's. See §9 of
+measured, and both are M5's. A third is M4's own: **`pytest` is pinned one
+release behind on purpose** (9.0.3, against 9.1.1) across seven
+`requirements.txt` files, deferred rather than drifted, and scheduled first
+after M4 merges. See §9 of
 [the M4 design spec](docs/superpowers/specs/2026-09-11-northstar-m4-observable-design.md).
 
 ---
@@ -109,8 +118,13 @@ cp .env.template .env
 # traced -- 7 application pods at stage 1, 9 at stage 2, where agentgateway
 # and the Policy Decision Service join them, and 11 at stage 3, where
 # reviewer-ui and senior-settlement-agent do (alongside SPIRE's four and
-# Cilium's, which are platform rather than application). Counted off a live
-# stage-3 cluster with `kubectl get pods -A`, not incremented on paper. The
+# Cilium's, which are platform rather than application), and 15 at stage 4,
+# where eval-scorer, OpenSearch, OpenSearch Dashboards and Prometheus join
+# them. Counted off live clusters with `kubectl get pods -A`, not incremented
+# on paper; the stage-4 figure was counted 2026-09-14 during M4's final-review
+# fix wave, on the same cluster the 5.06 GiB reading below came from. That line
+# is what the review added: this comment stopped at stage 3 two lines above a
+# `--stage 4` command. The
 # key is deliberately optional at the Kubernetes level, but the
 # FIRST claim submission fails at the model call — the one thing this
 # milestone exists to demonstrate. setup-kind.sh prints SET/EMPTY for this
@@ -213,8 +227,19 @@ Then open:
 | Surface | URL |
 |---|---|
 | Customer UI | http://localhost:8080 |
-| Reviewer UI (stage 3 only) | http://localhost:8081 |
+| Reviewer UI (stage 3 and above) | http://localhost:8081 |
 | Jaeger | http://localhost:16686 |
+| OpenSearch Dashboards — the evidence view (stage 4) | http://localhost:5601 |
+| Prometheus (stage 4) | http://localhost:9090 |
+
+The first three are kind host ports and need nothing else running. The last two
+are port-forwards `./scripts/start-demo.sh` owns; `setup-kind.sh` says so at the
+end of a stage-4 run. (This table listed only the first three, and called the
+reviewer UI "stage 3 **only**", until M4's final review — `setup-kind.sh` gates
+that UI on `-ge 3` and carries a comment recording that this exact wording was
+corrected *there* in M4 Task 1. The README copy was missed, which is the
+argument for `docs/architecture.md`'s equivalent table being the one a guard
+now checks.)
 
 The reviewer UI is where M3 is actually visible. Submit the pre-filled €6,200
 claim in the customer UI, watch it come back refused, then open the reviewer UI:
@@ -279,9 +304,13 @@ metric exists only if a model call happened minutes earlier),
 4), 4 of the 6 in `tests/e2e/test_policy_denial.py`, and
 `tests/e2e/test_evidence_view.py` (3, M4 Task 3).
 The three partly-gated ones are `test_supervised.py`, `test_policy_denial.py`
-and `test_prometheus_metrics_ingest.py`. Only **one** of the eleven needs a
-browser; the other ten ride the flag because they spend model tokens or need
-something that does.
+and `test_prometheus_metrics_ingest.py`. **3 of the 11 launch a browser** —
+`test_browser_root_span.py`, `test_policy_denial.py` and `test_supervised.py` —
+and **8 of the 11 start no browser**, riding the flag because they spend model
+tokens or need something that does. That split is derived from `chromium.launch(`
+in `tests/e2e` by the same guard that checks the 71; it was published here and
+in two places in the telemetry contract as "only one", by the pass whose job was
+to catch exactly that.
 `test_policy_denial.py`'s two ungated tests spend nothing: one reads source
 structurally, and the other drives two direct MCP calls with different SPIFFE
 identities and no model call at all. `test_supervised.py`'s one ungated test is
@@ -419,7 +448,7 @@ report the gaps we find. See [`docs/telemetry-contract.md`](docs/telemetry-contr
 
 - [`docs/architecture.md`](docs/architecture.md) — components, hops, protocols, and the trace, walked end to end
 - [`docs/telemetry-contract.md`](docs/telemetry-contract.md) — verified instrumentation and convention gaps
-- [`docs/upstream-findings.md`](docs/upstream-findings.md) — eleven consolidated, filing-ready findings against `a2a-sdk`, FastMCP, `mcp`, agentgateway v1.5.0 and the OpenTelemetry Python/Go pair, **none of them filed**: ten still open (one of those already fixed upstream but not adoptable here — Finding 7's HTTP-attribute half, merged but not yet released) and one closed on discovery. M2.2 added three, all about agentgateway's ExtMCP policy hook. **M3 added one finding and one measurement.** The finding is Finding 11: `opentelemetry-sdk` 1.44.0 emits a W3C Trace Context **Level 2** flag byte (`-03`) that `go.opentelemetry.io/otel` v1.41.0 rejects outright, so the hop silently starts a second trace rather than failing — found while fixing it, proved with a one-hex-digit A/B control, and upstream's fix (otel-go v1.42.0, PR #7834) has since been taken: `payments-api` is on otel-go v1.46.0 and `otelhttp v0.71.0`, built on `golang:1.27.1-alpine`, with `go.mod` declaring `go 1.25.0` and pinning `toolchain go1.27.1`. The measurement is OQ-U1, "can a JSON-RPC *batch* smuggle a `tools/call` past the gateway's policy hook", now closed: it cannot, on this transport — agentgateway v1.5.0 rejects the batch at deserialization with HTTP 400 and no decision span is ever created. Nothing to file there, because failing closed is the right direction
+- [`docs/upstream-findings.md`](docs/upstream-findings.md) — **twelve** consolidated, filing-ready findings against `a2a-sdk`, FastMCP, `mcp`, `pydantic-ai-slim`, agentgateway v1.5.0 and the OpenTelemetry Python/Go pair, **none of them filed**: **eleven** still open (one of those already fixed upstream but not adoptable here — Finding 7's HTTP-attribute half, merged but not yet released) and one closed on discovery. M4 added Finding 12, whose principal subject is `pydantic-ai-slim`. (This sentence read "eleven … ten still open" and omitted `pydantic-ai-slim` until M4's final review. It is the **second** time this exact line has gone stale against the file it counts — the M3 correction is quoted immediately below — which is why the fix this time is to name the milestone that adds each finding, and why `docs/upstream-findings.md`'s own header carries the count a reader should trust.) M2.2 added three, all about agentgateway's ExtMCP policy hook. **M3 added one finding and one measurement.** The finding is Finding 11: `opentelemetry-sdk` 1.44.0 emits a W3C Trace Context **Level 2** flag byte (`-03`) that `go.opentelemetry.io/otel` v1.41.0 rejects outright, so the hop silently starts a second trace rather than failing — found while fixing it, proved with a one-hex-digit A/B control, and upstream's fix (otel-go v1.42.0, PR #7834) has since been taken: `payments-api` is on otel-go v1.46.0 and `otelhttp v0.71.0`, built on `golang:1.27.1-alpine`, with `go.mod` declaring `go 1.25.0` and pinning `toolchain go1.27.1`. The measurement is OQ-U1, "can a JSON-RPC *batch* smuggle a `tools/call` past the gateway's policy hook", now closed: it cannot, on this transport — agentgateway v1.5.0 rejects the batch at deserialization with HTTP 400 and no decision span is ever created. Nothing to file there, because failing closed is the right direction
 
   > **Corrected 2026-09-11.** This entry read *"ten consolidated, filing-ready findings … nine still open (one of those already fixed upstream but unreleased) and one closed on discovery … **M3 added none** — it added a measurement instead"* until Finding 11 was written up. M3's final fix round had already measured that finding and fixed it, recording it in source comments, `docs/architecture.md` and `docs/telemetry-contract.md` — every place except the ledger this line points at. The retired claim is quoted and dated rather than overwritten, the way the rest of this milestone's corrections do it.
 

@@ -62,6 +62,23 @@ SPAN_PAGE_SIZE = 1000
 # collect two runs.
 DEFAULT_WINDOW_S = 900
 
+# The terms-aggregation cap for step 1, and — unlike every other constant in
+# this file until the M4 final review — a measured one.
+#
+# **Measured 2026-09-14 against the live index**, not estimated: a single
+# `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` (417s end to end) contributes
+# **8** distinct traces carrying `CLM-1842` — the whole gated suite drives more
+# than one supervised pair. So `DEFAULT_WINDOW_S`'s 15 minutes holds about
+# **2.5 gate runs**, not the ten supervised settlements a per-pair estimate
+# suggests. Unbounded, the same index answers **57** distinct traces for that
+# claim across 2,263 documents, and the aggregation below returns 20 of them
+# with `sum_other_doc_count: 874`.
+#
+# That measurement is the argument for the guard rather than for a bigger
+# number. Raising the cap moves the cliff; it does not remove it, and a cap
+# that cannot be exceeded is not available at any size while `CLM-1842` is a
+# fixed constant this repo's suite re-drives forever. 20 is kept, and
+# exceeding it is now a loud failure.
 MAX_TRACES_PER_CLAIM = 20
 
 
@@ -119,8 +136,35 @@ class OpenSearchClient:
         return payload
 
     def trace_ids_for_claim(self, claim_id: str, since_ms: int) -> list[str]:
-        """Step 1 of the join. Ordered by when each trace started."""
-        buckets = self.search(
+        """Step 1 of the join. Ordered by when each trace started.
+
+        **Refuses a truncated read, symmetrically with `spans_in_traces`.**
+        Until the M4 final review this method capped the terms aggregation at
+        `MAX_TRACES_PER_CLAIM` and inspected nothing, thirty lines above a
+        method that refuses to score a truncated page and says why. Step 2 of
+        the join would not score an incomplete read; step 1 truncated silently.
+
+        **And it truncates in the direction that reads as compliant.** A terms
+        aggregation orders buckets by `doc_count` descending before the `size`
+        cut, so the trace preferentially dropped is the *smallest* — which in a
+        supervised pair is the approval trace (73 documents against the
+        refusal trace's 141–145, recorded above). That trace is where the
+        second `execute_payment` decision lives, and its absence is exactly
+        what inverted `stopped_when_refused` from `0.0 retry-after-refusal` to
+        `1.0 compliant` during M4 Task 4's fix round. The milestone found that
+        failure mode, named it "a partial trajectory always reads higher",
+        hardened the *test* against it, and left this hole open one layer down.
+
+        **What this does not rely on.** In today's measured shape step 2 would
+        often catch it anyway — 20 traces at ~70 documents each is 1,400
+        against `SPAN_PAGE_SIZE`'s 1,000 — but that is arithmetic coincidence
+        between two constants chosen for different reasons, not a design. A
+        claim whose traces average under 50 documents (a denial-only path, a
+        shorter trajectory, a future trimmed span set) fits 20 traces inside
+        one page and truncates here in perfect silence. The guard is placed
+        where the truncation happens.
+        """
+        aggregation = self.search(
             {
                 "size": 0,
                 "query": {
@@ -145,7 +189,46 @@ class OpenSearchClient:
                     }
                 },
             }
-        )["aggregations"]["traces"]["buckets"]
+        )["aggregations"]["traces"]
+        buckets = aggregation["buckets"]
+
+        # Buckets OpenSearch had to drop to honour `size`. Any value above zero
+        # means this list is not the claim's trajectory, it is the busiest part
+        # of it.
+        dropped = aggregation.get("sum_other_doc_count") or 0
+        if dropped:
+            raise TrajectoryTruncated(
+                f"claim {claim_id!r} touched more than "
+                f"{MAX_TRACES_PER_CLAIM} traces in this window: the "
+                f"aggregation returned {len(buckets)} trace(s) and dropped "
+                f"{dropped} further document(s) (`sum_other_doc_count`). A "
+                "terms aggregation drops the SMALLEST buckets, which in a "
+                "supervised pair is the approval trace -- the one holding the "
+                "second execute decision -- so scoring what came back would "
+                "report a trajectory that stopped at the refusal as "
+                "compliant. No score is emitted. Narrow the window "
+                f"(currently since={since_ms}), or score a claim id that is "
+                "not re-driven by the suite."
+            )
+
+        # Non-zero only when the index has more than one shard and a bucket's
+        # count could be wrong: the ordering that decides *which* traces the
+        # cut keeps is then itself approximate, so "nothing was dropped" stops
+        # being something this read can assert. Measured 0 on this
+        # single-shard index; checked anyway, because the value that makes it
+        # non-zero is a chart setting nobody would connect to a score.
+        error_bound = aggregation.get("doc_count_error_upper_bound") or 0
+        if error_bound:
+            raise TrajectoryTruncated(
+                f"claim {claim_id!r}: the trace aggregation reports "
+                f"`doc_count_error_upper_bound` {error_bound}, so bucket "
+                "counts are approximate and the ordering that decides which "
+                "traces survive the `size` cut cannot be trusted. A "
+                "trajectory assembled from an approximate bucket list may be "
+                "missing a trace without saying so, and a missing trace reads "
+                "as compliant. No score is emitted."
+            )
+
         return [
             bucket["key"]
             for bucket in sorted(buckets, key=lambda b: b["first"]["value"])

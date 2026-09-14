@@ -121,8 +121,11 @@ Usage: setup-kind.sh [--stage N]
                           settlement's trajectory against the five
                           policy-adherence properties -- which completes the
                           stage. The one-line summary above says
-                          "+ OpenSearch, Prometheus" and this paragraph is
-                          where the rest of the stage is listed; M4 Task 5's
+                          "+ OpenSearch, Prometheus, eval-scorer" and this
+                          paragraph is where the detail lives; that sentence
+                          still quoted the PRE-Task-5 summary until M4's final
+                          review -- the doc pass fixed the summary and left
+                          the sentence quoting what it used to say; M4 Task 5's
                           doc pass added this sentence, the same doc-lag the
                           M3 note two paragraphs up records for stage 3.
                           Runs on stage 3's cluster config

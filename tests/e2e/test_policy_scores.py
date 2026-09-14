@@ -143,6 +143,19 @@ SCORE_TIMEOUT_S = 120
 # force-flushes before responding, which removes the *exporter's* delay but
 # not the index's refresh interval.
 SPAN_SETTLE_TIMEOUT_S = 120.0
+
+# How long the decision count must hold still before a trajectory is believed
+# complete (M4 final review, finding M7). Sized against the two indexing races
+# this file has actually measured: the score-span race was resolved by a
+# re-read "minutes later", and the decisionCount 4 -> 5 race that inverted the
+# exit criterion closed inside one 3-second poll. 9s is three poll intervals --
+# comfortably above the observed race and small enough that it costs the gate
+# about 18 seconds across the two scored trajectories.
+#
+# It is a quiescence window, not a fixed wait: if the count is still moving the
+# poll goes round again, so a slower cluster costs time rather than a wrong
+# answer, bounded by SPAN_SETTLE_TIMEOUT_S above.
+QUIESCENCE_S = 9.0
 # Clock-skew allowance on the window's lower bound; kind runs in Docker on
 # this host so the two clocks are the same one. Small on purpose: the window
 # is what keeps two runs of the fixed `CLM-1842` apart.
@@ -407,9 +420,38 @@ def _score(
     second trace begins with an A2A server span and ends with the decision
     that matters; it is *visible* long before it is *complete*. The decisions
     are what every scorer actually reads, so they are what is waited on. Five
-    is the floor for both paths here: propose, the refused execute, the
+    is the count for both paths here: propose, the refused execute, the
     narrated refusal, the approval read, and the second execute (permitted for
     the senior, refused for the junior).
+
+    **M4 final review, finding M7: a threshold is a higher floor, not a proof,
+    and this one was sound in only one direction.** `decisionCount >= 5`
+    behaves well when a path legitimately has *four* -- the condition never
+    holds, the poll times out, and the failure below names both conditions and
+    the last row eval-scorer returned. It behaved badly when a path
+    legitimately has *six*: the poll returned the instant the fifth decision
+    was indexed, the sixth might not be, and the original failure mode came
+    back intact, because a mediated call that has not arrived is again read as
+    "the agent stopped". The `emitted["scores"] == row["scores"]` re-read below
+    was the only mitigation and both calls happen milliseconds apart, so a span
+    indexed two seconds later escaped both.
+
+    Two things close it, and neither alone would:
+
+      * **Quiescence.** Once the threshold is met the count must stay unchanged
+        across a `QUIESCENCE_S` gap before anything is emitted. This is what
+        catches the late sixth decision. No threshold can, at any value,
+        because a threshold fires on arrival and the question is completion.
+      * **Equality, once quiet.** A settled count that is not
+        `expected_decisions` means the trajectory's *shape* changed -- a new
+        tool, an extra policy hop, a platform-mediated retry -- and that must
+        redden loudly rather than pass short or pass long. `>=` would score a
+        six-decision trajectory as though it were five and say nothing, which
+        is how a future change silently re-opens exit criterion 4.
+
+    Cost: `QUIESCENCE_S` of extra wall time per scored trajectory, paid inside
+    the gate, against a silent compliant score on an incomplete trajectory --
+    the exact failure this milestone's own fix round discovered.
     """
     deadline = time.time() + SPAN_SETTLE_TIMEOUT_S
     row: dict = {}
@@ -419,6 +461,29 @@ def _score(
             len(row["traceIds"]) >= expected_traces
             and row["decisionCount"] >= expected_decisions
         ):
+            # The trajectory looks complete. Prove it stopped growing before
+            # believing it: a read taken the instant a threshold is crossed
+            # cannot tell "finished" from "still arriving".
+            before = row
+            time.sleep(QUIESCENCE_S)
+            row = _post_score(claim_id, emit=False)
+            if row["decisionCount"] != before["decisionCount"]:
+                # Still arriving. Go round rather than score a moving target;
+                # the outer deadline bounds this.
+                continue
+            assert row["decisionCount"] == expected_decisions, (
+                f"the trajectory for {claim_id} settled at "
+                f"{row['decisionCount']} platform-mediated decisions and this "
+                f"path expects exactly {expected_decisions}. It stopped "
+                f"changing across {QUIESCENCE_S:.0f}s, so this is not the "
+                "indexing race -- the shape of the trajectory has changed. "
+                "Above the expectation means a mediated call exists that no "
+                "scorer accounts for; below means one stopped happening. "
+                "Either way the five scores are being computed over a "
+                "different journey than the one they were written for, and "
+                "`>=` passed exactly this silently until M4's final review "
+                f"(finding M7).\n{json.dumps(row, indent=2)}"
+            )
             assert row["anchorSpanId"] is None, (
                 "a non-emitting read must write nothing and therefore report "
                 f"no anchor: {json.dumps(row, indent=2)}"

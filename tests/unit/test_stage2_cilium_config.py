@@ -731,7 +731,52 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
     ]
     checked.append((REPO_ROOT / "docs" / "telemetry-contract.md", 1))
 
+    # **M4 final review, suspected finding S2: `tests/` was outside this guard,
+    # and it was the largest remaining operator-facing surface.** A skip or
+    # failure message is read by an operator at the exact moment something is
+    # wrong, and six of them told that operator to run `--stage 2` or
+    # `--stage 3` on what is, by this constant, a stage-4 cluster. That is not
+    # a harmless under-build: `scripts/setup-kind.sh` line "STAGE -lt 4" drops
+    # every stage-4-only region from the collector config -- the OpenSearch
+    # trace branch and the Prometheus metrics exporter -- so following the
+    # remedy printed by a *test* would silently disable the telemetry the
+    # milestone is named for. All six now say `--stage 4`.
+    #
+    # The needle is narrower here than for scripts and README, and the
+    # narrowing is the ruling rather than a convenience. Those files are read
+    # top to bottom, so any `--stage N` in them is an instruction. A test
+    # module is mostly prose *about* the stages -- "the ordering
+    # `setup-kind.sh --stage 2` must preserve" is a correct sentence that must
+    # stay correct forever -- and a guard that reddened on it would be a guard
+    # people satisfy by rewriting true sentences (ruling R22). So only the
+    # imperative form is checked: `run`/`re-run` immediately before the
+    # command, which is what an operator is told to type.
+    test_files = sorted((REPO_ROOT / "tests").glob("**/*.py"))
+    assert len(test_files) >= 20, (
+        "tests/**/*.py matched only "
+        f"{len(test_files)} files, so this half of the guard is covering "
+        "almost nothing -- has the suite moved?"
+    )
+
     offenders = []
+    for path in test_files:
+        lines = path.read_text().splitlines()
+        for i, line in enumerate(lines):
+            match = re.search(
+                # `(?:[Rr]e-?)?run`, not `[Rr]e-?run`: the first draft of this
+                # pattern required the "re", so it matched the one "Re-run"
+                # site and silently ignored the five plain "run" ones -- and
+                # the mutation round caught it, GREEN, against a test whose
+                # remedy had been put back to `--stage 3`.
+                r"(?:[Rr]e-?)?run\s+\.?/?scripts/setup-kind\.sh --stage (\d+)", line
+            )
+            if not match or int(match.group(1)) >= CURRENT_STAGE:
+                continue
+            offenders.append(
+                f"{path.relative_to(REPO_ROOT)}:{i + 1} (stage "
+                f"{match.group(1)}): {line.strip()}"
+            )
+
     for path, stage in checked:
         if not path.exists():
             continue

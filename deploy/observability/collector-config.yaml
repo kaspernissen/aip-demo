@@ -56,7 +56,11 @@ processors:
   # WHAT BREAKS WITHOUT IT, measured on this cluster 2026-09-13:
   # the `policy.decision` span sets BOTH `policy.decision` (a string) and
   # `policy.decision.retryable` (a bool) -- ATTR_DECISION and ATTR_RETRYABLE in
-  # platform/policy-decision-service/pds/telemetry.py:32,40. OpenSearch expands
+  # platform/policy-decision-service/pds/telemetry.py, as ATTR_DECISION and
+  # ATTR_RETRYABLE -- cited by NAME rather than by line, the one form that
+  # survives an edit to the file above them. The line numbers here were 32,40
+  # and were wrong by M4's final review: those are SPAN_NAME and ATTR_CURRENCY.
+  # In the comment explaining the milestone's central mechanism. OpenSearch expands
   # dotted keys into objects at index time, so one document would need
   # `attributes.policy.decision` to be a scalar and an object at once. It
   # refuses the bulk item permanently, per document, forever:

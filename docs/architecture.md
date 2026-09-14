@@ -2,12 +2,23 @@
 
 Status: **M4 (Observable)**, on branch `m4-observable`. **This header and the
 line below it said "M3 (Supervised)" until M4 Task 5's doc pass, while the
-sections beneath them had already grown `eval-scorer`'s SPIFFE ID, its Cilium
-and SPIRE entries, the stage-4 surfaces and "See it yourself" step 9** — the
+sections beneath them had already grown `eval-scorer`'s SPIFFE ID and SPIRE
+entry, the stage-4 surfaces and "See it yourself" step 9** — the
 same stale-prose class this document's own intro records catching a few
 paragraphs down, this time in the one line a reader reads first. Recorded
 rather than silently corrected, per the convention the rest of this file
 follows.
+
+That sentence also said "**its Cilium** and SPIRE entries" until M4's final
+review. `eval-scorer` has **no** Cilium policy — `grep -c eval-scorer
+deploy/platform/cilium-policies.yaml` is 0, `scripts/setup-kind.sh:656-662`
+records the absence as a posture gap, and spec §9's carried-debt entry (ruling
+M4-R17) names `eval-scorer` as one of the unenforced `northstar-platform`
+endpoints owned by M5. Two committed documents from the same milestone
+disagreeing about whether the milestone's new service sits behind a network
+policy is worse than either being wrong alone, and the one that was wrong is
+the one a reader opens first — so the correction is recorded rather than
+quietly applied.
 
 The M4 content was written and checked by that milestone's tasks against the
 live `kind-northstar` **stage-4** cluster as each was written, and M4 Task 5
@@ -694,8 +705,10 @@ that produced it: agentgateway propagates the context it *received* to the
 guardrail hook rather than its own client span's context. Measured on six
 captured traces before it was written down, and pinned by exact equality on
 the sorted `(service, operation, kind)` triples of that span's children in
-`tests/e2e/test_policy_denial.py` — which is a stronger assertion than a
+`tests/e2e/test_gateway_trace.py` — which is a stronger assertion than a
 child count, and replaced an "exactly one child" assertion that M2.2 falsified.
+(Attributed to `test_policy_denial.py` until M4's final review; the triple
+assertion has always lived in `test_gateway_trace.py`.)
 
 **Why the trace survives, stated precisely, because two mechanisms are very
 easy to conflate here and conflating them produces a false claim.** The
@@ -1155,7 +1168,7 @@ to a decision something else makes.
 Everything above is enforced at the application layer, by a proxy an agent
 chooses to talk to. M2.2's last task makes that choice not a choice, in both
 directions, with `CiliumNetworkPolicy` on a Cilium 1.20.1 dataplane
-(`deploy/platform/cilium-policies.yaml`, five documents):
+(`deploy/platform/cilium-policies.yaml`, **nine** documents -- `grep -c 'kind: CiliumNetworkPolicy'`; this said "five" until M4's final review, and the table below has always been a selection rather than the whole file):
 
 | Direction | Policy | What it makes impossible |
 |---|---|---|
@@ -1877,13 +1890,29 @@ above). `docs/telemetry-contract.md` has the full per-exemption reasoning
 and the isolated reproduction that confirmed the claims-agent task-boundary
 explanation; it is not repeated here.
 
-**Our services create no spans of their own.** Verified by grep, not
-assumed: there is no `get_tracer`, `start_span`, or `start_as_current_span`
-anywhere in this project's own `agents/`, `tools/`, or `systems/` source,
-except customer-ui's own `apps/customer-ui/src/telemetry.ts` /
-`src/app/page.tsx` (the hand-written `claim.submit` root span — the one
-necessary exception, since nothing upstream of the browser could have
-created it) and one docstring mention in `tools/payments-mcp/bootstrap.py`.
+**Our services create almost no spans of their own — and the two exceptions
+are named, because a "verified by grep" claim that a grep falsifies is the
+worst form of stale prose this document can carry.** Re-run over `agents/`,
+`tools/` and `systems/` (excluding `.venv` and tests) on 2026-09-14, there are
+exactly two hand-written spans in this project's own source:
+
+  * `apps/customer-ui/src/telemetry.ts` / `src/app/page.tsx` — the
+    `claim.submit` root span. Necessary: nothing upstream of the browser could
+    have created it.
+  * `agents/settlement-agent/settlement.py:377-378` —
+    `trace.get_tracer(__name__)` and `tracer.start_as_current_span(...)`, the
+    **`settlement.execute_approved` span**, which this very document describes
+    in four other places. It is the approved execution M3 added, and the span
+    the reviewer-ui link joins to the refused trace.
+
+(Until M4's final review this paragraph read "there is no `get_tracer`,
+`start_span`, or `start_as_current_span` anywhere in this project's own
+`agents/`, `tools/`, or `systems/` source", naming only customer-ui and a
+docstring mention in `tools/payments-mcp/bootstrap.py`. It has been false since
+M3 shipped `execute_approved`, inside its own stated grep scope, while claiming
+the grep as its evidence. Pre-existing rather than introduced by M4 — but M4
+Task 5 retitled this file precisely because its first line had gone stale, and
+did not re-run the one grep the file offers as proof.)
 Every other span in this chain — every `a2a.server.*`/`a2a.client.*` span,
 every `StarletteInstrumentor`/`HTTPXClientInstrumentor` span, every FastMCP
 `tools/call` span, every `otelhttp` span — comes from library
@@ -1898,14 +1927,25 @@ calling the tracer directly.
 | Reviewer UI (stage 3) | http://localhost:8081 |
 | Jaeger | http://localhost:16686 |
 | OpenSearch Dashboards — the evidence view (stage 4) | http://localhost:5601 |
+| Prometheus — the metrics half of stage 4 | http://localhost:9090 |
 
 The first three are kind host ports mapped at cluster creation and need no
-port-forward. The fourth does, and `./scripts/start-demo.sh` is what starts it —
-that script owns every forward this demo needs, and prints every URL in this
+port-forward. The last two do, and `./scripts/start-demo.sh` is what starts them
+— that script owns every forward this demo needs, and prints every URL in this
 table (plus the agent and tool ports the walkthrough does not open) at the end
-of its run. `tests/unit/test_stage4_config.py` requires the two lists to agree,
-so a surface added to one and not the other reddens a test rather than ageing a
-table.
+of its run.
+
+`tests/unit/test_stage4_config.py` requires the two lists to agree **in both
+directions**, so a surface added to one and not the other reddens a test rather
+than ageing a table. That sentence was false when it was first written, and the
+row above it is why: the guard only checked table → script, M4 Task 2 had
+already added Prometheus to the script, and the table went four tasks without a
+Prometheus row while the guard stayed green and this paragraph claimed it
+could not. The reverse direction cannot simply be "every printed URL is in this
+table" — the script deliberately prints agent and tool ports the walkthrough
+never opens — so each printed line now declares itself `#surface` or
+`#tool-port` and the guard requires the `#surface` set to *equal* this table.
+An unmarked line fails; adding a URL is now a decision rather than an echo.
 
 1. Open the Customer UI. The form is pre-filled with claim `CLM-1842`,
    policy `POL-77120`, €6,200. Click "Submit claim." Within a few seconds
@@ -2019,19 +2059,23 @@ table.
    model, and are gated behind `RUN_BROWSER_TESTS=1`.
 
    That file port-forwards to the gateway itself (on an ephemeral local port
-   it asks `kubectl` for, so it cannot collide with the four repo-managed
+   it asks `kubectl` for, so it cannot collide with the **six** repo-managed
    forwards), mints real JWT-SVIDs from SPIRE, and asserts both that a valid
    one executes a tool end to end and that invalid ones are refused: **5
    refusal cases from 4 refusal functions** (one, the untrusted-issuer check,
    is parametrised ×2 for `own_kid` and `spire_kid` — `pytest --collect-only`
-   confirms 6 cases collected in total, the 5 refusals plus the 1 accepted
-   control).
+   confirms **7** cases collected in total: the 5 refusals, the 1 accepted
+   control, and the caller-identity assertion the file opens with. This read
+   "6 cases" until M4's final review, having been written when the file held
+   six.)
    See "Identity with teeth" above for the exact wire shape of each refusal.
 
 7. **Then approve the refusal — this is M3's part of the walkthrough.** After
    step 1's €6,200 submission comes back `refused`, open the Reviewer UI at
-   http://localhost:8081. Unlike the four surfaces above it needs no
-   `kubectl port-forward`: its Service is a `NodePort` and
+   http://localhost:8081. Unlike the Customer UI and Jaeger above it needs no
+   `kubectl port-forward` (OpenSearch Dashboards and Prometheus, the other two
+   rows of that table, do -- the original "unlike the four surfaces above"
+   was wrong about its own table): its Service is a `NodePort` and
    `deploy/kind/stage3.yaml` maps host 8081 to it, so it also survives a
    redeploy.
 
@@ -2142,3 +2186,37 @@ table.
    dashboard's *pixels* are deliberately not tested — but a dashboard that
    silently goes blank because instrumentation regressed is worse than no
    dashboard, so the fields it renders redden a test instead.
+
+   **There is no score panel on this dashboard, and that is deliberate** — the
+   dashboard's own top-left readme panel says so. The scores are step 10.
+
+10. **Ask the auditor what it thought of the trajectory.** M4's other half is
+    `platform/eval-scorer`: five policy-adherence scores per settlement,
+    written back into the same trace they judge as
+    `gen_ai.evaluation.*` spans, so the judgement travels with the evidence
+    instead of in a separate system.
+
+    `./scripts/start-demo.sh` forwards it at **18300 → 8300** (stage 4 only; it
+    prints a SKIPPED line below stage 4). It is pull-only — nothing scores a
+    settlement automatically as it happens — so the scores exist when you ask
+    for them:
+
+    ```bash
+    curl -s localhost:18300/score -X POST \
+      -H 'content-type: application/json' \
+      -d '{"claimId": "CLM-1842", "emit": false}' | python3 -m json.tool
+    ```
+
+    `"emit": false` reads without writing spans, which is how to look without
+    changing what you are looking at. Check `spanCount` and `decisionCount`
+    first: OpenSearch is near-real-time, and a claim scored the instant a
+    settlement returns can be scored half-written. When those stop moving, ask
+    once more without `emit` and the five scores land in the trace.
+
+    For `CLM-1842` — the supervised €6,200 pair — the one worth reading is
+    `stopped_when_refused`. It is **1.0 compliant** for the real run, and a
+    deliberately mis-routed trajectory scores **0.0 retry-after-refusal** on
+    that same scorer while the other four stay put. That difference is spec §7.4's anti-vacuity criterion
+    and the reason the other four scores are worth anything: a scorer that
+    returns 1.0 for everything proves nothing. `tests/e2e/test_policy_scores.py`
+    asserts both runs against the live cluster.

@@ -97,6 +97,7 @@ import pytest
 import requests
 
 from tests.harness.jaeger import JaegerClient, assert_no_orphans, assert_single_root
+from tests.harness.kube import absent_or_fail
 
 # Wholesale reuse, not reimplementation -- see the module docstring.
 from tests.e2e.test_caller_identity import (  # noqa: F401 -- fixtures used by name
@@ -307,11 +308,26 @@ def _reviewer_ui_alive() -> bool:
 
 
 def _stage3_workload_present() -> bool:
+    """Whether this is a stage-3 cluster, or a hard failure if that is
+    unanswerable.
+
+    M4 final review, finding L4: this read `proc.returncode == 0` and treated
+    every other exit as "not a stage-3 cluster", so an unreachable API server
+    skipped this file's whole supervised story. Ruling M4-R14 retired that
+    shape and `tests/harness/kube.py` holds the one definition; this function
+    predates the ruling under a name the ruling's repo walk did not match,
+    which is why the walk now matches on shape as well as on name.
+    """
     proc = _kubectl(
         "-n", AGENTS_NAMESPACE, "get", "deployment",
         STAGE3_DISCRIMINATOR_DEPLOYMENT, "-o", "name",
     )
-    return proc.returncode == 0 and bool(proc.stdout.strip())
+    if not absent_or_fail(
+        proc,
+        f"deployment/{STAGE3_DISCRIMINATOR_DEPLOYMENT} in {AGENTS_NAMESPACE}",
+    ):
+        return False
+    return bool(proc.stdout.strip())
 
 
 @pytest.fixture(scope="module")
@@ -337,7 +353,7 @@ def reviewer_ui_route():
         pytest.skip(
             f"needs the live cluster: cannot reach {KUBE_CONTEXT} "
             f"({reachable.stderr.strip() or 'no output'}); "
-            "run ./scripts/setup-kind.sh --stage 3"
+            "run ./scripts/setup-kind.sh --stage 4"
         )
 
     if not _stage3_workload_present():

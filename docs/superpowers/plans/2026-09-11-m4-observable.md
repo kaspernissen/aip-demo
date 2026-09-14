@@ -26,7 +26,21 @@ kind.
 - **No unmeasured claims.** Every number, metric name, attribute key, version and
   default written in code, comments, docs or assertions traces to a live
   measurement or to read source.
-- **No exact whole-trace span totals** may be published anywhere.
+- **No exact whole-trace span totals** may be published anywhere, with one
+  carve-out added by M4's final review (finding M8): a **dated,
+  trace-qualified incident record whose claim is a _difference_ between two
+  counts of the same trace** may state both, because the difference *is* the
+  finding and cannot be stated without them. The one live instance is
+  `deploy/observability/collector-config.yaml`, recording that trace
+  `e25671d6…` held 142 spans in Jaeger and 139 documents in OpenSearch and that
+  the three missing ones are exactly its three `policy.decision` spans.
+  Everything the rule was written against still falls: a total published as a
+  property *of the system* rather than of one dated capture, which is not
+  reproducible because `EventQueue.dequeue_event` is a polling span measured
+  varying 10–16 across identically-shaped runs. M4 shipped one of those too —
+  `docs/telemetry-contract.md`'s "148 spans" line, retired by the same review,
+  where the two service counts that dominated the total were the two carrying
+  the polling span. The rule needed both halves stated, not relaxing.
 - **Every GenAI metric in the spec's §6 table is Development stability.** Any
   sentence published about one carries that qualifier and the version it was
   measured against.
@@ -70,7 +84,7 @@ kind.
 | `deploy/observability/opensearch/dashboards-values.yaml` | OpenSearch Dashboards | 1 |
 | `deploy/observability/collector-config.yaml` | the OpenSearch and Prometheus exporters and their pipelines | 1, 2 |
 | `deploy/observability/prometheus/values.yaml` | Prometheus with OTLP receiver enabled | 2 |
-| `agents/settlement-agent/telemetry.py` (and siblings) | `MeterProvider` wiring | 2 |
+| `agents/settlement-agent/bootstrap.py` (and siblings) | `MeterProvider` wiring | 2 |
 | `docs/telemetry-contract.md` | the measured metric inventory; OQ-1's answer | 2, 5 |
 | `deploy/observability/dashboards/evidence.ndjson` | the saved evidence dashboard | 3 |
 | `tests/e2e/test_evidence_view.py` | the dashboard's queries, asserted | 3 |
@@ -284,7 +298,7 @@ Python or Go source, no `OTEL_METRICS_*` in any manifest, and the collector's
 
 **Files:**
 - Create: `deploy/observability/prometheus/values.yaml`
-- Modify: `agents/settlement-agent/telemetry.py` and the equivalent bootstrap in `agents/claims-agent`, `platform/policy-decision-service`, `apps/reviewer-ui`; `deploy/observability/collector-config.yaml`; `scripts/setup-kind.sh`; `docs/telemetry-contract.md`
+- Modify: `agents/settlement-agent/bootstrap.py` and the equivalent bootstrap in `agents/claims-agent`, `platform/policy-decision-service`, `apps/reviewer-ui`; `deploy/observability/collector-config.yaml`; `scripts/setup-kind.sh`; `docs/telemetry-contract.md`
 - Test: `agents/settlement-agent/tests/test_telemetry.py`
 
 **Interfaces:**

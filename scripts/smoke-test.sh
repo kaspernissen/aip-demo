@@ -48,7 +48,8 @@ command_exists npx || { echo -e "${RED}npx (Node.js) is required${NC}" >&2; exit
 # `tests/test_policy_deny_contract.py` imports `pds.rules` and `pds.server`,
 # which import the git-ignored generated stub `ext_mcp_pb2`, so this gate
 # already could not run without the PDS being set up: removing the stubs
-# aborts the settlement-agent suite at collection (0 of 79 tests run) and
+# aborts the settlement-agent suite at collection (0 of 114 tests run -- 79
+# when this comment was written) and
 # reddens `tests/unit`'s per-service count guard. The gate was paying the whole
 # cost of that dependency and collecting none of the PDS's own tests, while
 # README told a new operator the PDS setup was not needed. Both halves are
@@ -337,7 +338,51 @@ echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included 
 # A20a quiet-window timing the multi-service trace-completeness wait depends
 # on). A narrower `tests/e2e`-only invocation would silently drop harness
 # coverage the e2e assertions themselves rely on being correct.
-RUN_BROWSER_TESTS=1 "$ROOT/.venv/bin/python" -m pytest "$ROOT/tests" -v
+#
+# M4 FINAL REVIEW, finding L2: a skip is invisible in a green gate, and until
+# now this gate acted on that for exactly one object -- the OpenSearch Service
+# it refuses to run without (ruling M4-R9). The pytest invocation itself
+# carried nothing that fails on a skip, while at least six modules running
+# inside it hold reachable `pytest.skip` calls on conditions the stage-4 check
+# does not cover (test_egress_policy.py, test_gateway_is_the_only_route.py,
+# test_gateway_config_drift.py, test_supervised.py, test_settlement_llm_trace.py
+# and the four M4 modules' cluster-reachability skips). Each is defensible on
+# its own; collectively, nothing stopped a future green gate that had silently
+# skipped a milestone's assertions. "Zero skips" was a property of one 2026-09-14
+# run, verified by grep after the fact. It is a property of the gate now.
+#
+# `tee` rather than a variable so the operator still watches it live, and
+# PIPESTATUS so pytest's own exit code survives the pipe -- under `set -e` a
+# pipeline's status is its LAST command's, which would be `tee`'s, and a
+# failing suite would sail past.
+SKIP_LOG="$(mktemp -t northstar-gate-XXXXXX)"
+trap 'rm -f "$SKIP_LOG"' EXIT
+set +e
+RUN_BROWSER_TESTS=1 "$ROOT/.venv/bin/python" -m pytest "$ROOT/tests" -v 2>&1 | tee "$SKIP_LOG"
+PYTEST_STATUS=${PIPESTATUS[0]}
+set -e
+if [[ $PYTEST_STATUS -ne 0 ]]; then
+  echo -e "${RED}The gate's test run failed (exit $PYTEST_STATUS).${NC}" >&2
+  exit "$PYTEST_STATUS"
+fi
+
+# Counted off the summary line rather than by grepping for "SKIPPED", which
+# also matches the word inside a test name or a failure message.
+SKIPPED=$(grep -cE "^[^ ]+::[^ ]+ SKIPPED" "$SKIP_LOG" || true)
+if [[ "$SKIPPED" -ne 0 ]]; then
+  echo "" >&2
+  echo -e "${RED}The gate passed with ${SKIPPED} skipped test(s), which is a failure.${NC}" >&2
+  echo "A skip inside this gate is invisible in a green run: the milestone's" >&2
+  echo "assertions simply do not execute and the summary still says 'passed'." >&2
+  echo "Every gated module is unskipped here by RUN_BROWSER_TESTS=1, and the" >&2
+  echo "stage-4 refusal above covers the cluster, so a skip means a condition" >&2
+  echo "nobody accounted for. The skipped tests and their reasons:" >&2
+  grep -E "^[^ ]+::[^ ]+ SKIPPED" "$SKIP_LOG" >&2 || true
+  echo "" >&2
+  echo "Fix the condition, or -- if the skip is genuinely correct -- say so in" >&2
+  echo "docs/telemetry-contract.md's gate row and change this check deliberately." >&2
+  exit 1
+fi
 
 echo ""
 echo -e "${GREEN}Northstar M4 smoke test passed.${NC}"

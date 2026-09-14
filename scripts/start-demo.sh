@@ -125,7 +125,10 @@ verify_existing_surface() {
 # the remedy for a dead port-forward would leave the operator with no
 # port-forwards at all.
 #
-# So the two stage-gated surfaces are asked for rather than assumed. The four
+# So the three stage-gated surfaces -- reviewer-ui, OpenSearch Dashboards and
+# Prometheus -- are asked for rather than assumed. ("Two" until M4's final
+# review: Prometheus was added by M4 Task 2 and the sentence counting them was
+# not.) The four
 # stage-1 surfaces below are NOT optional -- a cluster without them is broken,
 # not merely younger -- and nothing here is silently skipped: each skip prints
 # the stage that would provide it.
@@ -144,6 +147,10 @@ fi
 PROMETHEUS_AVAILABLE=""
 if service_exists observability prometheus; then
   PROMETHEUS_AVAILABLE=1
+fi
+EVAL_SCORER_AVAILABLE=""
+if service_exists northstar-platform eval-scorer; then
+  EVAL_SCORER_AVAILABLE=1
 fi
 
 echo -e "${BLUE}=== Starting Northstar port-forwards ===${NC}"
@@ -204,6 +211,29 @@ else
   echo -e "${YELLOW}  - Prometheus: SKIPPED, svc/prometheus does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 4)${NC}"
 fi
 
+# M4 final review, finding L5: eval-scorer was reachable from nothing a reader
+# is told to run. The policy scores of spec §5 are one of M4's exit criteria,
+# `docs/telemetry-contract.md` documents the `POST /score` surface, and the
+# only route to it was a port-forward each reader had to invent -- so the
+# demo path could not show the milestone's own headline output.
+#
+# Stage 4 only, on Dashboards' and Prometheus' `service_exists` guard rather
+# than the four unconditional forwards (review finding F8): the Deployment
+# reads `ss4o_traces-default-namespace`, which exists only at stage 4.
+#
+# 18300 -> 8300 follows the 1xxxx offset convention of the tool ports above,
+# not Prometheus' identity mapping: no committed command queries port 8300 on
+# the host, so there is nothing to keep identical.
+EVAL_SCORER_PID=""
+if [[ -n "$EVAL_SCORER_AVAILABLE" ]]; then
+  echo "  - eval-scorer        (18300 -> 8300)"
+  kubectl -n northstar-platform port-forward svc/eval-scorer 18300:8300 >/dev/null 2>&1 &
+  EVAL_SCORER_PID=$!
+  PIDS+=("$EVAL_SCORER_PID")
+else
+  echo -e "${YELLOW}  - eval-scorer: SKIPPED, svc/eval-scorer does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 4)${NC}"
+fi
+
 # Give the forwards a moment to establish before checking them (same
 # allowance setup-kind.sh's own port-forward block uses).
 sleep 4
@@ -223,6 +253,14 @@ if [[ -n "$PROMETHEUS_PID" ]]; then
   # but the health endpoint is the one that answers without the UI bundle and
   # is what Prometheus itself documents as its liveness path.
   verify_owned_forward 9090 "${PROMETHEUS_PID}" prometheus "/-/healthy"
+fi
+if [[ -n "$EVAL_SCORER_PID" ]]; then
+  # `/healthz` is the same route the Deployment's own readiness probe uses
+  # (deploy/k8s/eval-scorer.yaml), and it deliberately does not touch
+  # OpenSearch -- so this checks that the forward carries a request, which is
+  # what verify_owned_forward is for, and does not silently become a store
+  # health check.
+  verify_owned_forward 18300 "${EVAL_SCORER_PID}" eval-scorer "/healthz"
 fi
 # reviewer-ui: covered here for the same reason smoke-test.sh covers it --
 # it is normally already live via deploy/kind/stage3.yaml's NodePort mapping,
@@ -261,26 +299,42 @@ echo ""
 # and this list did not name the Customer UI or Jaeger -- rows 1 and 3 of that
 # table, and the two URLs walkthrough steps 1 and 2 open with. They are kind
 # host ports mapped at cluster creation rather than forwards this script owns,
-# which is why they were absent and why they are labelled as such here. A unit
-# guard now requires every URL in that table to appear in this list, so the two
-# cannot drift again.
-echo "  Customer UI:               http://localhost:8080   (kind host port, not forwarded by this script)"
-echo "  Jaeger:                    http://localhost:16686  (kind host port, not forwarded by this script)"
-echo "  claims-agent (A2A):        http://localhost:19001"
-echo "  settlement-agent (A2A):    http://localhost:19002"
-echo "  payments-mcp:              http://localhost:18000/mcp"
-echo "  payments-api:              http://localhost:18080"
+# which is why they were absent and why they are labelled as such here.
+#
+# M4 FINAL REVIEW, finding M2: every line below must end in `#surface` or
+# `#tool-port`, and the guard reads the marker rather than guessing.
+#
+# The F3 guard was one-directional -- "every URL in the table is printed here"
+# -- while its own docstring claimed it stopped divergence "in either
+# direction". Prometheus had ALREADY defeated it: Task 2 added the line below,
+# Task 3 then wrote the guard in the one direction that could not see it, and
+# the architecture table still has no Prometheus row. A reverse check cannot be
+# "every printed URL is in the table", because this list deliberately prints
+# agent and tool ports the walkthrough never opens. So each line declares which
+# it is, and the guard requires the `#surface` set to EQUAL the table's. A new
+# echo here that carries neither marker fails the guard, which is the point: a
+# URL an operator can reach is either a documented surface or an explicitly
+# undocumented one, and nobody gets to skip the choice by adding a line.
+echo "  Customer UI:               http://localhost:8080   (kind host port, not forwarded by this script)"  #surface
+echo "  Jaeger:                    http://localhost:16686  (kind host port, not forwarded by this script)"  #surface
+echo "  claims-agent (A2A):        http://localhost:19001"  #tool-port
+echo "  settlement-agent (A2A):    http://localhost:19002"  #tool-port
+echo "  payments-mcp:              http://localhost:18000/mcp"  #tool-port
+echo "  payments-api:              http://localhost:18080"  #tool-port
+if [[ -n "$EVAL_SCORER_PID" ]]; then
+  echo "  eval-scorer (POST /score): http://localhost:18300"  #tool-port
+fi
 # Written as `if` blocks rather than `[[ ... ]] && echo ...`: under `set -e` a
 # bare `test && cmd` list whose test fails is the classic way a script exits on
 # a condition simply being false.
 if [[ -n "$REVIEWER_UI_AVAILABLE" ]]; then
-  echo "  reviewer-ui:               http://localhost:8081"
+  echo "  reviewer-ui:               http://localhost:8081"  #surface
 fi
 if [[ -n "$DASHBOARDS_AVAILABLE" ]]; then
-  echo "  OpenSearch Dashboards:     http://localhost:5601"
+  echo "  OpenSearch Dashboards:     http://localhost:5601"  #surface
 fi
 if [[ -n "$PROMETHEUS_AVAILABLE" ]]; then
-  echo "  Prometheus:                http://localhost:9090"
+  echo "  Prometheus:                http://localhost:9090"  #surface
 fi
 echo ""
 echo "Press Ctrl+C to stop the port-forwards this script started."

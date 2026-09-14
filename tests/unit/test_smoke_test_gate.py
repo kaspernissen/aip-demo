@@ -300,3 +300,75 @@ def test_the_gate_runs_every_per_service_suite_the_contract_publishes():
         "Either the gate stopped needing it -- in which case stop telling a "
         "new operator to build it -- or the gate lost a prerequisite."
     )
+
+
+# --- M4 final review, L2: zero skips as a property of the gate ---------------
+
+
+def test_the_gate_fails_when_the_suite_skips_anything():
+    """A skip is invisible in a green gate, and the gate acted on that for
+    exactly one object.
+
+    `smoke-test.sh` refuses to run below stage 4 by asking the cluster for
+    `svc/opensearch-cluster-master` -- ruling M4-R9, real enforcement. The
+    pytest run itself then carried nothing that fails on a skip, while at
+    least six modules inside it hold reachable `pytest.skip` calls on
+    conditions that refusal does not cover. "Zero skips" for the 2026-09-14 run
+    was true and was verified by grepping the captured output afterwards; it
+    was a property of that run, not of the gate.
+
+    Asserted structurally rather than by running the gate, for the obvious
+    reason -- the gate spends model tokens -- so this checks the three things
+    that make the check real rather than decorative: the output is captured,
+    pytest's own exit status survives the pipe, and a non-zero skip count
+    exits non-zero.
+    """
+    text = _effective_script()
+
+    assert "PIPESTATUS" in text, (
+        "the gate pipes pytest into `tee` to capture skips while keeping the "
+        "run visible. Under `set -e` a pipeline's status is its LAST "
+        "command's -- `tee`'s, which always succeeds -- so without reading "
+        "PIPESTATUS[0] a FAILING suite would sail past the check below and "
+        "the gate would report success. That is a worse bug than the one this "
+        "capture was added to fix."
+    )
+    assert re.search(r"SKIPPED\b", text), (
+        "nothing in the gate looks for skipped tests any more (M4 final "
+        "review, finding L2)"
+    )
+    assert re.search(r'grep\s+-cE\s+"\^\[\^ \]\+::\[\^ \]\+ SKIPPED"', text), (
+        "the skip count must be taken off pytest's own per-test verdict lines "
+        "(`path::test SKIPPED`), not a bare `grep SKIPPED` -- the bare form "
+        "also matches the word inside a test name, a docstring echoed in a "
+        "failure message, or this very check's own error text, and would fail "
+        "the gate for saying the word."
+    )
+    assert re.search(r'\$SKIPPED"?\]?\]?\s*-ne\s*0|"\$SKIPPED"\s*-ne\s*0', text), (
+        "the gate must exit non-zero when the skip count is not zero"
+    )
+
+
+def test_the_skip_check_cannot_be_satisfied_by_a_run_that_never_happened():
+    """The vacuity question, asked of the check itself.
+
+    A skip count read from a file pytest never wrote is zero, and zero passes.
+    So the capture file has to be the same one the run writes, and the run has
+    to have succeeded before the count is believed -- both are asserted here
+    because "0 skips" from an empty log is exactly the false GREEN this repo
+    keeps finding.
+    """
+    text = _effective_script()
+    assert 'tee "$SKIP_LOG"' in text, (
+        "the gate must tee pytest's output into the file the skip count is "
+        "read from; a count read from a file nothing wrote is always zero"
+    )
+    run_at = text.index('tee "$SKIP_LOG"')
+    status_at = text.index("PYTEST_STATUS")
+    count_at = text.index("SKIPPED=$(grep")
+    assert run_at < status_at < count_at, (
+        "the order must be: run and capture, then check pytest's exit status, "
+        "then count skips. Counting skips before failing on a non-zero exit "
+        "would report 'passed with 0 skips' for a suite that crashed at "
+        f"collection. Offsets: run={run_at}, status={status_at}, count={count_at}"
+    )

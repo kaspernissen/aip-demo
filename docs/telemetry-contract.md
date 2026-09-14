@@ -32,10 +32,15 @@ paper over it with a bespoke convention.
 first and the overturned reasoning is kept below it rather than deleted.**
 
 A bare `pytest tests/` run (no environment variable set) now costs **no model
-tokens at all**. Ten modules sit behind `RUN_BROWSER_TESTS=1`; only one of them
-needs a browser. The other nine ride the flag because they spend Anthropic
-tokens, and as of Task 5 that set is closed: every e2e file that drives a
-settlement is gated. What a bare run therefore no longer proves is the A2A
+tokens at all**. Eleven modules sit behind `RUN_BROWSER_TESTS=1`, of which
+**3 of the 11 launch a browser** and **8 of the 11 start no browser** — they
+ride the flag because they spend Anthropic tokens, and as of Task 5 that set is
+closed: every e2e file that drives a
+settlement is gated. (That split is derived, not typed: it was published as
+"only one" in three places at once, in the *same* pass that was supposed to end
+stale prose, and `tests/unit/test_telemetry_contract_counts.py` now greps
+`tests/e2e` for `chromium.launch(` and fails this sentence against the answer.)
+What a bare run therefore no longer proves is the A2A
 chain — claims-agent → settlement-agent → payments-mcp → payments-api, one
 trace, no orphans, `northstar.claim.id` correlated to the boundary below —
 because the three files that prove it are the three that were driving the
@@ -129,12 +134,85 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-13 (M4 Task 5) — the current figures, and the gate row is MEASURED:
-the milestone's one gate run.**
+**2026-09-14 (M4 final-review fix wave) — the current figures. The gate row
+below is PREDICTED, NOT MEASURED, and saying so is the point of this block.**
+The fix wave added **7** tests under `tests/`, taking the collected count from
+343 to **350**, re-measured with
+`.venv/bin/python -m pytest --collect-only -q tests/`. Every one is a unit test
+guarding something the final review demonstrated was unguarded:
+
+* `tests/unit/test_telemetry_contract_counts.py` — **+3**.
+  `test_the_published_browser_split_is_what_the_source_says` derives the
+  browser/no-browser split of the gated modules from `chromium.launch(` in
+  `tests/e2e` instead of from a reader (finding M1: that figure had been wrong
+  twice in three tasks, in three documents at once).
+  `test_the_bare_rows_xfail_term_accounts_for_gating` derives the bare row's
+  `xfailed` term from whether any module *containing* an xfail is ungated
+  (finding M3). `test_a_predicted_gate_row_is_labelled_as_one` is the third,
+  and it exists because of this very block: see the gate row below.
+* `tests/unit/test_smoke_test_gate.py` — **+2**, pinning the gate's new
+  refusal to pass a run that skipped anything, and pinning the *order* of that
+  check after the run it inspects, so it cannot be satisfied by a log that was
+  never written.
+* `tests/unit/test_kube_helper.py` — **+2**.
+  `test_the_shared_pipeline_reader_has_no_local_copies_either` is the
+  `pipeline_exporters` half of ruling M4-R14's "one definition", which had no
+  repo walk while the weaker half had one (finding L4). The second is a
+  parametrised case pinning the ruling on suspected finding S3: a kubectl
+  message that quotes a name but is not `NotFound` stays a failure.
+
+Bare-suite row, derived from that same collection: 350 collected − 71 gated −
+**0** xfailed = `279 passed, 71 skipped, 0 xfailed`. **The xfailed term is 0,
+not 1, and the row below this one had it wrong**: the tree's only
+`pytest.xfail` is in `tests/e2e/test_claim_correlation.py`, which M4 Task 5
+gated. On a bare run that test *skips*, so it is already inside the 71, and
+subtracting it a second time counted one test twice — which is precisely why
+the old row still summed to its collected total while being wrong. The term is
+now derived by a test rather than carried forward.
+
+The gated figure is unchanged at **71** — no e2e module was added or gated by
+this wave — measured the same way every figure below it was, a `--collect-only`
+run with a plugin that counts items carrying a `skipif` whose reason names
+`RUN_BROWSER_TESTS` and whose condition is true with the variable unset, and
+reports 71 of 350, spread `test_settlement_llm_trace.py` 9,
+`test_prometheus_metrics_ingest.py` 9, `test_browser_root_span.py` 8,
+`test_settlement_agent_trace.py` 8, `test_claims_chain_trace.py` 7,
+`test_claim_correlation.py` 6, `test_gateway_trace.py` 6, `test_supervised.py`
+6, `test_policy_scores.py` 5, `test_policy_denial.py` 4,
+`test_evidence_view.py` 3. Of those eleven gated modules, **3 of the 11 launch
+a browser** (`test_browser_root_span.py`, `test_policy_denial.py`,
+`test_supervised.py` — derived from `chromium.launch(`, not recalled) and
+**8 of the 11 start no browser** — the flag gates
+*tokens*, not Chromium, and that split is now derived from the sources rather
+than typed.
+
+Gate row: **`349 passed, 1 xfailed` — PREDICTED, NOT MEASURED.** This branch's
+one gate run was at commit `43f0c72`, over a tree that collected 343, and it
+finished `342 passed, 1 xfailed` in 417.83s with zero skipped, exit 0. The seven
+tests above landed after it. They are unit tests that need no cluster and were
+each run directly, and the wave also changed live `eval-scorer` code
+(`MAX_TRACES_PER_CLAIM` truncation, §"trajectory truncation") that the
+cluster's running image predates — so the honest statement is that the gate
+**must be re-run before this branch merges**, and this row is arithmetic until
+it is. `test_a_predicted_gate_row_is_labelled_as_one` compares the working tree
+against the commit named here — not `HEAD` against it, which this wave would
+itself have fooled — and fails if the label is removed while any file the gate
+runs has changed, and equally if the label is left behind once none has.
+
+`tests/unit` alone collects **212** (205 before this wave).
+`platform/eval-scorer`'s own suite moves **128 → 135**; none of those is
+collected by `pytest tests/`, so they do not appear in the figures here.
+
+**2026-09-13 (M4 Task 5) — superseded by the row above, and kept the way every
+earlier row is: it was the current figure, with a MEASURED gate row, at the
+time it was written.**
 Task 5 added **34** tests under `tests/`, taking the collected count from 309 to
 **343**, re-measured with `.venv/bin/python -m pytest --collect-only -q tests/`.
-The gated figure moved much further than the collected one — **41 → 64** — and
-that is the ruling below, not an accident of the new tests.
+The gated figure moved much further than the collected one — **41 → 71** — and
+that is the ruling below, not an accident of the new tests. (This block first
+published that move as 41 → 64; the last seven were found by the bare run
+recorded further down, and the correction is kept visible rather than
+overwritten.)
 
 Twenty-nine of the thirty-four are there because the task went looking for
 *published facts and reconciled rulings that nothing re-checks*, and found
@@ -270,12 +348,18 @@ in this task rather than reasoned about:
   account, from the command this repo presents as the ordinary way to run the
   suite. All three now carry the same `pytestmark` the other cost-gated modules
   carry. `RUN_BROWSER_TESTS=1` is this repo's **cost** gate, not a browser gate:
-  **ten of the eleven** gated modules start no browser (this read "six of the
-  ten" until M4 Task 5's stale-prose pass — it was M4 Task 4's figure, left
-  behind by the same task that added the four new gated modules two paragraphs
-  above it). `README.md` carries the same fact as "only one of the eleven needs
-  a browser"; the module list itself is in `README.md` only, and this is a
-  count of it.
+  **8 of the 11** gated modules start no browser; **3 of the 11 launch a
+  browser** — `test_browser_root_span.py`, `test_policy_denial.py` (in
+  `_drive_browser`) and `test_supervised.py` (in its approval fixture). This
+  number has now been wrong twice in three tasks. It read "six of the ten"
+  (M4 Task 4's figure) until M4 Task 5's stale-prose pass, which moved the
+  denominator to eleven, moved the numerator to ten, and **re-derived
+  neither** — the pre-M4 README text it replaced had the browser count right.
+  The final review caught the second error and the fix is not a third typing:
+  `tests/unit/test_telemetry_contract_counts.py::test_the_published_browser_split_is_what_the_source_says`
+  greps `tests/e2e` for `chromium.launch(`, intersects that with the gated
+  module list pytest reports, and fails this sentence and `README.md`'s against
+  the answer.
 * **Three ungated tests still write an `executed` row to the ledger, and that is
   the intended state.** Measured by ledger delta over live runs, not inferred:
   `pytest tests/e2e/test_payments_api_trace.py tests/e2e/test_payments_mcp_trace.py`
@@ -304,7 +388,10 @@ in this task rather than reasoned about:
   this flag gates.**
 
 Bare-suite row, derived from that same collection: 343 collected − 71 gated −
-1 xfailed = `271 passed, 71 skipped, 1 xfailed`. The gated figure is measured
+1 xfailed = `271 passed, 71 skipped, 1 xfailed`. **That derivation is wrong and
+is left standing as written, because it is what this row published; the
+correct figure is `272 passed, 71 skipped, 0 xfailed`** — see finding M3 in the
+current block above, and the guard that now derives the term. The gated figure is measured
 the same way every figure below it was — a `--collect-only` run with a plugin
 that counts items carrying a `skipif` whose reason names `RUN_BROWSER_TESTS`
 and whose condition is true with the variable unset — and reports 71 of 343,
@@ -1256,7 +1343,13 @@ the plan defect described two paragraphs up).
 Per-service unit suites (all eight run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 114, payments-mcp 16, payments-api (Go) 31,
 customer-ui (vitest) 6, policy-decision-service 105,
-reviewer-ui 56, eval-scorer 128 — all passing.
+reviewer-ui 56, eval-scorer 135 — all passing.
+(**2026-09-14, M4 final-review fix wave: eval-scorer 128 → 135.** Seven tests
+for finding H1's truncation refusal — `trace_ids_for_claim` now reads the terms
+aggregation's `sum_other_doc_count` and `doc_count_error_upper_bound` and
+refuses to score a trajectory it cannot see all of. Two of the seven are
+positive controls, because a guard that refuses is worth nothing without proof
+that it still accepts.)
 (**2026-09-13, M4 Task 4: the eighth entry, `platform/eval-scorer` 128**,
 measured with `.venv/bin/python -m pytest --collect-only -q tests` from that
 service's own directory. It is added in the task that added the service, which
@@ -3319,10 +3412,26 @@ explanations this service writes lead with the count and the identity and put
 the `trace=… span=…` citation last.
 
 **The five spans of one evaluation, measured.** Trace
-`fb28259b9a5b4d2eb58f52132c9983ee` (148 spans: settlement-agent 64,
-claims-agent 35, agentgateway 32, payments-mcp 7, eval-scorer 5,
-policy-decision-service 3, payments-api 2), all five parented to
-`c9a03bd9cc4e18c1`:
+`fb28259b9a5b4d2eb58f52132c9983ee` carries **five `eval-scorer` spans**, all
+five parented to `c9a03bd9cc4e18c1`:
+
+<!--
+This sentence published the trace's whole-trace total — "148 spans:
+settlement-agent 64, claims-agent 35, agentgateway 32, …" — until M4's final
+review (finding M8). It broke the plan's standing rule, restated with its
+measurement two hundred lines below, that no exact whole-trace span total may
+be published anywhere: `EventQueue.dequeue_event` is a polling span measured
+varying 10–16 across identically-shaped runs, and the two service counts that
+dominated that total are the two carrying it, so the figure was not
+reproducible. The same defect was already retired once, in M2.1 Task 5, where
+a "62 spans" figure went for the same reason — and the paragraph recording
+that retirement sits in this same file.
+
+What the sentence is actually about is the five evaluation spans and their
+common parent. Neither needs the total, so the total is gone rather than
+disclaimed.
+-->
+
 
 ```
 evaluation proposed_before_executed          1  compliant

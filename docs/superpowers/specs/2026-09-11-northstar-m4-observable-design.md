@@ -347,6 +347,46 @@ times.
   each workload its own ServiceAccount changes every `ClusterSPIFFEID`
   selector, the PDS's caller table and the gateway's audience list at once.
   Owned by M5.
+- **`pytest` is deliberately one release behind, and this is where that is
+  written down** (ruling M4-R20). Seven `requirements.txt` files pin
+  `pytest==9.0.3` and six `test_pins.py` assert it; **9.1.1** is the latest
+  release, confirmed against PyPI on 2026-09-13. The standing rule in this repo
+  is that pins sit at the latest released version, so without this entry the
+  next reader finds seven stale pins with no explanation and reads drift where
+  there was a decision. The decision: the bump is orthogonal to M4's spec, it
+  touches seven requirements files and six pre-existing virtualenvs — and
+  installing into an existing service venv is forbidden by the standing
+  constraint, because their contents are pinned and asserted — and closing a
+  milestone is the wrong moment to re-pin the test runner that every one of
+  those assertions executes under. Cost if wrong: one release behind on a test
+  runner for the length of a merge. **Scheduled first after M4 merges. Owned by
+  M5.** Recorded here rather than in the execution ledger because
+  `.superpowers/` is git-ignored, and M4's final review found this item closed
+  in prose and open in fact — which is the whole argument for §9 existing.
+  Treat "recorded in the ledger" as "not recorded" once a branch merges.
+- **Two infrastructure pins are one patch release behind, for the same reason
+  and with the same owner** (M4 final review, finding L1; both verified against
+  upstream on 2026-09-14, not read off a local `helm search` cache, which is
+  how a stale index produces a confident wrong answer):
+  - `otel/opentelemetry-collector-contrib` pinned at **0.158.0**; latest
+    release **0.160.0** (`opentelemetry-collector-releases`). Five files carry
+    the literal — `.env.template`, `deploy/observability/collector.yaml`,
+    both collector ConfigMaps, and `tests/unit/test_metrics_wiring.py`, which
+    asserts it — plus the captured collector output in
+    `docs/telemetry-contract.md`, which is a **record of a run** and must not
+    be edited to a version that run did not use.
+  - `spiffe/spire` chart pinned at **0.30.1**; latest **0.30.2**. Chart-only:
+    both charts declare `appVersion: 1.15.3`, so no SPIRE binary moves. Nine
+    files name the chart version, one of them (`test_stage2_spire_config.py`)
+    asserting it. `spire-crds` 0.6.1 **is** the latest and is not debt.
+
+  Not bumped here because each bump is only real once the cluster runs it, and
+  this branch is forbidden from recreating the cluster; a pin changed in the
+  tree but never rolled out is worse than one left alone, because the tree then
+  claims a version nothing has executed. Cost if wrong: one patch release
+  behind on a collector image and a Helm chart for the length of a merge.
+  **Scheduled with the `pytest` bump above, on the same first-after-merge
+  cluster rebuild. Owned by M5.**
 - **`senior-settlement-agent` serves an agent card naming the junior**
   (`contracts/agent-cards/settlement-agent.json` is baked into the shared
   image). Latent: nothing does card discovery today, but a future client

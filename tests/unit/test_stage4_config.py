@@ -1427,6 +1427,25 @@ def test_the_surface_table_and_start_demos_printed_list_agree():
     which are the two URLs the walkthrough's first two steps open. Both were
     added to the script; this is what stops them diverging again, in either
     direction, rather than a third sentence asserting that they do not.
+
+    **M4 final review, finding M2: "in either direction" was a claim this test
+    did not implement, and the divergence it would have caught already
+    existed.** The body was `for url in urls: assert url in printed` -- table ->
+    script only. M4 Task 2 added `Prometheus: http://localhost:9090` to
+    `start-demo.sh`; Task 3 then wrote this guard in the one direction that
+    could not see it, and wrote the docstring above; `architecture.md`'s table
+    went the rest of the milestone with no Prometheus row while the prose under
+    it asserted the property this test lacked. An inert guard whose docstring
+    claims otherwise is the class M4 found eight times, reproduced inside the
+    guard built to end it.
+
+    The reverse direction is not "every printed URL is in the table": the
+    script deliberately prints agent and tool ports the walkthrough never
+    opens. So each printed line declares `#surface` or `#tool-port`, and this
+    requires **set equality** between the `#surface` lines and the table. A
+    printed URL carrying neither marker fails -- which is what makes this
+    bidirectional rather than merely two-way, because a future echo cannot
+    escape by being unclassified.
     """
     table = re.search(
         r"^## See it yourself\n\n\| Surface \| URL \|\n\|---\|---\|\n((?:\|.*\n)+)",
@@ -1448,6 +1467,36 @@ def test_the_surface_table_and_start_demos_printed_list_agree():
             "that table tells the reader to prefer the script's output. One of "
             "the two has to change."
         )
+
+    # --- the other direction, and the classification that makes it possible ---
+    echoed = re.findall(
+        r'^\s*echo "[^"]*(http://localhost:\d+)[^"]*"\s*(#\S+)?\s*$', printed, re.M
+    )
+    assert echoed, (
+        "no `echo \"... http://localhost:N ...\"` line was parsed out of "
+        "scripts/start-demo.sh. The summary block was reformatted and this "
+        "guard has gone blind rather than found agreement -- which is exactly "
+        "the failure mode it was rewritten to stop."
+    )
+    unmarked = sorted({url for url, marker in echoed if marker not in ("#surface", "#tool-port")})
+    assert not unmarked, (
+        f"scripts/start-demo.sh prints {unmarked} with no `#surface` or "
+        "`#tool-port` marker. Every URL this script hands an operator is "
+        "either a documented walkthrough surface (add it to "
+        f"{ARCHITECTURE.relative_to(REPO_ROOT)}'s 'See it yourself' table and "
+        "mark the line `#surface`) or deliberately undocumented (mark it "
+        "`#tool-port`). Skipping the choice is how Prometheus stayed out of "
+        "that table for four tasks."
+    )
+    surfaces = {url for url, marker in echoed if marker == "#surface"}
+    assert surfaces == set(urls), (
+        "the surface table and start-demo.sh's `#surface` lines disagree.\n"
+        f"  printed as a surface but not in the table: {sorted(surfaces - set(urls))}\n"
+        f"  in the table but not printed as a surface: {sorted(set(urls) - surfaces)}\n"
+        "The prose under that table tells the reader to prefer the script's "
+        "output and claims a test requires the two to agree in either "
+        "direction. This is that test."
+    )
 
 
 # --- M4 Task 5: two operator-facing strings that kept going stale ------------

@@ -91,8 +91,8 @@ closed, each in the milestone it said it would be**:
   instrumentation: `execute_approved` (M3 Task 3)", and the closure argument —
   including what it deliberately does not cover — is at that document's Gap 2.
   It stays listed here for the same reason Gap 3 does: a reader checking this
-  document against the contract's seven gaps should find all seven accounted
-  for.
+  document against the contract's **eight** gaps should find all eight
+  accounted for.
 - **Gap 3** ("policy and autonomy decision spans") — **closed in M2.2, and
   closed the way it said it would be.** No OTel convention exists for a
   policy/autonomy decision span, so this was never an upstream defect; it was
@@ -103,8 +103,8 @@ closed, each in the milestone it said it would be**:
   than typed into a document. The measured inventory is in
   [`docs/telemetry-contract.md`](telemetry-contract.md)'s "The policy
   decision, as measured (M2.2)". It stays listed here because a reader
-  checking this document against the contract's seven gaps should find all
-  seven accounted for, and because "we defined our own attributes, under our
+  checking this document against the contract's **eight** gaps should find all
+  eight accounted for, and because "we defined our own attributes, under our
   own prefix, and did not pretend they were a convention" is the outcome this
   entry was predicting.
 
@@ -114,9 +114,15 @@ to check. Both were recorded in the contract as open questions this project
 would have to resolve itself, not as upstream defects, and both were resolved
 that way — by defining this project's own attributes under this project's own
 prefixes and saying so out loud. This document covers
-the remaining five contract items — Gaps 1, 4, 5, 6, and 7 — renumbered below
-as Findings 1–5 in the order a reader would hit them walking the chain from
-the A2A hop down to the model's own outbound call.
+the remaining **six** contract items — Gaps 1, 4, 5, 6, 7 and 8. Gaps 1 and
+4–7 are renumbered below as Findings 1–5, in the order a reader would hit them
+walking the chain from the A2A hop down to the model's own outbound call; Gap 8
+is the metrics-side item M4 Task 2 added, written up as **Finding 12**.
+(This paragraph said "five … Gaps 1, 4, 5, 6, and 7" until M4's final review,
+and the two sentences above it said "seven gaps" — all three left behind when
+Gap 8 was added, while the numbering note at the head of this section was
+updated to "eight items" in the same commit. Three restatements of one count,
+one of them corrected.)
 
 **Findings 6 through 10 do not come from that list at all**, and the numbering
 would mislead a reader who assumed they did. Findings 6 and 7 are M2.1
@@ -521,8 +527,12 @@ OTel context in the first place, not merely dropped somewhere later.
 project actually has installed: the server is `fastmcp==4.0.3`
 (`tools/payments-mcp/requirements.txt:1`, and confirmed by the
 `.dist-info` directory name in that service's own `.venv`); the client is
-this project's own settlement-agent, pinned to `mcp==1.9.4`
-(`agents/settlement-agent/requirements.txt:13`). Two different, and
+this project's own settlement-agent. **That pin is now `mcp==2.2.0`**
+(`agents/settlement-agent/requirements.txt`, cited by name rather than by
+line); this sentence still read `mcp==1.9.4` at line 13 -- a version two majors
+behind and a line holding a comment -- until M4's final review. The finding
+below is written against 1.9.4 and is left numbered and worded as it was
+filed-ready; what changed is this project's pin, not the finding's subject. Two different, and
 differently-weighted, tests are cited here — kept distinct rather than
 merged, since they demonstrate different things:
 
@@ -1757,8 +1767,8 @@ ships in **one** service. The defect is a property of the **system**, and the
 only thing standing between it and the money path is a version pin nobody
 chose for this reason.
 
-Verified for this document by reading all six `requirements.txt` files in the
-repository and the installed `.venv` of each service that has one:
+Verified for this document by reading all **seven** `requirements.txt` files in
+the repository (six until M4 Task 4 added `platform/eval-scorer/`) and the installed `.venv` of each service that has one:
 
 | Service | `opentelemetry-sdk` pin | Talks directly to `payments-api`? |
 |---|---|---|
@@ -1785,7 +1795,10 @@ correlates today: at 1.29.0 it emits `-01` unconditionally, whatever arrives.
 **So the money path — the `execute_payment` hop, the one in the demo's
 headline trace — is correlated by a pin fifteen minor releases behind its
 siblings, rather than by anything anyone decided.** `payments-mcp` registers the stock
-`TraceContextTextMapPropagator` (`tools/payments-mcp/bootstrap.py:49-51`) and
+`TraceContextTextMapPropagator` (`tools/payments-mcp/bootstrap.py`, in the
+`set_global_textmap(CompositePropagator([...]))` call -- by name, because M4
+Task 2 moved it from the cited `:49-51` to `:61-62` and left `:49-51` holding
+the new metrics comment, falsifying this citation inside this same branch) and
 relies on it to inject on the outbound call to `payments-api`. Bumping that
 one pin to match its four siblings changes its flag byte from a constant into
 a function of whatever the gateway sends it.
@@ -1839,7 +1852,9 @@ useful:
   not co-membership, over a trace fetched by an id the test injects — and its
   first assertion, `assert api_spans, "payments-api span is not in the same
   trace as the MCP span"`, is exactly the shape a dropped traceparent produces.
-  `scripts/smoke-test.sh:229` runs the whole `tests/` tree, so it is gated.
+  `scripts/smoke-test.sh`'s final `pytest "$ROOT/tests" -v` runs the whole
+  `tests/` tree, so it is gated. (Cited as `:229` until M4's final review; that
+  line is a comment and the run is 112 lines further down.)
 - **Nothing catches it before that.** `tools/payments-mcp/tests/test_pins.py`
   says nothing about `opentelemetry-sdk` — none of the five per-service pin
   guards does, except `apps/reviewer-ui/tests/test_pins.py:47`, which asserts
@@ -2094,9 +2109,29 @@ no measurement; one (`operation.cost`) is PydanticAI's own name in no OTel
 namespace at all.
 
 **Why this is not a measurement artefact, stated because a false negative here
-would be the expensive kind of wrong.** Every service in the system was given a
-`MeterProvider` first, and each one's export path was demonstrated working in
-the same window before any absence was recorded:
+would be the expensive kind of wrong.** **The five services given a
+`MeterProvider`** — `settlement-agent`, `claims-agent`, `payments-mcp`,
+`reviewer-ui` and `policy-decision-service`, the exact five whose wiring
+`tests/unit/test_metrics_wiring.py` asserts is identical — each had its export
+path demonstrated working in the same window before any absence was recorded.
+**All four framework-hosting services are inside that set**, which is what the
+claim needs: `pydantic_ai` runs in `settlement-agent`, `a2a-sdk` in
+`claims-agent` and `settlement-agent`, `fastmcp` and `mcp` in `payments-mcp`.
+
+(This read "**every service in the system**" until M4's final review. It was
+true when M4 Task 2 wrote it and was falsified inside this same branch two
+tasks later: `platform/eval-scorer` is a sixth Python service with **no**
+MeterProvider — `scorer/emit.py` says so in its own words, and
+`tests/unit/test_metrics_wiring.py` asserts the absence — and
+`systems/payments-api` is Go and has no meter at all. Neither hosts any of the
+four frameworks, so the finding's *result* is untouched. The *argument* was
+overstated, and this is the paragraph whose entire job is to make a public
+assertion about four third-party libraries safe to stand behind — an
+overstated safety argument here is worse than a narrower true one, and M4 Task
+5's stale-prose pass read this file without noticing that the milestone's own
+new service had falsified it.)
+
+The evidence, in the order the data crosses it:
 
 * SPIRE's 271 metric names reach the same Prometheus through the same
   collector, with every Prometheus scrape job disabled, so the

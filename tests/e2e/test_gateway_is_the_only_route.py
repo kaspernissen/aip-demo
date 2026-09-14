@@ -211,10 +211,25 @@ def policy_present():
         "-n", "kube-system", "get", "pod", "-l", "k8s-app=cilium",
         "-o", "jsonpath={.items[*].metadata.name}",
     )
-    if cilium.returncode != 0 or not cilium.stdout.strip():
+    # M4 final review, finding L4: `cilium.returncode != 0` used to be half of
+    # this skip condition, so an unreachable API server -- or a wrong context,
+    # or an expired credential -- read as "not a stage-2 cluster" and skipped
+    # every assertion in this file. That is ruling M4-R14's defect exactly, in
+    # a file the ruling's own repo walk could not see because the helper is
+    # inline and unnamed. A label selector does not 404: on a reachable cluster
+    # with no Cilium the query succeeds and returns nothing, so EMPTINESS is
+    # the honest discriminator and a non-zero exit is a failure.
+    assert cilium.returncode == 0, (
+        "`kubectl get pod -l k8s-app=cilium` failed, so this file cannot tell "
+        "whether the cluster is below stage 2 or simply unreachable, and it "
+        "must not guess -- a skip here would remove every assertion below from "
+        f"a green run. Exit {cilium.returncode}; stderr: "
+        f"{cilium.stderr.strip() or '(empty)'}"
+    )
+    if not cilium.stdout.strip():
         pytest.skip(
             "not a stage-2 cluster (no Cilium agent), so there is no dataplane "
-            "to enforce anything; run ./scripts/setup-kind.sh --stage 2"
+            "to enforce anything; run ./scripts/setup-kind.sh --stage 4"
         )
 
     proc = _kubectl(
