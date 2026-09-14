@@ -134,6 +134,41 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
+**2026-09-14 (M5 Task 1 fix round 1) — the current figures, and the gate row
+is still PREDICTED.**
+The Task 1 review (Important finding) named `scripts/start-demo.sh`'s V11 fix
+as the one item in that task's whole batch shipped with zero regression
+test. Closed with one new hermetic suite,
+`tests/unit/test_start_demo_v11.py`, one test covering both changed
+behaviours (a healthy foreign port-forward is accepted; a genuine refusal on
+one surface does not tear down forwards already established for the
+others) against the real script run with faked `kubectl`/`lsof`/`curl`.
+Nothing else this fix round touched adds or removes a test.
+
+That takes the collected count from **354 to 355**, re-measured with
+`.venv/bin/python -m pytest --collect-only -q tests/`.
+
+Bare-suite row, derived from that same collection: 355 collected − 71 gated −
+**0** xfailed = `284 passed, 71 skipped, 0 xfailed`.
+
+The gated figure is unchanged at **71** (the new test lives under
+`tests/unit` with no `skipif`, so it is not gated) — and reports 71 of 355,
+with the same per-module spread as the row beneath this one. The browser
+split is unchanged too: **3 of the 11 launch a browser** and **8 of the 11
+start no browser**.
+
+Gate row: **PREDICTED, NOT MEASURED**, unchanged from the row below -- this
+branch's gate run was at commit `b215426` (the M4 final-review fix wave
+further below), and it is measured against no later tree than that one. This
+fix round changes a file under `gate_paths` (`tests/`) without a new gate run
+to back it. The prediction from collection (355 − 1 xfailed = 354) is `354
+passed, 1 xfailed`; nothing claims that figure was measured against this
+tree.
+
+`tests/unit` alone collects **217** (216 before this fix round).
+
+---
+
 **2026-09-14 (M5 Task 2) — the current figures, and the gate row is still
 PREDICTED.**
 Task 2 stands up stage 5's machinery (cert-manager, the Open Feature
