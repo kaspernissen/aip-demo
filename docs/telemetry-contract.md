@@ -134,8 +134,9 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-14 (M4 final-review fix wave) — the current figures. The gate row
-below is PREDICTED, NOT MEASURED, and saying so is the point of this block.**
+**2026-09-14 (M4 final-review fix wave) — the current figures, and the gate row
+is MEASURED: ruling M4-R22 bought this milestone a second run, because the
+first one no longer measured a build that exists.**
 The fix wave added **7** tests under `tests/`, taking the collected count from
 343 to **350**, re-measured with
 `.venv/bin/python -m pytest --collect-only -q tests/`. Every one is a unit test
@@ -186,18 +187,36 @@ a browser** (`test_browser_root_span.py`, `test_policy_denial.py`,
 *tokens*, not Chromium, and that split is now derived from the sources rather
 than typed.
 
-Gate row: **`349 passed, 1 xfailed` — PREDICTED, NOT MEASURED.** This branch's
-one gate run was at commit `43f0c72`, over a tree that collected 343, and it
-finished `342 passed, 1 xfailed` in 417.83s with zero skipped, exit 0. The seven
-tests above landed after it. They are unit tests that need no cluster and were
-each run directly, and the wave also changed live `eval-scorer` code
-(`MAX_TRACES_PER_CLAIM` truncation, §"trajectory truncation") that the
-cluster's running image predates — so the honest statement is that the gate
-**must be re-run before this branch merges**, and this row is arithmetic until
-it is. `test_a_predicted_gate_row_is_labelled_as_one` compares the working tree
-against the commit named here — not `HEAD` against it, which this wave would
-itself have fooled — and fails if the label is removed while any file the gate
-runs has changed, and equally if the label is left behind once none has.
+Gate row: **measured, not derived** — this branch's second and final
+gate run was at commit `b215426`, and `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh`
+on 2026-09-14 ran to completion in **436.03s** and finished
+`349 passed, 1 xfailed`, exit 0, final line
+`Northstar M4 smoke test passed.`, with **zero skipped** — the first run under
+the new zero-skip check, which would have failed the gate on any skip at all.
+The prediction from collection (350 − 1 xfailed = 349) and the run agree, and
+they are recorded as two separate facts because a milestone where they
+*disagreed* would be the interesting one.
+
+**Why there are two gate runs in one milestone, and why the first one was
+retired** (ruling M4-R22). The first ran at `43f0c72` over a tree that collected
+343, finishing `342 passed, 1 xfailed` in 417.83s with zero skipped. This fix
+wave then added seven tests *and* changed live `eval-scorer` scoring behaviour
+(the H1 truncation refusal) that the cluster's running image predated — so the
+`43f0c72` row measured a build that no longer existed. The milestone's "one gate
+run" budget buys one **valid** run, not one attempt, and a milestone that merges
+on a predicted row is the unmeasured-claim shape this repo bans. Before the
+second run, `./scripts/rebuild-and-deploy.sh eval-scorer` replaced the image
+(`sha256:afe5597…` → `sha256:77cd4974…`) and the new build was confirmed to be
+*serving*, not merely rolled out: a live `POST /score` over a seven-day window
+answered **HTTP 502** with the truncation refusal, which the previous image had
+no code to produce.
+
+`test_a_predicted_gate_row_is_labelled_as_one` compares the working tree against
+the commit named here — not `HEAD` against it, which the fix wave would itself
+have fooled — and requires a `PREDICTED, NOT MEASURED` label whenever any file
+the gate runs has changed since it, and forbids the label once none has. It is
+what turned this row back into a measurement rather than letting it be edited
+into one.
 
 `tests/unit` alone collects **212** (205 before this wave).
 `platform/eval-scorer`'s own suite moves **128 → 135**; none of those is
