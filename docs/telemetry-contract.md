@@ -1488,8 +1488,24 @@ the plan defect described two paragraphs up).
 
 Per-service unit suites (all eight run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 114, payments-mcp 16, payments-api (Go) 31,
-customer-ui (vitest) 6, policy-decision-service 105,
+customer-ui (vitest) 6, policy-decision-service 119,
 reviewer-ui 56, eval-scorer 135 — all passing.
+(**2026-09-14, M5 Task 3: policy-decision-service 105 → 119.** Re-measured
+with `.venv/bin/python -m pytest --collect-only -q tests` from that service's
+own directory. Fourteen tests for resolving the autonomy level from flagd
+instead of a compiled-in constant: nine in the new
+`tests/test_autonomy.py` (the fail-closed path, the seven-field
+`AutonomyResolution` record, the evaluation-context shape, and the two
+M5-R4 behavioural proofs that the client is configured against the port
+`featureflagsource.yaml` actually names and that it resolves over RPC, not
+in-process or file), three in `tests/test_pins.py` for the task's three new
+pins (`openfeature-sdk`, `openfeature-provider-flagd`,
+`openfeature-hooks-opentelemetry`), and two in `tests/test_rules.py` -- one
+confirming an autonomy-level variant absent from `EXECUTE_LIMITS` denies
+through the existing table with no new branch, one asserting the
+`(settlement-agent, autonomous)` row's rule name is no longer the
+pre-existing mislabel (Step 8's mutation round found this row had no
+positive assertion of its own until this suite added one).)
 (**2026-09-14, M4 final-review fix wave: eval-scorer 128 → 135.** Seven tests
 for finding H1's truncation refusal — `trace_ids_for_claim` now reads the terms
 aggregation's `sum_other_doc_count` and `doc_count_error_upper_bound` and
@@ -3652,7 +3668,7 @@ is in "Metrics, as measured (M4 Task 2)" above.
 |---|---|---|---|
 | `northstar.claim.id` | claims-agent at intake | W3C baggage | See "Real, measured coverage" below — **not** every span everywhere |
 | `northstar.policy.number` | customer-ui root span | none | The root span only |
-| `policy.*` (nine keys, M2.2) | policy-decision-service, on its own `policy.decision` span | none — set locally, never propagated | That one span only. Keys declared in `platform/policy-decision-service/pds/telemetry.py`; measured inventory under "The policy decision, as measured (M2.2)" |
+| `policy.*` (ten keys, M2.2 nine + M5 Task 3's `policy.autonomy.reason`) plus one borrowed key, `feature_flag.version` (M5-R6, an existing OTel semantic convention, not `policy.*`-prefixed because it is not this project's own to name) | policy-decision-service, on its own `policy.decision` span | none — set locally, never propagated | That one span only, `feature_flag.version` only when flagd's response actually carries a version (measured against the live sidecar in M5 Task 3: it never does for this deployment's `autonomy-level` flag, so it is routinely absent). Keys declared in `platform/policy-decision-service/pds/telemetry.py`'s `ATTRIBUTES`/`INVENTED_ATTRIBUTES`. **The worked example and live-trace inventory two sections below ("The policy decision, as measured (M2.2)") still shows the pre-M5 nine/ten-key shape** — re-capturing it against a live M5 trace is Task 4/5's own telemetry-contract work, not re-derived here; treat the counts there as historical (M2.2) rather than current until that pass updates them |
 | `northstar.payment.refusal_cause` (M2.2 Task 4) | payments-api, on its own server span for a refused execute; two closed values, `amount_mismatch` and `already_executed` (`systems/payments-api/handlers.go`) | none | payments-api's execute span, and **only when it refuses** — absent on success, so its presence means "refused here". Read off a real recorded span by that service's own Go tests via an in-memory `tracetest.SpanRecorder`; it appears on **none** of the six M2.2 traces named in this document, because neither the denied nor the permitted scenario reaches a 409 |
 | `northstar.payment.id`, `northstar.approval.reviewer_id` (M3 Task 3) | settlement-agent, on its own `settlement.execute_approved` span (`agents/settlement-agent/settlement.py`) | none | That span only, on the human-approved execution path. See "settlement-agent's own instrumentation" above, including this milestone's first span **link** and the same span's `northstar.claim.id` baggage (M3 Task 3 review, R16) |
 | `review.*` (six keys, M3 Task 4) | reviewer-ui, on its own `review.decision` span (`apps/reviewer-ui/review.py`) | none | That span only, one per submitted approve/reject decision — reviewer-ui's second owned span, `review.queue` (M3 final-review fix round), deliberately carries **none** of them, and no attributes at all. Two of the six (`review.refused.trace_id`, `review.elapsed_ms`) are now set *after* the span opens rather than at creation, because the ledger read they come from moved inside it; a decision that never reaches a refused record therefore emits the other four and an ERROR status. See "reviewer-ui's own instrumentation" above |

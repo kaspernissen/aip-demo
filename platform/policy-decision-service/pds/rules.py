@@ -159,50 +159,54 @@ def decide(req: PolicyInput) -> Decision:
             limit=limit,
         )
 
-    # **`rule` is a literal, and it mislabels two of the three principals that
-    # can reach here. Read this before changing it** -- `policy.rule` on the
-    # `policy.decision` span is what a reader on stage reads off the trace.
+    # **`rule` used to be a literal that mislabelled one of the three
+    # principals that can reach here. Read this before changing it again** --
+    # `policy.rule` on the `policy.decision` span is what a reader on stage
+    # reads off the trace.
     #
-    # The name says `settlement-agent` and `assisted`; the lookup above is
-    # keyed by `(caller, autonomy_level)` and EXECUTE_LIMITS holds three rows.
-    # So:
+    # M5 composes only the autonomy segment: `f"settlement-agent.
+    # {req.autonomy_level}.execute_limit"`. The lookup above is keyed by
+    # `(caller, autonomy_level)` and EXECUTE_LIMITS holds three rows, and this
+    # composition was chosen to touch exactly one of them:
     #
-    #   * `(settlement-agent, assisted)` -> the name is exactly right.
-    #   * `(senior-settlement-agent, assisted)` -> the name names the junior,
-    #     and that is **deliberate and load-bearing**. M3's whole claim is
-    #     that the approval changes *who is asking*, not what is allowed: the
-    #     same rule permits at a different limit because the caller differs,
-    #     and the shared rule name is what makes that visible in one span.
-    #     `tests/e2e/test_supervised.py`'s criterion 4 asserts this exact
-    #     string on the permitting decision. Do not "fix" it.
-    #   * `(settlement-agent, autonomous)` -> the name says `assisted` and the
-    #     decision was made at autonomy level `autonomous`. That one is a
-    #     plain mislabel. It is **pre-existing**, not M3's: the row landed
-    #     with this file itself (`fb3e294`, M2.2), and nothing in this repo
-    #     can drive an `autonomous` request today -- `server.py`'s
-    #     `AUTONOMY_LEVEL` is the module constant `"assisted"`, passed on
-    #     every `PolicyInput`, so no emitted span has ever carried this name
-    #     against that row. M3 only made the simplification visible, by adding
-    #     a third principal and thereby making "one literal for every execute
-    #     decision" obviously a shorthand rather than a description.
-    #
-    # Left as a literal rather than composed from `(req.caller,
-    # req.autonomy_level)`: composing it would silently change the string
-    # criterion 4 asserts and would break the "same rule, different caller"
-    # reading the demo rests on. The honest fix belongs with M5's autonomy
-    # work, which is the milestone that makes `autonomous` reachable and
-    # therefore the milestone in which the mislabel can actually be observed.
+    #   * `(settlement-agent, assisted)` -> composes back to the same string
+    #     the old literal was, byte for byte: unchanged.
+    #   * `(senior-settlement-agent, assisted)` -> ALSO composes to
+    #     `settlement-agent.assisted.execute_limit`, unchanged, because the
+    #     composition is keyed on `autonomy_level` only, never on `caller`.
+    #     That the name still names the junior is **deliberate and
+    #     load-bearing**, not an oversight this task left alone: M3's whole
+    #     claim is that approval changes *who is asking*, not what is
+    #     allowed, and the shared rule name across two different callers is
+    #     what makes that visible in one span. `tests/e2e/test_supervised.py`
+    #     criterion 4 asserts this exact string on the permitting decision.
+    #   * `(settlement-agent, autonomous)` -> now composes to
+    #     `settlement-agent.autonomous.execute_limit`, which is the first
+    #     honest name this row has ever had. It was a plain mislabel before
+    #     M5 (the row landed with this file itself, `fb3e294`, M2.2, and
+    #     nothing in this repo could drive an `autonomous` request until M5's
+    #     `pds/autonomy.py` made the level a per-decision resolution instead
+    #     of `server.py`'s old `AUTONOMY_LEVEL = "assisted"` constant, so no
+    #     emitted span had ever actually carried the wrong name against this
+    #     row) -- M5 is the milestone that makes `autonomous` reachable, and
+    #     therefore the milestone in which composing the segment, rather than
+    #     leaving it a literal, stops being able to break anything: the only
+    #     caller-segment string this file ever emits is `settlement-agent`,
+    #     for both settlement identities, so composing just the autonomy
+    #     segment cannot touch the senior/junior naming criterion 4 depends
+    #     on.
     if req.amount > limit:
         return Decision(
             False,
             f"requested {_money(req.amount, req.currency)} exceeds the "
             f"{_money(limit, req.currency)} limit for this agent at autonomy "
             f"level {req.autonomy_level}",
-            rule="settlement-agent.assisted.execute_limit",
+            rule=f"settlement-agent.{req.autonomy_level}.execute_limit",
             limit=limit,
         )
 
     return Decision(True,
                     f"{_money(req.amount, req.currency)} is within the "
                     f"{_money(limit, req.currency)} limit",
-                    rule="settlement-agent.assisted.execute_limit", limit=limit)
+                    rule=f"settlement-agent.{req.autonomy_level}.execute_limit",
+                    limit=limit)

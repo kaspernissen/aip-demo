@@ -26,7 +26,8 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from pds import telemetry
-from pds.server import AUTONOMY_LEVEL, PolicyServicer
+from pds.autonomy import RESTRICTIVE_LEVEL
+from pds.server import PolicyServicer
 
 import ext_mcp_pb2 as pb
 import ext_mcp_pb2_grpc as pb_grpc
@@ -44,6 +45,74 @@ MEASURED_PROPOSE = (b'{"name":"propose_payment","arguments":'
 PARENT_TRACE_ID = "41f5e359fa09260644706d31ffe3f327"
 PARENT_SPAN_ID = "642cdc04679138cf"
 TRACEPARENT = f"00-{PARENT_TRACE_ID}-{PARENT_SPAN_ID}-01".encode()
+
+
+class _FailClosedFlagClient:
+    """Deterministic double for `pds.server._flag_client`, installed for this
+    whole module by `_fake_flag_client` below.
+
+    `tests/test_autonomy.py` already exercises the real `FlagdProvider` and
+    `GrpcResolver` end to end, including the fail-closed path against a
+    genuinely unreachable sidecar (there is none in this test environment
+    either) -- this suite's own job, per the module docstring, is the
+    servicer's observable outputs, not a second proof of flagd integration.
+
+    Measured, not assumed, why this needs to be a double rather than the real
+    module-scope client left in place: `openfeature-provider-flagd==0.5.2`'s
+    provider status model marks a failed *initial* connect as
+    `ProviderStatus.ERROR` (`openfeature/provider/_registry.py`'s
+    `_update_provider_status`), which `OpenFeatureClient._assert_provider_
+    status` does NOT short-circuit on -- only `NOT_READY` and `FATAL` do. So
+    once that one-time ~500ms init window elapses, every subsequent
+    `get_string_details` call in this environment (no sidecar reachable)
+    actually reaches `GrpcResolver._resolve` and blocks for the configured
+    `deadline_ms` (default 500) before failing closed -- turning this
+    module's run time from sub-second into tens of seconds, and making it
+    depend on wall-clock timing of a service that is never there. This
+    double removes both problems and, as a side effect, never runs
+    `TracingHook` (a hook is an `OpenFeatureClient` concern; this class
+    implements `get_string_details` itself, so no
+    `feature_flag.evaluation` span event is added here) -- correct for this
+    suite, since that event's presence is `test_autonomy.py`'s concern too.
+    """
+
+    class _Provider:
+        def get_metadata(self):
+            return _Metadata("FakeFlagdProvider")
+
+    def __init__(self):
+        self.provider = self._Provider()
+
+    def get_string_details(self, flag_key, default_value, evaluation_context=None):
+        return _Details(value=default_value, reason="ERROR")
+
+
+class _Metadata:
+    def __init__(self, name):
+        self.name = name
+
+
+class _Details:
+    def __init__(self, value, reason, variant=None, flag_metadata=None,
+                 error_code=None):
+        self.value = value
+        self.reason = reason
+        self.variant = variant
+        self.flag_metadata = flag_metadata or {}
+        self.error_code = error_code
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _fake_flag_client():
+    """Installs `_FailClosedFlagClient` in place of `pds.server`'s real
+    module-scope OpenFeature client for the duration of this module, and
+    restores the real one afterward."""
+    import pds.server as server
+
+    original = server._flag_client
+    server._flag_client = _FailClosedFlagClient()
+    yield
+    server._flag_client = original
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -301,6 +370,13 @@ def test_an_unusable_traceparent_costs_the_parent_and_nothing_else(spans,
 
 
 def test_the_deny_span_carries_the_decision_and_both_numbers(spans):
+    """No flagd sidecar is reachable from this suite (it runs outside the
+    cluster), so `resolve_autonomy` takes its fail-closed path and the level
+    used is `RESTRICTIVE_LEVEL` -- which is also, not coincidentally, M2's
+    old constant. `ATTR_AUTONOMY_REASON` is `ERROR` because the OpenFeature
+    SDK's own not-ready path (measured against the live sidecar mid-startup:
+    `error_code=PROVIDER_NOT_READY`, no exception) reports it that way, not
+    because `resolve_autonomy`'s own `except` fired."""
     PolicyServicer().CheckRequest(_request(params=_execute(6200.0)), None)
     span, = spans.get_finished_spans()
     assert span.attributes[telemetry.ATTR_DECISION] == "deny"
@@ -311,7 +387,11 @@ def test_the_deny_span_carries_the_decision_and_both_numbers(spans):
     assert span.attributes[telemetry.ATTR_AMOUNT] == 6200.0
     assert span.attributes[telemetry.ATTR_CURRENCY] == "EUR"
     assert span.attributes[telemetry.ATTR_LIMIT] == 6000.0
-    assert span.attributes[telemetry.ATTR_AUTONOMY] == AUTONOMY_LEVEL
+    assert span.attributes[telemetry.ATTR_AUTONOMY] == RESTRICTIVE_LEVEL
+    assert span.attributes[telemetry.ATTR_AUTONOMY_REASON] == "ERROR"
+    assert telemetry.ATTR_FLAG_VERSION not in span.attributes, (
+        "no flagd sidecar is reachable here, so there is no version to carry"
+    )
     assert span.attributes[telemetry.ATTR_RETRYABLE] is False
 
 
@@ -335,13 +415,24 @@ def test_every_attribute_we_emit_is_declared_and_visibly_ours(spans):
     documents, so an attribute set on the span but missing from it would be
     undocumented telemetry -- and the `policy.`/`northstar.` prefixes are how a
     reader tells our invented keys from the `gen_ai.*`/`mcp.*` ones the
-    frameworks emit."""
+    frameworks emit.
+
+    M5-R6 adds one attribute this service did not invent (`feature_flag.
+    version`, an existing OTel semantic convention) alongside the ones it
+    did; `telemetry.INVENTED_ATTRIBUTES` is the subset the prefix check
+    still applies to. It is not exercised by the four calls below (no flagd
+    sidecar is reachable from this suite, so `resolve_autonomy` never gets a
+    version to attach) -- `tests/test_autonomy.py` covers its extraction,
+    and this guard's job is only to keep the *set* honest.
+    """
     for params in (_execute(6200.0), _execute(5800.0), MEASURED_PROPOSE, b"junk"):
         PolicyServicer().CheckRequest(_request(params=params), None)
     emitted = {k for span in spans.get_finished_spans() for k in span.attributes}
     assert emitted, "no attributes were set at all"
     assert emitted <= set(telemetry.ATTRIBUTES)
-    assert all(k.startswith(("policy.", "northstar.")) for k in emitted)
+    invented = emitted - {telemetry.ATTR_FLAG_VERSION}
+    assert invented <= set(telemetry.INVENTED_ATTRIBUTES)
+    assert all(k.startswith(("policy.", "northstar.")) for k in invented)
 
 
 def test_a_missing_value_is_absent_from_the_span_not_zero(spans):

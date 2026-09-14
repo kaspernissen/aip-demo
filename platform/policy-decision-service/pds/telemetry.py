@@ -28,6 +28,9 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+from opentelemetry.semconv._incubating.attributes.feature_flag_attributes import (
+    FEATURE_FLAG_VERSION,
+)
 
 SPAN_NAME = "policy.decision"
 
@@ -39,15 +42,41 @@ ATTR_TOOL = "policy.tool.name"              # the MCP tool requested
 ATTR_AMOUNT = "policy.request.amount"       # what was asked for
 ATTR_CURRENCY = "policy.request.currency"
 ATTR_LIMIT = "policy.limit.amount"          # what the rule allows
-ATTR_AUTONOMY = "policy.autonomy.level"     # the constant M5 turns into a flag
+ATTR_AUTONOMY = "policy.autonomy.level"     # M5: resolved from flagd, not a constant
+# M5: the OpenFeature `reason` the level came back with (`TARGETING_MATCH`,
+# `STATIC`, `DEFAULT`, `ERROR`, ...) -- alongside ATTR_AUTONOMY so a reader
+# can tell "autonomous because the contract says so" from "assisted because
+# we could not ask" without cross-referencing a second signal.
+ATTR_AUTONOMY_REASON = "policy.autonomy.reason"
 ATTR_RETRYABLE = "policy.decision.retryable"
+
+# M5-R6: the one attribute on this span that is NOT ours to name. Unlike
+# ATTR_AUTONOMY and its `policy.`/`northstar.`-prefixed siblings -- which
+# Gap 3 (module docstring) documents as invented because no convention exists
+# for a policy decision itself -- a feature flag's ruleset version already
+# has one: `feature_flag.version`, read from
+# `opentelemetry.semconv._incubating.attributes.feature_flag_attributes`
+# (still incubating as of opentelemetry-semantic-conventions==0.65b0, not yet
+# in the stable `opentelemetry.semconv.attributes` namespace -- checked by
+# import, not assumed) rather than retyped as a string literal. Placed here,
+# on `policy.decision`, rather than only on Task 4's log record: Task 5's
+# eval-scorer audit already reads this span to establish `policy.rule`, and
+# must not have that same determination for *ruleset version* start
+# depending on the logs pipeline M5 stands up for the first time.
+ATTR_FLAG_VERSION = FEATURE_FLAG_VERSION
 
 # Every attribute this service sets, so a guard test can assert the set rather
 # than re-listing it and drifting.
 ATTRIBUTES = (
     ATTR_DECISION, ATTR_RULE, ATTR_CALLER, ATTR_TOOL, ATTR_AMOUNT,
-    ATTR_CURRENCY, ATTR_LIMIT, ATTR_AUTONOMY, ATTR_RETRYABLE,
+    ATTR_CURRENCY, ATTR_LIMIT, ATTR_AUTONOMY, ATTR_AUTONOMY_REASON,
+    ATTR_RETRYABLE, ATTR_FLAG_VERSION,
 )
+
+# The subset of ATTRIBUTES this service invented (Gap 3) versus borrowed from
+# an existing OTel semantic convention -- `tests/test_servicer.py`'s
+# "visibly ours" guard checks provenance differently for each.
+INVENTED_ATTRIBUTES = tuple(a for a in ATTRIBUTES if a != ATTR_FLAG_VERSION)
 
 _TRACER_NAME = "northstar.policy-decision-service"
 

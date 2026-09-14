@@ -34,6 +34,24 @@ quietly contradict the architecture this milestone exists to demonstrate. The
 `sys.path` insertion below happens in a test module, so it cannot reach
 `mcp_tools.py`, `settlement.py` or the image.
 
+M5 Task 3: `pds/server.py` now imports `openfeature` at module scope (the
+autonomy-level client it builds once, per ruling M5-R4/Step 7), which is not
+a dependency this file's own venv (`agents/settlement-agent/.venv`) carries
+and never should -- house style is one clean venv per service
+(`requirements.txt`'s own "resolved once" ruling), and this file borrows the
+PDS's *source* rather than pip-installing it for exactly that reason. So the
+`sys.path` insertion below also appends the PDS's own already-built `.venv`
+site-packages -- `append`, not `insert(0, ...)`, so any package name the two
+services' venvs happen to share (`grpcio`, `protobuf`,
+`opentelemetry-{api,sdk}` -- all pinned to the same versions in both
+`requirements.txt` files already, not a coincidence this file relies on) is
+still resolved from this service's own venv first, and the PDS's copy is only
+reached for names this venv genuinely has none of (`openfeature*` and its own
+transitive closure). This does not add anything to
+`agents/settlement-agent/requirements.txt` or install anything into this
+service's `.venv` -- it reads a sibling venv's already-installed packages
+exactly as it already reads a sibling service's already-written source.
+
 Concrete regression check (measured -- see the task report's fix round):
 change `"decision": "deny"` to `"denied"` in `pds/server.py::build_result` and
 `test_the_pds_deny_body_is_recognised_by_the_agents_own_detector` fails here,
@@ -58,6 +76,8 @@ _PDS_DIR = (
     / "policy-decision-service"
 )
 
+_PDS_SITE_PACKAGES = sorted(_PDS_DIR.glob(".venv/lib/python3.*/site-packages"))
+
 _HOW = (
     "\n\n"
     "This is the producer/consumer contract test for the policy deny marker\n"
@@ -66,9 +86,13 @@ _HOW = (
     "service's suite green.\n"
     "\n"
     "The generated ExtMCP gRPC stubs it needs are git-ignored on purpose\n"
-    "(ruling R22). Generate them, then re-run:\n"
+    "(ruling R22), and since M5 Task 3 it also needs the PDS's own `.venv`\n"
+    "built (for `openfeature`, imported at `pds/server.py` module scope).\n"
+    "Generate/build both, then re-run:\n"
     "\n"
     "    cd platform/policy-decision-service && ./gen-stubs.sh\n"
+    "    cd platform/policy-decision-service && rm -rf .venv "
+    "&& uv venv --python 3.13 .venv && uv pip install -r requirements.txt\n"
     "\n"
     "Deliberately not an importorskip: a skipped contract test is a contract\n"
     "nobody is checking, and this project has already been burned by a\n"
@@ -77,10 +101,14 @@ _HOW = (
 
 if str(_PDS_DIR) not in sys.path:
     sys.path.insert(0, str(_PDS_DIR))
+for _site_packages in _PDS_SITE_PACKAGES:
+    if str(_site_packages) not in sys.path:
+        sys.path.append(str(_site_packages))
 
 try:  # pragma: no cover - the failure path is exercised by deleting the stubs
+    from pds.autonomy import RESTRICTIVE_LEVEL
     from pds.rules import PolicyInput, decide
-    from pds.server import AUTONOMY_LEVEL, build_result, parse_call
+    from pds.server import build_result, parse_call
 except ImportError as exc:
     raise RuntimeError(str(exc) + _HOW) from exc
 
@@ -112,7 +140,11 @@ def _pds_decision(params: bytes):
     Mirrors `PolicyServicer.CheckRequest`'s own call sequence
     (`parse_call` -> `decide` -> `build_result`, with `requested=call.amount`),
     minus the gRPC and span plumbing, which is the PDS suite's business and not
-    this contract's.
+    this contract's. Also minus `resolve_autonomy` (M5): this contract is
+    about the deny-marker shape `parse_call`/`decide`/`build_result` produce,
+    not about which autonomy level flagd hands back, so the level is fixed
+    at `RESTRICTIVE_LEVEL` -- the same "assisted" every call in this file
+    exercised before M5, when it was `server.py`'s own constant.
     """
     call = parse_call(params)
     decision = decide(
@@ -121,7 +153,7 @@ def _pds_decision(params: bytes):
             tool=call.tool or "",
             amount=call.amount,
             currency=call.currency,
-            autonomy_level=AUTONOMY_LEVEL,
+            autonomy_level=RESTRICTIVE_LEVEL,
         )
     )
     result = build_result(

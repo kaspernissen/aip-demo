@@ -61,6 +61,20 @@ def test_a_higher_autonomy_level_raises_the_limit():
     assert decide(_input(amount=6200.0, autonomy_level="autonomous")).permit is True
 
 
+def test_the_autonomous_row_gets_its_own_honest_rule_name():
+    """M5 Task 3, Step 8: `(settlement-agent, autonomous)` used to be
+    reported under the literal `settlement-agent.assisted.execute_limit` --
+    pre-existing (M2.2, `fb3e294`), and unreachable until M5 made
+    `autonomous` an actual resolvable level. Composing the autonomy segment
+    fixes exactly this row; nothing else in `EXECUTE_LIMITS` was mislabelled
+    for a caller this table already knew, so this is the one new positive
+    assertion Step 8 needs and the only row whose rule name actually
+    changes."""
+    d = decide(_input(caller=AGENT, amount=6200.0, autonomy_level="autonomous"))
+    assert d.permit is True
+    assert d.rule == "settlement-agent.autonomous.execute_limit"
+
+
 def test_the_denial_reason_names_both_numbers():
     """The model narrates this string, so it must contain what a customer
     needs to hear: what was asked and what the limit is."""
@@ -248,3 +262,24 @@ def test_proposing_a_payment_is_still_unlimited_for_any_caller():
     review never asked to restrict."""
     assert decide(_input(tool="propose_payment", amount=None, caller=None)).permit is True
     assert decide(_input(tool="propose_payment", amount=None, caller=OTHER)).permit is True
+
+
+# ---------------------------------------------------------------------------
+# M5 Task 3, Step 6: a contract that hands back a variant with no policy row
+# must deny -- and does, with no production change here. `EXECUTE_LIMITS` is
+# keyed by `(caller, autonomy_level)`, so an autonomy level nothing wrote a
+# row for is simply a dict miss, denied by the same `unknown_caller` branch
+# an unrecognised *caller* falls through -- the name is a misnomer for this
+# case (nothing about the caller was unknown), but the fail-closed property
+# it exists for holds regardless: a fail-closed property that holds
+# structurally, with no code added to defend it, is worth more than one that
+# only holds because a defensive branch was written for it.
+# ---------------------------------------------------------------------------
+
+
+def test_an_unknown_variant_denies_through_the_existing_table():
+    """Garbage in the contract must deny -- and does, without a new branch,
+    because EXECUTE_LIMITS is keyed by (caller, level) and will simply miss."""
+    decision = decide(_input(autonomy_level="banana"))
+    assert decision.permit is False
+    assert decision.rule == "unknown_caller"

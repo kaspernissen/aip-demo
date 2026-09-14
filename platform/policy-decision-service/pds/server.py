@@ -34,21 +34,47 @@ from concurrent import futures
 from dataclasses import dataclass
 
 import grpc
+from openfeature import api
+from openfeature.contrib.hook.opentelemetry import TracingHook
+from openfeature.contrib.provider.flagd import FlagdProvider
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
 import ext_mcp_pb2 as pb
 import ext_mcp_pb2_grpc as pb_grpc
 
 from pds import telemetry
+from pds.autonomy import FLAGD_HOST, FLAGD_PORT, resolve_autonomy
 from pds.identity import caller_spiffe_id
 from pds.rules import Decision, PolicyInput, decide
 
 log = logging.getLogger("pds")
 
-# M2 runs at one autonomy level, as a constant. M5 turns this into a flag; the
-# rule table in `rules.py` is already keyed by it, so that change is a value
-# change and not a shape change. Do not invent a mechanism for varying it here.
-AUTONOMY_LEVEL = "assisted"
+# M2 ran at one autonomy level, as a constant (`AUTONOMY_LEVEL = "assisted"`).
+# M5 turns this into a flag: the rule table in `rules.py` is already keyed by
+# the level, so resolving it per decision instead of compiling it in is a
+# value change, not a shape change -- `decide()` itself is untouched.
+#
+# One client, built once at import time rather than per request: the
+# provider owns a gRPC channel and a background connection-monitor thread
+# (`GrpcResolver.connect`, spawned by `api.set_provider`'s own init), and
+# building one per `CheckRequest` would open one of each per decision for no
+# gain. `api.set_provider` is non-blocking (it spawns a daemon thread to run
+# `provider.initialize`, measured in
+# `openfeature.provider._registry.ProviderRegistry._initialize_provider` --
+# `wait_for_init` defaults `False`) so this import never blocks server
+# startup on the sidecar being reachable; a request that arrives before the
+# provider reports ready resolves through the SDK's own not-ready path, which
+# `resolve_autonomy` reads exactly like any other unavailability (measured
+# against the live sidecar: `error_code=PROVIDER_NOT_READY`,
+# `value=default_value`, i.e. `RESTRICTIVE_LEVEL`).
+#
+# `TracingHook()` (ruling M5-R6's sibling concern for Task 4's log record,
+# not the span here) puts a `feature_flag.evaluation` event on whatever span
+# is active when the flag is resolved -- `_decide` below resolves inside the
+# `policy.decision` span, so that event lands there.
+api.set_provider(FlagdProvider(host=FLAGD_HOST, port=FLAGD_PORT))
+_flag_client = api.get_client()
+_flag_client.add_hooks([TracingHook()])
 
 # The JSON-RPC application-error range. The exact code is ours because this is
 # our error -- and it is worth being clear that the client never sees it:
@@ -256,6 +282,13 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
         call = parse_call(request.mcp_request if request.HasField("mcp_request")
                           else None)
 
+        # Resolved unconditionally, exactly where `AUTONOMY_LEVEL` used to be
+        # read unconditionally: M5 makes this a per-decision lookup instead
+        # of a module constant, but every `policy.decision` span still
+        # carries the level in effect, even on the `_undecidable_method`
+        # path below -- a value change, not a shape change.
+        resolution = resolve_autonomy(caller, _flag_client)
+
         if request.method != DECIDABLE_METHOD:
             # Not reachable under the committed gateway config, which sends us
             # `tools/call` only. Fail closed rather than assume a method whose
@@ -267,13 +300,27 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
                 tool=call.tool or "",
                 amount=call.amount,
                 currency=call.currency,
-                autonomy_level=AUTONOMY_LEVEL,
+                autonomy_level=resolution.level,
             ))
 
         span.set_attribute(telemetry.ATTR_DECISION,
                            "permit" if decision.permit else "deny")
         span.set_attribute(telemetry.ATTR_RULE, decision.rule)
-        span.set_attribute(telemetry.ATTR_AUTONOMY, AUTONOMY_LEVEL)
+        # The level actually used, plus why -- so a reader can tell
+        # "autonomous because the contract says so" (reason TARGETING_MATCH
+        # or STATIC) from "assisted because we could not ask" (reason ERROR).
+        span.set_attribute(telemetry.ATTR_AUTONOMY, resolution.level)
+        span.set_attribute(telemetry.ATTR_AUTONOMY_REASON, resolution.reason)
+        # Ruling M5-R6: the ruleset version too, on this span and not only on
+        # Task 4's log record -- Task 5's audit already reads this span, and
+        # must not have its correctness depend on the logs pipeline M5 is
+        # standing up for the first time. Absent like every other optional
+        # field below: the live sidecar's `autonomy-level` flag carries no
+        # `flagSetId`/`version` metadata today (measured, `flag_metadata`
+        # comes back `{}`), so this is routinely missing rather than always
+        # present, and a missing version must read as missing.
+        if resolution.version is not None:
+            span.set_attribute(telemetry.ATTR_FLAG_VERSION, resolution.version)
         span.set_attribute(telemetry.ATTR_RETRYABLE, decision.retryable)
         # Absent values are left off the span rather than written as "" or 0:
         # an attribute that is missing reads as missing, whereas a zero amount
@@ -347,8 +394,9 @@ def serve() -> None:
     pb_grpc.add_ExtMcpServicer_to_server(PolicyServicer(), server)
     server.add_insecure_port(f"[::]:{port}")
     server.start()
-    log.info("policy-decision-service listening on %s, autonomy level %s",
-             port, AUTONOMY_LEVEL)
+    log.info("policy-decision-service listening on %s, autonomy level "
+             "resolved per decision from flagd at %s:%s",
+             port, FLAGD_HOST, FLAGD_PORT)
 
     stopping = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stopping.set())
