@@ -1095,6 +1095,40 @@ def _names_in(node: ast.AST) -> set[str]:
     return found
 
 
+def _composed_rule_names(
+    node: ast.JoinedStr, autonomy_levels: set[str]
+) -> set[str] | None:
+    """Every concrete rule name an f-string `rule=` value can produce, one per
+    known autonomy level -- derived from the f-string's own pieces, not
+    retyped or guessed. Returns `None` if the f-string interpolates anything
+    this cannot safely resolve, because silently under-checking a rule name
+    this guard does not understand is worse than failing loudly on it.
+
+    M5's `pds/rules.py` composes exactly one shape,
+    `f"settlement-agent.{req.autonomy_level}.execute_limit"` (see that file's
+    own long comment on why the literal had to go): the caller segment is a
+    plain string piece that cannot vary, and the one interpolation is
+    `req.autonomy_level`, whose live vocabulary is `EXECUTE_LIMITS`'s own
+    second key element -- already collected by the caller, not re-derived
+    here.
+    """
+    template: list[str | None] = []
+    for value in node.values:
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            template.append(value.value)
+        elif (
+            isinstance(value, ast.FormattedValue)
+            and ast.unparse(value.value) == "req.autonomy_level"
+        ):
+            template.append(None)  # placeholder for the interpolated segment
+        else:
+            return None
+    return {
+        "".join(level if piece is None else piece for piece in template)
+        for level in autonomy_levels
+    }
+
+
 def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp():
     """§9.4: settlement-agent and payments-mcp contain no policy logic; the only
     change to either is mcp_tools.py's denial-to-terminal-result branch.
@@ -1184,6 +1218,14 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
       file in the component, so listing it widens nothing except the change
       surface it accounts for.
 
+    * `svid.py` -- **added to the set 2026-09-14 (M5 Task 1, `01606af`,
+      the deferred-pins batch).** `git diff m2.1-verified..HEAD -- agents/
+      settlement-agent/svid.py` is one line: a comment recording the
+      `spiffe/spire` chart version the Workload API socket path matches
+      (`0.30.1` -> `0.30.2`). No executable line moved, same class as
+      `bootstrap.py` above -- named for the same reason, not excused
+      silently.
+
     So the criterion's *substance* -- no policy logic in either component --
     holds and is asserted. Its literal "only one file changed" wording does not,
     and pretending otherwise by not looking would be the dishonest option.
@@ -1217,10 +1259,36 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
     # emitted twice, once on the deny branch and once on the permit branch,
     # which is the point of the rule -- one rule, two conclusions.
     rule_names = {node.value.value for node in literal_rule_keywords}
-    assert len(literal_rule_keywords) == len(rule_keywords), (
-        "a `rule=` argument in rules.py is not a plain string literal, so this "
-        "guard cannot read the full rule vocabulary and would silently under-"
-        "check. Fix the guard rather than the rule"
+
+    # M5: the execute-limit rule's autonomy segment is composed
+    # (`f"settlement-agent.{req.autonomy_level}.execute_limit"`), not a
+    # literal -- rules.py's own comment explains why the literal used to lie.
+    # A composed `rule=` is not a blind spot to route around silently: each
+    # one is expanded into the concrete name it produces for every autonomy
+    # level `EXECUTE_LIMITS` actually has, so the vocabulary this guard scans
+    # for downstream stays exactly as complete as when every `rule=` was a
+    # plain string.
+    composed_rule_keywords = [
+        node for node in rule_keywords if isinstance(node.value, ast.JoinedStr)
+    ]
+    for node in composed_rule_keywords:
+        composed = _composed_rule_names(node.value, vocabulary)
+        assert composed is not None, (
+            f"rules.py:{node.value.lineno}'s `rule=` argument is an f-string "
+            "this guard does not know how to expand safely (it only "
+            "understands one interpolating `req.autonomy_level`), so it "
+            "cannot read the full rule vocabulary and would silently under-"
+            "check. Fix the guard rather than the rule"
+        )
+        rule_names |= composed
+
+    assert len(literal_rule_keywords) + len(composed_rule_keywords) == len(
+        rule_keywords
+    ), (
+        "a `rule=` argument in rules.py is neither a plain string literal nor "
+        "an f-string this guard knows how to expand, so it cannot read the "
+        "full rule vocabulary and would silently under-check. Fix the guard "
+        "rather than the rule"
     )
     assert rule_names, "read no rule names out of rules.py; the guard is inert"
     vocabulary |= rule_names
@@ -1347,6 +1415,10 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
         # on every run, so this entry widens the change-surface clause alone
         # and leaves the substantive ones exactly as strict.
         "tools/payments-mcp/bootstrap.py",
+        # M5 Task 1 (`01606af`): a comment-only pin-version correction (the
+        # `spiffe/spire` chart's Workload API socket path, 0.30.1 -> 0.30.2).
+        # See this test's docstring for the measured one-line diff.
+        "agents/settlement-agent/svid.py",
     }
     assert production_changed <= expected, (
         "production source changed in these components since m2.1-verified, "

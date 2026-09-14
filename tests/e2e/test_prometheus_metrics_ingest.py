@@ -108,6 +108,25 @@ SPIRE's series, the no-scrape proof and the claims-agent, payments-mcp and
 reviewer-ui rows of the per-service control, which read HTTP metrics the
 remaining ungated traffic still produces -- still run on a bare `pytest
 tests/`, and all five passed on that same run.
+
+**Correction, 2026-09-14 (found unclaimed during M5, not introduced by it).**
+The paragraph above is wrong about the reviewer-ui row: it does not "read HTTP
+metrics the remaining ungated traffic still produces", because there is no
+ungated traffic to reviewer-ui at all. Every e2e file that reaches
+reviewer-ui's `GET /` or `POST /review/{id}` (`test_evidence_view.py`,
+`test_policy_scores.py`, `test_supervised.py` criteria 1-6) is itself gated
+behind `RUN_BROWSER_TESTS=1`, and reviewer-ui's readiness probe deliberately
+makes no ledger call, so the row failed a bare run every time -- not staleness,
+an absent series (`assert []`). `git diff 0ae64f9^..HEAD` touches none of this
+file, `apps/reviewer-ui/`, `test_evidence_view.py`, `test_policy_scores.py` or
+`test_supervised.py`, matching the M5 Task 4 reviewer's own finding that this
+failure predates Task 4. The row now carries
+`_REVIEWER_UI_TRAFFIC_REQUIRED`, its own gate rather than settlement-agent's;
+see that marker's comment for the full reasoning. "All five passed on that
+same run" was true only because a preceding `RUN_BROWSER_TESTS=1` run in the
+same session had left a still-fresh series behind it -- the false-GREEN class
+this file's own module docstring warns about, reached by session ordering
+rather than by a broken control.
 """
 from __future__ import annotations
 
@@ -458,21 +477,20 @@ def test_prometheus_itself_scrapes_nothing(prometheus_url):
 # that the code is byte-identical and the platform tells the two apart by
 # identity), so it has no `job` of its own by design.
 #
-# **The settlement-agent row carries the cost gate, and only that row** (M4 Task
-# 5). Its known metric is the one that exists only because a *model call*
-# happened -- PydanticAI records it per turn -- and `_recent_series` deliberately
-# refuses a stale sample, so this row's real precondition is "a settlement has
-# been driven in the last few minutes". Until M4 Task 5 that precondition was
-# supplied by accident: three ungated e2e files drove settlements earlier in the
-# alphabet than this one. Ruling M4-R15 (amended) gated those three, so the
-# accident is gone, and this row now states its own precondition instead of
-# inheriting it. In the gate -- the run that proves M4 exit criterion 6 --
-# `RUN_BROWSER_TESTS=1` is set, `test_policy_scores.py` and
-# `test_policy_denial.py` drive settlements immediately before this file, and
-# the row runs exactly as it did. The other three rows stay ungated: their
-# metrics come from ordinary HTTP traffic that the ungated e2e files still
-# generate, measured -- all three passed on the bare run in which this one
-# failed.
+# **The settlement-agent row carries the cost gate, and only that row was
+# gated by M4 Task 5.** Its known metric is the one that exists only because a
+# *model call* happened -- PydanticAI records it per turn -- and
+# `_recent_series` deliberately refuses a stale sample, so this row's real
+# precondition is "a settlement has been driven in the last few minutes".
+# Until M4 Task 5 that precondition was supplied by accident: three ungated
+# e2e files drove settlements earlier in the alphabet than this one. Ruling
+# M4-R15 (amended) gated those three, so the accident is gone, and this row
+# now states its own precondition instead of inheriting it. In the gate --
+# the run that proves M4 exit criterion 6 -- `RUN_BROWSER_TESTS=1` is set,
+# `test_policy_scores.py` and `test_policy_denial.py` drive settlements
+# immediately before this file, and the row runs exactly as it did. The
+# claims-agent and payments-mcp rows stay ungated: their metrics come from
+# ordinary HTTP traffic that the ungated e2e files still generate.
 _MODEL_TRAFFIC_REQUIRED = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
     reason=(
@@ -480,6 +498,38 @@ _MODEL_TRAFFIC_REQUIRED = pytest.mark.skipif(
         "settlement produces; gated behind the same RUN_BROWSER_TESTS=1 flag "
         "scripts/smoke-test.sh sets unconditionally (ruling M4-R15 amended, "
         "discharged in M4 Task 5)"
+    ),
+)
+
+# **The reviewer-ui row was never actually ungated -- M4 Task 5 measured the
+# other three and left this one on the same footing as claims-agent and
+# payments-mcp, but its own precondition does not hold for reviewer-ui.**
+# `http_client_duration_milliseconds_count{job="reviewer-ui"}` is recorded by
+# `HTTPXClientInstrumentor` only when reviewer-ui's own process makes an
+# outbound call to payments-api -- `apps/reviewer-ui/ledger.py`'s
+# `list_refused`/`get` -- which happens only when its `GET /` or
+# `POST /review/{id}` route is hit. `reviewer-ui`'s readiness probe hits
+# `/healthz` instead, deliberately: that route makes no ledger call at all
+# (`deploy/k8s/reviewer-ui.yaml`'s own comment gives the same
+# "probe traffic must not need the thing it is proving" reason
+# `systems/payments-api/handlers.go` gives for its own `/healthz`), so no
+# probe ever produces this metric. Every e2e file that reaches `GET /` or
+# `POST /review/{id}` --  `test_evidence_view.py`, `test_policy_scores.py`,
+# and `test_supervised.py` criteria 1-6 -- is itself gated behind
+# `RUN_BROWSER_TESTS=1` (grepped: no other file references
+# `reviewer_ui_route`'s HTTP paths). So unlike claims-agent and payments-mcp,
+# there is no ungated traffic source for this row at all, and it fails a bare
+# `pytest tests/` every time regardless of freshness -- confirmed failing
+# identically before and after M5 Task 4 (both touch no file this row or its
+# traffic sources depend on). Gated on the same flag, for its own reason.
+_REVIEWER_UI_TRAFFIC_REQUIRED = pytest.mark.skipif(
+    os.environ.get("RUN_BROWSER_TESTS") != "1",
+    reason=(
+        "needs reviewer-ui's own HTTP call to payments-api, which only "
+        "test_evidence_view.py, test_policy_scores.py and test_supervised.py "
+        "criteria 1-6 cause -- all three gated behind the same "
+        "RUN_BROWSER_TESTS=1 flag scripts/smoke-test.sh sets unconditionally; "
+        "reviewer-ui's own readiness probe deliberately makes no ledger call"
     ),
 )
 
@@ -511,6 +561,7 @@ SERVICES_WITH_A_KNOWN_METRIC = (
         "LEGACY name: reviewer-ui is the one service whose manifest sets no "
         "OTEL_SEMCONV_STABILITY_OPT_IN, measured 2026-09-13 and recorded in "
         "docs/telemetry-contract.md",
+        marks=_REVIEWER_UI_TRAFFIC_REQUIRED,
         id="reviewer-ui",
     ),
 )

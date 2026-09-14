@@ -281,20 +281,26 @@ end to end, because the three files that proved it are the three that were
 paying for it — **and it no longer re-proves the GenAI metric inventory
 either**, because the positive control every `gen_ai.*` absence in
 `test_prometheus_metrics_ingest.py` is paired with is a histogram only a model
-call produces. Nine of that file's fourteen tests ride the flag for that reason;
-seven of them were found by running the bare suite and reading the failures, not
-by reasoning about them. Set `RUN_BROWSER_TESTS=1` to get all of it back.
+call produces. Ten of that file's fourteen tests ride the flag for that reason;
+seven of the nine model-call ones were found by running the bare suite and
+reading the failures, not by reasoning about them, and the tenth (the
+reviewer-ui row of the per-service control) was found the same way, later,
+during M5: it needs no model call, but nothing ungated ever drives reviewer-ui
+traffic either, so it failed a bare run for a different reason from the other
+nine. Set `RUN_BROWSER_TESTS=1` to get all of it back.
 
-**Eleven** modules sit behind `RUN_BROWSER_TESTS=1`, **71** tests in all —
+**Eleven** modules sit behind `RUN_BROWSER_TESTS=1`, **72** tests in all —
 and that figure is now *re-measured by a test* rather than by hand.
 `tests/unit/test_telemetry_contract_counts.py` walks pytest's collected items,
 reads each item's own `skipif` marker, and fails against this sentence and
 against `docs/telemetry-contract.md`; before M4 Task 5 nothing did, so deleting
 a gate from a settlement-driving file moved no published number and reddened no
 test. The M4 Task 4 figure it replaces was seven modules and 41 tests. The
-spread: `tests/e2e/test_settlement_llm_trace.py` (9), 9 of the 14 in
-`tests/e2e/test_prometheus_metrics_ingest.py` (M4 Task 5 — every control whose
-metric exists only if a model call happened minutes earlier),
+spread: `tests/e2e/test_settlement_llm_trace.py` (9), 10 of the 14 in
+`tests/e2e/test_prometheus_metrics_ingest.py` (nine gated by M4 Task 5 — every
+control whose metric exists only if a model call happened minutes earlier —
+plus the reviewer-ui row of the per-service control, gated later during M5 for
+its own reason: nothing ungated drives reviewer-ui's HTTP traffic either),
 `tests/e2e/test_browser_root_span.py` (8),
 `tests/e2e/test_settlement_agent_trace.py` (8, M4 Task 5),
 `tests/e2e/test_claims_chain_trace.py` (7, M4 Task 5),
