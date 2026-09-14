@@ -3437,9 +3437,16 @@ five parented to `c9a03bd9cc4e18c1`:
 <!--
 This sentence published the trace's whole-trace total — "148 spans:
 settlement-agent 64, claims-agent 35, agentgateway 32, …" — until M4's final
-review (finding M8). It broke the plan's standing rule, restated with its
-measurement two hundred lines below, that no exact whole-trace span total may
-be published anywhere: `EventQueue.dequeue_event` is a polling span measured
+review (finding M8). It broke the plan's standing rule that no exact
+whole-trace span total may be published anywhere — restated with its
+measurement further down this file, in the paragraph beginning "No whole-trace
+total is published here, deliberately", which is cited that way because the
+first version of this comment cited a *distance* ("two hundred lines below")
+and was wrong by half. The rule has one carve-out, added by the same review: a
+dated, trace-qualified record whose claim is a **difference** between two
+counts of the same trace may state both, because the difference is the
+finding. This sentence was not one of those.
+`EventQueue.dequeue_event` is a polling span measured
 varying 10–16 across identically-shaped runs, and the two service counts that
 dominated that total are the two carrying it, so the figure was not
 reproducible. The same defect was already retired once, in M2.1 Task 5, where

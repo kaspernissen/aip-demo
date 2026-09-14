@@ -11,8 +11,12 @@ follows.
 
 That sentence also said "**its Cilium** and SPIRE entries" until M4's final
 review. `eval-scorer` has **no** Cilium policy — `grep -c eval-scorer
-deploy/platform/cilium-policies.yaml` is 0, `scripts/setup-kind.sh:656-662`
-records the absence as a posture gap, and spec §9's carried-debt entry (ruling
+deploy/platform/cilium-policies.yaml` is 0, and `scripts/setup-kind.sh`
+records the absence as a posture gap in its stage-4 eval-scorer block (the
+paragraph beginning "deploy/platform/cilium-policies.yaml, on the other hand,
+names no rule selecting it" — cited by its text rather than by a line number,
+because the line number this correction first used was already three lines off
+when it was written), and spec §9's carried-debt entry (ruling
 M4-R17) names `eval-scorer` as one of the unenforced `northstar-platform`
 endpoints owned by M5. Two committed documents from the same milestone
 disagreeing about whether the milestone's new service sits behind a network
@@ -100,7 +104,10 @@ prose: a sentence true when written, falsified by an edit two lines below it.)
    makes the chain one thing; attribute naming is what makes it queryable,
    and the two are separable. The real-world case is the more interesting one
    to demonstrate than a demo-world one would be.
-2. *A whole-trace span total.* This document publishes none. The trace is
+2. *A whole-trace span total.* This document publishes none **as a property of
+   the system** — the four figures below are one dated variance measurement,
+   which is the thing being demonstrated rather than a number to rely on, and
+   is the case the plan's rule carves out. The trace is
    non-deterministic: the `a2a-sdk`'s
    `a2a.server.events.event_queue.EventQueue.dequeue_event` polling span was
    measured varying **10–16** across identically-shaped runs, and **M2.2 adds a
@@ -364,7 +371,19 @@ the two is an identity rather than a program. The alternative — mentioning it
 only in a footnote to `settlement-agent`'s row — would have hidden the thing
 the milestone is about.
 
-### The application components — five at M1.1, seven as of M3
+### The application components — five at M1.1, seven as of M3, and one more in `northstar-platform` since M4
+
+**M4 added an eighth first-party component, `platform/eval-scorer`, and it is
+not in the table below** (M4 re-review, finding L9). It is deliberately absent
+rather than forgotten: this table is the *application* plane, and eval-scorer
+runs in `northstar-platform` beside the platform components. But the section
+below that one opens "none is this project's code", which eval-scorer
+falsifies — so today it has no row in either inventory. It is described in
+full under "Agent Evals" and in `docs/telemetry-contract.md`; giving it a row
+of its own, and deciding which plane owns it, is **owned by M5** and recorded
+in spec §9. Stated here because a reader counting components from this heading
+will be one short and nothing would tell them.
+
 
 Namespaces, ports, and service DNS names below are read directly from
 `deploy/k8s/*.yaml`, not from memory or from the diagram above.
@@ -443,7 +462,10 @@ What each component is explicitly **not** responsible for:
 
 ### The platform components M2.1 and M2.2 add
 
-All of these live in `northstar-platform` and none is this project's code.
+All of these live in `northstar-platform` and none is this project's code —
+with one exception this heading has not yet absorbed: `platform/eval-scorer`,
+added by M4, is this project's code and lives here too. See the note under the
+application-components heading above.
 Images and versions below were read from the live cluster, enumerating over
 every pod's `.spec.initContainers` **and** `.spec.containers` — not
 `containerStatuses`, which omits init containers and would have missed two of
@@ -1890,20 +1912,47 @@ above). `docs/telemetry-contract.md` has the full per-exemption reasoning
 and the isolated reproduction that confirmed the claims-agent task-boundary
 explanation; it is not repeated here.
 
-**Our services create almost no spans of their own — and the two exceptions
-are named, because a "verified by grep" claim that a grep falsifies is the
-worst form of stale prose this document can carry.** Re-run over `agents/`,
-`tools/` and `systems/` (excluding `.venv` and tests) on 2026-09-14, there are
-exactly two hand-written spans in this project's own source:
+**Our services create few spans of their own, and the exceptions are not
+retyped here — they are the output of a command, because a "verified by grep"
+claim that a grep falsifies is the worst form of stale prose this document can
+carry, and the first attempt to fix that reproduced it.** Run this, and compare:
 
-  * `apps/customer-ui/src/telemetry.ts` / `src/app/page.tsx` — the
-    `claim.submit` root span. Necessary: nothing upstream of the browser could
-    have created it.
-  * `agents/settlement-agent/settlement.py:377-378` —
-    `trace.get_tracer(__name__)` and `tracer.start_as_current_span(...)`, the
-    **`settlement.execute_approved` span**, which this very document describes
-    in four other places. It is the approved execution M3 added, and the span
-    the reviewer-ui link joins to the refused trace.
+```bash
+grep -rnE '(start_as_current_span|startActiveSpan)\(' \
+  agents apps platform systems tools \
+  --include='*.py' --include='*.ts' --include='*.tsx' \
+  | grep -vE '/\.venv/|/node_modules/|/tests/|/test_|\.test\.'
+```
+
+(The trailing `\(` matters: without it the same grep also returns three prose
+mentions in comments and docstrings, and a looser file filter returns
+`a2a.test.ts`. A command published as evidence has to be the command that was
+run.) On 2026-09-14 it returns **five** call sites, one span each:
+
+  * `apps/customer-ui/src/app/page.tsx:37` — **`claim.submit`**, the trace root.
+    Necessary: nothing upstream of the browser could have created it.
+  * `agents/settlement-agent/settlement.py:378` —
+    **`settlement.execute_approved`**, the approved execution M3 added, and the
+    span the reviewer-ui link joins to the refused trace.
+  * `apps/reviewer-ui/main.py:79` — **`review.queue`**.
+  * `apps/reviewer-ui/review.py:163` — **`review.decision`**.
+  * `platform/policy-decision-service/pds/server.py:230` —
+    **`policy.decision`** (the name is `telemetry.SPAN_NAME`, which is why a
+    grep for the literal string does not find it). This is the span every
+    scorer in M4 reads and the evidence view's second panel renders.
+
+There is a **sixth first-party source of spans that this grep cannot find**:
+`platform/eval-scorer` emits its `gen_ai.evaluation.*` spans through the
+evaluation SDK's `score(...)` — imported as `sdk_score` and called inside
+`emit()` in `scorer/emit.py` — which calls the tracer on
+the service's behalf. So "hand-written" and "first-party" are not the same set,
+and any future count has to say which it means.
+
+**The earlier version of this paragraph said "exactly two", scoped to `agents/`,
+`tools/` and `systems/` — and then named a file in `apps/` as one of the two.**
+Inside its own stated scope there was exactly one. That is why the count above
+is a command and its output rather than a number: this is the third time in one
+milestone that a stale-figure fix restated a figure instead of deriving it.
 
 (Until M4's final review this paragraph read "there is no `get_tracer`,
 `start_span`, or `start_as_current_span` anywhere in this project's own
@@ -2059,15 +2108,23 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
    model, and are gated behind `RUN_BROWSER_TESTS=1`.
 
    That file port-forwards to the gateway itself (on an ephemeral local port
-   it asks `kubectl` for, so it cannot collide with the **six** repo-managed
-   forwards), mints real JWT-SVIDs from SPIRE, and asserts both that a valid
+   it asks `kubectl` for, so it cannot collide with the **seven** forwards
+   `scripts/start-demo.sh` establishes — 19001, 19002, 18000, 18080, 5601,
+   9090 and 18300; this said "four" until M4's final review and "six" until
+   the fix wave added the seventh 160 lines away in the same commit, which is
+   why the ports are listed rather than counted), mints real JWT-SVIDs from
+   SPIRE, and asserts both that a valid
    one executes a tool end to end and that invalid ones are refused: **5
    refusal cases from 4 refusal functions** (one, the untrusted-issuer check,
    is parametrised ×2 for `own_kid` and `spire_kid` — `pytest --collect-only`
    confirms **7** cases collected in total: the 5 refusals, the 1 accepted
-   control, and the caller-identity assertion the file opens with. This read
-   "6 cases" until M4's final review, having been written when the file held
-   six.)
+   control the file *opens* with
+   (`test_a_valid_svid_is_accepted_and_the_tool_really_runs`), and the
+   JSON-RPC batch case it *closes* with
+   (`test_a_jsonrpc_batch_is_rejected_before_the_policy_hook_and_changes_nothing`)
+   — a bypass path this repo tracks separately. This read "6 cases" until M4's
+   final review, and the correction that fixed the number then mis-described
+   the seventh as the file's opening assertion, which was already counted.)
    See "Identity with teeth" above for the exact wire shape of each refusal.
 
 7. **Then approve the refusal — this is M3's part of the walkthrough.** After
@@ -2214,9 +2271,26 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
     once more without `emit` and the five scores land in the trace.
 
     For `CLM-1842` — the supervised €6,200 pair — the one worth reading is
-    `stopped_when_refused`. It is **1.0 compliant** for the real run, and a
-    deliberately mis-routed trajectory scores **0.0 retry-after-refusal** on
-    that same scorer while the other four stay put. That difference is spec §7.4's anti-vacuity criterion
-    and the reason the other four scores are worth anything: a scorer that
-    returns 1.0 for everything proves nothing. `tests/e2e/test_policy_scores.py`
-    asserts both runs against the live cluster.
+    `stopped_when_refused`. It is **1.0 compliant** for the real run and
+    **0.0 retry-after-refusal** for a deliberately mis-routed trajectory. That
+    difference is spec §7.4's anti-vacuity criterion: a scorer that returns 1.0
+    for everything proves nothing.
+
+    **Read the other four carefully, because "the other four are unchanged" is
+    a claim this repo has now had to retire twice.** Of the five scorers, the
+    mis-routed run only *exercises* three: the platform refuses the mis-routed
+    execution, so nothing executes, and `amount_executed_matches_approved` and
+    `identity_had_authority` come back `1.0 **not-applicable**` — against
+    `1.0 **compliant**` on the run that did execute. Their **values** match and
+    their **labels** do not, which is why comparing values alone was the wrong
+    shape: a scorer that silently regressed to "I had nothing to judge" would
+    have read as agreement. Among the three both runs do exercise, exactly one
+    differs — `stopped_when_refused` — and the other two,
+    `proposed_before_executed` and `narrated_the_refusal`, are the genuine
+    controls: exercised and compliant on both sides.
+
+    `tests/e2e/test_policy_scores.py` asserts all of that against the live
+    cluster on `(value, label)` pairs rather than on values, derives the
+    unexercised set from the labels rather than hard-coding it, and separately
+    checks that the two set-aside scorers *are* exercised by the compliant run
+    — otherwise setting them aside would be hiding a scorer that never runs.

@@ -387,6 +387,123 @@ times.
   behind on a collector image and a Helm chart for the length of a merge.
   **Scheduled with the `pytest` bump above, on the same first-after-merge
   cluster rebuild. Owned by M5.**
+- **A batch of six fixes that each land *inside* the gate-row staleness guard's
+  `gate_paths`, and therefore share one gate run** (M4 re-review, findings V2,
+  V5, V9, V11, V13 and V12's first item). Recorded together because the reason
+  none shipped with the final-review fix wave is the same for all six, and it
+  is measured rather than asserted: `tests/unit/test_telemetry_contract_counts.py::test_a_predicted_gate_row_is_labelled_as_one`
+  compares the working tree against the commit the published gate row names,
+  over `agents apps contracts deploy platform scripts tests`. Editing any of
+  those re-labels the row `PREDICTED, NOT MEASURED` and demands a fresh
+  `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh`. Confirmed by mutation: a
+  one-line change to the guard's own path list reddens that test naming
+  `tests/unit/test_telemetry_contract_counts.py`. Six behaviour-neutral fixes
+  are worth exactly one gate run between them, not six — **so they are M5's
+  first task, on the same rebuild as the pin bumps above.** In descending
+  order of how much they matter:
+
+  1. **The guard under-covers the gate it protects** (V2, the only one that is
+     not cosmetic). `gate_paths` omits `systems` and `tools`, and the comment
+     above it asserts *"`systems/` and `tools/` are not executed by the gate"*
+     — which is false: `scripts/smoke-test.sh` runs
+     `(cd "$ROOT/systems/payments-api" && go test ./...)` and
+     `(cd "$ROOT/tools/payments-mcp" && pytest tests -q)`, 31 and 16 tests. So
+     a change to either leaves the published row labelled **measured** with no
+     warning. Demonstrated on a real commit: `716d70c` changed
+     `tools/payments-mcp/bootstrap.py`, and the narrow path list reports that
+     file **0** times against the widened list's **1**. Fix: add `"systems"`
+     and `"tools"`, delete the false comment, and mutate to watch the wider set
+     redden. A guard that silently under-covers is worse than none, and this
+     one's job is protecting the MEASURED row the merge rests on.
+  2. **The zero-skip check is blind to two skip shapes** (V5).
+     `scripts/smoke-test.sh`'s `grep -cE "^[^ ]+::[^ ]+ SKIPPED"` misses a
+     collection-time module skip (which prints no `path::test` line at all —
+     the largest possible instance of the failure the check exists for) and any
+     parametrised id containing a space. Both were reproduced empirically on a
+     scratch project: 3 real skips, 1 counted. An id with a space already
+     exists in this tree
+     (`test_no_stray_core_networkpolicy_shadows_the_cilium_one[kind: NetworkPolicy]`),
+     though that test cannot skip. Worse, `tests/unit/test_smoke_test_gate.py`
+     now pins the *literal* fragile regex, so the shape is locked in. Fix:
+     anchor on pytest's own summary line (`N skipped`) — the comment's stated
+     objection, that a bare `grep SKIPPED` matches the word inside a test name,
+     does not apply to the summary line — and re-point the unit test at the
+     property rather than at the regex.
+  3. **The `absent_or_fail` shape walk has no vacuity control** (V9).
+     `tests/unit/test_kube_helper.py`'s AST walk would pass green forever if
+     `_reads_returncode` ever stopped matching — a refactor, a renamed
+     attribute — guarding nothing. Every comparable guard in this repo has a
+     positive control (`test_an_untruncated_read_is_not_refused`,
+     `test_mutation_protocol.py`); this one does not, and the fix wave's
+     mutation round proves it live *today* but nothing in the committed tree
+     pins that. Fix: assert the walk finds a known-offending synthetic source.
+     Two smaller items in the same file: `_RAW_RETURNCODE_SKIPS_ALLOWED` holds
+     **11** entries against the fix report's claim of 8 "with a reason each"
+     (the reasons are two group comments), and nothing detects a *stale*
+     allow-list entry — the rename→RED direction is proven, the rot direction
+     (an allow-listed probe later acquiring a genuine existence check) is not.
+  4. **`start-demo.sh` refuses to start when any of its ports is already held,
+     and tears down the forwards it just created on the way out** (V11 and the
+     re-review's §6). Refusing is *right* — ruling R20 measured that a dead
+     `kubectl port-forward` keeps its listening socket, so "something is bound"
+     is not evidence, and a script that owns forwards must be able to say
+     *these are mine and they work*. The error text is also fine as written: it
+     names the conclusion first and offers `lsof` as the way to see *who*. Two
+     things are wrong. **The script already has the safe alternative and does
+     not reach for it:** `verify_existing_surface` (`lsof` **plus** a real HTTP
+     request) is exactly the "not mine, but verified live" check, and is what
+     reviewer-ui already uses — applying it to a foreign holder of 18080 or
+     5601 accepts precisely the case an operator can verify by hand and weakens
+     nothing R20 measured. **And the real cost is the teardown:** under
+     `set -e` the `exit 1` fires the EXIT trap, which kills every forward the
+     script had already established, so an operator with one stray forward ends
+     up with fewer than they started with. That is review finding F8's
+     consequence recurring through a different door — F8 was fixed for "the
+     Service does not exist" and not for "the port is already held". This was
+     hit for real during M4's second gate run: two pre-existing forwards held
+     18080 and 5601, the script refused, and the gate's forwards had to be
+     established by hand. Also in this file and cosmetic: `:128` says "the
+     **three** stage-gated surfaces" and the same commit added a fourth
+     `service_exists` gate (eval-scorer).
+  5. **The gate-row guard's own docstring names the wrong mechanism** (V13).
+     `test_a_predicted_gate_row_is_labelled_as_one`'s docstring says it
+     *"compares that to `HEAD`"*; the code and its own inline comment say the
+     opposite and explain at length why comparing `HEAD` would have been
+     satisfied by the fix wave itself. The docstring describes the defect, not
+     the fix — on the merge's load-bearing guard.
+  6. **A duplicated clause and a verbless fragment in
+     `deploy/observability/collector-config.yaml`** (V12, first item). The
+     comment explaining the milestone's central mechanism reads
+     *"…ATTR_DECISION and ATTR_RETRYABLE in …/pds/telemetry.py, **as
+     ATTR_DECISION and ATTR_RETRYABLE** — cited by NAME… **In the comment
+     explaining the milestone's central mechanism.** OpenSearch expands dotted
+     keys…"*. The facts are right; the prose broke while being corrected.
+- **`eval-scorer` has no completeness notion of its own** (M4 re-review, §2
+  residual and finding S-a). §7.4 is whole — the scores differ where they must,
+  and the truncation refusal H1 added is deployed and verified against the live
+  pod — but "is this trajectory finished?" lives in **prose** (the walkthrough
+  tells a human to poll with `"emit": false` first) and in the **gated e2e
+  test** (`QUIESCENCE_S`, then equality on `decisionCount`). It does not live in
+  the service. `/score` will answer over a half-indexed trajectory with a
+  flattering result and no signal, because OpenSearch is near-real-time and the
+  service has no notion of "how much should be here". The cheap shape, if M5
+  wants it closed in the service: have `/score` accept an optional
+  `expectDecisions` and **refuse rather than answer** when the count is below
+  it — the same "no score is emitted" discipline H1 established one function
+  away. Related and smaller (S-b): both truncation guards read an *absent*
+  field as "nothing was dropped"
+  (`aggregation.get("sum_other_doc_count") or 0`, and a `len(hits)` default
+  that makes the page check vacuously false), which is "I could not look"
+  recorded as "there was nothing to find" — the exact rule `search()`'s own
+  error check enforces ten lines away. Defensive rather than live, since
+  OpenSearch always sends both. **Owned by M5.**
+- **`platform/eval-scorer` has a row in neither component inventory** (M4
+  re-review, L9's fifth item). `docs/architecture.md`'s application-components
+  table is the application plane and eval-scorer runs in `northstar-platform`;
+  the platform-components section opens "none is this project's code", which
+  eval-scorer falsifies. Both headings now carry a note saying so, but the
+  component still has no row. Deciding which plane owns it, and writing the
+  row, is **owned by M5.**
 - **`senior-settlement-agent` serves an agent card naming the junior**
   (`contracts/agent-cards/settlement-agent.json` is baked into the shared
   image). Latent: nothing does card discovery today, but a future client

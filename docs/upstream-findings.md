@@ -26,7 +26,10 @@ starts a second trace.
 
 **M4 (Observable) adds one more, and it is the first here that is about an
 absence rather than a misbehaviour.** **Finding 12**, added 2026-09-13 by M4
-Task 2: once a `MeterProvider` finally existed in every Python service, exactly
+Task 2: once a `MeterProvider` existed in the five Python services that host
+the four frameworks in the path — **not** in every Python service; see the
+correction below this finding's own write-up, where `platform/eval-scorer` is
+a sixth with none — exactly
 one of the twelve GenAI metrics the conventions define turned out to be emitted
 by anything in this system, and three of the four frameworks in the path create
 no metric instrument at all. It is also the first finding here whose write-up
@@ -1854,7 +1857,9 @@ useful:
   trace as the MCP span"`, is exactly the shape a dropped traceparent produces.
   `scripts/smoke-test.sh`'s final `pytest "$ROOT/tests" -v` runs the whole
   `tests/` tree, so it is gated. (Cited as `:229` until M4's final review; that
-  line is a comment and the run is 112 lines further down.)
+  line is a comment. The fix cited a *distance* instead — "112 lines further
+  down", which was itself wrong by 20 — so it is now cited by the text of the
+  line, which is what survives an edit above it.)
 - **Nothing catches it before that.** `tools/payments-mcp/tests/test_pins.py`
   says nothing about `opentelemetry-sdk` — none of the five per-service pin
   guards does, except `apps/reviewer-ui/tests/test_pins.py:47`, which asserts

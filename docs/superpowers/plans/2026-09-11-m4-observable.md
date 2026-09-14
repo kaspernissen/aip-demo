@@ -30,10 +30,24 @@ kind.
   carve-out added by M4's final review (finding M8): a **dated,
   trace-qualified incident record whose claim is a _difference_ between two
   counts of the same trace** may state both, because the difference *is* the
-  finding and cannot be stated without them. The one live instance is
+  finding and cannot be stated without them. The carve-out was written for
   `deploy/observability/collector-config.yaml`, recording that trace
   `e25671d6…` held 142 spans in Jaeger and 139 documents in OpenSearch and that
   the three missing ones are exactly its three `policy.decision` spans.
+
+  **It is not the only whole-trace total in the committed tree, and the first
+  version of this bullet said it was** (M4 re-review, finding V10). Three
+  pre-existing sites publish totals that are *not* difference records and are
+  therefore not covered: `docs/telemetry-contract.md`'s "145 spans, six
+  services, one orphan" capture and its "one live approval trace of 67 spans",
+  and `docs/architecture.md`'s four-run variance measurement (125, 123, 119,
+  117) printed directly beneath its own sentence saying this document publishes
+  none. None was introduced by M4; what M4 introduced was an inventory claim
+  asserting they were absent. **Owned by M5**: either disclaim each as a dated
+  capture the way the paragraph beneath the architecture one already does, or
+  delete them — and give the rule a guard, because a rule about what may not
+  appear in prose has been checked by readers three times and has been wrong
+  each time.
   Everything the rule was written against still falls: a total published as a
   property *of the system* rather than of one dated capture, which is not
   reproducible because `EventQueue.dequeue_event` is a polling span measured
