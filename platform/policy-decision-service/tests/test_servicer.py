@@ -25,12 +25,24 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+from openfeature.exception import ErrorCode
+
 from pds import telemetry
 from pds.autonomy import RESTRICTIVE_LEVEL
 from pds.server import PolicyServicer
 
 import ext_mcp_pb2 as pb
 import ext_mcp_pb2_grpc as pb_grpc
+
+import pds.server as _pds_server_module
+
+# M2 (task-3 review, fix round 1): captured at module-import time, before
+# `_fake_flag_client` below (module-scoped, autouse) ever runs and replaces
+# `pds.server._flag_client` with `_FailClosedFlagClient` for every test in
+# this file. This is the actual object `api.set_provider`/`_flag_client.
+# add_hooks([TracingHook()])` built at `pds.server` import -- the real
+# module-scope client, not a test double.
+_REAL_FLAG_CLIENT = _pds_server_module._flag_client
 
 AGENT = "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
 
@@ -74,17 +86,39 @@ class _FailClosedFlagClient:
     implements `get_string_details` itself, so no
     `feature_flag.evaluation` span event is added here) -- correct for this
     suite, since that event's presence is `test_autonomy.py`'s concern too.
+
+    Fix round 1 (M3): the default construction (`value=None`) reproduces the
+    real not-ready path measured in `test_autonomy.py` and in
+    `test_the_deny_span_carries_the_decision_and_both_numbers`'s own
+    docstring -- `error_code=PROVIDER_NOT_READY`, no exception -- rather than
+    the `error_code=None` state this double previously returned, which the
+    real SDK never produces on any error path (every one of the four traced
+    in the task-3 review sets an `error_code`). `value`/`reason` are
+    overridable per instance so a single test can install a second double
+    that returns a genuine `autonomous` resolution (reason
+    `TARGETING_MATCH`, the reason flagd's own targeting engine reports, not
+    this class's fail-closed default) -- see
+    `test_the_autonomous_resolution_reaches_policyinput_and_changes_the_outcome`
+    below, which is C1's guard.
     """
 
     class _Provider:
         def get_metadata(self):
             return _Metadata("FakeFlagdProvider")
 
-    def __init__(self):
+    def __init__(self, value=None, reason="ERROR",
+                 error_code=ErrorCode.PROVIDER_NOT_READY, flag_metadata=None):
         self.provider = self._Provider()
+        self._value = value
+        self._reason = reason
+        self._error_code = error_code
+        self._flag_metadata = flag_metadata
 
     def get_string_details(self, flag_key, default_value, evaluation_context=None):
-        return _Details(value=default_value, reason="ERROR")
+        return _Details(
+            value=self._value if self._value is not None else default_value,
+            reason=self._reason, error_code=self._error_code,
+            flag_metadata=self._flag_metadata)
 
 
 class _Metadata:
@@ -395,6 +429,68 @@ def test_the_deny_span_carries_the_decision_and_both_numbers(spans):
     assert span.attributes[telemetry.ATTR_RETRYABLE] is False
 
 
+def test_the_autonomous_resolution_reaches_policyinput_and_changes_the_outcome(
+        spans, monkeypatch):
+    """C1 (task-3 review, fix round 1): the servicer-level guard that was
+    missing. Every other test in this module drives `_FailClosedFlagClient`'s
+    default, which returns `RESTRICTIVE_LEVEL` ("assisted") -- the same
+    string `server.py`'s deleted M2 constant held -- so none of them can
+    distinguish `autonomy_level=resolution.level` from a revert to the old
+    literal `autonomy_level="assisted"`. The review measured that revert
+    (`server.py:303`) leaving 119/119 PDS and 217/217 root tests GREEN.
+
+    This test installs a second double that returns a genuine `autonomous`
+    resolution with `reason="TARGETING_MATCH"` and `error_code=None` -- the
+    reason flagd's own targeting engine reports on a real contract match,
+    carrying no error the way a real match never does (this class's own
+    default `error_code=PROVIDER_NOT_READY` is I2's fail-closed fixture, and
+    would force the level back down per that fix if left in place here) --
+    and drives the exact €6,200 `execute_payment` scenario M2's headline
+    denial uses. At `autonomous`,
+    `EXECUTE_LIMITS[(settlement-agent, "autonomous")]` is €1,000,000, so the
+    same payment that every other test in this module sees denied must now
+    be permitted, under the honest rule name Step 8 composed. All four
+    assertions the review specified: level, rule, limit, and decision.
+    """
+    import pds.server as server
+
+    monkeypatch.setattr(
+        server, "_flag_client",
+        _FailClosedFlagClient(value="autonomous", reason="TARGETING_MATCH",
+                              error_code=None),
+    )
+    result = PolicyServicer().CheckRequest(_request(params=_execute(6200.0)), None)
+    assert result.WhichOneof("result") == "pass"
+    span, = spans.get_finished_spans()
+    assert span.attributes[telemetry.ATTR_AUTONOMY] == "autonomous"
+    assert span.attributes[telemetry.ATTR_RULE] == \
+        "settlement-agent.autonomous.execute_limit"
+    assert span.attributes[telemetry.ATTR_LIMIT] == 1_000_000.0
+    assert span.attributes[telemetry.ATTR_DECISION] == "permit"
+
+
+def test_the_flag_version_lands_on_the_span_when_the_contract_carries_one(
+        spans, monkeypatch):
+    """M1 (task-3 review, fix round 1): `server.py`'s `if resolution.version
+    is not None: span.set_attribute(...)` branch (`:322-323`) was dead and
+    unguarded -- deleting it left 119/119 green, because neither the live
+    sidecar's `autonomy-level` flag nor this suite's double ever populated a
+    version. `test_autonomy.py` already proves `resolve_autonomy` extracts
+    `version` off `flag_metadata`; this proves the extracted value also
+    reaches the span, closing the only gap the finding named.
+    """
+    import pds.server as server
+
+    monkeypatch.setattr(
+        server, "_flag_client",
+        _FailClosedFlagClient(value="assisted", reason="TARGETING_MATCH",
+                              error_code=None, flag_metadata={"version": "7"}),
+    )
+    PolicyServicer().CheckRequest(_request(params=_execute(5800.0)), None)
+    span, = spans.get_finished_spans()
+    assert span.attributes[telemetry.ATTR_FLAG_VERSION] == "7"
+
+
 def test_a_permit_span_says_permit_and_is_not_an_error(spans):
     """A refusal is this service working. A trace must not show a red span for
     the one thing M2.2 exists to do, and must not show a green one for a deny
@@ -443,6 +539,26 @@ def test_a_missing_value_is_absent_from_the_span_not_zero(spans):
     assert telemetry.ATTR_AMOUNT not in span.attributes
     assert telemetry.ATTR_CALLER not in span.attributes
     assert telemetry.ATTR_TOOL not in span.attributes
+
+
+def test_the_real_module_scope_client_has_the_tracing_hook_registered():
+    """M2 (task-3 review, fix round 1), the other half of the guard.
+
+    `test_autonomy.py::test_the_tracing_hook_puts_a_feature_flag_evaluation_
+    event_on_the_active_span` proves `TracingHook`, once registered, does
+    what `server.py`'s comment claims. This proves the other half: that
+    `server.py`'s own module-scope client -- `_REAL_FLAG_CLIENT`, captured at
+    the top of this file before `_fake_flag_client` (module-scoped, autouse)
+    ever gets a chance to replace `server._flag_client` with a double for
+    every other test here -- is the one actually carrying it.
+    """
+    from openfeature.contrib.hook.opentelemetry import TracingHook
+
+    assert any(isinstance(hook, TracingHook) for hook in _REAL_FLAG_CLIENT.hooks), (
+        "no TracingHook registered on pds.server's module-scope OpenFeature "
+        "client -- the feature_flag.evaluation event server.py's comment "
+        "promises would never be added to any span"
+    )
 
 
 # --- the wire ---------------------------------------------------------------

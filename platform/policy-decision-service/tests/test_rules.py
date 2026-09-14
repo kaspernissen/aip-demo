@@ -1,5 +1,17 @@
+import ast
+import re
+from pathlib import Path
+
 import pytest
 from pds.rules import Decision, PolicyInput, decide
+
+# platform/policy-decision-service/tests/test_rules.py -> repo root is three
+# parents up.
+REPO_ROOT = Path(__file__).resolve().parents[3]
+TEST_SUPERVISED = REPO_ROOT / "tests" / "e2e" / "test_supervised.py"
+CRITERION_4_FUNCTION = (
+    "test_criterion_4_the_pds_permits_under_the_same_rule_for_a_different_caller"
+)
 
 AGENT = "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
 OTHER = "spiffe://northstar.local/ns/northstar-agents/sa/claims-agent"
@@ -283,3 +295,57 @@ def test_an_unknown_variant_denies_through_the_existing_table():
     decision = decide(_input(autonomy_level="banana"))
     assert decision.permit is False
     assert decision.rule == "unknown_caller"
+
+
+# ---------------------------------------------------------------------------
+# M5-R23: the task-3 review found that "substitute #2" -- a direct read of
+# criterion 4's own asserted string, parsed live from
+# `tests/e2e/test_supervised.py` and compared against `decide()`'s actual
+# output -- was described in the task-3 report as run, but left no artifact:
+# no such test was in the diff, so it caught no future drift. This is that
+# substitute, committed.
+# ---------------------------------------------------------------------------
+
+
+def _criterion_4_asserted_rule() -> str:
+    """Criterion 4's own asserted `policy.rule` literal, parsed live out of
+    `tests/e2e/test_supervised.py` -- not retyped here, so a change to that
+    file's literal is what this test reads, rather than a copy that can
+    drift from it silently."""
+    source = TEST_SUPERVISED.read_text()
+    tree = ast.parse(source, filename=str(TEST_SUPERVISED))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == CRITERION_4_FUNCTION:
+            segment = ast.get_source_segment(source, node)
+            match = re.search(r'ATTR_POLICY_RULE\)\s*==\s*"([^"]+)"', segment)
+            assert match, (
+                f"found {CRITERION_4_FUNCTION} in {TEST_SUPERVISED}, but no "
+                '`ATTR_POLICY_RULE) == "..."` assertion inside it -- has its '
+                "shape changed?"
+            )
+            return match.group(1)
+    raise AssertionError(
+        f"{TEST_SUPERVISED} no longer defines {CRITERION_4_FUNCTION} -- "
+        "nothing to compare decide()'s output against"
+    )
+
+
+def test_criterion_4s_own_asserted_rule_matches_deciders_output_for_the_senior_identity():
+    """Criterion 4 is a `@browser_test` (live cluster, live LLM narration),
+    out of scope under this task's no-full-gate constraint (M5-R19 defers
+    its live run to Task 6's gate). This is the hermetic substitute: read
+    criterion 4's own literal (above) and compare it against `decide()`'s
+    actual output for exactly the scenario criterion 4 exercises -- the
+    senior identity, `assisted`, `execute_payment`, EUR 6,200 (permitted, per
+    M3). It is evidence about `decide()`, not about the live path -- the link
+    C1's guard closes is the one this substitute cannot cover -- but a
+    regression in either `decide()`'s rule composition or criterion 4's own
+    literal is caught here without a browser or a live cluster.
+    """
+    asserted = _criterion_4_asserted_rule()
+    produced = decide(_input(caller=SENIOR, amount=6200.0)).rule
+    assert produced == asserted, (
+        f"decide()'s rule for the senior identity at EUR 6,200 is "
+        f"{produced!r}, but tests/e2e/test_supervised.py's criterion 4 "
+        f"asserts {asserted!r}"
+    )

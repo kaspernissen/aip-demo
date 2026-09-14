@@ -127,8 +127,19 @@ def resolve_autonomy(caller: str | None, client) -> AutonomyResolution:
     error_type = (
         str(details.error_code) if details.error_code is not None else None
     )
+    # I2 (task-3 review, fix round 1): fail-closed on the non-raising error
+    # path must be enforced HERE, not merely observed to hold because of how
+    # `openfeature-provider-flagd==0.5.2` currently behaves. The module
+    # docstring traces four SDK paths that all set `value=default_value`
+    # (i.e. `RESTRICTIVE_LEVEL`) whenever `error_code` is present -- that is a
+    # property of the library today, not a guarantee this function enforces
+    # itself. Forcing the level down here whenever `error_type` is set means
+    # a future SDK version (or any other `client` shape a test hands in) that
+    # ever returned a provider-chosen or contract-chosen value alongside an
+    # error code cannot widen what is permitted through this function.
+    level = RESTRICTIVE_LEVEL if error_type is not None else details.value
     return AutonomyResolution(
-        level=details.value,
+        level=level,
         reason=str(details.reason or "UNKNOWN"),
         variant=details.variant,
         # The hook does NOT emit these (see the class docstring) -- read

@@ -1488,8 +1488,32 @@ the plan defect described two paragraphs up).
 
 Per-service unit suites (all eight run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 114, payments-mcp 16, payments-api (Go) 31,
-customer-ui (vitest) 6, policy-decision-service 119,
+customer-ui (vitest) 6, policy-decision-service 124,
 reviewer-ui 56, eval-scorer 135 — all passing.
+(**2026-09-14, M5 Task 3 fix round 1: policy-decision-service 119 → 124.**
+Re-measured with `.venv/bin/python -m pytest --collect-only -q tests` from
+that service's own directory. The task-3 review found the milestone's
+central wiring (`server.py:303`, `autonomy_level=resolution.level`) had no
+guard — reverting it to the M2 constant left every suite green — and found
+two Minor gaps genuinely unguarded, plus one M5-R23 substitute that was
+described as run but left no artifact. Five tests close them: one in
+`tests/test_servicer.py` drives a real `autonomous` resolution through
+`PolicyServicer` and asserts level, rule, limit and permit together (C1);
+one in `tests/test_autonomy.py` proves `TracingHook`, once registered, does
+put a `feature_flag.evaluation` event on the active span, using a real
+`OpenFeatureClient` and `InMemoryProvider` rather than the double that
+bypasses hooks by design (M2); one in `tests/test_servicer.py` proves
+`pds.server`'s own module-scope client is the one actually carrying that
+hook, not merely that the hook class works (M2's other half); one in
+`tests/test_servicer.py` drives a `flag_metadata` version through to the
+span, closing the dead `feature_flag.version` branch (M1); and one in
+`tests/test_rules.py` parses `tests/e2e/test_supervised.py` criterion 4's own
+asserted rule-name literal via `ast` (not retyped) and compares it against
+`decide()`'s output for the senior identity at EUR 6,200 (M5-R23).
+`test_autonomy.py` also replaced a tautological assertion with one that
+forces the fail-closed level down even when the fake provider hands back
+`"autonomous"` (I2) — that changes what one existing test asserts, not the
+count.)
 (**2026-09-14, M5 Task 3: policy-decision-service 105 → 119.** Re-measured
 with `.venv/bin/python -m pytest --collect-only -q tests` from that service's
 own directory. Fourteen tests for resolving the autonomy level from flagd
@@ -2783,8 +2807,14 @@ this project now emits such a span, so the gap moves from "deferred" to
 `platform/policy-decision-service/pds/telemetry.py` — and this document cites
 that file rather than re-typing them**, which is the whole reason they were
 put in a module-level `ATTRIBUTES` tuple: the same tuple is what
-`tests/unit/test_stage2_pds_config.py` asserts against, so the source, the
-guard and this contract cannot drift into three different lists. The `policy.`
+`platform/policy-decision-service/tests/test_servicer.py`'s
+`test_every_attribute_we_emit_is_declared_and_visibly_ours` asserts against,
+so the source, the guard and this contract cannot drift into three
+different lists.
+**Dated note, 2026-09-14 (M5 Task 3): corrected — the previous reference
+here, `tests/unit/test_stage2_pds_config.py`, asserts nothing about
+`ATTRIBUTES`; verified by reading it. `test_servicer.py`, not a line number
+within it, is the reference this document now cites.** The `policy.`
 prefix is deliberate and so is its absence of a `northstar.` one: a reader
 scanning a span must be able to tell at a glance which attributes came from a
 framework (`gen_ai.*`, `mcp.*`, `http.*`) and which this project invented, and
@@ -2799,6 +2829,17 @@ depends on the decision, because `server.py` writes the optional ones only
 when it has a value (`if decision.limit is not None: span.set_attribute(...)`,
 and likewise for the caller, tool, amount and currency). Absent reads as
 absent; a zero amount would read as a request for nothing.
+
+**Dated note, 2026-09-14 (M5 Task 3):** the source now declares **ten**
+`policy.*` keys, not nine — this task's commit added `policy.autonomy.reason`
+alongside `policy.autonomy.level`. Measured, not retyped:
+`len(telemetry.INVENTED_ATTRIBUTES) == 10` in
+`platform/policy-decision-service/pds/telemetry.py`. The "nine" above, the
+"Ten keys"/table counts just below, and the live-trace inventory under "The
+policy decision, as measured (M2.2)" are the pre-M5 shape and are flagged
+here rather than re-captured — re-deriving the live key inventory against a
+fresh M5 trace is Task 4/5's own telemetry-contract work (ruling M5-R21),
+not repeated by this note.
 
 ### Attributes on the `policy.decision` span
 
@@ -2871,6 +2912,13 @@ outside:
   span anyway. It is the field M5 turns into a feature flag; recording it now
   means the traces M5 changes the behaviour of already say what the behaviour
   was keyed on.
+  **Dated note, 2026-09-14 (M5 Task 3): no longer true.** This is exactly the
+  commit that stopped it being a constant — `policy.autonomy.level` is now
+  resolved per decision from the `autonomy-level` flag through
+  `pds/autonomy.py::resolve_autonomy`, not read off a compiled-in module
+  constant. The sentence above describes the pre-M5 (M2.2) shape; left in
+  place as the historical reason the field exists, not as the field's
+  current behaviour.
 
 **No `policy.*` attribute is set anywhere except in the PDS.** In particular
 nothing in `settlement-agent`, `payments-mcp` or `payments-api` writes one, and
@@ -3668,7 +3716,7 @@ is in "Metrics, as measured (M4 Task 2)" above.
 |---|---|---|---|
 | `northstar.claim.id` | claims-agent at intake | W3C baggage | See "Real, measured coverage" below — **not** every span everywhere |
 | `northstar.policy.number` | customer-ui root span | none | The root span only |
-| `policy.*` (ten keys, M2.2 nine + M5 Task 3's `policy.autonomy.reason`) plus one borrowed key, `feature_flag.version` (M5-R6, an existing OTel semantic convention, not `policy.*`-prefixed because it is not this project's own to name) | policy-decision-service, on its own `policy.decision` span | none — set locally, never propagated | That one span only, `feature_flag.version` only when flagd's response actually carries a version (measured against the live sidecar in M5 Task 3: it never does for this deployment's `autonomy-level` flag, so it is routinely absent). Keys declared in `platform/policy-decision-service/pds/telemetry.py`'s `ATTRIBUTES`/`INVENTED_ATTRIBUTES`. **The worked example and live-trace inventory two sections below ("The policy decision, as measured (M2.2)") still shows the pre-M5 nine/ten-key shape** — re-capturing it against a live M5 trace is Task 4/5's own telemetry-contract work, not re-derived here; treat the counts there as historical (M2.2) rather than current until that pass updates them |
+| `policy.*` (ten keys, M2.2 nine + M5 Task 3's `policy.autonomy.reason`) plus one borrowed key, `feature_flag.version` (M5-R6, an existing OTel semantic convention, not `policy.*`-prefixed because it is not this project's own to name) | policy-decision-service, on its own `policy.decision` span | none — set locally, never propagated | That one span only, `feature_flag.version` only when flagd's response actually carries a version (measured against the live sidecar in M5 Task 3: it never does for this deployment's `autonomy-level` flag, so it is routinely absent). Keys declared in `platform/policy-decision-service/pds/telemetry.py`'s `ATTRIBUTES`/`INVENTED_ATTRIBUTES`. **Dated note, 2026-09-14 (M5 Task 3): corrected — that section is above, not below.** **The worked example and live-trace inventory in "The policy decision, as measured (M2.2)" above still shows the pre-M5 nine/ten-key shape** — re-capturing it against a live M5 trace is Task 4/5's own telemetry-contract work, not re-derived here; treat the counts there as historical (M2.2) rather than current until that pass updates them |
 | `northstar.payment.refusal_cause` (M2.2 Task 4) | payments-api, on its own server span for a refused execute; two closed values, `amount_mismatch` and `already_executed` (`systems/payments-api/handlers.go`) | none | payments-api's execute span, and **only when it refuses** — absent on success, so its presence means "refused here". Read off a real recorded span by that service's own Go tests via an in-memory `tracetest.SpanRecorder`; it appears on **none** of the six M2.2 traces named in this document, because neither the denied nor the permitted scenario reaches a 409 |
 | `northstar.payment.id`, `northstar.approval.reviewer_id` (M3 Task 3) | settlement-agent, on its own `settlement.execute_approved` span (`agents/settlement-agent/settlement.py`) | none | That span only, on the human-approved execution path. See "settlement-agent's own instrumentation" above, including this milestone's first span **link** and the same span's `northstar.claim.id` baggage (M3 Task 3 review, R16) |
 | `review.*` (six keys, M3 Task 4) | reviewer-ui, on its own `review.decision` span (`apps/reviewer-ui/review.py`) | none | That span only, one per submitted approve/reject decision — reviewer-ui's second owned span, `review.queue` (M3 final-review fix round), deliberately carries **none** of them, and no attributes at all. Two of the six (`review.refused.trace_id`, `review.elapsed_ms`) are now set *after* the span opens rather than at creation, because the ledger read they come from moved inside it; a decision that never reaches a refused record therefore emits the other four and an ERROR status. See "reviewer-ui's own instrumentation" above |

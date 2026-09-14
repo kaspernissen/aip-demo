@@ -156,11 +156,24 @@ def test_an_error_code_without_an_exception_still_reports_an_error_type():
     merely not ready yet returns `FlagEvaluationDetails` with `error_code`
     set and no exception at all (measured against the live sidecar during
     its own startup window). `error_type` must still carry that, not stay
-    `None` just because nothing was thrown."""
+    `None` just because nothing was thrown.
+
+    I2 (task-3 review, fix round 1): this test used to feed
+    `value=RESTRICTIVE_LEVEL` in and assert `RESTRICTIVE_LEVEL` came back --
+    tautological, since it passes whether or not `resolve_autonomy` forces
+    anything down; the fail-closed guarantee on this path lived entirely in
+    a library, not in this function. The fixture now hands back
+    `value="autonomous"` -- a provider-chosen or contract-chosen value that
+    has not been overwritten to the default -- *alongside* an `error_code`.
+    Today's SDK always overwrites the value before this can happen (traced
+    in the module docstring), but this function must not depend on that: if
+    `error_code` is present, `resolve_autonomy` must force the level to
+    `RESTRICTIVE_LEVEL` regardless of what `details.value` says.
+    """
     from openfeature.exception import ErrorCode
 
     details = _FakeDetails(
-        value=RESTRICTIVE_LEVEL, reason=Reason.ERROR,
+        value="autonomous", reason=Reason.ERROR,
         error_code=ErrorCode.PROVIDER_NOT_READY,
     )
     resolution = resolve_autonomy(SETTLEMENT_AGENT, client=_FakeClient(details))
@@ -200,6 +213,68 @@ def test_a_missing_caller_still_resolves_something():
 def test_the_flag_key_is_the_one_the_contract_defines():
     spec = yaml.safe_load(FEATUREFLAG.read_text())
     assert FLAG_KEY in spec["spec"]["flagSpec"]["flags"]
+
+
+# --- M2 (task-3 review, fix round 1): the `feature_flag.evaluation` event ---
+
+
+def test_the_tracing_hook_puts_a_feature_flag_evaluation_event_on_the_active_span():
+    """`server.py`'s comment claims `TracingHook` "puts a `feature_flag.
+    evaluation` event on whatever span is active" -- the task-3 review
+    verified this independently against a real `OpenFeatureClient` and an
+    in-memory exporter, but the claim was asserted before it was measured
+    (this repo's standing rule forbids that), and nothing in this repo's own
+    suite proved it. `test_servicer.py`'s `_FailClosedFlagClient` cannot
+    stand in for this guard: it implements `get_string_details` itself and
+    never runs a hook at all, by design (its own docstring says so).
+
+    This is the guard: a real `OpenFeatureClient`, a real `TracingHook`, and
+    `InMemoryProvider` (in-process, no network -- the point under test is the
+    hook, not flagd) evaluated inside a real active span through
+    `resolve_autonomy` itself, so the call shape matches production exactly.
+    A domain-scoped client keeps this isolated from the default-domain client
+    `pds.server` installs at import.
+    """
+    from openfeature import api
+    from openfeature.contrib.hook.opentelemetry import TracingHook
+    from openfeature.provider.in_memory_provider import InMemoryFlag, InMemoryProvider
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    exporter = InMemorySpanExporter()
+    tracer_provider = TracerProvider()
+    tracer_provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = tracer_provider.get_tracer("test_autonomy")
+
+    domain = "test-tracing-hook-event"
+    api.set_provider(InMemoryProvider({
+        FLAG_KEY: InMemoryFlag(
+            default_variant=RESTRICTIVE_LEVEL,
+            variants={RESTRICTIVE_LEVEL: RESTRICTIVE_LEVEL, "autonomous": "autonomous"},
+        ),
+    }), domain=domain)
+    client = api.get_client(domain=domain)
+    client.add_hooks([TracingHook()])
+
+    with tracer.start_as_current_span("policy.decision"):
+        resolve_autonomy(SETTLEMENT_AGENT, client=client)
+
+    span, = exporter.get_finished_spans()
+    events = [e for e in span.events if e.name == "feature_flag.evaluation"]
+    assert len(events) == 1, (
+        f"expected exactly one feature_flag.evaluation event, got "
+        f"{[e.name for e in span.events]}"
+    )
+    attrs = dict(events[0].attributes)
+    assert attrs["feature_flag.key"] == FLAG_KEY
+    assert attrs["feature_flag.result.value"] == f'"{RESTRICTIVE_LEVEL}"'
+    assert attrs["feature_flag.result.reason"] == "static"
+    assert attrs["feature_flag.result.variant"] == RESTRICTIVE_LEVEL
+    assert attrs["feature_flag.context.id"] == SETTLEMENT_AGENT
+    assert "feature_flag.provider.name" in attrs
 
 
 # --- Ruling M5-R4 ------------------------------------------------------------
