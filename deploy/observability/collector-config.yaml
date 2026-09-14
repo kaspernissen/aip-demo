@@ -183,6 +183,43 @@ exporters:
   # END stage-4-only
 
   # BEGIN stage-4-only
+  # M5 Task 4: the logs pipeline's first real exporter. Before this it was
+  # `exporters: [debug]` alone -- exactly the shape the traces and metrics
+  # pipelines had before M4 Tasks 1 and 2, and nothing in this repo emits an
+  # OTLP log record yet (grepped: no first-party service imports
+  # `opentelemetry._logs`/`LoggerProvider`/`OTLPLogExporter` anywhere before
+  # this task's `pds/telemetry.py` change), so this is a genuinely new signal
+  # rather than an extension of one already flowing.
+  #
+  # `stage-4-only`, not `stage-5-only`. OpenSearch is the backend this names,
+  # and OpenSearch is installed starting stage 4 (`setup-kind.sh` Step 8c),
+  # exactly like the traces branch above -- ruling M4-R8's rule is about
+  # backend existence, not about which milestone's task happened to add the
+  # region. Reusing the existing marker and the existing
+  # `STAGE4_ONLY_STRIP`/`-lt 4` machinery in `scripts/setup-kind.sh` means a
+  # `--stage 1|2|3` cluster still gets no reference to a backend it does not
+  # have, with no change to that script at all --
+  # `tests/unit/test_stage4_config.py::test_below_stage_4_the_collector_config_
+  # names_no_opensearch` extends to this region automatically because it
+  # strips by marker, not by exporter name.
+  #
+  # No `attributes/opensearch-compat`-style rename needed here: that
+  # processor exists solely because `policy.decision`/`policy.decision.
+  # retryable` collide as a scalar-vs-object OpenSearch mapping (one key a
+  # dotted prefix of the other) on the SAME span. The `feature_flag.*`
+  # attributes `pds/autonomy.py`'s `emit_evaluation_event` writes have no such
+  # pair -- checked: none of `feature_flag.key`, `.provider.name`,
+  # `.result.variant`, `.result.reason`, `.result.value`, `.context.id`,
+  # `.set.id`, `.version`, `error.type` is a dotted prefix of another in that
+  # set -- so this exporter is wired directly into the `logs` pipeline below,
+  # no `forward`/tee connector and no branch pipeline needed the way traces
+  # required one.
+  opensearch/logs:
+    http:
+      endpoint: http://opensearch-cluster-master.observability.svc.cluster.local:9200
+  # END stage-4-only
+
+  # BEGIN stage-4-only
   # M4 Task 2: Prometheus, fed by the collector rather than scraping anything.
   # M4 exit criterion 5 is "Prometheus receives metrics over OTLP with no
   # application change to the routing and no scrape configuration", and this
@@ -277,4 +314,14 @@ service:
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      # One exporter per line, same reason as the traces/metrics pipelines
+      # above: scripts/setup-kind.sh strips the stage-4-only entry below
+      # stage 4 with a line-range sed and cannot edit inside a flow sequence.
+      # Below stage 4 this list is `- debug` alone -- which is what it was
+      # before this task (ruling M4-R8: the collector must not name a
+      # backend the cluster does not have).
+      exporters:
+        # BEGIN stage-4-only
+        - opensearch/logs
+        # END stage-4-only
+        - debug

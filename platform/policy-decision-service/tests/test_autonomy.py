@@ -27,11 +27,13 @@ from openfeature.flag_evaluation import Reason
 
 from pds.autonomy import (
     CONTEXT_KEY,
+    FEATURE_FLAG_EVALUATION_EVENT,
     FLAG_KEY,
     FLAGD_HOST,
     FLAGD_PORT,
     RESTRICTIVE_LEVEL,
     AutonomyResolution,
+    emit_evaluation_event,
     resolve_autonomy,
 )
 
@@ -275,6 +277,147 @@ def test_the_tracing_hook_puts_a_feature_flag_evaluation_event_on_the_active_spa
     assert attrs["feature_flag.result.variant"] == RESTRICTIVE_LEVEL
     assert attrs["feature_flag.context.id"] == SETTLEMENT_AGENT
     assert "feature_flag.provider.name" in attrs
+
+
+# --- M5 Task 4: the log-record event (signal #2) ---------------------------
+
+
+def _emitted_log_record(resolution: AutonomyResolution, caller: str | None):
+    """Drive `emit_evaluation_event` through a hermetic `LoggerProvider` --
+    no global OTel state touched, no network, no dependence on whatever
+    `pds.telemetry.configure()` may or may not have installed in this
+    process. `pds.autonomy.telemetry.event_logger` is monkeypatched for the
+    duration of the call only, by direct reassignment and restoration rather
+    than `pytest`'s `monkeypatch` fixture, so this helper works from a bare
+    function call."""
+    from opentelemetry.sdk._logs import LoggerProvider
+    from opentelemetry.sdk._logs.export import (
+        InMemoryLogRecordExporter,
+        SimpleLogRecordProcessor,
+    )
+
+    from pds import autonomy as autonomy_module
+
+    provider = LoggerProvider()
+    exporter = InMemoryLogRecordExporter()
+    provider.add_log_record_processor(SimpleLogRecordProcessor(exporter))
+    logger = provider.get_logger("test_autonomy")
+
+    original = autonomy_module.telemetry.event_logger
+    autonomy_module.telemetry.event_logger = lambda: logger
+    try:
+        emit_evaluation_event(resolution, caller)
+    finally:
+        autonomy_module.telemetry.event_logger = original
+
+    records = exporter.get_finished_logs()
+    assert len(records) == 1, (
+        f"expected exactly one log record, got {len(records)}"
+    )
+    return records[0].log_record
+
+
+def test_emit_evaluation_event_sends_a_log_record_carrying_every_available_field():
+    """The positive case: every one of the seven `AutonomyResolution` fields
+    that CAN populate an attribute does, including `feature_flag.set.id` and
+    `feature_flag.version` -- the two `TracingHook` declares constants for
+    and never emits (Finding 14). `error_type` is also asserted, even though
+    a resolution with a populated `version`/`set_id` is never simultaneously
+    an error path in practice -- this only proves the field maps to
+    `error.type` when present, independent of what a real resolution shape
+    combines it with."""
+    resolution = AutonomyResolution(
+        level="autonomous",
+        reason="TARGETING_MATCH",
+        variant="autonomous",
+        version="3",
+        error_type="PROVIDER_NOT_READY",
+        provider_name="FlagdProvider",
+        set_id="northstar-autonomy",
+    )
+    record = _emitted_log_record(resolution, SETTLEMENT_AGENT)
+
+    assert record.event_name == FEATURE_FLAG_EVALUATION_EVENT
+    attrs = dict(record.attributes)
+    assert attrs == {
+        "feature_flag.key": FLAG_KEY,
+        "feature_flag.result.value": "autonomous",
+        "feature_flag.result.reason": "TARGETING_MATCH",
+        "feature_flag.result.variant": "autonomous",
+        "feature_flag.provider.name": "FlagdProvider",
+        "feature_flag.context.id": SETTLEMENT_AGENT,
+        "feature_flag.set.id": "northstar-autonomy",
+        "feature_flag.version": "3",
+        "error.type": "PROVIDER_NOT_READY",
+    }
+
+
+def test_emit_evaluation_event_stamps_a_real_timestamp():
+    """Measured against the live cluster (2026-09-14): emitting without an
+    explicit `timestamp=` landed in `ss4o_logs-default-namespace` with
+    `"@timestamp": "1970-01-01T00:00:00Z"` -- the installed SDK's
+    `LogRecord.__init__` (1.44.0) only defaults `observed_timestamp` to
+    `time_ns()` when unset; `timestamp` itself is stored verbatim, `None`
+    included, and the OTLP exporter serialises that as zero. A Dashboards
+    time-range query defaults to `@timestamp` and would never surface a
+    record stamped at the epoch -- a real loss dressed as a successful
+    export. This guard is deliberately loose (a wide, generous bound) rather
+    than exact, because the point is "not None/zero", not a specific value."""
+    import time
+
+    before_ns = time.time_ns()
+    resolution = AutonomyResolution(level=RESTRICTIVE_LEVEL, reason="STATIC")
+    record = _emitted_log_record(resolution, None)
+    after_ns = time.time_ns()
+
+    assert record.timestamp is not None, (
+        "the log record's timestamp is None -- the OTLP exporter serialises "
+        "that as the Unix epoch, which is what shipped to the live cluster "
+        "before this was fixed"
+    )
+    assert before_ns <= record.timestamp <= after_ns, (
+        f"the log record's timestamp ({record.timestamp}) is not within the "
+        f"window this test ran in ({before_ns}..{after_ns})"
+    )
+
+
+def test_emit_evaluation_event_omits_none_fields_rather_than_inventing_them():
+    """The tension the task brief names explicitly: `version` and `set_id`
+    measure `None` for every real evaluation against this deployment
+    (`featureflag.yaml` defines no `flag_metadata`), and this repo's standing
+    rule is that a missing value is absent, never zero or fabricated. This
+    is the unreachable-provider shape `test_the_unreachable_path_is_honest_
+    about_what_it_could_not_learn` already covers for `resolve_autonomy`
+    itself -- `variant`, `version`, `provider_name` and `set_id` all `None`
+    -- driven one step further, through the emitter, to prove the OMISSION
+    (not a null/empty-string placeholder) is what actually reaches the log
+    record's attribute dict."""
+    resolution = AutonomyResolution(
+        level=RESTRICTIVE_LEVEL,
+        reason="ERROR",
+        variant=None,
+        version=None,
+        error_type="ConnectionError",
+        provider_name=None,
+        set_id=None,
+    )
+    record = _emitted_log_record(resolution, None)
+
+    attrs = dict(record.attributes)
+    assert attrs == {
+        "feature_flag.key": FLAG_KEY,
+        "feature_flag.result.value": RESTRICTIVE_LEVEL,
+        "feature_flag.result.reason": "ERROR",
+        "error.type": "ConnectionError",
+    }
+    for absent in (
+        "feature_flag.result.variant", "feature_flag.provider.name",
+        "feature_flag.context.id", "feature_flag.set.id", "feature_flag.version",
+    ):
+        assert absent not in attrs, (
+            f"{absent} is None on this resolution and must be OMITTED from "
+            f"the log record, not written as null/empty -- found {attrs.get(absent)!r}"
+        )
 
 
 # --- Ruling M5-R4 ------------------------------------------------------------

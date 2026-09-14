@@ -95,6 +95,16 @@ exporters:
   # END stage-4-only
 
   # BEGIN stage-4-only
+  # M5 Task 4: see collector-config.yaml's own comment on this exporter for
+  # the full reasoning -- this file must carry the identical block
+  # (tests/unit/test_collector_configs_in_sync.py enforces agreement on every
+  # exporter except otlp_grpc/dash0).
+  opensearch/logs:
+    http:
+      endpoint: http://opensearch-cluster-master.observability.svc.cluster.local:9200
+  # END stage-4-only
+
+  # BEGIN stage-4-only
   # M4 Task 2: Prometheus, fed by the collector rather than scraping anything.
   # M4 exit criterion 5 is "Prometheus receives metrics over OTLP with no
   # application change to the routing and no scrape configuration", and this
@@ -193,4 +203,11 @@ service:
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlp_grpc/dash0, debug]
+      # One exporter per line, matching collector-config.yaml's logs pipeline
+      # -- see that file's comment.
+      exporters:
+        # BEGIN stage-4-only
+        - opensearch/logs
+        # END stage-4-only
+        - otlp_grpc/dash0
+        - debug

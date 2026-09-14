@@ -43,7 +43,12 @@ import ext_mcp_pb2 as pb
 import ext_mcp_pb2_grpc as pb_grpc
 
 from pds import telemetry
-from pds.autonomy import FLAGD_HOST, FLAGD_PORT, resolve_autonomy
+from pds.autonomy import (
+    FLAGD_HOST,
+    FLAGD_PORT,
+    emit_evaluation_event,
+    resolve_autonomy,
+)
 from pds.identity import caller_spiffe_id
 from pds.rules import Decision, PolicyInput, decide
 
@@ -288,6 +293,13 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
         # carries the level in effect, even on the `_undecidable_method`
         # path below -- a value change, not a shape change.
         resolution = resolve_autonomy(caller, _flag_client)
+        # M5 Task 4: the second of "two records per evaluation" -- a log
+        # record carrying the full seven-field set, alongside (not instead
+        # of) the span event `TracingHook` already put on the active span
+        # inside `resolve_autonomy` above. See `pds/autonomy.py`'s comment
+        # for why this is a separate call rather than folded into
+        # `resolve_autonomy` itself.
+        emit_evaluation_event(resolution, caller)
 
         if request.method != DECIDABLE_METHOD:
             # Not reachable under the committed gateway config, which sends us

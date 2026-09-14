@@ -134,6 +134,79 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
+**2026-09-14 (M5 Task 4) — the current figures, and the gate row is still
+PREDICTED.**
+Task 4 gives every flag evaluation a second signal: a genuine
+`feature_flag.evaluation` log record (`pds/autonomy.py::emit_evaluation_event`,
+sent through the logs pipeline `pds/telemetry.py` now wires end to end to
+OpenSearch), alongside the span event `TracingHook` already put there. Two
+new tests land under `tests/unit` (`tests/unit/test_autonomy_contract.py`):
+one guards that no deprecated feature-flag attribute spelling is ever emitted,
+with the deprecated set *derived* from the installed
+`opentelemetry.semconv._incubating.attributes.feature_flag_attributes` module
+rather than retyped; one cross-checks that derived set against the four
+literal spellings this task's own plan named, so a future semconv bump that
+changes the deprecated set is caught rather than silently trusted. One new
+e2e file, `tests/e2e/test_flag_evaluation_telemetry.py`, adds five tests
+against the live cluster: the parity guard (collector-accepted log records
+must equal what OpenSearch holds, for the same reason `test_opensearch_trace_ingest.py`
+already asserts this for spans — loss looks exactly like sampling from
+outside); that the live event is the semconv event with the hook's two gaps
+filled; that no fabricated `version`/`set_id` is invented where the flag
+carries none; that the live event's own timestamp is real, not the epoch (see
+the fix round two paragraphs below); and that the collector rejected nothing
+during the run. None of the five carries a `RUN_BROWSER_TESTS` `skipif` — the
+gated figure below is unchanged.
+
+That takes the collected count from **355 to 362**, re-measured with
+`.venv/bin/python -m pytest --collect-only -q tests/`.
+
+Bare-suite row, derived from that same collection: 362 collected − 71 gated −
+**0** xfailed = `291 passed, 71 skipped, 0 xfailed`.
+
+The gated figure is unchanged at **71** (all seven new tests — two in
+`tests/unit`, five in `tests/e2e` — carry no `skipif` naming
+`RUN_BROWSER_TESTS`, so none is gated) — and reports 71 of 362, with the same
+per-module spread as the row beneath this one. The browser split is unchanged
+too: **3 of the 11 launch a browser** and **8 of the 11 start no browser**.
+
+Gate row: **PREDICTED, NOT MEASURED**, unchanged from the row below -- this
+branch's gate run was at commit `b215426` (the M4 final-review fix wave
+further below), and it is measured against no later tree than that one. This
+task changes files under `gate_paths` (`platform/`, `deploy/`, `tests/`,
+`docs/`) without a new gate run to back it. The prediction from collection
+(362 − 1 xfailed = 361) is `361 passed, 1 xfailed`; nothing claims that
+figure was measured against this tree.
+
+`tests/unit` alone collects **219** (217 before this task).
+
+**A defect this task found and fixed, worth stating here rather than only in
+`pds/autonomy.py`'s own comment: the first live-driven `feature_flag.evaluation`
+log record measured in OpenSearch carried `"@timestamp": "1970-01-01T00:00:00Z"`.**
+The installed SDK (`opentelemetry-sdk==1.44.0`) sets `LogRecord.timestamp`
+verbatim from whatever is passed — unlike `observed_timestamp`, it does not
+default to `time_ns()` when `None` — and the emitter's first version passed
+nothing. Fixed by passing `timestamp=time_ns()` explicitly; both the hermetic
+guard test above and the live e2e test
+(`test_the_live_events_carry_a_real_timestamp_not_the_epoch`) assert a real
+timestamp now, and the live record was re-measured after the fix.
+
+**One tension this task's plan asked to be decided, not papered over, stated
+here rather than only in code:** `resolution.version` and `.set_id` measure
+`None` for every real evaluation against this deployment
+(`featureflag.yaml`'s `autonomy-level` flag defines no `flag_metadata`, per
+Task 3's own measurement). Both are omitted from the log record when `None`,
+per this repository's standing "missing value is absent, never invented"
+rule — the same convention `server.py` already applies to the
+`policy.decision` span's `feature_flag.version` attribute. Consequence for
+Task 5, stated plainly: reading `feature_flag.version` off this log event
+will find it absent today, same as the span; ruling M5-R6 already routes the
+audit's correctness around this by resolving the current contract version
+from flagd directly rather than depending on either event carrying it — this
+log event is the human-readable parity target, not a scoring dependency.
+
+---
+
 **2026-09-14 (M5 Task 1 fix round 1) — the current figures, and the gate row
 is still PREDICTED.**
 The Task 1 review (Important finding) named `scripts/start-demo.sh`'s V11 fix
@@ -1488,8 +1561,23 @@ the plan defect described two paragraphs up).
 
 Per-service unit suites (all eight run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 114, payments-mcp 16, payments-api (Go) 31,
-customer-ui (vitest) 6, policy-decision-service 124,
+customer-ui (vitest) 6, policy-decision-service 127,
 reviewer-ui 56, eval-scorer 135 — all passing.
+(**2026-09-14, M5 Task 4: policy-decision-service 124 → 127.**
+Re-measured with `.venv/bin/python -m pytest --collect-only -q tests` from
+that service's own directory. Three tests in `tests/test_autonomy.py` close
+the guard `pds/autonomy.py::emit_evaluation_event` (Task 4's second-signal
+log record) had none of on its own: one drives a real `AutonomyResolution`
+through a hermetic `LoggerProvider`/`InMemoryLogRecordExporter` and asserts
+every field that can be present is, spelled with the current semconv keys;
+one asserts the emitted record's own `timestamp` is a real wall-clock value,
+not the SDK's `None`-passthrough default (the epoch-timestamp defect this
+task found and fixed against the live cluster, before this hermetic guard
+existed to catch it); one asserts a `None` field (`version`/`set_id`/
+`variant`/`provider_name`) is omitted from the record's attributes rather
+than invented as `null` or `""`, mirroring the same convention Task 3 already
+proved on the `policy.decision` span. All three were run through
+`scripts/mutate-guard.sh` and confirmed RED before being left green.)
 (**2026-09-14, M5 Task 3 fix round 1: policy-decision-service 119 → 124.**
 Re-measured with `.venv/bin/python -m pytest --collect-only -q tests` from
 that service's own directory. The task-3 review found the milestone's

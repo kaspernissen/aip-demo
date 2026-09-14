@@ -36,7 +36,26 @@ no metric instrument at all. It is also the first finding here whose write-up
 quotes an upstream maintainer arguing the *other* way — PydanticAI treats
 agent-level telemetry as a span concern deliberately — because a finding that
 suppressed the best counter-argument would be advocacy rather than evidence.
-**Twelve findings, still none filed.**
+
+**M5 (Progressive autonomy) adds two more, both about the same pair of
+packages and found while wiring the second of "two records per evaluation"
+Task 4's own title promises.** **Finding 13**, added 2026-09-14 by M5 Task 4:
+`openfeature-hooks-opentelemetry` 0.3.1's `TracingHook` puts the
+`feature_flag.evaluation` event on the active **span**, citing the OTel
+*trace* semantic conventions as its own compliance target — while
+`openfeature-sdk` 0.10.0 ships a second, unused event-builder
+(`openfeature.telemetry.create_evaluation_event`) built the other way, citing
+the *logs* semantic conventions by name in its own docstrings, added to the
+SDK core for exactly this purpose over a year before the hook's most recent
+release and never once called by it. The two also disagree on the wire
+spelling of every attribute they share, and the hook's own error-message key
+spells that attribute a third way, off both packages' own spellings.
+**Finding 14**, added the
+same day: the fields that disagreement's log-shaped side already reads —
+`feature_flag.set.id` and `feature_flag.version`, off the flag's own
+`flag_metadata` — are two of the seven fields `TracingHook` declares constants
+for and never fills in on the span event it actually emits. **Fourteen
+findings, still none filed.**
 
 > **Corrected 2026-09-11, when Finding 11 was written.** This paragraph opened
 > *"**M3 (Supervised) adds no finding.** It adds a *measurement*"* and closed
@@ -162,6 +181,20 @@ be assumed into another. It is also the only finding
 this project found by *fixing its own system* rather than by surveying a
 dependency, and the only one whose evidence includes a live A/B control: the
 same request, twice, differing in one hex digit.
+
+**Finding 12 is the metrics-side counterpart of Gap 8**, as the numbering note
+above already says, and is the only finding after Finding 5 that *does* map
+onto one of the contract's eight gaps. **Findings 13 and 14 sit outside the
+gap list entirely, the same way Findings 6–11 do** — they are M5 findings,
+both added 2026-09-14 by M5 Task 4, and their subject is a third roof: the
+`open-feature` GitHub organization's own Python packages
+(`openfeature-hooks-opentelemetry` and `openfeature-sdk`), an **independent
+project**, not CNCF (Finding 11's roof) and not Linux Foundation (Findings
+6–10's). Unlike every finding before them, both are about the two packages
+**disagreeing with each other**, not about either one disagreeing with a
+convention on its own — Finding 13 is the disagreement itself (which OTel
+signal, which attribute spelling); Finding 14 is a consequence of it (the
+package that already reads two fields correctly is the one nothing calls).
 
 **There is also an "Open questions" section at the end of this document**, added
 in the M2.2 fix round (ruling R46). Entries there are deliberately *outside* the
@@ -2245,6 +2278,303 @@ reserves for its maintainers, not one an implementation task takes
 unilaterally, exactly as Findings 1-11 record. Nothing was posted to any
 tracker; every issue above was read, never written to. No workaround was added
 to this project's own code in the meantime.
+
+---
+
+## Finding 13: OpenFeature's own Python packages disagree with each other on which OTel signal carries `feature_flag.evaluation` — and on every attribute's spelling
+
+**The problem, plainly:** Two packages under the same `open-feature`
+GitHub organization, both installed by this project, both claiming to
+implement the same specified telemetry event, disagree with each other about
+which OpenTelemetry signal that event belongs on and how its attributes
+should be spelled. `openfeature-hooks-opentelemetry`'s `TracingHook` — the
+only one of the two actually wired into anything, in this project or (as far
+as could be found) anywhere — puts `feature_flag.evaluation` on the active
+**span**, as a span event, and cites the OTel **trace** semantic conventions
+as the reason. `openfeature-sdk` itself ships a second, complete, unused
+event-builder for the identical event name, built for a **log record**, and
+cites the OTel **logs** semantic conventions in its own class docstrings —
+added to the core SDK for exactly this purpose over a year before the hook
+package's most recent release, and never called by it. A downstream author
+who trusts either artifact's own citation, in isolation, would build
+something the other artifact disagrees with.
+
+**Project and version:** `openfeature-hooks-opentelemetry==0.3.1` (PyPI,
+`open-feature/python-sdk-contrib`, installed at
+`platform/policy-decision-service/.venv/lib/python3.13/site-packages/openfeature/contrib/hook/opentelemetry/__init__.py`)
+and `openfeature-sdk==0.10.0` (PyPI, `open-feature/python-sdk`, installed at
+`.../site-packages/openfeature/telemetry/{__init__,attributes,body,metadata}.py`
+in the same venv) — the exact two packages this project's `pds/autonomy.py`
+already depends on for the `AutonomyResolution` machinery Task 3 built.
+
+**Where the behaviour lives, read directly from both installed packages:**
+
+*The hook (span event, actively used).* `TracingHook.finally_after` hand-builds
+an attribute dict and ends with `current_span.add_event(OTEL_EVENT_NAME,
+event_attributes)` — a span event, full stop; no log record is ever
+constructed. Its package's own README states the justification in one
+sentence: *"a [spec compliant][otel-spec] way to automatically add a feature
+flag evaluation to a span as a span event,"* with `[otel-spec]` resolving
+to `https://opentelemetry.io/docs/reference/specification/trace/semantic_conventions/feature-flags/`
+— the **trace**-side semantic conventions page, cited by the package itself.
+
+*The SDK's own sibling utility (log record, unused).* `openfeature/telemetry/__init__.py`
+defines `create_evaluation_event(hook_context, details) -> EvaluationEvent`,
+returning a dataclass with **separate `attributes` and `body` fields** — the
+log-record data model, which has no equivalent split for a span event — and
+its sibling module `openfeature/telemetry/body.py` states outright: *"OpenTelemetry
+event body fields. See: https://opentelemetry.io/docs/specs/semconv/feature-flags/feature-flags-logs/"*
+— the **logs**-side page, a different URL from the one the hook cites.
+`openfeature/telemetry/metadata.py`'s `TelemetryFlagMetadata` cites a third
+page, `https://openfeature.dev/specification/appendix-d/#flag-metadata`
+(OpenFeature's own spec, not OTel's). A repository-wide grep of the entire
+venv, `grep -rln "create_evaluation_event\|EvaluationEvent"`, returns exactly
+one file: the definition itself. Nothing in `openfeature-hooks-opentelemetry`
+0.3.1 — the only hook package this project or, per the tracker search below,
+anyone else has published — calls it.
+
+*Provenance of the unused half, confirmed via the tracker rather than
+assumed:* [`open-feature/python-sdk#448`](https://github.com/open-feature/python-sdk/issues/448)
+("Add OpenTelemetry-Compatible Telemetry Utility Function", closed) asked for
+"a telemetry utility function... to create OpenTelemetry-compatible telemetry
+signals," explicitly requiring it to "adhere to... [Appendix D] of the
+OpenFeature Specification and the [OpenTelemetry Semantic Conventions for
+Feature Flags]" — linking the same `feature-flags-logs` URL found in
+`body.py` above — modeled on a sibling JS-SDK implementation.
+[`#451`](https://github.com/open-feature/python-sdk/pull/451) ("feat: add OTel
+utility function") merged **2025-02-22**, closing it. `openfeature-hooks-opentelemetry`'s
+two most recent releases, v0.3.0 (2025-12-18) and v0.3.1 (2026-02-17), both
+postdate that merge by ten months and a year respectively — there was ample
+time to adopt it, and neither release does.
+
+**What the convention says should happen:** the OpenFeature specification's
+own "signal emission patterns" section
+(`https://openfeature.dev/specification/appendix-d/#signal-emission-patterns`)
+allows more than one shape here — confirmed via
+[`open-feature/python-sdk-contrib#363`](https://github.com/open-feature/python-sdk-contrib/issues/363)
+("Add Span Hook", **open**, filed by a third party, `danjuv`), whose own body
+states *"[the spec] specifies emitting spans as an option... The js-sdk
+supports this already, but the rest of the SDKs don't."* Note precisely what
+`#363` is and is not: it asks for a hook that creates a whole **span**
+(matching the JS SDK's separate `traces` hook), which is a third shape,
+distinct from both artifacts measured here — it does not resolve, or even
+mention, the span-event-vs-log-record disagreement this finding is about.
+
+**What we observed instead:** read directly, not inferred — the two packages'
+own attribute spellings for the same four fields, none of which is an
+invented name; all eight cited values below came off this project's own
+installed `.venv`, cross-checked against
+`opentelemetry.semconv._incubating.attributes.feature_flag_attributes`
+(the same module Task 4's `DEPRECATED_SPELLINGS` derivation reads):
+
+| Field | Current OTel semconv | `TracingHook` (span event, used) | `openfeature.telemetry` (log-shaped, unused) |
+|---|---|---|---|
+| provider name | `feature_flag.provider.name` | `feature_flag.provider.name` (current) | `feature_flag.provider_name` (**deprecated**) |
+| variant | `feature_flag.result.variant` | `feature_flag.result.variant` (current) | `feature_flag.variant` (**deprecated**) |
+| reason | `feature_flag.result.reason` | `feature_flag.result.reason` (current) | `feature_flag.evaluation.reason` (**deprecated**) |
+| error message | `feature_flag.error.message` | `error.message` (**neither current nor deprecated**) | `feature_flag.evaluation.error.message` (**deprecated**) |
+
+The right-hand column's three "deprecated" cells and the left-hand column's
+four "current" cells are not this project's characterization — they are the
+literal `Final`/`@deprecated`-marked values already read out of the installed
+`opentelemetry-semantic-conventions==0.65b0` package for Task 4's own guard
+test (`tests/unit/test_autonomy_contract.py`). The hook gets three of four
+right and invents the fourth (`error.message`, off both the current
+and the deprecated OTel spelling — it is simply a different, unnamespaced
+key). The SDK's own unused utility, despite citing the correct current-spec
+page in its own docstring, uses the deprecated spelling on all three
+attributes where a deprecated alternative exists.
+
+**Why it matters, beyond this project:** anyone consuming
+`feature_flag.evaluation` downstream — a query, a dashboard panel, an alert —
+has to know in advance which OTel signal to look on, because OpenFeature's own
+Python ecosystem does not agree with itself, and cannot query by the current
+attribute names alone, because the one utility that already reads
+`flag_metadata` (see Finding 14) spells three of four shared attributes the
+deprecated way. A vendor whose backend supports log-based events well and
+span-events poorly (or vice versa — the spec's own `#363` names this
+directly) gets a worse experience purely from which OpenFeature package an
+integrator happened to install, not from any choice available to them.
+
+**What a fix would need to do:** either `TracingHook` adopts
+`create_evaluation_event()` (fixing its error-message key and aligning its
+signal choice with the SDK's own logs-cited utility), or the SDK's utility is
+updated to current spellings and the hook is left as the span-event path,
+with the package's own README stating which of the spec's several emission
+patterns it implements and why — either resolution is legitimate; what is not
+is two co-maintained packages each citing a different OTel page as their
+compliance target for the identical event name.
+
+**How we worked around it, and whether it should be adopted upstream:** this
+project's own `pds/autonomy.py::emit_evaluation_event` (Task 4) took neither
+package's attribute spelling on faith — it imports every key directly from
+`opentelemetry.semconv._incubating.attributes.feature_flag_attributes` (the
+**current** spellings only) and emits a genuine log record via
+`opentelemetry._logs`/`opentelemetry.sdk._logs`, deliberately choosing the
+signal `openfeature.telemetry`'s own citations argue for, independent of
+either OpenFeature package's own inconsistency. `TracingHook` remains
+registered too (Task 3), on the active span, exactly as installed and
+unmodified — this project relies on it for the span-event signal
+(`tests/test_autonomy.py::test_the_tracing_hook_puts_a_feature_flag_evaluation_event_on_the_active_span`)
+and does not attempt to patch its attribute spelling or its error-message key
+at runtime. Two records per evaluation, correctly attributed on one side and
+inherited as-is, imperfections included, on the other — recorded rather than
+silently patched, because patching a third-party hook's own span event in
+place would be exactly the kind of invented-behind-the-library's-back fix
+this project's governing rule rules out.
+
+**Existing upstream activity (verified live against the tracker, read-only,
+2026-09-14 — no issue, comment or pull request was posted anywhere as part of
+writing this):** beyond `#363` and `#448`/`#451` cited above, a further search
+of `open-feature/python-sdk-contrib` for "log record", "feature_flag.version"
+and "error.message" (issues and pull requests, matched against title and body)
+returned no results — no open issue asks the hook to adopt the SDK's own
+utility, or to fix its error-message key, or names the signal-choice
+disagreement this finding describes.
+
+**Status: not filed by this project.** No open issue covers the specific gap
+found here — that two co-maintained packages disagree on signal and spelling
+for the same event — and `#363` is adjacent but distinct (a third, span-scoped
+shape, not a resolution of the span-event/log-record split). Recorded
+filing-ready: both installed versions, the exact citations each makes, and the
+attribute table above.
+
+---
+
+## Finding 14: `TracingHook` declares `feature_flag.set.id` and `feature_flag.version` as constants and never emits either — while its own SDK's sibling utility already reads them
+
+**The problem, plainly:** `openfeature-hooks-opentelemetry`'s `EventAttributes`
+class names all eight attributes its `TracingHook` might plausibly emit,
+including `SET_ID = "feature_flag.set.id"` and `VERSION = "feature_flag.version"`.
+`finally_after` — the one method that builds the event — references six of
+those eight names and never once references `EventAttributes.SET_ID` or
+`EventAttributes.VERSION`. Both fields come from a flag's own `flag_metadata`,
+which `FlagEvaluationDetails` already carries into the hook on every call;
+`finally_after` has the data sitting in `details.flag_metadata` and does not
+read it for these two keys, though it does read `details.variant`,
+`details.reason`, and three others from adjacent parts of the same object on
+the very same code path.
+
+**Project and version:** `openfeature-hooks-opentelemetry==0.3.1`, the same
+package and installed file as Finding 13.
+
+**Where the behaviour lives:** `TracingHook.finally_after`, read in full —
+every attribute it sets:
+
+```python
+event_attributes = {
+    EventAttributes.KEY: details.flag_key,
+    EventAttributes.RESULT_VALUE: json.dumps(details.value),
+    EventAttributes.RESULT_REASON: str(details.reason or Reason.UNKNOWN).lower(),
+}
+if details.variant:
+    event_attributes[EventAttributes.RESULT_VARIANT] = details.variant
+if details.reason == Reason.ERROR:
+    ...
+context = hook_context.evaluation_context
+if context.targeting_key:
+    event_attributes[EventAttributes.CONTEXT_ID] = context.targeting_key
+if hook_context.provider_metadata:
+    event_attributes[EventAttributes.PROVIDER_NAME] = hook_context.provider_metadata.name
+```
+
+`details.flag_metadata` — the object `FlagEvaluationDetails` defines
+specifically to carry provider-supplied metadata such as a flag's set ID and
+ruleset version — is never named in this method at all. A repository grep of
+the installed hook package for `flag_metadata` returns zero matches.
+
+**What the convention says should happen:** OpenFeature's own specification,
+Appendix D (`https://openfeature.dev/specification/appendix-d/#flag-metadata`)
+— cited, as noted in Finding 13, directly inside this same SDK's
+`openfeature/telemetry/metadata.py` — documents `flagSetId` and `version` as
+well-known `flag_metadata` keys specifically for telemetry events. The OTel
+feature-flag semantic conventions (`feature_flag.set.id`, `feature_flag.version`,
+both confirmed present and current in the installed
+`opentelemetry-semantic-conventions==0.65b0`) name the identical two
+attributes as the wire spelling for exactly this data once resolved.
+
+**What we observed instead:** two independent pieces of evidence, neither
+requiring speculation about what `TracingHook` was "supposed" to do:
+
+1. *Read directly, in the previous section:* `finally_after`'s own attribute
+   dict, quoted in full above, has no `SET_ID` or `VERSION` key under any
+   circumstance — not gated behind a `None` check that happens to always be
+   `None` in this deployment (Task 4's own tension, addressed on its own
+   emission path — see `pds/autonomy.py`'s module comment on ruling M5-R5),
+   but genuinely absent from the code that builds the dict, regardless of
+   what `flag_metadata` contains.
+2. *The sibling utility already does this correctly*, read directly from
+   `openfeature/telemetry/__init__.py::create_evaluation_event` (Finding 13):
+   `if set_id := details.flag_metadata.get(TelemetryFlagMetadata.FLAG_SET_ID):
+   attributes[TelemetryAttribute.SET_ID] = ...` and the identical pattern for
+   `TelemetryFlagMetadata.VERSION`. The SDK this hook depends on
+   (`openfeature-sdk>=0.8.4` per the hook's own `METADATA`) has shipped a
+   correct, working reference implementation of exactly the read
+   `TracingHook` omits, since 2025-02-22 (Finding 13's `#451`) — nine months
+   before the hook package's own most recent minor release.
+
+Against this project's own live deployment specifically: `resolution.set_id`
+and `resolution.version` measure `None` for every real evaluation (Task 3's
+measurement, re-confirmed by Task 4 — `featureflag.yaml`'s `autonomy-level`
+flag defines no `flag_metadata`), so `TracingHook`'s omission happens to cost
+nothing observable in this deployment today. It would cost something the
+moment any flag in this system's flagd configuration defined a
+`flag_metadata` block, silently: no error, no warning, the two fields simply
+never appearing on the span event, exactly the shape every other finding in
+this document about a silent gap takes.
+
+**Why it matters, beyond this project:** an operator relying on
+`TracingHook`'s span event to answer "which ruleset version produced this
+decision" or "which flag set was this flag part of" — precisely the audit
+question this project's own Task 5 needs answered — gets neither, for any
+flag that defines them, regardless of provider, and with no indication
+anything is missing. The gap is not a hard problem: the fix already exists,
+tested and shipped, four lines long, in a sibling module of the same SDK
+this hook already imports.
+
+**What a fix would need to do:** two `if` blocks in `finally_after`, reading
+`details.flag_metadata.get("flagSetId")` and `.get("version")` and setting
+`EventAttributes.SET_ID`/`EventAttributes.VERSION` when present — the exact
+four lines already written and shipped in
+`openfeature/telemetry/create_evaluation_event`, ported into the span-event
+path rather than invented fresh.
+
+**How we worked around it, and whether it should be adopted upstream:** this
+project's own `pds/autonomy.py::emit_evaluation_event` (Task 4) reads both
+fields itself, off the same `AutonomyResolution.set_id`/`.version` Task 3's
+`resolve_autonomy` already carries (ruling M5-R5), and includes them in its
+own log record when not `None` — this project did not patch `TracingHook` at
+runtime to add the missing read; it emits the complete record itself, on the
+second of the two signals Task 4 wires, leaving the span event exactly as the
+installed hook produces it. The consequence for this deployment specifically
+is stated in `pds/autonomy.py`'s own module comment and carried forward to
+Task 5: reading `feature_flag.version` off `TracingHook`'s span event will
+find it absent for every real evaluation today (the flag defines no
+`flag_metadata`, independent of this gap), and Task 5's audit is specified
+(ruling M5-R6) to resolve the current contract version from flagd directly
+rather than depend on either event carrying it.
+
+**Existing upstream activity (verified live against the tracker, read-only,
+2026-09-14 — no issue, comment or pull request was posted anywhere as part of
+writing this):** a search of `open-feature/python-sdk-contrib` for
+"flagSetId", "flag_metadata" (with "version"), and "metadata" (issues and pull
+requests, matched against title and body) found nothing naming this specific
+omission. The closest related history is
+[`#215`](https://github.com/open-feature/python-sdk-contrib/pull/215)
+("feat: add support for flagd flag metadata", merged) and
+[`#211`](https://github.com/open-feature/python-sdk-contrib/pull/211)
+("chore(flagd): Add sync metadata disabled", merged) — both about the
+**flagd provider** learning to carry `flag_metadata` at all, not about
+`TracingHook` reading it once carried; neither touches
+`hooks/openfeature-hooks-opentelemetry`.
+
+**Status: not filed by this project.** No open issue covers `TracingHook`'s
+specific omission of `set.id`/`version`, and the fix is small, already proven
+correct elsewhere in the same SDK, and filing is — as with every finding in
+this document — a decision reserved for this project's maintainers. Nothing
+was posted to any tracker. This project's own emission path (`pds/autonomy.py`)
+supplies both fields itself rather than waiting on or patching the upstream
+hook.
 
 ---
 
