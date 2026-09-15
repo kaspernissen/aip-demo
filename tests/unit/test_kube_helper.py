@@ -60,6 +60,7 @@ _RAW_RETURNCODE_SKIPS_ALLOWED = {
     ("test_evidence_view.py", "stage_4_or_a_reason"),
     ("test_policy_scores.py", "stage_4_or_a_reason"),
     ("test_progressive_autonomy.py", "stage_5_or_a_reason"),
+    ("test_autonomy_writer_live_rbac.py", "stage_6_with_the_write_grant_applied_or_a_reason"),
     ("test_gateway_config_drift.py", "live_gateway_config_text"),
     ("test_supervised.py", "reviewer_ui_route"),
     # Label-selector pod lookups and in-pod `exec` probes. A selector does not

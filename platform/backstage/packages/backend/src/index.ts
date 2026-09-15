@@ -64,6 +64,13 @@ backend.add(import('@backstage/plugin-search-backend-module-techdocs'));
 // kubernetes plugin
 backend.add(import('@backstage/plugin-kubernetes-backend'));
 
+// M6 Task 3: the autonomy-contract card's backend -- reads and writes the
+// `northstar-autonomy` FeatureFlag through its OWN ServiceAccount
+// (backstage-autonomy-writer, deploy/k8s/backstage.yaml), never through the
+// kubernetes-backend plugin above. See
+// platform/backstage/packages/backend/src/plugins/autonomyContract/index.ts.
+backend.add(import('./plugins/autonomyContract'));
+
 // user settings plugin
 backend.add(import('@backstage/plugin-user-settings-backend'));
 

@@ -11,7 +11,17 @@ import catalogPlugin from '@backstage/plugin-catalog/alpha';
 import kubernetesPlugin from '@backstage/plugin-kubernetes/alpha';
 import { navModule } from './modules/nav';
 import { homeModule } from './modules/home';
+// M6 Task 3: the autonomy card, its own frontend plugin --
+// modules/autonomyContract/plugin.tsx. Backend half: packages/backend/src/
+// plugins/autonomyContract, registered in packages/backend/src/index.ts.
+import { autonomyContractPlugin } from './modules/autonomyContract/plugin';
 
 export default createApp({
-  features: [catalogPlugin, kubernetesPlugin, navModule, homeModule],
+  features: [
+    catalogPlugin,
+    kubernetesPlugin,
+    navModule,
+    homeModule,
+    autonomyContractPlugin,
+  ],
 });

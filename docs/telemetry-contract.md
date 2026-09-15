@@ -222,17 +222,38 @@ hand-maintained list), taking the collected count from **390 to 393**,
 re-measured the same way, prose continuing this same current block for the
 same reason M6 Task 1's own addition above does.
 
-Bare-suite row, derived from that same collection: 393 collected − 74 gated −
-**0** xfailed = `319 passed, 74 skipped, 0 xfailed`.
+M6 Task 3 adds twenty-five more: **ten** under `tests/unit`
+(`tests/unit/test_autonomy_writer_rbac.py`, parsing `deploy/k8s/
+backstage.yaml` the same way `test_stage6_backstage_config.py` parses Task
+1's read-only ClusterRole — the write Role's verbs are exactly `get`/`list`/
+`patch`, `resourceNames` is exactly `[northstar-autonomy]`, no wildcard
+anywhere, neither Backstage RBAC object grants Secrets, the write
+ServiceAccount is separate from the read-only one, and the Deployment mounts
+its token read-only while keeping its own `serviceAccountName` as the
+read-only identity) and **fifteen** under `tests/e2e`
+(`tests/e2e/test_autonomy_writer_live_rbac.py`, the live half this task's own
+brief names by name — `kubectl auth can-i --as=` proving the positive grant,
+the negative half design §4 asks for by name (a different FeatureFlag denied,
+`delete` denied, Secrets unreadable), a namespace/cluster-wide-access control,
+and a control that M6-R5 still holds: the read-only ServiceAccount still
+cannot touch `featureflags` at all). Not gated behind `RUN_BROWSER_TESTS=1`,
+for the same reason `test_egress_policy.py` and `test_gateway_config_drift.py`
+give for their own live-cluster-but-no-browser suites: no model tokens, no
+browser, a dozen `kubectl` calls under a second. Taking the collected count
+from **393 to 418**, re-measured the same way.
+
+Bare-suite row, derived from that same collection: 418 collected − 74 gated −
+**0** xfailed = `344 passed, 74 skipped, 0 xfailed`.
 
 The gated figure is unchanged at **74** — re-measured the same way as every
 figure below it, a `--collect-only` run with a plugin that counts items
 carrying a `skipif` whose reason names `RUN_BROWSER_TESTS` and whose condition
 is true with the variable unset — because none of Part A's eleven new
 `tests/unit` tests, Part B's five new `tests/unit` tests, M6 Task 1's six new
-`tests/unit` tests, M6 Task 2's three new `tests/unit` tests, or the two new
+`tests/unit` tests, M6 Task 2's three new `tests/unit` tests, M6 Task 3's
+twenty-five new tests, or the two new
 PDS tests carries one; PDS tests are not
-collected by this measure at all (`tests/unit`-only) — and reports 74 of 393,
+collected by this measure at all (`tests/unit`-only) — and reports 74 of 418,
 with the per-module spread and the browser split both unchanged from the row
 below (restated so this block's own guard has a figure to read, not merely
 inherited by silence). Full spread: `test_settlement_llm_trace.py` 9,
@@ -275,14 +296,21 @@ check), M6 Task 1's own six-test addition
 addition (`tests/unit/test_catalog_matches_the_tree.py`) plus its changes
 under `deploy/` (the eight components' `backstage.io/kubernetes-id` labels)
 and `platform/` (`platform/backstage/app-config.production.yaml`,
-`packages/app/src/App.tsx`, the Dockerfile) are all uncommitted against the
+`packages/app/src/App.tsx`, the Dockerfile), and M6 Task 3's own
+twenty-five-test addition (`tests/unit/test_autonomy_writer_rbac.py`,
+`tests/e2e/test_autonomy_writer_live_rbac.py`) plus its changes under
+`deploy/` (`deploy/k8s/backstage.yaml`'s write ServiceAccount/Role/
+RoleBinding/Secret and the Deployment's new volume/env) and `platform/`
+(the backend's new `plugins/autonomyContract/` module and its own five test
+files, `packages/backend/package.json`) are all uncommitted against the
 recorded gate commit for the same reason. The prediction from collection
-(393 − 0 xfailed = 393) is `393 passed, 0 xfailed`; nothing claims that
+(418 − 0 xfailed = 418) is `418 passed, 0 xfailed`; nothing claims that
 figure was measured against this tree.
 
-`tests/unit` alone collects **247** (222 before the M5 whole-branch review's
+`tests/unit` alone collects **257** (222 before the M5 whole-branch review's
 fix wave, 233 after Part A, 238 after Part B, 244 after M6 Task 1's own
-six-test addition, 247 after M6 Task 2's own three-test addition).
+six-test addition, 247 after M6 Task 2's own three-test addition, 257 after
+M6 Task 3's own ten-test addition).
 
 ---
 

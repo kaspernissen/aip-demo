@@ -107,6 +107,112 @@ subjects:
     name: backstage
     namespace: northstar-platform
 ---
+# M6 Task 3: the SECOND ServiceAccount, promised by Task 1's own comment above
+# and by design §4. This is the write grant -- "Backstage can see the
+# cluster" (backstage-read-only, above) and "Backstage can change policy"
+# (this) are separate objects, bound to separate ServiceAccounts, so either
+# can be revoked without touching the other. M6-R5 (progress ledger): this
+# ServiceAccount is the card's OWN read *and* write -- it is not layered on
+# top of the read-only ClusterRole, and the read-only ClusterRole must never
+# be widened to give the card its `get`. Widening it would put the narrow
+# grant's read behind the broad grant's identity, defeating the separation
+# design §4 asks for.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backstage-autonomy-writer
+  namespace: northstar-platform
+  labels:
+    app: backstage
+    northstar.io/plane: platform
+---
+# Namespaced Role, not ClusterRole: the one resource this grant ever touches
+# lives in `northstar-platform` and nowhere else, so a namespaced Role is the
+# tighter of the two, unlike backstage-read-only's ClusterRole (which needs
+# cluster scope because the catalog it reads spans four namespaces). Design
+# §4, verbatim: "get/list/patch on featureflags ... restricted by
+# resourceNames to northstar-autonomy alone. Not `*`, not cluster-wide, not
+# other verbs. No `delete`."
+#
+# `list` is granted alongside `get` because @kubernetes/client-node's
+# CustomObjectsApi -- used here exactly as the read-only ClusterRole's own
+# Kubernetes plugin uses it -- issues a LIST-shaped watch/refresh call in some
+# client code paths even when the caller only ever wants one named object;
+# `resourceNames` still confines it to `northstar-autonomy` (the API server
+# enforces resourceNames on `list`/`watch` by filtering to the named objects,
+# not by rejecting the verb outright), so this does not admit reading any
+# other FeatureFlag.
+#
+# tests/unit/test_autonomy_writer_rbac.py pins every clause of this Role by
+# parsing the manifest; tests/e2e/test_autonomy_writer_live_rbac.py proves the
+# same claims against the live API server with
+# `kubectl auth can-i --as=system:serviceaccount:northstar-platform:backstage-autonomy-writer`.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backstage-autonomy-writer
+  namespace: northstar-platform
+  labels:
+    app: backstage
+    northstar.io/plane: platform
+rules:
+  - apiGroups: ["core.openfeature.dev"]
+    resources: ["featureflags"]
+    resourceNames: ["northstar-autonomy"]
+    verbs: ["get", "list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backstage-autonomy-writer
+  namespace: northstar-platform
+  labels:
+    app: backstage
+    northstar.io/plane: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backstage-autonomy-writer
+subjects:
+  - kind: ServiceAccount
+    name: backstage-autonomy-writer
+    namespace: northstar-platform
+---
+# The mechanism that lets ONE pod (the Backstage Deployment below) hold TWO
+# ServiceAccounts' worth of credentials. A Pod has exactly one
+# `spec.serviceAccountName`, and a projected `serviceAccountToken` volume can
+# only ever mint a token for THAT ServiceAccount -- there is no kubelet
+# mechanism to project a token for a second, named ServiceAccount into a pod
+# whose own identity is the first. So the write grant's credential has to
+# reach the pod a different way: a long-lived token Secret, bound to
+# `backstage-autonomy-writer` by the annotation below, mounted as an ordinary
+# volume. Kubernetes still supports this ("service account token Secrets",
+# https://kubernetes.io/docs/concepts/configuration/secret/#service-account-token-secrets)
+# specifically for cases like this one.
+#
+# This does NOT require `get secrets` RBAC on backstage-read-only or on
+# backstage-autonomy-writer -- neither Role grants it, and neither needs it.
+# Mounting a Secret named explicitly in a Pod spec is a deployment-time
+# decision made by whoever applies this manifest (scripts/setup-kind.sh /
+# rebuild-and-deploy.sh, both operator-driven); it is not something the
+# running pod's own RBAC could use to go discover or read *other* Secrets. A
+# ServiceAccount that could list arbitrary Secrets and one that has this one
+# named Secret's contents handed to it by the kubelet are different
+# privileges, and design §4's "no access to Secrets" is about the former --
+# tests/unit/test_autonomy_writer_rbac.py asserts neither Role in this file
+# ever grants it.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backstage-autonomy-writer-token
+  namespace: northstar-platform
+  labels:
+    app: backstage
+    northstar.io/plane: platform
+  annotations:
+    kubernetes.io/service-account.name: backstage-autonomy-writer
+type: kubernetes.io/service-account-token
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -136,6 +242,38 @@ spec:
           # be ignored in favour of the node's cached layer.
           image: localhost:5001/northstar/backstage:dev
           imagePullPolicy: Always
+          env:
+            # M6 Task 3: where the autonomy-contract backend plugin
+            # (platform/backstage/packages/backend/src/plugins/autonomyContract)
+            # finds the SECOND ServiceAccount's credential -- see the
+            # backstage-autonomy-writer-token Secret and its mount below.
+            # Never the pod's own default-mounted token
+            # (/var/run/secrets/kubernetes.io/serviceaccount/token, which is
+            # backstage-read-only's and cannot patch anything).
+            - name: NORTHSTAR_AUTONOMY_WRITER_TOKEN_PATH
+              value: /var/run/secrets/northstar/autonomy-writer/token
+            - name: NORTHSTAR_AUTONOMY_WRITER_CA_PATH
+              value: /var/run/secrets/northstar/autonomy-writer/ca.crt
+            - name: NORTHSTAR_AUTONOMY_NAMESPACE
+              value: northstar-platform
+            - name: NORTHSTAR_AUTONOMY_FLAG_NAME
+              value: northstar-autonomy
+            # The same three OTLP variables every other service in this
+            # cluster sets (deploy/k8s/eval-scorer.yaml, deploy/k8s/policy-
+            # decision-service.yaml, ...), read by
+            # plugins/autonomyContract/telemetry.ts through the standard
+            # `OTEL_EXPORTER_OTLP_*` names. This did not exist before Task 3:
+            # Task 1's Backstage made no decision and changed nothing, so it
+            # emitted nothing. The card's write does both, so it is the first
+            # thing in this manifest with anything to say to the collector --
+            # design §4's auditability clause, discharged as telemetry rather
+            # than left as a claim in a comment.
+            - name: OTEL_SERVICE_NAME
+              value: backstage
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
           ports:
             - name: http
               containerPort: 7007
@@ -178,6 +316,25 @@ spec:
               cpu: 100m
             limits:
               memory: 1Gi
+          volumeMounts:
+            # Read-only, and this is the ONLY thing this mount does: hand the
+            # kubelet-populated token/CA for backstage-autonomy-writer to the
+            # one route that needs it. It is a second credential sitting
+            # beside the pod's own automounted backstage-SA token, not a
+            # replacement for it -- the Kubernetes plugin keeps using the
+            # pod's own (read-only) identity exactly as Task 1 left it.
+            - name: autonomy-writer-token
+              mountPath: /var/run/secrets/northstar/autonomy-writer
+              readOnly: true
+      volumes:
+        - name: autonomy-writer-token
+          secret:
+            secretName: backstage-autonomy-writer-token
+            # `token` and `ca.crt` are populated onto this Secret by the
+            # cluster's own service-account-token controller once it exists
+            # (verified live, 2026-09-15: both keys present within a few
+            # seconds of `kubectl apply`) -- nothing here writes them.
+            optional: false
 ---
 apiVersion: v1
 kind: Service
