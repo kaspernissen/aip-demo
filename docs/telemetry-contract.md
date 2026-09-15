@@ -134,8 +134,8 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-15 (M5 Task 6) — the current figures, and the gate row is still
-PREDICTED.**
+**2026-09-15 (M5 Task 6) — the current figures, and the gate row is
+MEASURED.**
 Task 6 flips the `northstar-autonomy` contract live (against the deployed
 `FeatureFlag` object, never the committed `deploy/platform/openfeature/featureflag.yaml`
 — see ruling M5-R29/M5-R31's `CURRENT_LEVEL` coupling, which this design
@@ -185,17 +185,38 @@ not). Full spread: `test_settlement_llm_trace.py` 9,
 start no browser**: the twelfth gated module starts no browser, so the
 numerator is unchanged and only the denominator (and its complement) moved.
 
-Gate row: **PREDICTED, NOT MEASURED**, unchanged from the row below — this
-branch's gate run was at commit `b215426` (the M4 final-review fix wave
-further below), and it is measured against no later tree than that one. This
-task changes files under `gate_paths` (`deploy/`, `docs/`, `scripts/`,
-`tests/`) without a new gate run to back it — running the gate is
-deliberately the orchestrator's step, not this task's own. The prediction
-from collection (368 − 1 xfailed = 367) is
-`367 passed, 1 xfailed`; nothing claims that figure was measured against
-this tree. The one xfail (`tests/e2e/test_claim_correlation.py`) is still
-inside a gated module, so it still skips rather than xfails on a bare run —
-the bare row's `0 xfailed` above is not a typo.
+Gate row: **MEASURED** — this branch's gate run was at commit `ae29785`,
+`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh`, run by the orchestrator,
+exit **0**: `367 passed, 1 xfailed`, in 509.96s (8m29s), with **zero skips**
+(`grep -c SKIPPED` over the run's full output returns 0 — `RUN_BROWSER_TESTS=1`
+ungates all 74 gated tests, so the gate really does execute the whole of
+`tests/`: 367 + 1 xfailed = the 368 collected). This matches the figure the
+collection predicted, which is the point of publishing the prediction first.
+**M5-R19 is discharged explicitly rather than by implication:**
+`test_supervised.py::test_criterion_4_the_pds_permits_under_the_same_rule_for_a_different_caller`
+**PASSED** in this run — the criterion whose asserted rule literal Task 3
+changed and could not verify live. Both anti-vacuity tests also passed live:
+`test_the_same_claim_refuses_then_settles_when_only_the_contract_changes` and
+`test_no_workload_was_redeployed_by_the_flip`.
+
+The one xfail (`tests/e2e/test_claim_correlation.py`) is inside a gated module,
+so it still skips rather than xfails on a bare run — the bare row's `0 xfailed`
+above is not a typo.
+
+**Dated note, 2026-09-15: the first attempt at this run failed, and what it
+found is worth keeping.** It exited **1** in Step 1 on
+`tools/payments-mcp`'s `test_pytest_is_pinned_clear_of_pysec_2026_1845` —
+`assert '9.0.3' == '9.1.1'`. Ruling M5-R20 named **two** stale service venvs
+(`agents/settlement-agent`, `platform/eval-scorer`) and those two had been
+recreated; in fact Task 1's pytest bump touched seven `requirements.txt` files,
+and **four** venvs were still stale — `agents/claims-agent`, `apps/reviewer-ui`,
+`tools/payments-mcp`, **and the repo-root `.venv` itself**, which is pinned by
+`tests/requirements.txt` but guarded by no `test_pins.py` at all, which is
+exactly why it went unnoticed. All seven venvs now measure `pytest 9.1.1`. The
+failed attempt reached no live settlement, so it consumed none of the
+milestone's single-gate-run budget. **The lesson is the repo's own: a count in a
+ruling is a claim, and claims get re-derived — `find . -name .venv` and compare
+each against its pin, rather than trusting the number written down.**
 
 `tests/unit` alone collects **222**, unchanged: nothing this task added lives
 under `tests/unit` (`test_kube_helper.py`'s one-line allowlist addition is an
