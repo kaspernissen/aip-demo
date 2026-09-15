@@ -39,6 +39,7 @@ below closes that blind spot the same way the whole-tree check closes its
 own: by asking each service's own test runner what it actually has, rather
 than trusting a number someone typed by hand.
 """
+import json
 import os
 import re
 import subprocess
@@ -302,6 +303,52 @@ def _vitest_test_count(service_dir: Path) -> int:
     return len(lines)
 
 
+def _jest_test_count(service_dir: Path) -> int:
+    # Whole-branch review C1: every Backstage jest suite (six plugin files
+    # under packages/backend and packages/app, plus the two scaffold-default
+    # suites those workspaces already carried) was executed by nothing --
+    # `grep -ci backstage scripts/smoke-test.sh` was 0 and this row did not
+    # exist. Unlike pytest/go/vitest above, `backstage-cli repo test` (a
+    # thin wrapper over jest) has no pure enumerate-without-running mode:
+    # jest's own `--listTests` only lists matching FILES, not the individual
+    # `it(...)` cases the published count is over. The suite is hermetic
+    # (no cluster, no network, no model -- confirmed below by timing: low
+    # single-digit seconds) and sub-second-per-file, so running it for real
+    # to get an exact count costs nothing this repo's other per-service
+    # counters weren't already paying in `scripts/smoke-test.sh` itself.
+    #
+    # **`CI=true` is mandatory.** Without it, `backstage-cli repo test`
+    # (jest) defaults to watch mode and the subprocess hangs forever --
+    # found the hard way in the M6 Task 3 fix round (see progress.md) and
+    # confirmed again while writing this counter.
+    cli_bin = service_dir / "node_modules" / ".bin" / "backstage-cli"
+    assert cli_bin.exists(), (
+        f"{cli_bin} does not exist -- this check needs the workspace's own "
+        "installed backstage-cli binary (from `yarn install`), the same one "
+        "scripts/smoke-test.sh requires"
+    )
+    env = dict(os.environ)
+    env["CI"] = "true"
+    result = subprocess.run(
+        [str(cli_bin), "repo", "test", "--silent", "--json"],
+        cwd=service_dir,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=env,
+    )
+    assert result.returncode == 0, (
+        f"`CI=true {cli_bin} repo test --silent --json` failed in "
+        f"{service_dir}, so this test cannot verify its published count:\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    # jest's `--json` prints one JSON object on stdout (the human-readable
+    # summary goes to stderr under --silent), so parsing it directly is
+    # exact rather than regex-scraping the "Tests: N passed, N total" line.
+    payload = json.loads(result.stdout)
+    return int(payload["numTotalTests"])
+
+
 # (published name in the doc row, directory relative to REPO_ROOT, counter)
 _PER_SERVICE_SUITES = [
     ("claims-agent", REPO_ROOT / "agents" / "claims-agent", _pytest_collected_count),
@@ -364,6 +411,24 @@ _PER_SERVICE_SUITES = [
     # and `scorer/scores.py` import nothing outside the standard library, so
     # collection touches no cluster, no network and no model.
     ("eval-scorer", REPO_ROOT / "platform" / "eval-scorer", _pytest_collected_count),
+    # The ninth row -- whole-branch review C1, not M6 Task 3 (which added the
+    # service and the suites but never this row, the exact recurrence this
+    # file's own comment two rows up predicted: "Adding a service to
+    # `deploy/k8s/` means adding it here, in the same task"). `backstage`
+    # ships in `deploy/k8s/backstage.yaml` (M6 Task 1). Six plugin test files
+    # under `platform/backstage/packages/{backend,app}` -- carrying, among
+    # other things, the jest guards for all four of Task 3's review-round
+    # correctness fixes -- were executed by NOTHING: not this row, not
+    # `scripts/smoke-test.sh` (`grep -ci backstage scripts/smoke-test.sh` was
+    # 0). `_jest_test_count` runs the whole workspace's `backstage-cli repo
+    # test`, which also picks up the two untouched scaffold-default suites
+    # (`packages/app/src/App.test.tsx`, and the backend's own) -- that is
+    # correct, not a fudge: this row's job is "does the number published here
+    # match what this workspace's own test runner reports", the same
+    # contract every row above keeps, and narrowing to only the six
+    # autonomy-contract files would silently exempt the scaffold defaults
+    # from ever being asked to run again.
+    ("backstage", REPO_ROOT / "platform" / "backstage", _jest_test_count),
 ]
 
 
@@ -616,8 +681,22 @@ def test_the_published_browser_split_is_what_the_source_says():
     without_browser = len(gated_modules) - with_browser
     total = len(gated_modules)
 
-    for path in (CONTRACT_PATH, REPO_ROOT / "README.md"):
-        text = path.read_text()
+    # Whole-branch review D2: this used to read `path.read_text()` for BOTH
+    # documents -- the entire file, historical blocks included. README.md has
+    # no append-only history of sealed-but-superseded blocks (its rows are
+    # overwritten in place), so scanning it whole is fine.
+    # `docs/telemetry-contract.md` does have that history --
+    # `_current_figures_block()` exists precisely to keep other checks off
+    # it -- and this was the one check in the file that had not been narrowed
+    # to it. The unnarrowed scan is what forced M6's own commit to rewrite six
+    # sealed historical blocks: the only way to make an unqualified "N of the
+    # 13" true everywhere in the document was to retype it into every prior
+    # block that used to say something else, which is the "derive figures,
+    # never retype them" rule broken by the guard that exists to enforce it.
+    for path, text in (
+        (CONTRACT_PATH, _current_figures_block()),
+        (REPO_ROOT / "README.md", (REPO_ROOT / "README.md").read_text()),
+    ):
         claims = re.findall(
             r"\*\*(\d+) of the (\d+) (?:gated modules )?(launch a browser|start no browser)\*\*",
             text,

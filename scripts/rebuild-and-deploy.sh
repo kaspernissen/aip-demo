@@ -268,6 +268,20 @@ for component in "${targets[@]}"; do
     # that as a hard failure rather than a pass, so this fallback cannot mask
     # a stale build from a real checkout.
     git_sha="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+    # Whole-branch review M3(b): the label used to bind the image to HEAD,
+    # not to the tree -- a commit's SHA does not move for uncommitted edits,
+    # so a mutated working tree stamped and passed the label check anyway.
+    # Demonstrated live in the review: `router.ts` neutered in the working
+    # tree, rebuilt, and both image-identity tests in
+    # tests/e2e/test_backstage_image_matches_head.py PASSED while the
+    # anti-vacuity tests were RED against that same image. `git status
+    # --porcelain` catches both halves of "uncommitted" -- modified/staged
+    # tracked files and untracked new ones -- so a dirty tree now stamps
+    # `<sha>-dirty`, which that guard's `label == head` comparison fails on
+    # rather than silently matching.
+    if [[ "$git_sha" != "unknown" ]] && [[ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]]; then
+      git_sha="${git_sha}-dirty"
+    fi
     build_cmd=(docker build --build-arg "GIT_SHA=${git_sha}" -t "$image" "$ROOT/$context")
   fi
 

@@ -377,6 +377,17 @@ def test_the_card_reads_assisted_for_both_identities_on_the_refusing_contract(
     `denial_run` fixtures call it first: a leaked flip from a crashed earlier
     run in this same suite must fail loudly here, immediately, rather than
     surface as a confusing mismatch three assertions later.
+
+    Whole-branch review M1: on the shipped contract BOTH targeting branches
+    are `assisted` (M5-R8's deliberate no-op), so `level` alone cannot fail --
+    every path through `resolveAutonomyLevel` (`targeting-then`,
+    `targeting-else`, `default-variant`, `flag-disabled`) returns the same
+    string here. A reader that ignores `spiffeId` entirely, hardcodes
+    `'assisted'`, resolves both identities through the same branch, or
+    regresses the senior SPIFFE literal would all pass unchanged. `branch` is
+    already in the response for free -- asserting it too means a caller that
+    is not actually reaching the targeting-else arm cannot pass as one that
+    is.
     """
     contract.assert_assisted("test_the_card_reads_assisted_for_both_identities")
 
@@ -387,11 +398,21 @@ def test_the_card_reads_assisted_for_both_identities_on_the_refusing_contract(
     body = resp.json()
     assert body["state"] == "ENABLED", body
     per_identity = body["perIdentity"]
-    for label in ("settlement-agent", "senior-settlement-agent"):
+    expected_branch = {
+        "settlement-agent": "targeting-then",
+        "senior-settlement-agent": "targeting-else",
+    }
+    for label, branch in expected_branch.items():
         assert label in per_identity, f"{label!r} missing from perIdentity: {per_identity}"
         assert per_identity[label]["level"] == "assisted", (
             f"{label} reads {per_identity[label]} on a contract "
             "`contract.assert_assisted` just confirmed is refusing"
+        )
+        assert per_identity[label]["branch"] == branch, (
+            f"{label} resolved via branch {per_identity[label].get('branch')!r}, "
+            f"expected {branch!r} -- both branches happen to read 'assisted' "
+            "today, so `level` alone cannot tell a correct per-identity "
+            "resolution from one that ignores spiffeId entirely"
         )
 
 
@@ -436,6 +457,39 @@ def test_no_workload_is_redeployed_by_a_card_driven_flip(backstage_url, auth_hea
         assert before == after, (
             "something in northstar-agents restarted when only the contract "
             f"changed: before={before!r} after={after!r}"
+        )
+
+        # Whole-branch review M1: this test already holds the contract
+        # flipped, at no extra cost -- the discriminating check that
+        # `test_the_card_reads_assisted_for_both_identities...` cannot make on
+        # the shipped (both-assisted) contract. With the then-branch flipped,
+        # the junior identity must read the NEW level on `targeting-then`
+        # while the senior identity is unaffected on `targeting-else`; a
+        # reader that ignores `spiffeId`, or resolves both identities through
+        # the same branch, would show both as `autonomous` here.
+        resp = requests.get(
+            f"{backstage_url}/api/autonomy-contract/status",
+            headers=auth_headers,
+            timeout=10,
+        )
+        assert resp.status_code == 200, resp.text[:300]
+        per_identity = resp.json()["perIdentity"]
+        assert per_identity["settlement-agent"] == {
+            "level": "autonomous",
+            "branch": "targeting-then",
+        }, (
+            f"settlement-agent reads {per_identity['settlement-agent']} while "
+            "the contract is flipped to autonomous -- expected the "
+            "targeting-then branch to carry the new level"
+        )
+        assert per_identity["senior-settlement-agent"] == {
+            "level": "assisted",
+            "branch": "targeting-else",
+        }, (
+            f"senior-settlement-agent reads "
+            f"{per_identity['senior-settlement-agent']} while the flip only "
+            "touched targeting.if[1] -- expected the targeting-else branch to "
+            "be unaffected"
         )
     finally:
         resp = requests.post(

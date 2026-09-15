@@ -169,21 +169,39 @@ export function resolveAutonomyLevel(
     return { level: RESTRICTIVE_LEVEL, branch: 'flag-disabled' };
   }
 
+  // Whole-branch review M2: this check used to sit AFTER the targeting
+  // branch was parsed, which meant the no-targeting path below returned
+  // `defaultVariant` -- a variant NAME -- verbatim, never validated against
+  // `variants` at all. flagd's `getStringValue` always returns the
+  // variant's VALUE, so an undeclared/typo'd `defaultVariant` would show a
+  // level flagd would refuse to resolve (and the PDS would then deny),
+  // exactly the lying-UI shape M4(b) already fixed on the targeting path.
+  // Checking `variants` once, here, before either path reads it, closes
+  // both at once.
+  const variants = flagSpec.variants;
+  if (!isPlainObject(variants)) {
+    throw new UnsupportedTargetingShapeError(
+      'variants is missing or not an object -- cannot confirm either ' +
+        'defaultVariant or a targeting branch names a real variant',
+    );
+  }
+
   if (flagSpec.targeting === undefined || flagSpec.targeting === null) {
-    return { level: defaultVariant, branch: 'default-variant' };
+    const resolvedDefault = variants[defaultVariant];
+    if (typeof resolvedDefault !== 'string') {
+      throw new UnsupportedTargetingShapeError(
+        `defaultVariant names variant "${defaultVariant}", which is not ` +
+          'one of the flag\'s declared `variants` -- flagd would error ' +
+          'resolving this (and the PDS would then deny), so this reader ' +
+          'refuses to display it as a level rather than guess',
+      );
+    }
+    return { level: resolvedDefault, branch: 'default-variant' };
   }
 
   const { callerIds, thenVariant, elseVariant } = parseNarrowTargeting(
     flagSpec.targeting,
   );
-
-  const variants = flagSpec.variants;
-  if (!isPlainObject(variants)) {
-    throw new UnsupportedTargetingShapeError(
-      'variants is missing or not an object -- cannot confirm the ' +
-        'targeting branches name real variants',
-    );
-  }
 
   const level = callerIds.includes(spiffeId) ? thenVariant : elseVariant;
   const branch: 'targeting-then' | 'targeting-else' = callerIds.includes(

@@ -235,6 +235,22 @@ echo "docker $*" >> "$FAKE_CMD_LOG"
 if [[ "$1" == "ps" ]]; then
   echo "kind-registry"
 fi
+# Whole-branch review M7: `docker build` is faked here, so nothing ever reads
+# the build context's `.catalog-stage/` directory the way a real `COPY
+# ./catalog-stage ...` in platform/backstage/Dockerfile would -- and the real
+# script `rm -rf`s it right after this call returns, so by the time a test
+# could inspect the sandbox on disk, the directory is already gone (the same
+# "copy in, always clean up" cleanup agent-card.json gets). Snapshotting it
+# HERE, at the moment a real `docker build` would have read it, is the only
+# point in this fake's lifecycle where the directory is guaranteed to still
+# exist. Only runs when a test opts in via $CATALOG_STAGE_SNAPSHOT, so every
+# other sandbox using this same fake is unaffected.
+if [[ "$1" == "build" && -n "${CATALOG_STAGE_SNAPSHOT:-}" ]]; then
+  build_context="${@: -1}"
+  if [[ -d "$build_context/.catalog-stage" ]]; then
+    cp -r "$build_context/.catalog-stage" "$CATALOG_STAGE_SNAPSHOT"
+  fi
+fi
 exit 0
 """
 
@@ -304,6 +320,20 @@ def _component_contexts() -> list[str]:
     return contexts
 
 
+def _component_name_context_pairs() -> list[tuple[str, str]]:
+    """`(name, context)` for every `COMPONENTS` entry, in order -- the mapping
+    the catalog-staging test below needs (it must know which context is
+    "backstage" and which staged file each OTHER context should have produced)
+    and `_component_contexts()` throws away by returning only the context."""
+    text = (REPO_ROOT / SCRIPT_RELATIVE_PATH).read_text()
+    block = _COMPONENTS_BLOCK_RE.search(text)
+    assert block, f"could not find a `COMPONENTS=(` ... `)` array in {SCRIPT_RELATIVE_PATH}"
+    return [
+        (m.group(1), m.group(2))
+        for m in _COMPONENT_ENTRY_RE.finditer(block.group(1))
+    ]
+
+
 def _deploying_sandbox(
     tmp_path: Path, build_contexts: list[str], script_text: str | None = None
 ) -> tuple[Path, dict, Path]:
@@ -330,11 +360,22 @@ def _deploying_sandbox(
         # M6 Task 2: when "backstage" is among the targets, the script's own
         # staging step `cp`s every OTHER component's `catalog-info.yaml` (plus
         # the repo-root one) into platform/backstage/.catalog-stage/ before
-        # building. Real content is irrelevant here -- docker is faked -- but
-        # the files must exist or that `cp` fails and `set -e` kills the run
-        # before it ever reaches this test's actual assertions.
-        (tmp_path / context / "catalog-info.yaml").write_text("# stub\n")
-    (tmp_path / "catalog-info.yaml").write_text("# stub\n")
+        # building. The files must exist or that `cp` fails and `set -e`
+        # kills the run before it ever reaches this test's actual assertions.
+        #
+        # Whole-branch review M7: every one of these ten stubs (nine
+        # components plus the repo root) used to be the byte-identical
+        # `"# stub\n"`. Nothing distinguished a correctly-staged
+        # `.catalog-stage/` (each file copied from its own real source) from
+        # one where `cp "$ROOT/$ccontext/catalog-info.yaml" ...` had been
+        # typo'd into `cp "$ROOT/catalog-info.yaml" ..." (the ROOT
+        # System stub, seven lines above the real per-component cp in the
+        # script) for every entry -- both produce ten identical files here.
+        # Distinct, source-derived content closes that: a test can now assert
+        # each staged file's content traces back to the ONE source it should
+        # have been copied from.
+        (tmp_path / context / "catalog-info.yaml").write_text(f"# {context}\n")
+    (tmp_path / "catalog-info.yaml").write_text("# root system\n")
 
     bin_dir = tmp_path / "fakebin"
     bin_dir.mkdir()
@@ -425,6 +466,79 @@ def test_a_bare_full_run_also_restarts_the_companion(tmp_path):
         "rollout restart deployment/senior-settlement-agent" in call
         for call in calls
     ), f"a bare full run left the senior identity on the previous build: {calls}"
+
+
+def test_the_catalog_stage_holds_exactly_the_real_sources_it_should_have_copied(
+    tmp_path,
+):
+    """Whole-branch review M7: `_deploying_sandbox` used to write the same
+    `"# stub\\n"` into all ten `catalog-info.yaml` sources (nine components
+    plus the repo root), so a `.catalog-stage/` built by correctly copying
+    each source was byte-identical to one built by a typo'd `cp` that copied
+    the WRONG source into every destination -- e.g. `cp
+    "$ROOT/catalog-info.yaml"` (the root System stub, seven lines above the
+    real per-component `cp` in the script) substituted in for
+    `cp "$ROOT/$ccontext/catalog-info.yaml"`. That bug ships a catalog with
+    zero real components and nothing here could tell.
+
+    Now that every source is distinct (`f"# {context}\\n"`, the root gets
+    `"# root system\\n"`), this asserts `.catalog-stage/` -- snapshotted by
+    the fake `docker build` at the one moment it still exists, since the real
+    script `rm -rf`s it right after -- holds exactly one file per
+    NON-backstage component, each matching that component's own source, plus
+    `system-catalog-info.yaml` matching the repo root's.
+    """
+    pairs = _component_name_context_pairs()
+    contexts = [context for _, context in pairs]
+    backstage_context = next(
+        context for name, context in pairs if name == "backstage"
+    )
+    other_contexts = [context for name, context in pairs if name != "backstage"]
+
+    script_copy, env, log = _deploying_sandbox(tmp_path, contexts)
+    snapshot_dir = tmp_path / "catalog-stage-snapshot"
+    env["CATALOG_STAGE_SNAPSHOT"] = str(snapshot_dir)
+
+    result = _run(script_copy, env, [])
+    assert result.returncode == 0, (
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+
+    assert snapshot_dir.is_dir(), (
+        "the fake docker never snapshotted .catalog-stage/ -- either "
+        "'backstage' was not built in this run, or the staging step no "
+        "longer creates that directory before `docker build`"
+    )
+
+    system_stub = snapshot_dir / "system-catalog-info.yaml"
+    assert system_stub.read_text() == "# root system\n", (
+        f"system-catalog-info.yaml holds {system_stub.read_text()!r}, not the "
+        "repo root's own stub -- the staging step copied the wrong source"
+    )
+
+    for context in other_contexts:
+        staged = snapshot_dir / context / "catalog-info.yaml"
+        assert staged.is_file(), (
+            f"{context}/catalog-info.yaml was never staged into "
+            f".catalog-stage/ -- the loop over COMPONENTS skipped it"
+        )
+        expected = f"# {context}\n"
+        assert staged.read_text() == expected, (
+            f".catalog-stage/{context}/catalog-info.yaml holds "
+            f"{staged.read_text()!r}, expected {expected!r} (that context's "
+            "own source) -- this is exactly the byte-identical-fixture shape "
+            "that would let a typo'd `cp` source substitute the wrong file "
+            "and go unnoticed"
+        )
+
+    # And nothing under backstage's OWN context was staged -- the loop
+    # explicitly `continue`s past it.
+    backstage_self_stage = snapshot_dir / backstage_context
+    assert not backstage_self_stage.exists(), (
+        f"backstage's own context ({backstage_context}) was staged into its "
+        "own .catalog-stage/ -- the loop's `[[ \"$cname\" == \"backstage\" ]] "
+        "&& continue` guard should have skipped it"
+    )
 
 
 def test_the_companion_guard_goes_red_when_the_mapping_is_emptied(tmp_path):

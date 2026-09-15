@@ -92,6 +92,19 @@ for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platfo
     exit 1
   }
 done
+# Whole-branch review C1: `platform/backstage`'s own jest suites -- six
+# autonomy-contract plugin test files plus the two scaffold-default suites --
+# were run by NOTHING. `_jest_test_count` in
+# tests/unit/test_telemetry_contract_counts.py now re-measures the ninth
+# `_PER_SERVICE_SUITES` row against `backstage-cli repo test`'s own count, the
+# same contract every row above keeps, so this checks the same prerequisite
+# the same way: fail here, at a clear missing-toolchain message, rather than
+# four minutes later inside a unit test about a contract count.
+[[ -x "$ROOT/platform/backstage/node_modules/.bin/backstage-cli" ]] || {
+  echo -e "${RED}Error: $ROOT/platform/backstage/node_modules not found.${NC}" >&2
+  echo "Create it: (cd platform/backstage && yarn install)" >&2
+  exit 1
+}
 command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1; }
 kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
   echo -e "${RED}Error: cannot reach the 'kind-northstar' cluster.${NC}" >&2
@@ -321,6 +334,21 @@ echo -e "${YELLOW}reviewer-ui${NC}"
 # live demo.
 echo -e "${YELLOW}eval-scorer${NC}"
 (cd "$ROOT/platform/eval-scorer" && .venv/bin/python -m pytest tests -q)
+
+# Whole-branch review C1: the ninth per-service suite, and the third
+# recurrence of the exact defect this file's own comments have named twice
+# above -- a service shipped in deploy/k8s/ (backstage.yaml, M6 Task 1) whose
+# suite nothing ran. Six autonomy-contract plugin test files (evaluate,
+# k8sClient, router, telemetry, index, AutonomyContractPage) carry, among
+# other things, the jest guards for all four of Task 3's review-round
+# correctness fixes -- each was proven GREEN-to-RED exactly once, by hand, in
+# a transcript, and this line is what makes that a standing regression guard
+# instead of a one-time transcript. `CI=true` is NOT optional:
+# `backstage-cli repo test` is a thin wrapper over jest, and jest defaults to
+# watch mode without it -- found the hard way in the M6 Task 3 fix round, and
+# an unset `CI` here would hang the gate forever rather than fail it.
+echo -e "${YELLOW}backstage (jest)${NC}"
+(cd "$ROOT/platform/backstage" && CI=true node_modules/.bin/backstage-cli repo test --silent)
 
 echo ""
 echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included ---${NC}"

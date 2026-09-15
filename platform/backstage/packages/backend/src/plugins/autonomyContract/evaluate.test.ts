@@ -149,4 +149,22 @@ describe('resolveAutonomyLevel', () => {
       UnsupportedTargetingShapeError,
     );
   });
+
+  it('refuses when defaultVariant names a variant that is not declared in variants (whole-branch review M2)', () => {
+    // The sibling of the "refuses when the targeting branch names a variant
+    // flagd would not resolve either" test above, but for the NO-TARGETING
+    // path: until this fix, an absent/null targeting block returned
+    // defaultVariant verbatim without ever consulting `variants`, so a
+    // typo'd defaultVariant displayed as a real level while flagd/the PDS
+    // would have refused it. No `targeting` key at all, so this can only go
+    // red through the default-variant path.
+    const spec = {
+      state: 'ENABLED',
+      variants: { assisted: 'assisted', autonomous: 'autonomous' },
+      defaultVariant: 'autonomous-TYPO',
+    };
+    expect(() => resolveAutonomyLevel(spec, SETTLEMENT_AGENT)).toThrow(
+      UnsupportedTargetingShapeError,
+    );
+  });
 });

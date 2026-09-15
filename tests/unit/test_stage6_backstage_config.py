@@ -58,9 +58,19 @@ def test_the_manifest_defines_exactly_one_read_only_cluster_role():
 
 def test_no_rule_grants_a_verb_outside_get_list_watch():
     role = _backstage_cluster_roles()[0]
+    rules = role.get("rules", [])
+    # Whole-branch review M5: this iterated `role.get("rules", [])` with no
+    # non-emptiness assertion, so a blanked ClusterRole (`rules: []`) passed
+    # vacuously -- and a rule with no `verbs` key at all passed too, since
+    # `set() <= ALLOWED_VERBS` is True. The sibling file already has this
+    # line (`test_autonomy_writer_rbac.py`'s
+    # `test_the_write_role_is_scoped_to_exactly_the_one_named_flag`); it was
+    # never copied over here, so the read-only Role had a negative assertion
+    # with no positive control at all.
+    assert rules, "deploy/k8s/backstage.yaml's backstage-read-only ClusterRole grants no rules at all"
     offending = [
         (rule.get("resources"), rule.get("verbs"))
-        for rule in role.get("rules", [])
+        for rule in rules
         if not set(rule.get("verbs", [])) <= ALLOWED_VERBS
     ]
     assert not offending, (
@@ -74,9 +84,11 @@ def test_no_rule_grants_a_verb_outside_get_list_watch():
 
 def test_no_rule_uses_a_wildcard_verb_resource_or_api_group():
     role = _backstage_cluster_roles()[0]
+    rules = role.get("rules", [])
+    assert rules, "deploy/k8s/backstage.yaml's backstage-read-only ClusterRole grants no rules at all"
     offending = [
         rule
-        for rule in role.get("rules", [])
+        for rule in rules
         if "*" in rule.get("verbs", [])
         or "*" in rule.get("resources", [])
         or "*" in rule.get("apiGroups", [])
@@ -92,9 +104,11 @@ def test_no_rule_uses_a_wildcard_verb_resource_or_api_group():
 
 def test_no_rule_grants_any_access_to_secrets():
     role = _backstage_cluster_roles()[0]
+    rules = role.get("rules", [])
+    assert rules, "deploy/k8s/backstage.yaml's backstage-read-only ClusterRole grants no rules at all"
     offending = [
         rule
-        for rule in role.get("rules", [])
+        for rule in rules
         if "secrets" in rule.get("resources", [])
     ]
     assert not offending, (

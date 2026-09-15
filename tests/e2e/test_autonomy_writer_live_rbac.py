@@ -88,19 +88,33 @@ def _can_i(
 
 @pytest.fixture(scope="module", autouse=True)
 def stage_6_with_the_write_grant_applied_or_a_reason():
-    """Skip if this is not even a live cluster; FAIL, never skip, if the
-    cluster is live but `deploy/k8s/backstage.yaml`'s write grant is missing
-    -- the same "empty is a regression, unreachable is a skip" discipline
-    `test_egress_policy.py::policy_present` and its own docstring name.
+    """Skip if this is not even a live cluster; skip (not fail) if the
+    cluster is live but stage 6's Backstage Deployment does not exist -- that
+    is an absence of stage 6, not a regression; FAIL, never skip, if
+    Backstage is deployed but `deploy/k8s/backstage.yaml`'s write grant is
+    missing -- the same "empty is a regression, unreachable is a skip"
+    discipline `test_egress_policy.py::policy_present` and its own docstring
+    name.
 
-    Two separate questions, deliberately not collapsed into one raw exit-code
-    check (ruling M4-R14; `tests/unit/test_kube_helper.py` walks this file for
-    exactly that collapse): "can I talk to this cluster at all" has no
-    `NotFound` shape to read (`cluster-info` names no object), so it stays a
-    raw-returncode reachability probe -- the same shape
+    Whole-branch review M4: this used to go straight from the reachability
+    probe to asserting the Role exists, which made ANY live stage-1..5
+    cluster hard-fail all 15 tests here with a message claiming a regression
+    where there was only an absence of stage 6 -- the exact inversion of the
+    "skip where you should fail" family this repo otherwise guards against.
+    `test_backstage_image_matches_head.py:59-77` and
+    `test_golden_path.py:150-166` both already get this right (check
+    `deployment/backstage` first, skip if absent; fail on a missing Role only
+    once Backstage itself is confirmed present) -- copied verbatim here.
+
+    Three separate questions, deliberately not collapsed into one raw
+    exit-code check (ruling M4-R14; `tests/unit/test_kube_helper.py` walks
+    this file for exactly that collapse): "can I talk to this cluster at
+    all" has no `NotFound` shape to read (`cluster-info` names no object),
+    so it stays a raw-returncode reachability probe -- the same shape
     `test_progressive_autonomy.py::stage_5_or_a_reason` uses and is
-    allow-listed for. "Does the Role exist" DOES name an object, so it goes
-    through `absent_or_fail` rather than a second raw check.
+    allow-listed for. "Does the Deployment exist" and "does the Role exist"
+    both DO name an object, so each goes through `absent_or_fail` rather than
+    a second raw check.
     """
     reachable = _kubectl("cluster-info", timeout=15)
     if reachable.returncode != 0:
@@ -109,14 +123,23 @@ def stage_6_with_the_write_grant_applied_or_a_reason():
             f"({reachable.stderr.strip() or 'no output'})"
         )
 
+    deployment = _kubectl(
+        "-n", NAMESPACE, "get", "deployment", "backstage", "-o", "name",
+    )
+    if not absent_or_fail(deployment, f"deployment/backstage in {NAMESPACE}"):
+        pytest.skip(
+            f"needs stage 6: deployment/backstage does not exist in "
+            f"{NAMESPACE}. Run ./scripts/setup-kind.sh --stage 6."
+        )
+
     role = _kubectl(
         "-n", NAMESPACE, "get", "role", "backstage-autonomy-writer", "-o", "name",
     )
     exists = absent_or_fail(role, f"role/backstage-autonomy-writer in {NAMESPACE}")
     assert exists, (
-        "the live cluster is reachable but the backstage-autonomy-writer "
-        "Role is not applied -- this is a regression, not an absence of "
-        "stage 6: run `kubectl apply -f deploy/k8s/backstage.yaml`"
+        "Backstage is deployed (stage 6) but "
+        "role/backstage-autonomy-writer is missing -- this is a regression, "
+        "not an absence of stage 6: run `kubectl apply -f deploy/k8s/backstage.yaml`"
     )
 
 

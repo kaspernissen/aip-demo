@@ -47,7 +47,7 @@ paper over it with a bespoke convention.
 first and the overturned reasoning is kept below it rather than deleted.**
 
 A bare `pytest tests/` run (no environment variable set) now costs **no model
-tokens at all**. Twelve modules sit behind `RUN_BROWSER_TESTS=1`, of which
+tokens at all**. Thirteen modules sit behind `RUN_BROWSER_TESTS=1`, of which
 **3 of the 13 launch a browser** and **10 of the 13 start no browser** — they
 ride the flag because they spend Anthropic tokens, and as of Task 5 that set is
 closed: every e2e file that drives a
@@ -278,8 +278,18 @@ already does for `policy.decision`") — a live OpenSearch query for the
 one durable signal of the three the write produces, gated on stage 4's own
 presence rather than assumed. Re-measured the same way.
 
-Bare-suite row, derived from that same collection: 429 collected − 75 gated −
-**0** xfailed = `354 passed, 75 skipped, 0 xfailed`.
+**Whole-branch review fix wave adds one more, all under `tests/unit`, taking
+the collected count from 429 to 430** (still within this same current block,
+for the reason M6 Task 1's own addition above already states): M7's fix to
+`tests/unit/test_rebuild_and_deploy_guard.py`, asserting `.catalog-stage/`'s
+actual contents rather than the byte-identical stub fixture that let a
+typo'd `cp` source substitute the wrong file silently. Not gated (no model
+call, no browser -- a sandboxed run of `scripts/rebuild-and-deploy.sh` with
+docker/kubectl faked, same as its siblings in that file). Re-measured the
+same way.
+
+Bare-suite row, derived from that same collection: 430 collected − 75 gated −
+**0** xfailed = `355 passed, 75 skipped, 0 xfailed`.
 
 The gated figure moves to **75** — re-measured the same way as every figure
 below it, a `--collect-only` run with a plugin that counts items carrying a
@@ -290,8 +300,10 @@ tests, M6 Task 2's three new `tests/unit` tests, M6 Task 3's twenty-five new
 tests, M6 Task 3's fix-round two new tests, or the two new PDS tests carries
 one (PDS tests are not collected by this measure at all, `tests/unit`-only);
 M6 Task 4 adds exactly **one** — `test_golden_path.py`'s own settlement-driving
-test, the only one of its seven that spends a model call and a browser — and
-reports 75 of 429, with the per-module spread and the browser split both
+test, the only one of its seven that spends a model call and a browser; the
+whole-branch review fix wave's own addition (M7's `test_rebuild_and_deploy_guard.py`
+test) is `tests/unit`-only and carries no `skipif`, so it adds none — and
+reports 75 of 430, with the per-module spread and the browser split both
 moving for the first time this milestone. Full spread:
 `test_settlement_llm_trace.py` 9,
 `test_prometheus_metrics_ingest.py` 10, `test_browser_root_span.py` 8,
@@ -363,14 +375,17 @@ allow-list entry for `test_golden_path.py`'s own reachability-probe fixture),
 `tests/e2e/test_golden_path.py`, `docs/upstream-findings.md`, and this
 document plus `docs/architecture.md` and `README.md` — the last three do not
 themselves move the gate row (`docs/` is not in `GATE_PATHS`), but the first
-five do, so the row stays labelled for the same reason it already was. The
-prediction from collection (429 − 0 xfailed = 429) is `429 passed, 0
+five do, so the row stays labelled for the same reason it already was. **The
+whole-branch review fix wave itself also touches `scripts/`, `tests/` and
+`platform/backstage/` (all in `GATE_PATHS`)**, so the row stays labelled here
+too. The prediction from collection (430 − 0 xfailed = 430) is `430 passed, 0
 xfailed`; nothing claims that figure was measured against this tree.
 
-`tests/unit` alone collects **259** (222 before the M5 whole-branch review's
+`tests/unit` alone collects **260** (222 before the M5 whole-branch review's
 fix wave, 233 after Part A, 238 after Part B, 244 after M6 Task 1's own
 six-test addition, 247 after M6 Task 2's own three-test addition, 257 after
 M6 Task 3's own ten-test addition, 259 after M6 Task 4's own two-test
+addition, 260 after the whole-branch review fix wave's own one-test
 addition).
 
 ---
@@ -422,7 +437,7 @@ not). Full spread: `test_settlement_llm_trace.py` 9,
 `test_supervised.py` 6, `test_policy_scores.py` 5,
 `test_evidence_view.py` 4, `test_policy_denial.py` 4,
 `test_progressive_autonomy.py` 1. The browser split moves from **3 of the
-11**/**8 of the 11** to **3 of the 13 launch a browser** and **10 of the 13
+11**/**8 of the 11** to **3 of the 12 launch a browser** and **9 of the 12
 start no browser**: the twelfth gated module starts no browser, so the
 numerator is unchanged and only the denominator (and its complement) moved.
 
@@ -528,7 +543,7 @@ The gated figure is **72** (all seven of Task 4's new tests — two in
 `skipif` naming `RUN_BROWSER_TESTS`, so none of those ten is gated; the one
 new gate is the reviewer-ui row above) — and reports 72 of 365, with the same
 per-module spread as the row beneath this one. The browser split is
-unchanged: **3 of the 13 launch a browser** and **10 of the 13 start no
+unchanged: **3 of the 12 launch a browser** and **9 of the 12 start no
 browser** -- the module was already gated and already browser-less, so this
 moved a test count within it, not a module count.
 
@@ -601,7 +616,7 @@ Bare-suite row, derived from that same collection: 355 collected − 71 gated �
 The gated figure is unchanged at **71** (the new test lives under
 `tests/unit` with no `skipif`, so it is not gated) — and reports 71 of 355,
 with the same per-module spread as the row beneath this one. The browser
-split is unchanged too: **3 of the 13 launch a browser** and **10 of the 13
+split is unchanged too: **3 of the 12 launch a browser** and **9 of the 12
 start no browser**.
 
 Gate row: **PREDICTED, NOT MEASURED**, unchanged from the row below -- this
@@ -639,7 +654,7 @@ figure below it, `tests/unit/_count_gated_plugin.py` against a bare
 `RUN_BROWSER_TESTS`-unset collection — both new tests live under
 `tests/unit` with no `skipif`, so neither is gated) — and reports 71 of 354,
 with the same per-module spread as the row beneath this one. The browser
-split is unchanged too: **3 of the 13 launch a browser** and **10 of the 13
+split is unchanged too: **3 of the 12 launch a browser** and **9 of the 12
 start no browser**.
 
 Gate row: **PREDICTED, NOT MEASURED**, unchanged from the row above -- this
@@ -697,7 +712,7 @@ The gated figure is unchanged at **71** (both new tests live under
 `tests/unit`, not behind `RUN_BROWSER_TESTS=1`) — measured the same way as
 every figure below it, and reports 71 of 352, with the same per-module
 spread as the row beneath this one. The browser split is unchanged too:
-**3 of the 13 launch a browser** and **10 of the 13 start no browser**.
+**3 of the 12 launch a browser** and **9 of the 12 start no browser**.
 
 Gate row: **PREDICTED, NOT MEASURED** — this branch's gate run was at commit `b215426`
 (the M4 final-review fix wave below). This task's commit changes files
@@ -762,9 +777,9 @@ reports 71 of 350, spread `test_settlement_llm_trace.py` 9,
 `test_claim_correlation.py` 6, `test_gateway_trace.py` 6, `test_supervised.py`
 6, `test_policy_scores.py` 5, `test_policy_denial.py` 4,
 `test_evidence_view.py` 3. Of those gated modules (twelve as of M5 Task 6),
-**3 of the 13 launch a browser** (`test_browser_root_span.py`,
+**3 of the 12 launch a browser** (`test_browser_root_span.py`,
 `test_policy_denial.py`, `test_supervised.py` — derived from
-`chromium.launch(`, not recalled) and **10 of the 13 start no browser** — the
+`chromium.launch(`, not recalled) and **9 of the 12 start no browser** — the
 flag gates
 *tokens*, not Chromium, and that split is now derived from the sources rather
 than typed.
@@ -1944,10 +1959,26 @@ the 19 other `tests/unit/` harness-correctness tests silently) or if
 environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
-Per-service unit suites (all eight run by `smoke-test.sh`, before any e2e test):
+Per-service unit suites (all nine run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 114, payments-mcp 16, payments-api (Go) 31,
 customer-ui (vitest) 6, policy-decision-service 129,
-reviewer-ui 56, eval-scorer 160 — all passing.
+reviewer-ui 56, eval-scorer 160, backstage (jest) 37 — all passing.
+(**2026-09-15, whole-branch review fix wave Part B: backstage (jest) row
+added, at 37.** C1: `platform/backstage`'s six autonomy-contract plugin test
+files (`evaluate`, `k8sClient`, `router`, `telemetry`, `index` under
+`packages/backend`, `AutonomyContractPage` under `packages/app`) plus the two
+untouched scaffold-default suites those workspaces ship with, were run by
+nothing -- not `scripts/smoke-test.sh` (zero matches for `backstage`), not
+this row. Each carried a jest guard for one of Task 3's review-round
+correctness fixes, verified GREEN-to-RED exactly once, by hand, in a
+transcript nothing ever re-ran. Re-measured with
+`CI=true node_modules/.bin/backstage-cli repo test --silent --json` from
+`platform/backstage`, parsing `numTotalTests` (7 suites, 37 tests -- 35 at
+C1's own wiring, +1 for this same fix wave's M2 addition to
+`evaluate.test.ts`, +1 for M6's retry-then-degrade addition to
+`index.test.ts`). `CI=true` is not
+optional: without it, `backstage-cli repo test` (a jest wrapper) defaults to
+watch mode and the process hangs forever.)
 (**2026-09-15, whole-branch review fix wave Part A: policy-decision-service
 127 → 129.** J2's deny-branch rule-name test and N6's unrecognised-identity
 test both land in `platform/policy-decision-service/tests/test_rules.py`.

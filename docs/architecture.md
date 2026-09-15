@@ -2481,8 +2481,19 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
       `docs/upstream-findings.md` Finding 15); the graph edge is real, the
       file's contents are one click away, and this document does not pretend
       the placeholder mechanism reached further than it did.
-    - Open **`northstar`** (the System) or search for **autonomy** to find the
-      contract card. It reads `assisted`/`assisted` for both identities on a
+    - Click **Autonomy contract** in the left sidebar, or go to
+      http://localhost:7007/autonomy-contract. (**Corrected 2026-09-15,
+      whole-branch review D1**: this used to say "open `northstar` (the
+      System) or search for autonomy" — both wrong. The card is a standalone
+      page (`PageBlueprint.make({ path: '/autonomy-contract' })`,
+      `platform/backstage/packages/app/src/modules/autonomyContract/plugin.tsx`),
+      not an entity tab on the System, and Backstage's search backend indexes
+      only the catalog and techdocs plugins
+      (`packages/backend/src/index.ts`) — a frontend route is not indexed, so
+      searching "autonomy" would surface catalog entities, never the card. A
+      false step at the milestone's own punchline, in the walkthrough an
+      operator follows live.)
+      It reads `assisted`/`assisted` for both identities on a
       freshly built cluster — the contract ships refusing, and M6 does not
       change that (M5-R8). This is a **read** of the live `FeatureFlag`
       object, per identity, through `GET /api/autonomy-contract/status` — not

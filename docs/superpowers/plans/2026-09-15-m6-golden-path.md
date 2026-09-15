@@ -34,13 +34,20 @@ review's fix wave** (M5-R38 — the lesson that cost M5 its measured row).
    **M5-R27 is the warning here:** the cold path is the only recovery path in a
    repo with no remote, and it broke last milestone precisely because nobody ran
    it cold. Prove `--stage 6` works from cold, or state plainly that you did not.
-5. **Correct the six contradicted sites** (design §1). `setup-kind.sh:175` and
+5. **Correct the seven contradicted sites** (design §1). `setup-kind.sh:175` and
    `docs/architecture.md:637,:739` are **corrected**; the **M1, M2 and M4 specs
    are annotated, not rewritten** — they are historical records and this repo
    annotates them (same convention as the M2.2 `failureMode` inversion). Also
    take the **stale cert-manager claim** in the M1 spec's M2 row, which M5's §11
    left to "M6's or a doc pass's" — M5 Task 2 actually installed cert-manager,
    so the claim "installed, never clicked" is now doubly wrong.
+   (**Corrected 2026-09-15, whole-branch review D3**: "six" and
+   "`docs/architecture.md:637,:739`" were both wrong. `:637` never mentioned
+   Crossplane at the commit this plan was written from — a site that did not
+   exist — and the real total, once that phantom is dropped and the two sites
+   this task's own commit actually corrected but this plan never named
+   (`agents/claims-agent/delegation.py`, `README.md:449`) are counted, is
+   seven documents. See design §1's own correction for the reconciled table.)
 6. **Bump both document status lines to M6.** Design §8: the guard
    `tests/unit/test_doc_status_lines_name_the_current_milestone.py` derives the
    milestone from the newest plan file, so committing this plan makes it demand

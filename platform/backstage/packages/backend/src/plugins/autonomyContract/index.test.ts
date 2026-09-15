@@ -58,7 +58,7 @@ beforeEach(() => {
 });
 
 describe('initAutonomyContract', () => {
-  it('degrades to 503 on every route, and does not throw, when the writer credential cannot be acquired', async () => {
+  it('degrades to 503 on every route, and does not throw, when the writer credential is STILL unavailable after every retry', async () => {
     (k8sClient.buildInClusterWriterKubeConfig as jest.Mock).mockImplementation(
       () => {
         throw new Error('KUBERNETES_SERVICE_HOST/PORT are not set');
@@ -67,8 +67,15 @@ describe('initAutonomyContract', () => {
     const logger = fakeLogger();
     const { service: httpRouter, app } = fakeHttpRouter();
 
+    // retryDelayMs: 0 keeps this hermetic and sub-second -- the property
+    // under test is "degrades after exhausting retries", not "waits 1s
+    // between attempts", which the whole-branch-review M6 fix's production
+    // default (retryDelayMs unset) covers instead.
     await expect(
-      initAutonomyContract({ httpRouter, logger, auditor: fakeAuditor() }),
+      initAutonomyContract(
+        { httpRouter, logger, auditor: fakeAuditor() },
+        { retries: 3, retryDelayMs: 0 },
+      ),
     ).resolves.toBeUndefined();
 
     const status = await request(app).get('/api/autonomy-contract/status');
@@ -80,6 +87,7 @@ describe('initAutonomyContract', () => {
       .send({ variant: 'autonomous' });
     expect(variant.status).toBe(503);
 
+    expect(k8sClient.buildInClusterWriterKubeConfig).toHaveBeenCalledTimes(3);
     expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining('could not acquire the writer credential'),
       expect.any(Error),
@@ -107,6 +115,54 @@ describe('initAutonomyContract', () => {
     // The real router's GET /status calls client.getFlag() and fails with
     // 500/502 on a broken fixture -- the point here is that it is NOT 503,
     // which is the degraded router's one and only status code.
+    const res = await request(app).get('/api/autonomy-contract/status');
+    expect(res.status).not.toBe(503);
+  });
+
+  it('whole-branch review M6: mounts the real router when the credential is late but arrives within the retry window, instead of degrading permanently', async () => {
+    // The exact cold-`--stage 6` race: the writer-token Secret's key is not
+    // there yet on the first attempt (ENOENT-shaped failure), and lands
+    // before the retries are exhausted. Before this fix, credential
+    // acquisition ran ONCE in registerInit, so this scenario always
+    // degraded -- silently, since the pod's readiness probe does not touch
+    // this plugin (M6-R6/M6). Mutating this away (e.g. reverting to a single
+    // attempt) makes this test RED: `buildInClusterWriterKubeConfig` would
+    // be called once, throw, and the degraded router would mount instead.
+    let calls = 0;
+    (k8sClient.buildInClusterWriterKubeConfig as jest.Mock).mockImplementation(
+      () => {
+        calls += 1;
+        if (calls < 2) {
+          throw new Error('ENOENT: token not mounted yet');
+        }
+        return {} as any;
+      },
+    );
+    (k8sClient.makeCustomObjectsClient as jest.Mock).mockReturnValue({
+      getNamespacedCustomObject: jest.fn(async () => {
+        throw new Error('not called in this test');
+      }),
+      patchNamespacedCustomObject: jest.fn(),
+    });
+    const logger = fakeLogger();
+    const { service: httpRouter, app } = fakeHttpRouter();
+
+    await initAutonomyContract(
+      { httpRouter, logger, auditor: fakeAuditor() },
+      { retries: 3, retryDelayMs: 0 },
+    );
+
+    expect(calls).toBe(2);
+    // Not asserting `logger.error` was never called at all: the fixture's
+    // getFlag() deliberately throws, and the mounted REAL router logs that
+    // request-level failure through the same logger. What matters here is
+    // that init() itself never logged the credential-acquisition failure --
+    // the degraded-router path's distinctive message -- because it recovered
+    // within the retry window.
+    expect(logger.error).not.toHaveBeenCalledWith(
+      expect.stringContaining('could not acquire the writer credential'),
+      expect.anything(),
+    );
     const res = await request(app).get('/api/autonomy-contract/status');
     expect(res.status).not.toBe(503);
   });

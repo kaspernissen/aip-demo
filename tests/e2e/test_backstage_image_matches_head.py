@@ -126,20 +126,76 @@ def test_the_deployed_backstage_image_was_built_from_the_current_commit():
     )
 
 
-def test_the_running_pod_is_actually_using_that_same_image_tag():
-    """The label check above proves the IMAGE TAG's content; this proves the
-    pod actually serving traffic runs that same tag rather than a node-cached
-    older pull. `imagePullPolicy: Always` makes a mismatch unlikely, but
-    unlikely is not the same as asserted."""
-    running = _kubectl(
+def _pod_image_id() -> str:
+    proc = _kubectl(
         "-n", NAMESPACE, "get", "pods", "-l", "app=backstage",
-        "-o", "jsonpath={.items[0].spec.containers[0].image}",
+        "-o", "jsonpath={.items[0].status.containerStatuses[0].imageID}",
     )
-    assert running.returncode == 0, (
-        f"could not read the running backstage pod's image: {running.stderr}"
+    assert proc.returncode == 0, (
+        f"could not read the running backstage pod's imageID: {proc.stderr}"
     )
-    assert running.stdout.strip() == IMAGE, (
-        f"the running pod's container image is {running.stdout.strip()!r}, "
-        f"not {IMAGE!r} -- deploy/k8s/backstage.yaml and the live pod have "
-        "diverged"
+    return proc.stdout.strip()
+
+
+def _local_repo_digest() -> str:
+    proc = subprocess.run(
+        [
+            "docker", "image", "inspect", IMAGE,
+            "--format", "{{ index .RepoDigests 0 }}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc.returncode == 0, (
+        f"`docker image inspect {IMAGE}` failed getting a RepoDigest: "
+        f"{proc.stderr} -- has it ever been pushed to the registry?"
+    )
+    return proc.stdout.strip()
+
+
+def test_the_running_pod_is_using_the_exact_image_bytes_the_local_build_produced():
+    """Whole-branch review M3: this used to compare the pod's
+    `spec.containers[0].image` STRING against the same mutable tag constant
+    (`localhost:5001/northstar/backstage:dev`) -- which any node-cached older
+    pull of that same tag also carries, so equal tags proved nothing about
+    equal content. Worse, that comparison PASSED against a mutated,
+    uncommitted image the review built during this same mutation round, while
+    the anti-vacuity e2e was RED against it -- so the guard's own assertion
+    message ("the running image does not contain the committed code") was one
+    it could not actually back up.
+
+    Comparing DIGESTS instead closes both a and c of the review's finding in
+    one guard: `status.containerStatuses[0].imageID` is what the kubelet on
+    THIS node actually pulled and is running (not merely what the Deployment
+    spec asks for), and `docker image inspect --format
+    '{{index .RepoDigests 0}}'` is the content-addressed digest the local
+    build just pushed to the registry. A stale node-cached pull, a failed
+    push, or a registry serving an older digest under the same tag all
+    produce a real mismatch here; two different tags can never coincidentally
+    share a digest the way they can share a mutable tag string.
+    """
+    pod_image_id = _pod_image_id()
+    local_digest = _local_repo_digest()
+
+    assert pod_image_id, (
+        "the running backstage pod reports an empty imageID -- cannot verify "
+        "which image bytes are actually running"
+    )
+    assert "@sha256:" in pod_image_id, (
+        f"the pod's imageID {pod_image_id!r} does not look like a digest "
+        "reference (expected '...@sha256:<hex>') -- cannot compare content"
+    )
+    assert "@sha256:" in local_digest, (
+        f"`docker image inspect {IMAGE}` returned {local_digest!r}, not a "
+        "digest reference -- has this image ever been pushed to "
+        "localhost:5001 (scripts/rebuild-and-deploy.sh does this)?"
+    )
+    assert pod_image_id == local_digest, (
+        f"the running pod's image digest is {pod_image_id!r}, but the local "
+        f"build's registry digest is {local_digest!r} -- the node is NOT "
+        "running the bytes this checkout just built and pushed. This is the "
+        "exact gap the tag-comparison version of this test could not see: "
+        "identical tags, different content. Run "
+        "./scripts/rebuild-and-deploy.sh backstage and re-run this test."
     )

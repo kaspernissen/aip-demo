@@ -831,7 +831,74 @@ if [[ "${STAGE}" -ge 6 ]]; then
   # with the rest of this stage's machinery, for that reason alone.
   echo -e "${BLUE}Step 8i/9 (stage 6): Building and deploying Backstage...${NC}"
   "$ROOT/scripts/rebuild-and-deploy.sh" backstage
-  echo -e "${GREEN}Backstage is up on 7007 (read-only ServiceAccount; the FeatureFlag-write grant is a later task's), serving its scaffolded default catalog until Task 2 adds this repo's own catalog-info.yaml entries.${NC}"
+
+  # Whole-branch review M6: `rollout status` above only proves the pod is
+  # READY -- the readiness probe hits Backstage's own health endpoint, not
+  # this plugin. The writer-token Secret's `token` key is populated
+  # ASYNCHRONOUSLY by the token controller, and until the M6 fix-wave retry
+  # (index.ts) exhausts its bounded backoff, a cold bring-up that mounts
+  # before the key lands still degrades the autonomy-contract plugin to a
+  # permanent 503 on every route -- silently: `rollout status` succeeds,
+  # `set -e` is satisfied, and this script would otherwise print a GREEN
+  # banner claiming a card that can never actually write. This is M6-R7's own
+  # lesson ("a backend health signal is not a delivery check") applied to
+  # the installer, which until now had only backend health signals for
+  # Backstage.
+  #
+  # Checked with `kubectl exec` + node's own `http` module, not curl: the
+  # final image stage installs no curl (unlike the OpenSearch Dashboards
+  # image Step 8c2 above execs into), and this is a one-shot in-pod check,
+  # not a persistent forward -- `scripts/start-demo.sh` still owns the
+  # demo's own port-forwards. A guest token is required first
+  # (`/api/autonomy-contract/status` answers 401 unauthenticated either way,
+  # by design -- §10 -- so an unauthenticated probe could not tell a healthy
+  # router from a degraded one); only the authenticated response can be 200
+  # or 503.
+  BACKSTAGE_DELIVERY_CHECK=""
+  for _ in $(seq 1 20); do
+    if kubectl --context "kind-${CLUSTER_NAME}" -n northstar-platform \
+        exec deploy/backstage -- node -e '
+      const http = require("http");
+      function req(opts, body) {
+        return new Promise((resolve, reject) => {
+          const r = http.request(opts, res => {
+            let data = "";
+            res.on("data", c => { data += c; });
+            res.on("end", () => resolve({ status: res.statusCode, body: data }));
+          });
+          r.on("error", reject);
+          if (body) r.write(body);
+          r.end();
+        });
+      }
+      (async () => {
+        const refreshBody = JSON.stringify({});
+        const refresh = await req({
+          host: "localhost", port: 7007, path: "/api/auth/guest/refresh",
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(refreshBody) },
+        }, refreshBody);
+        if (refresh.status !== 200) { console.error("guest/refresh: " + refresh.status); process.exit(1); }
+        const token = JSON.parse(refresh.body).backstageIdentity.token;
+        const status = await req({
+          host: "localhost", port: 7007, path: "/api/autonomy-contract/status",
+          method: "GET", headers: { Authorization: "Bearer " + token },
+        });
+        console.error("autonomy-contract/status: " + status.status);
+        process.exit(status.status === 200 ? 0 : 1);
+      })().catch(e => { console.error("delivery check error: " + e.message); process.exit(1); });
+    ' 2>/dev/null; then
+      BACKSTAGE_DELIVERY_CHECK="yes"
+      break
+    fi
+    sleep 3
+  done
+  if [[ -z "${BACKSTAGE_DELIVERY_CHECK}" ]]; then
+    echo -e "${RED}Error: the autonomy-contract card never answered 200 on /api/autonomy-contract/status (as a guest) within 60s of Backstage becoming Ready.${NC}" >&2
+    echo "This is the degraded-router / writer-credential-race failure mode: the pod is Ready (its own health endpoint, not this plugin) but the card cannot write. Check: kubectl --context kind-${CLUSTER_NAME} -n northstar-platform logs deploy/backstage | grep 'autonomy-contract'" >&2
+    exit 1
+  fi
+  echo -e "${GREEN}Backstage is up on 7007 with its read-only ServiceAccount and its separate write ServiceAccount (backstage-autonomy-writer); the autonomy-contract card answered 200 as a guest, so the writer credential is live, not merely the pod.${NC}"
 fi
 
 echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then starting port-forwards...${NC}"
