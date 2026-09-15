@@ -57,6 +57,27 @@ same day: the fields that disagreement's log-shaped side already reads —
 for and never fills in on the span event it actually emits. **Fourteen
 findings, still none filed.**
 
+**M6 (Golden path) adds two more, both against Backstage rather than the
+telemetry path, and both are a framework assumption meeting this repo's
+no-remote, no-Postgres posture rather than a bug in the usual sense — recorded
+here anyway because each one cost real delivery time before it was understood.
+Nothing is filed for either; both are genuinely working as designed, just
+designed around an SCM-backed, multi-tenant deployment this demo deliberately
+is not.** **Finding 15**, added 2026-09-15 by M6 Task 2 (this write-up added by
+Task 4): a `$text` placeholder cannot inline a local, git-less file in
+`@backstage/backend-defaults` — a `type: file` location's target reaches
+`PlaceholderProcessor` as a bare filesystem path, `defaultScmResolveUrl`'s
+`new URL(value, base)` throws because `base` is not itself an absolute URL,
+and even a `file://`-prefixed value would find no reader: `UrlReaders.default()`
+registers eleven SCM/cloud-storage factories and one generic http(s) fetcher,
+none of them a local `file:` scheme. **Finding 16**, added the same day: the
+guest auth provider refuses to issue a token at all outside
+`NODE_ENV=development` unless `auth.providers.guest.dangerouslyAllowOutsideDevelopment`
+is explicitly set — correct and by design, but its absence meant M6 Task 2
+shipped a catalog that built cleanly, collated without error, and passed every
+RBAC check, while being unreachable from any browser (ruling M6-R7 in this
+project's own SDD ledger). **Sixteen findings, still none filed.**
+
 > **Corrected 2026-09-11, when Finding 11 was written.** This paragraph opened
 > *"**M3 (Supervised) adds no finding.** It adds a *measurement*"* and closed
 > *"Ten findings, still none filed"*, and both clauses were false by the time
@@ -2575,6 +2596,254 @@ this document — a decision reserved for this project's maintainers. Nothing
 was posted to any tracker. This project's own emission path (`pds/autonomy.py`)
 supplies both fields itself rather than waiting on or patching the upstream
 hook.
+
+---
+
+## Finding 15: a `$text` placeholder cannot inline a local, git-less file — `type: file` locations reach the resolver as a bare path, and no reader is registered for `file:` anyway
+
+**The problem, plainly:** this project's catalog entities want to point an
+API entity's `definition` at the actual A2A agent-card JSON committed in
+`contracts/agent-cards/`, inlined rather than restated, which is exactly what
+the `$text` placeholder exists for. It does not work for a `type: file`
+location with no git remote behind it, for two independent reasons stacked on
+top of each other: the URL-resolution step throws before the read step is
+ever reached, and the read step would fail anyway because no reader in the
+default set understands a local file at all.
+
+**Project and version:** `@backstage/backend-defaults`, declared
+`^0.17.7` in `packages/backend/package.json`, resolved and installed as
+`0.17.8` (checked directly against `node_modules/@backstage/backend-defaults/
+package.json` in this build — the declared range and the installed file are
+not the same string, so this finding cites the file actually running, per
+this project's own "verify against what shipped, not a stale local index"
+habit). `@backstage/plugin-catalog-backend` (installed `3.9.1`) owns
+`PlaceholderProcessor`; `@backstage/integration` (installed `2.1.1`) owns
+the URL resolver the processor calls through.
+
+**Where the behaviour lives, read in full:**
+
+1. `PlaceholderProcessor.preProcessEntity` (`node_modules/@backstage/
+   plugin-catalog-backend/dist/processors/PlaceholderProcessor.cjs.js`) finds
+   a `$text` key, resolves the URL via `relativeUrl`, and only then reads it:
+   ```js
+   function relativeUrl({ key, value, baseUrl, resolveUrl }) {
+     ...
+     const resolved = resolveUrl(value, baseUrl);   // throws here, first
+     assertSameRepository(resolved, baseUrl);
+     return resolved;
+   }
+   ```
+2. `resolveUrl` is `ScmIntegrations.resolveUrl` (`node_modules/@backstage/
+   integration/dist/ScmIntegrations.cjs.js:88-94`): it looks the location's
+   `base` up by host among the registered SCM integrations (GitHub, GitLab,
+   Bitbucket, Azure, Gerrit, Gitea, Harness, the two cloud-storage backends);
+   a bare filesystem path matches none of them, so it falls through to
+   `helpers.defaultScmResolveUrl`.
+3. `defaultScmResolveUrl` (`node_modules/@backstage/integration/dist/
+   helpers.cjs.js:62-86`) tries `new URL(url)` first (fails — `value` is a
+   relative path, e.g. `../../contracts/agent-cards/claims-agent.json`), then
+   falls to `new URL(url, base)`. `URL`'s two-argument form requires `base`
+   to itself be an absolute URL with a scheme; `base` here is `location.target`,
+   which for a `type: file` location is the bare path Backstage read from disk
+   (`/app/catalog/agents/claims-agent/catalog-info.yaml`, not
+   `file:///app/...`). `new URL` throws `TypeError: Invalid URL` on a base with
+   no scheme, unconditionally.
+4. Even a location authored with an explicit `file://` URL so step 3 does not
+   throw would not reach content: `UrlReaders.default()` (`node_modules/
+   @backstage/backend-defaults/dist/entrypoints/urlReader/lib/
+   UrlReaders.cjs.js:44-60`) registers exactly twelve factories — Azure,
+   Bitbucket Cloud, Bitbucket Server, Gerrit, GitHub, Gitea, GitLab, Google
+   GCS, Harness, AWS S3, AWS CodeCommit/Azure Blob Storage, and a generic
+   http(s) `FetchUrlReader` — and none of them claims a `file:` scheme.
+   `readUrl('file:///...')` would fall through the whole predicate chain with
+   no matching reader.
+
+**What we actually saw, live, before either of the two steps above was traced**
+(recorded verbatim in `agents/claims-agent/catalog-info.yaml`'s own header
+comment, M6 Task 2): with `contracts/agent-cards/claims-agent.json` staged
+into the image at `./catalog/contracts/agent-cards/claims-agent.json`, a
+`$text: ../../contracts/agent-cards/claims-agent.json` on the API entity
+produced, in the running pod's own logs:
+```
+Processor PlaceholderProcessor threw an error while preprocessing;
+caused by Error: Placeholder $text could not form a URL out of
+/app/catalog/agents/claims-agent/catalog-info.yaml and
+../../contracts/agent-cards/claims-agent.json, TypeError: Invalid URL
+```
+— exactly step 3 above, reached before step 4 ever became relevant.
+
+**Why it matters, beyond this project:** `$text`/`$json`/`$yaml` are
+documented as general-purpose placeholders, and Backstage's own scaffold
+ships example locations that are `type: url` against a real SCM host, which
+is the one case this code path was built for. A deployment with committed
+catalog data and genuinely no git remote to point at — arguably the simplest
+possible case, and the one this repo's "no git remote, nothing is backed up"
+posture (an open finding of its own, tracked in this project's memory rather
+than here) puts it squarely in — cannot use inlining placeholders at all,
+with a failure mode (an unhandled `TypeError` surfacing through a generic
+"processor threw" wrapper) that names neither the missing scheme support nor
+the two-step reason plainly.
+
+**What a fix would need to do:** two independent changes, either sufficient
+alone to unblock a well-formed absolute `file://` value but both needed for
+the case actually hit here (a location's own `target`, which Backstage itself
+populates from disk, being a bare path): (1) `defaultScmResolveUrl` treating a
+`base` with no scheme as already-absolute-enough to resolve a relative `value`
+against, rather than requiring `new URL(base)` to succeed first; (2) a
+`file:`-scheme reader added to `UrlReaders.default()`'s factory list,
+presumably gated behind an explicit opt-in given the local-filesystem-access
+implications of trusting a `file://` value's path unconditionally.
+
+**How we worked around it, and whether it should be adopted upstream:** this
+project did not patch either package. `agents/claims-agent/catalog-info.yaml`
+and `agents/settlement-agent/catalog-info.yaml` link the agent card via a
+`Component --providesApis--> API` graph edge instead, with the API entity's
+`definition` field carrying a written pointer ("see
+`contracts/agent-cards/claims-agent.json` in this repo") rather than the
+file's actual JSON contents. This keeps the real relationship the catalog
+graph is for — an API a component provides, discoverable from the component
+page — without pretending the file is inlined when it is not; a reader who
+wants the actual contract still has to open the linked file, which is the
+honest state of affairs for a placeholder mechanism that cannot reach it. A
+custom `coreServices.urlReader` backend module registering a `file:` reader
+would be real new backend code, out of this milestone's scope, not a config
+change.
+
+**Existing upstream activity (checked read-only via `gh search issues`/
+`gh search prs` against `backstage/backstage`, 2026-09-15 — nothing was
+opened or commented on as part of writing this):** no open issue or PR names
+this specific pairing (a `type: file` location's bare-path `target` failing
+`$text` resolution, or the absent `file:` reader). The closest related history
+predates the current architecture: `FileReaderProcessor` (issues #7706,
+#14042, PR #4534, all 2021–2022) was an entirely different, since-removed
+mechanism for reading local files directly, not routed through
+`UrlReaders`/`ScmIntegrations` at all — its removal is itself consistent with
+this finding rather than contradicting it. Issue #9446 ("Could not read
+location from Gitlab repo (`$text` placeholder)") and #12251 ("`$yaml` and
+`$text` placeholders behave differently for YAML OpenAPI spec") are the same
+placeholder family failing against a *configured* SCM host, a different
+failure shape than a `type: file` location with no host to configure.
+
+**Status: not filed by this project.** This is arguably not a defect so much
+as a deployment shape (a git-less, committed-file catalog) the placeholder
+mechanism was never built for; filing it would be a feature request for
+local-file support, a decision reserved for this project's maintainers.
+Nothing was posted to any tracker.
+
+---
+
+## Finding 16: the guest auth provider's outside-development gate is correct and by design — and its absence turned a complete, correctly-collated catalog into one nobody could open
+
+**The problem, plainly:** this is not a bug in the sense every other finding
+in this document is — `@backstage/plugin-auth-backend-module-guest-provider`
+does exactly what it says it does, on purpose, and says so in its own error
+message. It is recorded here because that correct, documented default cost a
+full task's worth of "everything is green" before the actual blocker
+(ruling M6-R7 in this project's own SDD ledger) was found, and because the
+gap it leaves — no login at all for a single-operator demo cluster reachable
+only through an explicit `kubectl port-forward` — is a real, stated posture
+of this deployment, not an accident.
+
+**Project and version:**
+`@backstage/plugin-auth-backend-module-guest-provider`, declared and
+installed at the identical `0.2.22` (`packages/backend/package.json` and
+`node_modules/@backstage/plugin-auth-backend-module-guest-provider/
+package.json` agree — no drift to note here, unlike Finding 15).
+
+**Where the behaviour lives, read in full** — both places the same check is
+made, once at initialization and once again at sign-in:
+
+```js
+// dist/authenticator.cjs.js
+initialize({ config }) {
+  const allowOutsideDev = config.getOptionalBoolean(
+    "dangerouslyAllowOutsideDevelopment"
+  );
+  return process.env.NODE_ENV !== "development" && allowOutsideDev !== true;
+}
+...
+async authenticate(_, disabled) {
+  if (disabled) {
+    throw new errors.NotAllowedError(
+      "The guest provider cannot be used outside of a development " +
+      "environment unless 'auth.providers.guest.dangerouslyAllowOutsideDevelopment' is enabled"
+    );
+  }
+  return { result: {} };
+}
+```
+```js
+// dist/resolvers.cjs.js — the same gate, independently, on the sign-in resolver
+if (process.env.NODE_ENV !== "development" &&
+    config.getOptionalBoolean("dangerouslyAllowOutsideDevelopment") !== true) {
+  throw new errors.NotImplementedError(
+    "The guest provider is NOT recommended for use outside of a " +
+    "development environment. If you want to enable this, set " +
+    "`auth.providers.guest.dangerouslyAllowOutsideDevelopment: true` " +
+    "in your app config."
+  );
+}
+```
+
+**What we observed:** the in-cluster image is this project's own `yarn build`
+output, so it runs under `NODE_ENV=production`. With
+`auth.providers.guest.dangerouslyAllowOutsideDevelopment` unset (M6 Task 2's
+first attempt), `POST /api/auth/guest/refresh` answered `403` with the exact
+first message above. Every other backend signal was green throughout — zero
+`PlaceholderProcessor` errors once Finding 15's workaround was in place,
+`"Collating documents for software-catalog succeeded"` in the logs, RBAC and
+`backstage.io/kubernetes-id` labels verified live against the cluster — and
+the catalog was, in the plain sense that matters to an audience, undeliverable:
+nothing reachable from a browser could authenticate to see it.
+
+**Why it matters, beyond this project:** the message is correct and the
+default is the right one for the overwhelming majority of Backstage
+deployments, where "outside development" means "reachable by more than one
+person, possibly over a network Backstage does not control." It is exactly
+wrong-shaped for this project's specific deployment: a single-operator, one
+namespace, `kind` cluster with no Ingress, no LoadBalancer, no node port —
+reachable at all only through a `kubectl port-forward` the operator
+themselves runs — where "development" is a fair description of the actual
+risk profile even though the build is a production build. The gate does not
+know that; it only knows `NODE_ENV`. The generalizable lesson (recorded
+already in ruling M6-R7, restated here for the finding this project keeps
+locally): a backend health signal — build succeeded, plugin registered,
+collation succeeded — is not the same claim as "the deliverable is reachable
+by the audience it is for," and this gate is a clean example of the two
+diverging without either side lying.
+
+**What a fix would need to do:** nothing, on the upstream side — the gate
+already does what it should. The fix, such as it is, is entirely this
+project's own configuration and its own documented posture, not a patch.
+
+**How we worked around it, and whether it should be adopted upstream:**
+`platform/backstage/app-config.production.yaml` sets
+`auth.providers.guest.dangerouslyAllowOutsideDevelopment: true` explicitly,
+with a comment beside it (not quietly) stating the trade this makes: anyone
+who can reach port 7007 can authenticate as the guest user and, through the
+autonomy contract card, flip the one write this deployment's Backstage
+instance can make. The narrowness of that write — a ServiceAccount scoped to
+`get/list/patch` on `resourceNames: [northstar-autonomy]` only, no `delete`,
+separate from the read-only Kubernetes-plugin ServiceAccount — is what keeps
+this posture defensible for a laptop demo cluster with no network path in
+except an operator's own port-forward, and design §10 states the trade-off
+in the same terms for anyone reading the architecture docs rather than the
+config comment. There is nothing to propose upstream: the flag exists
+precisely so a deployment in this project's position can make this call
+explicitly, which is what happened.
+
+**Existing upstream activity:** not applicable in the usual sense — there is
+no gap to find on the tracker, because the behaviour matches its own
+documentation and its own error message exactly. A read-only
+`gh search issues`/`gh search prs` sweep (2026-09-15) against
+`dangerouslyAllowOutsideDevelopment` and "guest provider production" surfaced
+no discussion of this default being wrong; the closest hits are unrelated
+Kubernetes-deployment auth reports (401s from other causes, plugin startup
+failures) that do not touch the guest provider's own gate.
+
+**Status: not filed by this project, and nothing to file.** This entry
+exists to record a real cost this project paid against a working-as-designed
+default, not to propose upstream change.
 
 ---
 

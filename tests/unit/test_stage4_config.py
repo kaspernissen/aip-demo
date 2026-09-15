@@ -1072,6 +1072,7 @@ def test_start_demo_forwards_the_stage_4_surfaces_when_they_do_exist(tmp_path):
     assert "http://localhost:5601" in output, output
     assert "http://localhost:8081" in output, output
     assert "http://localhost:9090" in output, output
+    assert "http://localhost:7007" in output, output
 
 
 def test_the_all_verified_banner_requires_eval_scorer_and_flagd_too(tmp_path):
@@ -1128,6 +1129,47 @@ def test_reviewer_uis_bound_but_dead_forward_is_refused_ruling_r20(tmp_path):
         f"carries no request:\n{output}"
     )
     assert "All surfaces verified up." not in output, output
+
+
+def test_start_demo_skips_backstage_when_its_service_does_not_exist(tmp_path):
+    """M6 Task 4: the same F8 discipline (skip a stage-gated surface loudly,
+    never hard-fail below the stage that provides it), one surface later.
+    `svc/backstage` does not exist below stage 6 -- this reproduces that on a
+    cluster that otherwise has every other surface, so a script that regressed
+    to forwarding `svc/backstage` unconditionally would exit 1 here (the fake
+    `kubectl port-forward` for an absent Service fails immediately, same
+    cascade shape F8 fixed for Dashboards).
+    """
+    output, _ = _run_start_demo(tmp_path, absent_services="backstage")
+    assert "Backstage: SKIPPED" in output, (
+        "start-demo.sh did not say Backstage was being skipped. A skip must "
+        f"be loud, same as every other stage-gated surface:\n{output}"
+    )
+    assert "http://localhost:7007" not in output, (
+        "start-demo.sh printed a Backstage URL for a cluster that has no "
+        f"Backstage:\n{output}"
+    )
+
+
+def test_the_all_verified_banner_requires_backstage_too(tmp_path):
+    """M6 Task 4's own version of J1 (whole-branch review, M5): the "All
+    surfaces verified up." gate must include `BACKSTAGE_AVAILABLE`, not just
+    the five conditions M5's fix wave left it with. Every other stage-gated
+    surface -- Dashboards, reviewer-ui, Prometheus, eval-scorer, flagd -- is
+    present here; Backstage alone is absent, so a gate that forgot to add it
+    (the exact shape J1 was) would print the all-clear banner directly under
+    a YELLOW `Backstage: SKIPPED` line. M6 Task 1's own brief named this
+    finding by number and asked for this test before the surface even existed
+    in the script.
+    """
+    output, _ = _run_start_demo(tmp_path, absent_services="backstage")
+    assert "Backstage: SKIPPED" in output, output
+    assert "All surfaces verified up." not in output, (
+        "the gate printed the all-clear banner while Backstage was SKIPPED "
+        f"just above it:\n{output}"
+    )
+    assert "Every surface this cluster has is verified up." in output, output
+    assert "Some stage-gated surfaces are absent" in output, output
 
 
 # --- M4 Task 3: the evidence view, and the two things that make it real -----

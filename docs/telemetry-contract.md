@@ -48,7 +48,7 @@ first and the overturned reasoning is kept below it rather than deleted.**
 
 A bare `pytest tests/` run (no environment variable set) now costs **no model
 tokens at all**. Twelve modules sit behind `RUN_BROWSER_TESTS=1`, of which
-**3 of the 12 launch a browser** and **9 of the 12 start no browser** — they
+**3 of the 13 launch a browser** and **10 of the 13 start no browser** — they
 ride the flag because they spend Anthropic tokens, and as of Task 5 that set is
 closed: every e2e file that drives a
 settlement is gated. (That split is derived, not typed: it was published as
@@ -253,28 +253,60 @@ image's baked-in `org.opencontainers.image.revision` label against
 as the fifteen above. Taking the collected count from **418 to 420**,
 re-measured the same way.
 
-Bare-suite row, derived from that same collection: 420 collected − 74 gated −
-**0** xfailed = `346 passed, 74 skipped, 0 xfailed`.
+**M6 Task 4 adds nine more, taking the collected count from 420 to 429.**
+**Two** under `tests/unit`, both in `tests/unit/test_stage4_config.py`:
+`start-demo.sh`'s own "All surfaces verified up." banner omitted
+`BACKSTAGE_AVAILABLE` from its gate condition — the same J1 shape the
+whole-branch review found for `EVAL_SCORER_AVAILABLE`/`FLAGD_AVAILABLE` one
+milestone earlier, now fixed for the surface this task adds — plus the
+matching skip-path test. **Seven** under `tests/e2e`, all in the new
+`tests/e2e/test_golden_path.py` — design §5's anti-vacuity e2e: an
+authenticated/unauthenticated HTTP control on the port-forward this file
+establishes itself; a live assertion that the running code is the committed
+code (M6-R9, restated as a route only Task 3's plugin serves, rather than
+repeating `test_backstage_image_matches_head.py`'s own image-label check);
+the catalog checked against the same tree walk
+`test_catalog_matches_the_tree.py` already derives, not a retyped list; the
+card's read on the refusing contract; a no-redeploy check that also proves
+the card's HTTP write reaches the live `FeatureFlag` object (an independent
+`kubectl get`, not merely the HTTP response); the milestone's own claim —
+driving the card's write over HTTP flips a refused settlement to executed,
+with no redeploy, then reverts; and design §10's own instruction ("Task 4's
+e2e should assert the span lands, the way `test_opensearch_trace_ingest.py`
+already does for `policy.decision`") — a live OpenSearch query for the
+`northstar.autonomy_contract.change` span design §10 already names as the
+one durable signal of the three the write produces, gated on stage 4's own
+presence rather than assumed. Re-measured the same way.
 
-The gated figure is unchanged at **74** — re-measured the same way as every
-figure below it, a `--collect-only` run with a plugin that counts items
-carrying a `skipif` whose reason names `RUN_BROWSER_TESTS` and whose condition
-is true with the variable unset — because none of Part A's eleven new
-`tests/unit` tests, Part B's five new `tests/unit` tests, M6 Task 1's six new
-`tests/unit` tests, M6 Task 2's three new `tests/unit` tests, M6 Task 3's
-twenty-five new tests, M6 Task 3's fix-round two new tests, or the two new
-PDS tests carries one; PDS tests are not
-collected by this measure at all (`tests/unit`-only) — and reports 74 of 420,
-with the per-module spread and the browser split both unchanged from the row
-below (restated so this block's own guard has a figure to read, not merely
-inherited by silence). Full spread: `test_settlement_llm_trace.py` 9,
+Bare-suite row, derived from that same collection: 429 collected − 75 gated −
+**0** xfailed = `354 passed, 75 skipped, 0 xfailed`.
+
+The gated figure moves to **75** — re-measured the same way as every figure
+below it, a `--collect-only` run with a plugin that counts items carrying a
+`skipif` whose reason names `RUN_BROWSER_TESTS` and whose condition is true
+with the variable unset — because none of Part A's eleven new `tests/unit`
+tests, Part B's five new `tests/unit` tests, M6 Task 1's six new `tests/unit`
+tests, M6 Task 2's three new `tests/unit` tests, M6 Task 3's twenty-five new
+tests, M6 Task 3's fix-round two new tests, or the two new PDS tests carries
+one (PDS tests are not collected by this measure at all, `tests/unit`-only);
+M6 Task 4 adds exactly **one** — `test_golden_path.py`'s own settlement-driving
+test, the only one of its seven that spends a model call and a browser — and
+reports 75 of 429, with the per-module spread and the browser split both
+moving for the first time this milestone. Full spread:
+`test_settlement_llm_trace.py` 9,
 `test_prometheus_metrics_ingest.py` 10, `test_browser_root_span.py` 8,
 `test_settlement_agent_trace.py` 8, `test_claims_chain_trace.py` 7,
 `test_claim_correlation.py` 6, `test_gateway_trace.py` 6,
 `test_supervised.py` 6, `test_policy_scores.py` 5,
 `test_evidence_view.py` 4, `test_policy_denial.py` 4,
-`test_progressive_autonomy.py` 1. The browser split is unchanged: **3 of the
-12 launch a browser** and **9 of the 12 start no browser**.
+`test_golden_path.py` 1, `test_progressive_autonomy.py` 1. **The browser split
+changes for the first time since M4 Task 5**: a thirteenth gated module
+joins, and it does not launch its own browser
+(`tests/e2e/test_golden_path.py` imports `_drive_browser` from
+`test_policy_denial.py` rather than calling `chromium.launch(` itself, the
+same reason `test_progressive_autonomy.py` was never one of the three
+either) — **3 of the 13 launch a browser** and **10 of the 13 start no
+browser**.
 
 Gate row: **PREDICTED, NOT MEASURED** — this branch's gate run was at commit `ae29785`.
 Part A touched nine files, all under `GATE_PATHS`
@@ -324,14 +356,22 @@ router.test,evaluate,evaluate.test,index,index.test,k8sClient,telemetry}.ts`,
 `platform/backstage/Dockerfile`, `scripts/rebuild-and-deploy.sh`,
 `deploy/k8s/backstage.yaml`, `tests/e2e/test_backstage_image_matches_head.py`,
 `tests/unit/test_kube_helper.py`, this document, and the M6 design spec —
-also uncommitted against the recorded gate commit, for the same reason. The
-prediction from collection (420 − 0 xfailed = 420) is `420 passed, 0
+also uncommitted against the recorded gate commit, for the same reason.
+**M6 Task 4** touches `scripts/start-demo.sh`, `scripts/setup-kind.sh`,
+`tests/unit/test_stage4_config.py`, `tests/unit/test_kube_helper.py` (the new
+allow-list entry for `test_golden_path.py`'s own reachability-probe fixture),
+`tests/e2e/test_golden_path.py`, `docs/upstream-findings.md`, and this
+document plus `docs/architecture.md` and `README.md` — the last three do not
+themselves move the gate row (`docs/` is not in `GATE_PATHS`), but the first
+five do, so the row stays labelled for the same reason it already was. The
+prediction from collection (429 − 0 xfailed = 429) is `429 passed, 0
 xfailed`; nothing claims that figure was measured against this tree.
 
-`tests/unit` alone collects **257** (222 before the M5 whole-branch review's
+`tests/unit` alone collects **259** (222 before the M5 whole-branch review's
 fix wave, 233 after Part A, 238 after Part B, 244 after M6 Task 1's own
 six-test addition, 247 after M6 Task 2's own three-test addition, 257 after
-M6 Task 3's own ten-test addition).
+M6 Task 3's own ten-test addition, 259 after M6 Task 4's own two-test
+addition).
 
 ---
 
@@ -382,7 +422,7 @@ not). Full spread: `test_settlement_llm_trace.py` 9,
 `test_supervised.py` 6, `test_policy_scores.py` 5,
 `test_evidence_view.py` 4, `test_policy_denial.py` 4,
 `test_progressive_autonomy.py` 1. The browser split moves from **3 of the
-11**/**8 of the 11** to **3 of the 12 launch a browser** and **9 of the 12
+11**/**8 of the 11** to **3 of the 13 launch a browser** and **10 of the 13
 start no browser**: the twelfth gated module starts no browser, so the
 numerator is unchanged and only the denominator (and its complement) moved.
 
@@ -488,7 +528,7 @@ The gated figure is **72** (all seven of Task 4's new tests — two in
 `skipif` naming `RUN_BROWSER_TESTS`, so none of those ten is gated; the one
 new gate is the reviewer-ui row above) — and reports 72 of 365, with the same
 per-module spread as the row beneath this one. The browser split is
-unchanged: **3 of the 12 launch a browser** and **9 of the 12 start no
+unchanged: **3 of the 13 launch a browser** and **10 of the 13 start no
 browser** -- the module was already gated and already browser-less, so this
 moved a test count within it, not a module count.
 
@@ -561,7 +601,7 @@ Bare-suite row, derived from that same collection: 355 collected − 71 gated �
 The gated figure is unchanged at **71** (the new test lives under
 `tests/unit` with no `skipif`, so it is not gated) — and reports 71 of 355,
 with the same per-module spread as the row beneath this one. The browser
-split is unchanged too: **3 of the 12 launch a browser** and **9 of the 12
+split is unchanged too: **3 of the 13 launch a browser** and **10 of the 13
 start no browser**.
 
 Gate row: **PREDICTED, NOT MEASURED**, unchanged from the row below -- this
@@ -599,7 +639,7 @@ figure below it, `tests/unit/_count_gated_plugin.py` against a bare
 `RUN_BROWSER_TESTS`-unset collection — both new tests live under
 `tests/unit` with no `skipif`, so neither is gated) — and reports 71 of 354,
 with the same per-module spread as the row beneath this one. The browser
-split is unchanged too: **3 of the 12 launch a browser** and **9 of the 12
+split is unchanged too: **3 of the 13 launch a browser** and **10 of the 13
 start no browser**.
 
 Gate row: **PREDICTED, NOT MEASURED**, unchanged from the row above -- this
@@ -657,7 +697,7 @@ The gated figure is unchanged at **71** (both new tests live under
 `tests/unit`, not behind `RUN_BROWSER_TESTS=1`) — measured the same way as
 every figure below it, and reports 71 of 352, with the same per-module
 spread as the row beneath this one. The browser split is unchanged too:
-**3 of the 12 launch a browser** and **9 of the 12 start no browser**.
+**3 of the 13 launch a browser** and **10 of the 13 start no browser**.
 
 Gate row: **PREDICTED, NOT MEASURED** — this branch's gate run was at commit `b215426`
 (the M4 final-review fix wave below). This task's commit changes files
@@ -722,9 +762,9 @@ reports 71 of 350, spread `test_settlement_llm_trace.py` 9,
 `test_claim_correlation.py` 6, `test_gateway_trace.py` 6, `test_supervised.py`
 6, `test_policy_scores.py` 5, `test_policy_denial.py` 4,
 `test_evidence_view.py` 3. Of those gated modules (twelve as of M5 Task 6),
-**3 of the 12 launch a browser** (`test_browser_root_span.py`,
+**3 of the 13 launch a browser** (`test_browser_root_span.py`,
 `test_policy_denial.py`, `test_supervised.py` — derived from
-`chromium.launch(`, not recalled) and **9 of the 12 start no browser** — the
+`chromium.launch(`, not recalled) and **10 of the 13 start no browser** — the
 flag gates
 *tokens*, not Chromium, and that split is now derived from the sources rather
 than typed.
@@ -4159,7 +4199,86 @@ name: the approved-execution trace contains a second payments-api
 `execute_approved` makes one hop downstream, and only one of the two is a
 child of reviewer-ui's own CLIENT span.
 
-## eval-scorer's own instrumentation: the policy-adherence scores (M4 Task 4)
+## Backstage's own instrumentation: `northstar.autonomy_contract.change` (M6 Task 3/4)
+
+**The ninth service, and the first UI in this document that emits telemetry
+about its own write rather than about a request it served.** M6 Task 3 adds
+one span this repo owns outright, emitted by
+`platform/backstage/packages/backend/src/plugins/autonomyContract/
+telemetry.ts`'s `emitContractChangeSpan`, called once from `router.ts`'s
+`POST /variant` handler, after the FeatureFlag patch that flips the contract
+already succeeded. Named `northstar.autonomy_contract.change`
+(`SPAN_NAME` in `telemetry.ts`), one per successful write to the
+`northstar-autonomy` FeatureFlag through the autonomy-card UI -- not per read,
+and not for a write attempted with an invalid `variant` (rejected `400` before
+the k8s client is ever called, so no span either).
+
+This is the third of three independent signals design §4 asks for ("the write
+must be auditable and distinguishable from a `kubectl` edit"), and the module
+docstring is explicit about why it is the one worth trusting as history: the
+object's own `metadata.managedFields` field-manager entry is overwritten by
+the very next write (from either this client or `kubectl`), and Backstage's
+`coreServices.auditor` event lives only in this one pod's logs, backed by a
+`:memory:` database with no shipping. The span survives both.
+
+**Hand-rolled OTLP/HTTP JSON, not the Node OTel SDK.** This plugin emits at
+most a few spans per process lifetime -- one per contract write, not a
+sustained request path -- so there is no batching or sampling case to justify
+a tracer-provider lifecycle; `buildOtlpTracePayload`/`emitContractChangeSpan`
+construct and `POST` a `resourceSpans` payload to
+`${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces` directly. `service.name` on the
+resource is `OTEL_SERVICE_NAME`, unset in this deployment, so it falls back to
+the literal `'backstage'`. Not counted among "which services emit anything at
+all" below: that section's method (a MeterProvider probe, per-`job` metric
+names in Prometheus) is scoped to the five Python services hosting the four
+GenAI frameworks in the path (§6's question), and Backstage is neither Python
+nor a candidate for any of the twelve GenAI metrics that section is about —
+it is a ninth *span*-emitting service, a different inventory this document
+does not otherwise total in one place.
+
+**"100% telemetry, never sampled" still applies to a hand-rolled exporter with
+no retry queue.** `emitContractChangeSpan` never throws -- a telemetry outage
+must not block a policy-contract write that already landed in the cluster --
+but it always returns whether the `POST` was attempted and whether the
+collector answered `2xx`, and `router.ts` logs a failure loudly
+(`autonomy-contract-write: OTLP span was NOT delivered ...`) rather than
+swallowing it. There is no local queue and no retry: a collector outage at the
+moment of the write drops that one span for good, reported instead of hidden.
+The k8s write and the auditor event are unaffected either way.
+
+### Attributes on the `northstar.autonomy_contract.change` span
+
+Six keys, none of them a `feature_flag.*` OpenFeature/OTel semantic-convention
+name -- this event is not an evaluation, it is an operator's write to the
+*definition* the evaluation will read next, a different claim with no
+convention of its own to cite:
+
+```
+northstar.contract.previous_variant   "assisted"
+northstar.contract.new_variant        "autonomous"
+northstar.contract.field_manager      "backstage-autonomy-card"
+northstar.contract.actor              "backstage-autonomy-card"
+k8s.namespace.name                    "northstar-platform"
+k8s.resource.name                     "northstar-autonomy"
+```
+
+`northstar.contract.previous_variant`/`new_variant` are read straight off the
+live object immediately before and the requested value the route validated
+(`isValidVariant`), not assumed from a prior response. `k8s.namespace.name`
+and `k8s.resource.name` are the two conventional attributes this deployment
+already uses that shape for elsewhere (`AUTONOMY_NAMESPACE`/`AUTONOMY_NAME` in
+`k8sClient.ts`), reused here rather than invented fresh.
+`northstar.contract.field_manager` is `FIELD_MANAGER` (`k8sClient.ts`) --
+the same string the patch itself sets as its Server-Side Apply field manager,
+so a reader can match this span's claim against the live object's own
+`metadata.managedFields` while both still agree. `northstar.contract.actor`
+is a fixed literal, not a caller identity: **this project's own limitation to
+state plainly (design §10) is that Backstage's guest auth means every write
+through this UI is indistinguishable from every other** -- there is no signed
+user identity upstream of this route for the span to carry honestly, so it
+does not manufacture one.
+
+
 
 **The eighth service, and the only one whose spans are *about* other spans.**
 `platform/eval-scorer` reads a settlement's whole trajectory back out of
@@ -4306,6 +4425,7 @@ is in "Metrics, as measured (M4 Task 2)" above.
 | `northstar.payment.refusal_cause` (M2.2 Task 4) | payments-api, on its own server span for a refused execute; two closed values, `amount_mismatch` and `already_executed` (`systems/payments-api/handlers.go`) | none | payments-api's execute span, and **only when it refuses** — absent on success, so its presence means "refused here". Read off a real recorded span by that service's own Go tests via an in-memory `tracetest.SpanRecorder`; it appears on **none** of the six M2.2 traces named in this document, because neither the denied nor the permitted scenario reaches a 409 |
 | `northstar.payment.id`, `northstar.approval.reviewer_id` (M3 Task 3) | settlement-agent, on its own `settlement.execute_approved` span (`agents/settlement-agent/settlement.py`) | none | That span only, on the human-approved execution path. See "settlement-agent's own instrumentation" above, including this milestone's first span **link** and the same span's `northstar.claim.id` baggage (M3 Task 3 review, R16) |
 | `review.*` (six keys, M3 Task 4) | reviewer-ui, on its own `review.decision` span (`apps/reviewer-ui/review.py`) | none | That span only, one per submitted approve/reject decision — reviewer-ui's second owned span, `review.queue` (M3 final-review fix round), deliberately carries **none** of them, and no attributes at all. Two of the six (`review.refused.trace_id`, `review.elapsed_ms`) are now set *after* the span opens rather than at creation, because the ledger read they come from moved inside it; a decision that never reaches a refused record therefore emits the other four and an ERROR status. See "reviewer-ui's own instrumentation" above |
+| `northstar.contract.previous_variant`, `northstar.contract.new_variant`, `northstar.contract.field_manager`, `northstar.contract.actor` (M6 Task 3/4) | Backstage's autonomyContract plugin, on its own `northstar.autonomy_contract.change` span (`platform/backstage/packages/backend/src/plugins/autonomyContract/telemetry.ts`) | none | That span only, one per successful write to the `northstar-autonomy` FeatureFlag through the autonomy card. `northstar.contract.actor` is a fixed literal (`"backstage-autonomy-card"`), not a caller identity — Backstage's guest auth (design §10) means there is no signed user upstream of this route to name honestly. See "Backstage's own instrumentation" above |
 
 **Two M2.2 notes on this table, both measured rather than reasoned.** The
 `policy.*` family is prefixed `policy.` and not `northstar.` on purpose: it is

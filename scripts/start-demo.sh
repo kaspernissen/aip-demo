@@ -196,6 +196,17 @@ if featureflag_exists northstar-platform northstar-autonomy; then
   FLAGD_AVAILABLE=1
 fi
 
+# M6 Task 4: Backstage, the view M6 puts on the platform API. Stage-6 only
+# (svc/backstage does not exist below it), same `service_exists` discipline as
+# the four surfaces above. Unlike those four, this was a documented MANUAL
+# `kubectl port-forward` until now (scripts/setup-kind.sh's own stage-6
+# completion message used to say so in as many words) -- this is the wiring
+# that closes it.
+BACKSTAGE_AVAILABLE=""
+if service_exists northstar-platform backstage; then
+  BACKSTAGE_AVAILABLE=1
+fi
+
 echo -e "${BLUE}=== Starting Northstar port-forwards ===${NC}"
 
 echo "  - claims-agent       (19001 -> 9001)"
@@ -306,6 +317,34 @@ else
   echo -e "${YELLOW}  - flagd metrics: SKIPPED, no northstar-autonomy FeatureFlag in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
 fi
 
+# M6 Task 4: Backstage has no kind host port (its Service is ClusterIP-only,
+# deploy/k8s/backstage.yaml) and no NodePort the way reviewer-ui has, so a
+# forward is the only way to reach it -- same constraint as Dashboards and
+# Prometheus above, stage-6-gated the same way.
+#
+# Started and tracked in PIDS exactly like every other forward this script
+# owns (the kill-only-your-own-PIDs rule below is unchanged), but verified
+# with `verify_existing_surface` rather than `verify_owned_forward`: the
+# latter's PID-ownership check would refuse a cluster where an operator
+# already has `kubectl -n northstar-platform port-forward svc/backstage
+# 7007:7007` running by hand (scripts/setup-kind.sh's own stage-6 completion
+# message tells them to run exactly that, and told them to before this task).
+# `verify_existing_surface` asks the two questions that actually matter here --
+# is the port bound, does it answer -- without caring which process bound it,
+# so it accepts a healthy foreign port-forward on 7007 without this script
+# needing to special-case one, and without weakening the rule that cleanup()
+# only ever kills a PID this script itself started (a forward it did not
+# start is never added to PIDS, so cleanup never touches it either way).
+BACKSTAGE_PID=""
+if [[ -n "$BACKSTAGE_AVAILABLE" ]]; then
+  echo "  - Backstage          (7007 -> 7007)"
+  kubectl -n northstar-platform port-forward svc/backstage 7007:7007 >/dev/null 2>&1 &
+  BACKSTAGE_PID=$!
+  PIDS+=("$BACKSTAGE_PID")
+else
+  echo -e "${YELLOW}  - Backstage: SKIPPED, svc/backstage does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 6)${NC}"
+fi
+
 # Give the forwards a moment to establish before checking them (same
 # allowance setup-kind.sh's own port-forward block uses).
 sleep 4
@@ -340,6 +379,15 @@ if [[ -n "$FLAGD_METRICS_PID" ]]; then
   # above is checked through, rather than pulling the full (measured: >500KB)
   # metrics payload just to confirm the forward answers.
   verify_owned_forward 18014 "${FLAGD_METRICS_PID}" flagd-metrics "/healthz"
+fi
+if [[ -n "$BACKSTAGE_PID" ]]; then
+  # `/`, not an `/api/...` route: every `/api/*` route in this app requires a
+  # Backstage credential (guest or otherwise) and answers 401 unauthenticated
+  # (M6 Task 3's httpRouter default policy) -- a curl with no token would read
+  # a healthy backend as dead. `/` is the served frontend bundle, which
+  # answers 200 with no credential, the same reason Dashboards' own check
+  # above uses its bare root.
+  verify_existing_surface 7007 backstage "/"
 fi
 # reviewer-ui: covered here for the same reason smoke-test.sh covers it --
 # it is normally already live via deploy/kind/stage3.yaml's NodePort mapping,
@@ -386,7 +434,7 @@ else
 fi
 
 echo ""
-if [[ -n "$DASHBOARDS_AVAILABLE" && -n "$REVIEWER_UI_AVAILABLE" && -n "$PROMETHEUS_AVAILABLE" && -n "$EVAL_SCORER_AVAILABLE" && -n "$FLAGD_AVAILABLE" ]]; then
+if [[ -n "$DASHBOARDS_AVAILABLE" && -n "$REVIEWER_UI_AVAILABLE" && -n "$PROMETHEUS_AVAILABLE" && -n "$EVAL_SCORER_AVAILABLE" && -n "$FLAGD_AVAILABLE" && -n "$BACKSTAGE_AVAILABLE" ]]; then
   echo -e "${GREEN}All surfaces verified up.${NC}"
 else
   echo -e "${GREEN}Every surface this cluster has is verified up.${NC}"
@@ -441,6 +489,9 @@ if [[ -n "$DASHBOARDS_AVAILABLE" ]]; then
 fi
 if [[ -n "$PROMETHEUS_AVAILABLE" ]]; then
   echo "  Prometheus:                http://localhost:9090"  #surface
+fi
+if [[ -n "$BACKSTAGE_AVAILABLE" ]]; then
+  echo "  Backstage:                 http://localhost:7007"  #surface
 fi
 echo ""
 echo "Press Ctrl+C to stop the port-forwards this script started."

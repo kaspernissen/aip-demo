@@ -1013,7 +1013,7 @@ echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payment
 
 echo ""
 if [[ "${STAGE}" -eq 6 ]]; then
-  echo -e "${GREEN}Stage 6 (Golden path) is up: stage 5's workloads and backends, unchanged (amendment A1, no cluster recreate), plus Backstage in northstar-platform on SQLite, its read-only ServiceAccount wired to the Kubernetes plugin (get/list/watch on Pods, Deployments, ReplicaSets, Services, ConfigMaps and the other default object types; no Secrets, no write verbs). The FeatureFlag-write ServiceAccount and the software catalog are a later task's -- this stage ships Backstage Running with its own scaffolded example catalog, not this repo's eight components yet.${NC}"
+  echo -e "${GREEN}Stage 6 (Golden path) is up: stage 5's workloads and backends, unchanged (amendment A1, no cluster recreate), plus Backstage in northstar-platform on SQLite. Its read-only ServiceAccount is wired to the Kubernetes plugin (get/list/watch on Pods, Deployments, ReplicaSets, Services, ConfigMaps and the other default object types; no Secrets, no write verbs) and its own, separate ServiceAccount carries the one narrow write grant (get/list/patch, resourceNames: [northstar-autonomy], no delete -- deploy/k8s/backstage.yaml). The catalog covers this repo's own eight components (agent cards linked, not restated) plus Backstage itself, each showing its live workload; the autonomy card reads northstar-autonomy live, per identity, and can change it -- the same one-word flip M5 proved from kubectl, from a UI instead. Run ./scripts/start-demo.sh to reach it, unauthenticated (design §10) at http://localhost:7007 once forwarded.${NC}"
 elif [[ "${STAGE}" -eq 5 ]]; then
   echo -e "${GREEN}Stage 5 (Progressive autonomy) is up: stage 4's workloads and backends, unchanged (amendment A1, no cluster recreate), plus cert-manager ${CERT_MANAGER_VERSION}, the Open Feature Operator ${OPENFEATURE_CHART_VERSION}, and the northstar-autonomy FeatureFlag/FeatureFlagSource pair. The PDS pod carries a flagd sidecar answering on localhost:8013 inside it, serving flag 'autonomy-level' (variants assisted/autonomous, targeted on evaluation-context key spiffeId) -- still resolved nowhere yet, since Task 2 stands up the machinery only.${NC}"
 elif [[ "${STAGE}" -eq 4 ]]; then
@@ -1042,12 +1042,14 @@ echo "  claims-agent (A2A):  http://localhost:19001"
 echo "  Local registry:      localhost:${REGISTRY_PORT}"
 if [[ "${STAGE}" -ge 6 ]]; then
   # Not a kind host port, same reasoning as Dashboards/Prometheus at stage 4:
-  # reached by port-forward rather than printed as a bare URL. Unlike those
-  # two, ./scripts/start-demo.sh does not forward it yet -- that wiring is a
-  # later task's (M6 Task 4) -- so the instruction printed here is the one
-  # that actually works today, not a forward reference to a script that
-  # would 404 on it.
-  echo "  Backstage:           kubectl -n northstar-platform port-forward svc/backstage 7007:7007"
+  # reached by port-forward rather than printed as a bare URL. This used to
+  # send the operator to a manual `kubectl port-forward` because
+  # ./scripts/start-demo.sh did not own this forward yet ("that wiring is a
+  # later task's (M6 Task 4)" -- true when this comment was written, false
+  # the moment that task landed). It now does, the same as Dashboards and
+  # Prometheus, so this points there instead of to a hand-assembled command --
+  # rulings R10 and R20 are exactly about not making an operator remember one.
+  echo "  Backstage:           run ./scripts/start-demo.sh, then http://localhost:7007"
 fi
 echo ""
 echo "Next: ./scripts/smoke-test.sh"

@@ -570,7 +570,12 @@ own code, and each says so in its own cell rather than being folded into
 this heading's old, now-false claim**: `policy-decision-service` (M2.2) and
 `eval-scorer` (M4, given a row here in M5 Task 6 — see the note under the
 application-components heading above for why it was left out of both
-inventories for two milestones).
+inventories for two milestones). **M6 adds a third, partial case**:
+`backstage` itself is third-party framework code this project configures,
+same as agentgateway or SPIRE, but one plugin inside it
+(`autonomyContract/`) is this project's own — the same distinction the
+no-invented-telemetry rule needs, drawn at plugin granularity rather than
+service granularity because that is where the boundary actually falls.
 Images and versions below were read from the live cluster, enumerating over
 every pod's `.spec.initContainers` **and** `.spec.containers` — not
 `containerStatuses`, which omits init containers and would have missed two of
@@ -582,6 +587,7 @@ the six SPIRE sub-images, including the one carrying the hazard recorded under
 | `agentgateway` | Rust MCP/A2A/LLM proxy. A **Linux Foundation** project — **not** CNCF | `cr.agentgateway.dev/agentgateway:v1.5.0` (note the leading `v`; the tag `1.5.0` does not exist on that registry, though the binary reports `1.5.0` as its internal version) | Interposed on the MCP hop. Verifies the caller's JWT-SVID (`jwtAuth`), asks the Policy Decision Service about every `tools/call` (`mcpGuardrails`), and forwards to `payments-mcp` **only** if the answer is permit. |
 | `policy-decision-service` | **This project's own code** (Python 3.13, `grpcio`), not third-party — listed here because it is platform machinery rather than an application component. Serves agentgateway's `agentgateway.dev.ext_mcp.ExtMcp` contract, from a proto vendored verbatim at v1.5.0 (`platform/policy-decision-service/proto/ext_mcp.proto`, `d459d88`) | `localhost:5001/northstar/policy-decision-service:dev`, `policy-decision-service.northstar-platform.svc.cluster.local:9100` | Answers permit or deny on caller identity plus amount. Holds the milestone's one rule and emits the `policy.decision` span. Makes no Kubernetes API calls and holds no RBAC; nothing in `northstar-agents` can reach it. |
 | `eval-scorer` **(M4; row added M5 Task 6)** | **This project's own code** (Python 3.13, standard library only — no web framework, no third-party OTel SDK dependency beyond what `platform/eval-scorer/requirements.txt` pins), not third-party — the same reason `policy-decision-service` has a row here rather than in the application table | `localhost:5001/northstar/eval-scorer:dev`, `eval-scorer.northstar-platform.svc.cluster.local:8300` | Scores a settled trajectory's identity authority against its own independent copy of the policy table (`scorer/authority.py`) and its own independent copy of the contract's currently-published autonomy level (`scorer/contract.py`'s `CURRENT_LEVEL`), never by re-reading the `policy.decision` span's own claim — the anti-vacuity argument `scorer/contract.py`'s own module docstring makes at length. `CURRENT_LEVEL` is a static constant checked at build time against the committed `deploy/platform/openfeature/featureflag.yaml`, deliberately blind to a live `kubectl patch` against the deployed `FeatureFlag` object (M5-R29/M5-R31) — the two are independent by design, not by oversight, which is exactly what let Task 6 flip the live contract without touching this service or its tests. |
+| `backstage` **(M6)** | Backstage backend, `@backstage/backend-defaults@^0.17.7` and siblings — third-party framework, plus **this project's own code** in one plugin: `platform/backstage/packages/backend/src/plugins/autonomyContract/` (router, k8s client, evaluator, telemetry), the same reason `policy-decision-service` and `eval-scorer` have rows here rather than in the application table, scaled down to one plugin rather than a whole service | `localhost:5001/northstar/backstage:dev`, `backstage.northstar-platform.svc.cluster.local:7007` | Serves the software catalog (nine `Component` entities: the eight in the tree plus Backstage itself, derived from `catalog-info.yaml` files staged into the image at build time — see "Known limitations" below) and the autonomy-contract card, the one UI in this system with a write path of its own: `POST /api/autonomy-contract/variant` flips `northstar-autonomy`'s `targeting.if[1]` through a second, narrower ServiceAccount (`backstage-autonomy-writer`) than the one the Kubernetes plugin reads with. |
 | SPIRE server / agent | SPIFFE runtime, chart `spiffe/spire` 0.30.2 from the hardened repo | appVersion SPIRE **1.15.3**; `ghcr.io/spiffe/spire-server:1.15.3`, `spire-agent:1.15.3` | Issues the JWT-SVID. Trust domain `northstar.local`, cluster name `northstar`. |
 | SPIRE CRDs | chart `spiffe/spire-crds` 0.6.1, installed first | — | The `spire.spiffe.io` CRDs the `ClusterSPIFFEID` resources need. |
 | `spire-controller-manager` | ships inside the SPIRE chart | `ghcr.io/spiffe/spire-controller-manager:0.7.0` | Reconciles `ClusterSPIFFEID` resources into real registration entries. |
@@ -2117,12 +2123,19 @@ calling the tracer directly.
 | Jaeger | http://localhost:16686 |
 | OpenSearch Dashboards — the evidence view (stage 4) | http://localhost:5601 |
 | Prometheus — the metrics half of stage 4 | http://localhost:9090 |
+| Backstage — the catalog and the autonomy card (stage 6) | http://localhost:7007 |
 
 The first three are kind host ports mapped at cluster creation and need no
-port-forward. The last two do, and `./scripts/start-demo.sh` is what starts them
+port-forward. The rest do, and `./scripts/start-demo.sh` is what starts them
 — that script owns every forward this demo needs, and prints every URL in this
 table (plus the agent and tool ports the walkthrough does not open) at the end
-of its run.
+of its run. **Backstage was the one exception until M6 Task 4.** Task 1 shipped
+it reachable only by a manual `kubectl -n northstar-platform port-forward
+svc/backstage 7007:7007` (`scripts/setup-kind.sh`'s own stage-6 completion
+message said so in as many words), which is why this row could not be added
+until the script actually owned the forward — adding the row first would have
+been exactly the "See it yourself" table naming a surface the script could not
+reach, the class of drift the paragraph below exists to stop.
 
 `tests/unit/test_stage4_config.py` requires the two lists to agree **in both
 directions**, so a surface added to one and not the other reddens a test rather
@@ -2439,3 +2452,98 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
     unexercised set from the labels rather than hard-coding it, and separately
     checks that the two set-aside scorers *are* exercised by the compliant run
     — otherwise setting them aside would be hiding a scorer that never runs.
+
+11. **Finally, open Backstage — M6's part of the walkthrough, and the first
+    step in this list that is not about the money hop at all.** Run
+    `./scripts/start-demo.sh` (it forwards `svc/backstage` at 7007, gated on
+    stage 6's own presence — a cluster below stage 6 prints
+    `Backstage: SKIPPED` instead) and open http://localhost:7007. Unlike every
+    other surface in this table, this one asks for a login. Click **Enter**
+    under the Guest option — there is no username or password to type, and
+    that absence is itself the first thing worth noticing, not a rough edge to
+    look past (see "Known limitations" below).
+
+    - Open **Catalog** in the left nav. Nine `Component` entities are listed —
+      the eight this repo's own directory tree has (`agents/`, `apps/`,
+      `platform/`, `systems/`, `tools/`, each with its own `catalog-info.yaml`)
+      plus `backstage` itself, cataloguing its own plugin. This list is not
+      typed by hand anywhere, on either side: the live catalog is built from
+      the committed YAML files staged into the image, and
+      `tests/e2e/test_golden_path.py`'s own check of it is a directory walk
+      (`tests/unit/test_catalog_matches_the_tree.py`'s `_component_dirs`),
+      reused rather than reimplemented, so neither side of the comparison is a
+      list someone wrote down and forgot to update.
+    - Open **`settlement-agent`**'s component page and follow its **provides
+      API** relation to `settlement-agent-card`. Its `definition` field is a
+      written pointer to `contracts/agent-cards/settlement-agent.json`, not
+      the file's contents inlined — a `$text` placeholder was tried first and
+      does not work for a location this git-less (see
+      `docs/upstream-findings.md` Finding 15); the graph edge is real, the
+      file's contents are one click away, and this document does not pretend
+      the placeholder mechanism reached further than it did.
+    - Open **`northstar`** (the System) or search for **autonomy** to find the
+      contract card. It reads `assisted`/`assisted` for both identities on a
+      freshly built cluster — the contract ships refusing, and M6 does not
+      change that (M5-R8). This is a **read** of the live `FeatureFlag`
+      object, per identity, through `GET /api/autonomy-contract/status` — not
+      a static description of what the demo does.
+    - **Flip it, and watch a real settlement change without a redeploy.**
+      Submit `CLM-1842` at €6,200 on the Customer UI first (step 1 above) and
+      confirm it is `refused`, same as always. Then, on the card, flip the
+      variant to `autonomous` and submit the **identical** claim again: it
+      comes back `executed`, through the same `execute_payment` choke point,
+      under the same identity, with nothing else in the cluster touched — no
+      pod restarted, no image rebuilt. Flip it back to `assisted` afterward;
+      the demo's resting state is refusing, and leaving it flipped would be
+      the same mistake ruling M5-R8 already named for a `kubectl`-driven flip.
+      This is the identical claim `test_progressive_autonomy.py` proves for a
+      `kubectl patch` against the object, proven again here for Backstage's
+      own HTTP route — `tests/e2e/test_golden_path.py`'s own anti-vacuity
+      test, mutation-proved to fail if the card's write stops reaching the
+      object (task report has the quoted RED).
+    - In Jaeger, search service **`backstage`**, operation
+      **`northstar.autonomy_contract.change`**. One span per successful flip
+      through the card — not through `kubectl`, which never reaches this
+      code path at all. This is the durable half of design §4's auditability
+      claim: the object's own `metadata.managedFields` field-manager entry is
+      overwritten by the very next write, whichever tool makes it, so it
+      is a point-in-time fact rather than a history; this span is what
+      survives both the object being reverted and the pod being recycled.
+      `tests/e2e/test_golden_path.py::test_the_contract_change_span_lands_in_opensearch`
+      asserts it reaches OpenSearch too, the same standard M4-R6 already
+      holds `policy.decision` to.
+
+**Known limitations, stated plainly (design §10).** An audience of platform
+engineers will notice these; naming them first is better than letting them
+assume otherwise:
+
+- **Backstage here is unauthenticated.** The guest login above is real — it
+  is a genuine `POST /api/auth/guest/refresh` round trip, not a fake — but it
+  asks nothing of the caller. Anyone who can reach port 7007 can open the
+  catalog and flip the autonomy contract. That is acceptable for a laptop
+  demo cluster reached only through an explicit `kubectl port-forward` — there
+  is no Ingress, no LoadBalancer, no node port — and it would not be
+  acceptable anywhere else. What keeps this honest is the narrowness of the
+  one write the UI can make, not a login: `backstage-autonomy-writer` holds
+  `get`/`list`/`patch` on `resourceNames: [northstar-autonomy]` only, no
+  `delete`, separate from the read-only ServiceAccount the Kubernetes plugin
+  uses. Anyone reaching this port can flip the contract and nothing else —
+  and see "The write credential's real cost" in design §10 itself for the
+  sharper version of this trade, including the one this project did **not**
+  build: a separate Deployment fronting the write, so a Backstage compromise
+  yields the ability to *ask* rather than a credential to *keep*.
+- **No scaffolder demonstrated.** M1's own claim — "the rest is
+  implementation detail; a platform team could add a service in an afternoon
+  through the same API" — is only half shown here: the platform API exists
+  as a real object with a real UI, but nothing in this demo generates a new
+  agent from it. Backstage ships a scaffolder; this milestone does not wire
+  a template into it.
+- **The catalog is static.** It reflects the `catalog-info.yaml` files
+  committed to this repo and staged into the image at build time, not a
+  discovered repository — there is no git remote for Backstage's own
+  discovery processors to point at (see `docs/upstream-findings.md`
+  Finding 15 for the specific mechanism that does not reach a local file).
+  A component added to the tree without its own `catalog-info.yaml` does not
+  appear here until the image is rebuilt, and `tests/unit/
+  test_catalog_matches_the_tree.py` is what catches that drift before a demo
+  does.
