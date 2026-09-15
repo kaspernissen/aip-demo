@@ -30,7 +30,31 @@ backend:
 
 auth:
   providers:
-    guest: {}
+    # The in-cluster image runs under NODE_ENV=production (it is the
+    # `yarn build` output), and Backstage's guest provider refuses to issue a
+    # token outside development unless this flag is set:
+    #
+    #   POST /api/auth/guest/refresh -> 403
+    #   "The guest provider cannot be used outside of a development environment"
+    #
+    # So without it the catalog exists, the backend collates it, and nobody can
+    # see any of it -- which is the entire deliverable of this milestone.
+    #
+    # This is a deliberate, recorded choice, not a workaround. Design §10 already
+    # states the posture plainly: **Backstage here is unauthenticated, and anyone
+    # who can reach the port can lower the autonomy guardrail.** That is
+    # acceptable for a laptop demo cluster reached only through an explicit
+    # `kubectl port-forward` -- there is no Ingress, no LoadBalancer, and no node
+    # port -- and it is NOT acceptable anywhere else. The talk says this out loud
+    # rather than letting an audience assume otherwise.
+    #
+    # The thing that keeps this honest is the narrowness of what the UI can do,
+    # not the login: Task 3's contract card gets its own ServiceAccount limited
+    # to get/list/patch on `resourceNames: [northstar-autonomy]` with no delete,
+    # separate from the read-only ServiceAccount the Kubernetes plugin uses.
+    # Anyone reaching this port can flip the autonomy contract and nothing else.
+    guest:
+      dangerouslyAllowOutsideDevelopment: true
 
 catalog:
   # Overrides the default list locations from app-config.yaml, which are
