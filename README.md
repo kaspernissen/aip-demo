@@ -11,6 +11,63 @@ Built from open standards and existing open-source projects, not a proprietary
 
 ## Status
 
+**Running the demo?** Start at
+[`docs/demo-runbook.md`](docs/demo-runbook.md) — the operator's document:
+pre-flight, the beat-by-beat run with what to say at each one, every option
+available, the reset checklist, and live triage. This file is the reference;
+that one is the script.
+
+**M6 — Golden path.** The question this milestone answers is *"where is the
+platform API, and what does a human see of it?"* Stage 6 adds **Backstage**,
+in `northstar-platform`, built and pushed through
+`scripts/rebuild-and-deploy.sh` like every other component. The answer it
+gives is deliberately anticlimactic: **the platform API is the
+`northstar-autonomy` `FeatureFlag` M5 already shipped, and Backstage is a
+view onto it.** M6's own design (§1) records that M5's spec had already
+dropped Crossplane and Argo CD and reassigned the platform-API role to that
+resource — so a Crossplane `Agent` CRD composing Deployments that already
+work would have been a wrapper over working things. The **Autonomy contract**
+card (http://localhost:7007/autonomy-contract) is a *live read* of the object
+per identity through `GET /api/autonomy-contract/status`, and its one write
+— `POST /api/autonomy-contract/variant`, flipping `settlement-agent`'s
+targeting branch `assisted` ⇄ `autonomous` — goes through a **separate,
+deliberately narrow ServiceAccount**: `backstage-autonomy-writer` holds
+`get`/`list`/`patch` on `resourceNames: [northstar-autonomy]` and nothing
+else, no `delete`, no `create`, kept independently reviewable from the
+read-only ServiceAccount the Kubernetes plugin uses. `tests/e2e/
+test_golden_path.py` is the milestone's anti-vacuity proof: it flips the
+contract **over Backstage's own HTTP route** rather than `kubectl`, submits
+the identical €6,200 claim before and after, and asserts refused-then-executed
+— with an independent `kubectl get` witness, so the card's response agreeing
+with itself proves nothing. Every successful flip through the card emits a
+`northstar.autonomy_contract.change` span (service `backstage`), asserted to
+reach OpenSearch as well as Jaeger; that span is the **durable** half of the
+audit claim, because the object's own `managedFields` entry is overwritten by
+the very next write, whichever tool makes it, and is a point-in-time fact
+rather than a history. The catalog is **nine `Component` entities**, and
+neither side of the check that asserts it is a hand-written list — the live
+catalog is built from the committed `catalog-info.yaml` files staged into the
+image, and the test's expectation is a directory walk. Measured pod and
+memory figures are in the Stages table's row 6 below and are not repeated
+here.
+
+**What M6 deliberately does not do, and says out loud on stage.** Three, all
+in the design's §10 and in `docs/architecture.md`'s "Known limitations":
+**Backstage here is unauthenticated** — the guest login is a real
+`POST /api/auth/guest/refresh` round trip that asks nothing of the caller, so
+anyone who can reach port 7007 can flip the contract; what keeps that honest
+is the narrowness of the one write, not a login, and the sharper trade this
+project did *not* make (a separate Deployment fronting the write, so a
+Backstage compromise yields the ability to *ask* rather than a credential to
+*keep*) is written down as such. **No scaffolder is demonstrated**, so M1's
+own claim — "the rest is implementation detail; a platform team could add a
+service in an afternoon through the same API" — is honestly **half** shown:
+the platform API exists as a real object with a real UI, and nothing here
+generates a new agent from it. And **the catalog is static**, because there
+is no git remote for Backstage's discovery processors to point at (see
+`docs/upstream-findings.md` Finding 15 for the specific mechanism that does
+not reach a local file).
+
 **M5 — Progressive autonomy.** The question this milestone answers is *"can
 one live value change what the platform is allowed to do, with nothing else
 touched?"* Stage 5 adds cert-manager, the Open Feature Operator (OFO) and
@@ -184,9 +241,28 @@ cp .env.template .env
 # three DASH0_* siblings are optional — see the comments in .env.template for
 # exactly which variables are required.
 
-./scripts/setup-kind.sh --stage 5
+./scripts/setup-kind.sh --stage 6
 ./scripts/smoke-test.sh
 ```
+
+**`--stage 6` as of M6.** Stage 6 is the complete demo; every lower stage
+exists to isolate one idea for a shorter talk, and
+[`docs/demo-runbook.md`](docs/demo-runbook.md) §3 has the table that says
+which stage to pick for which audience. Stages 4, 5 and 6 all run on **stage
+3's cluster config unchanged**, so climbing 3 → 4 → 5 → 6 needs no cluster
+recreate; only 1 → 2 does, because `networking.disableDefaultCNI` is a
+create-time kind flag.
+
+**Carried to M7, recorded rather than fixed here:**
+`tests/unit/test_stage2_cilium_config.py::test_no_operator_facing_instruction_still_points_at_an_older_stage`
+still has `CURRENT_STAGE = 5`. M6 shipped stage 6 without raising it, so the
+guard that exists to catch exactly this line did not catch it — the **fifth**
+recurrence of this class, and the first one the guard slept through rather
+than caught. Raising the constant is a `GATE_PATHS` change (it reddens every
+remaining `--stage 5` instruction across `scripts/*.sh`, README and the
+telemetry contract), so it is not being slipped into a documentation pass
+that would silently turn M6's **measured** gate row into a predicted one.
+It is M7's first task.
 
 **`--stage 4`, not `--stage 3`, as of M4 Task 1.** Same defect one stage later,
 and the third time this class has recurred here. It said `--stage 2` for the
@@ -283,10 +359,16 @@ Then open:
 | Jaeger | http://localhost:16686 |
 | OpenSearch Dashboards — the evidence view (stage 4) | http://localhost:5601 |
 | Prometheus (stage 4) | http://localhost:9090 |
+| Backstage — the catalog and the autonomy card (stage 6) | http://localhost:7007 |
 
-The first three are kind host ports and need nothing else running. The last two
-are port-forwards `./scripts/start-demo.sh` owns; `setup-kind.sh` says so at the
-end of a stage-4 run. (This table listed only the first three, and called the
+The first three are kind host ports and need nothing else running. The last
+three are port-forwards `./scripts/start-demo.sh` owns; `setup-kind.sh` says so
+at the end of a stage-4 run. (The Backstage row was added by M6 Task 4, which
+is also when `start-demo.sh` took ownership of that forward — until then stage
+6 shipped reachable only by a `kubectl port-forward` the operator ran by hand,
+so adding the row earlier would have named a surface the script could not
+reach. `docs/architecture.md`'s equivalent table is the one a guard checks
+against `start-demo.sh`'s own `#surface` lines, in both directions.) (This table listed only the first three, and called the
 reviewer UI "stage 3 **only**", until M4's final review — `setup-kind.sh` gates
 that UI on `-ge 3` and carries a comment recording that this exact wording was
 corrected *there* in M4 Task 1. The README copy was missed, which is the
@@ -515,6 +597,7 @@ report the gaps we find. See [`docs/telemetry-contract.md`](docs/telemetry-contr
 
 ## Documentation
 
+- [`docs/demo-runbook.md`](docs/demo-runbook.md) — **the operator's document.** How the demo is brought up, the beat-by-beat run with what to say at each beat, every option available (which stage for which talk length, the environment switches, the three ways to flip the contract), the reset checklist between runs, and live triage. It deliberately prints almost no figures — it gives the command that produces each one live, because this repo's standing rule is *derive figures; never retype them*, and a number read on stage should have come off the cluster in front of the audience
 - [`docs/architecture.md`](docs/architecture.md) — components, hops, protocols, and the trace, walked end to end
 - [`docs/telemetry-contract.md`](docs/telemetry-contract.md) — verified instrumentation and convention gaps
 - [`docs/upstream-findings.md`](docs/upstream-findings.md) — **fourteen** consolidated, filing-ready findings against `a2a-sdk`, FastMCP, `mcp`, `pydantic-ai-slim`, agentgateway v1.5.0, the OpenTelemetry Python/Go pair, and the `open-feature` Python packages, **none of them filed**: **thirteen** still open (one of those already fixed upstream but not adoptable here — Finding 7's HTTP-attribute half, merged but not yet released) and one closed on discovery. M5 added Findings 13 and 14: `openfeature-hooks-opentelemetry`'s `TracingHook` disagrees with its own sibling `openfeature-sdk` on which OTel signal carries a flag evaluation and on every shared attribute's spelling (13), and never emits two attributes it declares constants for, though the sibling package's own unused utility already reads them (14). M4 added Finding 12, whose principal subject is `pydantic-ai-slim`. (This sentence read "eleven … ten still open" and omitted `pydantic-ai-slim` until M4's final review. It is the **second** time this exact line has gone stale against the file it counts — the M3 correction is quoted immediately below — which is why the fix this time is to name the milestone that adds each finding, and why `docs/upstream-findings.md`'s own header carries the count a reader should trust.) M2.2 added three, all about agentgateway's ExtMCP policy hook. **M3 added one finding and one measurement.** The finding is Finding 11: `opentelemetry-sdk` 1.44.0 emits a W3C Trace Context **Level 2** flag byte (`-03`) that `go.opentelemetry.io/otel` v1.41.0 rejects outright, so the hop silently starts a second trace rather than failing — found while fixing it, proved with a one-hex-digit A/B control, and upstream's fix (otel-go v1.42.0, PR #7834) has since been taken: `payments-api` is on otel-go v1.46.0 and `otelhttp v0.71.0`, built on `golang:1.27.1-alpine`, with `go.mod` declaring `go 1.25.0` and pinning `toolchain go1.27.1`. The measurement is OQ-U1, "can a JSON-RPC *batch* smuggle a `tools/call` past the gateway's policy hook", now closed: it cannot, on this transport — agentgateway v1.5.0 rejects the batch at deserialization with HTTP 400 and no decision span is ever created. Nothing to file there, because failing closed is the right direction
