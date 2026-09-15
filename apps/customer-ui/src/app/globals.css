@@ -1,0 +1,369 @@
+/* Northstar Insurance — the claimant-facing portal.
+ *
+ * One institutional identity shared with apps/reviewer-ui (whose own styles
+ * mirror these tokens by hand, since that service deliberately ships no
+ * frontend toolchain -- see apps/reviewer-ui/render.py's header and the M3
+ * design spec §3). If a token changes here, change it there too.
+ *
+ * ON THE DETERMINATION COLOURS. A refusal is rendered in OCHRE, never red.
+ * This is the demo's central sentence made visual: a refused payment is the
+ * platform working, not an error, and the `policy.decision` span is
+ * deliberately not ERROR for exactly the same reason. Red is reserved for a
+ * genuine fault -- the model call failing, the agent unreachable -- where
+ * something really did go wrong.
+ */
+
+:root {
+  /* blue and white, the corporate register */
+  --navy-900: #0a2342;
+  --navy-800: #0e2c52;
+  --navy-700: #123963;
+  --blue-600: #1b5fa8;
+  --blue-500: #2b74c0;
+  --blue-300: #8fb8dd;
+  --blue-200: #c9ddf0;
+  --blue-100: #dfebf7;
+  --blue-050: #eff4fa;
+  --paper: #ffffff;
+
+  --ink: #0e1f33;
+  --ink-soft: #4c637e;
+  --ink-faint: #7a8ea6;
+  --rule: #d7e3f0;
+
+  /* determinations — see the header note */
+  --refused: #8a5a00;
+  --refused-bg: #fdf4e3;
+  --executed: #0f6b4f;
+  --executed-bg: #e8f5ef;
+  --fault: #a32a22;
+  --fault-bg: #fbeceb;
+
+  --shadow-panel: 0 1px 2px rgba(10, 35, 66, 0.06),
+                  0 12px 32px -18px rgba(10, 35, 66, 0.35);
+
+  --serif: Spectral, Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html { color-scheme: light; }
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--blue-050);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── masthead ─────────────────────────────────────────────── */
+
+.masthead {
+  background: var(--navy-900);
+  color: #fff;
+  border-bottom: 3px solid var(--blue-600);
+}
+.masthead-inner {
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.mark { flex: none; display: block; }
+.wordmark {
+  font-family: var(--serif);
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: .01em;
+  line-height: 1.1;
+}
+.wordmark span {
+  display: block;
+  font-family: var(--sans);
+  font-size: .6875rem;
+  font-weight: 500;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--blue-300);
+  margin-top: 2px;
+}
+.masthead-meta {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: .75rem;
+  letter-spacing: .04em;
+  color: var(--blue-300);
+  text-align: right;
+}
+
+/* ── page shell ───────────────────────────────────────────── */
+
+.shell {
+  max-width: 940px;
+  margin: 0 auto;
+  padding-inline: 24px;
+  padding-block: 34px 60px;
+}
+
+.intro { margin-bottom: 26px; }
+.intro h1 {
+  font-family: var(--serif);
+  font-size: 2.1rem;
+  font-weight: 600;
+  line-height: 1.15;
+  margin: 0;
+  color: var(--navy-900);
+  text-wrap: balance;
+}
+.intro p {
+  margin: 8px 0 0;
+  max-width: 58ch;
+  color: var(--ink-soft);
+}
+
+/* ── the document panel ───────────────────────────────────── */
+
+.panel {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+.panel + .panel { margin-top: 22px; }
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 24px;
+  background: var(--blue-050);
+  border-bottom: 1px solid var(--rule);
+}
+.panel-head h2 {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: .8125rem;
+  font-weight: 600;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  color: var(--navy-700);
+}
+.panel-head .ref {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: .75rem;
+  color: var(--ink-faint);
+  letter-spacing: .04em;
+}
+
+.panel-body { padding: 24px; }
+
+/* ── the claim form ───────────────────────────────────────── */
+
+.fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 22px;
+}
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field.wide { grid-column: 1 / -1; }
+
+.field > span {
+  font-size: .6875rem;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.field input,
+.field textarea {
+  font-family: var(--mono);
+  font-size: .9375rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--blue-200);
+  border-radius: 3px;
+  padding: 10px 12px;
+  width: 100%;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+.field textarea {
+  font-family: var(--sans);
+  min-height: 74px;
+  resize: vertical;
+  line-height: 1.5;
+}
+/* a stated fact, not an editable one — same metrics as an input so the row
+   keeps its baseline, but flat and unbordered so it never reads as a control */
+.field .static {
+  font-family: var(--mono);
+  font-size: .9375rem;
+  color: var(--ink-soft);
+  background: var(--blue-050);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 10px 12px;
+}
+
+.field input:hover,
+.field textarea:hover { border-color: var(--blue-300); }
+.field input:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--blue-600);
+  box-shadow: 0 0 0 3px var(--blue-100);
+}
+
+/* the amount reads as money, not as a quantity */
+.field.amount { position: relative; }
+.field.amount input {
+  padding-left: 30px;
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+}
+.field.amount .currency {
+  position: absolute;
+  left: 12px;
+  bottom: 11px;
+  font-family: var(--mono);
+  font-size: 1rem;
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+/* the spinners fight the tabular alignment and invite the stray click that
+   changes a settlement amount mid-demo */
+.field.amount input::-webkit-outer-spin-button,
+.field.amount input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.field.amount input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+}
+.actions .fineprint {
+  font-size: .8125rem;
+  color: var(--ink-faint);
+  max-width: 44ch;
+}
+
+button[type=submit] {
+  font-family: var(--sans);
+  font-size: .9375rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: #fff;
+  background: var(--blue-600);
+  border: 1px solid var(--blue-600);
+  border-radius: 3px;
+  padding: 11px 26px;
+  cursor: pointer;
+  transition: background .12s ease, box-shadow .12s ease;
+}
+button[type=submit]:hover:not(:disabled) { background: var(--navy-700); border-color: var(--navy-700); }
+button[type=submit]:focus-visible { outline: 3px solid var(--blue-200); outline-offset: 2px; }
+button[type=submit]:disabled { background: var(--blue-300); border-color: var(--blue-300); cursor: progress; }
+
+/* ── progress + determination ─────────────────────────────── */
+
+pre {
+  font-family: var(--mono);
+  font-size: .8125rem;
+  line-height: 1.7;
+  margin: 0;
+  padding: 16px 18px;
+  background: var(--navy-900);
+  color: #dbe7f4;
+  border-radius: 3px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+pre:empty::before {
+  content: "Nothing submitted yet.";
+  color: var(--blue-300);
+  font-style: italic;
+}
+
+/* the determination banner — an insurer writing back, not a toast */
+.determination {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 20px;
+  border-radius: 3px;
+  border: 1px solid;
+  margin-bottom: 18px;
+  animation: rise .22s ease-out both;
+}
+.determination .status {
+  font-family: var(--sans);
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  padding-top: 1px;
+}
+.determination .detail { font-size: .9375rem; line-height: 1.55; }
+.determination .detail strong { font-weight: 600; }
+.determination .figure { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.determination.is-refused  { border-color: #e6cf9e; background: var(--refused-bg); color: #5f3f04; }
+.determination.is-refused .status { color: var(--refused); }
+.determination.is-executed { border-color: #b3ddcc; background: var(--executed-bg); color: #0b4c38; }
+.determination.is-executed .status { color: var(--executed); }
+.determination.is-other    { border-color: var(--blue-200); background: var(--blue-050); color: var(--navy-700); }
+.determination.is-other .status { color: var(--blue-600); }
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.panel-body > h2 {
+  font-family: var(--sans);
+  font-size: .6875rem;
+  font-weight: 600;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 0 0 8px;
+}
+
+.footnote {
+  margin: 22px 0 0;
+  font-size: .8125rem;
+  color: var(--ink-faint);
+  max-width: 62ch;
+}
+
+/* ── responsive ───────────────────────────────────────────── */
+
+@media (max-width: 620px) {
+  .fields { grid-template-columns: 1fr; }
+  .intro h1 { font-size: 1.65rem; }
+  .masthead-meta { display: none; }
+  .shell { padding-inline: 16px; }
+  .panel-head, .panel-body { padding-inline: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

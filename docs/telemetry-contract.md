@@ -320,13 +320,38 @@ same reason `test_progressive_autonomy.py` was never one of the three
 either) — **3 of the 13 launch a browser** and **10 of the 13 start no
 browser**.
 
-Gate row: **MEASURED** — this branch's gate run was at commit `6588570`,
+Gate row: **PREDICTED, NOT MEASURED** — the run below was real, and it no
+longer describes this tree. The gate run was at commit `6588570`,
 `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh`, run by the orchestrator,
 exit **0**: `429 passed, 1 xfailed`, in 597.91s (9m57s), with **zero skips**
 (`grep -c SKIPPED` over the run's full output returns 0 — `RUN_BROWSER_TESTS=1`
 ungates all 75 gated tests, so the gate really does execute the whole of
 `tests/`). 429 + 1 xfailed = the full 430-test collection derived above, so the
-measured figure equals the one this block predicts.
+measured figure equalled the one this block predicts.
+
+**What demoted it, 2026-09-15.** A visual pass over the two demo surfaces —
+`apps/customer-ui` (restyled, plus a real input defect fixed: the amount field
+held a `number`, so clearing it made `Number("") === 0` and the controlled
+input could never be emptied, turning a hand-typed `5800` into `05800`) and
+`apps/reviewer-ui/render.py` (the same institutional identity, hand-mirrored
+because that service ships no frontend toolchain). Four files under `apps/`,
+which is a `GATE_PATHS` entry. **No test count changed** — the collection is
+still 430, `tests/unit` still 260, reviewer-ui's own suite still 56 — so this
+block's arithmetic is untouched; what is untouched and what is *measured* are
+different claims, and this row makes the smaller one.
+
+What has to happen before this reads MEASURED again: one
+`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` against the rebuilt images. The
+three browser-driving suites (`test_browser_root_span.py`,
+`test_policy_denial.py`, `test_supervised.py`) are the ones with standing in
+this change — they address the restyled markup by
+`input >> nth=0`, `input[type=number]`, `button[type=submit]`,
+`h2:text-is('Outcome') + pre`, `form[action="/review/…"]`,
+`input[name="reviewer_id"]` and `button.approve`. Every one of those was
+preserved deliberately and checked against the built output, and the
+`h2 + pre` adjacency was proved by rendering the real component with a stubbed
+result through `scripts/mutate-guard.sh`; none of that is the same as the gate
+having run.
 
 **This run is the first in the series to also execute the Backstage jest
 suites.** The whole-branch review's Critical finding was that all six of M6's

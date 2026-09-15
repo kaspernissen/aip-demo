@@ -26,46 +26,158 @@ from dataclasses import dataclass
 from html import escape
 from typing import Any
 
+# The internal register of the same institutional identity apps/customer-ui
+# wears -- navy and white, Spectral for display, IBM Plex Sans and Mono for
+# everything else. The tokens are mirrored by hand from
+# apps/customer-ui/src/app/globals.css because this service deliberately ships
+# no frontend toolchain (M3 design spec §3); if one moves, move the other.
+#
+# TWO STRINGS THIS STYLESHEET MAY NOT CONTAIN, both asserted by
+# tests/test_render.py against pages this CSS is inlined into:
+#
+#   "executed" -- test_result_page_for_a_rejection_records_no_execution
+#                 asserts the substring is absent from the WHOLE rejection
+#                 page, and the stylesheet ships inside it. The settled state
+#                 is therefore `.is-settled`, never `.executed`.
+#   "PAY-"     -- test_list_page_says_so_when_there_is_nothing_to_review
+#                 asserts it is absent from the empty list page, so no
+#                 placeholder or example reference may appear here.
+#
+# Fonts come from Google Fonts with a real fallback behind each family, and
+# `display=swap` means a reviewer on a venue network with no egress loses the
+# typography and nothing else.
+_FONTS = (
+    '<link rel="preconnect" href="https://fonts.googleapis.com">'
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
+    "family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700"
+    '&family=Spectral:wght@500;600&display=swap">'
+)
+
 _STYLE = """
 <style>
-  body { font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 20px;
-         line-height: 1.5; max-width: 900px; margin: 2rem auto; padding: 0 1rem;
-         background: #0b0f14; color: #e6edf3; }
-  h1 { font-size: 2rem; }
-  .card { border: 1px solid #30363d; border-radius: 8px; padding: 1.25rem 1.5rem;
-          margin-bottom: 1.5rem; background: #161b22; }
-  .figure { font-family: ui-monospace, Menlo, monospace; font-size: 1.1em; }
-  .label { color: #8b949e; text-transform: uppercase; font-size: 0.75em;
-            letter-spacing: 0.05em; }
-  .decision { display: flex; gap: 0.75rem; margin-top: 1rem; }
-  button { font-size: 1.1rem; padding: 0.6rem 1.4rem; border-radius: 6px;
-           border: 1px solid #30363d; cursor: pointer; }
-  button.approve { background: #238636; color: white; }
-  button.reject { background: #da3633; color: white; }
-  input[type=text] { font-size: 1.1rem; padding: 0.4rem 0.6rem; border-radius: 6px;
-                      border: 1px solid #30363d; background: #0d1117; color: #e6edf3; }
-  .narrative { border-left: 3px solid #8b949e; padding-left: 1rem; font-style: italic;
-               color: #c9d1d9; }
-  .error { color: #f85149; font-weight: bold; }
-  .ok { color: #3fb950; font-weight: bold; }
-  a { color: #58a6ff; }
+  :root {
+    --navy-900:#0a2342; --navy-700:#123963; --blue-600:#1b5fa8; --blue-300:#8fb8dd;
+    --blue-200:#c9ddf0; --blue-100:#dfebf7; --blue-050:#eff4fa; --paper:#fff;
+    --ink:#0e1f33; --ink-soft:#4c637e; --ink-faint:#7a8ea6; --rule:#d7e3f0;
+    --refused:#8a5a00; --settled:#0f6b4f; --fault:#a32a22;
+    --serif:Spectral,Georgia,"Times New Roman",serif;
+    --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html{color-scheme:light}
+  body{margin:0;padding:0;background:var(--blue-050);color:var(--ink);
+       font-family:var(--sans);font-size:16px;line-height:1.6;
+       -webkit-font-smoothing:antialiased}
+
+  .masthead{background:var(--navy-900);color:#fff;border-bottom:3px solid var(--blue-600)}
+  .masthead-inner{max-width:900px;margin:0 auto;padding:16px 24px;display:flex;
+                  align-items:center;gap:14px}
+  .wordmark{font-family:var(--serif);font-size:1.25rem;font-weight:600;line-height:1.1}
+  .wordmark span{display:block;font-family:var(--sans);font-size:.6875rem;font-weight:500;
+                 letter-spacing:.16em;text-transform:uppercase;color:var(--blue-300);
+                 margin-top:2px}
+  .console{margin-left:auto;font-family:var(--mono);font-size:.75rem;letter-spacing:.04em;
+           color:var(--blue-300);text-align:right}
+
+  .shell{max-width:900px;margin:0 auto;padding:30px 24px 60px}
+  h1{font-family:var(--serif);font-size:1.9rem;font-weight:600;color:var(--navy-900);
+     margin:0 0 22px;text-wrap:balance}
+
+  .card{background:var(--paper);border:1px solid var(--rule);border-left:4px solid var(--refused);
+        border-radius:4px;padding:20px 24px;margin-bottom:18px;
+        box-shadow:0 1px 2px rgba(10,35,66,.06),0 12px 32px -20px rgba(10,35,66,.32)}
+  .card p{margin:0 0 10px}
+  .card p:last-of-type{margin-bottom:0}
+
+  .figure{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--navy-700);
+          letter-spacing:.01em}
+  .label{display:inline-block;color:var(--ink-soft);text-transform:uppercase;
+         font-size:.6875rem;font-weight:600;letter-spacing:.1em;margin-right:4px}
+
+  .narrative{border-left:2px solid var(--blue-200);background:var(--blue-050);
+             padding:12px 16px;font-style:italic;color:var(--navy-700);border-radius:0 3px 3px 0}
+
+  form{margin-top:18px;padding-top:16px;border-top:1px solid var(--rule)}
+  label{font-size:.6875rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+        color:var(--ink-soft);display:block}
+  input[type=text]{display:block;margin-top:6px;font-family:var(--mono);font-size:.9375rem;
+                   padding:9px 12px;border-radius:3px;border:1px solid var(--blue-200);
+                   background:var(--paper);color:var(--ink);min-width:260px;max-width:100%}
+  input[type=text]:focus{outline:none;border-color:var(--blue-600);
+                         box-shadow:0 0 0 3px var(--blue-100)}
+
+  .decision{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+  button{font-family:var(--sans);font-size:.9375rem;font-weight:600;letter-spacing:.02em;
+         padding:10px 24px;border-radius:3px;border:1px solid;cursor:pointer;
+         transition:background .12s ease}
+  button.approve{background:var(--blue-600);border-color:var(--blue-600);color:#fff}
+  button.approve:hover{background:var(--navy-700);border-color:var(--navy-700)}
+  button.reject{background:var(--paper);border-color:var(--blue-200);color:var(--navy-700)}
+  button.reject:hover{border-color:var(--blue-300);background:var(--blue-050)}
+  button:focus-visible{outline:3px solid var(--blue-200);outline-offset:2px}
+
+  .verdict{background:var(--paper);border:1px solid var(--rule);border-left:4px solid var(--blue-600);
+           border-radius:4px;padding:20px 24px;margin-bottom:18px}
+  .verdict.is-settled{border-left-color:var(--settled)}
+  .verdict.is-fault{border-left-color:var(--fault)}
+  .ok{color:var(--settled);font-weight:600;font-size:1.05rem}
+  .error{color:var(--fault);font-weight:600}
+  .empty{color:var(--ink-soft);background:var(--paper);border:1px dashed var(--blue-200);
+         border-radius:4px;padding:26px 24px;text-align:center}
+
+  a{color:var(--blue-600)}
+  .back{margin-top:26px;font-size:.9375rem}
+
+  @media (max-width:560px){
+    .console{display:none}
+    .shell{padding-inline:16px}
+    .card,.verdict{padding-inline:16px}
+  }
 </style>
 """
 
+_MARK = (
+    '<svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true" '
+    'style="flex:none;display:block">'
+    '<path d="M16 0.5 L18.4 13.6 L31.5 16 L18.4 18.4 L16 31.5 L13.6 18.4 '
+    'L0.5 16 L13.6 13.6 Z" fill="#ffffff"/>'
+    '<path d="M16 6.2 L17.3 14.7 L25.8 16 L17.3 17.3 L16 25.8 L14.7 17.3 '
+    'L6.2 16 L14.7 14.7 Z" fill="#2b74c0"/>'
+    "</svg>"
+)
+
+_MASTHEAD = (
+    '<header class="masthead"><div class="masthead-inner">'
+    f"{_MARK}"
+    '<div class="wordmark">Northstar<span>Insurance</span></div>'
+    '<div class="console">Settlement review<br>Internal console</div>'
+    "</div></header>"
+)
+
 
 def _page(title: str, body: str) -> str:
+    # The <h1> carries the title as VISIBLE text, not only the <title> tag:
+    # tests/e2e/test_supervised.py waits on `text=Review recorded`, and
+    # Playwright's text engine matches rendered text, which <title> is not.
     return (
-        "<!doctype html><html><head><meta charset=\"utf-8\">"
-        f"<title>{escape(title)}</title>{_STYLE}</head>"
-        f"<body><h1>{escape(title)}</h1>{body}"
-        '<p><a href="/">&larr; Back to refused payments</a></p>'
-        "</body></html>"
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f"<title>{escape(title)}</title>{_FONTS}{_STYLE}</head>"
+        f"<body>{_MASTHEAD}<main class=\"shell\"><h1>{escape(title)}</h1>{body}"
+        '<p class="back"><a href="/">&larr; Back to refused payments</a></p>'
+        "</main></body></html>"
     )
 
 
 def _payment_card(payment: dict[str, Any]) -> str:
     refusal = payment.get("refusal") or {}
     payment_id = str(payment.get("paymentId", ""))
+    # The attribution ("told the claimant") must stay within 200 characters
+    # BEFORE the narrative text -- tests/test_render.py's
+    # test_the_narrative_is_attributed_to_the_agent_not_stated_as_fact reads
+    # that window. Do not push markup between the two.
     return f"""
 <div class="card">
   <p><span class="label">Claim</span> <span class="figure">{escape(str(payment.get("claimId", "")))}</span>
@@ -92,7 +204,10 @@ def _payment_card(payment: dict[str, Any]) -> str:
 
 def list_page(payments: list[dict[str, Any]]) -> str:
     if not payments:
-        body = "<p>There are no refused payments awaiting review.</p>"
+        # No example reference may appear here, not even as a placeholder:
+        # test_list_page_says_so_when_there_is_nothing_to_review asserts the
+        # string "PAY-" is absent from this whole page.
+        body = '<p class="empty">There are no refused payments awaiting review.</p>'
     else:
         body = "".join(_payment_card(p) for p in payments)
     return _page("Refused payments", body)
@@ -121,7 +236,13 @@ def result_page(outcome: ResultView) -> str:
     reviewer = escape(outcome.reviewer_id)
     payment_id = escape(outcome.payment_id)
 
+    # The tone class on the wrapper is the ONLY styling difference between
+    # these three, and the rejection branch deliberately takes the neutral one:
+    # test_result_page_for_a_rejection_records_no_execution asserts the
+    # substring "executed" appears nowhere on that page, so the settled state's
+    # class is `is-settled`.
     if outcome.decision == "reject":
+        tone = "verdict"
         body = (
             f'<p class="ok">Rejected by {reviewer}.</p>'
             f"<p>Payment <span class=\"figure\">{payment_id}</span>: no execution "
@@ -129,6 +250,7 @@ def result_page(outcome: ResultView) -> str:
         )
     elif outcome.executed is not None:
         executed = outcome.executed
+        tone = "verdict is-settled"
         body = (
             f'<p class="ok">Approved by {reviewer}.</p>'
             f"<p>Payment <span class=\"figure\">{escape(str(executed.get('paymentId', '')))}</span> "
@@ -137,6 +259,7 @@ def result_page(outcome: ResultView) -> str:
             f"{escape(str(executed.get('currency', '')))}</span>.</p>"
         )
     else:
+        tone = "verdict is-fault"
         body = (
             f"<p>Approved by {reviewer}, but the execution did not happen.</p>"
             f'<p class="error">Payment <span class="figure">{payment_id}</span> '
@@ -144,4 +267,4 @@ def result_page(outcome: ResultView) -> str:
         )
 
     body += f'<p><span class="label">Elapsed since refusal</span> {outcome.elapsed_ms} ms</p>'
-    return _page("Review recorded", body)
+    return _page("Review recorded", f'<div class="{tone}">{body}</div>')
