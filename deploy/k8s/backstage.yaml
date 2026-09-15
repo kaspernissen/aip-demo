@@ -79,7 +79,26 @@ rules:
       - resourcequotas
       - events
       - replicationcontrollers
+      - namespaces
     verbs: ["get", "list", "watch"]
+  # Pod logs, the second under-grant found the same way as `resourcequotas`
+  # above -- by a human opening the page:
+  #
+  #   Proxy request failed with 403 Forbidden ... pods "claims-agent-..." is
+  #   forbidden: User "system:serviceaccount:northstar-platform:backstage"
+  #   cannot get resource "pods/log" in API group "" in the namespace
+  #   "northstar-agents"
+  #
+  # `pods/log` is a SUBRESOURCE: granting `pods` does not grant it, which is
+  # exactly why it was missed. Its own rule, `get` only -- a log is read by
+  # fetching it, never listed or watched through RBAC.
+  #
+  # Reading logs is the thing that makes a catalog feel like an operable
+  # platform rather than an inventory, and it is still strictly read-only.
+  - apiGroups: [""]
+    resources:
+      - pods/log
+    verbs: ["get"]
   - apiGroups: ["apps"]
     resources:
       - deployments
