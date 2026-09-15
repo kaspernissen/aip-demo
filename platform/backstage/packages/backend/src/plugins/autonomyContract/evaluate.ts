@@ -20,11 +20,34 @@
  * cannot drift from the PDS's real answer without saying so; a permissive one
  * could silently show a level flagd would not actually resolve.
  *
- * Fails CLOSED on anything it cannot parse: an absent or DISABLED flag
- * resolves to `defaultVariant` (mirroring flagd's own fail-closed default,
- * ruling M5-R8), and a targeting block that is present but not in the one
- * shape above throws rather than returning a guess.
+ * Fails CLOSED on anything it cannot parse: an absent targeting block
+ * resolves to `defaultVariant` (there is no rule to consult, so this is what
+ * flagd itself would resolve too). A DISABLED flag does NOT fall back to
+ * `defaultVariant` -- see RESTRICTIVE_LEVEL below, and the M6 task-3 review's
+ * M4(a) finding, which is why that used to be wrong. A targeting block that
+ * is present but not in the one shape above throws rather than returning a
+ * guess, and so does a targeting branch naming a variant `variants` does not
+ * declare (M4(b)).
  */
+
+/**
+ * The Policy Decision Service's own hardcoded fail-closed constant --
+ * `RESTRICTIVE_LEVEL` in `platform/policy-decision-service/pds/autonomy.py`,
+ * passed as the OpenFeature client's caller-supplied default and forced when
+ * resolution errors. Reproduced here rather than imported: different
+ * runtime (Python vs this Node plugin), same reason the SPIFFE literals in
+ * `router.ts` are reproduced rather than imported.
+ *
+ * M6 task-3 review, M4(a): flagd treats a DISABLED flag as `FLAG_NOT_FOUND`
+ * -- an error, not `defaultVariant`. The OpenFeature SDK then falls back to
+ * the CALLER's own default, which for the PDS is this constant, not
+ * whatever `defaultVariant` happens to say on the flag. A card that echoed
+ * `defaultVariant` for a DISABLED flag could show `autonomous` while the PDS
+ * enforces `assisted` -- a lying UI in the permissive direction. So this
+ * reader shows the PDS's real fallback here, not the flag's own
+ * `defaultVariant`.
+ */
+export const RESTRICTIVE_LEVEL = 'assisted';
 
 export class UnsupportedTargetingShapeError extends Error {
   constructor(reason: string) {
@@ -49,8 +72,15 @@ export interface ResolvedLevel {
   /** The variant string this identity resolves to right now. */
   level: string;
   /** Which part of the flag produced it -- for the card's own display, and
-   * for tests to pin without re-deriving the targeting shape. */
-  branch: 'targeting-then' | 'targeting-else' | 'default-variant';
+   * for tests to pin without re-deriving the targeting shape.
+   * `flag-disabled` is deliberately distinct from `default-variant`: it
+   * means "the PDS's restrictive fallback, because flagd would error here",
+   * not "this flag's own configured default". */
+  branch:
+    | 'targeting-then'
+    | 'targeting-else'
+    | 'default-variant'
+    | 'flag-disabled';
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -130,9 +160,13 @@ export function resolveAutonomyLevel(
   }
 
   if (flagSpec.state !== 'ENABLED') {
-    // Fail closed, mirroring flagd's own DISABLED behaviour: no targeting is
-    // ever consulted for a disabled flag.
-    return { level: defaultVariant, branch: 'default-variant' };
+    // M4(a): flagd errors (FLAG_NOT_FOUND) on a DISABLED flag; it does NOT
+    // resolve to defaultVariant. The PDS's OpenFeature client then falls
+    // back to ITS OWN caller-supplied default (RESTRICTIVE_LEVEL), never
+    // this flag's defaultVariant -- so reporting defaultVariant here could
+    // show a level the PDS would never actually enforce. Report the
+    // restrictive constant under a branch label that says exactly that.
+    return { level: RESTRICTIVE_LEVEL, branch: 'flag-disabled' };
   }
 
   if (flagSpec.targeting === undefined || flagSpec.targeting === null) {
@@ -143,8 +177,35 @@ export function resolveAutonomyLevel(
     flagSpec.targeting,
   );
 
-  if (callerIds.includes(spiffeId)) {
-    return { level: thenVariant, branch: 'targeting-then' };
+  const variants = flagSpec.variants;
+  if (!isPlainObject(variants)) {
+    throw new UnsupportedTargetingShapeError(
+      'variants is missing or not an object -- cannot confirm the ' +
+        'targeting branches name real variants',
+    );
   }
-  return { level: elseVariant, branch: 'targeting-else' };
+
+  const level = callerIds.includes(spiffeId) ? thenVariant : elseVariant;
+  const branch: 'targeting-then' | 'targeting-else' = callerIds.includes(
+    spiffeId,
+  )
+    ? 'targeting-then'
+    : 'targeting-else';
+
+  // M4(b): this reader used to return the targeting branch's variant NAME
+  // verbatim, never checking it against `variants`. flagd looks that name
+  // up and errors (and the PDS then denies) if it is not a declared
+  // variant -- a renamed/typo'd branch would make flagd/the PDS refuse
+  // while this card displayed the bogus name as if it were a real level.
+  const resolved = variants[level];
+  if (typeof resolved !== 'string') {
+    throw new UnsupportedTargetingShapeError(
+      `the ${branch} branch names variant "${level}", which is not one of ` +
+        'the flag\'s declared `variants` -- flagd would error resolving ' +
+        'this (and the PDS would then deny), so this reader refuses to ' +
+        'display it as a level rather than guess',
+    );
+  }
+
+  return { level: resolved, branch };
 }

@@ -242,8 +242,19 @@ give for their own live-cluster-but-no-browser suites: no model tokens, no
 browser, a dozen `kubectl` calls under a second. Taking the collected count
 from **393 to 418**, re-measured the same way.
 
-Bare-suite row, derived from that same collection: 418 collected − 74 gated −
-**0** xfailed = `344 passed, 74 skipped, 0 xfailed`.
+**M6 Task 3's fix round** (closing the opus review's NOT APPROVED verdict)
+adds **two** more under `tests/e2e`
+(`tests/e2e/test_backstage_image_matches_head.py` — M6-R9's durable fix:
+nothing in this repo asserted the running image contains the committed
+code, which is how Task 3's own security boundary was reported as verified
+against an image that predated the commit under review; this compares the
+image's baked-in `org.opencontainers.image.revision` label against
+`git rev-parse HEAD`). Not gated behind `RUN_BROWSER_TESTS=1`, same reasons
+as the fifteen above. Taking the collected count from **418 to 420**,
+re-measured the same way.
+
+Bare-suite row, derived from that same collection: 420 collected − 74 gated −
+**0** xfailed = `346 passed, 74 skipped, 0 xfailed`.
 
 The gated figure is unchanged at **74** — re-measured the same way as every
 figure below it, a `--collect-only` run with a plugin that counts items
@@ -251,9 +262,9 @@ carrying a `skipif` whose reason names `RUN_BROWSER_TESTS` and whose condition
 is true with the variable unset — because none of Part A's eleven new
 `tests/unit` tests, Part B's five new `tests/unit` tests, M6 Task 1's six new
 `tests/unit` tests, M6 Task 2's three new `tests/unit` tests, M6 Task 3's
-twenty-five new tests, or the two new
+twenty-five new tests, M6 Task 3's fix-round two new tests, or the two new
 PDS tests carries one; PDS tests are not
-collected by this measure at all (`tests/unit`-only) — and reports 74 of 418,
+collected by this measure at all (`tests/unit`-only) — and reports 74 of 420,
 with the per-module spread and the browser split both unchanged from the row
 below (restated so this block's own guard has a figure to read, not merely
 inherited by silence). Full spread: `test_settlement_llm_trace.py` 9,
@@ -303,9 +314,19 @@ twenty-five-test addition (`tests/unit/test_autonomy_writer_rbac.py`,
 RoleBinding/Secret and the Deployment's new volume/env) and `platform/`
 (the backend's new `plugins/autonomyContract/` module and its own five test
 files, `packages/backend/package.json`) are all uncommitted against the
-recorded gate commit for the same reason. The prediction from collection
-(418 − 0 xfailed = 418) is `418 passed, 0 xfailed`; nothing claims that
-figure was measured against this tree.
+recorded gate commit for the same reason. **M6 Task 3's fix round** (closing
+the opus review's NOT APPROVED verdict: M2's unpinned audit branch, M3's
+unpinned senior SPIFFE literal, M4's two permissive `evaluate.ts`
+divergences, M5's unguarded credential acquisition, M1/M6-R10's documentation
+correction, and M6-R9's image-matches-commit guard) touches
+`platform/backstage/packages/backend/src/plugins/autonomyContract/{router,
+router.test,evaluate,evaluate.test,index,index.test,k8sClient,telemetry}.ts`,
+`platform/backstage/Dockerfile`, `scripts/rebuild-and-deploy.sh`,
+`deploy/k8s/backstage.yaml`, `tests/e2e/test_backstage_image_matches_head.py`,
+`tests/unit/test_kube_helper.py`, this document, and the M6 design spec —
+also uncommitted against the recorded gate commit, for the same reason. The
+prediction from collection (420 − 0 xfailed = 420) is `420 passed, 0
+xfailed`; nothing claims that figure was measured against this tree.
 
 `tests/unit` alone collects **257** (222 before the M5 whole-branch review's
 fix wave, 233 after Part A, 238 after Part B, 244 after M6 Task 1's own

@@ -1,17 +1,28 @@
 /**
  * M6 Task 3, design §4: "the write must be auditable and distinguishable
  * from a `kubectl` edit." Three independent signals carry that, and this
- * module is the third:
+ * module is the third and the only DURABLE one (M6 task-3 review,
+ * M1/M6-R10 correction -- read before trusting the other two as history):
  *
  *   1. `k8sClient.ts`'s FIELD_MANAGER -- lands in the object's own
  *      `metadata.managedFields`, readable with plain `kubectl get -o yaml`.
+ *      NOT a history: `managedFields` records current ownership of a field,
+ *      not who has ever touched it. Measured: this client's write ERASES
+ *      the prior `kubectl-patch` manager entry outright, and a `kubectl`
+ *      revert of the same field erases this one right back -- point-in-time
+ *      confirmation only.
  *   2. `router.ts`'s use of `coreServices.auditor` -- Backstage's own
- *      structured audit-event service, visible in this pod's logs.
+ *      structured audit-event service, visible in this pod's logs. Real,
+ *      but lives only in this pod's own logs, backed by a `:memory:`
+ *      database with no log shipping -- gone the moment the pod is.
  *   3. This module -- a real span, in the SAME OTLP pipeline every other
  *      first-party service in this cluster exports into
  *      (deploy/observability/collector-config.yaml), so an operator looking
  *      at Jaeger/OpenSearch sees the change too, not only an operator
- *      reading this one pod's logs or this one object's YAML.
+ *      reading this one pod's logs or this one object's YAML. This is the
+ *      signal that survives both the object being reverted and the pod
+ *      being recycled -- design §4's auditability claim should rest on
+ *      THIS, not on (1).
  *
  * Hand-rolled OTLP/HTTP JSON rather than the `@opentelemetry/sdk-trace-node`
  * + exporter packages: this plugin emits at most a few spans per process

@@ -201,6 +201,31 @@ subjects:
 # privileges, and design §4's "no access to Secrets" is about the former --
 # tests/unit/test_autonomy_writer_rbac.py asserts neither Role in this file
 # ever grants it.
+#
+# THAT IS ONLY THE FAVOURABLE HALF of this trade-off, and a comment that
+# states only the favourable half is worse than no comment -- it reads as
+# having weighed the question when it has not (M6 task-3 review, M1/M6-R10;
+# full accounting in design §10). The unfavourable half, measured by
+# decoding both tokens live in the running pod: this Secret's token has NO
+# `exp`, NO `aud`, and NO binding to a pod or object -- unlike the pod's own
+# kubelet-projected token (backstage-read-only's, mounted automatically),
+# which has all three and rotates. Both token files sit `0644` in the SAME
+# mount namespace of the SAME single Node process that also runs the
+# scaffolder, techdocs, the proxy and mcp-actions under guest auth and an
+# allow-all permission policy (packages/backend/src/index.ts). So: a
+# compromise of the read-only identity yields a token that expires and is
+# audience-bound; a compromise of THIS process also yields a bearer token
+# that can patch `northstar-autonomy` forever, from anywhere -- surviving
+# this pod's deletion and a fix to whatever let the compromise happen -- and
+# nothing here monitors for that Secret being used. The more dangerous grant
+# got the WEAKER credential mechanism, not a matching one. The structural
+# fix -- a separate Deployment running as `backstage-autonomy-writer`,
+# called over HTTP from this one, so a Backstage compromise yields the
+# ability to ASK for the write rather than a credential to KEEP -- was not
+# built. That is carried as recorded debt (design §10), not a judgment that
+# the trade-off is fine: Kasper is time-pressured and this milestone is
+# scoped lean. Read design §10 before repeating only the first half of this
+# comment elsewhere.
 apiVersion: v1
 kind: Secret
 metadata:

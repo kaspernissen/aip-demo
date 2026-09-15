@@ -37,6 +37,17 @@ export const TARGETING_THEN_PATH =
 // object's own `metadata.managedFields[].manager` -- a `kubectl edit` or
 // `kubectl patch` never produces this string (kubectl's own field managers
 // are named `kubectl-edit` / `kubectl-client-side-apply` / `kubectl-patch`).
+//
+// CORRECTION (M6 task-3 review, M6/M1-R10): `managedFields` records CURRENT
+// OWNERSHIP of a field, not a history of who has ever touched it. Measured:
+// after this client's write, the prior `manager: kubectl-patch` entry for
+// this same field is GONE, not merely superseded alongside the new one --
+// and a subsequent `kubectl patch` of the same field erases THIS manager's
+// entry in turn. So this string proves who wrote the field last, at the
+// moment you read it; it is not the durable audit trail design §4's
+// auditability clause needs. That durable record is the OTLP span this
+// module's telemetry.ts emits -- see its own header comment, and design
+// §10.
 export const FIELD_MANAGER = 'backstage-autonomy-card';
 
 const DEFAULT_TOKEN_PATH =

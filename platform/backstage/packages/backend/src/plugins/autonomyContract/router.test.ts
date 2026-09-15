@@ -8,8 +8,32 @@ jest.mock('./telemetry');
 
 const SETTLEMENT_AGENT =
   'spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent';
+// Reproduced as a literal, independently of router.ts's own
+// TARGETED_IDENTITIES -- the same reason router.ts's own header comment
+// gives for reproducing rather than importing: if TARGETED_IDENTITIES ever
+// drifts (a typo in the senior's SPIFFE id), a test that imported the same
+// corrupted constant would still agree with itself. M6 task-3 review, M3:
+// "corrupting the senior SPIFFE id at router.ts:41-42 is GREEN 30/30" --
+// this constant, and the test below that uses it, is the fix.
+const SENIOR_SETTLEMENT_AGENT =
+  'spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent';
 
-function flag(thenBranch: string) {
+// M6 task-3 review, M2: this helper used to hardcode the else-branch to
+// 'assisted' and every POST fixture below passed 'assisted' as the
+// then-branch too, so then and else were byte-identical in every test --
+// mutating router.ts's `if?.[1]` to `if?.[2]` (reading the ELSE branch
+// instead of the THEN branch) stayed GREEN 30/30, because nothing could
+// tell the difference. `elseBranch` is now a required argument specifically
+// so a caller cannot fall back into that tautology by omission.
+function flag(thenBranch: string, elseBranch: string) {
+  return flagWithCallers([SETTLEMENT_AGENT], thenBranch, elseBranch);
+}
+
+function flagWithCallers(
+  callerIds: string[],
+  thenBranch: string,
+  elseBranch: string,
+) {
   return {
     apiVersion: 'core.openfeature.dev/v1beta1',
     kind: 'FeatureFlag',
@@ -23,9 +47,9 @@ function flag(thenBranch: string) {
             defaultVariant: 'assisted',
             targeting: {
               if: [
-                { in: [{ var: 'spiffeId' }, [SETTLEMENT_AGENT]] },
+                { in: [{ var: 'spiffeId' }, callerIds] },
                 thenBranch,
-                'assisted',
+                elseBranch,
               ],
             },
           },
@@ -71,7 +95,7 @@ beforeEach(() => {
 
 describe('GET /status', () => {
   it('resolves both identities from the live object, not a cached copy', async () => {
-    const getFlag = jest.fn(async () => flag('assisted'));
+    const getFlag = jest.fn(async () => flag('assisted', 'assisted'));
     const { app, auditor } = buildApp({ getFlag });
 
     const res = await request(app).get('/api/autonomy-contract/status');
@@ -93,13 +117,43 @@ describe('GET /status', () => {
   });
 
   it('reflects a live flip immediately -- no caching layer of its own', async () => {
-    const getFlag = jest.fn(async () => flag('autonomous'));
+    const getFlag = jest.fn(async () => flag('autonomous', 'assisted'));
     const { app } = buildApp({ getFlag });
 
     const res = await request(app).get('/api/autonomy-contract/status');
 
     expect(res.body.perIdentity['settlement-agent'].level).toBe('autonomous');
     expect(res.body.perIdentity['senior-settlement-agent'].level).toBe('assisted');
+  });
+
+  it('resolves BOTH the junior and senior identity to the then-branch when both are targeted, pinning both SPIFFE literals', async () => {
+    // M6 task-3 review, M3: "corrupting the senior SPIFFE id at
+    // router.ts:41-42 is GREEN 30/30 -- every test only requires that
+    // identity to land on targeting-else, which ANY non-matching string
+    // does." Putting both ids in the targeted caller list is what pins the
+    // literal: if TARGETED_IDENTITIES['senior-settlement-agent'] drifts by
+    // so much as a character, it stops matching this fixture's callerIds
+    // and falls through to the else-branch ('assisted') instead of the
+    // then-branch ('autonomous') asserted below.
+    const getFlag = jest.fn(async () =>
+      flagWithCallers(
+        [SETTLEMENT_AGENT, SENIOR_SETTLEMENT_AGENT],
+        'autonomous',
+        'assisted',
+      ),
+    );
+    const { app } = buildApp({ getFlag });
+
+    const res = await request(app).get('/api/autonomy-contract/status');
+
+    expect(res.body.perIdentity['settlement-agent']).toEqual({
+      level: 'autonomous',
+      branch: 'targeting-then',
+    });
+    expect(res.body.perIdentity['senior-settlement-agent']).toEqual({
+      level: 'autonomous',
+      branch: 'targeting-then',
+    });
   });
 
   it('answers 502 and fails the audit event rather than guessing at an unsupported shape', async () => {
@@ -135,8 +189,8 @@ describe('POST /variant', () => {
     // If this endpoint ever accepted a `path` or `name` from the request
     // body, this test would need to assert patchThenBranch received them --
     // it does not, on purpose, and the client (k8sClient.ts) hardcodes both.
-    const getFlag = jest.fn(async () => flag('assisted'));
-    const patchThenBranch = jest.fn(async () => flag('autonomous'));
+    const getFlag = jest.fn(async () => flag('assisted', 'autonomous'));
+    const patchThenBranch = jest.fn(async () => flag('autonomous', 'assisted'));
     const { app } = buildApp({ getFlag, patchThenBranch });
 
     await request(app)
@@ -153,8 +207,8 @@ describe('POST /variant', () => {
   });
 
   it('writes the requested variant, reports the previous one, and audits success', async () => {
-    const getFlag = jest.fn(async () => flag('assisted'));
-    const patchThenBranch = jest.fn(async () => flag('autonomous'));
+    const getFlag = jest.fn(async () => flag('assisted', 'autonomous'));
+    const patchThenBranch = jest.fn(async () => flag('autonomous', 'assisted'));
     const { app, auditor } = buildApp({ getFlag, patchThenBranch });
 
     const res = await request(app)
@@ -178,8 +232,8 @@ describe('POST /variant', () => {
       ok: false,
       error: 'collector unreachable',
     });
-    const getFlag = jest.fn(async () => flag('assisted'));
-    const patchThenBranch = jest.fn(async () => flag('autonomous'));
+    const getFlag = jest.fn(async () => flag('assisted', 'autonomous'));
+    const patchThenBranch = jest.fn(async () => flag('autonomous', 'assisted'));
     const { app, logger } = buildApp({ getFlag, patchThenBranch });
 
     const res = await request(app)
@@ -194,7 +248,7 @@ describe('POST /variant', () => {
   });
 
   it('fails the request and the audit event if the k8s patch itself throws', async () => {
-    const getFlag = jest.fn(async () => flag('assisted'));
+    const getFlag = jest.fn(async () => flag('assisted', 'autonomous'));
     const patchThenBranch = jest.fn(async () => {
       throw new Error('forbidden');
     });

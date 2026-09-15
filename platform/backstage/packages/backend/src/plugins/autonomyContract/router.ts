@@ -85,6 +85,32 @@ export interface RouterDeps {
   auditor: AuditorService;
 }
 
+/**
+ * M6 fix round (M5): mounted instead of `createAutonomyContractRouter` when
+ * the writer credential could not be acquired at startup (see `index.ts`'s
+ * `initAutonomyContract`). Answers 503 with the reason on every route this
+ * plugin owns, rather than the alternative that used to happen -- an
+ * unguarded throw out of `registerInit` that Backstage's `BackendInitializer`
+ * turns into a fatal `BackendStartupError`, taking the WHOLE backend down
+ * (scaffolder, techdocs, catalog, everything) for a token only this one
+ * plugin needs. A missing writer token now degrades this plugin only.
+ */
+export function createDegradedAutonomyContractRouter(opts: {
+  reason: string;
+}): Router {
+  const router = Router();
+  router.use(express.json());
+  router.use((_req, res) => {
+    res.status(503).json({
+      error:
+        'autonomy-contract failed to initialize: the writer credential ' +
+        'could not be acquired at startup',
+      reason: opts.reason,
+    });
+  });
+  return router;
+}
+
 export function createAutonomyContractRouter(deps: RouterDeps): Router {
   const { client, logger, auditor } = deps;
   const router = Router();

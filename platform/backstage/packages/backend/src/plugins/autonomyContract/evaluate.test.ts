@@ -51,12 +51,45 @@ describe('resolveAutonomyLevel', () => {
     );
   });
 
-  it('fails closed to defaultVariant when the flag is DISABLED', () => {
-    const spec = { ...shippedFlagSpec('autonomous', 'autonomous'), state: 'DISABLED' };
+  it('fails closed to the PDS restrictive constant, NOT defaultVariant, when the flag is DISABLED', () => {
+    // M6 task-3 review, M4(a): flagd errors on DISABLED (FLAG_NOT_FOUND),
+    // and the PDS's own caller-supplied default (RESTRICTIVE_LEVEL) is what
+    // actually resolves -- never this flag's defaultVariant. defaultVariant
+    // is deliberately 'autonomous' here, NOT 'assisted': the old (wrong)
+    // behaviour of echoing defaultVariant would return 'autonomous' and
+    // this assertion would catch it.
+    const spec = {
+      ...shippedFlagSpec('autonomous', 'autonomous'),
+      defaultVariant: 'autonomous',
+      state: 'DISABLED',
+    };
     expect(resolveAutonomyLevel(spec, SETTLEMENT_AGENT)).toEqual({
       level: 'assisted',
-      branch: 'default-variant',
+      branch: 'flag-disabled',
     });
+  });
+
+  it('refuses when the targeting branch names a variant flagd would not resolve either', () => {
+    // M6 task-3 review, M4(b): this reader used to echo the targeting
+    // branch's variant NAME verbatim without checking `variants`. flagd
+    // looks the name up and errors if it is not declared (and the PDS then
+    // denies) -- a renamed/typo'd branch must not be displayed as if it
+    // were a real, PDS-enforced level.
+    const spec = {
+      state: 'ENABLED',
+      variants: { assisted: 'assisted', autonomous: 'autonomous' },
+      defaultVariant: 'autonomous',
+      targeting: {
+        if: [
+          { in: [{ var: 'spiffeId' }, [SETTLEMENT_AGENT]] },
+          'a-renamed-variant-that-is-not-declared',
+          'assisted',
+        ],
+      },
+    };
+    expect(() => resolveAutonomyLevel(spec, SETTLEMENT_AGENT)).toThrow(
+      UnsupportedTargetingShapeError,
+    );
   });
 
   it('falls back to defaultVariant when there is no targeting block at all', () => {

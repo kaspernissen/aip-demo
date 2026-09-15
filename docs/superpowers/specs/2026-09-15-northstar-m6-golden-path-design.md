@@ -200,3 +200,52 @@ Re-measure after Task 1 rather than carrying this figure forward.
   real UI, but nothing generates a new agent from it.
 - **The catalog is static.** It reflects committed `catalog-info.yaml` files, not
   a discovered repo, because there is no remote to discover.
+- **The write credential's real cost (M6-R10).** §4 asks for "two different
+  ServiceAccounts" so the read grant and the write grant are separately
+  revocable, and that half is real — measured live, revoking one does not
+  touch the other. What that requirement does **not** buy, and what the
+  Task 3 review measured directly by decoding both tokens in the running
+  pod, is a matching **credential mechanism**: the write grant's token is a
+  legacy Kubernetes **Secret-based service-account token** — no `exp`, no
+  `aud`, no binding to the pod or the Secret object — mounted read-only
+  alongside the pod's own kubelet-projected, expiring, audience-bound
+  read-only token, in the **same single Node process** that also runs the
+  scaffolder (23 actions), techdocs, the proxy and mcp-actions, all under
+  guest auth and an allow-all permission policy. A compromise of that one
+  process is therefore a **durable, unbounded policy-write credential** —
+  the more dangerous grant got the *weaker* mechanism, not a matching one.
+  It survives the pod being deleted and the image being fixed; the only
+  revocation is deleting the Secret/SA/RoleBinding, and nothing here
+  monitors for that. The separation between "the read-only code path" and
+  "the write code path" picking up the wrong token is a code convention
+  inside one process, not an isolation boundary between two. The reviewer
+  found no concrete guest-reachable file-read primitive in the enabled
+  plugin set, and does not claim an exploit — but the honest statement of
+  the trade-off is: **the structural fix (a separate Deployment running as
+  `backstage-autonomy-writer`, called over HTTP, so a Backstage compromise
+  yields the ability to *ask* rather than a credential to *keep*) was not
+  built.** It is carried as recorded debt, deliberately, because Kasper is
+  time-pressured and M6 is scoped lean — not because the trade-off was
+  judged acceptable on its merits. `deploy/k8s/backstage.yaml`'s own
+  comment on the Secret states only the favourable half of this (the RBAC
+  is narrow); this paragraph is the rest.
+- **The auditability claim is weaker than it reads.** §4 requires the write
+  to be "distinguishable in telemetry from one made with `kubectl`." It is —
+  but not durably, and not through the signal the code comments used to
+  lean on. `metadata.managedFields` (the `fieldManager` mechanism) records
+  **current ownership of a field, not a history of who has touched it.**
+  Measured directly: before the card's write, the targeting field's
+  `managedFields` entry was owned by `manager: kubectl-patch`; after the
+  card's write, that entry is gone and only `manager:
+  backstage-autonomy-card` remains. A subsequent `kubectl patch` of the
+  same field is symmetric — it erases the Backstage entry in turn. So
+  `managedFields` is a point-in-time confirmation of who wrote a field
+  *last*, not a durable audit trail, and a `kubectl` revert of a card-made
+  change leaves no `managedFields` trace that Backstage was ever involved.
+  The durable record is the **OTLP span**
+  (`northstar.autonomy_contract.change`), which does reach Jaeger and
+  OpenSearch and is the signal to point an audience at; the Backstage
+  `auditor` event is real but lives only in this pod's own logs, with a
+  `:memory:` database and no log shipping. (Task 4's e2e should assert the
+  span lands, the way `test_opensearch_trace_ingest.py` already does for
+  `policy.decision` — nothing today does for this span.)

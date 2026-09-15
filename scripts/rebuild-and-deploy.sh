@@ -244,7 +244,34 @@ for component in "${targets[@]}"; do
     done
   fi
 
-  if ! docker build -t "$image" "$ROOT/$context"; then
+  # M6-R9: the Task 3 review found the running Backstage image had been
+  # built an hour before the commit under review -- nothing checked that
+  # the image contained the committed code, so an RBAC matrix and a healthy
+  # pod both "verified" a security boundary that was not running. Stamping
+  # the current commit into the image (platform/backstage/Dockerfile's own
+  # `GIT_SHA` build-arg / `org.opencontainers.image.revision` label) is what
+  # tests/e2e/test_backstage_image_matches_head.py compares against
+  # `git rev-parse HEAD`. Backstage only, for now: it is the one image this
+  # milestone's security review turned out to need this for, and adding the
+  # build-arg to a Dockerfile that does not declare it would just be a
+  # docker warning about an unused arg, not a false sense of coverage.
+  build_cmd=(docker build -t "$image" "$ROOT/$context")
+  if [[ "$component" == "backstage" ]]; then
+    # `git -C ... || echo unknown`, not a bare `git rev-parse`: this script
+    # also runs inside test_rebuild_and_deploy_guard.py's sandboxes, which
+    # copy the script into a tmp dir that is NOT a git repository, and
+    # `set -e` would otherwise take the whole run down on a command
+    # substitution failure inside this array assignment (verified: it does).
+    # A real checkout always resolves a real SHA; "unknown" only ever shows
+    # up in a context that was never a git repo to begin with, and the image
+    # revision guard (tests/e2e/test_backstage_image_matches_head.py) treats
+    # that as a hard failure rather than a pass, so this fallback cannot mask
+    # a stale build from a real checkout.
+    git_sha="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+    build_cmd=(docker build --build-arg "GIT_SHA=${git_sha}" -t "$image" "$ROOT/$context")
+  fi
+
+  if ! "${build_cmd[@]}"; then
     rm -f "$ROOT/$context/agent-card.json"
     [[ -n "$catalog_stage" ]] && rm -rf "$catalog_stage"
     exit 1

@@ -88,6 +88,24 @@ COPY --chown=node:node examples ./examples
 # "backstage" branch. `app-config.production.yaml`'s `catalog.locations`
 # reads it back out at ./catalog/...
 COPY --chown=node:node .catalog-stage ./catalog
+
+# M6-R9's durable fix: the Task 3 review found the running image predated
+# the commit under review by an hour, and nothing in this repo would have
+# caught that -- an RBAC matrix and a healthy pod both verify without the
+# committed code ever running. `GIT_SHA` is passed by
+# scripts/rebuild-and-deploy.sh as `--build-arg GIT_SHA=$(git rev-parse
+# HEAD)` for this component only, and stamped into a label
+# `tests/e2e/test_backstage_image_matches_head.py` reads back with `docker
+# image inspect` and compares against the checkout's own `git rev-parse
+# HEAD` -- the same comparison the reviewer made by hand
+# (`docker image inspect --format {{.Created}}` vs `git show -s --format=%ci`).
+# Placed here, after every COPY/RUN in this stage, so changing it invalidates
+# only this one metadata layer, not the expensive yarn-install/tsc/build
+# layers above -- it must still change on every commit, or the check it
+# backs is worthless.
+ARG GIT_SHA=unknown
+LABEL org.opencontainers.image.revision=$GIT_SHA
+
 ENV NODE_ENV=production
 EXPOSE 7007
 CMD ["node", "packages/backend", "--config", "app-config.yaml", "--config", "app-config.production.yaml"]

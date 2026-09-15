@@ -23,17 +23,62 @@
  * auth flow" and "reached this port with a bare, credential-less HTTP
  * client", which is the same distinction the design draws for the write's
  * auditability more broadly.
+ *
+ * M6 fix round (M5): `init` used to call `buildInClusterWriterKubeConfig()`
+ * unguarded. That throws whenever `KUBERNETES_SERVICE_HOST`/`PORT` are unset
+ * (any local `yarn start`) or the writer token file is not yet mounted (a
+ * cold `--stage 6` bring-up racing the token controller -- M6-R6). A thrown
+ * `init` becomes, via `@backstage/backend-app-api`'s `BackendInitializer`, a
+ * fatal `BackendStartupError`: the whole backend process exits, taking
+ * scaffolder/techdocs/catalog/everything down for a credential only THIS
+ * plugin needs. `initAutonomyContract` below is exported and exercised
+ * directly by `index.test.ts` so this stays guarded without needing the full
+ * Backstage backend-wiring test harness.
  */
-import {
-  coreServices,
-  createBackendPlugin,
+import type {
+  AuditorService,
+  HttpRouterService,
+  LoggerService,
 } from '@backstage/backend-plugin-api';
+import { coreServices, createBackendPlugin } from '@backstage/backend-plugin-api';
 import {
   AutonomyContractClient,
   buildInClusterWriterKubeConfig,
   makeCustomObjectsClient,
 } from './k8sClient';
-import { createAutonomyContractRouter } from './router';
+import {
+  createAutonomyContractRouter,
+  createDegradedAutonomyContractRouter,
+} from './router';
+
+export interface InitAutonomyContractDeps {
+  httpRouter: HttpRouterService;
+  logger: LoggerService;
+  auditor: AuditorService;
+}
+
+export async function initAutonomyContract({
+  httpRouter,
+  logger,
+  auditor,
+}: InitAutonomyContractDeps): Promise<void> {
+  try {
+    const kc = buildInClusterWriterKubeConfig();
+    const client = new AutonomyContractClient(makeCustomObjectsClient(kc));
+    httpRouter.use(createAutonomyContractRouter({ client, logger, auditor }));
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    logger.error(
+      'autonomy-contract: could not acquire the writer credential at ' +
+        'startup -- degrading THIS plugin only (503 on every route) ' +
+        'instead of failing the whole backend (M6 fix round, M5)',
+      err,
+    );
+    httpRouter.use(
+      createDegradedAutonomyContractRouter({ reason: err.message }),
+    );
+  }
+}
 
 export const autonomyContractPlugin = createBackendPlugin({
   pluginId: 'autonomy-contract',
@@ -44,13 +89,7 @@ export const autonomyContractPlugin = createBackendPlugin({
         logger: coreServices.logger,
         auditor: coreServices.auditor,
       },
-      async init({ httpRouter, logger, auditor }) {
-        const kc = buildInClusterWriterKubeConfig();
-        const client = new AutonomyContractClient(makeCustomObjectsClient(kc));
-        httpRouter.use(
-          createAutonomyContractRouter({ client, logger, auditor }),
-        );
-      },
+      init: initAutonomyContract,
     });
   },
 });
