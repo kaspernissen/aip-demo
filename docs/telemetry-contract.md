@@ -320,66 +320,31 @@ same reason `test_progressive_autonomy.py` was never one of the three
 either) — **3 of the 13 launch a browser** and **10 of the 13 start no
 browser**.
 
-Gate row: **PREDICTED, NOT MEASURED** — this branch's gate run was at commit `ae29785`.
-Part A touched nine files, all under `GATE_PATHS`
-(`platform/policy-decision-service/pds/rules.py`,
-`platform/policy-decision-service/tests/test_rules.py`,
-`scripts/start-demo.sh`, `tests/unit/test_autonomy_contract.py`,
-`tests/unit/test_stage2_cilium_config.py`, `tests/unit/test_stage4_config.py`,
-`tests/unit/test_start_demo_v11.py`, `tests/unit/_start_demo_fakes.py`,
-`tests/unit/test_pins.py`). Part B added three more under `tests/`
-(`tests/unit/test_telemetry_contract_export_destinations.py`,
-`tests/unit/test_doc_status_lines_name_the_current_milestone.py`, and an
-extension to `tests/unit/test_telemetry_contract_counts.py` itself) — `docs/`
-is not in `GATE_PATHS` (see the comment on `gate_paths` in
-`test_a_predicted_gate_row_is_labelled_as_one` for why), so this document's
-own edits do not themselves count, but the new and extended test files do.
-Every one of these twelve files is still uncommitted against that gate commit
-— so the row can no longer read MEASURED, and this test suite's own staleness
-guard (`test_a_predicted_gate_row_is_labelled_as_one`) would fail it if it
-did. **What has to happen before merge:** either a second
-`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` run, recording its own commit
-and figures in a new block above this one — a decision this document does not
-make, since it is the orchestrator's to spend or defer — or, absent that run,
-this row stays labelled `PREDICTED, NOT MEASURED` at merge, and whoever merges
-it is accepting that the gate has not re-verified Part A's changes (most
-materially: J2's and N6's PDS behaviour, and J1/J3's guard additions) or Part
-B's new guards (C1's derivation test, J5's status-line test, J7's spread
-check), M6 Task 1's own six-test addition
-(`tests/unit/test_stage6_backstage_config.py` and the cold-path test in
-`tests/unit/test_stage2_cilium_config.py`), and M6 Task 2's own three-test
-addition (`tests/unit/test_catalog_matches_the_tree.py`) plus its changes
-under `deploy/` (the eight components' `backstage.io/kubernetes-id` labels)
-and `platform/` (`platform/backstage/app-config.production.yaml`,
-`packages/app/src/App.tsx`, the Dockerfile), and M6 Task 3's own
-twenty-five-test addition (`tests/unit/test_autonomy_writer_rbac.py`,
-`tests/e2e/test_autonomy_writer_live_rbac.py`) plus its changes under
-`deploy/` (`deploy/k8s/backstage.yaml`'s write ServiceAccount/Role/
-RoleBinding/Secret and the Deployment's new volume/env) and `platform/`
-(the backend's new `plugins/autonomyContract/` module and its own five test
-files, `packages/backend/package.json`) are all uncommitted against the
-recorded gate commit for the same reason. **M6 Task 3's fix round** (closing
-the opus review's NOT APPROVED verdict: M2's unpinned audit branch, M3's
-unpinned senior SPIFFE literal, M4's two permissive `evaluate.ts`
-divergences, M5's unguarded credential acquisition, M1/M6-R10's documentation
-correction, and M6-R9's image-matches-commit guard) touches
-`platform/backstage/packages/backend/src/plugins/autonomyContract/{router,
-router.test,evaluate,evaluate.test,index,index.test,k8sClient,telemetry}.ts`,
-`platform/backstage/Dockerfile`, `scripts/rebuild-and-deploy.sh`,
-`deploy/k8s/backstage.yaml`, `tests/e2e/test_backstage_image_matches_head.py`,
-`tests/unit/test_kube_helper.py`, this document, and the M6 design spec —
-also uncommitted against the recorded gate commit, for the same reason.
-**M6 Task 4** touches `scripts/start-demo.sh`, `scripts/setup-kind.sh`,
-`tests/unit/test_stage4_config.py`, `tests/unit/test_kube_helper.py` (the new
-allow-list entry for `test_golden_path.py`'s own reachability-probe fixture),
-`tests/e2e/test_golden_path.py`, `docs/upstream-findings.md`, and this
-document plus `docs/architecture.md` and `README.md` — the last three do not
-themselves move the gate row (`docs/` is not in `GATE_PATHS`), but the first
-five do, so the row stays labelled for the same reason it already was. **The
-whole-branch review fix wave itself also touches `scripts/`, `tests/` and
-`platform/backstage/` (all in `GATE_PATHS`)**, so the row stays labelled here
-too. The prediction from collection (430 − 0 xfailed = 430) is `430 passed, 0
-xfailed`; nothing claims that figure was measured against this tree.
+Gate row: **MEASURED** — this branch's gate run was at commit `6588570`,
+`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh`, run by the orchestrator,
+exit **0**: `429 passed, 1 xfailed`, in 597.91s (9m57s), with **zero skips**
+(`grep -c SKIPPED` over the run's full output returns 0 — `RUN_BROWSER_TESTS=1`
+ungates all 75 gated tests, so the gate really does execute the whole of
+`tests/`). 429 + 1 xfailed = the full 430-test collection derived above, so the
+measured figure equals the one this block predicts.
+
+**This run is the first in the series to also execute the Backstage jest
+suites.** The whole-branch review's Critical finding was that all six of M6's
+Backstage test files — 744 lines, including the jest guards for every one of
+Task 3's four correctness bugs — were run by **nothing**: `grep -ci backstage
+scripts/smoke-test.sh` returned **0** and `_PER_SERVICE_SUITES` had eight rows.
+Each of those guards had been shown going green-to-red exactly once, by hand, in
+a transcript. The gate now runs them (`Test Suites: 7 passed`, `Tests: 37
+passed`) and `_PER_SERVICE_SUITES` has a ninth row, so the per-service line
+below reads **all nine**, not all eight.
+
+**The ordering is deliberate and is M5's most expensive lesson.** M5 ran its
+gate *before* its whole-branch review; the review's fix wave then changed twelve
+`GATE_PATHS` files, the measured row was demoted to `PREDICTED, NOT MEASURED`,
+and M5 merged on a row that described a tree two commits and a fix wave old.
+This run happens **after** M6's whole-branch review and after its eleven-fix
+wave, so `6588570` is the tree that merges. Nothing in `GATE_PATHS` has changed
+since.
 
 `tests/unit` alone collects **260** (222 before the M5 whole-branch review's
 fix wave, 233 after Part A, 238 after Part B, 244 after M6 Task 1's own
