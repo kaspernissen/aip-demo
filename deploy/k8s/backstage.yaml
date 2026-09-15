@@ -63,6 +63,20 @@ rules:
       - services
       - configmaps
       - limitranges
+      # `resourcequotas` was MISSING until 2026-09-15, and it is the one gap in
+      # this list a user actually sees. `@backstage/plugin-kubernetes-backend`
+      # fetches LimitRange and ResourceQuota as a pair in its default object
+      # set; this list took the first and not the second, so every entity page
+      # rendered a red banner -- "There was a problem retrieving some
+      # Kubernetes resources for the entity: policy-decision-service ...
+      # '/api/v1/namespaces/northstar-platform/resourcequotas', error:
+      # UNKNOWN_ERROR, status code: 403". Nothing was broken underneath it: the
+      # plugin degrades to a warning and still renders every other resource,
+      # which is exactly why no test and no health check ever went red. It was
+      # found by opening the page.
+      #
+      # Read-only like every other rule here, and still no Secrets.
+      - resourcequotas
       - events
       - replicationcontrollers
     verbs: ["get", "list", "watch"]
