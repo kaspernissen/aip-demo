@@ -1,0 +1,55 @@
+app:
+  # Should be the same as backend.baseUrl when using the `app-backend` plugin.
+  baseUrl: http://localhost:7007
+
+backend:
+  # Note that the baseUrl should be the URL that the browser and other clients
+  # should use when communicating with the backend, i.e. it needs to be
+  # reachable not just from within the backend host, but from all of your
+  # callers. When its value is "http://localhost:7007", it's strictly private
+  # and can't be reached by others.
+  baseUrl: http://localhost:7007
+  # The listener can also be expressed as a single <host>:<port> string. In this case we bind to
+  # all interfaces, the most permissive setting. The right value depends on your specific deployment.
+  listen: ':7007'
+
+  # SQLite, not PostgreSQL (design §3, docs/superpowers/specs/
+  # 2026-09-15-northstar-m6-golden-path-design.md). This cluster is torn down
+  # and rebuilt, not operated; a second stateful component buys durability
+  # nobody wants, a pod, a PVC and a failure mode on stage for a catalog that
+  # is re-read from committed catalog-info.yaml files on every start anyway.
+  # `:memory:` matches that property exactly: nothing here survives a restart
+  # because nothing here is the source of truth -- the committed files are.
+  # The scaffold's own default (`app-config.yaml`'s dev database) already used
+  # the same client and connection string; this file only stops overriding it
+  # with Postgres for the "production" build the in-cluster image runs under
+  # NODE_ENV=production.
+  database:
+    client: better-sqlite3
+    connection: ':memory:'
+
+auth:
+  providers:
+    guest: {}
+
+catalog:
+  # Overrides the default list locations from app-config.yaml as these contain example data.
+  # See https://backstage.io/docs/features/software-catalog/#adding-components-to-the-catalog for more details
+  # on how to get entities into the catalog.
+  locations:
+    # Local example data, replace this with your production config, these are intended for demo use only.
+    # File locations are relative to the backend process, typically in a deployed context, such as in a Docker container, this will be the root
+    - type: file
+      target: ./examples/entities.yaml
+
+    # Local example template
+    - type: file
+      target: ./examples/template/template.yaml
+      rules:
+        - allow: [Template]
+
+    # Local example organizational data
+    - type: file
+      target: ./examples/org.yaml
+      rules:
+        - allow: [User, Group]

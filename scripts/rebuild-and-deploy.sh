@@ -89,6 +89,25 @@ COMPONENTS=(
   # script has no notion of stages and never has, and against a stage-1
   # cluster this component's apply would fail on the missing namespace.
   "eval-scorer:platform/eval-scorer:northstar-platform"
+  # M6 Task 1: Backstage. Registered here for the same reason eval-scorer's
+  # own addition comment argues -- a component outside this list keeps running
+  # whatever image happened to be pushed last, silently, and this one's source
+  # is the platform-API view the whole milestone is about.
+  #
+  # It is a STAGE 6 component (the catalog it serves, added in Task 2, reads
+  # `contracts/agent-cards/` and the eight component directories baked into
+  # its own image, none of which exist below stage 6 in any meaningful sense),
+  # which is why scripts/setup-kind.sh names it inside a `STAGE -ge 6` block
+  # rather than adding it to the stage-1 list. A bare
+  # `./scripts/rebuild-and-deploy.sh` with no arguments does still build it
+  # (this script has no notion of stages and never has), and against a
+  # stage-1..5 cluster this component's apply would fail on the missing
+  # `northstar-platform` namespace exactly as policy-decision-service's would
+  # -- except `northstar-platform` exists from stage 2 on, so in practice it
+  # would simply come up two stages before the catalog it is meant to serve
+  # has anything real in it. That is a cosmetic gap, not a functional one:
+  # nothing here reads catalog-info.yaml files that Task 2 has not written yet.
+  "backstage:platform/backstage:northstar-platform"
 )
 
 # component:companion-deployment:namespace

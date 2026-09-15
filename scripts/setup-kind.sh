@@ -172,8 +172,36 @@ Usage: setup-kind.sh [--stage N]
                           UNCHANGED -- see the KIND_CONFIG note below -- no
                           host port is needed, the sidecar is reached only
                           from inside its own pod]
-  --stage 6   Golden path:          + Crossplane, Argo CD, Backstage
-                          [not implemented -- exits]
+  --stage 6   Golden path:          + Backstage
+                          [M6 dropped Crossplane and Argo CD -- see
+                          docs/superpowers/specs/2026-09-15-northstar-m6-
+                          golden-path-design.md §1: M5's own spec had already
+                          reassigned the platform-API role to the
+                          `FeatureFlag` resource M5 Task 2 introduced, so a
+                          Crossplane `Agent` CRD composing Deployments that
+                          already work would be a wrapper over working things.
+                          As of M6 Task 1: Backstage is deployed in
+                          `northstar-platform` (deploy/k8s/backstage.yaml),
+                          built and pushed the same way every other
+                          component's image is, on SQLite rather than
+                          PostgreSQL (design
+                          §3: this cluster is torn down and rebuilt, not
+                          operated, and the catalog is re-read from committed
+                          catalog-info.yaml files on every start regardless).
+                          This task's ServiceAccount is READ-ONLY
+                          (`get`/`list`/`watch` on Pods, Deployments,
+                          ReplicaSets, Services, ConfigMaps and the other
+                          object types the Kubernetes plugin reads by
+                          default; no Secrets, no write verbs anywhere) --
+                          the SEPARATE ServiceAccount that can PATCH the
+                          `northstar-autonomy` FeatureFlag is a later task's,
+                          deliberately, so the two grants stay independently
+                          reviewable. Reached by port-forward
+                          (./scripts/start-demo.sh), never a kind host port,
+                          the same convention every platform component here
+                          follows. Runs on stage 3's cluster config UNCHANGED
+                          -- see the KIND_CONFIG note below -- nothing this
+                          stage installs needs a host port]
 
 Each stage installs only what that stage of the demo needs, so the laptop
 runs exactly one stage at a time.
@@ -226,8 +254,8 @@ if ! [[ "$STAGE" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-if [[ "${STAGE}" -gt 5 ]]; then
-  echo "Stage $STAGE is not implemented yet. Stages 1 (Connected), 2 (Governed: Cilium), 3 (Supervised), 4 (Observable) and 5 (Progressive autonomy) are implemented; stage 6 arrives in a later milestone." >&2
+if [[ "${STAGE}" -gt 6 ]]; then
+  echo "Stage $STAGE is not implemented yet. Stages 1 (Connected), 2 (Governed: Cilium), 3 (Supervised), 4 (Observable), 5 (Progressive autonomy) and 6 (Golden path) are implemented." >&2
   exit 1
 fi
 
@@ -290,10 +318,17 @@ KIND_CONFIG="$ROOT/deploy/kind/stage${STAGE}.yaml"
 # M5 Task 2: there is no stage5.yaml either, for the same amendment-A1
 # reasoning -- nothing this stage installs (cert-manager, the Open Feature
 # Operator, the flagd sidecar) needs a host port, so it reuses stage 3's
-# config too. Written as `-eq 4 || -eq 5` rather than `-ge 4`: whether stage 6
-# also needs no new host port is not something this task measured, so this
-# does not silently decide it.
-if [[ "${STAGE}" -eq 4 || "${STAGE}" -eq 5 ]]; then
+# config too.
+#
+# M6 Task 1: there is no stage6.yaml either, measured rather than assumed.
+# Backstage is reached by port-forward (./scripts/start-demo.sh), the same
+# convention every platform component in this cluster already follows, so it
+# needs no `extraPortMappings` entry of its own -- and that entry is the only
+# thing a create-time kind config buys here (same as stages 4 and 5). Written
+# as `-eq 4 || -eq 5 || -eq 6` rather than `-ge 4`, still: whether a stage
+# past 6 needs a new host port is not something this task measured, so this
+# does not silently decide it either.
+if [[ "${STAGE}" -eq 4 || "${STAGE}" -eq 5 || "${STAGE}" -eq 6 ]]; then
   KIND_CONFIG="$ROOT/deploy/kind/stage3.yaml"
 fi
 [[ -f "$KIND_CONFIG" ]] || { echo -e "${RED}Error: ${KIND_CONFIG} not found.${NC}" >&2; exit 1; }
@@ -775,6 +810,30 @@ if [[ "${STAGE}" -ge 5 ]]; then
   echo -e "${GREEN}northstar-autonomy / northstar-autonomy-source applied -- flagd will be injected into any pod carrying the openfeature.dev/* annotations, PDS included, when it is (re)created below.${NC}"
 fi
 
+if [[ "${STAGE}" -ge 6 ]]; then
+  # M6 Task 1: Backstage, the view over the platform API this milestone puts
+  # a UI on (design §3). Built and deployed through rebuild-and-deploy.sh
+  # rather than a bare `kubectl apply`, so this component's image is rebuilt
+  # from source like every other one (it is registered in that script's
+  # COMPONENTS list) -- deploy/k8s/backstage.yaml is a single manifest
+  # carrying its ServiceAccount, its read-only ClusterRole/ClusterRoleBinding,
+  # its Deployment and its Service, applied together the same way
+  # eval-scorer's own manifest is.
+  #
+  # Deployed here, in its own stage-6 block, rather than folded into Step 9
+  # below: Step 9 is stage-1's own block (it names its five components by
+  # hand, unconditionally), and every later stage's addition -- the PDS at
+  # `-ge 2`, the M3 workloads at `-ge 3`, eval-scorer inside the `-ge 4`
+  # block above -- gets its own guarded block for the same reason. Nothing
+  # here needs anything Step 9 provides that is not already true by
+  # `-ge 6` (`northstar-platform` has existed since `-ge 2`), so there is no
+  # ordering constraint forcing this before or after it; it is placed here,
+  # with the rest of this stage's machinery, for that reason alone.
+  echo -e "${BLUE}Step 8i/9 (stage 6): Building and deploying Backstage...${NC}"
+  "$ROOT/scripts/rebuild-and-deploy.sh" backstage
+  echo -e "${GREEN}Backstage is up on 7007 (read-only ServiceAccount; the FeatureFlag-write grant is a later task's), serving its scaffolded default catalog until Task 2 adds this repo's own catalog-info.yaml entries.${NC}"
+fi
+
 echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then starting port-forwards...${NC}"
 "$ROOT/scripts/rebuild-and-deploy.sh" \
   payments-api payments-mcp settlement-agent claims-agent customer-ui
@@ -953,7 +1012,9 @@ verify_port_forward 18080 "${API_PF_PID}" payments-api
 echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payments-mcp, payments-api.${NC}"
 
 echo ""
-if [[ "${STAGE}" -eq 5 ]]; then
+if [[ "${STAGE}" -eq 6 ]]; then
+  echo -e "${GREEN}Stage 6 (Golden path) is up: stage 5's workloads and backends, unchanged (amendment A1, no cluster recreate), plus Backstage in northstar-platform on SQLite, its read-only ServiceAccount wired to the Kubernetes plugin (get/list/watch on Pods, Deployments, ReplicaSets, Services, ConfigMaps and the other default object types; no Secrets, no write verbs). The FeatureFlag-write ServiceAccount and the software catalog are a later task's -- this stage ships Backstage Running with its own scaffolded example catalog, not this repo's eight components yet.${NC}"
+elif [[ "${STAGE}" -eq 5 ]]; then
   echo -e "${GREEN}Stage 5 (Progressive autonomy) is up: stage 4's workloads and backends, unchanged (amendment A1, no cluster recreate), plus cert-manager ${CERT_MANAGER_VERSION}, the Open Feature Operator ${OPENFEATURE_CHART_VERSION}, and the northstar-autonomy FeatureFlag/FeatureFlagSource pair. The PDS pod carries a flagd sidecar answering on localhost:8013 inside it, serving flag 'autonomy-level' (variants assisted/autonomous, targeted on evaluation-context key spiffeId) -- still resolved nowhere yet, since Task 2 stands up the machinery only.${NC}"
 elif [[ "${STAGE}" -eq 4 ]]; then
   echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workloads (reviewer-ui, senior-settlement-agent) on the same Cilium ${CILIUM_CHART_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- amendment A1, no cluster recreate -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them with the evidence view already imported, prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone, and eval-scorer scoring a settlement's trajectory against the five policy-adherence properties and emitting each score back into the trace it judges. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port, and the evidence view is at http://localhost:5601/app/dashboards#/view/northstar-evidence.${NC}"
@@ -979,5 +1040,14 @@ echo "  Jaeger UI:           http://localhost:16686"
 echo "  Collector OTLP/HTTP: http://localhost:4318"
 echo "  claims-agent (A2A):  http://localhost:19001"
 echo "  Local registry:      localhost:${REGISTRY_PORT}"
+if [[ "${STAGE}" -ge 6 ]]; then
+  # Not a kind host port, same reasoning as Dashboards/Prometheus at stage 4:
+  # reached by port-forward rather than printed as a bare URL. Unlike those
+  # two, ./scripts/start-demo.sh does not forward it yet -- that wiring is a
+  # later task's (M6 Task 4) -- so the instruction printed here is the one
+  # that actually works today, not a forward reference to a script that
+  # would 404 on it.
+  echo "  Backstage:           kubectl -n northstar-platform port-forward svc/backstage 7007:7007"
+fi
 echo ""
 echo "Next: ./scripts/smoke-test.sh"

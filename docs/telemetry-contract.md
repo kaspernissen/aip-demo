@@ -191,16 +191,40 @@ a guard that checks a count is itself a test, and this document's own history
 (J4, this fix wave) is the argument against forgetting that a guard's own
 collection weight needs re-deriving too.
 
-Bare-suite row, derived from that same collection: 384 collected − 74 gated −
-**0** xfailed = `310 passed, 74 skipped, 0 xfailed`.
+M6 Task 1 adds six more, all under `tests/unit`, taking the
+collected count from 384 to 390 (still within this same current block --
+this addition is prose continuing the M5-review heading above, not a new
+`**<date> ` heading, so `_current_figures_block()`'s boundary slice still
+finds this text).
+`tests/unit/test_stage6_backstage_config.py` (five tests)
+pins design §4's read-only constraint on `deploy/k8s/backstage.yaml`'s
+`backstage-read-only` ClusterRole -- no verb outside `get`/`list`/`watch`, no
+wildcard verb/resource/apiGroup, no access to Secrets, and the Deployment and
+ClusterRoleBinding both naming the `backstage` ServiceAccount -- parsed from
+the manifest with `yaml.safe_load_all`, never grepped. One more,
+`test_stage_six_creates_the_cluster_from_stage3_yaml_when_cold` (added to
+`tests/unit/test_stage2_cilium_config.py`), is the cold-path proof M5-R27
+demands: the real laptop cluster was already at stage 5 when this task ran,
+so every real `--stage 6` run took the "cluster already exists" branch and
+never exercised create-time `KIND_CONFIG` selection: this test runs the real
+script hermetically (fake `kind`/`kubectl`/`docker`/`helm`, no real cluster,
+registry or network) with no cluster present and asserts `kind create
+cluster --config .../stage3.yaml` is what a cold `--stage 6` actually
+invokes. Re-measured with
+`.venv/bin/python -m pytest --collect-only -q tests/`, not carried forward by
+arithmetic, for the same reason every prior figure in this section gives.
+
+Bare-suite row, derived from that same collection: 390 collected − 74 gated −
+**0** xfailed = `316 passed, 74 skipped, 0 xfailed`.
 
 The gated figure is unchanged at **74** — re-measured the same way as every
 figure below it, a `--collect-only` run with a plugin that counts items
 carrying a `skipif` whose reason names `RUN_BROWSER_TESTS` and whose condition
 is true with the variable unset — because none of Part A's eleven new
-`tests/unit` tests, Part B's five new `tests/unit` tests, or the two new PDS
+`tests/unit` tests, Part B's five new `tests/unit` tests, M6 Task 1's six new
+`tests/unit` tests, or the two new PDS
 tests carries one; PDS tests are not
-collected by this measure at all (`tests/unit`-only) — and reports 74 of 384,
+collected by this measure at all (`tests/unit`-only) — and reports 74 of 390,
 with the per-module spread and the browser split both unchanged from the row
 below (restated so this block's own guard has a figure to read, not merely
 inherited by silence). Full spread: `test_settlement_llm_trace.py` 9,
@@ -237,11 +261,16 @@ this row stays labelled `PREDICTED, NOT MEASURED` at merge, and whoever merges
 it is accepting that the gate has not re-verified Part A's changes (most
 materially: J2's and N6's PDS behaviour, and J1/J3's guard additions) or Part
 B's new guards (C1's derivation test, J5's status-line test, J7's spread
-check). The prediction from collection (384 − 0 xfailed = 384) is `384
-passed, 0 xfailed`; nothing claims that figure was measured against this tree.
+check), and M6 Task 1's own six-test addition
+(`tests/unit/test_stage6_backstage_config.py` and the cold-path test in
+`tests/unit/test_stage2_cilium_config.py`) is uncommitted against the
+recorded gate commit for the same reason. The prediction from collection
+(390 − 0 xfailed = 390) is `390 passed, 0 xfailed`; nothing claims that
+figure was measured against this tree.
 
-`tests/unit` alone collects **238** (222 before this fix wave, 233 after Part
-A, 238 after Part B).
+`tests/unit` alone collects **244** (222 before the M5 whole-branch review's
+fix wave, 233 after Part A, 238 after Part B, 244 after M6 Task 1's own
+six-test addition).
 
 ---
 

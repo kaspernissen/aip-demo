@@ -346,6 +346,12 @@ the reviewer UI (M3); OpenSearch, Prometheus and evals (M4); OpenFeature/flagd a
 profiles (M5); Crossplane, Argo CD and Backstage (M6). Linkerd remains deferred with its own
 attached experiment — whether a service mesh's telemetry joins or fragments this trace.
 
+**Corrected 2026-09-15 (M6 Task 1), M6 clause only:** M6 is Backstage over the
+`FeatureFlag` resource M5 introduced, not Crossplane/Argo CD/Backstage —
+M5's own spec dropped the first two (`docs/superpowers/specs/
+2026-09-15-northstar-m6-golden-path-design.md` §1). Left as written above per
+this repo's standing convention for historical specs; not rewritten.
+
 ---
 
 ## 11. Carried debt from M1.2, to be cleared early

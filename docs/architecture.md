@@ -743,8 +743,19 @@ In the deployed manifest, `NORTHSTAR_ALLOWED_AGENTS` has exactly one entry:
 (`deploy/k8s/claims-agent.yaml`). `delegation.py`'s own docstring states the
 intent precisely: *"Which agents may be delegated to is configuration, never
 discovery. In M1 that configuration is an environment variable; in M2 these
-become agentgateway route names enforced at the gateway; in M6 Crossplane
-generates them from the Agent CRD's `delegation.allowedAgents` field."*
+become agentgateway route names enforced at the gateway."*
+
+**Corrected 2026-09-15 (M6 Task 1).** Until this correction, both this
+document and the docstring it quotes went on to say *"in M6 Crossplane
+generates them from the Agent CRD's `delegation.allowedAgents` field"* — the
+M1 spec's original plan for M6 (`docs/superpowers/specs/
+2026-09-07-northstar-m1-connected-design.md:256`). M5's own spec dropped
+Crossplane and Argo CD in favour of Backstage over the `FeatureFlag` resource
+it introduced, and M6's design (`docs/superpowers/specs/
+2026-09-15-northstar-m6-golden-path-design.md` §1) confirms M6 does not
+reintroduce a CRD layer here either. This allow-list is **unchanged by M6**:
+it is still the M2-era environment variable read by
+`allowed_agents_from_env()`, exactly as deployed above.
 
 **What this mechanism does protect against:** claims-agent's own code (or a
 bug, or a name that arrives some other way) calling out to an agent name

@@ -1,0 +1,193 @@
+# M6 Task 1: Backstage, the view over the platform API this milestone puts a
+# UI on. Design: docs/superpowers/specs/2026-09-15-northstar-m6-golden-path-
+# design.md §3 (the shape), §4 (the security boundary).
+#
+# It lives in `northstar-platform`, with the gateway, SPIRE, the PDS and
+# eval-scorer, for the same reason all four of those do: platform machinery,
+# not a tool an agent may call and not an agent's own dependency. No agent
+# knows this exists.
+#
+# **This task grants READ-ONLY.** The ServiceAccount below carries the
+# Kubernetes-plugin's read RBAC (§4: "the Kubernetes plugin's read access and
+# the contract card's write access are two different ServiceAccounts"). The
+# SECOND ServiceAccount -- the one that can PATCH
+# featureflags.core.openfeature.dev -- is Task 3's, deliberately not this
+# task's, so the two grants are reviewed and can be revoked separately.
+#
+# No SPIRE ClusterSPIFFEID is registered for this pod. Nothing Backstage does
+# is on the SPIFFE-verified path (it calls the Kubernetes API with this
+# ServiceAccount's own bearer token, not through agentgateway), so -- unlike
+# eval-scorer, which took one purely so the answer would be its own name if
+# something ever did check -- nothing here checks one either. Revisit if a
+# later task puts Backstage behind SPIRE-verified ingress.
+---
+# A dedicated ServiceAccount, for the same measured reason every workload in
+# this repo has one (see deploy/k8s/eval-scorer.yaml's identical note): a pod
+# running as `default` attests as `.../sa/default`, an identity that verifies
+# perfectly and identifies nothing. This one additionally CARRIES RBAC, unlike
+# eval-scorer's or the PDS's own ServiceAccount -- see the ClusterRole below.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backstage
+  namespace: northstar-platform
+  labels:
+    app: backstage
+    northstar.io/plane: platform
+---
+# Read-only, cluster-scoped because the eight catalog components this
+# ServiceAccount's Kubernetes plugin will show (Task 2) span four namespaces --
+# northstar-agents, northstar-tools, northstar-systems, northstar-platform --
+# and a catalog entry's owner does not always match the namespace Backstage
+# itself runs in. `get`/`list`/`watch` only: no `create`, `update`, `patch` or
+# `delete` anywhere in this Role, and no Secrets at all -- matching design §4's
+# "no access to Secrets ... beyond what the read-only Kubernetes plugin needs"
+# (the plugin needs none). ConfigMaps ARE included: Backstage's
+# @backstage/plugin-kubernetes-backend reads them by default alongside Pods,
+# Deployments, ReplicaSets, Services, HorizontalPodAutoscalers, Ingresses,
+# StatefulSets, LimitRanges, Jobs, CronJobs and Events -- the same default
+# object-type list upstream's docs publish -- which is what design §4 means by
+# "beyond what the plugin needs": this Role grants exactly that list, nothing
+# past it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: backstage-read-only
+  labels:
+    app: backstage
+    northstar.io/plane: platform
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - services
+      - configmaps
+      - limitranges
+      - events
+      - replicationcontrollers
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+      - daemonsets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+  # No metrics.k8s.io rule: this cluster installs no metrics-server (verified
+  # 2026-09-15, `kubectl get apiservices` -- no such APIService registered),
+  # so granting it would be RBAC for an API nothing here serves. Add it in the
+  # same change that adds metrics-server, not before.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backstage-read-only
+  labels:
+    app: backstage
+    northstar.io/plane: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: backstage-read-only
+subjects:
+  - kind: ServiceAccount
+    name: backstage
+    namespace: northstar-platform
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backstage
+  namespace: northstar-platform
+  labels:
+    app: backstage
+    northstar.io/plane: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backstage
+  template:
+    metadata:
+      labels:
+        app: backstage
+        northstar.io/plane: platform
+    spec:
+      serviceAccountName: backstage
+      containers:
+        - name: backstage
+          # scripts/rebuild-and-deploy.sh's convention:
+          # localhost:5001/northstar/<component>:dev, built from
+          # platform/backstage and pushed to the kind registry. `Always`
+          # because the tag never changes -- a rebuilt `:dev` would otherwise
+          # be ignored in favour of the node's cached layer.
+          image: localhost:5001/northstar/backstage:dev
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 7007
+          # No documented `/healthcheck` route exists in this scaffold
+          # (verified: grepping the installed @backstage/* packages for one
+          # turns up nothing, and the same absence is why
+          # deploy/k8s/policy-decision-service.yaml settles for a TCP probe
+          # rather than a richer health check). A TCP connect proves
+          # rootHttpRouter has bound :7007, which is the transition that
+          # matters here -- it cannot prove every plugin finished
+          # initializing, but nothing downstream of this pod blocks on that
+          # the way a payment blocks on the PDS, so the same tradeoff PDS's
+          # own note argues applies here too.
+          readinessProbe:
+            tcpSocket:
+              port: 7007
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 7007
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          # Measured 2026-09-15 against this pod, warm and idle 30s after
+          # rollout (this cluster has no metrics-server, so `kubectl top` is
+          # unavailable -- measured instead with
+          # `kubectl exec deploy/backstage -- cat /proc/1/status` and
+          # cross-checked with `crictl stats` on the kind node): steady-state
+          # VmRSS **~368 MiB** (376924 kB). Backstage is a Node backend
+          # bundling the catalog, scaffolder, search, auth, kubernetes and
+          # techdocs plugins in one process, so its footprint is well past the
+          # Python services' 96-256Mi. Request set just above the measured
+          # steady state; limit leaves roughly 2.6x headroom for the
+          # catalog/search-indexing burst on startup and on a rollout, the
+          # same "peak vs realistic" split reviewer-ui's own note
+          # (deploy/k8s/reviewer-ui.yaml) uses.
+          resources:
+            requests:
+              memory: 384Mi
+              cpu: 100m
+            limits:
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backstage
+  namespace: northstar-platform
+spec:
+  selector:
+    app: backstage
+  ports:
+    - name: http
+      port: 7007
+      targetPort: 7007

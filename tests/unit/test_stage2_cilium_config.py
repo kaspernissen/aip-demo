@@ -81,6 +81,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STAGE1 = REPO_ROOT / "deploy" / "kind" / "stage1.yaml"
 STAGE2 = REPO_ROOT / "deploy" / "kind" / "stage2.yaml"
+STAGE3 = REPO_ROOT / "deploy" / "kind" / "stage3.yaml"
 CILIUM_VALUES = REPO_ROOT / "deploy" / "platform" / "cilium-values.yaml"
 SETUP_KIND = REPO_ROOT / "scripts" / "setup-kind.sh"
 
@@ -309,20 +310,21 @@ def test_stages_above_the_implemented_one_still_refuse_to_run():
 
     The threshold moves with the milestones, and this test moves with it: M2.1
     set it at 2, M3 Task 1 raised it to 3, M4 Task 1 raised it to 4 when
-    `--stage 4` became real. Raising the gate in `setup-kind.sh` without
-    raising it here reddens this test, which is the intent -- the gate's
-    threshold is a claim about what exists, and it should not be possible to
-    change one without the other. (M3 ruling R5: this exact omission left the
-    branch red across two commits before, which is why Task 1's own brief
-    calls this test out by name.)
+    `--stage 4` became real, M5 Task 2 raised it to 5, and M6 Task 1 raises it
+    to 6 (Backstage). Raising the gate in `setup-kind.sh` without raising it
+    here reddens this test, which is the intent -- the gate's threshold is a
+    claim about what exists, and it should not be possible to change one
+    without the other. (M3 ruling R5: this exact omission left the branch red
+    across two commits before, which is why Task 1's own brief calls this
+    test out by name.)
     """
     text = _effective_script()
-    assert re.search(r'"\$\{STAGE\}" -gt 5', text), (
-        "the stage gate must refuse stages above 5; expected an effective "
-        '`"${STAGE}" -gt 5` test'
+    assert re.search(r'"\$\{STAGE\}" -gt 6', text), (
+        "the stage gate must refuse stages above 6; expected an effective "
+        '`"${STAGE}" -gt 6` test'
     )
-    assert not re.search(r'"\$\{?STAGE\}?" -gt 4', text), (
-        "the stage gate must no longer refuse stage 5, which M5 Task 2 "
+    assert not re.search(r'"\$\{?STAGE\}?" -gt 5', text), (
+        "the stage gate must no longer refuse stage 6, which M6 Task 1 "
         "implemented"
     )
 
@@ -494,6 +496,11 @@ def _run_setup_kind(stage, cluster_exists, kindnet_present, tmp_path):
     shutil.copy2(SETUP_KIND, tree / "scripts" / "setup-kind.sh")
     shutil.copy2(STAGE1, tree / "deploy" / "kind" / "stage1.yaml")
     shutil.copy2(STAGE2, tree / "deploy" / "kind" / "stage2.yaml")
+    # M6 Task 1: stage3.yaml too, for the stage-6 cold-path test below. Copied
+    # unconditionally rather than only when a stage-6 test runs -- it is a
+    # static committed file, and copying it for stages that never read it
+    # costs nothing.
+    shutil.copy2(STAGE3, tree / "deploy" / "kind" / "stage3.yaml")
     shutil.copy2(CILIUM_VALUES, tree / "deploy" / "platform" / "cilium-values.yaml")
     # A fake .env with only the one variable the script requires. The repo's
     # real .env is never read, and no secret is involved.
@@ -559,6 +566,41 @@ def test_stage_one_creates_the_cluster_from_stage1_yaml_when_run(tmp_path):
     assert Path(config).name == "stage1.yaml", (
         f"`--stage 1` created the cluster from {Path(config).name!r}; stage 1 "
         "must keep its default CNI"
+    )
+
+
+@pytestmark_bash
+def test_stage_six_creates_the_cluster_from_stage3_yaml_when_cold(tmp_path):
+    """M6 Task 1's cold-path proof for the one part of `--stage 6` this task
+    could not exercise against the real laptop cluster: the create-time
+    KIND_CONFIG selection.
+
+    M5-R27 is the standing warning this test answers: M5 shipped a broken
+    cold `--stage 5` because nobody ran it cold, and with no git remote a cold
+    rebuild is this repo's only recovery path. The real cluster this task ran
+    against was already at stage 5 -- warm, `kind get clusters` finds
+    `northstar`, and every `--stage 6` run this task performed took the
+    "cluster already exists, skipping creation" branch, which never
+    re-evaluates KIND_CONFIG for cluster creation at all (the same caveat
+    stage 5's own header in `scripts/setup-kind.sh` states about itself).
+    Recreating the real cluster to exercise this branch live needs Kasper's
+    explicit permission, each time, per this repo's standing constraint --
+    so this hermetic harness is the substitute: no real cluster, registry, or
+    network is touched, and the assertion is on the literal `kind create
+    cluster --config ...` invocation a genuinely cold `--stage 6` would issue.
+    """
+    _, out, calls = _run_setup_kind("6", False, False, tmp_path)
+    creates = [c for c in calls if c.startswith("kind create cluster")]
+    assert creates, f"`kind create cluster` was never invoked; output:\n{out}"
+    assert len(creates) == 1, f"expected one create, got {creates}"
+    config = creates[0].split("--config", 1)[1].strip()
+    assert Path(config).name == "stage3.yaml", (
+        f"`--stage 6` created the cluster from {Path(config).name!r}, not "
+        "stage3.yaml. There is deliberately no stage6.yaml (amendment A1: "
+        "Backstage needs no new host port, same reasoning stages 4 and 5 "
+        "already established) -- if this reads anything else, a cold "
+        "`--stage 6` either builds the wrong cluster shape or dies at the "
+        "`[[ -f \"$KIND_CONFIG\" ]]` check on a file that does not exist."
     )
 
 
