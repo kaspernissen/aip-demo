@@ -1,0 +1,19 @@
+# MkDocs configuration for this component's TechDocs site.
+#
+# Rendered by Backstage's `techdocs` plugin: `builder: local`,
+# `generator.runIn: local` (platform/backstage/app-config.production.yaml),
+# with python3 + mkdocs-techdocs-core installed in the Backstage image. The
+# entity points here with `backstage.io/techdocs-ref: dir:.`, which resolves
+# to the directory holding this component's catalog-info.yaml -- this one.
+#
+# `techdocs-core` is the only plugin, deliberately: it is the bundle Backstage
+# supports, and anything outside it is a plugin the image would also have to
+# ship.
+site_name: Claims Agent
+site_description: "Intake agent: parses the claim and delegates settlement."
+
+nav:
+  - Overview: index.md
+
+plugins:
+  - techdocs-core

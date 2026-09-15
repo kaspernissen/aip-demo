@@ -63,10 +63,27 @@ RUN mkdir packages/backend/dist/skeleton packages/backend/dist/bundle \
 
 # Stage 3 - Build the actual backend image and install production dependencies
 FROM node:24-trixie-slim
+# libsqlite3-dev for better-sqlite3, plus MkDocs for TechDocs.
+#
+# TechDocs `builder: 'local'` generates a component's documentation site on
+# first request, inside this container, which means the generator has to be
+# here. The default `generator.runIn: 'docker'` shells out to a Docker daemon
+# to run the techdocs container -- there is no daemon inside this pod and
+# mounting one would be a far larger grant than this demo should hold, so
+# app-config.production.yaml sets `runIn: 'local'` and this layer provides
+# what "local" then needs: python3 and `mkdocs-techdocs-core`, the plugin
+# bundle Backstage's own generator invokes.
+#
+# `--break-system-packages` is required on trixie: PEP 668 marks the system
+# Python as externally managed and pip refuses to install into it otherwise.
+# That is the correct flag here rather than a virtualenv, because the
+# generator resolves `mkdocs` from PATH as the `node` user and a venv would
+# need activating in a shell this process never starts.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
-    apt-get install -y --no-install-recommends libsqlite3-dev && \
+    apt-get install -y --no-install-recommends libsqlite3-dev python3 python3-pip && \
+    pip3 install --no-cache-dir --break-system-packages mkdocs-techdocs-core && \
     rm -rf /var/lib/apt/lists/*
 USER node
 WORKDIR /app
@@ -79,6 +96,11 @@ RUN --mount=type=cache,target=/home/node/.cache/yarn,sharing=locked,uid=1000,gid
 COPY --from=build --chown=node:node /app/packages/backend/dist/bundle/ ./
 COPY --chown=node:node app-config*.yaml ./
 COPY --chown=node:node catalog-info.yaml ./
+# This app's own TechDocs source. Its entity lives at the image root, so
+# `backstage.io/techdocs-ref: dir:.` resolves to /app -- mkdocs.yml and docs/
+# have to be here, not under ./catalog like the eight staged components.
+COPY --chown=node:node mkdocs.yml ./
+COPY --chown=node:node docs ./docs
 COPY --chown=node:node examples ./examples
 # M6 Task 2: the software catalog, static and read from this image's own
 # filesystem (design §3 -- no git discovery, this repo has no remote).

@@ -12,8 +12,18 @@ metadata:
   description: >-
     The MCP tool surface settlement-agent calls to reach payments-api.
   annotations:
+    backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-id: payments-mcp
     backstage.io/kubernetes-namespace: northstar-tools
+  tags:
+    - tool
+    - mcp
+    - python
+    - payments
+  links:
+    - url: http://localhost:16686/search?service=payments-mcp
+      title: Traces in Jaeger
+      icon: dashboard
 spec:
   type: service
   lifecycle: production

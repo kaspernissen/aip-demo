@@ -114,6 +114,25 @@ catalog:
       rules:
         - allow: [User, Group]
 
+techdocs:
+  # Generate on demand, inside this pod, and serve from its own filesystem.
+  #
+  # `runIn: 'local'` rather than the scaffold's `'docker'`: there is no Docker
+  # daemon inside this pod to shell out to, and mounting one would be a far
+  # larger grant than a docs renderer warrants. The Dockerfile installs
+  # python3 + mkdocs-techdocs-core so "local" has a generator to call.
+  #
+  # `publisher.type: 'local'` writes the generated site under the backend's
+  # own working directory. Nothing here needs to survive a restart -- the
+  # source of truth is the committed docs/ directory staged into the image,
+  # exactly as it is for the catalog itself (design §3), so a rebuild is how
+  # documentation changes reach this instance.
+  builder: 'local'
+  generator:
+    runIn: 'local'
+  publisher:
+    type: 'local'
+
 kubernetes:
   # M6 Task 2: wires the Kubernetes plugin (already registered in
   # packages/backend/src/index.ts and packages/app/src/App.tsx by this task)

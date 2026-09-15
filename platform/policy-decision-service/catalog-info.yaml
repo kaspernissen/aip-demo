@@ -17,8 +17,30 @@ metadata:
     FeatureFlag contract and decides whether a settlement requires human
     review or may execute autonomously.
   annotations:
+    backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-id: policy-decision-service
     backstage.io/kubernetes-namespace: northstar-platform
+  tags:
+    - platform
+    - python
+    - grpc
+    - policy
+    - security
+  links:
+    # Absolute, not the relative `/autonomy-contract` this first carried.
+    # Backstage's entity policy requires `links[].url` to be a valid URL and
+    # rejects a bare path -- and the rejection drops the WHOLE entity from the
+    # catalog, not just the link: policy-decision-service vanished from the
+    # component list while the backend logged a single `warn` and the pod
+    # stayed Ready. tests/unit/test_catalog_links_are_absolute_urls.py is the
+    # detector, because the running system's own signal for this is a page
+    # that is quietly missing something.
+    - url: http://localhost:7007/autonomy-contract
+      title: Autonomy contract
+      icon: dashboard
+    - url: http://localhost:16686/search?service=policy-decision-service
+      title: Traces in Jaeger
+      icon: dashboard
 spec:
   type: service
   lifecycle: production

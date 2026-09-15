@@ -13,8 +13,17 @@ metadata:
     The system of record for payments: executes a settlement once
     settlement-agent (via payments-mcp) instructs it to.
   annotations:
+    backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-id: payments-api
     backstage.io/kubernetes-namespace: northstar-systems
+  tags:
+    - system-of-record
+    - go
+    - payments
+  links:
+    - url: http://localhost:16686/search?service=payments-api
+      title: Traces in Jaeger
+      icon: dashboard
 spec:
   type: service
   lifecycle: production

@@ -44,8 +44,18 @@ metadata:
     via policy-decision-service, and delegates settlement to settlement-agent
     over A2A.
   annotations:
+    backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-id: claims-agent
     backstage.io/kubernetes-namespace: northstar-agents
+  tags:
+    - agent
+    - a2a
+    - python
+    - intake
+  links:
+    - url: http://localhost:16686/search?service=claims-agent
+      title: Traces in Jaeger
+      icon: dashboard
 spec:
   type: service
   lifecycle: production

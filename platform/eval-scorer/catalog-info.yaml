@@ -13,8 +13,18 @@ metadata:
     Scores settlement decisions after the fact against the telemetry
     contract, for the audit trail M3/M4/M5 built.
   annotations:
+    backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-id: eval-scorer
     backstage.io/kubernetes-namespace: northstar-platform
+  tags:
+    - platform
+    - python
+    - evaluation
+    - audit
+  links:
+    - url: http://localhost:16686/search?service=eval-scorer
+      title: Traces in Jaeger
+      icon: dashboard
 spec:
   type: service
   lifecycle: production

@@ -10,6 +10,11 @@ import catalogPlugin from '@backstage/plugin-catalog/alpha';
 // cluster.
 import kubernetesPlugin from '@backstage/plugin-kubernetes/alpha';
 import { navModule } from './modules/nav';
+// Northstar's own palette, logo lockup and page banners -- modules/theme.
+// Registered before the feature plugins so its themes are the ones the app
+// offers; the scaffold shipped no theme of its own at all, which is why
+// every page banner was Backstage magenta.
+import { themeModule } from './modules/theme';
 import { homeModule } from './modules/home';
 // M6 Task 3: the autonomy card, its own frontend plugin --
 // modules/autonomyContract/plugin.tsx. Backend half: packages/backend/src/
@@ -21,6 +26,7 @@ export default createApp({
     catalogPlugin,
     kubernetesPlugin,
     navModule,
+    themeModule,
     homeModule,
     autonomyContractPlugin,
   ],

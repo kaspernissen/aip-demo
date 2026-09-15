@@ -1,5 +1,5 @@
 app:
-  title: Scaffolded Backstage App
+  title: Northstar Internal Platform
   baseUrl: http://localhost:3000
 
   # Enable all packages by default, this will discover packages from packages/app/package.json
@@ -97,7 +97,12 @@ app:
               height: 4
 
 organization:
-  name: My Company
+  # Not the scaffold's "My Company". This string is what the catalog page
+  # titles itself with ("Northstar Catalog"), and it is on screen for the
+  # whole of the demo's last beat -- an audience reading "My Company Catalog"
+  # on a portal branded Northstar learns that the portal is a stock template,
+  # which is the one thing this pass exists to stop saying.
+  name: Northstar
 
 backend:
   # Used for enabling authentication, secret is shared by all backend plugins

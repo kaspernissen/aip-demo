@@ -1,0 +1,13 @@
+# Backstage's own TechDocs site. Unlike the eight components under agents/,
+# apps/, platform/, systems/ and tools/, this entity's catalog-info.yaml ships
+# at the IMAGE ROOT (/app) rather than being staged into ./catalog/... -- so
+# `dir:.` resolves to /app, and the Dockerfile copies this file and ./docs
+# there alongside it.
+site_name: Northstar Internal Platform
+site_description: The portal itself -- catalog, docs, live workloads, and the one write path.
+
+nav:
+  - Overview: index.md
+
+plugins:
+  - techdocs-core

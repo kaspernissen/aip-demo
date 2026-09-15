@@ -241,6 +241,22 @@ for component in "${targets[@]}"; do
       ccontext="${crest%%:*}"
       mkdir -p "$catalog_stage/$ccontext"
       cp "$ROOT/$ccontext/catalog-info.yaml" "$catalog_stage/$ccontext/catalog-info.yaml"
+      # TechDocs travels with the entity that owns it. Each component's
+      # `backstage.io/techdocs-ref: dir:.` resolves relative to the directory
+      # holding its catalog-info.yaml, which in the image is this staged
+      # directory -- so mkdocs.yml and docs/ have to land beside it or the
+      # docs tab renders "no techdocs" against a component that has some.
+      #
+      # Copied rather than required: a component with no docs yet simply has
+      # no mkdocs.yml, and stages fine. tests/unit/
+      # test_every_component_has_techdocs.py is what makes that a deliberate
+      # gap rather than a silent one.
+      if [[ -f "$ROOT/$ccontext/mkdocs.yml" ]]; then
+        cp "$ROOT/$ccontext/mkdocs.yml" "$catalog_stage/$ccontext/mkdocs.yml"
+      fi
+      if [[ -d "$ROOT/$ccontext/docs" ]]; then
+        cp -R "$ROOT/$ccontext/docs" "$catalog_stage/$ccontext/docs"
+      fi
     done
   fi
 

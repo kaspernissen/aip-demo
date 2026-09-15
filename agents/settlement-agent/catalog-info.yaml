@@ -22,8 +22,19 @@ metadata:
     `northstar-autonomy` FeatureFlag contract to decide whether a settlement
     executes assisted (human-reviewed) or autonomously.
   annotations:
+    backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-id: settlement-agent
     backstage.io/kubernetes-namespace: northstar-agents
+  tags:
+    - agent
+    - a2a
+    - mcp
+    - python
+    - llm
+  links:
+    - url: http://localhost:16686/search?service=settlement-agent
+      title: Traces in Jaeger
+      icon: dashboard
 spec:
   type: service
   lifecycle: production

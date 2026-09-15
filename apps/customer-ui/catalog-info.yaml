@@ -12,8 +12,21 @@ metadata:
   description: >-
     The customer-facing surface for filing a claim and watching it progress.
   annotations:
+    backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-id: customer-ui
     backstage.io/kubernetes-namespace: northstar-agents
+  tags:
+    - frontend
+    - typescript
+    - nextjs
+    - customer-facing
+  links:
+    - url: http://localhost:8080
+      title: Open the claim form
+      icon: web
+    - url: http://localhost:16686/search?service=customer-ui
+      title: Traces in Jaeger
+      icon: dashboard
 spec:
   type: website
   lifecycle: production
