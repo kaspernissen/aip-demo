@@ -516,6 +516,64 @@ def test_the_contracts_gated_figure_is_what_pytest_would_actually_skip():
     )
 
 
+def test_the_full_per_module_gated_spread_matches_what_pytest_reports():
+    """J7 (whole-branch review): the twelve per-module gated counts are
+    published in BOTH `docs/telemetry-contract.md`'s "Full spread" sentence
+    and README.md's own "The spread:" paragraph -- the same twelve integers,
+    summing to the same guarded total (74) -- and neither was ever compared to
+    `_gated_test_count()`'s own `per_file` dict, which already computes this
+    exact spread and until now was used only to build assertion messages. The
+    cheapest finding in the review, because the data was already in hand.
+    """
+    _, per_file = _gated_test_count()
+
+    text = _current_figures_block()
+    doc_match = re.search(r"Full spread:(.*?)The browser split", text, re.S)
+    assert doc_match, (
+        "expected the current block to state the per-module spread as "
+        "'Full spread: `file.py` N, ...' ending before 'The browser split'"
+    )
+    doc_spread = {
+        name: int(count)
+        for name, count in re.findall(r"`(test_\w+\.py)`\s+(\d+)", doc_match.group(1))
+    }
+    assert doc_spread, "found the 'Full spread:' sentence but parsed no entries from it"
+    assert doc_spread == per_file, (
+        "docs/telemetry-contract.md's 'Full spread:' sentence has drifted from "
+        f"what pytest actually reports. Published: {doc_spread}. "
+        f"Measured: {per_file}"
+    )
+
+    readme = (REPO_ROOT / "README.md").read_text()
+    readme_match = re.search(
+        r"The\s+spread:(.*?)The\s+four partly-gated ones", readme, re.S
+    )
+    assert readme_match, (
+        "expected README.md to state the per-module spread as 'The spread: "
+        "...' ending before 'The four partly-gated ones'"
+    )
+    section = readme_match.group(1)
+    # Two forms coexist in the prose: "`file.py` (N)" for a fully-gated
+    # module, and "N of the M in `file.py`" for one that is only partly
+    # gated -- both spellings are pulled out and merged into one dict, since
+    # either one publishes the same fact this test checks: how many of that
+    # module's tests are gated.
+    readme_spread = {
+        name: int(count)
+        for name, count in re.findall(
+            r"`(?:tests/e2e/)?(test_\w+\.py)`\s*\((\d+)", section
+        )
+    }
+    for count, name in re.findall(
+        r"(\d+) of the \d+\s+in\s*`(?:tests/e2e/)?(test_\w+\.py)`", section
+    ):
+        readme_spread[name] = int(count)
+    assert readme_spread == per_file, (
+        "README.md's 'The spread:' paragraph has drifted from what pytest "
+        f"actually reports. Published: {readme_spread}. Measured: {per_file}"
+    )
+
+
 def test_the_published_browser_split_is_what_the_source_says():
     """M4's final review, finding M1: the one gated figure with no guard.
 

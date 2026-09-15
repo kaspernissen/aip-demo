@@ -102,11 +102,18 @@ policy stops at the agent plane** (of `northstar-platform`'s six Cilium
 endpoints only the Policy Decision Service enforces anything, and nothing in the
 cluster has egress enforcement outside `northstar-agents`), and **`claims-agent`
 and `customer-ui` share one SPIFFE ID**. Both are pre-existing, both are
-measured, and both are M5's. A third is M4's own: **`pytest` is pinned one
+measured, and both are M5's. A third was M4's own: **`pytest` was pinned one
 release behind on purpose** (9.0.3, against 9.1.1) across seven
 `requirements.txt` files, deferred rather than drifted, and scheduled first
 after M4 merges. See §9 of
 [the M4 design spec](docs/superpowers/specs/2026-09-11-northstar-m4-observable-design.md).
+**2026-09-15, whole-branch review (J6): this debt was discharged in M5's own
+first commit** — Task 1 bumped all seven `requirements.txt` files (the five
+in the docs/telemetry-contract.md pin table, `platform/eval-scorer`'s, and
+the root `tests/requirements.txt`) to `9.1.1`, and every venv, including the
+root one, now measures it. Left standing with this note rather than deleted,
+per this document's own convention for a claim that was true when written
+and has since been closed.
 
 ---
 

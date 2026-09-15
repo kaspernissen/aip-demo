@@ -49,6 +49,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from _start_demo_fakes import port_aware_fake_curl
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 START_DEMO = REPO_ROOT / "scripts" / "start-demo.sh"
 
@@ -94,25 +96,13 @@ ps -axo pid= | while read -r p; do echo "fake $p user 1u IPv4 0x0 0t0 TCP *:1 (L
 exit 0
 """
 
-# Port-aware, unlike test_stage4_config.py's fake (which always succeeds):
-# this test needs curl to distinguish "answers" from "does not answer" per
-# port, since that distinction is the entire subject of V11. Every port
-# answers except payments-api's (18080), which is the one genuine refusal.
-_FAKE_CURL = r"""#!/usr/bin/env bash
-port=""
-for arg in "$@"; do
-  case "$arg" in
-    http://localhost:*)
-      rest="${arg#http://localhost:}"
-      port="${rest%%/*}"
-      ;;
-  esac
-done
-if [[ "$port" == "18080" ]]; then
-  exit 1
-fi
-exit 0
-"""
+# Port-aware, from the shared `_start_demo_fakes` helper (whole-branch review
+# carry-in 3 promoted this from a one-off defined here to a helper
+# `test_stage4_config.py` also uses): this test needs curl to distinguish
+# "answers" from "does not answer" per port, since that distinction is the
+# entire subject of V11. Every port answers except payments-api's (18080),
+# which is the one genuine refusal.
+_FAKE_CURL = port_aware_fake_curl(refusing_ports={"18080"})
 
 
 def _write_fake(bindir: Path, name: str, body: str) -> None:

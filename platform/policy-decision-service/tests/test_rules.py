@@ -87,6 +87,23 @@ def test_the_autonomous_row_gets_its_own_honest_rule_name():
     assert d.rule == "settlement-agent.autonomous.execute_limit"
 
 
+def test_the_autonomous_rows_deny_branch_also_gets_its_own_honest_rule_name():
+    """Whole-branch review, J2: the test above only ever drives the PERMIT
+    side of the `(settlement-agent, autonomous)` row -- 6,200 against its
+    1,000,000 limit -- so nothing anywhere asserted the DENY branch's rule
+    name. Reverting `decide()`'s deny-branch composition to the pre-M5 literal
+    left the entire PDS suite green (review mutation A16); the control
+    mutation on the permit branch (A17) went red, which is what made this the
+    one uncovered branch: an autonomous-level request over its own limit would
+    have its denial reported under `settlement-agent.assisted.execute_limit`,
+    the exact mislabel this milestone's commit title claims to have closed,
+    surviving in the one place nothing exercised.
+    """
+    d = decide(_input(caller=AGENT, amount=2_000_000.0, autonomy_level="autonomous"))
+    assert d.permit is False
+    assert d.rule == "settlement-agent.autonomous.execute_limit"
+
+
 def test_the_denial_reason_names_both_numbers():
     """The model narrates this string, so it must contain what a customer
     needs to hear: what was asked and what the limit is."""
@@ -174,11 +191,14 @@ def test_the_permit_text_also_names_the_currency_once_each():
 # M3 Task 3: the colleague with higher approval authority.
 #
 # One new EXECUTE_LIMITS row, nothing else -- `decide()` itself is unchanged.
-# The rule name `settlement-agent.assisted.execute_limit` is a literal in
-# `decide()`, not derived from `req.caller`, so the senior identity's decision
-# -- permit or deny -- is reported under the exact same rule string as the
-# junior identity's. That is what "same rule, different principal" means in
-# practice, and it is asserted here rather than narrated.
+# The rule name `settlement-agent.assisted.execute_limit` is composed from
+# `req.autonomy_level` only, never from `req.caller` (M5 Task 3 replaced the
+# literal with an f-string, but the load-bearing property this section is
+# about did not change: it is still keyed off the autonomy level alone), so
+# the senior identity's decision -- permit or deny -- is reported under the
+# exact same rule string as the junior identity's. That is what "same rule,
+# different principal" means in practice, and it is asserted here rather than
+# narrated.
 # ---------------------------------------------------------------------------
 
 
@@ -280,19 +300,41 @@ def test_proposing_a_payment_is_still_unlimited_for_any_caller():
 # M5 Task 3, Step 6: a contract that hands back a variant with no policy row
 # must deny -- and does, with no production change here. `EXECUTE_LIMITS` is
 # keyed by `(caller, autonomy_level)`, so an autonomy level nothing wrote a
-# row for is simply a dict miss, denied by the same `unknown_caller` branch
-# an unrecognised *caller* falls through -- the name is a misnomer for this
-# case (nothing about the caller was unknown), but the fail-closed property
-# it exists for holds regardless: a fail-closed property that holds
-# structurally, with no code added to defend it, is worth more than one that
-# only holds because a defensive branch was written for it.
+# row for is simply a dict miss, denied by the same branch an unrecognised
+# *caller* falls through.
+#
+# Whole-branch review, N6/M5-R25: that branch used to report BOTH misses
+# under `unknown_caller`, which is a misnomer for this case -- nothing about
+# the caller (`settlement-agent`, a row this table knows at two other levels)
+# was unknown here; the level was. `decide()` now derives whether the caller
+# itself has any row at all (`_KNOWN_CALLERS`) and reports this case under
+# `unknown_autonomy_level` instead. The fail-closed BEHAVIOUR is unchanged --
+# still a plain dict miss, still denied, still no defensive branch added to
+# hold the property -- only the audit-trail label moved to name the
+# dimension that was actually wrong. This test used to assert
+# `unknown_caller` here; that was itself the M5-R25 ambiguity made concrete,
+# not a fact worth preserving, so it is updated rather than left green by
+# accident.
 # ---------------------------------------------------------------------------
 
 
 def test_an_unknown_variant_denies_through_the_existing_table():
     """Garbage in the contract must deny -- and does, without a new branch,
-    because EXECUTE_LIMITS is keyed by (caller, level) and will simply miss."""
+    because EXECUTE_LIMITS is keyed by (caller, level) and will simply miss.
+    The caller here (settlement-agent) is a known identity, just not at this
+    level, so the rule name is `unknown_autonomy_level`, not `unknown_caller`
+    -- see the section comment above (N6/M5-R25)."""
     decision = decide(_input(autonomy_level="banana"))
+    assert decision.permit is False
+    assert decision.rule == "unknown_autonomy_level"
+
+
+def test_an_unrecognised_identity_still_denies_under_unknown_caller():
+    """The other half of N6/M5-R25's split: an identity with no row at ANY
+    level -- not merely at this one -- must still deny under `unknown_caller`,
+    unchanged. `OTHER` (claims-agent's SPIFFE ID) never appears in
+    EXECUTE_LIMITS at all, so `_KNOWN_CALLERS` genuinely does not contain it."""
+    decision = decide(_input(caller=OTHER, autonomy_level="assisted"))
     assert decision.permit is False
     assert decision.rule == "unknown_caller"
 

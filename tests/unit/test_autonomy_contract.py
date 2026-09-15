@@ -100,12 +100,73 @@ def test_the_contract_defaults_to_the_restrictive_variant():
 
 
 def test_every_variant_has_a_row_in_the_policy_table():
-    """A variant the rule table does not know denies via unknown_caller -- but
-    silently. Assert the two stay in step."""
+    """A variant the rule table does not know denies via unknown_autonomy_level
+    -- but silently. Assert the two stay in step."""
     variants = set(_load_featureflag()["spec"]["flagSpec"]["flags"]
                    ["autonomy-level"]["variants"])
     levels = {level for _, level in _parse_execute_limits()}
     assert variants <= levels, f"variants with no policy row: {variants - levels}"
+
+
+def _targeting_branches() -> tuple[str, str]:
+    """The two literal outcomes of the `autonomy-level` flag's `targeting.if`
+    -- `(then_branch, else_branch)` -- read directly from the YAML, not from
+    any other service's constant."""
+    targeting_if = (
+        _load_featureflag()["spec"]["flagSpec"]["flags"]["autonomy-level"]
+        ["targeting"]["if"]
+    )
+    assert isinstance(targeting_if, list) and len(targeting_if) == 3, (
+        "targeting.if is no longer the three-element [condition, then, else] "
+        f"shape this guard expects: {targeting_if!r}"
+    )
+    _condition, then_branch, else_branch = targeting_if
+    return then_branch, else_branch
+
+
+def test_the_targeted_branch_is_the_restrictive_variant_today():
+    """Whole-branch review, J3. `platform/eval-scorer/scorer/contract.py`'s
+    `set(branches) == {CURRENT_LEVEL}` is the only thing that currently
+    guards this branch, and it is scheduled to be rewritten the day a real
+    flip ships (see that constant's own failure message) -- taking this
+    protection with it. This file already parses the YAML for
+    `defaultVariant` and does not need the audit's coupling constant to keep
+    guarding the targeted branch too.
+
+    Ruling M5-R8: this resource ships with BOTH branches "assisted" on
+    purpose -- Task 6's flip is a one-word diff on this branch alone. Review
+    mutation A20 (THEN branch flipped) already reddens the eval-scorer suite;
+    this pins the same fact at the tests/unit layer, independent of that
+    coupling."""
+    then_branch, _else_branch = _targeting_branches()
+    assert then_branch == "assisted", (
+        f"the targeted (settlement-agent) branch reads {then_branch!r}, not "
+        "the shipped no-op 'assisted' -- if this is a deliberate flip "
+        "(Task 6), the demo state has genuinely changed; if it is not, this "
+        "is the permissive half of ruling M5-R8's no-op silently breaking"
+    )
+
+
+def test_the_untargeted_branch_is_still_the_restrictive_variant():
+    """Whole-branch review, J3 (the actual gap): review mutation A19 flipped
+    this exact branch -- every caller the contract does NOT name -- to
+    'autonomous' and `test_every_variant_has_a_row_in_the_policy_table` and
+    `test_the_contract_defaults_to_the_restrictive_variant` both stayed green,
+    because neither reads the targeting branches themselves. Only
+    `platform/eval-scorer/scorer/contract.py`'s `CURRENT_LEVEL` coupling
+    caught it (A19b), and that guard's own failure message says it is
+    scheduled to be rewritten the day Task 6's flip becomes real, at which
+    point it would stop coupling the two branches together and this would be
+    the only thing standing between a typo and every unnamed caller silently
+    gaining autonomous execution.
+    """
+    _then_branch, else_branch = _targeting_branches()
+    assert else_branch == "assisted", (
+        f"the untargeted (else) branch reads {else_branch!r}, not the "
+        "fail-closed 'assisted' -- every caller this contract does not name "
+        "would resolve to that variant, which is the exact failure mode "
+        "review mutation A19 found no tests/unit guard against"
+    )
 
 
 # --- M5 Task 4: the deprecated-spelling guard, derived not retyped ---------

@@ -58,9 +58,10 @@ processors:
   # `policy.decision.retryable` (a bool) -- ATTR_DECISION and ATTR_RETRYABLE in
   # platform/policy-decision-service/pds/telemetry.py -- cited by NAME rather
   # than by line, the one form that survives an edit to the file above them.
-  # The line numbers here were 32,40 and were wrong by M4's final review:
-  # those are SPAN_NAME and ATTR_CURRENCY, in the comment explaining the
-  # milestone's central mechanism. OpenSearch expands dotted keys into
+  # (M4's final review found the previous citation -- line numbers 32 and 40 --
+  # pointed at the wrong constants entirely, SPAN_NAME and ATTR_CURRENCY, in
+  # the comment explaining this milestone's central mechanism; naming by line
+  # is what let that drift happen unnoticed.) OpenSearch expands dotted keys into
   # objects at index time, so one document would need
   # `attributes.policy.decision` to be a scalar and an object at once. It
   # refuses the bulk item permanently, per document, forever:

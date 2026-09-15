@@ -350,11 +350,19 @@ fi
 if [[ -n "$REVIEWER_UI_AVAILABLE" ]]; then
   verify_existing_surface 8081 reviewer-ui "/healthz"
 else
-  # `--stage 4`, not `--stage 3`, even though reviewer-ui first appears at
-  # stage 3: stage 4 is the current stage and a strict superset of stage 3
-  # (the same cluster config, plus OpenSearch), and sending an operator to
-  # stage 3 lands them on a cluster where every one of
-  # tests/e2e/test_opensearch_trace_ingest.py's guards skips.
+  # Name the CURRENT stage here, not the stage reviewer-ui first appears at
+  # (3): stage 3 is a strict subset of the current cluster, and sending an
+  # operator to build only as far as reviewer-ui's own first stage lands them
+  # on a cluster where every one of
+  # tests/e2e/test_opensearch_trace_ingest.py's guards skips, missing
+  # everything a later stage added. `tests/unit/test_stage2_cilium_config.py`'s
+  # `test_no_operator_facing_instruction_still_points_at_an_older_stage`
+  # (ruling M5-R17) enforces exactly this for every operator-facing
+  # instruction in this repo: an instruction naming a stage older than
+  # `CURRENT_STAGE` is an offender there regardless of whether that older
+  # stage happens to be sufficient for the one surface being described, which
+  # is why this line must always track `CURRENT_STAGE` and never a fixed
+  # literal.
   #
   # Re-review finding N1: this line said `--stage 3`, which was the FOURTH
   # recurrence of the class ruling M4-R7 exists for -- authored inside the fix
@@ -362,11 +370,23 @@ else
   # tests/unit/test_stage2_cilium_config.py's guard did not open. Its file
   # list is now a `scripts/*.sh` glob rather than four hand-listed paths, so
   # this file is covered and so is the next script anyone adds.
+  #
+  # Whole-branch review (M5), finding N1, fifth recurrence, and it was the
+  # COMMENT that had gone stale, not the code: M4's fix round wrote this
+  # comment naming `--stage 4` because 4 was `CURRENT_STAGE` at the time; M5
+  # Task 6 raised `CURRENT_STAGE` to 5 and correctly bumped the line below to
+  # `--stage 5` in the same move, but nobody re-derived this paragraph's own
+  # conclusion alongside it, so the prose and the code it justifies fell out
+  # of step. Fixed here by updating the comment to track `CURRENT_STAGE`
+  # rather than by changing the line to `--stage 4`: M5-R17's guard was run
+  # against that alternative and rejects it -- any operator-facing instruction
+  # naming a stage below `CURRENT_STAGE` is an offender there, by design, so
+  # `--stage 4` is not an available fix regardless of "first provides."
   echo -e "${YELLOW}  - reviewer-ui: SKIPPED, svc/reviewer-ui does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
 fi
 
 echo ""
-if [[ -n "$DASHBOARDS_AVAILABLE" && -n "$REVIEWER_UI_AVAILABLE" && -n "$PROMETHEUS_AVAILABLE" ]]; then
+if [[ -n "$DASHBOARDS_AVAILABLE" && -n "$REVIEWER_UI_AVAILABLE" && -n "$PROMETHEUS_AVAILABLE" && -n "$EVAL_SCORER_AVAILABLE" && -n "$FLAGD_AVAILABLE" ]]; then
   echo -e "${GREEN}All surfaces verified up.${NC}"
 else
   echo -e "${GREEN}Every surface this cluster has is verified up.${NC}"

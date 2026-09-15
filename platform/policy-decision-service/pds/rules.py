@@ -25,6 +25,17 @@ EXECUTE_LIMITS: dict[tuple[str, str], float] = {
      "assisted"): 25_000.0,
 }
 
+# Whole-branch review, finding N6: EXECUTE_LIMITS is keyed by (caller, level),
+# so a miss below is ambiguous between "this caller has no row at all" and
+# "this caller is known, but not at this level" -- a contract typo in the
+# autonomy level (or, before M5, an unreachable variant) used to be reported
+# under the same `unknown_caller` rule name as a genuinely unrecognised
+# identity. The label names the wrong dimension in that second case: the
+# caller IS known, the level is not, and in an audit trail that distinction
+# is the whole point. Derived from EXECUTE_LIMITS' own keys, not retyped, so
+# a caller added or removed there needs no matching edit here.
+_KNOWN_CALLERS = frozenset(caller for caller, _level in EXECUTE_LIMITS)
+
 # Tools with no world-changing effect. Proposing is reversible; executing moves
 # money. Only the latter is limited.
 #
@@ -121,11 +132,23 @@ def decide(req: PolicyInput) -> Decision:
 
     limit = EXECUTE_LIMITS.get((req.caller or "", req.autonomy_level))
     if limit is None:
+        # Fail-closed behaviour is identical either way -- a dict miss denies,
+        # full stop (review mutation A15, RED). Only the audit-trail LABEL
+        # changes: `unknown_caller` when the identity itself has no row at
+        # any level, `unknown_autonomy_level` when the identity is known but
+        # this particular level is not (see the N6 note above `_KNOWN_CALLERS`).
+        if (req.caller or "") not in _KNOWN_CALLERS:
+            return Decision(
+                False,
+                f"no execute allowance for caller {req.caller!r} at autonomy "
+                f"level {req.autonomy_level!r}",
+                rule="unknown_caller",
+            )
         return Decision(
             False,
             f"no execute allowance for caller {req.caller!r} at autonomy "
             f"level {req.autonomy_level!r}",
-            rule="unknown_caller",
+            rule="unknown_autonomy_level",
         )
 
     if req.amount is None:

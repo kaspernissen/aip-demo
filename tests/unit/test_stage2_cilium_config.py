@@ -759,7 +759,7 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
     # single line. Python does not require an instruction to stay on one
     # source line: `"Re-run "` `"./scripts/setup-kind.sh --stage 4 to ..."` is
     # two adjacent string literals the interpreter concatenates into one
-    # string, and four more sites used a lead-in this pattern never covered at
+    # string, and other sites used a lead-in this pattern never covered at
     # all ("Bring it up with", "the fix is") -- both defeats are the same
     # "stale prose survives because the guard's needle doesn't see the whole
     # sentence" class this project has hit eight times before (M4 alone), just

@@ -67,10 +67,13 @@ import signal
 import stat
 import subprocess
 import time
+from collections.abc import Iterable
 from pathlib import Path
 
 import pytest
 import yaml
+
+from _start_demo_fakes import port_aware_fake_curl
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SETUP_KIND = REPO_ROOT / "scripts/setup-kind.sh"
@@ -884,9 +887,13 @@ def test_the_rename_is_confined_to_the_opensearch_branch():
 
 _FAKE_KUBECTL = r"""#!/usr/bin/env bash
 # `get svc/NAME -o name` decides whether a stage-gated surface "exists".
-if [[ "$*" == *"get svc/"* ]]; then
+# `get featureflag/NAME -o name` does the same for flagd (M5 Task 6: it has
+# no Service of its own, so start-demo.sh asks for the FeatureFlag object
+# instead -- see FLAGD_AVAILABLE). Both are matched against the same
+# FAKE_ABSENT_SERVICES list, keyed by the name after the slash.
+if [[ "$*" == *"get svc/"* || "$*" == *"get featureflag/"* ]]; then
   for absent in $FAKE_ABSENT_SERVICES; do
-    if [[ "$*" == *"svc/$absent"* ]]; then exit 1; fi
+    if [[ "$*" == *"svc/$absent"* || "$*" == *"featureflag/$absent"* ]]; then exit 1; fi
   done
   exit 0
 fi
@@ -914,11 +921,20 @@ ps -axo pid= | while read -r p; do echo "fake $p user 1u IPv4 0x0 0t0 TCP *:1 (L
 exit 0
 """
 
-_FAKE_CURL = "#!/usr/bin/env bash\nexit 0\n"
 
-
-def _run_start_demo(tmp_path, absent_services: str):
+def _run_start_demo(
+    tmp_path, absent_services: str, refusing_ports: Iterable[str] = (),
+):
     """Run the real start-demo.sh against fakes and return its output.
+
+    `refusing_ports` (whole-branch review, carry-in 3): the fake `curl` used
+    to be `"#!/usr/bin/env bash\\nexit 0\\n"` unconditionally -- inert on the
+    one dimension `verify_owned_forward`/`verify_existing_surface` exist to
+    check (ruling R20: a bound port proves nothing, only an answering one
+    does). It is now `_start_demo_fakes.port_aware_fake_curl`, shared with
+    `test_start_demo_v11.py`, which fails only for the ports named here. The
+    default (no port refuses) reproduces the old fake's behaviour exactly, for
+    callers that only need curl to get out of the way.
 
     The script ends in `wait`, so it never exits on its own: read until it
     prints its final line, then kill the whole process group (which is this
@@ -929,7 +945,9 @@ def _run_start_demo(tmp_path, absent_services: str):
     bindir = tmp_path / "fakebin"
     bindir.mkdir()
     for name, body in {
-        "kubectl": _FAKE_KUBECTL, "lsof": _FAKE_LSOF, "curl": _FAKE_CURL,
+        "kubectl": _FAKE_KUBECTL,
+        "lsof": _FAKE_LSOF,
+        "curl": port_aware_fake_curl(refusing_ports),
     }.items():
         path = bindir / name
         path.write_text(body)
@@ -1039,6 +1057,62 @@ def test_start_demo_forwards_the_stage_4_surfaces_when_they_do_exist(tmp_path):
     assert "http://localhost:5601" in output, output
     assert "http://localhost:8081" in output, output
     assert "http://localhost:9090" in output, output
+
+
+def test_the_all_verified_banner_requires_eval_scorer_and_flagd_too(tmp_path):
+    """Whole-branch review, J1: `start-demo.sh:369`'s "All surfaces verified
+    up." gate used to check only `DASHBOARDS_AVAILABLE`, `REVIEWER_UI_AVAILABLE`
+    and `PROMETHEUS_AVAILABLE`, omitting `EVAL_SCORER_AVAILABLE` and
+    `FLAGD_AVAILABLE` -- both forwarded and verified earlier in the same
+    script, with their own real SKIPPED branches. On a stage-4 cluster (which
+    has neither eval-scorer nor the flagd FeatureFlag, both stage-5-only) the
+    old gate printed two YELLOW `SKIPPED` lines immediately followed by GREEN
+    `All surfaces verified up.` -- the exact contradiction the else-branch
+    exists to prevent, and it never fired.
+
+    Dashboards, reviewer-ui and Prometheus are all present here -- the old
+    gate's three conditions are individually satisfied -- so this reproduces
+    the contradiction precisely: it is eval-scorer and flagd alone that must
+    still turn the banner over to the honest branch.
+    """
+    output, _ = _run_start_demo(
+        tmp_path, absent_services="eval-scorer northstar-autonomy",
+    )
+    assert "eval-scorer: SKIPPED" in output, output
+    assert "flagd metrics: SKIPPED" in output, output
+    assert "All surfaces verified up." not in output, (
+        "the gate printed the all-clear banner while eval-scorer and flagd "
+        f"were both SKIPPED just above it:\n{output}"
+    )
+    assert "Every surface this cluster has is verified up." in output, output
+    assert "Some stage-gated surfaces are absent" in output, output
+
+
+def test_reviewer_uis_bound_but_dead_forward_is_refused_ruling_r20(tmp_path):
+    """Whole-branch review, carry-in 3: `verify_existing_surface`'s R20 branch
+    (port bound, but the request it carries never answers) had no test
+    anywhere -- the only path this fake `curl` could not previously exercise,
+    because it always answered.
+
+    reviewer-ui is a `NodePort`, not a forward this script owns, so it is
+    checked through `verify_existing_surface` rather than
+    `verify_owned_forward`: fake `lsof` reports its port (8081) bound (as it
+    does for every port, unconditionally), and fake `curl` is told to refuse
+    exactly that port -- reproducing a dead `kubectl port-forward`'s own
+    socket-stays-bound-but-nothing-answers shape for a NodePort instead.
+    """
+    output, returncode = _run_start_demo(
+        tmp_path, absent_services="", refusing_ports={"8081"},
+    )
+    assert returncode != 0, (
+        f"expected start-demo.sh to exit non-zero on reviewer-ui's bound but "
+        f"dead port:\n{output}"
+    )
+    assert "reviewer-ui" in output and "ruling R20" in output, (
+        "expected the R20 refusal, naming reviewer-ui, for a bound port that "
+        f"carries no request:\n{output}"
+    )
+    assert "All surfaces verified up." not in output, output
 
 
 # --- M4 Task 3: the evidence view, and the two things that make it real -----

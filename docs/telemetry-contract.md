@@ -11,7 +11,11 @@ this repo owns outright on the human-in-the-loop path —
 (Observable)** for the metrics this system actually emits (one of six GenAI
 agent metrics, the rest published as gaps), the trace-ingest path into
 OpenSearch, the evidence view's queries, the policy-adherence score spans, and
-**OQ-1, answered**. Revised at every milestone.
+**OQ-1, answered**, and through **M5 (Progressive autonomy)** for the
+`feature_flag.evaluation` span event and log record the OpenFeature/flagd
+sidecar now emits on every autonomy-level resolution, and the export
+destinations those log records travel to (see the export-destinations table
+and its recurrence note below). Revised at every milestone.
 
 **This line stopped at M3 for the whole of M4** until Task 5's doc pass, while
 five M4 sections were added below it. Recorded rather than silently fixed: it
@@ -19,6 +23,14 @@ is the same class the count-and-inventory guards in
 `tests/unit/test_telemetry_contract_counts.py` and
 `tests/unit/test_telemetry_contract_attribute_counts.py` exist for, in the one
 part of the file no guard reads.
+
+**2026-09-15, whole-branch review (J5): it happened again, second consecutive
+recurrence.** This line stopped at M4 for the whole of M5 — no mention of M5,
+flagd, OpenFeature, the contract or the logs pipeline — while the document
+grew +569 net lines below it, including the section this note now sits
+inside. Recorded rather than silently fixed, for the same reason as the note
+above: this is the one part of the file the count-and-inventory guards do not
+read, and it has now failed twice running.
 
 ## The governing rule
 
@@ -134,8 +146,104 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
-**2026-09-15 (M5 Task 6) — the current figures, and the gate row is
-MEASURED.**
+**2026-09-15 (M5 whole-branch review, fix wave Parts A+B) — the current
+figures, and the gate row is PREDICTED, NOT MEASURED.**
+The whole-branch review
+(`.superpowers/sdd/2026-09-14-m5-progressive-autonomy/whole-branch-review.md`)
+returned READY AFTER FIXES against the Task 6 gate commit `ae29785`. Part A
+(code) closed six of its items with new tests: J1 (`start-demo.sh`'s "All
+surfaces verified up." banner omitted `EVAL_SCORER_AVAILABLE` and
+`FLAGD_AVAILABLE`, +1 test), J2 (the deny branch of the `(settlement-agent,
+autonomous)` row had no rule-name assertion, +1 PDS test), J3 (the targeting
+branches' only guard was a coupling constant scheduled to be rewritten, +2
+tests moved into `tests/unit/test_autonomy_contract.py`), N6 (`unknown_caller`
+named the wrong dimension for a known caller at an unknown level, +1 PDS test
+for the split), M5-R33 (the root `.venv` had no pin guard, +7 tests in the new
+`tests/unit/test_pins.py`), and carry-in 3 (the inert `_FAKE_CURL` promoted to
+the shared, port-aware `tests/unit/_start_demo_fakes.py::port_aware_fake_curl`,
++1 test for ruling R20's previously-untested branch). Carry-in 5 (the "four of
+the six" retyped count) was deleted from `test_stage2_cilium_config.py`'s
+docstring, adding no test. Part B (this document, its guards, and the two
+other documents below) closes C1 and everything else the review filed as
+Major or Minor.
+
+That takes the collected count from **368 to 379**: `tests/unit` gains
+**11** (`test_pins.py`'s seven, two in `test_autonomy_contract.py` for J3, two
+in `test_stage4_config.py` for J1 and carry-in 3), re-measured with
+`.venv/bin/python -m pytest --collect-only -q tests/`. The
+policy-decision-service's own suite gains **2** (J2's deny-branch test, N6's
+unrecognised-identity test), taking it from 127 to **129** — re-measured with
+`.venv/bin/python -m pytest --collect-only -q tests` from that service's own
+directory, not derived by arithmetic on the row below.
+
+Part B adds **5** more, all under `tests/unit`, taking the collected count from
+**379 to 384**: C1's own derivation guard,
+`tests/unit/test_telemetry_contract_export_destinations.py` (2 tests — the
+table-vs-config check, and the logs-summary-sentence check); J5's status-line
+guard, `tests/unit/test_doc_status_lines_name_the_current_milestone.py` (2
+tests); and J7's extension of this very file, one new test comparing the
+per-module gated spread published below against `_gated_test_count()`'s own
+`per_file` dict. Re-measured the same way, not carried forward by arithmetic —
+a guard that checks a count is itself a test, and this document's own history
+(J4, this fix wave) is the argument against forgetting that a guard's own
+collection weight needs re-deriving too.
+
+Bare-suite row, derived from that same collection: 384 collected − 74 gated −
+**0** xfailed = `310 passed, 74 skipped, 0 xfailed`.
+
+The gated figure is unchanged at **74** — re-measured the same way as every
+figure below it, a `--collect-only` run with a plugin that counts items
+carrying a `skipif` whose reason names `RUN_BROWSER_TESTS` and whose condition
+is true with the variable unset — because none of Part A's eleven new
+`tests/unit` tests, Part B's five new `tests/unit` tests, or the two new PDS
+tests carries one; PDS tests are not
+collected by this measure at all (`tests/unit`-only) — and reports 74 of 384,
+with the per-module spread and the browser split both unchanged from the row
+below (restated so this block's own guard has a figure to read, not merely
+inherited by silence). Full spread: `test_settlement_llm_trace.py` 9,
+`test_prometheus_metrics_ingest.py` 10, `test_browser_root_span.py` 8,
+`test_settlement_agent_trace.py` 8, `test_claims_chain_trace.py` 7,
+`test_claim_correlation.py` 6, `test_gateway_trace.py` 6,
+`test_supervised.py` 6, `test_policy_scores.py` 5,
+`test_evidence_view.py` 4, `test_policy_denial.py` 4,
+`test_progressive_autonomy.py` 1. The browser split is unchanged: **3 of the
+12 launch a browser** and **9 of the 12 start no browser**.
+
+Gate row: **PREDICTED, NOT MEASURED** — this branch's gate run was at commit `ae29785`.
+Part A touched nine files, all under `GATE_PATHS`
+(`platform/policy-decision-service/pds/rules.py`,
+`platform/policy-decision-service/tests/test_rules.py`,
+`scripts/start-demo.sh`, `tests/unit/test_autonomy_contract.py`,
+`tests/unit/test_stage2_cilium_config.py`, `tests/unit/test_stage4_config.py`,
+`tests/unit/test_start_demo_v11.py`, `tests/unit/_start_demo_fakes.py`,
+`tests/unit/test_pins.py`). Part B added three more under `tests/`
+(`tests/unit/test_telemetry_contract_export_destinations.py`,
+`tests/unit/test_doc_status_lines_name_the_current_milestone.py`, and an
+extension to `tests/unit/test_telemetry_contract_counts.py` itself) — `docs/`
+is not in `GATE_PATHS` (see the comment on `gate_paths` in
+`test_a_predicted_gate_row_is_labelled_as_one` for why), so this document's
+own edits do not themselves count, but the new and extended test files do.
+Every one of these twelve files is still uncommitted against that gate commit
+— so the row can no longer read MEASURED, and this test suite's own staleness
+guard (`test_a_predicted_gate_row_is_labelled_as_one`) would fail it if it
+did. **What has to happen before merge:** either a second
+`RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` run, recording its own commit
+and figures in a new block above this one — a decision this document does not
+make, since it is the orchestrator's to spend or defer — or, absent that run,
+this row stays labelled `PREDICTED, NOT MEASURED` at merge, and whoever merges
+it is accepting that the gate has not re-verified Part A's changes (most
+materially: J2's and N6's PDS behaviour, and J1/J3's guard additions) or Part
+B's new guards (C1's derivation test, J5's status-line test, J7's spread
+check). The prediction from collection (384 − 0 xfailed = 384) is `384
+passed, 0 xfailed`; nothing claims that figure was measured against this tree.
+
+`tests/unit` alone collects **238** (222 before this fix wave, 233 after Part
+A, 238 after Part B).
+
+---
+
+**2026-09-15 (M5 Task 6) — superseded by the row above, and kept the way every
+earlier row is: it was the current figure at the time it was written.**
 Task 6 flips the `northstar-autonomy` contract live (against the deployed
 `FeatureFlag` object, never the committed `deploy/platform/openfeature/featureflag.yaml`
 — see ruling M5-R29/M5-R31's `CURRENT_LEVEL` coupling, which this design
@@ -222,8 +330,11 @@ each against its pin, rather than trusting the number written down.**
 under `tests/unit` (`test_kube_helper.py`'s one-line allowlist addition is an
 edit to an existing test's data, not a new test).
 
-**2026-09-14 (M5 Task 4) — the current figures, and the gate row is still
-PREDICTED.**
+**2026-09-14 (M5 Task 4) — superseded by the row above, and kept the way every
+earlier row is: it was the current figure at the time it was written.**
+(J4, whole-branch review: this heading claimed the gate row was still
+PREDICTED after the row above had already measured it. Reworded rather than
+silently corrected, per the standing rule two blocks above.)
 Task 4 gives every flag evaluation a second signal: a genuine
 `feature_flag.evaluation` log record (`pds/autonomy.py::emit_evaluation_event`,
 sent through the logs pipeline `pds/telemetry.py` now wires end to end to
@@ -333,8 +444,12 @@ log event is the human-readable parity target, not a scoring dependency.
 
 ---
 
-**2026-09-14 (M5 Task 1 fix round 1) — the current figures, and the gate row
-is still PREDICTED.**
+**2026-09-14 (M5 Task 1 fix round 1) — superseded by the row above, and kept
+the way every earlier row is: it was the current figure at the time it was
+written.**
+(J4, whole-branch review: this heading claimed the gate row was still
+PREDICTED after a later row had already measured it. Reworded rather than
+silently corrected, per the standing rule two blocks above.)
 The Task 1 review (Important finding) named `scripts/start-demo.sh`'s V11 fix
 as the one item in that task's whole batch shipped with zero regression
 test. Closed with one new hermetic suite,
@@ -368,8 +483,11 @@ tree.
 
 ---
 
-**2026-09-14 (M5 Task 2) — the current figures, and the gate row is still
-PREDICTED.**
+**2026-09-14 (M5 Task 2) — superseded by the row above, and kept the way every
+earlier row is: it was the current figure at the time it was written.**
+(J4, whole-branch review: this heading claimed the gate row was still
+PREDICTED after a later row had already measured it. Reworded rather than
+silently corrected, per the standing rule two blocks above.)
 Task 2 stands up stage 5's machinery (cert-manager, the Open Feature
 Operator, flagd, the `northstar-autonomy` contract) and adds one new hermetic
 suite, `tests/unit/test_autonomy_contract.py`, two tests: the contract's
@@ -460,9 +578,13 @@ run is what turns this back into a measurement.
 
 `tests/unit` alone collects **214** (212 before this task).
 
-**2026-09-14 (M4 final-review fix wave) — the current figures, and the gate row
-is MEASURED: ruling M4-R22 bought this milestone a second run, because the
+**2026-09-14 (M4 final-review fix wave) — superseded by the row above, and kept
+the way every earlier row is: it was the current figure at the time it was
+written. Ruling M4-R22 bought this milestone a second run, because the
 first one no longer measured a build that exists.**
+(J4, whole-branch review: this heading is M4's, not M5's, and the file grew
++569 net lines below it while this one sat unreworded. Reworded rather than
+silently corrected, per the standing rule two blocks above.)
 The fix wave added **7** tests under `tests/`, taking the collected count from
 343 to **350**, re-measured with
 `.venv/bin/python -m pytest --collect-only -q tests/`. Every one is a unit test
@@ -1691,8 +1813,13 @@ the plan defect described two paragraphs up).
 
 Per-service unit suites (all eight run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 114, payments-mcp 16, payments-api (Go) 31,
-customer-ui (vitest) 6, policy-decision-service 127,
+customer-ui (vitest) 6, policy-decision-service 129,
 reviewer-ui 56, eval-scorer 160 — all passing.
+(**2026-09-15, whole-branch review fix wave Part A: policy-decision-service
+127 → 129.** J2's deny-branch rule-name test and N6's unrecognised-identity
+test both land in `platform/policy-decision-service/tests/test_rules.py`.
+Re-measured with `.venv/bin/python -m pytest --collect-only -q tests` from
+that service's own directory.)
 (**2026-09-14, M5 Task 5 fix round 1: eval-scorer 152 → 160.**
 Re-measured with `.venv/bin/python -m pytest --collect-only -q tests` from
 that service's own directory. Task 5's opus review returned NOT APPROVED (1
@@ -2316,18 +2443,21 @@ are not symmetric**:
 | `traces` | `otlp_grpc/jaeger`, `forward/opensearch`, `otlp_grpc/dash0`, `debug` |
 | `traces/opensearch` (stage 4 only) | `opensearch/trace` |
 | `metrics` | `otlp_http/prometheus` (stage 4 only), `otlp_grpc/dash0`, `debug` |
-| `logs` | `otlp_grpc/dash0`, `debug` |
+| `logs` | `opensearch/logs` (stage 4 only), `otlp_grpc/dash0`, `debug` |
 
 **Traces go to Jaeger, OpenSearch and Dash0; metrics go to Prometheus and
-Dash0; logs go to Dash0 only.** Jaeger is a traces-only backend by design, so
+Dash0; logs go to OpenSearch and Dash0.** Jaeger is a traces-only backend by design, so
 it was never a candidate for the other two signals — this is not an oversight,
 it is what "traces to a vendor-neutral OSS backend, everything else to whichever
 vendor is configured" looks like when the OSS backend genuinely can't carry
-metrics or logs. Prometheus is the vendor-neutral OSS backend for the signal
-Jaeger cannot take, added at M4 Task 2 and stage-4 only; below stage 4 the
-`metrics` row is `otlp_grpc/dash0`, `debug` again, because
-`scripts/setup-kind.sh` strips the stage-4-only region and a collector must not
-name a backend its cluster does not have (ruling M4-R8).
+metrics or logs. Prometheus and OpenSearch are the vendor-neutral OSS backends
+for the two signals Jaeger cannot take — Prometheus for metrics (added at M4
+Task 2), OpenSearch for logs (added at M5 Task 4, alongside the trace branch
+M4 Task 1 already gave it) — both stage-4 only; below stage 4 the `metrics`
+row is `otlp_grpc/dash0`, `debug` again and the `logs` row is likewise
+`otlp_grpc/dash0`, `debug` alone, because `scripts/setup-kind.sh` strips the
+stage-4-only region and a collector must not name a backend its cluster does
+not have (ruling M4-R8).
 
 **The metrics row read `otlp_grpc/dash0`, `debug` and this paragraph read
 "metrics and logs go to Dash0 only" until M4 Task 2**, which is the second time
@@ -2337,6 +2467,22 @@ where it was written: "read directly from" is a provenance claim, and it decays
 the moment the file it names changes. **Dash0 is still strictly richer than the
 on-stage Jaeger view**: anyone looking at Dash0 sees the same traces plus
 metrics and logs that never reach Jaeger at all.
+
+**2026-09-15, whole-branch review C1: the `logs` row read `otlp_grpc/dash0`,
+`debug` and this section concluded "logs go to Dash0 only" until this fix
+wave**, which is the **third** time this exact table has been falsified by a
+change to the file it claims to be read from — the two paragraphs above
+record the first and second. M5 Task 4 added `opensearch/logs` to the logs
+pipeline in both collector configs
+(`deploy/observability/collector-config-dash0.yaml:203-213` and
+`deploy/observability/collector-config.yaml`'s equivalent pipeline), and the
+table went unfixed for the rest of the milestone: this document's own
+`:228-230` (also Task 4's) already said the record reaches OpenSearch, and
+`README.md` agreed, so the table contradicted the rest of its own file the
+whole time. Per the standing rule, correcting the row a third time is not
+enough — **the guard below derives this table from the two collector configs
+themselves**, so a fourth recurrence reddens a test instead of waiting for a
+fourth review to find it by reading.
 
 **This table said "Traces: `otlp_grpc/jaeger`, `otlp_grpc/dash0`, `debug`" and
 concluded "Traces go to both Jaeger and Dash0" until M4 Task 1's fix round.**
@@ -2603,7 +2749,12 @@ attributes — four such traces carry all seven services: the denials
 only the shape:
 
 - **`policy.decision` ×2 per settlement**, one per tool call, each a child of
-  the gateway's own `tools/call` SERVER span for that call.
+  the gateway's own `tools/call` SERVER span for that call. (**N5,
+  whole-branch review: this is the M2.2-era count, from before M3's
+  `refuse_payment` call existed** — it is pre-`refuse_payment`, describing the
+  two-call `propose_payment`/`execute_payment` shape only. See "So **two or
+  three `policy.decision` spans appear per settlement**" further below for
+  the current figure, which accounts for `refuse_payment`'s third call.)
 - **`Guardrail` ×2 per settlement**, agentgateway's own CLIENT span for the
   policy hop, sibling to the `policy.decision` span under the same parent.
 - **`payments-api` is in the denied trace too**, with the propose (`201`) and
@@ -5063,7 +5214,9 @@ and 3 together instead of two possibly-incompatible ones — and
 `platform/policy-decision-service/Dockerfile:4` installs that whole file with
 `pip install --no-cache-dir -r requirements.txt`. So the running image contains
 `grpcio-tools==1.83.1` (plus its `setuptools==84.0.0` build dependency) and
-`pytest==9.0.3` with its four-package closure, none of which `pds/server.py`
+`pytest==9.1.1` (**J6, whole-branch review, 2026-09-15: was `9.0.3` here until
+M5 Task 1's bump; corrected rather than left to drift a second time**) with
+its four-package closure, none of which `pds/server.py`
 imports: `grpcio-tools` is needed only at build time, by the `RUN
 ./gen-stubs.sh python` layer six lines below, and `pytest` is needed only by a
 developer running the suite from the source tree. The service's ingress is
@@ -5089,16 +5242,31 @@ the problem look smaller than it is.** It presents the shipped test tooling as
 "a consequence of ruling R4", i.e. as specific to the Policy Decision Service
 and to the decision that gave it one requirements file for runtime and test.
 That is not the cause. **Every Python service in this repository does the same
-thing, and always has** — measured by reading all five Dockerfiles and all
-five requirements files:
+thing, and always has** — measured 2026-09-15 (whole-branch review, J6) by
+reading all six Dockerfiles and all six requirements files, re-dated from the
+M3 Task 5B measurement below, which read five of each and predates
+`platform/eval-scorer`:
 
 | Service | Dockerfile install | `pytest` in that file |
 |---|---|---|
-| `agents/settlement-agent` | `pip install --no-cache-dir -r requirements.txt` | `pytest==9.0.3`, `pytest-asyncio==1.4.0` |
-| `agents/claims-agent` | same | `pytest==9.0.3`, `pytest-asyncio==1.4.0` |
-| `tools/payments-mcp` | same | `pytest==9.0.3` |
-| `platform/policy-decision-service` | same | `pytest==9.0.3` |
-| `apps/reviewer-ui` (M3 Task 4) | same | `pytest==9.0.3`, `pytest-asyncio==1.4.0` |
+| `agents/settlement-agent` | `pip install --no-cache-dir -r requirements.txt` | `pytest==9.1.1`, `pytest-asyncio==1.4.0` |
+| `agents/claims-agent` | same | `pytest==9.1.1`, `pytest-asyncio==1.4.0` |
+| `tools/payments-mcp` | same | `pytest==9.1.1` |
+| `platform/policy-decision-service` | same | `pytest==9.1.1` |
+| `apps/reviewer-ui` (M3 Task 4) | same | `pytest==9.1.1`, `pytest-asyncio==1.4.0` |
+| `platform/eval-scorer` (M4 Task 4) | same | `pytest==9.1.1` |
+
+**J6, whole-branch review: this table published `pytest==9.0.3` for all five
+original rows, and was missing the sixth (`eval-scorer`) entirely, until this
+fix wave.** M5 Task 1 bumped all seven of this repo's `requirements.txt` files
+(the six above, plus the root `tests/requirements.txt`) to `9.1.1`, clearing
+PYSEC-2026-1845; every venv, including the root one `tests/unit/test_pins.py`
+now guards (M5-R33), measures `pytest 9.1.1` today. The preamble's own
+provenance claim — "measured by reading all five Dockerfiles and all five
+requirements files" — decayed the same way the export-destinations table's
+did (C1): the moment the files it named moved, without the table it produced
+moving with them. Corrected here rather than silently, per this document's
+own standing convention.
 
 So the pattern is this repository's uniform one-requirements-file convention,
 not R4; R4 only decided that the PDS would not be the exception. The `pytest`
@@ -5523,3 +5691,48 @@ own version-compatibility surface to worry about. A decision recorded twice
 and applied never is worse than a decision withdrawn once, cleanly, with the
 reasoning attached — this is that withdrawal. No further action is expected
 of a future milestone on this point.
+
+### N7, carried: retyped counts published in two or more places, not closed by this fix wave
+
+**2026-09-15, whole-branch review, fix wave Part B.** C1, J4, J5, J6, J7, J8,
+N2, N4 and N5 are closed above, each with its own dated note (and, where the
+finding was a guard gap rather than a one-time correction, a new test —
+`test_telemetry_contract_export_destinations.py` for C1,
+`test_doc_status_lines_name_the_current_milestone.py` for J5, and an
+extension to `test_telemetry_contract_counts.py` for J7 — each mutated and
+confirmed RED for its own reason). **N7 itself is explicitly not required to
+be closed in full** (per the fix-wave brief) and is not: it is large, spans
+many sites across two documents, and some of it predates M5. Left open,
+dated, so it is carried rather than lost:
+
+- **114 distinct span attribute keys**, cited at this document's own
+  "measured 2026-09-13" paragraph and again in
+  `deploy/observability/collector-config.yaml`'s comment on the same
+  measurement. Two sites, currently in agreement; neither is guarded.
+- **Ten `policy.*` keys**, cited at four sites in this document, one of which
+  says "Measured, not retyped" immediately before retyping the figure three
+  more times in the same section. The irony is the reason to close this one
+  first, whenever it is picked up.
+- **Six `review.*` keys**, cited at four sites in this document.
+- **The GenAI metric counts** (twelve/six/one, in various framings), cited at
+  eleven sites across this document and README.md — the largest single count
+  in N7 by site count.
+- **Ten Prometheus scrape jobs**, cited at seven sites.
+- **`28`/`25` attribute names** in
+  `agents/settlement-agent/requirements.txt:122-123`, outside every guard.
+- **The `125`/`123`/`119`/`117` whole-trace totals**, cited at five and two
+  sites respectively — notable because this document argues at length,
+  elsewhere in its own text, that whole-trace totals must not be published,
+  then publishes four of them twice regardless.
+- **This file's own inlined snapshot** at the per-service-suite guard's
+  module docstring (`tests/unit/test_telemetry_contract_counts.py`'s
+  "as of M3 Task 5B" comment) — four of seven figures there have already
+  drifted from the six-suite table above them, and `eval-scorer` is missing
+  from it entirely. Dated, and therefore self-mitigating, but not corrected.
+
+None of these carries the guard C1 got (derive-from-source) or the
+correction J4–J8 got (reword-and-date). Closing them is future work, in the
+same style as everything above: derive the figure from something that
+already computes it, or extend an existing test by the smallest number of
+assertions that makes the duplication visible, rather than retype either
+copy by hand.

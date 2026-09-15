@@ -1,11 +1,20 @@
-# Northstar Architecture — M4 (Observable)
+# Northstar Architecture — M5 (Progressive autonomy)
 
-Status: **M4 (Observable)**, on branch `m4-observable`. **This header and the
-line below it said "M3 (Supervised)" until M4 Task 5's doc pass, while the
-sections beneath them had already grown `eval-scorer`'s SPIFFE ID and SPIRE
-entry, the stage-4 surfaces and "See it yourself" step 9** — the
-same stale-prose class this document's own intro records catching a few
-paragraphs down, this time in the one line a reader reads first. Recorded
+Status: **M5 (Progressive autonomy)**, on branch `m5-progressive-autonomy`.
+**This header and the line below it said "M4 (Observable)" on branch
+`m4-observable` until this whole-branch review's fix wave (finding J5), while
+the sections beneath them had already grown the flagd sidecar diagram and
+four platform-component rows — +105 lines M5 added to this file. Second
+consecutive recurrence**: the paragraph immediately below already records
+this exact defect happening to this exact line once before, for M3 → M4.
+Recorded rather than silently corrected, per the convention the rest of this
+file follows.
+
+**This header and the line below it said "M3 (Supervised)" until M4 Task 5's
+doc pass, while the sections beneath them had already grown `eval-scorer`'s
+SPIFFE ID and SPIRE entry, the stage-4 surfaces and "See it yourself" step
+9** — the same stale-prose class this document's own intro records catching a
+few paragraphs down, this time in the one line a reader reads first. Recorded
 rather than silently corrected, per the convention the rest of this file
 follows.
 
@@ -418,16 +427,20 @@ the milestone is about.
 
 ### The application components — five at M1.1, seven as of M3, and one more in `northstar-platform` since M4
 
-**M4 added an eighth first-party component, `platform/eval-scorer`, and it is
-not in the table below** (M4 re-review, finding L9). It is deliberately absent
-rather than forgotten: this table is the *application* plane, and eval-scorer
-runs in `northstar-platform` beside the platform components. But the section
-below that one opens "none is this project's code", which eval-scorer
-falsifies — so today it has no row in either inventory. It is described in
-full under "Agent Evals" and in `docs/telemetry-contract.md`; giving it a row
-of its own, and deciding which plane owns it, is **owned by M5** and recorded
-in spec §9. Stated here because a reader counting components from this heading
-will be one short and nothing would tell them.
+**M4 added an eighth first-party component, `platform/eval-scorer`, and for
+two milestones it was in neither inventory** (M4 re-review, finding L9). It
+was deliberately absent from the table below rather than forgotten: this
+table is the *application* plane, and eval-scorer runs in `northstar-platform`
+beside the platform components. But the section below that one used to open
+"none is this project's code", which eval-scorer falsified — so it had no row
+in either inventory for the whole of M4. **M5 Task 6 closed this**: that
+section's opening sentence was rewritten (it no longer claims "none is this
+project's code" — see "The platform components M2.1 through M5 add" below,
+which now names `eval-scorer` as one of two rows that are this project's own
+code), and eval-scorer was given its row there. Left standing here, past
+tense, rather than deleted, per this document's own convention for a gap that
+has since been closed — a reader counting components from this heading no
+longer comes up one short.
 
 
 Namespaces, ports, and service DNS names below are read directly from
@@ -448,8 +461,7 @@ Namespaces, ports, and service DNS names below are read directly from
 `settlement-agent` — not a namespace of its own (confirmed in
 `deploy/k8s/customer-ui.yaml`, `deploy/k8s/namespaces.yaml`, which
 declares four: `observability`, `northstar-agents`, `northstar-tools`,
-`northstar-systems`). **Five namespaces exist in the cluster** (`kubectl get
-ns` confirms it): `scripts/setup-kind.sh` creates a fifth,
+`northstar-systems`). `scripts/setup-kind.sh` creates a fifth,
 `northstar-platform`, at stage 2 for M2.1's platform components —
 deliberately outside `namespaces.yaml`, since it holds infrastructure this
 project configures but does not own (see "The platform components M2.1
@@ -458,6 +470,42 @@ component (the
 plane labels — `northstar.io/plane: agents/tools/systems` — encourage that
 reading) would be wrong about `customer-ui` specifically; it shares the
 agents' namespace even though it isn't itself an agent.
+
+**2026-09-15, whole-branch review (N2): this said "Five namespaces exist in
+the cluster (`kubectl get ns` confirms it)", which was already an
+undersell of the literal command even at M4 (kind's own `default`,
+`kube-system`, `kube-public`, `kube-node-lease`, `local-path-storage`, plus
+Cilium's `cilium-secrets`, were always present alongside the five named
+above) and became flatly false once M5's `setup-kind.sh` added two more
+project-relevant namespaces of its own: `cert-manager` (Step 8f) and
+`open-feature-operator-system` (Step 8g) — both described in their own right
+under "The platform components M2.1 through M5 add" below.** Measured live,
+2026-09-15:
+
+```
+$ kubectl get ns
+NAME                           STATUS
+cert-manager                   Active
+cilium-secrets                 Active
+default                        Active
+kube-node-lease                Active
+kube-public                    Active
+kube-system                    Active
+local-path-storage             Active
+northstar-agents                Active
+northstar-platform              Active
+northstar-systems                Active
+northstar-tools                  Active
+observability                    Active
+open-feature-operator-system     Active
+```
+
+**13**, not five. Of those, **seven** are project-relevant (the five named
+above, plus `cert-manager` and `open-feature-operator-system`) and six are
+kind's own defaults or Cilium's, present regardless of what this project
+adds. The corrected claim, so a future reader does not have to re-derive
+which count the sentence meant: **seven project-relevant namespaces**, and
+**13** if `kubectl get ns` is read literally as the sentence itself invited.
 
 What each component is explicitly **not** responsible for:
 
@@ -1702,7 +1750,14 @@ live spans:
   unless something reaches in and flips the live object. Any caller not in
   the table is `unknown_caller` and denied. This is still nowhere near a
   general authorization model, and the number of rows is the least
-  interesting part of M3 or M5: `decide()` itself was not touched by either,
+  interesting part of M3 or M5: `decide()`'s allowance logic was not touched
+  by either (**N4, whole-branch review: this said "`decide()` itself was not
+  touched by either", false when written — Task 3's two `rule=` literals sit
+  inside `decide()`, at `pds/rules.py:204` and `:211`, and this fix wave's own
+  N6 fix touches `decide()` again, adding the `_KNOWN_CALLERS` check and
+  splitting its deny-branch rule name in two. None of that is allowance
+  logic: every change across M3, M5 Task 3 and this fix wave is to which rule
+  NAME a decision is reported under, never to which decisions are permitted**),
   because approval changes *who asks* and the flag changes *what a rule
   resolves to*, neither changes what is allowed.
 - **Nothing in the policy knows a human approved anything.** The PDS sees a
@@ -2134,7 +2189,12 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
      the outbound leg, so there is no verified token to attribute.
    - **`policy-decision-service`'s `policy.decision`** — new in M2.2, and the
      span the whole milestone exists to produce. There are two per settlement,
-     one per tool call. On the `execute_payment` one in a €6,200 run:
+     one per tool call (**N5, whole-branch review: this is the M2.2-era
+     count, pre-`refuse_payment` — M3 added a third `policy.decision`-bearing
+     call, so a refused settlement can carry three; see
+     `docs/telemetry-contract.md`'s "two or three `policy.decision` spans
+     appear per settlement" for the current figure**). On the
+     `execute_payment` one in a €6,200 run:
      `policy.decision = deny`, `policy.rule =
      settlement-agent.assisted.execute_limit`, `policy.request.amount = 6200`,
      `policy.limit.amount = 6000`, and `policy.caller.spiffe_id` naming the
