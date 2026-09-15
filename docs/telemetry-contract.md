@@ -1,6 +1,9 @@
 # Northstar Telemetry Contract
 
-Status: M1.1, revised through M1.2 for the settlement-agent's model-driven
+Status: **M6 (Golden path)** -- current milestone, branch `m6-golden-path`;
+M5 merged 2026-09-15 at `e62238f`. Full revision history follows.
+
+Originally M1.1, revised through M1.2 for the settlement-agent's model-driven
 decision logic, through M2.1 for agentgateway's interposition and SPIRE's
 workload identity, through M2.2 (Decided) for the Policy Decision
 Service, the `policy.decision` span (which closes Gap 3), and agentgateway's

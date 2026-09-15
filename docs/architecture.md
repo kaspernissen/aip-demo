@@ -1,6 +1,13 @@
-# Northstar Architecture — M5 (Progressive autonomy)
+# Northstar Architecture — M6 (Golden path)
 
-Status: **M5 (Progressive autonomy)**, on branch `m5-progressive-autonomy`.
+Status: **M6 (Golden path)**, on branch `m6-golden-path`. **M5 (Progressive
+autonomy) merged 2026-09-15 at `e62238f`, tagged `m5-verified`** -- read that
+tag's own message before trusting it, it claims less than its predecessors.
+Bumped in M6's first commit rather than left to a doc pass: this line went
+stale two milestones running (M3->M4, then M4->M5), and M5 shipped a guard
+(`tests/unit/test_doc_status_lines_name_the_current_milestone.py`) that now
+derives the expected milestone from the newest plan file and reddens here the
+moment a new plan lands. It did, on its first day.
 **This header and the line below it said "M4 (Observable)" on branch
 `m4-observable` until this whole-branch review's fix wave (finding J5), while
 the sections beneath them had already grown the flagd sidecar diagram and
