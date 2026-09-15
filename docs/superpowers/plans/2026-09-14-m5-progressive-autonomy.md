@@ -118,8 +118,14 @@ fresh gate run. One run covers all nine. This is M4 §9's explicit schedule.
 
 Counts are deliberately **not** written here. Derive them:
 
+(**Path corrected 2026-09-15**: this said `aip-demo-m1.1`, a second git
+worktree of this same repo that was removed when the two checkouts were
+consolidated into `aip-demo`. The commands below are unchanged and still
+correct; only the directory moved. Annotated rather than rewritten, per this
+repo's convention for historical plans.)
+
 ```bash
-cd /Users/kaspernissen/kaspernissen/aip-demo-m1.1
+cd /Users/kaspernissen/kaspernissen/aip-demo
 grep -rln "pytest==9\.0\.3" --include=requirements.txt .
 grep -rln "9\.0\.3" --include=test_pins.py .
 grep -rln "0\.158\.0" .
