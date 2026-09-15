@@ -96,6 +96,7 @@ from types import SimpleNamespace
 import pytest
 import requests
 
+from tests.harness import contract
 from tests.harness.jaeger import JaegerClient, assert_no_orphans, assert_single_root
 from tests.harness.kube import absent_or_fail
 
@@ -416,7 +417,16 @@ def denial_run(claims_agent_route):
 
     Feeds criteria 1 and 2 directly, and criteria 3-6 via its payment id and
     its settlement-agent entry span.
+
+    **M5 Task 6 (review finding I4):** criteria 1 and 6 both hardcode
+    `settlement-agent.assisted.execute_limit` and require the junior identity
+    to be *denied*. `test_progressive_autonomy.py` sorts alphabetically
+    before this file and its own flip test restores the contract in a
+    `finally`, but this checks flagd's actual resolved answer rather than
+    trust the ordering -- the same guard, same reason,
+    `test_policy_denial.py::denial_run` now carries.
     """
+    contract.assert_assisted("test_supervised.py::denial_run")
     return _drive_browser(DENIED_CLAIM_ID, None)
 
 

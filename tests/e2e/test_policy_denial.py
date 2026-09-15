@@ -78,6 +78,7 @@ from types import SimpleNamespace
 import pytest
 import requests
 
+from tests.harness import contract
 from tests.harness.jaeger import JaegerClient, assert_no_orphans, assert_single_root
 
 # The identity probe criterion 5 needs, whole, from the file that already built
@@ -162,6 +163,15 @@ ATTR_POLICY_RULE = "policy.rule"
 ATTR_POLICY_CALLER = "policy.caller.spiffe_id"
 ATTR_POLICY_LIMIT = "policy.limit.amount"
 ATTR_POLICY_AMOUNT = "policy.request.amount"
+# M5 Task 3/6: the contract's own two signals on this span.
+# `ATTR_AUTONOMY` is set unconditionally (`pds/server.py`); `ATTR_FLAG_VERSION`
+# is set only when flagd's response actually carries a version, which
+# measurably never happens against this deployment (`featureflag.yaml`
+# declares no flag `metadata` -- M5-R29) -- reproduced here, not imported
+# from `pds/telemetry.py`, per this file's own "read off what the PDS was
+# measured emitting" rule for every attribute above it.
+ATTR_AUTONOMY = "policy.autonomy.level"
+ATTR_FLAG_VERSION = "feature_flag.version"
 
 EXECUTE_TOOL = "execute_payment"
 PROPOSE_TOOL = "propose_payment"
@@ -397,7 +407,20 @@ def denial_run(claims_agent_route):
 
     Shared by criteria 1, 2 and 3, which are three views of this single event.
     Costs one model call per run of this file.
+
+    **M5 Task 6 (review finding I4):** criterion 1 hardcodes
+    `settlement-agent.assisted.execute_limit` and requires the junior
+    identity to be *denied* -- true again the moment
+    `test_progressive_autonomy.py`'s own flip test restores the contract,
+    which by pytest's default alphabetical file order it always has before
+    this file runs (`test_policy_denial` sorts before `test_progressive_autonomy`,
+    so ordering alone would even be moot here) -- but a crash mid-flip in
+    that file, run any other way than the full suite, must not silently
+    reach this settlement under the wrong contract. Checked against flagd's
+    own resolved answer, not the committed YAML, because that is what the
+    decision path this fixture is about to exercise will actually consult.
     """
+    contract.assert_assisted("test_policy_denial.py::denial_run")
     return _drive_browser(DENIED_CLAIM_ID, None)
 
 

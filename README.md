@@ -11,6 +11,51 @@ Built from open standards and existing open-source projects, not a proprietary
 
 ## Status
 
+**M5 — Progressive autonomy.** The question this milestone answers is *"can
+one live value change what the platform is allowed to do, with nothing else
+touched?"* Stage 5 adds cert-manager, the Open Feature Operator (OFO) and
+flagd — injected into the Policy Decision Service's own pod as a native
+Kubernetes sidecar (`spec.initContainers[]`, `restartPolicy: Always`, not a
+regular container), answering gRPC evaluation on `:8013` and OFREP on
+`:8016`. The autonomy level the policy engine judges every `execute_payment`
+call against is no longer a constant compiled into the PDS — it is resolved
+per request from a `FeatureFlag` object, `northstar-autonomy`
+(`deploy/platform/openfeature/featureflag.yaml`), through that sidecar. The
+object **ships in its shipped, refusing state** on purpose
+(`defaultVariant: assisted`, both targeting branches `assisted` — a
+deliberate no-op, not an oversight): the whole point is that the demo's
+flip is a one-word change to a *live* value, not a resource authored from
+scratch on stage, and not a change to this repository's own tree at all.
+`tests/e2e/test_progressive_autonomy.py` is the milestone's anti-vacuity
+proof: it flips the live contract, submits the identical €6,200 claim under
+the junior identity before and after, and asserts the claim is **refused**
+under `settlement-agent.assisted.execute_limit` the first time and
+**executed** under `settlement-agent.autonomous.execute_limit` the second —
+with no reviewer-ui approval anywhere in the trace — then restores the
+contract to its refusing state itself, verified against flagd's own
+resolved answer rather than assumed. A companion test asserts, mechanically
+against pod UIDs and image digests, that nothing in `northstar-agents` was
+redeployed by the flip. Every flag evaluation now also carries two
+telemetry signals rather than one: the `feature_flag.evaluation` **span
+event** PydanticAI's OpenFeature hook already put on the `policy.decision`
+span, and a genuine `feature_flag.evaluation` **log record** this milestone
+adds end to end through the logs pipeline to OpenSearch — the audit
+(`platform/eval-scorer`) holds its own, independently-derived answer to
+"what does the contract currently say" rather than trusting either signal,
+the same argument this project already made for the execute-limit table
+itself (spec §5's anti-vacuity criterion, applied to the level, not just
+the amount). **Measured: 34 pods, all Running.** Memory against the ~8 GB
+budget (M1 spec §9, "Cluster and deployment", row 5): **5.24 GiB** cold
+(a full `--stage 5` bring-up from nothing, 2026-09-14) and **5.66 GiB**
+warm, re-measured while this task's own live tests were running against
+the cluster — both comfortably inside budget. `./scripts/start-demo.sh` now
+also forwards flagd's own metrics port (`18014 -> 8014`, via
+`deployment/policy-decision-service` rather than a pod name, since flagd is
+a sidecar with no Service of its own) — `/metrics` carries
+`feature_flag_flagd_impression_total`, the one place in this system that
+shows how many evaluations resolved `assisted` versus `autonomous` without
+querying Prometheus or OpenSearch by hand.
+
 **M4 — Observable.** The question this milestone answers is *"can we prove why
 €5,800 was paid?"*, and the answer is a saved dashboard with **no new
 application code behind it**. Stage 4 adds OpenSearch, OpenSearch Dashboards,
@@ -289,7 +334,7 @@ during M5: it needs no model call, but nothing ungated ever drives reviewer-ui
 traffic either, so it failed a bare run for a different reason from the other
 nine. Set `RUN_BROWSER_TESTS=1` to get all of it back.
 
-**Eleven** modules sit behind `RUN_BROWSER_TESTS=1`, **72** tests in all —
+**Twelve** modules sit behind `RUN_BROWSER_TESTS=1`, **74** tests in all —
 and that figure is now *re-measured by a test* rather than by hand.
 `tests/unit/test_telemetry_contract_counts.py` walks pytest's collected items,
 reads each item's own `skipif` marker, and fails against this sentence and
@@ -307,16 +352,23 @@ its own reason: nothing ungated drives reviewer-ui's HTTP traffic either),
 `tests/e2e/test_claim_correlation.py` (6, M4 Task 5),
 `tests/e2e/test_gateway_trace.py` (6), 6 of the 7 in
 `tests/e2e/test_supervised.py`, `tests/e2e/test_policy_scores.py` (5, M4 Task
-4), 4 of the 6 in `tests/e2e/test_policy_denial.py`, and
-`tests/e2e/test_evidence_view.py` (3, M4 Task 3).
-The three partly-gated ones are `test_supervised.py`, `test_policy_denial.py`
-and `test_prometheus_metrics_ingest.py`. **3 of the 11 launch a browser** —
-`test_browser_root_span.py`, `test_policy_denial.py` and `test_supervised.py` —
-and **8 of the 11 start no browser**, riding the flag because they spend model
-tokens or need something that does. That split is derived from `chromium.launch(`
-in `tests/e2e` by the same guard that checks the 71; it was published here and
-in two places in the telemetry contract as "only one", by the pass whose job was
-to catch exactly that.
+4), 4 of the 6 in `tests/e2e/test_policy_denial.py`, 4 of the 4 in
+`tests/e2e/test_evidence_view.py` (3, M4 Task 3, +1, M5 Task 6 — a fourth test
+reads the same module-level gate rather than adding its own), and 1 of the 2
+in `tests/e2e/test_progressive_autonomy.py` (M5 Task 6's own new module — the
+half of it that drives a real settlement is gated the same way
+`test_supervised.py`'s is; the half that only compares pod UIDs and image
+digests is not, because it drives no model call and starts no browser).
+The four partly-gated ones are `test_supervised.py`, `test_policy_denial.py`,
+`test_prometheus_metrics_ingest.py` and `test_progressive_autonomy.py`.
+**3 of the 12 launch a browser** — `test_browser_root_span.py`,
+`test_policy_denial.py` and `test_supervised.py` — and
+**9 of the 12 start no browser**, riding the flag because they spend model
+tokens or need something that does. That split is derived from
+`chromium.launch(` in `tests/e2e` by the
+same guard that checks the 74; it was published here and in two places in the
+telemetry contract as "only one", by the pass whose job was to catch exactly
+that.
 `test_policy_denial.py`'s two ungated tests spend nothing: one reads source
 structurally, and the other drives two direct MCP calls with different SPIFFE
 identities and no model call at all. `test_supervised.py`'s one ungated test is
@@ -386,7 +438,7 @@ the laptop runs one stage at a time.
 | 2 | Governed | agentgateway, SPIFFE/SPIRE, Policy Decision Service, Kyverno, Cilium — **as of M2.2 `--stage 2` installs Cilium (M2.1 Task 3, with M2.2 Task 7 adding ingress and `toFQDNs` egress policies), agentgateway (M2.1 Task 3, in the MCP path between settlement-agent and payments-mcp), SPIRE (M2.1 Task 4, verifying a JWT-SVID at the gateway) and the Policy Decision Service (M2.2 Task 4, deciding every `tools/call` through the gateway's `mcpGuardrails` hook) — Kyverno is NOT installed yet**, on a cluster created with kind's default CNI disabled |
 | 3 | Supervised | Dapr Workflow, reviewer UI, Keycloak — **as of M3 `--stage 3` installs the reviewer UI (Task 4, the page a human reads and clicks) and `senior-settlement-agent` (Task 3, the settlement-agent image in a second Deployment under a second ServiceAccount, so "senior" is an identity rather than a different program) on top of everything stage 2 installs — Dapr Workflow and Keycloak are NOT installed**, on a cluster created with a fourth host port reserved for the reviewer UI |
 | 4 | Observable | OpenSearch + Agent Evals, Prometheus — **as of M4, `--stage 4` installs OpenSearch (single node, security plugin off), OpenSearch Dashboards, Prometheus and `eval-scorer` on top of everything stage 3 installs, adds an OpenSearch branch to the collector's traces pipeline, and routes the collector's metrics pipeline to Prometheus over OTLP. Stage 4 is complete: Agent Evals arrived with `platform/eval-scorer` in M4 Task 4** — this row said they were "NOT installed yet" until M4 Task 5's doc pass, which is the milestone's own headline feature going unannounced in the table a reader checks first. Prometheus is OTLP-ingest only: every one of the chart's ten default scrape jobs is disabled, so OTLP is its single ingestion path (M4 exit criterion 5). **Measured memory: 5.06 GiB** against the ~8 GB budget (M1 spec §9, "Cluster and deployment", row 5) — `docker stats northstar-control-plane`, three readings 3s apart on the complete stage-4 cluster with 30 pods Running, all of OpenSearch, Dashboards, Prometheus, eval-scorer and the demo workloads up: `5.062 / 5.061 / 5.061 GiB`. That is the kind node container's whole footprint, page cache included; the node cgroup's `anon` alone is 3.79 GiB, so 5.06 is the conservative end of the range and the budget holds either way. All of it runs on stage 3's cluster config unchanged: there is deliberately no `deploy/kind/stage4.yaml` (plan amendment A1), and both Dashboards and Prometheus are reached by port-forward via `./scripts/start-demo.sh` rather than a kind host port. M4 Task 3 adds the evidence view itself, imported into Dashboards from `deploy/observability/dashboards/evidence.ndjson` at this stage — see `docs/architecture.md`'s "See it yourself" step 9 |
-| 5 | Progressive autonomy | OpenFeature / flagd |
+| 5 | Progressive autonomy | OpenFeature / flagd — **as of M5, `--stage 5` installs cert-manager (a prerequisite for the Open Feature Operator's webhook certificates, not this project's own component), the Open Feature Operator, and the `northstar-autonomy` `FeatureFlag` on top of everything stage 4 installs. flagd itself is injected as a native Kubernetes sidecar into the Policy Decision Service's own pod (`spec.initContainers[]`, `restartPolicy: Always`), not a separate Deployment — the PDS resolves the `autonomy-level` flag against it over gRPC (`:8013`) per `execute_payment` request rather than reading a compiled-in constant.** The contract ships in its shipped, refusing state on purpose (`defaultVariant: assisted`, both targeting branches `assisted`) — see "M5 — Progressive autonomy" above for the anti-vacuity demo this makes possible and the measured pod/memory figures; nothing here is retyped from that section |
 | 6 | Golden path | Crossplane `Agent` CRD, Argo CD, Backstage |
 
 ## Architecture (stage 1 workloads, on the stage-2 dataplane, with M3's approval path)

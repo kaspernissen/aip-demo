@@ -32,8 +32,8 @@ paper over it with a bespoke convention.
 first and the overturned reasoning is kept below it rather than deleted.**
 
 A bare `pytest tests/` run (no environment variable set) now costs **no model
-tokens at all**. Eleven modules sit behind `RUN_BROWSER_TESTS=1`, of which
-**3 of the 11 launch a browser** and **8 of the 11 start no browser** — they
+tokens at all**. Twelve modules sit behind `RUN_BROWSER_TESTS=1`, of which
+**3 of the 12 launch a browser** and **9 of the 12 start no browser** — they
 ride the flag because they spend Anthropic tokens, and as of Task 5 that set is
 closed: every e2e file that drives a
 settlement is gated. (That split is derived, not typed: it was published as
@@ -134,6 +134,73 @@ what `pytest --collect-only tests/` actually collects; a historical figure
 moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
+**2026-09-15 (M5 Task 6) — the current figures, and the gate row is still
+PREDICTED.**
+Task 6 flips the `northstar-autonomy` contract live (against the deployed
+`FeatureFlag` object, never the committed `deploy/platform/openfeature/featureflag.yaml`
+— see ruling M5-R29/M5-R31's `CURRENT_LEVEL` coupling, which this design
+sidesteps rather than fights) and adds the milestone's anti-vacuity proof:
+one new e2e file, `tests/e2e/test_progressive_autonomy.py`, two tests — one
+drives a real settlement twice, once refused at `assisted` and once settled
+at `autonomous`, with nothing else about the request changed between the
+two calls; the other confirms no pod was redeployed by the flip (same UIDs,
+same image digests, before and after). Only the first is gated (it spends
+model tokens); the second inspects the live cluster's own pod metadata and
+needs no browser and no model call. One new shared module,
+`tests/harness/contract.py`, is the one place that reads, flips and verifies
+the live contract — it is not itself collected (no `test_` prefix) and adds
+nothing to any count below. Two existing e2e fixtures
+(`test_policy_denial.py::denial_run`, `test_supervised.py::denial_run`) each
+gained one defensive precondition line, `contract.assert_assisted(...)`,
+converting their previously-incidental protection (alphabetical file
+collection order happening to run before any flip) into an explicit, tested
+one; neither fixture gained or lost a test. One new test lands in
+`tests/e2e/test_evidence_view.py`
+(`test_the_contract_signals_reach_the_decision_panel`), reading the two
+contract keys now on `evidence_for()`'s dict.
+
+That takes the collected count from **365 to 368**, re-measured with
+`.venv/bin/python -m pytest --collect-only -q tests/`.
+
+Bare-suite row, derived from that same collection: 368 collected − 74 gated −
+**0** xfailed = `294 passed, 74 skipped, 0 xfailed`.
+
+The gated figure moves from **72 to 74** — measured the same way every
+figure below it was, a `--collect-only` run with a plugin that counts items
+carrying a `skipif` whose reason names `RUN_BROWSER_TESTS` and whose
+condition is true with the variable unset — and reports 74 of 368, with the
+spread changed in exactly two places: `test_evidence_view.py` goes from 3 to
+**4** (the new test reads the module-level `pytestmark` gate the same way
+its three siblings already do, rather than adding its own), and
+`test_progressive_autonomy.py` is a new entry at **1** (only the
+settlement-driving test is gated; the pod-UID/image-digest comparison is
+not). Full spread: `test_settlement_llm_trace.py` 9,
+`test_prometheus_metrics_ingest.py` 10, `test_browser_root_span.py` 8,
+`test_settlement_agent_trace.py` 8, `test_claims_chain_trace.py` 7,
+`test_claim_correlation.py` 6, `test_gateway_trace.py` 6,
+`test_supervised.py` 6, `test_policy_scores.py` 5,
+`test_evidence_view.py` 4, `test_policy_denial.py` 4,
+`test_progressive_autonomy.py` 1. The browser split moves from **3 of the
+11**/**8 of the 11** to **3 of the 12 launch a browser** and **9 of the 12
+start no browser**: the twelfth gated module starts no browser, so the
+numerator is unchanged and only the denominator (and its complement) moved.
+
+Gate row: **PREDICTED, NOT MEASURED**, unchanged from the row below — this
+branch's gate run was at commit `b215426` (the M4 final-review fix wave
+further below), and it is measured against no later tree than that one. This
+task changes files under `gate_paths` (`deploy/`, `docs/`, `scripts/`,
+`tests/`) without a new gate run to back it — running the gate is
+deliberately the orchestrator's step, not this task's own. The prediction
+from collection (368 − 1 xfailed = 367) is
+`367 passed, 1 xfailed`; nothing claims that figure was measured against
+this tree. The one xfail (`tests/e2e/test_claim_correlation.py`) is still
+inside a gated module, so it still skips rather than xfails on a bare run —
+the bare row's `0 xfailed` above is not a typo.
+
+`tests/unit` alone collects **222**, unchanged: nothing this task added lives
+under `tests/unit` (`test_kube_helper.py`'s one-line allowlist addition is an
+edit to an existing test's data, not a new test).
+
 **2026-09-14 (M5 Task 4) — the current figures, and the gate row is still
 PREDICTED.**
 Task 4 gives every flag evaluation a second signal: a genuine
@@ -196,7 +263,7 @@ The gated figure is **72** (all seven of Task 4's new tests — two in
 `skipif` naming `RUN_BROWSER_TESTS`, so none of those ten is gated; the one
 new gate is the reviewer-ui row above) — and reports 72 of 365, with the same
 per-module spread as the row beneath this one. The browser split is
-unchanged: **3 of the 11 launch a browser** and **8 of the 11 start no
+unchanged: **3 of the 12 launch a browser** and **9 of the 12 start no
 browser** -- the module was already gated and already browser-less, so this
 moved a test count within it, not a module count.
 
@@ -265,7 +332,7 @@ Bare-suite row, derived from that same collection: 355 collected − 71 gated �
 The gated figure is unchanged at **71** (the new test lives under
 `tests/unit` with no `skipif`, so it is not gated) — and reports 71 of 355,
 with the same per-module spread as the row beneath this one. The browser
-split is unchanged too: **3 of the 11 launch a browser** and **8 of the 11
+split is unchanged too: **3 of the 12 launch a browser** and **9 of the 12
 start no browser**.
 
 Gate row: **PREDICTED, NOT MEASURED**, unchanged from the row below -- this
@@ -300,7 +367,7 @@ figure below it, `tests/unit/_count_gated_plugin.py` against a bare
 `RUN_BROWSER_TESTS`-unset collection — both new tests live under
 `tests/unit` with no `skipif`, so neither is gated) — and reports 71 of 354,
 with the same per-module spread as the row beneath this one. The browser
-split is unchanged too: **3 of the 11 launch a browser** and **8 of the 11
+split is unchanged too: **3 of the 12 launch a browser** and **9 of the 12
 start no browser**.
 
 Gate row: **PREDICTED, NOT MEASURED**, unchanged from the row above -- this
@@ -358,7 +425,7 @@ The gated figure is unchanged at **71** (both new tests live under
 `tests/unit`, not behind `RUN_BROWSER_TESTS=1`) — measured the same way as
 every figure below it, and reports 71 of 352, with the same per-module
 spread as the row beneath this one. The browser split is unchanged too:
-**3 of the 11 launch a browser** and **8 of the 11 start no browser**.
+**3 of the 12 launch a browser** and **9 of the 12 start no browser**.
 
 Gate row: **PREDICTED, NOT MEASURED** — this branch's gate run was at commit `b215426`
 (the M4 final-review fix wave below). This task's commit changes files
@@ -418,10 +485,11 @@ reports 71 of 350, spread `test_settlement_llm_trace.py` 9,
 `test_settlement_agent_trace.py` 8, `test_claims_chain_trace.py` 7,
 `test_claim_correlation.py` 6, `test_gateway_trace.py` 6, `test_supervised.py`
 6, `test_policy_scores.py` 5, `test_policy_denial.py` 4,
-`test_evidence_view.py` 3. Of those eleven gated modules, **3 of the 11 launch
-a browser** (`test_browser_root_span.py`, `test_policy_denial.py`,
-`test_supervised.py` — derived from `chromium.launch(`, not recalled) and
-**8 of the 11 start no browser** — the flag gates
+`test_evidence_view.py` 3. Of those gated modules (twelve as of M5 Task 6),
+**3 of the 12 launch a browser** (`test_browser_root_span.py`,
+`test_policy_denial.py`, `test_supervised.py` — derived from
+`chromium.launch(`, not recalled) and **9 of the 12 start no browser** — the
+flag gates
 *tokens*, not Chromium, and that split is now derived from the sources rather
 than typed.
 
@@ -605,9 +673,12 @@ in this task rather than reasoned about:
   account, from the command this repo presents as the ordinary way to run the
   suite. All three now carry the same `pytestmark` the other cost-gated modules
   carry. `RUN_BROWSER_TESTS=1` is this repo's **cost** gate, not a browser gate:
-  **8 of the 11** gated modules start no browser; **3 of the 11 launch a
-  browser** — `test_browser_root_span.py`, `test_policy_denial.py` (in
-  `_drive_browser`) and `test_supervised.py` (in its approval fixture). This
+  **8 of the 11** gated modules started no browser at the time; **3 of the 11
+  launch a browser** — `test_browser_root_span.py`, `test_policy_denial.py`
+  (in `_drive_browser`) and `test_supervised.py` (in its approval fixture).
+  (M5 Task 6 added a twelfth gated module, `test_progressive_autonomy.py`,
+  itself no-browser; see the current figures at the top of this document for
+  today's 3-of-12/9-of-12 split.) This
   number has now been wrong twice in three tasks. It read "six of the ten"
   (M4 Task 4's figure) until M4 Task 5's stale-prose pass, which moved the
   denominator to eleven, moved the numerator to ten, and **re-derived
@@ -3046,10 +3117,10 @@ framework (`gen_ai.*`, `mcp.*`, `http.*`) and which this project invented, and
 this whole section is the second kind.
 
 **Read off a live span, not off that file.** The block below is the deny
-decision from trace `b05167ba11744cff81bcedce615cb379`, dumped from Jaeger and
+decision from trace `c6666319b97c70487bccf8af1ba73b8e`, dumped from Jaeger and
 compared key-for-key against `telemetry.py`'s declared `ATTRIBUTES`. They
 agree, and the check was worth making in that direction: the source declares
-nine `policy.*` keys, and how many of them a given span actually carries
+ten `policy.*` keys, and how many of them a given span actually carries
 depends on the decision, because `server.py` writes the optional ones only
 when it has a value (`if decision.limit is not None: span.set_attribute(...)`,
 and likewise for the caller, tool, amount and currency). Absent reads as
@@ -3059,23 +3130,30 @@ absent; a zero amount would read as a request for nothing.
 `policy.*` keys, not nine — this task's commit added `policy.autonomy.reason`
 alongside `policy.autonomy.level`. Measured, not retyped:
 `len(telemetry.INVENTED_ATTRIBUTES) == 10` in
-`platform/policy-decision-service/pds/telemetry.py`. The "nine" above, the
-"Ten keys"/table counts just below, and the live-trace inventory under "The
-policy decision, as measured (M2.2)" are the pre-M5 shape and are flagged
-here rather than re-captured — re-deriving the live key inventory against a
-fresh M5 trace is Task 4/5's own telemetry-contract work (ruling M5-R21),
-not repeated by this note.
+`platform/policy-decision-service/pds/telemetry.py`.
+
+**Dated note, 2026-09-15 (M5 Task 6): re-derived, not flagged again.** The
+"nine keys"/`b05167ba…`/`88cdfbcf…` inventory the note above left in place has
+now been replaced below with a fresh pull against the live cluster
+(Jaeger's own `GET /api/traces/{traceID}` HTTP query API), closing ruling
+M5-R21. Two traces anchor it: `c6666319b97c70487bccf8af1ba73b8e`, an
+assisted-mode denial produced the same way the M2.2 reference trace was, and
+`08d797e48e8b41e67a022f84dd38a732`, an autonomous-mode permit produced by
+this task's own anti-vacuity e2e (`tests/e2e/test_progressive_autonomy.py`)
+flipping the live contract — the first trace this project has that shows
+`policy.autonomy.level` as anything other than `"assisted"`.
 
 ### Attributes on the `policy.decision` span
 
-Ten keys on a limit-rule decision — the nine `policy.*` names plus the scope —
-which is the complete set for the span below, nothing omitted, with Jaeger's
-own `internal.span.format` and `span.kind` excluded by the same convention as
-the agentgateway blocks:
+Eleven keys on a limit-rule decision — the ten `policy.*` names plus the
+scope — which is the complete set for the span below, nothing omitted, with
+Jaeger's own `internal.span.format` and `span.kind` excluded by the same
+convention as the agentgateway blocks:
 
 ```
 otel.scope.name              "northstar.policy-decision-service"
 policy.autonomy.level        "assisted"
+policy.autonomy.reason       "TARGETING_MATCH"
 policy.caller.spiffe_id      "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
 policy.decision              "deny"
 policy.decision.retryable    false
@@ -3088,22 +3166,33 @@ policy.tool.name             "execute_payment"
 
 **What varies, measured across both reference traces rather than reasoned
 about.** `policy.decision` is `"permit"` or `"deny"`; `policy.rule` names the
-rule that fired; and `policy.limit.amount` is **absent** whenever the rule that
-fired has no limit to state. Concretely, from the two traces:
+rule that fired; `policy.autonomy.level` is whatever the flag resolved to for
+that call; and `policy.limit.amount` and the two `policy.request.*` keys are
+each **absent** whenever the rule or the tool has nothing to state for them.
+Concretely, from the two traces:
 
-| Trace | Tool | `policy.rule` | `policy.decision` | `policy.limit.amount` | Keys |
-|---|---|---|---|---|---|
-| `b05167ba…` (denial) | `propose_payment` | `unlimited_tool` | `permit` | absent | 9 |
-| `b05167ba…` (denial) | `execute_payment` | `settlement-agent.assisted.execute_limit` | `deny` | `6000` | 10 |
-| `88cdfbcf…` (permit) | `propose_payment` | `unlimited_tool` | `permit` | absent | 9 |
-| `88cdfbcf…` (permit) | `execute_payment` | `settlement-agent.assisted.execute_limit` | `permit` | `6000` | 10 |
+| Trace | Tool | `policy.rule` | `policy.autonomy.level` | `policy.decision` | `policy.limit.amount` | Keys |
+|---|---|---|---|---|---|---|
+| `c6666319…` (deny) | `propose_payment` | `unlimited_tool` | `assisted` | `permit` | absent | 10 |
+| `c6666319…` (deny) | `refuse_payment` | `unlimited_tool` | `assisted` | `permit` | absent | 8 |
+| `c6666319…` (deny) | `execute_payment` | `settlement-agent.assisted.execute_limit` | `assisted` | `deny` | `6000` | 11 |
+| `08d797e4…` (permit) | `propose_payment` | `unlimited_tool` | `autonomous` | `permit` | absent | 10 |
+| `08d797e4…` (permit) | `execute_payment` | `settlement-agent.autonomous.execute_limit` | `autonomous` | `permit` | `1000000` | 11 |
 
-So **two `policy.decision` spans appear per settlement**, one per tool call,
-and the pair is the interesting artefact rather than either span alone: the
-same caller, at the same autonomy level, is permitted to *propose* €6,200 and
-refused permission to *execute* it. `propose_payment` is in the PDS's
-`UNLIMITED_TOOLS` set because proposing is reversible and executing moves
-money, and the trace shows that distinction being made rather than asserted.
+So **two or three `policy.decision` spans appear per settlement**, one per
+tool call the settlement agent makes, and the set is the interesting artefact
+rather than any one span alone. In the denial trace there are three: the
+agent is permitted to *propose* €6,200, refused permission to *execute* it,
+and then permitted to call `refuse_payment` — its terminal, no-money branch
+tool that tells the customer why — which is why that row's key count (8) is
+the smallest: `refuse_payment` carries neither `policy.request.*` key nor
+`policy.limit.amount` because it moves nothing. The permit trace has only
+two, because there is no refusal branch to take. `propose_payment` and
+`refuse_payment` are both in the PDS's `UNLIMITED_TOOLS` set because neither
+moves money; `execute_payment` is the one tool a limit rule ever fires
+against, whether the limit that rule states is €6,000 (assisted) or
+€1,000,000 (autonomous) — the trace shows that distinction being made rather
+than asserted.
 
 Four properties worth stating because they are easy to get wrong from the
 outside:
@@ -3144,6 +3233,13 @@ outside:
   constant. The sentence above describes the pre-M5 (M2.2) shape; left in
   place as the historical reason the field exists, not as the field's
   current behaviour.
+  **Dated note, 2026-09-15 (M5 Task 6): observed, not just resolvable.**
+  Trace `08d797e48e8b41e67a022f84dd38a732` (above) is this project's first
+  live span with `policy.autonomy.level = "autonomous"` — the live
+  `northstar-autonomy` `FeatureFlag` object was targeted to `autonomous` for
+  the duration of one settlement (`tests/harness/contract.py`'s
+  `set_targeted_branch`), the trace was captured, and the flag was reverted
+  to its shipped, refusing (`assisted`) state before this task finished.
 
 **No `policy.*` attribute is set anywhere except in the PDS.** In particular
 nothing in `settlement-agent`, `payments-mcp` or `payments-api` writes one, and
@@ -3941,7 +4037,7 @@ is in "Metrics, as measured (M4 Task 2)" above.
 |---|---|---|---|
 | `northstar.claim.id` | claims-agent at intake | W3C baggage | See "Real, measured coverage" below — **not** every span everywhere |
 | `northstar.policy.number` | customer-ui root span | none | The root span only |
-| `policy.*` (ten keys, M2.2 nine + M5 Task 3's `policy.autonomy.reason`) plus one borrowed key, `feature_flag.version` (M5-R6, an existing OTel semantic convention, not `policy.*`-prefixed because it is not this project's own to name) | policy-decision-service, on its own `policy.decision` span | none — set locally, never propagated | That one span only, `feature_flag.version` only when flagd's response actually carries a version (measured against the live sidecar in M5 Task 3: it never does for this deployment's `autonomy-level` flag, so it is routinely absent). Keys declared in `platform/policy-decision-service/pds/telemetry.py`'s `ATTRIBUTES`/`INVENTED_ATTRIBUTES`. **Dated note, 2026-09-14 (M5 Task 3): corrected — that section is above, not below.** **The worked example and live-trace inventory in "The policy decision, as measured (M2.2)" above still shows the pre-M5 nine/ten-key shape** — re-capturing it against a live M5 trace is Task 4/5's own telemetry-contract work, not re-derived here; treat the counts there as historical (M2.2) rather than current until that pass updates them |
+| `policy.*` (ten keys, M2.2 nine + M5 Task 3's `policy.autonomy.reason`) plus one borrowed key, `feature_flag.version` (M5-R6, an existing OTel semantic convention, not `policy.*`-prefixed because it is not this project's own to name) | policy-decision-service, on its own `policy.decision` span | none — set locally, never propagated | That one span only, `feature_flag.version` only when flagd's response actually carries a version (measured against the live sidecar in M5 Task 3: it never does for this deployment's `autonomy-level` flag, so it is routinely absent). Keys declared in `platform/policy-decision-service/pds/telemetry.py`'s `ATTRIBUTES`/`INVENTED_ATTRIBUTES`. **Dated note, 2026-09-14 (M5 Task 3): corrected — that section is above, not below.** **Dated note, 2026-09-15 (M5 Task 6): re-derived.** The worked example and live-trace inventory in "The policy decision, as measured (M2.2)" above now cites two fresh M5 traces (`c6666319…` assisted-deny, `08d797e4…` autonomous-permit) instead of the pre-M5 nine-key shape; the eleven-key (ten `policy.*` plus scope) count there is current, not historical, and `feature_flag.version`'s routine absence was re-confirmed against both traces |
 | `northstar.payment.refusal_cause` (M2.2 Task 4) | payments-api, on its own server span for a refused execute; two closed values, `amount_mismatch` and `already_executed` (`systems/payments-api/handlers.go`) | none | payments-api's execute span, and **only when it refuses** — absent on success, so its presence means "refused here". Read off a real recorded span by that service's own Go tests via an in-memory `tracetest.SpanRecorder`; it appears on **none** of the six M2.2 traces named in this document, because neither the denied nor the permitted scenario reaches a 409 |
 | `northstar.payment.id`, `northstar.approval.reviewer_id` (M3 Task 3) | settlement-agent, on its own `settlement.execute_approved` span (`agents/settlement-agent/settlement.py`) | none | That span only, on the human-approved execution path. See "settlement-agent's own instrumentation" above, including this milestone's first span **link** and the same span's `northstar.claim.id` baggage (M3 Task 3 review, R16) |
 | `review.*` (six keys, M3 Task 4) | reviewer-ui, on its own `review.decision` span (`apps/reviewer-ui/review.py`) | none | That span only, one per submitted approve/reject decision — reviewer-ui's second owned span, `review.queue` (M3 final-review fix round), deliberately carries **none** of them, and no attributes at all. Two of the six (`review.refused.trace_id`, `review.elapsed_ms`) are now set *after* the span opens rather than at creation, because the ledger read they come from moved inside it; a decision that never reaches a refused record therefore emits the other four and an ERROR status. See "reviewer-ui's own instrumentation" above |

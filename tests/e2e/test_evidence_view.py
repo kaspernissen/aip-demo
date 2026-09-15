@@ -93,7 +93,9 @@ import requests
 # for its own imports. These are the claim, the amounts and the route fixtures
 # M2.2 and M3 already established for exactly these two runs.
 from tests.e2e.test_policy_denial import (  # noqa: F401 -- fixture used by name
+    ATTR_AUTONOMY,
     ATTR_DECISION,
+    ATTR_FLAG_VERSION,
     ATTR_POLICY_AMOUNT,
     ATTR_POLICY_CALLER,
     ATTR_POLICY_LIMIT,
@@ -350,10 +352,22 @@ def evidence_for(claim_id: str) -> dict:
       `trace_ids`                  panel 1, "Claims in this window"
       `policy_decision`/`rule`/    panel 2, "What the platform decided"
         `limit`/`requested`/
+        `autonomy_level`/
+        `contract_version`/
         `executing_identity`/
         `executing_rule`
       `reviewer`/`review_decision` panel 3, "Was a human in the loop?"
       `money_hops`                 panel 4, the ledger hops
+
+    **M5 Task 6.** `autonomy_level` and `contract_version` are the contract's
+    own two signals on the first decision span -- `ATTR_AUTONOMY` (always
+    present, `pds/server.py`) and `ATTR_FLAG_VERSION` (present only when
+    flagd's response carries a version, which measurably never happens
+    against this deployment; see `scorer/contract.py`'s module docstring and
+    ruling M5-R29). `contract_version` is expected to read `None` for both of
+    this file's live claims today -- that is the honest value, not a gap in
+    this function -- and the panel's own `missingBucket` surfaces it as
+    "(no version published)" rather than an empty row.
 
     So a field that stops arriving reddens here *and* empties a panel there,
     which is the whole reason this file exists.
@@ -402,6 +416,8 @@ def evidence_for(claim_id: str) -> dict:
         "rule": attrs(first_decision).get(ATTR_POLICY_RULE),
         "limit": attrs(first_decision).get(ATTR_POLICY_LIMIT),
         "requested": attrs(first_decision).get(ATTR_POLICY_AMOUNT),
+        "autonomy_level": attrs(first_decision).get(ATTR_AUTONOMY),
+        "contract_version": attrs(first_decision).get(ATTR_FLAG_VERSION),
         "reviewer": attrs(review).get(ATTR_REVIEW_REVIEWER),
         "review_decision": attrs(review).get(ATTR_REVIEW_DECISION),
         "executing_identity": attrs(executor).get(ATTR_POLICY_CALLER),
@@ -715,6 +731,32 @@ def test_the_evidence_query_returns_both_stories(denied_claim, permitted_claim_i
         "the permitted claim must show no human in the loop; a reviewer here "
         "means the two stories are not actually different"
     )
+
+
+def test_the_contract_signals_reach_the_decision_panel(denied_claim, permitted_claim_id):
+    """M5 Task 6: the decision panel also carries the contract's own two
+    signals -- the autonomy level a decision actually ran under, and the
+    ruleset version it saw, if any -- read off the same first decision span
+    `rule`/`limit`/`requested` already come from, not a second query.
+
+    Both claims in this file run under the shipped, refusing contract
+    (M5-R8), so both must show `autonomy_level == "assisted"`.
+    `contract_version` is asserted `None` for both, which is the *honest*
+    value today (ruling M5-R29): `featureflag.yaml` publishes no flag
+    `metadata`, so flagd never returns one. If this assertion ever reddens
+    because a real version appeared, that means route 1 has been taken for
+    real -- update it and `platform/eval-scorer/scorer/contract.py`'s
+    `CURRENT_CONTRACT_VERSION` together, the same discipline that module's
+    own `test_the_currently_published_contract_version_is_none` holds itself
+    to; do not silently widen this assertion to tolerate a string.
+    """
+    denied = evidence_for(DENIED_CLAIM_ID)
+    permitted = evidence_for(permitted_claim_id)
+
+    assert denied["autonomy_level"] == "assisted", denied
+    assert permitted["autonomy_level"] == "assisted", permitted
+    assert denied["contract_version"] is None, denied
+    assert permitted["contract_version"] is None, permitted
 
 
 def test_the_trace_id_join_is_what_reaches_the_money_hops(

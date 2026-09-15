@@ -304,6 +304,51 @@ picking one silently.
                                                           └──────────────────┘
 ```
 
+**M5's flag lookup is a third picture, for the same reason M3's approval path
+below is a second one rather than another arrow above**: it happens inside a
+single box in the picture above, not between two of them, and drawing it as a
+branch off `policy-decision-service` would either crowd the Hop 3p annotation
+beside it or misstate the lookup as a network hop between pods when it is a
+localhost call inside one pod.
+
+```text
+                         ┌──────────────────────────┐
+                         │ policy-decision-service  │
+                         │ (Python, gRPC ExtMCP)    │
+                         │ pds/autonomy.py          │
+                         └────────────┬─────────────┘
+                                      │  Hop 3f: gRPC, localhost:8013,
+                                      │  INSIDE the same pod -- flagd is
+                                      │  an initContainer the Open Feature
+                                      │  Operator injects into this pod's
+                                      │  spec, not a separate Deployment
+                                      │  with a Service of its own
+                                      ▼
+                         ┌──────────────────────────┐
+                         │          flagd           │
+                         │  (sidecar, OFO-injected)  │
+                         │  watches the live         │
+                         │  `northstar-autonomy`     │
+                         │  FeatureFlag object       │
+                         │  (provider: kubernetes,   │
+                         │  a real watch, not a poll)│
+                         └──────────────────────────┘
+```
+
+Every `tools/call` the PDS decides makes this lookup once, before Hop 3p's
+verdict — `pds/autonomy.py::resolve_autonomy` asks flagd for the
+`autonomy-level` variant, keyed on the caller's SPIFFE ID from the same
+evaluation context Hop 3p already carries, and the answer becomes
+`policy.autonomy.level` on the `policy.decision` span. This is also the one
+hop in the whole chain that changes behaviour without a code deploy: the
+`northstar-autonomy` `FeatureFlag` object can be patched live (`kubectl patch
+featureflag/northstar-autonomy -n northstar-platform ...`), and flagd's
+Kubernetes watch means the very next lookup sees it — no pod restart, no
+image rebuild. `tests/e2e/test_progressive_autonomy.py` is built on exactly
+that property, and its own second test confirms the property holds by
+comparing pod UIDs and image digests before and after a flip: nothing was
+redeployed to make the same claim settle instead of refuse.
+
 **M3's approval path is a second picture, not another arrow in this one**, and
 drawing it separately is the accurate thing rather than the tidy thing. It
 starts minutes later, from a different browser tab, in a different trace:
@@ -460,12 +505,17 @@ What each component is explicitly **not** responsible for:
   oversight — the service is the same service — but it is the one place where
   "senior is only an identity" makes the telemetry read oddly.
 
-### The platform components M2.1 and M2.2 add
+### The platform components M2.1 through M5 add
 
-All of these live in `northstar-platform` and none is this project's code —
-with one exception this heading has not yet absorbed: `platform/eval-scorer`,
-added by M4, is this project's code and lives here too. See the note under the
-application-components heading above.
+All of these live in `northstar-platform` (or a namespace of their own, for
+the two M5 controllers below); most are third-party infrastructure this
+project configures but does not write — the no-invented-telemetry rule
+applies to that majority without exception. **Two rows are this project's
+own code, and each says so in its own cell rather than being folded into
+this heading's old, now-false claim**: `policy-decision-service` (M2.2) and
+`eval-scorer` (M4, given a row here in M5 Task 6 — see the note under the
+application-components heading above for why it was left out of both
+inventories for two milestones).
 Images and versions below were read from the live cluster, enumerating over
 every pod's `.spec.initContainers` **and** `.spec.containers` — not
 `containerStatuses`, which omits init containers and would have missed two of
@@ -476,11 +526,15 @@ the six SPIRE sub-images, including the one carrying the hazard recorded under
 |---|---|---|---|
 | `agentgateway` | Rust MCP/A2A/LLM proxy. A **Linux Foundation** project — **not** CNCF | `cr.agentgateway.dev/agentgateway:v1.5.0` (note the leading `v`; the tag `1.5.0` does not exist on that registry, though the binary reports `1.5.0` as its internal version) | Interposed on the MCP hop. Verifies the caller's JWT-SVID (`jwtAuth`), asks the Policy Decision Service about every `tools/call` (`mcpGuardrails`), and forwards to `payments-mcp` **only** if the answer is permit. |
 | `policy-decision-service` | **This project's own code** (Python 3.13, `grpcio`), not third-party — listed here because it is platform machinery rather than an application component. Serves agentgateway's `agentgateway.dev.ext_mcp.ExtMcp` contract, from a proto vendored verbatim at v1.5.0 (`platform/policy-decision-service/proto/ext_mcp.proto`, `d459d88`) | `localhost:5001/northstar/policy-decision-service:dev`, `policy-decision-service.northstar-platform.svc.cluster.local:9100` | Answers permit or deny on caller identity plus amount. Holds the milestone's one rule and emits the `policy.decision` span. Makes no Kubernetes API calls and holds no RBAC; nothing in `northstar-agents` can reach it. |
+| `eval-scorer` **(M4; row added M5 Task 6)** | **This project's own code** (Python 3.13, standard library only — no web framework, no third-party OTel SDK dependency beyond what `platform/eval-scorer/requirements.txt` pins), not third-party — the same reason `policy-decision-service` has a row here rather than in the application table | `localhost:5001/northstar/eval-scorer:dev`, `eval-scorer.northstar-platform.svc.cluster.local:8300` | Scores a settled trajectory's identity authority against its own independent copy of the policy table (`scorer/authority.py`) and its own independent copy of the contract's currently-published autonomy level (`scorer/contract.py`'s `CURRENT_LEVEL`), never by re-reading the `policy.decision` span's own claim — the anti-vacuity argument `scorer/contract.py`'s own module docstring makes at length. `CURRENT_LEVEL` is a static constant checked at build time against the committed `deploy/platform/openfeature/featureflag.yaml`, deliberately blind to a live `kubectl patch` against the deployed `FeatureFlag` object (M5-R29/M5-R31) — the two are independent by design, not by oversight, which is exactly what let Task 6 flip the live contract without touching this service or its tests. |
 | SPIRE server / agent | SPIFFE runtime, chart `spiffe/spire` 0.30.2 from the hardened repo | appVersion SPIRE **1.15.3**; `ghcr.io/spiffe/spire-server:1.15.3`, `spire-agent:1.15.3` | Issues the JWT-SVID. Trust domain `northstar.local`, cluster name `northstar`. |
 | SPIRE CRDs | chart `spiffe/spire-crds` 0.6.1, installed first | — | The `spire.spiffe.io` CRDs the `ClusterSPIFFEID` resources need. |
 | `spire-controller-manager` | ships inside the SPIRE chart | `ghcr.io/spiffe/spire-controller-manager:0.7.0` | Reconciles `ClusterSPIFFEID` resources into real registration entries. |
 | `spiffe-csi-driver` (+ `node-driver-registrar`) | ships inside the SPIRE chart | `ghcr.io/spiffe/spiffe-csi-driver:0.2.7`, `registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.15.0` | Bind-mounts the Workload API socket into `settlement-agent`'s pod at `/spiffe-workload-api/spire-agent.sock`. |
 | `spiffe-oidc-discovery-provider` (+ `nginx` sidecar) | ships inside the SPIRE chart | `ghcr.io/spiffe/oidc-discovery-provider:1.15.3`, `docker.io/nginxinc/nginx-unprivileged:1.30.0-alpine` | Publishes SPIRE's JWT signing keys as a JWKS, which the gateway fetches. Plain HTTP inside the cluster — recorded as a gap, not hidden. |
+| `cert-manager` (+ `cainjector`, `webhook`) **(M5 Task 2)** | Upstream Kubernetes certificate controller, applied straight from its release manifest (`kubectl apply -f cert-manager.yaml`), not Helm | `v1.21.2`; `quay.io/jetstack/cert-manager-controller:v1.21.2`, `-cainjector:v1.21.2`, `-webhook:v1.21.2` | Its own namespace, `cert-manager`, not `northstar-platform`. A prerequisite for the Open Feature Operator's admission webhook, which needs a signed TLS certificate to run; issues and rotates that certificate. Reads and writes no `northstar-*` resource. |
+| Open Feature Operator (OFO) | Helm chart `openfeature/open-feature-operator`, installed by `scripts/setup-kind.sh` | chart `v0.9.3`; `ghcr.io/open-feature/open-feature-operator:v0.9.3` | Its own namespace, `open-feature-operator-system`. Watches `FeatureFlag` and `FeatureFlagSource` custom resources (`core.openfeature.dev/v1beta1`) and, on a pod carrying the `openfeature.dev/enabled`/`openfeature.dev/featureflagsource` annotations, mutates that pod's spec at admission time to add a `flagd` sidecar — an `initContainer` with `restartPolicy: Always`, the mechanism that puts flagd inside `policy-decision-service`'s own pod below rather than behind a separate `Service`. |
+| `flagd` | Sidecar, not its own pod — injected by the Open Feature Operator into `policy-decision-service`'s pod as an `initContainer` (`kubectl -n northstar-platform get pod -l app=policy-decision-service` shows it under `initContainers`, confirmed live rather than assumed from the chart) | `ghcr.io/open-feature/flagd:v0.16.2` | Watches the `northstar-autonomy` `FeatureFlag` object (`provider: kubernetes`, a live Kubernetes API watch, not file-polling) and answers flag evaluations over gRPC on `localhost:8013` inside the PDS pod — the port `pds/autonomy.py` calls. Also exposes a management/`healthz`+`/metrics` port (`:8014`, forwarded by `scripts/start-demo.sh` as `flagd-metrics`) and an OFREP REST port (`:8016`, `POST /ofrep/v1/evaluate/flags/{key}`) used to resolve a flag from outside the pod without a gRPC client — the mechanism `tests/harness/contract.py` uses to confirm a live flip actually resolved, from an ephemeral port-forward, before any test trusts it. |
 
 **Not the Helm chart, for agentgateway, and that was a real decision.** The
 gateway is a plain `Deployment` plus a ConfigMap-mounted `config.yaml`
@@ -1629,15 +1683,28 @@ live spans:
   carry no tool and no amount. The PDS denies any method other than
   `tools/call` if it is ever handed one, so widening the config fails loudly
   rather than silently permitting.
-- **Three allowance rows, two callers, one autonomy level that is ever
-  used.** Through M2.2 this read "two entries and both name
+- **Three allowance rows, two callers, one autonomy level the demo ships
+  reaching.** Through M2.2 this read "two entries and both name
   `settlement-agent`". M3 added a third — `senior-settlement-agent` at
-  `assisted`, €25,000 — so the table now names two callers, and the
-  `autonomous` row that has been there since M2.2 is still reached by nothing.
-  Any caller not in the table is `unknown_caller` and denied. This is still
-  nowhere near a general authorization model, and the number that grew is the
-  least interesting part of M3: `decide()` itself was not touched, because
-  approval changes *who asks*, not what is allowed.
+  `assisted`, €25,000 — so the table now names two callers.
+  **Dated note, 2026-09-15 (M5 Task 6): "reached by nothing" is no longer
+  true, and the correction is narrower than it sounds.** The `autonomous` row
+  has now been reached, live, by `tests/e2e/test_progressive_autonomy.py`,
+  which patches the deployed `northstar-autonomy` `FeatureFlag` object's
+  targeting rule (never the committed
+  `deploy/platform/openfeature/featureflag.yaml`, per ruling M5-R8's own
+  instruction not to touch it), drives one real settlement against
+  `settlement-agent.autonomous.execute_limit`, and reverts the flag before the
+  test ends. What did **not** change is what ships: the demo's resting state
+  is still the no-op targeting rule M5-R8 describes (both branches resolve to
+  `assisted`), so a bare `pytest tests/` or a fresh `setup-kind.sh` bring-up
+  reaches the `autonomous` row exactly as often as before this task — never,
+  unless something reaches in and flips the live object. Any caller not in
+  the table is `unknown_caller` and denied. This is still nowhere near a
+  general authorization model, and the number of rows is the least
+  interesting part of M3 or M5: `decide()` itself was not touched by either,
+  because approval changes *who asks* and the flag changes *what a rule
+  resolves to*, neither changes what is allowed.
 - **Nothing in the policy knows a human approved anything.** The PDS sees a
   second identity with a higher limit and decides exactly as it would for any
   caller. The evidence that a human was involved lives in the ledger's refusal

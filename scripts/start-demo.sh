@@ -182,6 +182,20 @@ if service_exists northstar-platform eval-scorer; then
   EVAL_SCORER_AVAILABLE=1
 fi
 
+# M5 Task 6: flagd has no Service of its own (it is a sidecar injected into
+# policy-decision-service's own pod, not a separate Deployment -- measured, no
+# Service anywhere in this cluster exposes 8013/8014/8016), so
+# `service_exists` cannot be the discriminator. The `FeatureFlag` object is:
+# it is the resource Task 2's manifest creates and the one thing that is
+# genuinely absent below stage 5.
+featureflag_exists() {
+  kubectl -n "$1" get "featureflag/$2" -o name >/dev/null 2>&1
+}
+FLAGD_AVAILABLE=""
+if featureflag_exists northstar-platform northstar-autonomy; then
+  FLAGD_AVAILABLE=1
+fi
+
 echo -e "${BLUE}=== Starting Northstar port-forwards ===${NC}"
 
 echo "  - claims-agent       (19001 -> 9001)"
@@ -263,6 +277,35 @@ else
   echo -e "${YELLOW}  - eval-scorer: SKIPPED, svc/eval-scorer does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
 fi
 
+# M5 Task 6: flagd's own metrics, on its "management" port (8014) alongside
+# `/healthz` -- both flagd's own naming, not this project's
+# (deploy/k8s/policy-decision-service.yaml's openfeature.dev/* annotations
+# wire the Open Feature Operator's mutating webhook to inject the sidecar
+# with `--management-port 8014`). Genuinely worth forwarding, not merely
+# possible to: measured live, `/metrics` carries
+# `feature_flag_flagd_impression_total`, broken down by
+# `feature_flag_result_variant` -- the only place in this system that shows
+# how many evaluations resolved "assisted" versus "autonomous" without
+# querying Prometheus or OpenSearch by hand, which matters more here than for
+# any earlier stage because this milestone's whole point is that the variant
+# changes.
+#
+# `deployment/policy-decision-service`, not a pod name: flagd is a sidecar
+# inside that Deployment's own pod, not a separate Deployment or Service (no
+# Service anywhere in this cluster exposes 8013/8014/8016 -- measured), and
+# `kubectl port-forward deployment/NAME` resolves to whichever pod currently
+# backs it, so this forward survives a rollout the same way `svc/NAME`
+# already does for every other forward above.
+FLAGD_METRICS_PID=""
+if [[ -n "$FLAGD_AVAILABLE" ]]; then
+  echo "  - flagd metrics      (18014 -> 8014)"
+  kubectl -n northstar-platform port-forward deployment/policy-decision-service 18014:8014 >/dev/null 2>&1 &
+  FLAGD_METRICS_PID=$!
+  PIDS+=("$FLAGD_METRICS_PID")
+else
+  echo -e "${YELLOW}  - flagd metrics: SKIPPED, no northstar-autonomy FeatureFlag in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
+fi
+
 # Give the forwards a moment to establish before checking them (same
 # allowance setup-kind.sh's own port-forward block uses).
 sleep 4
@@ -290,6 +333,13 @@ if [[ -n "$EVAL_SCORER_PID" ]]; then
   # what verify_owned_forward is for, and does not silently become a store
   # health check.
   verify_owned_forward 18300 "${EVAL_SCORER_PID}" eval-scorer "/healthz"
+fi
+if [[ -n "$FLAGD_METRICS_PID" ]]; then
+  # `/healthz`, not `/metrics`: flagd's management port serves both, and
+  # `/healthz` is the cheap, dedicated liveness route every other surface
+  # above is checked through, rather than pulling the full (measured: >500KB)
+  # metrics payload just to confirm the forward answers.
+  verify_owned_forward 18014 "${FLAGD_METRICS_PID}" flagd-metrics "/healthz"
 fi
 # reviewer-ui: covered here for the same reason smoke-test.sh covers it --
 # it is normally already live via deploy/kind/stage3.yaml's NodePort mapping,
@@ -352,6 +402,13 @@ echo "  payments-mcp:              http://localhost:18000/mcp"  #tool-port
 echo "  payments-api:              http://localhost:18080"  #tool-port
 if [[ -n "$EVAL_SCORER_PID" ]]; then
   echo "  eval-scorer (POST /score): http://localhost:18300"  #tool-port
+fi
+if [[ -n "$FLAGD_METRICS_PID" ]]; then
+  # `#tool-port`, not `#surface`: like eval-scorer's own POST endpoint above,
+  # nothing in docs/architecture.md's "See it yourself" walkthrough opens
+  # this URL in a browser -- it is a diagnostic port for an operator who
+  # wants to `curl` `feature_flag_flagd_impression_total` directly.
+  echo "  flagd metrics:             http://localhost:18014/metrics"  #tool-port
 fi
 # Written as `if` blocks rather than `[[ ... ]] && echo ...`: under `set -e` a
 # bare `test && cmd` list whose test fails is the classic way a script exits on
