@@ -1,0 +1,22 @@
+# M6 Task 2: this component's software-catalog entry. Staging/build-context
+# note lives in the top-level catalog-info.yaml -- read that once, not once
+# per component.
+#
+# No entry in contracts/agent-cards/ -- payments-api is the system of record
+# settlement-agent calls through payments-mcp, not an A2A agent itself, so
+# there is nothing here to link (design's own rule: "where one exists").
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: payments-api
+  description: >-
+    The system of record for payments: executes a settlement once
+    settlement-agent (via payments-mcp) instructs it to.
+  annotations:
+    backstage.io/kubernetes-id: payments-api
+    backstage.io/kubernetes-namespace: northstar-systems
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: northstar

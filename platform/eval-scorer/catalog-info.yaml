@@ -1,0 +1,22 @@
+# M6 Task 2: this component's software-catalog entry. Staging/build-context
+# note lives in the top-level catalog-info.yaml -- read that once, not once
+# per component.
+#
+# No entry in contracts/agent-cards/ -- eval-scorer is platform machinery
+# (the audit path), not an A2A agent, so there is nothing here to link
+# (design's own rule: "where one exists").
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: eval-scorer
+  description: >-
+    Scores settlement decisions after the fact against the telemetry
+    contract, for the audit trail M3/M4/M5 built.
+  annotations:
+    backstage.io/kubernetes-id: eval-scorer
+    backstage.io/kubernetes-namespace: northstar-platform
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: northstar

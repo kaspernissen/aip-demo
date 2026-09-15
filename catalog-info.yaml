@@ -1,0 +1,30 @@
+# M6 Task 2: the System the repo's eight catalog components belong to. This
+# is "a top-level catalog-info.yaml declaring the System"
+# (docs/superpowers/plans/2026-09-15-m6-golden-path.md, Task 2 step 1) --
+# repo root, since a System is not owned by any one component.
+#
+# Design: docs/superpowers/specs/2026-09-15-northstar-m6-golden-path-design.md
+# §3 (static catalog, no git discovery). This file is never read straight out
+# of its real path by the running Backstage instance -- the Docker build
+# context for platform/backstage/ is that directory alone, so
+# scripts/rebuild-and-deploy.sh stages a copy of this file (and the eight
+# components' own catalog-info.yaml files) into
+# platform/backstage/.catalog-stage/ before `docker build`. See that script's
+# own comment on the "backstage" branch, and platform/backstage/Dockerfile's
+# COPY of .catalog-stage. The two agent cards in contracts/agent-cards/ are
+# NOT staged this way -- see agents/claims-agent/catalog-info.yaml's header
+# comment for why (measured: no installed UrlReader handles a local `file:`
+# scheme), so they stay linked by repo path in prose instead.
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: northstar
+  description: >-
+    The Northstar claims-settlement demo: two agents (claims-agent,
+    settlement-agent), two UIs (customer-ui, reviewer-ui), the policy
+    decision service, the eval scorer, the payments API and the payments MCP
+    tool. Eight components, measured from the tree 2026-09-15 (M6 Task 2) --
+    kept honest by tests/unit/test_catalog_matches_the_tree.py, which reddens
+    if a ninth is added with no catalog-info.yaml of its own.
+spec:
+  owner: guests

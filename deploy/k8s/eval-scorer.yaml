@@ -75,6 +75,12 @@ metadata:
   labels:
     app: eval-scorer
     northstar.io/plane: platform
+    # M6 Task 2: read by @backstage/plugin-kubernetes-backend's default
+    # label selector (`backstage.io/kubernetes-id=<entity name>`), so this
+    # Component's catalog entry (platform/eval-scorer/catalog-info.yaml)
+    # shows its live workload. Added to the Pod template below too -- the
+    # plugin queries Pods, not just Deployments.
+    backstage.io/kubernetes-id: eval-scorer
 spec:
   replicas: 1
   selector:
@@ -85,6 +91,7 @@ spec:
       labels:
         app: eval-scorer
         northstar.io/plane: platform
+        backstage.io/kubernetes-id: eval-scorer
     spec:
       serviceAccountName: eval-scorer
       containers:

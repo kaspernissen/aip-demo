@@ -327,6 +327,14 @@ def _deploying_sandbox(
     (tmp_path / "deploy" / "k8s").mkdir(parents=True)
     for context in build_contexts:
         (tmp_path / context).mkdir(parents=True)
+        # M6 Task 2: when "backstage" is among the targets, the script's own
+        # staging step `cp`s every OTHER component's `catalog-info.yaml` (plus
+        # the repo-root one) into platform/backstage/.catalog-stage/ before
+        # building. Real content is irrelevant here -- docker is faked -- but
+        # the files must exist or that `cp` fails and `set -e` kills the run
+        # before it ever reaches this test's actual assertions.
+        (tmp_path / context / "catalog-info.yaml").write_text("# stub\n")
+    (tmp_path / "catalog-info.yaml").write_text("# stub\n")
 
     bin_dir = tmp_path / "fakebin"
     bin_dir.mkdir()

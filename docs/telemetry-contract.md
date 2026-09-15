@@ -214,17 +214,25 @@ invokes. Re-measured with
 `.venv/bin/python -m pytest --collect-only -q tests/`, not carried forward by
 arithmetic, for the same reason every prior figure in this section gives.
 
-Bare-suite row, derived from that same collection: 390 collected − 74 gated −
-**0** xfailed = `316 passed, 74 skipped, 0 xfailed`.
+M6 Task 2 adds three more, all under `tests/unit`
+(`tests/unit/test_catalog_matches_the_tree.py` — the guard that the software
+catalog's eight `catalog-info.yaml` files are derived from a directory walk
+over `agents/`, `apps/`, `platform/`, `systems/` and `tools/`, not a
+hand-maintained list), taking the collected count from **390 to 393**,
+re-measured the same way, prose continuing this same current block for the
+same reason M6 Task 1's own addition above does.
+
+Bare-suite row, derived from that same collection: 393 collected − 74 gated −
+**0** xfailed = `319 passed, 74 skipped, 0 xfailed`.
 
 The gated figure is unchanged at **74** — re-measured the same way as every
 figure below it, a `--collect-only` run with a plugin that counts items
 carrying a `skipif` whose reason names `RUN_BROWSER_TESTS` and whose condition
 is true with the variable unset — because none of Part A's eleven new
 `tests/unit` tests, Part B's five new `tests/unit` tests, M6 Task 1's six new
-`tests/unit` tests, or the two new PDS
-tests carries one; PDS tests are not
-collected by this measure at all (`tests/unit`-only) — and reports 74 of 390,
+`tests/unit` tests, M6 Task 2's three new `tests/unit` tests, or the two new
+PDS tests carries one; PDS tests are not
+collected by this measure at all (`tests/unit`-only) — and reports 74 of 393,
 with the per-module spread and the browser split both unchanged from the row
 below (restated so this block's own guard has a figure to read, not merely
 inherited by silence). Full spread: `test_settlement_llm_trace.py` 9,
@@ -261,16 +269,20 @@ this row stays labelled `PREDICTED, NOT MEASURED` at merge, and whoever merges
 it is accepting that the gate has not re-verified Part A's changes (most
 materially: J2's and N6's PDS behaviour, and J1/J3's guard additions) or Part
 B's new guards (C1's derivation test, J5's status-line test, J7's spread
-check), and M6 Task 1's own six-test addition
+check), M6 Task 1's own six-test addition
 (`tests/unit/test_stage6_backstage_config.py` and the cold-path test in
-`tests/unit/test_stage2_cilium_config.py`) is uncommitted against the
+`tests/unit/test_stage2_cilium_config.py`), and M6 Task 2's own three-test
+addition (`tests/unit/test_catalog_matches_the_tree.py`) plus its changes
+under `deploy/` (the eight components' `backstage.io/kubernetes-id` labels)
+and `platform/` (`platform/backstage/app-config.production.yaml`,
+`packages/app/src/App.tsx`, the Dockerfile) are all uncommitted against the
 recorded gate commit for the same reason. The prediction from collection
-(390 − 0 xfailed = 390) is `390 passed, 0 xfailed`; nothing claims that
+(393 − 0 xfailed = 393) is `393 passed, 0 xfailed`; nothing claims that
 figure was measured against this tree.
 
-`tests/unit` alone collects **244** (222 before the M5 whole-branch review's
+`tests/unit` alone collects **247** (222 before the M5 whole-branch review's
 fix wave, 233 after Part A, 238 after Part B, 244 after M6 Task 1's own
-six-test addition).
+six-test addition, 247 after M6 Task 2's own three-test addition).
 
 ---
 

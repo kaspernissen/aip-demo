@@ -1,0 +1,21 @@
+# M6 Task 2: this component's software-catalog entry. Staging/build-context
+# note lives in the top-level catalog-info.yaml -- read that once, not once
+# per component.
+#
+# No entry in contracts/agent-cards/ -- payments-mcp is a tool
+# settlement-agent calls (an MCP server), not an A2A agent itself, so there
+# is nothing here to link (design's own rule: "where one exists").
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: payments-mcp
+  description: >-
+    The MCP tool surface settlement-agent calls to reach payments-api.
+  annotations:
+    backstage.io/kubernetes-id: payments-mcp
+    backstage.io/kubernetes-namespace: northstar-tools
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: northstar

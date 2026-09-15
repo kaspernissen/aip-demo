@@ -40,6 +40,12 @@ metadata:
   labels:
     app: policy-decision-service
     northstar.io/plane: platform
+    # M6 Task 2: read by @backstage/plugin-kubernetes-backend's default
+    # label selector (`backstage.io/kubernetes-id=<entity name>`), so this
+    # Component's catalog entry (platform/policy-decision-service/
+    # catalog-info.yaml) shows its live workload. Added to the Pod template
+    # below too -- the plugin queries Pods, not just Deployments.
+    backstage.io/kubernetes-id: policy-decision-service
 spec:
   replicas: 1
   selector:
@@ -50,6 +56,7 @@ spec:
       labels:
         app: policy-decision-service
         northstar.io/plane: platform
+        backstage.io/kubernetes-id: policy-decision-service
       # M5 Task 2: these two annotations are what the Open Feature Operator's
       # mutating webhook reads to inject the flagd sidecar into this pod at
       # admission time. `featureflagsource` names

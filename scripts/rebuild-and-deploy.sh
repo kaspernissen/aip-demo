@@ -210,11 +210,47 @@ for component in "${targets[@]}"; do
   if [[ -f "$card" ]]; then
     cp "$card" "$ROOT/$context/agent-card.json"
   fi
+
+  # M6 Task 2: backstage's build context (platform/backstage/) cannot reach
+  # the catalog-info.yaml files its catalog serves — they live outside that
+  # build context, and design §3 rules out a git-based catalog (this repo
+  # has no remote). Stage a mirror of their real repo-relative paths into
+  # .catalog-stage/ before the build, on the same "copy in, always clean up"
+  # terms as agent-card.json above, so platform/backstage/Dockerfile can
+  # COPY it into the image at ./catalog.
+  #
+  # contracts/agent-cards/*.json is deliberately NOT staged here. It was,
+  # until this task's own verification found that Backstage's default
+  # UrlReaders register no reader for a local `file:` scheme — see
+  # agents/claims-agent/catalog-info.yaml's header comment for the measured
+  # error and the trace. Nothing baked into the image would ever read a
+  # staged copy, so staging one was dead weight kept only for a mechanism
+  # that does not work; the agent cards stay linked by repo path in prose,
+  # read from the committed tree the normal way, same as any other doc
+  # reference in this repo.
+  catalog_stage=""
+  if [[ "$component" == "backstage" ]]; then
+    catalog_stage="$ROOT/$context/.catalog-stage"
+    rm -rf "$catalog_stage"
+    mkdir -p "$catalog_stage"
+    cp "$ROOT/catalog-info.yaml" "$catalog_stage/system-catalog-info.yaml"
+    for entry in "${COMPONENTS[@]}"; do
+      cname="${entry%%:*}"
+      [[ "$cname" == "backstage" ]] && continue
+      crest="${entry#*:}"
+      ccontext="${crest%%:*}"
+      mkdir -p "$catalog_stage/$ccontext"
+      cp "$ROOT/$ccontext/catalog-info.yaml" "$catalog_stage/$ccontext/catalog-info.yaml"
+    done
+  fi
+
   if ! docker build -t "$image" "$ROOT/$context"; then
     rm -f "$ROOT/$context/agent-card.json"
+    [[ -n "$catalog_stage" ]] && rm -rf "$catalog_stage"
     exit 1
   fi
   rm -f "$ROOT/$context/agent-card.json"
+  [[ -n "$catalog_stage" ]] && rm -rf "$catalog_stage"
 
   echo -e "${BLUE}Step ${step}/${total}: Pushing ${image} to the local registry${NC}"
   docker push "$image"

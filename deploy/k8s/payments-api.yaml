@@ -6,6 +6,12 @@ metadata:
   labels:
     app: payments-api
     northstar.io/plane: systems
+    # M6 Task 2: read by @backstage/plugin-kubernetes-backend's default
+    # label selector (`backstage.io/kubernetes-id=<entity name>`), so this
+    # Component's catalog entry (systems/payments-api/catalog-info.yaml)
+    # shows its live workload. Added to the Pod template below too -- the
+    # plugin queries Pods, not just Deployments.
+    backstage.io/kubernetes-id: payments-api
 spec:
   replicas: 1
   selector:
@@ -16,6 +22,7 @@ spec:
       labels:
         app: payments-api
         northstar.io/plane: systems
+        backstage.io/kubernetes-id: payments-api
     spec:
       containers:
         - name: payments-api

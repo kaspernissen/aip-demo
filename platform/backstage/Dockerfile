@@ -78,7 +78,16 @@ RUN --mount=type=cache,target=/home/node/.cache/yarn,sharing=locked,uid=1000,gid
     yarn workspaces focus --all --production && rm -rf "$(yarn cache clean)"
 COPY --from=build --chown=node:node /app/packages/backend/dist/bundle/ ./
 COPY --chown=node:node app-config*.yaml ./
+COPY --chown=node:node catalog-info.yaml ./
 COPY --chown=node:node examples ./examples
+# M6 Task 2: the software catalog, static and read from this image's own
+# filesystem (design §3 -- no git discovery, this repo has no remote).
+# scripts/rebuild-and-deploy.sh stages this directory (mirroring the real
+# repo's component paths) into platform/backstage/.catalog-stage/ before this
+# build and removes it after; see that script's own comment on the
+# "backstage" branch. `app-config.production.yaml`'s `catalog.locations`
+# reads it back out at ./catalog/...
+COPY --chown=node:node .catalog-stage ./catalog
 ENV NODE_ENV=production
 EXPOSE 7007
 CMD ["node", "packages/backend", "--config", "app-config.yaml", "--config", "app-config.production.yaml"]

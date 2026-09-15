@@ -33,23 +33,97 @@ auth:
     guest: {}
 
 catalog:
-  # Overrides the default list locations from app-config.yaml as these contain example data.
-  # See https://backstage.io/docs/features/software-catalog/#adding-components-to-the-catalog for more details
-  # on how to get entities into the catalog.
+  # Overrides the default list locations from app-config.yaml, which are
+  # scaffold example data (design §3, docs/superpowers/specs/
+  # 2026-09-15-northstar-m6-golden-path-design.md). Every location below is
+  # `type: file`, resolved relative to this process's cwd (`/app` in the
+  # container -- see the Dockerfile's `CMD`), and every target is baked into
+  # the image at build time rather than fetched over a network: this repo
+  # has no git remote, so a `type: url`/`type: github` location is not an
+  # option, and design §3 makes that a deliberate property ("the catalog is
+  # derived from the repo, not from a database somebody edited once") rather
+  # than a workaround.
+  #
+  # The nine files below (the System plus the eight components) are staged
+  # into ./catalog/... by scripts/rebuild-and-deploy.sh's backstage build
+  # step and are NOT hand-maintained here as a list of names: each is
+  # derived from the repo's own directory tree (that script's COMPONENTS
+  # array), and tests/unit/test_catalog_matches_the_tree.py reddens if a
+  # ninth component is added to that tree with no catalog-info.yaml of its
+  # own. This locations list, by contrast, IS names written by hand -- a
+  # Backstage `type: file` location has no glob/discovery mode -- so a
+  # ninth component also needs one more line here, same as it needs one more
+  # COMPONENTS entry in rebuild-and-deploy.sh already.
   locations:
-    # Local example data, replace this with your production config, these are intended for demo use only.
-    # File locations are relative to the backend process, typically in a deployed context, such as in a Docker container, this will be the root
     - type: file
-      target: ./examples/entities.yaml
+      target: ./catalog/system-catalog-info.yaml
 
-    # Local example template
     - type: file
-      target: ./examples/template/template.yaml
-      rules:
-        - allow: [Template]
+      target: ./catalog/agents/claims-agent/catalog-info.yaml
+    - type: file
+      target: ./catalog/agents/settlement-agent/catalog-info.yaml
+    - type: file
+      target: ./catalog/apps/customer-ui/catalog-info.yaml
+    - type: file
+      target: ./catalog/apps/reviewer-ui/catalog-info.yaml
+    - type: file
+      target: ./catalog/platform/eval-scorer/catalog-info.yaml
+    - type: file
+      target: ./catalog/platform/policy-decision-service/catalog-info.yaml
+    - type: file
+      target: ./catalog/systems/payments-api/catalog-info.yaml
+    - type: file
+      target: ./catalog/tools/payments-mcp/catalog-info.yaml
 
-    # Local example organizational data
+    # This app's own entry (platform/backstage/catalog-info.yaml, unchanged
+    # scaffold default) -- not one of the eight, not baked into ./catalog
+    # (it ships in the image root already, alongside app-config*.yaml).
+    - type: file
+      target: ./catalog-info.yaml
+
+    # Local example organizational data: the only Group this demo defines
+    # ("guests", examples/org.yaml) is every entry above's `owner`. No
+    # scaffolder, no TechDocs, no real org integration (design §2, "Out") --
+    # not worth inventing a second Group for a demo cluster.
     - type: file
       target: ./examples/org.yaml
       rules:
         - allow: [User, Group]
+
+kubernetes:
+  # M6 Task 2: wires the Kubernetes plugin (already registered in
+  # packages/backend/src/index.ts and packages/app/src/App.tsx by this task)
+  # to the SAME cluster Backstage's own pod runs in, using the READ-ONLY
+  # ServiceAccount Task 1 already granted it (`backstage`, bound to the
+  # `backstage-read-only` ClusterRole in deploy/k8s/backstage.yaml). Ruling
+  # M6-R5: this is deliberately the only ServiceAccount the plugin gets --
+  # Task 3's write grant is separate, narrower, and for the autonomy card
+  # alone, not for this.
+  #
+  # `authProvider: serviceAccount` with no `serviceAccountToken` configured:
+  # verified against the installed
+  # @backstage/plugin-kubernetes-backend@0.21.7's ServiceAccountStrategy
+  # (node_modules/@backstage/plugin-kubernetes-backend/dist/auth/
+  # ServiceAccountStrategy.cjs.js) — with no token given, it calls the
+  # `@kubernetes/client-node` KubeConfig's `loadFromCluster()`, which reads
+  # this pod's own mounted `/var/run/secrets/kubernetes.io/serviceaccount/`
+  # token and CA. No Secret reference belongs in this file for that reason:
+  # there is nothing to put there that the in-cluster default does not
+  # already provide, and design §4 is explicit that this ServiceAccount gets
+  # no Secret access at all.
+  serviceLocatorMethod:
+    type: multiTenant
+  clusterLocatorMethods:
+    - type: config
+      clusters:
+        - url: https://kubernetes.default.svc
+          name: northstar-kind
+          authProvider: serviceAccount
+          skipTLSVerify: false
+          caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          # No metrics.k8s.io in this cluster (verified 2026-09-15,
+          # `kubectl get apiservices` -- no such APIService; same finding
+          # deploy/k8s/backstage.yaml's ClusterRole comment already records).
+          # Without this the plugin retries a metrics lookup that can only
+          # ever fail, on every entity, every poll.
+          skipMetricsLookup: true

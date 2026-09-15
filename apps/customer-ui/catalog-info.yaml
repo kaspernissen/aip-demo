@@ -1,0 +1,21 @@
+# M6 Task 2: this component's software-catalog entry. Staging/build-context
+# note lives in the top-level catalog-info.yaml -- read that once, not once
+# per component.
+#
+# No entry in contracts/agent-cards/ -- customer-ui is a UI, not an A2A
+# agent, so there is nothing here to link (design's own rule: "where one
+# exists").
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: customer-ui
+  description: >-
+    The customer-facing surface for filing a claim and watching it progress.
+  annotations:
+    backstage.io/kubernetes-id: customer-ui
+    backstage.io/kubernetes-namespace: northstar-agents
+spec:
+  type: website
+  lifecycle: production
+  owner: guests
+  system: northstar

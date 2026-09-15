@@ -1,0 +1,52 @@
+# M6 Task 2: this component's software-catalog entry. Staging/build-context
+# note lives in the top-level catalog-info.yaml -- read that once, not once
+# per component.
+#
+# The agent card is LINKED via the API entity below, not restated -- see
+# agents/claims-agent/catalog-info.yaml's header comment for why it is a
+# Component -> providesApis -> API graph edge and not an inlined `$text`
+# placeholder (that route was tried first and is not supported by this
+# Backstage version's default reader set for a local, git-less file).
+#
+# Note what this entry does NOT cover: `senior-settlement-agent` is the same
+# image in a second Deployment (deploy/k8s/senior-settlement-agent.yaml), not
+# a build context of its own (scripts/rebuild-and-deploy.sh's COMPONENTS
+# array carries no separate entry for it either) -- so it has no catalog
+# entry of its own, deliberately, the same way it has no separate image.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: settlement-agent
+  description: >-
+    Proposes and executes settlements for motor claims, reading the
+    `northstar-autonomy` FeatureFlag contract to decide whether a settlement
+    executes assisted (human-reviewed) or autonomously.
+  annotations:
+    backstage.io/kubernetes-id: settlement-agent
+    backstage.io/kubernetes-namespace: northstar-agents
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: northstar
+  providesApis: [settlement-agent-card]
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: settlement-agent-card
+  description: >-
+    settlement-agent's A2A agent card. Its full definition (protocolVersion,
+    skills, capabilities) lives in
+    contracts/agent-cards/settlement-agent.json -- read that file, not the
+    `definition` field below, for the actual contract; see
+    agents/claims-agent/catalog-info.yaml's header comment for why it is not
+    inlined here.
+spec:
+  type: agent-card
+  lifecycle: production
+  owner: guests
+  system: northstar
+  definition: |
+    See contracts/agent-cards/settlement-agent.json in this repo for the
+    full A2A AgentCard.

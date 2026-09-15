@@ -13,6 +13,12 @@ metadata:
     # everywhere from M1 onward, not just on the two agents that happened to
     # add it first.
     northstar.io/plane: agents
+    # M6 Task 2: read by @backstage/plugin-kubernetes-backend's default
+    # label selector (`backstage.io/kubernetes-id=<entity name>`), so this
+    # Component's catalog entry (apps/customer-ui/catalog-info.yaml) shows
+    # its live workload. Added to the Pod template below too -- the plugin
+    # queries Pods, not just Deployments.
+    backstage.io/kubernetes-id: customer-ui
 spec:
   replicas: 1
   selector:
@@ -23,6 +29,7 @@ spec:
       labels:
         app: customer-ui
         northstar.io/plane: agents
+        backstage.io/kubernetes-id: customer-ui
     spec:
       containers:
         - name: customer-ui

@@ -1,0 +1,73 @@
+# M6 Task 2: this component's software-catalog entry. Staging/build-context
+# note lives in the top-level catalog-info.yaml -- read that once, not once
+# per component.
+#
+# The agent card is LINKED via the API entity below, not restated: the
+# Component -> providesApis -> API relationship points a reader at
+# contracts/agent-cards/claims-agent.json, this repo's reviewable A2A
+# interface definition, rather than copying its fields into a second place
+# that could drift out of sync with it.
+#
+# NOT inlined with a `$text` placeholder, though that was tried first: with
+# `contracts/agent-cards/claims-agent.json` staged into this image at
+# ./catalog/contracts/agent-cards/claims-agent.json (see the top-level
+# catalog-info.yaml), a `$text: ../../contracts/agent-cards/claims-agent.json`
+# on the API entity below produced, live, in this pod's own logs --
+#   Processor PlaceholderProcessor threw an error while preprocessing;
+#   caused by Error: Placeholder $text could not form a URL out of
+#   /app/catalog/agents/claims-agent/catalog-info.yaml and
+#   ../../contracts/agent-cards/claims-agent.json, TypeError: Invalid URL
+# -- traced to `@backstage/integration`'s `defaultScmResolveUrl`
+# (node_modules/@backstage/integration/dist/helpers.cjs.js): a `type: file`
+# location's target reaches the placeholder resolver as a bare filesystem
+# path with no `file:` scheme (`/app/...`, not `file:/app/...`), and
+# `new URL(relativeValue, base)` requires `base` to itself be an absolute
+# URL. Even fixing that (an absolute `file://` value bypasses `base`
+# entirely) does not reach content: the installed
+# @backstage/backend-defaults@0.17.7 `UrlReaders.default()` registers Azure,
+# Bitbucket (Cloud+Server), Gerrit, GitHub, Gitea, GitLab, Google GCS,
+# Harness, AWS S3, AWS CodeCommit, Azure Blob Storage and a generic
+# http(s) fetch reader (node_modules/@backstage/backend-defaults/dist/
+# entrypoints/urlReader/lib/UrlReaders.cjs.js) -- no reader matches a local
+# `file:` scheme at all. Placeholder inclusion of a local, git-less file is
+# not supported by this version's default reader set; a custom
+# `coreServices.urlReader` backend module could add one, but that is real
+# new backend code this milestone did not scope in, not a config change --
+# the Component -> API graph edge below is the honest version of "point at
+# it" that actually works today.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: claims-agent
+  description: >-
+    Intake and delegation for motor claims: files the claim, evaluates policy
+    via policy-decision-service, and delegates settlement to settlement-agent
+    over A2A.
+  annotations:
+    backstage.io/kubernetes-id: claims-agent
+    backstage.io/kubernetes-namespace: northstar-agents
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: northstar
+  providesApis: [claims-agent-card]
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: claims-agent-card
+  description: >-
+    claims-agent's A2A agent card. Its full definition
+    (protocolVersion, skills, capabilities) lives in
+    contracts/agent-cards/claims-agent.json -- read that file, not the
+    `definition` field below, for the actual contract; see this file's
+    header comment for why it is not inlined here.
+spec:
+  type: agent-card
+  lifecycle: production
+  owner: guests
+  system: northstar
+  definition: |
+    See contracts/agent-cards/claims-agent.json in this repo for the full
+    A2A AgentCard.
