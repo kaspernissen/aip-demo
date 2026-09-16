@@ -348,7 +348,14 @@ def test_every_page_wears_the_band_its_route_is_assigned(backstage_url):
                 _goto(page, f"{backstage_url}{route}")
                 selector = HOME_BANNER_SELECTOR if route == "/" else BAND_SELECTOR
                 try:
-                    page.wait_for_selector(selector, timeout=20000)
+                    # 60s, not the 20s this started at. The first load of a
+                    # TechDocs route after a pod restart triggers the backend's
+                    # own docs generation, and the whole page -- plugin header
+                    # included -- waits on it: that route alone failed the run
+                    # immediately after a rollout and passed every run after.
+                    # A timeout tuned to a warm pod turns a cold one into a
+                    # false report that the band is missing.
+                    page.wait_for_selector(selector, timeout=60000)
                 except Exception:  # noqa: BLE001
                     unpainted.append(f"{route}: no `{selector}` element on the page")
                     continue
