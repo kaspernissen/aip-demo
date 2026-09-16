@@ -27,13 +27,20 @@ metadata:
     backstage.io/kubernetes-namespace: northstar-agents
   tags:
     - agent
-    - a2a
-    - mcp
-    - python
     - llm
+    - mcp
   links:
-    - url: http://localhost:16686/search?service=settlement-agent
-      title: Traces in Jaeger
+    - url: "http://localhost:16686/search?service=settlement-agent&lookback=1h&limit=50"
+      title: Traces in Jaeger (last hour)
+      icon: dashboard
+    - url: "http://localhost:9090/graph?g0.expr=sum%20by%20%28gen_ai_operation_name%29%20%28increase%28gen_ai_client_token_usage_sum%7Bjob%3D%22settlement-agent%22%7D%5B1h%5D%29%29&g0.tab=0&g0.stacked=0&g0.range_input=1h"
+      title: LLM tokens by operation
+      icon: dashboard
+    - url: "http://localhost:9090/graph?g0.expr=sum%28increase%28operation_cost_sum%7Bjob%3D%22settlement-agent%22%7D%5B1h%5D%29%29&g0.tab=0&g0.stacked=0&g0.range_input=1h"
+      title: Model cost (last hour)
+      icon: dashboard
+    - url: "http://localhost:5601/app/data-explorer/discover#?_g=(time:(from:now-1h,to:now))&_a=(discover:(columns:!(resource.service.name,name,durationInNanos),sort:!()),metadata:(indexPattern:'northstar-evidence-traces',view:discover))&_q=(filters:!(),query:(language:kuery,query:'resource.service.name:%22settlement-agent%22'))"
+      title: Spans in OpenSearch
       icon: dashboard
 spec:
   type: service

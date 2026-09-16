@@ -9,6 +9,17 @@ metadata:
     (docs/superpowers/specs/2026-09-15-northstar-m6-golden-path-design.md).
     Not one of the eight components tests/unit/test_catalog_matches_the_tree.py
     guards; it is the thing serving their catalog entries, not one of them.
+  tags:
+    - platform
+    - portal
+    - backstage
+  links:
+    - url: "http://localhost:16686/search?service=backstage&lookback=1h&limit=50"
+      title: Traces in Jaeger (last hour)
+      icon: dashboard
+    - url: "http://localhost:5601/app/data-explorer/discover#?_g=(time:(from:now-1h,to:now))&_a=(discover:(columns:!(resource.service.name,name,durationInNanos),sort:!()),metadata:(indexPattern:'northstar-evidence-traces',view:discover))&_q=(filters:!(),query:(language:kuery,query:'resource.service.name:%22backstage%22'))"
+      title: Spans in OpenSearch
+      icon: dashboard
 spec:
   type: website
   owner: guests

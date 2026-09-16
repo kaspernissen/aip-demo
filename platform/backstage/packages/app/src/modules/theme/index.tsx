@@ -66,6 +66,81 @@ const pageTheme = {
   tool: navyBanner,
 };
 
+/* Component overrides both themes share, parameterised by surface colour.
+ *
+ * Written once because the two themes had drifted: the dark theme carried a
+ * table fix the light one did not, which is how a palette ends up with two
+ * different ideas of what a table row is.
+ *
+ * What is NOT here any more, and why. An earlier version set
+ * `white-space: nowrap; max-width: 22rem` on every table cell, to stop the
+ * catalog breaking "policy-decision-service" into "policy-decisio n-servic e".
+ * It stopped that and caused something worse: eight columns each free to grow
+ * to 22rem made the table wider than the card holding it, so the catalog grew
+ * a horizontal scrollbar straight across its middle and sliced the tags column
+ * mid-word. A fix whose failure mode is uglier than the defect is not a fix.
+ *
+ * The narrow version is the correct one: the mangling was never about wrapping,
+ * it was about breaking *inside a word*, so only that is turned off. A long
+ * hyphenated name now wraps at its hyphens, like prose, and the table stays
+ * inside its card at any width.
+ */
+const componentOverrides = (c: {
+  page: string;
+  border: string;
+  divider: string;
+  thumb: string;
+  thumbHover: string;
+  hover: string;
+}) => ({
+  MuiCssBaseline: {
+    styleOverrides: {
+      // The browser's default scrollbar is painted for a light page, and on
+      // the dark theme it landed as a bright white bar across the catalog.
+      '*::-webkit-scrollbar': { width: 10, height: 10 },
+      '*::-webkit-scrollbar-track': { background: c.page },
+      '*::-webkit-scrollbar-thumb': {
+        background: c.thumb,
+        borderRadius: 8,
+        border: `2px solid ${c.page}`,
+      },
+      '*::-webkit-scrollbar-thumb:hover': { background: c.thumbHover },
+    },
+  },
+  MuiPaper: {
+    styleOverrides: {
+      root: {
+        // `backgroundImage: none` kills MUI's elevation overlay, which tints
+        // dark surfaces a flat grey and was fighting the navy underneath it.
+        // A 1px border does the separating instead -- with only ~6 points of
+        // lightness between page and card, an edge is what makes a card read
+        // as a card.
+        backgroundImage: 'none',
+        border: `1px solid ${c.border}`,
+      },
+    },
+  },
+  MuiTableCell: {
+    styleOverrides: {
+      root: {
+        wordBreak: 'normal' as const,
+        overflowWrap: 'normal' as const,
+        borderBottomColor: c.divider,
+      },
+    },
+  },
+  MuiTableRow: {
+    styleOverrides: {
+      root: {
+        // Zebra striping off: two near-identical slates alternating down a
+        // table read as banding rather than as rows. Hover says where you are.
+        backgroundColor: 'transparent',
+        '&:hover': { backgroundColor: c.hover },
+      },
+    },
+  },
+});
+
 const northstarLight = createUnifiedTheme({
   fontFamily:
     "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif",
@@ -90,30 +165,14 @@ const northstarLight = createUnifiedTheme({
     },
   },
   pageTheme,
-  components: {
-    // The catalog table breaks entity names mid-word when the column is
-    // narrow -- "policy-decision-service" renders as "policy-decisio n-servic
-    // e" at 1440px once the tags column is populated, because a hyphenated
-    // name with no spaces will break anywhere the wrapper allows. Measured
-    // from a screenshot of the running pod; it is the first thing on screen
-    // in the demo's last beat.
-    //
-    // `nowrap` on the cell rather than a width on the column: the column set
-    // belongs to the catalog page extension, and overriding that to change a
-    // wrap is a far larger change than the defect warrants. Cells that then
-    // do not fit get an ellipsis instead of a mangled word, which is the
-    // better failure of the two.
-    MuiTableCell: {
-      styleOverrides: {
-        root: {
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          maxWidth: '22rem',
-        },
-      },
-    },
-  },
+  components: componentOverrides({
+    page: '#f4f7fb',
+    border: '#d5e0ec',
+    divider: '#e2e9f2',
+    thumb: '#b4c4d6',
+    thumbHover: '#94a8c0',
+    hover: '#eef3f9',
+  }),
 });
 
 /* The dark surfaces, all on ONE hue.
@@ -130,24 +189,33 @@ const northstarLight = createUnifiedTheme({
  * saturation easing off as the surfaces get lighter so the pale end stays
  * neutral instead of turning into blue paint:
  *
- *   navigation   hsl(213, 50%,  5.5%)  #070d15   darkest, anchors the rail
- *   page         hsl(213, 45%,  8.5%)  #0c151f
- *   paper/card   hsl(213, 40%, 12.5%)  #131f2d   a clear step off the page
- *   raised/hover hsl(213, 34%, 17.0%)  #1d2a3a
- *   border       hsl(213, 28%, 23.5%)  #2b3a4d
- *   text 2nd     hsl(213, 26%, 66.0%)  #92a6bf
- *   text 1st     hsl(213, 30%, 93.0%)  #e8edf3   near-white, faint blue cast
+ *   navigation   hsl(213, 50%,  5.0%)  #060c13   darkest, anchors the rail
+ *   page         hsl(213, 45%,  7.5%)  #0b121c
+ *   paper/card   hsl(213, 38%, 14.0%)  #162231   + a 1px border, see below
+ *   raised/hover hsl(213, 32%, 18.5%)  #202e3e
+ *   border       hsl(213, 26%, 22.5%)  #2a3848
+ *   divider      hsl(213, 24%, 19.0%)  #252f3c
+ *   text 2nd     hsl(213, 22%, 72.0%)  #a8b6c7
+ *   text 1st     hsl(213, 30%, 94.0%)  #ebeff4   near-white, faint blue cast
+ *
+ * The page/card step was 4.0 points of lightness in the first version and is
+ * 6.5 here. At 4.0 the big "All Components" panel did not read as a panel at
+ * all -- it floated on a ground almost its own colour -- so the card also
+ * takes a 1px border now. Secondary text went up 6 points for the same
+ * reason: the description column was dimmer than the rows it described.
  *
  * The blue stays: #65a1e2 is the light theme's #1b5fa8 lifted to carry on a
  * dark ground, same hue family, so a link is recognisably the same blue in
  * both themes.
  */
-const DARK_NAV = '#070d15';
-const DARK_PAGE = '#0c151f';
-const DARK_PAPER = '#131f2d';
-const DARK_RAISED = '#1d2a3a';
-const DARK_TEXT = '#e8edf3';
-const DARK_TEXT_2 = '#92a6bf';
+const DARK_NAV = '#060c13';
+const DARK_PAGE = '#0b121c';
+const DARK_PAPER = '#162231';
+const DARK_RAISED = '#202e3e';
+const DARK_BORDER = '#2a3848';
+const DARK_DIVIDER = '#252f3c';
+const DARK_TEXT = '#ebeff4';
+const DARK_TEXT_2 = '#a8b6c7';
 const DARK_BLUE = '#65a1e2';
 
 const northstarDark = createUnifiedTheme({
@@ -166,7 +234,7 @@ const northstarDark = createUnifiedTheme({
     info: { main: DARK_BLUE },
     background: { default: DARK_PAGE, paper: DARK_PAPER },
     text: { primary: DARK_TEXT, secondary: DARK_TEXT_2 },
-    divider: '#2b3a4d',
+    divider: DARK_DIVIDER,
     navigation: {
       background: DARK_NAV,
       indicator: '#65a1e2',
@@ -176,32 +244,14 @@ const northstarDark = createUnifiedTheme({
     },
   },
   pageTheme,
-  components: {
-    // Same nowrap treatment the light theme gets, and the reason is there.
-    MuiTableCell: {
-      styleOverrides: {
-        root: {
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          maxWidth: '22rem',
-          borderBottomColor: '#1d2a3a',
-        },
-      },
-    },
-    // The catalog table's zebra striping was the other half of the muddiness:
-    // two near-identical slates alternating down the page read as banding
-    // rather than as rows. One surface, with the hover state doing the work
-    // of telling you which row you are on.
-    MuiTableRow: {
-      styleOverrides: {
-        root: {
-          backgroundColor: 'transparent',
-          '&:hover': { backgroundColor: DARK_RAISED },
-        },
-      },
-    },
-  },
+  components: componentOverrides({
+    page: DARK_PAGE,
+    border: DARK_BORDER,
+    divider: DARK_DIVIDER,
+    thumb: '#3c4b5d',
+    thumbHover: '#4d5f74',
+    hover: DARK_RAISED,
+  }),
 });
 
 // `name: 'light'` / `name: 'dark'`, NOT 'northstar-light'. A ThemeBlueprint's

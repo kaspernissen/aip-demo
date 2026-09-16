@@ -18,12 +18,14 @@ metadata:
     backstage.io/kubernetes-namespace: northstar-platform
   tags:
     - platform
-    - python
     - evaluation
     - audit
   links:
-    - url: http://localhost:16686/search?service=eval-scorer
-      title: Traces in Jaeger
+    - url: "http://localhost:16686/search?service=eval-scorer&lookback=1h&limit=50"
+      title: Traces in Jaeger (last hour)
+      icon: dashboard
+    - url: "http://localhost:5601/app/data-explorer/discover#?_g=(time:(from:now-1h,to:now))&_a=(discover:(columns:!(resource.service.name,name,durationInNanos),sort:!()),metadata:(indexPattern:'northstar-evidence-traces',view:discover))&_q=(filters:!(),query:(language:kuery,query:'resource.service.name:%22eval-scorer%22'))"
+      title: Spans in OpenSearch
       icon: dashboard
 spec:
   type: service

@@ -18,11 +18,16 @@ metadata:
   tags:
     - tool
     - mcp
-    - python
     - payments
   links:
-    - url: http://localhost:16686/search?service=payments-mcp
-      title: Traces in Jaeger
+    - url: "http://localhost:16686/search?service=payments-mcp&lookback=1h&limit=50"
+      title: Traces in Jaeger (last hour)
+      icon: dashboard
+    - url: "http://localhost:9090/graph?g0.expr=sum%20by%20%28server_address%29%20%28rate%28http_client_request_duration_seconds_count%7Bjob%3D%22payments-mcp%22%7D%5B5m%5D%29%29&g0.tab=0&g0.stacked=0&g0.range_input=1h"
+      title: Outbound call rate
+      icon: dashboard
+    - url: "http://localhost:5601/app/data-explorer/discover#?_g=(time:(from:now-1h,to:now))&_a=(discover:(columns:!(resource.service.name,name,durationInNanos),sort:!()),metadata:(indexPattern:'northstar-evidence-traces',view:discover))&_q=(filters:!(),query:(language:kuery,query:'resource.service.name:%22payments-mcp%22'))"
+      title: Spans in OpenSearch
       icon: dashboard
 spec:
   type: service
