@@ -116,27 +116,92 @@ const northstarLight = createUnifiedTheme({
   },
 });
 
+/* The dark surfaces, all on ONE hue.
+ *
+ * The first version of this theme mixed them: navigation sat at hue 208.4,
+ * the page at 208.6, cards at 210.0, while the brand navy this is all
+ * supposed to be is 213.2. Four surfaces, four hues, none of them the
+ * brand's -- which is what "the grey" was. A few degrees of hue drift
+ * between large adjacent fields does not read as a palette, it reads as
+ * dirt, and no single colour in it looks wrong on its own.
+ *
+ * So every surface below is hue 213 -- the brand navy's own hue, measured
+ * from #0a2342 rather than chosen -- at deliberate lightness steps, with
+ * saturation easing off as the surfaces get lighter so the pale end stays
+ * neutral instead of turning into blue paint:
+ *
+ *   navigation   hsl(213, 50%,  5.5%)  #070d15   darkest, anchors the rail
+ *   page         hsl(213, 45%,  8.5%)  #0c151f
+ *   paper/card   hsl(213, 40%, 12.5%)  #131f2d   a clear step off the page
+ *   raised/hover hsl(213, 34%, 17.0%)  #1d2a3a
+ *   border       hsl(213, 28%, 23.5%)  #2b3a4d
+ *   text 2nd     hsl(213, 26%, 66.0%)  #92a6bf
+ *   text 1st     hsl(213, 30%, 93.0%)  #e8edf3   near-white, faint blue cast
+ *
+ * The blue stays: #65a1e2 is the light theme's #1b5fa8 lifted to carry on a
+ * dark ground, same hue family, so a link is recognisably the same blue in
+ * both themes.
+ */
+const DARK_NAV = '#070d15';
+const DARK_PAGE = '#0c151f';
+const DARK_PAPER = '#131f2d';
+const DARK_RAISED = '#1d2a3a';
+const DARK_TEXT = '#e8edf3';
+const DARK_TEXT_2 = '#92a6bf';
+const DARK_BLUE = '#65a1e2';
+
 const northstarDark = createUnifiedTheme({
   fontFamily:
     "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif",
   palette: {
     ...palettes.dark,
-    primary: { main: '#6aa9e0' },
-    secondary: { main: '#8fb8dd' },
-    warning: { main: '#e7a94a' },
+    primary: { main: DARK_BLUE, dark: '#3f82c9', light: '#84b6eb' },
+    secondary: { main: '#84b6eb' },
+    // Ochre reads as mud on a navy ground, so the dark theme's refusal colour
+    // is the same hue family lifted into amber. It still must not be red --
+    // a refusal is the platform working (see the light theme above).
+    warning: { main: '#e0a458' },
     error: { main: '#ef8279' },
     success: { main: '#5ac2a0' },
-    info: { main: '#6aa9e0' },
-    background: { default: '#0b1620', paper: '#122232' },
+    info: { main: DARK_BLUE },
+    background: { default: DARK_PAGE, paper: DARK_PAPER },
+    text: { primary: DARK_TEXT, secondary: DARK_TEXT_2 },
+    divider: '#2b3a4d',
     navigation: {
-      background: '#07111a',
-      indicator: '#2b74c0',
-      color: '#b9cde0',
+      background: DARK_NAV,
+      indicator: '#65a1e2',
+      color: DARK_TEXT_2,
       selectedColor: '#ffffff',
-      navItem: { hoverBackground: '#142739' },
+      navItem: { hoverBackground: DARK_RAISED },
     },
   },
   pageTheme,
+  components: {
+    // Same nowrap treatment the light theme gets, and the reason is there.
+    MuiTableCell: {
+      styleOverrides: {
+        root: {
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          maxWidth: '22rem',
+          borderBottomColor: '#1d2a3a',
+        },
+      },
+    },
+    // The catalog table's zebra striping was the other half of the muddiness:
+    // two near-identical slates alternating down the page read as banding
+    // rather than as rows. One surface, with the hover state doing the work
+    // of telling you which row you are on.
+    MuiTableRow: {
+      styleOverrides: {
+        root: {
+          backgroundColor: 'transparent',
+          '&:hover': { backgroundColor: DARK_RAISED },
+        },
+      },
+    },
+  },
 });
 
 // `name: 'light'` / `name: 'dark'`, NOT 'northstar-light'. A ThemeBlueprint's

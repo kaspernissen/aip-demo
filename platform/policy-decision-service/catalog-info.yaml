@@ -46,3 +46,49 @@ spec:
   lifecycle: production
   owner: guests
   system: northstar
+  dependsOn:
+    - resource:northstar-autonomy
+
+---
+# The autonomy contract itself, as a catalog entity.
+#
+# Added 2026-09-16 because a reader looking at the component list asked where
+# OpenFeature was, and the honest answer was: nowhere. flagd ran as a native
+# sidecar in this service's pod, the `northstar-autonomy` FeatureFlag was the
+# thing the demo's last beat flips, and the catalog -- the portal's own answer
+# to "what is this system made of" -- did not mention either.
+#
+# `kind: Resource`, not Component: it is not built or deployed from a
+# directory in this tree (which is also why the component guards in tests/unit
+# do not demand an mkdocs.yml beside it -- they filter on Component). It is a
+# FeatureFlag custom resource in the cluster, owned by the platform, that
+# policy-decision-service reads at request time. The `dependsOn` above makes
+# that edge show up on the PDS entity page and in the Catalog Graph, which is
+# where someone tracing "who decided, and under what contract?" will look.
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: northstar-autonomy
+  description: >-
+    The autonomy contract: an OpenFeature FeatureFlag, served by a flagd
+    sidecar in the policy-decision-service pod, that decides whether a
+    settlement may execute autonomously or must go to a human. Ships refusing
+    -- `defaultVariant: assisted`, with both targeting branches also
+    `assisted`.
+  annotations:
+    backstage.io/kubernetes-id: policy-decision-service
+    backstage.io/kubernetes-namespace: northstar-platform
+  tags:
+    - openfeature
+    - flagd
+    - feature-flag
+    - policy
+    - autonomy
+  links:
+    - url: http://localhost:7007/autonomy-contract
+      title: Read and flip the contract
+      icon: dashboard
+spec:
+  type: feature-flag
+  owner: guests
+  system: northstar

@@ -135,7 +135,7 @@ export function AutonomyContractPage() {
     <Page themeId="tool">
       <Header
         title="Autonomy contract"
-        subtitle="northstar-autonomy, read live from the FeatureFlag -- never a cached copy"
+        subtitle="northstar-autonomy -- an OpenFeature flag served by the flagd sidecar in the policy-decision-service pod, read live, never a cached copy"
       />
       <Content>
         <Typography variant="body2" paragraph>
