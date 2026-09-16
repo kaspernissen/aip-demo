@@ -10,11 +10,24 @@ import catalogPlugin from '@backstage/plugin-catalog/alpha';
 // cluster.
 import kubernetesPlugin from '@backstage/plugin-kubernetes/alpha';
 import { navModule } from './modules/nav';
-// Northstar's own palette, logo lockup and page banners -- modules/theme.
-// Registered before the feature plugins so its themes are the ones the app
-// offers; the scaffold shipped no theme of its own at all, which is why
-// every page banner was Backstage magenta.
-import { themeModule } from './modules/theme';
+// No theme module. This app deliberately runs Backstage's own default light
+// and dark themes.
+//
+// There WAS one -- a full Northstar palette: navy surfaces on the brand hue,
+// custom page banners for all nine page types, table and scrollbar overrides.
+// It was removed 2026-09-16 after three rounds of trying to make it look
+// right. The lesson is worth keeping, because the failures were not random:
+// recolouring a design system means owning every surface it has, and each
+// round fixed the surface in the screenshot while breaking one just outside
+// it -- a table override that outgrew its card, page and card sat too close
+// to separate, a browser scrollbar still painted for a light page. Backstage's
+// defaults are internally consistent in a way a partial override is not.
+//
+// Northstar's identity now rides entirely on things that are NOT the
+// colour system, and it survives every Backstage upgrade for free:
+//   - the logo lockup in modules/nav (LogoFull/LogoIcon)
+//   - `app.title` and `organization.name` in app-config.yaml
+//   - the catalog's own content: the components, docs and links
 import { homeModule } from './modules/home';
 // M6 Task 3: the autonomy card, its own frontend plugin --
 // modules/autonomyContract/plugin.tsx. Backend half: packages/backend/src/
@@ -26,7 +39,6 @@ export default createApp({
     catalogPlugin,
     kubernetesPlugin,
     navModule,
-    themeModule,
     homeModule,
     autonomyContractPlugin,
   ],

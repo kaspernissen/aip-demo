@@ -42,6 +42,24 @@
       color="#5bbad5"
     />
     <title><%= config.getOptionalString('app.title') ?? 'Backstage' %></title>
+    <style>
+      /* The one visual rule this app adds, and it is not a colour.
+       *
+       * Backstage's catalog table lets a cell break inside a word when the
+       * column is narrow, so "settlement-agent" renders as "settlemen
+       * t-agent" and "policy-decision-service" fragments across three lines.
+       * Turning off mid-word breaking lets those names wrap at their hyphens
+       * instead, the way prose does.
+       *
+       * Deliberately here rather than in a theme: this app runs Backstage's
+       * own default light and dark themes (see packages/app/src/App.tsx for
+       * why a full Northstar palette was tried and removed), and a theme
+       * module reintroduced for one rule would be the same mistake in
+       * miniature. A four-line stylesheet owns no colours and survives
+       * upgrades.
+       */
+      td, th { word-break: normal; overflow-wrap: normal; }
+    </style>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
