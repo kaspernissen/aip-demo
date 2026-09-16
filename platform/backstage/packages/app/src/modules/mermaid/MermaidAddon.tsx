@@ -25,13 +25,13 @@ const MermaidAddon = () => {
   const theme = useTheme();
   const blocks = useShadowRootElements<HTMLPreElement>(['pre.mermaid']);
 
-  const dark = theme.palette.type === 'dark';
+  const { palette } = theme;
   const fontFamily = String(theme.typography.fontFamily ?? 'sans-serif');
-  const errorColour = theme.palette.error.main;
+  const errorColour = palette.error.main;
 
   useEffect(() => {
     let live = true;
-    configureMermaid(dark, fontFamily);
+    configureMermaid(palette, fontFamily);
 
     blocks.forEach(async pre => {
       // The source is stashed on the element the first time it is seen. This
@@ -75,7 +75,7 @@ const MermaidAddon = () => {
     return () => {
       live = false;
     };
-  }, [blocks, dark, fontFamily, errorColour]);
+  }, [blocks, palette, fontFamily, errorColour]);
 
   return null;
 };

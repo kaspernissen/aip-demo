@@ -27,20 +27,30 @@ decision to make — and the machinery that makes that sentence true, rather
 than aspirational, is what this system is for.
 `;
 
-/* The same claim path as docs/index.md, and drawn by the same renderer -- but
- * reached differently. TechDocs gets its mermaid from a \`\`\`mermaid fence that
- * MkDocs turns into `<pre class="mermaid">`; this card renders through
- * `MarkdownContent`, which has no fence handling of any kind, so it takes the
- * component directly. */
+/* The claim path of docs/index.md, drawn by the same renderer -- but reached
+ * differently and deliberately coarser.
+ *
+ * Reached differently: a TechDocs page carries its diagram as a raw
+ * `<pre class="mermaid">` block, which the addon finds in the shadow root.
+ * This card renders through `MarkdownContent`, which handles no blocks of any
+ * kind, so it takes the `<Mermaid>` component directly.
+ *
+ * Coarser on purpose, and this is the second version. The first drew all
+ * seven services the documentation does. In a 700px card `useMaxWidth` then
+ * scales a seven-column chart down until the labels are a few pixels tall --
+ * legible in a screenshot at full resolution, not from the third row of a
+ * room, which is the only place this card is ever read from. The two pairs
+ * that are always adjacent are collapsed into one node each, giving four
+ * columns and labels that survive a projector. The seven-service version is
+ * one click away, and the card's own last line is the link to it.
+ */
 const claimPath = `
 flowchart LR
-    browser(["browser"]) -->|A2A| claims["claims-agent"]
-    claims -->|A2A| settle["settlement-agent"]
-    settle -->|"MCP + JWT-SVID"| gw{{"agentgateway"}}
+    browser(["browser"]) -->|A2A| agents["claims-agent → settlement-agent"]
+    agents -->|"MCP + JWT-SVID"| gw{{"agentgateway"}}
     gw <-->|"gRPC — permit or deny"| pds["policy-decision-service"]
     pds -->|reads| flag[("northstar-autonomy")]
-    gw -->|"permit only"| mcp["payments-mcp"]
-    mcp -->|"HTTP/JSON"| api[("payments-api")]
+    gw -->|"permit only"| pay["payments-mcp → payments-api"]
 `;
 
 const overviewRest = `

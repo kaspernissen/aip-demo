@@ -452,6 +452,46 @@ def test_the_app_registers_the_mermaid_renderer():
     )
 
 
+def test_the_diagrams_borrow_backstage_colours_rather_than_owning_them():
+    """No colour literal anywhere in the mermaid module.
+
+    Mermaid's own `dark` and `default` themes are self-consistent and belong to
+    a different product: `dark` draws near-black boxes with white rules, which
+    on a Backstage page reads as a screenshot from somewhere else. The fix is
+    mermaid's `base` theme plus a palette -- and the palette is read off the
+    live MUI theme at render time, never written down.
+
+    That is the same decision `packages/app/src/App.tsx` records at length
+    about the app as a whole: a custom Northstar palette was built, tried for
+    three rounds and removed, because recolouring a design system means owning
+    every surface it has. A hex literal in this module would be that mistake
+    coming back one colour at a time -- and it would be invisible, because a
+    hard-coded colour looks right in whichever theme it was picked in and
+    wrong only in the other one.
+    """
+    module = (
+        REPO_ROOT
+        / "platform" / "backstage" / "packages" / "app" / "src" / "modules" / "mermaid"
+    )
+    colour = re.compile(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(")
+
+    offending: list[str] = []
+    for path in sorted(module.glob("*.tsx")) + sorted(module.glob("*.ts")):
+        for i, line in enumerate(path.read_text().splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith(("*", "//", "/*")):
+                continue  # prose may name a colour; code may not
+            if colour.search(line):
+                offending.append(f"{path.relative_to(REPO_ROOT)}:{i}: {stripped[:80]}")
+
+    assert not offending, (
+        "these lines hard-code a colour in the mermaid renderer, which is "
+        "supposed to take every colour from the live Backstage theme so the "
+        "diagrams follow the portal through a theme toggle and through any "
+        f"future restyle: {offending}. Use a `palette.*` slot instead."
+    )
+
+
 def test_no_ascii_diagram_survives_in_the_published_docs():
     """The conversion was all of them, not most of them.
 
