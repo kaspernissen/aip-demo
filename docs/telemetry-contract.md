@@ -324,8 +324,39 @@ because each reads the repo rather than what the catalog ingested. None of these
 are gated (no model call, no browser — a directory walk and a YAML parse).
 Re-measured the same way.
 
-Bare-suite row, derived from that same collection: 438 collected − 75 gated −
-**0** xfailed = `363 passed, 75 skipped, 0 xfailed`.
+**The mermaid pass adds seven, all under `tests/unit`, taking the collected
+count from 438 to 445** (still within this same current block, for the reason
+the additions above already state): `tests/unit/test_mermaid_diagrams.py`,
+which asserts the three separate things that each have to hold for a diagram
+to reach a reader. The diagram has to parse — handed to mermaid itself through
+`platform/backstage/packages/app/scripts/parse-mermaid.mjs` rather than to a
+reimplementation of its grammar, on the same reasoning that gave
+`test_catalog_links_are_absolute_urls.py` a strict YAML loader: a checker that
+disagrees with the consumer reports success for input the consumer rejects.
+The diagram has to be written as a raw `<pre class="mermaid">` block and not
+as the idiomatic ```mermaid fence — a fence needs MkDocs to be told about it,
+which needs a `!!python/name:` tag in `mkdocs.yml`, and **Backstage parses
+`mkdocs.yml` itself, in JavaScript, before MkDocs ever sees it**, refusing
+every Python YAML tag outside a hard-coded allowlist of three
+(`ALLOWED_PYTHON_YAML_TAGS` in `@backstage/plugin-techdocs-node`). That was
+found the expensive way: a green suite, a Ready pod, and every page of the
+System's documentation 404ing behind a red banner — so a sixth test asserts
+that no `mkdocs.yml` carries a tag Backstage rejects. The raw block then
+produced a second defect of its own, and a seventh test for it: the contents
+of a raw HTML block **are HTML**, so the `<br/>` the diagrams used for line
+breaks was an element by the time the renderer read the block, and
+`textContent` dropped it — mermaid drew `browser["browserTS, manual root
+span"]`, with no line break and no error, on a page that looked fine. A guard
+that reads the file was validating a different string than the one mermaid
+received. And the Backstage app has to list the renderer among its
+`features`. All three fail the same quiet way: the page
+loads, the pod stays Ready, and a human sees a wall of `flowchart TD` where a
+picture should be. None is gated (no model call, no browser — a YAML parse, a
+text match, and a node subprocess against a jsdom DOM). Re-measured the same
+way.
+
+Bare-suite row, derived from that same collection: 445 collected − 75 gated −
+**0** xfailed = `370 passed, 75 skipped, 0 xfailed`.
 
 The gated figure moves to **75** — re-measured the same way as every figure
 below it, a `--collect-only` run with a plugin that counts items carrying a
@@ -339,8 +370,9 @@ M6 Task 4 adds exactly **one** — `test_golden_path.py`'s own settlement-drivin
 test, the only one of its seven that spends a model call and a browser; the
 whole-branch review fix wave's own addition (M7's `test_rebuild_and_deploy_guard.py`
 test) is `tests/unit`-only and carries no `skipif`, so it adds none, and the
-internal-platform pass's eight new `tests/unit` tests carry none either — and
-reports 75 of 438, with the per-module spread and the browser split both
+internal-platform pass's eight new `tests/unit` tests and the mermaid pass's
+seven carry none either — and
+reports 75 of 445, with the per-module spread and the browser split both
 moving for the first time this milestone. Full spread:
 `test_settlement_llm_trace.py` 9,
 `test_prometheus_metrics_ingest.py` 10, `test_browser_root_span.py` 8,
@@ -357,8 +389,8 @@ same reason `test_progressive_autonomy.py` was never one of the three
 either) — **3 of the 13 launch a browser** and **10 of the 13 start no
 browser**.
 
-Gate row: **PREDICTED, NOT MEASURED** — `437 passed, 1 xfailed`. That figure is
-*derived*, not observed: 438 collected above, minus the one test that xfails
+Gate row: **PREDICTED, NOT MEASURED** — `444 passed, 1 xfailed`. That figure is
+*derived*, not observed: 445 collected above, minus the one test that xfails
 only once `RUN_BROWSER_TESTS=1` ungates it, and **zero skips** — the flag
 ungates all 75 gated tests, so the gate executes the whole of `tests/`. Nobody
 has run it against this tree.
@@ -368,7 +400,7 @@ no longer describes this tree. That gate run was at commit `6588570`,
 `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh`, run by the orchestrator,
 exit **0**, 429 passed and 1 xfailed in 597.91s (9m57s), with zero skips
 (`grep -c SKIPPED` over the run's full output returned 0). 429 + 1 = 430, which
-was the full collection that day. It is **438 today**, and the eight-test gap
+was the full collection that day. It is **445 today**, and the fifteen-test gap
 is itself the evidence that this row is stale rather than merely unre-run.
 
 **What demoted it, 2026-09-15.** A visual pass over the two demo surfaces —
@@ -390,8 +422,10 @@ the pod (`builder: local`, `generator.runIn: local`, python3 +
 itself, enriched `catalog-info.yaml` entities, and the new guard above. This
 touches `platform/`, `apps/`, `agents/`, `systems/`, `tools/`, `scripts/` and
 `tests/` — seven `GATE_PATHS` entries — and it **does** move the collection,
-430 → 438. So this row is now stale on both counts: not re-run, and no longer
-arithmetically consistent with the block above it.
+430 → 438. The mermaid pass that followed moved it again, 438 → 445, across
+`platform/`, `tests/` and the documentation itself. So this row is now stale on
+both counts: not re-run, and no longer arithmetically consistent with the block
+above it.
 
 What has to happen before this reads MEASURED again: one
 `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` against the rebuilt images. The

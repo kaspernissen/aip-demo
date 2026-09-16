@@ -267,58 +267,42 @@ picking one silently.
 
 ## The chain, in one picture
 
-```text
-┌──────────┐  A2A/JSON-RPC   ┌─────────────┐  A2A/JSON-RPC   ┌──────────────────┐
-│ browser  │────over HTTP───▶│ claims-agent│────over HTTP───▶│ settlement-agent │
-│  (TS,    │  message/send   │  (Python,   │  message/send   │  (Python,        │
-│ manual   │◀────────────────│  a2a-sdk)   │◀────────────────│   a2a-sdk)       │
-│ root     │  JSON-RPC reply │             │  JSON-RPC reply │                  │
-│ span)    │                 └─────────────┘                 └────────┬─────────┘
-└──────────┘                                                          │
-                                                     Hop 3a: MCP over streamable
-                                                     HTTP. Identity in an
-                                                     `Authorization: Bearer`
-                                                     JWT-SVID header; trace
-                                                     context in BOTH a
-                                                     `traceparent` header and
-                                                     JSON-RPC `params._meta`
-                                                                       │
-                                                                       ▼
-                                                          ┌──────────────────┐
-                                                          │  agentgateway    │      ┌──────────────────────────┐
-                                                          │  (Rust, v1.5.0)  │      │ policy-decision-service  │
-                                                          │  SVID verified   │─────▶│ (Python, gRPC ExtMCP)    │
-                                                          │  policy consulted│◀─────│ permit | deny            │
-                                                          └────────┬─────────┘      └──────────────────────────┘
-                                                                   │            Hop 3p: gRPC, on EVERY
-                                                                   │            `tools/call`, BEFORE the
-                                                                   │            call reaches payments-mcp.
-                                                                   │            failureMode: failClosed.
-                                                                   │            A deny stops here.
-                                                     Hop 3b: MCP again, same
-                                                     transport, ONLY if the
-                                                     policy permitted. The
-                                                     gateway STRIPS the
-                                                     credential and re-stamps
-                                                     `_meta` with its own
-                                                     outbound span
-                                                                   │
-                                                                   ▼
-                                                          ┌──────────────────┐
-                                                          │   payments-mcp   │
-                                                          │ (Python, FastMCP)│
-                                                          └────────┬─────────┘
-                                                                   │
-                                                     plain HTTP/JSON (otelhttp
-                                                     client ↔ otelhttp server)
-                                                                   │
-                                                                   ▼
-                                                          ┌──────────────────┐
-                                                          │   payments-api   │
-                                                          │  (Go, otelhttp)  │
-                                                          │ system of record │
-                                                          └──────────────────┘
-```
+<pre class="mermaid">
+flowchart TD
+    browser["`browser
+      TS, manual root span`"]
+    claims["`claims-agent
+      Python, a2a-sdk`"]
+    settle["`settlement-agent
+      Python, a2a-sdk`"]
+    gw["`agentgateway
+      Rust, v1.5.0
+      SVID verified · policy consulted`"]
+    pds["`policy-decision-service
+      Python, gRPC ExtMCP`"]
+    mcp["`payments-mcp
+      Python, FastMCP`"]
+    api["`payments-api
+      Go, otelhttp
+      system of record`"]
+
+    browser <-->|"`Hop 1 — A2A/JSON-RPC over HTTP
+      message/send, JSON-RPC reply`"| claims
+    claims <-->|"`Hop 2 — A2A/JSON-RPC over HTTP
+      message/send, JSON-RPC reply`"| settle
+    settle -->|"`Hop 3a — MCP over streamable HTTP
+      identity in an Authorization: Bearer JWT-SVID header
+      trace context in BOTH a traceparent header
+      and JSON-RPC params._meta`"| gw
+    gw <-->|"`Hop 3p — gRPC, on EVERY tools/call, BEFORE the
+      call reaches payments-mcp. failureMode: failClosed.
+      A deny stops here.`"| pds
+    gw -->|"`Hop 3b — MCP again, same transport, ONLY if the policy
+      permitted. The gateway STRIPS the credential and
+      re-stamps _meta with its own outbound span`"| mcp
+    mcp -->|"`Hop 4 — plain HTTP/JSON
+      otelhttp client to otelhttp server`"| api
+</pre>
 
 **M5's flag lookup is a third picture, for the same reason M3's approval path
 below is a second one rather than another arrow above**: it happens inside a
@@ -327,29 +311,23 @@ branch off `policy-decision-service` would either crowd the Hop 3p annotation
 beside it or misstate the lookup as a network hop between pods when it is a
 localhost call inside one pod.
 
-```text
-                         ┌──────────────────────────┐
-                         │ policy-decision-service  │
-                         │ (Python, gRPC ExtMCP)    │
-                         │ pds/autonomy.py          │
-                         └────────────┬─────────────┘
-                                      │  Hop 3f: gRPC, localhost:8013,
-                                      │  INSIDE the same pod -- flagd is
-                                      │  an initContainer the Open Feature
-                                      │  Operator injects into this pod's
-                                      │  spec, not a separate Deployment
-                                      │  with a Service of its own
-                                      ▼
-                         ┌──────────────────────────┐
-                         │          flagd           │
-                         │  (sidecar, OFO-injected)  │
-                         │  watches the live         │
-                         │  `northstar-autonomy`     │
-                         │  FeatureFlag object       │
-                         │  (provider: kubernetes,   │
-                         │  a real watch, not a poll)│
-                         └──────────────────────────┘
-```
+<pre class="mermaid">
+flowchart TD
+    subgraph pod["one pod — no Service, no second Deployment"]
+        pds["`policy-decision-service
+      Python, gRPC ExtMCP
+      pds/autonomy.py`"]
+        flagd["`flagd
+      sidecar, OFO-injected
+      provider: kubernetes`"]
+        pds -->|"`Hop 3f — gRPC, localhost:8013, INSIDE the same pod.
+      flagd is an initContainer the Open Feature Operator
+      injects into this pod's spec.`"| flagd
+    end
+    ff[["`FeatureFlag/northstar-autonomy
+      a Kubernetes object`"]]
+    flagd -->|"watches — a real watch, not a poll"| ff
+</pre>
 
 Every `tools/call` the PDS decides makes this lookup once, before Hop 3p's
 verdict — `pds/autonomy.py::resolve_autonomy` asks flagd for the
@@ -369,22 +347,31 @@ redeployed to make the same claim settle instead of refuse.
 drawing it separately is the accurate thing rather than the tidy thing. It
 starts minutes later, from a different browser tab, in a different trace:
 
-```text
-┌──────────┐   plain HTML    ┌─────────────┐   REST, no MCP  ┌──────────────────┐
-│  human   │────form POST───▶│ reviewer-ui │────────────────▶│   payments-api   │
-│ (browser)│                 │  (Python,   │  GET /payments  │  (the same one)  │
-│          │◀────────────────│   FastAPI)  │  ?status=refused└──────────────────┘
-└──────────┘   rendered HTML └──────┬──────┘
-                                    │  A2A/JSON-RPC over HTTP, message/send
-                                    │  carrying the approval and the refusal's
-                                    │  trace id and span id
-                                    ▼
-                         ┌──────────────────────────┐
-                         │ senior-settlement-agent  │
-                         │ (the settlement-agent    │──▶ agentgateway ──▶ Hop 3p ──▶ payments-mcp ──▶ payments-api
-                         │  image, second identity) │    (same gateway, same jwtAuth, same PDS,
-                         └──────────────────────────┘     different `jwt.sub`, different allowance row)
-```
+<pre class="mermaid">
+flowchart TD
+    human["`human
+      browser`"]
+    rui["`reviewer-ui
+      Python, FastAPI`"]
+    api["`payments-api
+      the same one`"]
+    senior["`senior-settlement-agent
+      the settlement-agent image,
+      second identity`"]
+    gw["`agentgateway
+      same gateway, same jwtAuth, same PDS —
+      different jwt.sub, different allowance row`"]
+    mcp["payments-mcp"]
+
+    human <-->|"plain HTML — form POST, rendered HTML"| rui
+    rui -->|"REST, no MCP — GET /payments?status=refused"| api
+    rui -->|"`A2A/JSON-RPC over HTTP, message/send,
+      carrying the approval and the refusal's
+      trace id and span id`"| senior
+    senior --> gw
+    gw -->|"Hop 3p, then permit only"| mcp
+    mcp --> api
+</pre>
 
 Two things that picture is making explicit. **reviewer-ui reaches payments-api
 directly and is forbidden from reaching the governed path at all** — no
@@ -825,17 +812,32 @@ is a call that never happened.
 the only thing about the trace this document publishes, since a whole-trace
 span total is not stable (see the header):
 
-```
-settlement-agent  execute_tool
-  settlement-agent  POST                                  (httpx CLIENT)
-    agentgateway    tools/call                             (SERVER)
-      agentgateway  Guardrail                              (CLIENT)   ── M2.2
-      policy-decision-service  policy.decision             (SERVER)   ── M2.2
-      agentgateway  tools/call payments-mcp_<tool>         (CLIENT)   ── permit only
-        payments-mcp  tools/call <tool>                    (SERVER)
-          payments-mcp  POST                               (httpx CLIENT)
-            payments-api  POST /payments/...               (SERVER)
-```
+<pre class="mermaid">
+flowchart TD
+    s1["`settlement-agent · **execute_tool**`"]
+    s2["`settlement-agent · **POST**
+      httpx CLIENT`"]
+    s3["`agentgateway · **tools/call**
+      SERVER`"]
+    s4["`agentgateway · **Guardrail**
+      CLIENT — M2.2`"]
+    s5["`policy-decision-service · **policy.decision**
+      SERVER — M2.2`"]
+    s6["`agentgateway · **tools/call payments-mcp_#60;tool#62;**
+      CLIENT`"]
+    s7["`payments-mcp · **tools/call #60;tool#62;**
+      SERVER`"]
+    s8["`payments-mcp · **POST**
+      httpx CLIENT`"]
+    s9["`payments-api · **POST /payments/...**
+      SERVER`"]
+
+    s1 --> s2 --> s3
+    s3 --> s4
+    s3 --> s5
+    s3 -->|"permit only"| s6
+    s6 --> s7 --> s8 --> s9
+</pre>
 
 One trace id throughout, no new roots and no orphans.
 `tests/e2e/test_gateway_trace.py` is the runnable evidence and pins this

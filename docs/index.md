@@ -12,22 +12,27 @@ that makes that sentence true rather than aspirational.
 
 ## The claim's journey
 
-```text
-browser ──A2A──▶ claims-agent ──A2A──▶ settlement-agent
-                                              │
-                                              │ MCP + JWT-SVID
-                                              ▼
-                                        agentgateway ──gRPC──▶ policy-decision-service
-                                              │  ▲                    │
-                                     permit   │  └── permit | deny ───┘
-                                              ▼                    reads
-                                        payments-mcp          northstar-autonomy
-                                              │               (OpenFeature flag)
-                                              │ HTTP/JSON
-                                              ▼
-                                        payments-api
-                                       (system of record)
-```
+<pre class="mermaid">
+flowchart TD
+    browser(["browser"])
+    claims["claims-agent"]
+    settle["settlement-agent"]
+    gw{{"agentgateway"}}
+    pds["policy-decision-service"]
+    flag[("`northstar-autonomy
+      OpenFeature flag`")]
+    mcp["payments-mcp"]
+    api[("`payments-api
+      system of record`")]
+
+    browser -->|A2A| claims
+    claims -->|A2A| settle
+    settle -->|"MCP + JWT-SVID"| gw
+    gw <-->|"gRPC — permit or deny"| pds
+    pds -->|reads| flag
+    gw -->|"permit only"| mcp
+    mcp -->|"HTTP/JSON"| api
+</pre>
 
 Four hops, and a fifth that is not on the line: **every `tools/call` is
 referred to the policy decision service before it is forwarded**. The gateway

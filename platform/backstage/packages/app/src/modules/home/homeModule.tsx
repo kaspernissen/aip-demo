@@ -7,15 +7,17 @@
  * platform -- the demo opens Backstage at its punchline, and the punchline
  * was a tutorial about the tool rather than anything about Northstar.
  *
- * Two cards rather than one, because they answer different questions and get
- * read at different moments: "what is this system" (the story, once) and
- * "where do I click" (the surfaces, every time).
+ * Three cards rather than one, because they answer different questions and get
+ * read at different moments: "what is this system" (the story, once), "what
+ * does the demo prove" (the arc, once) and "where do I click" (the surfaces,
+ * every time).
  */
 import { createFrontendModule } from '@backstage/frontend-plugin-api';
 import { HomePageWidgetBlueprint } from '@backstage/plugin-home-react/alpha';
 import { MarkdownContent } from '@backstage/core-components';
+import { Mermaid } from '../mermaid';
 
-const overview = `
+const overviewIntro = `
 **Motor-claims settlement, where agents do the work and the platform decides
 what they are allowed to do.**
 
@@ -23,17 +25,25 @@ A claimant files a vehicle-damage claim. Two agents read it, assess it and
 propose a settlement. Whether that settlement is *paid* is not the agents'
 decision to make — and the machinery that makes that sentence true, rather
 than aspirational, is what this system is for.
+`;
 
-\`\`\`text
-browser ──A2A──▶ claims-agent ──A2A──▶ settlement-agent
-                                              │ MCP + JWT-SVID
-                                              ▼
-      policy-decision-service ◀──gRPC── agentgateway
-                 │ reads                     │ permit only
-                 ▼                           ▼
-        northstar-autonomy             payments-mcp ──▶ payments-api
-\`\`\`
+/* The same claim path as docs/index.md, and drawn by the same renderer -- but
+ * reached differently. TechDocs gets its mermaid from a \`\`\`mermaid fence that
+ * MkDocs turns into `<pre class="mermaid">`; this card renders through
+ * `MarkdownContent`, which has no fence handling of any kind, so it takes the
+ * component directly. */
+const claimPath = `
+flowchart LR
+    browser(["browser"]) -->|A2A| claims["claims-agent"]
+    claims -->|A2A| settle["settlement-agent"]
+    settle -->|"MCP + JWT-SVID"| gw{{"agentgateway"}}
+    gw <-->|"gRPC — permit or deny"| pds["policy-decision-service"]
+    pds -->|reads| flag[("northstar-autonomy")]
+    gw -->|"permit only"| mcp["payments-mcp"]
+    mcp -->|"HTTP/JSON"| api[("payments-api")]
+`;
 
+const overviewRest = `
 **Every \`tools/call\` is referred to the policy decision service before it is
 forwarded**, and the gateway is \`failureMode: failClosed\` — a policy service
 that is down refuses payments rather than waving them through.
@@ -114,7 +124,13 @@ const overviewWidget = HomePageWidgetBlueprint.make({
     title: 'Northstar — what this system is',
     description: 'The claim path, and the four things that stop a payment',
     components: async () => ({
-      Content: () => <MarkdownContent content={overview} />,
+      Content: () => (
+        <>
+          <MarkdownContent content={overviewIntro} />
+          <Mermaid chart={claimPath} />
+          <MarkdownContent content={overviewRest} />
+        </>
+      ),
     }),
   },
 });

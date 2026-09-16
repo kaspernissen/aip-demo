@@ -32,27 +32,37 @@ markdown file written last week.
 Everything is built from open standards and existing open source. There is no
 proprietary "AI platform" component anywhere in it.
 
-```
-            ┌──────────────────────────────────────────────────────┐
-            │  THE ARC — six stages, one claim, one trace          │
-            └──────────────────────────────────────────────────────┘
+<pre class="mermaid">
+flowchart TD
+    s1["`**1 · Connected**
+      “they can talk to each other”`"]
+    s2["`**2 · Governed**
+      “the platform decides, not the agent”`"]
+    s3["`**3 · Supervised**
+      “a refusal is not the end”`"]
+    s4["`**4 · Observable**
+      “prove why €5,800 was paid”`"]
+    s5["`**5 · Progressive autonomy**
+      “one live value changes what
+      the platform is allowed to do”`"]
+    s6["`**6 · Golden path**
+      “the resource IS the platform API”`"]
 
-  1 Connected     "they can talk to each other"        → one trace exists
-       ↓
-  2 Governed      "the platform decides, not the       → identity is an
-                   agent"                                 INPUT to the decision
-       ↓
-  3 Supervised    "a refusal is not the end"           → a human can overturn
-       ↓
-  4 Observable    "prove why €5,800 was paid"          → from telemetry alone,
-                                                          no new app code
-       ↓
-  5 Progressive   "one live value changes what the     → no redeploy, no
-     autonomy      platform is allowed to do"             restart, no rebuild
-       ↓
-  6 Golden path   "the resource IS the platform API"   → Backstage is just
-                                                          the view onto it
-```
+    r1(["one trace exists"])
+    r2(["identity is an INPUT to the decision"])
+    r3(["a human can overturn"])
+    r4(["from telemetry alone, no new app code"])
+    r5(["no redeploy, no restart, no rebuild"])
+    r6(["Backstage is just the view onto it"])
+
+    s1 --> s2 --> s3 --> s4 --> s5 --> s6
+    s1 -.-> r1
+    s2 -.-> r2
+    s3 -.-> r3
+    s4 -.-> r4
+    s5 -.-> r5
+    s6 -.-> r6
+</pre>
 
 **The closing line the whole demo is built to earn:**
 
@@ -63,61 +73,71 @@ proprietary "AI platform" component anywhere in it.
 
 ## 2. The system at a glance (stage 6)
 
-```
-  ┌─ THE MONEY HOP ─────────────────────────────────────────────────────────┐
-  │                                                                          │
-  │  browser ─A2A─► claims-agent ─A2A─► settlement-agent ─MCP─► agentgateway │
-  │   (TS)            (Python)            (Python)                │  (Rust)  │
-  │  :8080                                                        │          │
-  │                                                     ExtMCP/gRPC│  permit  │
-  │                                                     ┌──────────┘  or deny │
-  │                                                     ▼   BEFORE forwarding │
-  │                                          policy-decision-service          │
-  │                                                (Python)                   │
-  │                                                     │                     │
-  │                                    resolves autonomy│level per request    │
-  │                                                     ▼                     │
-  │                                            flagd  (NATIVE SIDECAR         │
-  │                                                    in the PDS pod,        │
-  │                                                    localhost:8013)        │
-  │                                                     │                     │
-  │                                                     ▼  reads              │
-  │                              FeatureFlag/northstar-autonomy  ◄── THE      │
-  │                                     (a Kubernetes object)        CONTRACT │
-  │                                                                           │
-  │  agentgateway ─MCP─► payments-mcp ─HTTP/JSON─► payments-api               │
-  │                        (Python)                   (Go)  ← money moves here│
-  └──────────────────────────────────────────────────────────────────────────┘
+<pre class="mermaid">
+flowchart TD
+    subgraph money["THE MONEY HOP"]
+        br["`browser · TS
+      :8080`"] -->|A2A| ca["`claims-agent
+      Python`"]
+        ca -->|A2A| sa["`settlement-agent
+      Python`"]
+        sa -->|MCP| gw["`agentgateway
+      Rust`"]
+        gw -->|"`ExtMCP/gRPC — permit or deny,
+      BEFORE forwarding`"| pds["`policy-decision-service
+      Python`"]
+        pds -->|"resolves autonomy level per request"| fd["`flagd
+      NATIVE SIDECAR in the PDS pod
+      localhost:8013`"]
+        gw -->|permit| pm["`payments-mcp
+      Python`"]
+        pm -->|"HTTP/JSON"| pa["`payments-api · Go
+      money moves here`"]
+    end
 
-  ┌─ THE HUMAN HOP (stage 3) ───────────────────────────────────────────────┐
-  │  browser ─────► reviewer-ui ─A2A─► senior-settlement-agent ─MCP─► (same  │
-  │   (human)        (Python)              (Python)                gateway)  │
-  │   :8081                        same image as settlement-agent,           │
-  │                                different ServiceAccount,                 │
-  │                                its own allowance row in the PDS          │
-  └──────────────────────────────────────────────────────────────────────────┘
+    ff[["`**THE CONTRACT**
+      FeatureFlag/northstar-autonomy
+      a Kubernetes object`"]]
+    fd -->|reads| ff
 
-  ┌─ THE EVIDENCE PLANE (stage 4) ──────────────────────────────────────────┐
-  │  every service ─OTLP─► OpenTelemetry Collector ─┬─► Jaeger      :16686   │
-  │                                                  ├─► OpenSearch  :5601   │
-  │                                                  └─► Prometheus  :9090   │
-  │                                     (OTLP ingest ONLY — all 10 default   │
-  │                                      scrape jobs are disabled)           │
-  │  eval-scorer  :18300  — pull-only, POST /score, writes its verdict back  │
-  │                         into the trace it judged                         │
-  └──────────────────────────────────────────────────────────────────────────┘
+    subgraph humanhop["THE HUMAN HOP · stage 3"]
+        hb["`browser · human
+      :8081`"] --> ru["`reviewer-ui
+      Python`"]
+        ru -->|A2A| ss["`senior-settlement-agent · Python
+      same image as settlement-agent,
+      different ServiceAccount,
+      its own allowance row in the PDS`"]
+    end
+    ss -->|"MCP — the same gateway"| gw
 
-  ┌─ THE VIEW (stage 6) ────────────────────────────────────────────────────┐
-  │  Backstage :7007 — catalog (9 Components) + the Autonomy contract card   │
-  │    read  ServiceAccount `backstage`                 get/list/watch only  │
-  │    write ServiceAccount `backstage-autonomy-writer` get/list/PATCH,      │
-  │                            resourceNames: [northstar-autonomy], no more  │
-  └──────────────────────────────────────────────────────────────────────────┘
+    subgraph evidence["THE EVIDENCE PLANE · stage 4"]
+        svc["every service"] -->|OTLP| col["`OpenTelemetry Collector
+      OTLP ingest ONLY — all 10 default
+      scrape jobs are disabled`"]
+        col --> jg["Jaeger :16686"]
+        col --> os["OpenSearch :5601"]
+        col --> pr["Prometheus :9090"]
+        es["`eval-scorer :18300
+      pull-only, POST /score`"] -->|"`writes its verdict back
+      into the trace it judged`"| col
+    end
 
-  Underneath all of it: Cilium (dataplane) · SPIFFE/SPIRE (workload identity,
-  trust domain `northstar.local`) — every MCP call carries a SPIRE-minted
-  JWT-SVID the gateway verifies before anything else happens.
-```
+    subgraph view["THE VIEW · stage 6"]
+        bs["`Backstage :7007
+      catalog, 9 Components
+      + the Autonomy contract card`"]
+    end
+    bs -->|"`ServiceAccount backstage —
+      get/list/watch only`"| ff
+    bs -->|"`ServiceAccount backstage-autonomy-writer —
+      get/list/PATCH, resourceNames: [northstar-autonomy],
+      no more`"| ff
+</pre>
+
+Underneath all of it: **Cilium** (dataplane) · **SPIFFE/SPIRE** (workload
+identity, trust domain `northstar.local`) — every MCP call carries a
+SPIRE-minted JWT-SVID the gateway verifies before anything else happens.
 
 ### The two claims the whole demo runs on
 
@@ -132,16 +152,19 @@ platform that refused everything would look identical if you only ran A.
 Then the same €6,200 claim is made to succeed **three different ways**, and
 each one is a different milestone's point:
 
-```
-  €6,200 refused ──► approved by a human on the reviewer UI       (stage 3)
-                     └─ different IDENTITY: senior-settlement-agent, €25,000
-
-  €6,200 refused ──► contract flipped to `autonomous` by kubectl  (stage 5)
-                     └─ same identity, different LIMIT TABLE ROW
-
-  €6,200 refused ──► contract flipped to `autonomous` in Backstage (stage 6)
-                     └─ identical to the above — and that is the point
-```
+<pre class="mermaid">
+flowchart LR
+    r(["€6,200 refused"])
+    r -->|"stage 3"| a["`approved by a human on the reviewer UI
+      different **IDENTITY**:
+      senior-settlement-agent, €25,000`"]
+    r -->|"stage 5"| b["`contract flipped to autonomous by kubectl
+      same identity,
+      different **LIMIT TABLE ROW**`"]
+    r -->|"stage 6"| c["`contract flipped to autonomous in Backstage
+      identical to the above —
+      and that is the point`"]
+</pre>
 
 ---
 
@@ -434,13 +457,16 @@ Type any reviewer id (placeholder `alex.mercer`) → **Approve**.
 
 **SHOW** — Jaeger, service `reviewer-ui`, operation `review.decision`:
 
-```
-   trace A (refused)                          trace B (approved)
-   browser → … → settlement-agent → deny      review.decision
-                        ▲                            └─► settlement.execute_approved
-                        │                                        │
-                        └────────── span LINK ───────────────────┘
-```
+<pre class="mermaid">
+flowchart LR
+    subgraph A["trace A — refused"]
+        a1["browser → … → settlement-agent"] --> a2["deny"]
+    end
+    subgraph B["trace B — approved"]
+        b1["review.decision"] --> b2["settlement.execute_approved"]
+    end
+    b2 -.->|"span LINK"| a1
+</pre>
 
 **SAY**
 

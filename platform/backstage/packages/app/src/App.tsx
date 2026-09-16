@@ -33,6 +33,10 @@ import { homeModule } from './modules/home';
 // modules/autonomyContract/plugin.tsx. Backend half: packages/backend/src/
 // plugins/autonomyContract, registered in packages/backend/src/index.ts.
 import { autonomyContractPlugin } from './modules/autonomyContract/plugin';
+// Renders ```mermaid fences on TechDocs pages. A TechDocs addon rather than
+// anything simpler because TechDocs puts the generated HTML behind a shadow
+// root -- see modules/mermaid/MermaidAddon.tsx.
+import { mermaidModule } from './modules/mermaid';
 
 export default createApp({
   features: [
@@ -41,5 +45,6 @@ export default createApp({
     navModule,
     homeModule,
     autonomyContractPlugin,
+    mermaidModule,
   ],
 });

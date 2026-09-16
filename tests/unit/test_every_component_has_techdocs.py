@@ -34,6 +34,57 @@ import yaml
 from test_catalog_matches_the_tree import REPO_ROOT, _component_dirs
 
 
+class MkDocsLoader(yaml.SafeLoader):
+    """A loader that reads an mkdocs.yml the way MkDocs does.
+
+    MkDocs parses its config with a loader that understands YAML's
+    `!!python/name:` tag, which is how a config names a *callable* -- and
+    `pymdownx.superfences` custom fences are configured with exactly that:
+
+        format: !!python/name:pymdownx.superfences.fence_code_format
+
+    `yaml.safe_load` raises `ConstructorError` on that tag, so every mkdocs.yml
+    in this repo became unparseable to the guards here the moment mermaid
+    rendering was added. The fix is not to loosen the loader to PyYAML's unsafe
+    one -- that would IMPORT the named module, which is not installed in this
+    venv and does not need to be -- but to construct the tag as the string it
+    names. Nothing is imported and nothing is called; the guards get a value
+    they can assert on.
+
+    Exported rather than private because `test_mermaid_diagrams.py` needs the
+    same reading of the same files, and two loaders that disagree about what an
+    mkdocs.yml says is how a guard ends up green against a config its consumer
+    rejects.
+    """
+
+
+class PythonTag(str):
+    """The FULL YAML tag of a `!!python/...` value, kept distinguishable.
+
+    The whole tag (`tag:yaml.org,2002:python/name:pymdownx...`) and not the
+    dotted name after it, because the consumer that rejects these compares
+    whole tags -- and the prefix is part of what it compares: the same callable
+    can be named by `python/name:`, `python/object.apply:` or
+    `python/object/apply:`, and Backstage's allowlist admits a specific one of
+    those per entry.
+
+    A subclass of `str` so that every consumer can treat it as the string it
+    is, and so that a guard which cares WHERE the string came from -- Backstage
+    rejects these tags, see
+    `test_mermaid_diagrams.py::test_no_mkdocs_config_uses_a_python_yaml_tag` --
+    can tell it apart from an ordinary config value that happens to look like a
+    dotted name.
+    """
+
+
+_PYTHON_TAG_PREFIX = "tag:yaml.org,2002:python/"
+
+MkDocsLoader.add_multi_constructor(
+    _PYTHON_TAG_PREFIX,
+    lambda loader, suffix, node: PythonTag(_PYTHON_TAG_PREFIX + suffix),
+)
+
+
 def _component_entities(path):
     """Every `kind: Component` document in a multi-document catalog file.
 
@@ -107,7 +158,7 @@ def test_every_mkdocs_config_actually_parses():
             # would present one defect as two.
             continue
         try:
-            parsed = yaml.safe_load(config.read_text())
+            parsed = yaml.load(config.read_text(), MkDocsLoader)
         except yaml.YAMLError as exc:
             first_line = str(exc).splitlines()[0]
             broken.append(f"{config.relative_to(REPO_ROOT)}: {first_line}")

@@ -556,28 +556,43 @@ because neither caused the other in the way a parent causes a child (measured �
 see `tests/e2e/test_supervised.py` and `docs/telemetry-contract.md`'s "Gap 2
 (closed, M3)").
 
-```text
-browser ──A2A──► claims-agent ──A2A──► settlement-agent ──MCP──► agentgateway ──MCP──► payments-mcp ──HTTP──► payments-api
-  (TS)              (Python)              (Python)                 ▲  (Rust)             (Python)              (Go)
-                                                                   │ │ ExtMCP/gRPC — permit or deny, before forwarding
-                                                                   │ ▼
-                                                                   │ policy-decision-service
-                                                                   │        (Python)
-browser ────────► reviewer-ui ──A2A──► senior-settlement-agent ──MCP┘
-  (human)          (Python)                  (Python)
-                                    same image as settlement-agent,
-                                    different ServiceAccount, own
-                                    allowance row in the PDS
-```
+<pre class="mermaid">
+flowchart LR
+    br["browser · TS"] -->|A2A| ca["`claims-agent
+      Python`"]
+    ca -->|A2A| sa["`settlement-agent
+      Python`"]
+    sa -->|MCP| gw["`agentgateway
+      Rust`"]
+    gw -->|MCP| pm["`payments-mcp
+      Python`"]
+    pm -->|HTTP| pa["`payments-api
+      Go`"]
+    gw <-->|"`ExtMCP/gRPC — permit or deny,
+      before forwarding`"| pds["`policy-decision-service
+      Python`"]
+
+    hb["browser · human"] --> ru["`reviewer-ui
+      Python`"]
+    ru -->|A2A| ss["`senior-settlement-agent · Python
+      same image as settlement-agent,
+      different ServiceAccount,
+      own allowance row in the PDS`"]
+    ss -->|MCP| gw
+</pre>
 
 The refused trace and the approved trace are two traces, linked:
 
-```text
-  trace A (refused)                              trace B (approved)
-  browser → ... → settlement-agent → deny        review.decision → settlement.execute_approved
-                         ▲                                                     │
-                         └──────────────── span link ────────────────────────────┘
-```
+<pre class="mermaid">
+flowchart LR
+    subgraph A["trace A — refused"]
+        a1["browser → ... → settlement-agent"] --> a2["deny"]
+    end
+    subgraph B["trace B — approved"]
+        b1["review.decision"] --> b2["settlement.execute_approved"]
+    end
+    b2 -.->|"span link"| a1
+</pre>
 
 The link's target is not the `policy.decision` span but the settlement-agent
 span that was active when the refusal was written — its trace id *and* its span
