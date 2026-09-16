@@ -17,3 +17,8 @@ agents/*/agent-card.json
 # a contract whose source of truth is the vendored proto.
 platform/policy-decision-service/ext_mcp_pb2.py
 platform/policy-decision-service/ext_mcp_pb2_grpc.py
+# macOS Finder metadata. Not ignored until 2026-09-16, which is why the
+# Backstage image revision label -- derived from `git describe --dirty` by
+# scripts/rebuild-and-deploy.sh -- had been reading `-dirty` on an otherwise
+# clean tree, making every build look like it carried uncommitted work.
+.DS_Store

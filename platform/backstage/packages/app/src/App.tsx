@@ -37,6 +37,12 @@ import { autonomyContractPlugin } from './modules/autonomyContract/plugin';
 // anything simpler because TechDocs puts the generated HTML behind a shadow
 // root -- see modules/mermaid/MermaidAddon.tsx.
 import { mermaidModule } from './modules/mermaid';
+// Puts Backstage's own gradient page-theme band across the top of every page,
+// not only the two that were never migrated off the classic `<Page>`/`<Header>`
+// pair. This is the ONE module that overrides an upstream extension rather
+// than adding to it (`app/layout`) -- modules/pageBanner/layout.tsx says what
+// that costs and why the additive alternative did not fit.
+import { pageBannerModule } from './modules/pageBanner';
 
 export default createApp({
   features: [
@@ -46,5 +52,6 @@ export default createApp({
     homeModule,
     autonomyContractPlugin,
     mermaidModule,
+    pageBannerModule,
   ],
 });

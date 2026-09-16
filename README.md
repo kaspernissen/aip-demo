@@ -423,7 +423,7 @@ during M5: it needs no model call, but nothing ungated ever drives reviewer-ui
 traffic either, so it failed a bare run for a different reason from the other
 nine. Set `RUN_BROWSER_TESTS=1` to get all of it back.
 
-**Thirteen** modules sit behind `RUN_BROWSER_TESTS=1`, **75** tests in all —
+**Fourteen** modules sit behind `RUN_BROWSER_TESTS=1`, **76** tests in all —
 and that figure is now *re-measured by a test* rather than by hand.
 `tests/unit/test_telemetry_contract_counts.py` walks pytest's collected items,
 reads each item's own `skipif` marker, and fails against this sentence and
@@ -451,13 +451,18 @@ digests is not, because it drives no model call and starts no browser), and
 `tests/e2e/test_golden_path.py` (1, M6 Task 4 — the settlement-driving test
 that flips the contract over Backstage's own HTTP route rather than
 `kubectl`; the other five in that module drive no browser and spend no model
-call, so they are not gated).
-The four partly-gated ones are `test_supervised.py`, `test_policy_denial.py`,
-`test_prometheus_metrics_ingest.py` and `test_progressive_autonomy.py`.
-**3 of the 13 launch a browser** — `test_browser_root_span.py`,
-`test_policy_denial.py` and `test_supervised.py` — and
-**10 of the 13 start no browser**, riding the flag because they spend model
-tokens or need something that does. That split is derived from
+call, so they are not gated), and 1 of the 2 in
+`tests/e2e/test_backstage_page_bands.py` (the page-banner pass — the half that
+opens every route on the running portal and reads the band's computed
+`background-image`; the half that only parses `@backstage/theme`'s palette
+needs neither browser nor cluster and is not gated).
+The five partly-gated ones are `test_supervised.py`, `test_policy_denial.py`,
+`test_prometheus_metrics_ingest.py`, `test_progressive_autonomy.py` and
+`test_backstage_page_bands.py`.
+**4 of the 14 launch a browser** — `test_backstage_page_bands.py`,
+`test_browser_root_span.py`, `test_policy_denial.py` and `test_supervised.py`
+— and **10 of the 14 start no browser**, riding the flag because they spend
+model tokens or need something that does. That split is derived from
 `chromium.launch(` in `tests/e2e` by the
 same guard that checks the 74; it was published here and in two places in the
 telemetry contract as "only one", by the pass whose job was to catch exactly

@@ -610,12 +610,17 @@ def test_the_full_per_module_gated_spread_matches_what_pytest_reports():
     )
 
     readme = (REPO_ROOT / "README.md").read_text()
+    # `The <number> partly-gated ones` -- the number word is matched rather
+    # than spelled, because it moves whenever a partly-gated module is added.
+    # It was `four` until the page-banner pass made it `five`, and an anchor
+    # that names the count turns "the prose was updated correctly" into "the
+    # guard cannot find the prose at all", which reports as the wrong defect.
     readme_match = re.search(
-        r"The\s+spread:(.*?)The\s+four partly-gated ones", readme, re.S
+        r"The\s+spread:(.*?)The\s+\w+ partly-gated ones", readme, re.S
     )
     assert readme_match, (
         "expected README.md to state the per-module spread as 'The spread: "
-        "...' ending before 'The four partly-gated ones'"
+        "...' ending before 'The <number> partly-gated ones'"
     )
     section = readme_match.group(1)
     # Two forms coexist in the prose: "`file.py` (N)" for a fully-gated

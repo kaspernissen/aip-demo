@@ -359,11 +359,54 @@ loads, the pod stays Ready, and a human sees a wall of `flowchart TD` where a
 picture should be. None is gated (no model call, no browser — a YAML parse, a
 text match, and a node subprocess against a jsdom DOM). Re-measured the same
 way.
+**The page-banner pass adds eight, all under `tests/unit`, taking the collected
+count from 446 to 454** (still within this same current block, for the reason
+the additions above already state): `tests/unit/test_page_banner.py`, which
+guards the module that puts Backstage's own page-theme gradient across the top
+of every page rather than only the two that were never migrated off the classic
+`<Page>`/`<Header>` pair. Four separate things have to hold, and **every one of
+them fails silently** — the app builds, the pod goes Ready, the suite stays
+green, and the page simply looks the way it did before. The module has to be
+listed in `App.tsx`'s `features` array, because `createApp` ignores an
+imported-but-unlisted feature without a word (checked with comments stripped,
+both forms, for the reason the mermaid guard above records). The override has
+to claim the id `app/layout`, which is assembled from the module's `pluginId`
+and the extension's `name` in two different files — either one wrong and the
+module is well-formed, type-checks, builds, and attaches to nothing. The CSS
+selector has to keep its trailing `__`: `[class*="bui-PluginHeader"]` without
+it also matches every descendant Backstage UI names, and the gradient is then
+redrawn from each one's own origin. And every `themeId` has to name a real
+built-in page theme, because `getPageTheme` resolves an unknown id to the
+*default* theme rather than raising — so `documentaton` renders teal instead of
+pink and says nothing about it; the list of ten it is checked against is itself
+cross-checked against the installed `@backstage/theme`, so the copy cannot rot.
+An eighth test asserts there is not one colour literal in the module, the same
+decision, for the same reason, as the mermaid module and as `App.tsx`'s own
+note. None is gated (no model call, no browser — a text match and a regex over
+two source files). Re-measured the same way.
 
-Bare-suite row, derived from that same collection: 446 collected − 75 gated −
-**0** xfailed = `371 passed, 75 skipped, 0 xfailed`.
+**And the page-banner pass adds a fourteenth gated module, taking the collected
+count from 454 to 456**: `tests/e2e/test_backstage_page_bands.py`, which is the
+proof the unit guard above is explicitly not. All four of that guard's checks
+can hold while nothing is painted, because what decides whether the gradient
+lands is a CSS cascade inside a build — Backstage UI ships its component styles
+in `@layer components`, this module's rules are unlayered, and unlayered wins.
+Nothing in the repo can see that; the browser can. The test opens each of ten
+routes on the running portal, reads the computed `background-image` off the
+element a human is looking at, and asserts both that it carries a
+`linear-gradient` at all and that the gradient's colours are the ones
+`@backstage/theme` defines for that route's page theme — parsed out of the
+installed package at test time, never typed into the test, because a literal
+there would be a second place the palette lives. **One** of its two tests is
+gated (the palette parse needs no browser and no cluster; the page walk needs
+both), and the gated one launches a browser, which is what moves the browser
+split below. It costs no model call and no settlement: ten page loads, about
+five seconds.
 
-The gated figure moves to **75** — re-measured the same way as every figure
+Bare-suite row, derived from that same collection: 456 collected − 76 gated −
+**0** xfailed = `380 passed, 76 skipped, 0 xfailed`.
+
+The gated figure moves to **76** — re-measured the same way as every figure
 below it, a `--collect-only` run with a plugin that counts items carrying a
 `skipif` whose reason names `RUN_BROWSER_TESTS` and whose condition is true
 with the variable unset — because none of Part A's eleven new `tests/unit`
@@ -375,9 +418,10 @@ M6 Task 4 adds exactly **one** — `test_golden_path.py`'s own settlement-drivin
 test, the only one of its seven that spends a model call and a browser; the
 whole-branch review fix wave's own addition (M7's `test_rebuild_and_deploy_guard.py`
 test) is `tests/unit`-only and carries no `skipif`, so it adds none, and the
-internal-platform pass's eight new `tests/unit` tests and the mermaid pass's
-eight carry none either — and
-reports 75 of 446, with the per-module spread and the browser split both
+internal-platform pass's eight new `tests/unit` tests, the mermaid pass's eight
+and the page-banner pass's eight `tests/unit` tests carry none either; the
+page-banner pass's own e2e file adds exactly **one** — and
+reports 76 of 456, with the per-module spread and the browser split both
 moving for the first time this milestone. Full spread:
 `test_settlement_llm_trace.py` 9,
 `test_prometheus_metrics_ingest.py` 10, `test_browser_root_span.py` 8,
@@ -385,19 +429,21 @@ moving for the first time this milestone. Full spread:
 `test_claim_correlation.py` 6, `test_gateway_trace.py` 6,
 `test_supervised.py` 6, `test_policy_scores.py` 5,
 `test_evidence_view.py` 4, `test_policy_denial.py` 4,
-`test_golden_path.py` 1, `test_progressive_autonomy.py` 1. **The browser split
-changes for the first time since M4 Task 5**: a thirteenth gated module
-joins, and it does not launch its own browser
-(`tests/e2e/test_golden_path.py` imports `_drive_browser` from
-`test_policy_denial.py` rather than calling `chromium.launch(` itself, the
-same reason `test_progressive_autonomy.py` was never one of the three
-either) — **3 of the 13 launch a browser** and **10 of the 13 start no
-browser**.
+`test_backstage_page_bands.py` 1, `test_golden_path.py` 1,
+`test_progressive_autonomy.py` 1. **The browser split changes twice this
+milestone, having not moved since M4 Task 5.** First a thirteenth gated module
+joined without launching its own browser (`tests/e2e/test_golden_path.py`
+imports `_drive_browser` from `test_policy_denial.py` rather than calling
+`chromium.launch(` itself, the same reason `test_progressive_autonomy.py` was
+never one of the three either). Then the page-banner pass added a fourteenth
+that *does* call `chromium.launch(` — it has no page to drive, only pages to
+look at — so the split is now **4 of the 14 launch a browser** and **10 of the
+14 start no browser**.
 
-Gate row: **PREDICTED, NOT MEASURED** — `445 passed, 1 xfailed`. That figure is
-*derived*, not observed: 446 collected above, minus the one test that xfails
+Gate row: **PREDICTED, NOT MEASURED** — `455 passed, 1 xfailed`. That figure is
+*derived*, not observed: 456 collected above, minus the one test that xfails
 only once `RUN_BROWSER_TESTS=1` ungates it, and **zero skips** — the flag
-ungates all 75 gated tests, so the gate executes the whole of `tests/`. Nobody
+ungates all 76 gated tests, so the gate executes the whole of `tests/`. Nobody
 has run it against this tree.
 
 The last real gate run is the reason the shape above is trusted at all, and it
@@ -405,7 +451,7 @@ no longer describes this tree. That gate run was at commit `6588570`,
 `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh`, run by the orchestrator,
 exit **0**, 429 passed and 1 xfailed in 597.91s (9m57s), with zero skips
 (`grep -c SKIPPED` over the run's full output returned 0). 429 + 1 = 430, which
-was the full collection that day. It is **446 today**, and the sixteen-test gap
+was the full collection that day. It is **456 today**, and the twenty-six-test gap
 is itself the evidence that this row is stale rather than merely unre-run.
 
 **What demoted it, 2026-09-15.** A visual pass over the two demo surfaces —
