@@ -38,3 +38,5 @@ spec:
   lifecycle: production
   owner: guests
   system: northstar
+  dependsOn:
+    - component:payments-api

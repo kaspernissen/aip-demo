@@ -376,6 +376,17 @@ def _deploying_sandbox(
         # have been copied from.
         (tmp_path / context / "catalog-info.yaml").write_text(f"# {context}\n")
     (tmp_path / "catalog-info.yaml").write_text("# root system\n")
+    # The System's own TechDocs source. The real repo has mkdocs.yml and docs/
+    # at its root and the script stages both beside system-catalog-info.yaml,
+    # unconditionally -- a System entity that carries
+    # `backstage.io/techdocs-ref: dir:.` and finds no mkdocs.yml there renders
+    # an empty Docs tab, which is the silent-failure shape this milestone kept
+    # producing. Unconditional means a sandbox without these files makes the
+    # script fail loudly, so they belong here, with source-derived content for
+    # the same reason the per-component stubs above have it.
+    (tmp_path / "mkdocs.yml").write_text("# root mkdocs\n")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "index.md").write_text("# root docs index\n")
 
     bin_dir = tmp_path / "fakebin"
     bin_dir.mkdir()
@@ -514,6 +525,33 @@ def test_the_catalog_stage_holds_exactly_the_real_sources_it_should_have_copied(
     assert system_stub.read_text() == "# root system\n", (
         f"system-catalog-info.yaml holds {system_stub.read_text()!r}, not the "
         "repo root's own stub -- the staging step copied the wrong source"
+    )
+
+    # The System's TechDocs source, staged beside its entity. Asserted on
+    # content, not just existence, for the same reason as everything else in
+    # this test: `cp` copying the wrong file is the failure being guarded
+    # against, and a bare `is_file()` cannot tell the two apart.
+    staged_mkdocs = snapshot_dir / "mkdocs.yml"
+    assert staged_mkdocs.is_file(), (
+        "the repo root's mkdocs.yml was never staged into .catalog-stage/. "
+        "The System entity carries `backstage.io/techdocs-ref: dir:.`, which "
+        "resolves to this directory, so without it the system's Docs tab -- "
+        "the solution documentation -- renders empty while every component's "
+        "own docs still work, and nothing else in the repo notices."
+    )
+    assert staged_mkdocs.read_text() == "# root mkdocs\n", (
+        f".catalog-stage/mkdocs.yml holds {staged_mkdocs.read_text()!r}, not "
+        "the repo root's own -- the staging step copied the wrong source"
+    )
+    staged_index = snapshot_dir / "docs" / "index.md"
+    assert staged_index.is_file(), (
+        "the repo root's docs/ was never staged into .catalog-stage/. "
+        "mkdocs.yml declares `docs_dir: docs` relative to itself, so an "
+        "mkdocs.yml with no docs/ beside it builds nothing."
+    )
+    assert staged_index.read_text() == "# root docs index\n", (
+        f".catalog-stage/docs/index.md holds {staged_index.read_text()!r}, "
+        "not the repo root's own -- the staging step copied the wrong source"
     )
 
     for context in other_contexts:

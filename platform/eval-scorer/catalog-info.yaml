@@ -32,3 +32,5 @@ spec:
   lifecycle: production
   owner: guests
   system: northstar
+  dependsOn:
+    - resource:opensearch

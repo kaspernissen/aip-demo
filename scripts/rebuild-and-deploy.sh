@@ -234,6 +234,19 @@ for component in "${targets[@]}"; do
     rm -rf "$catalog_stage"
     mkdir -p "$catalog_stage"
     cp "$ROOT/catalog-info.yaml" "$catalog_stage/system-catalog-info.yaml"
+    # The System's own TechDocs -- the solution documentation, as opposed to
+    # the nine per-component sites staged in the loop below. The System entity
+    # carries `backstage.io/techdocs-ref: dir:.`, which resolves to the
+    # directory holding its catalog-info.yaml: this staging root. So the repo
+    # root's mkdocs.yml and docs/ have to land here, beside
+    # system-catalog-info.yaml, exactly as each component's do beside theirs.
+    #
+    # docs/ is copied whole, superpowers/ included, and mkdocs.yml excludes
+    # that subtree from the built site. One source of truth, one place the
+    # exclusion is stated -- rather than a copy rule here and a nav rule there
+    # that can disagree about which documents are part of the solution.
+    cp "$ROOT/mkdocs.yml" "$catalog_stage/mkdocs.yml"
+    cp -R "$ROOT/docs" "$catalog_stage/docs"
     for entry in "${COMPONENTS[@]}"; do
       cname="${entry%%:*}"
       [[ "$cname" == "backstage" ]] && continue

@@ -26,5 +26,176 @@ metadata:
     tool. Eight components, measured from the tree 2026-09-15 (M6 Task 2) --
     kept honest by tests/unit/test_catalog_matches_the_tree.py, which reddens
     if a ninth is added with no catalog-info.yaml of its own.
+  annotations:
+    # The solution documentation -- ../mkdocs.yml and ../docs/ at the repo
+    # root, staged beside this file. The nine components each document
+    # themselves; this is the one entity that can answer "what is Northstar".
+    backstage.io/techdocs-ref: dir:.
+  links:
+    - url: http://localhost:8080
+      title: Claim form (customer-ui)
+      icon: dashboard
+    - url: http://localhost:8081
+      title: Review console (reviewer-ui)
+      icon: dashboard
+    - url: http://localhost:7007/autonomy-contract
+      title: Autonomy contract (OpenFeature)
+      icon: dashboard
+    - url: http://localhost:16686
+      title: Traces in Jaeger
+      icon: dashboard
+    - url: http://localhost:9090
+      title: Metrics in Prometheus
+      icon: dashboard
+    - url: http://localhost:5601
+      title: Spans in OpenSearch
+      icon: dashboard
 spec:
   owner: guests
+
+---
+# The platform infrastructure, as catalog entities.
+#
+# Added 2026-09-16. These six run in the cluster and carry the demo's whole
+# security and telemetry story, and none of them was in the catalog -- so the
+# portal could tell you what `settlement-agent` does but not what stood
+# between it and a payment. `kind: Resource` rather than Component for all of
+# them: they are not built from a directory in this tree (which is also why
+# the component guards in tests/unit, which walk component directories, do not
+# demand an mkdocs.yml beside each).
+#
+# The `dependsOn` edges declared here and on the components are what make
+# Catalog Graph show the real call chain rather than nine unrelated boxes.
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: agentgateway
+  description: >-
+    The enforcement point. A Rust proxy (v1.5.0) running as a sidecar that
+    verifies the caller's JWT-SVID, refers every `tools/call` to the policy
+    decision service before forwarding it, strips the credential on the way
+    out, and is configured `failureMode: failClosed` -- a policy service that
+    is down refuses payments rather than waving them through.
+  tags:
+    - gateway
+    - mcp
+    - enforcement
+spec:
+  type: gateway
+  owner: guests
+  system: northstar
+  dependsOn:
+    - component:policy-decision-service
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: spire
+  description: >-
+    Workload identity. Issues the SPIFFE SVIDs that make the caller an
+    attested identity rather than a self-declared name. The one piece that
+    turns "settlement-agent says it is settlement-agent" into something the
+    gateway can verify.
+  annotations:
+    backstage.io/kubernetes-namespace: spire
+  tags:
+    - identity
+    - spiffe
+    - security
+spec:
+  type: identity-provider
+  owner: guests
+  system: northstar
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: otel-collector
+  description: >-
+    The telemetry pipeline every component exports to. Fans traces out to
+    Jaeger and OpenSearch and metrics to Prometheus. Sampling is off, always
+    -- 100% of spans, because a demo that samples cannot prove what it claims.
+  annotations:
+    backstage.io/kubernetes-namespace: observability
+  tags:
+    - opentelemetry
+    - telemetry
+spec:
+  type: telemetry-pipeline
+  owner: guests
+  system: northstar
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: jaeger
+  description: >-
+    Trace storage and UI (v2.20.0, in-memory). One filed claim produces a
+    single end-to-end trace of roughly 150 spans across seven services.
+  annotations:
+    backstage.io/kubernetes-namespace: observability
+  tags:
+    - tracing
+    - jaeger
+  links:
+    - url: http://localhost:16686
+      title: Open Jaeger
+      icon: dashboard
+spec:
+  type: observability
+  owner: guests
+  system: northstar
+  dependsOn:
+    - resource:otel-collector
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: prometheus
+  description: >-
+    Metrics storage. Carries the request rates, the LLM token usage and the
+    per-operation model cost the settlement path generates.
+  annotations:
+    backstage.io/kubernetes-namespace: observability
+  tags:
+    - metrics
+    - prometheus
+  links:
+    - url: http://localhost:9090
+      title: Open Prometheus
+      icon: dashboard
+spec:
+  type: observability
+  owner: guests
+  system: northstar
+  dependsOn:
+    - resource:otel-collector
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: opensearch
+  description: >-
+    Spans as queryable data, in `ss4o_traces-default-namespace`. This is what
+    eval-scorer audits against, and what the evidence view reads -- the same
+    traces as Jaeger, but addressable by query rather than by eye.
+  annotations:
+    backstage.io/kubernetes-namespace: observability
+  tags:
+    - opensearch
+    - evidence
+  links:
+    - url: http://localhost:5601
+      title: Open OpenSearch Dashboards
+      icon: dashboard
+spec:
+  type: observability
+  owner: guests
+  system: northstar
+  dependsOn:
+    - resource:otel-collector

@@ -1,52 +1,149 @@
+/* The portal's landing page.
+ *
+ * This replaced the create-app scaffold's card, which said "Welcome to
+ * Backstage! 👋", linked to backstage.io, and closed with a section titled
+ * "How to Edit This Card" explaining how to edit itself. That is a fine
+ * placeholder for a fresh scaffold and a poor first screen for an internal
+ * platform -- the demo opens Backstage at its punchline, and the punchline
+ * was a tutorial about the tool rather than anything about Northstar.
+ *
+ * Two cards rather than one, because they answer different questions and get
+ * read at different moments: "what is this system" (the story, once) and
+ * "where do I click" (the surfaces, every time).
+ */
 import { createFrontendModule } from '@backstage/frontend-plugin-api';
 import { HomePageWidgetBlueprint } from '@backstage/plugin-home-react/alpha';
 import { MarkdownContent } from '@backstage/core-components';
 
-const content = `
-## Welcome to Backstage! 👋
+const overview = `
+**Motor-claims settlement, where agents do the work and the platform decides
+what they are allowed to do.**
 
-Backstage is your developer portal — a single place to manage all your
-software, services, and documentation.
+A claimant files a vehicle-damage claim. Two agents read it, assess it and
+propose a settlement. Whether that settlement is *paid* is not the agents'
+decision to make — and the machinery that makes that sentence true, rather
+than aspirational, is what this system is for.
 
-### Quick Start
+\`\`\`text
+browser ──A2A──▶ claims-agent ──A2A──▶ settlement-agent
+                                              │ MCP + JWT-SVID
+                                              ▼
+      policy-decision-service ◀──gRPC── agentgateway
+                 │ reads                     │ permit only
+                 ▼                           ▼
+        northstar-autonomy             payments-mcp ──▶ payments-api
+\`\`\`
 
-- **Explore the catalog** — Browse all your organization's software in
-  the [Software Catalog](/catalog)
-- **Create something new** — Use a [Software Template](/create) to
-  scaffold a new project in minutes
-- **Read the docs** — Find technical documentation for any service
-  right from its catalog page
+**Every \`tools/call\` is referred to the policy decision service before it is
+forwarded**, and the gateway is \`failureMode: failClosed\` — a policy service
+that is down refuses payments rather than waving them through.
 
-### Helpful Links
+Four things stop a payment, independently, none of them relying on an agent
+choosing to behave: the **policy decision service** (the only decision point),
+the **autonomy contract** (an OpenFeature flag that ships refusing),
+**workload identity** (an attested SPIFFE ID, not a self-declared name), and
+the **network** (the agent plane cannot reach the policy service at all).
 
-- [Backstage Documentation](https://backstage.io/docs)
-- [Customizing Your Homepage](https://backstage.io/docs/getting-started/homepage)
-- [Adding Plugins](https://backstage.io/docs/plugins)
-- [Contributing](https://github.com/backstage/backstage/blob/master/CONTRIBUTING.md)
+A refusal is the platform working. Both UIs render one in ochre, never red,
+and the \`policy.decision\` span is deliberately not an error.
 
-### How to Edit This Card
-
-This widget is defined in \`packages/app/src/modules/home/homeModule.tsx\`.
-You can update the markdown content there to welcome your team with
-your own links and getting started tips.
-
-To remove this card entirely, delete the getting started widget and
-remove it from the home module's extensions array in this file.
+→ **[Read the solution documentation](/docs/default/system/northstar)** —
+architecture, the demo runbook, and the telemetry contract.
 `;
 
-const gettingStartedWidget = HomePageWidgetBlueprint.make({
-  name: 'getting-started',
+const surfaces = `
+| Surface | What it shows |
+|---|---|
+| [Claim form](http://localhost:8080) | filing a claim, and the determination |
+| [Review console](http://localhost:8081) | settlements awaiting a human, and the ledger |
+| [Autonomy contract](/autonomy-contract) | the live OpenFeature flag, and the one write that flips it |
+| [Traces — Jaeger](http://localhost:16686) | one claim, one trace, ~150 spans across 7 services |
+| [Metrics — Prometheus](http://localhost:9090) | request rates, LLM tokens, model cost |
+| [Spans — OpenSearch](http://localhost:5601) | the same traces, queryable as data |
+
+**In the portal**
+
+- [Components](/catalog) — all nine, each with its own docs and pre-filtered
+  links into Jaeger, Prometheus and OpenSearch
+- [Catalog Graph](/catalog-graph?rootEntityRefs%5B%5D=system%3Adefault%2Fnorthstar) —
+  the call chain as a picture, including the gateway and the flag
+- [Docs](/docs) — every component's documentation, and the system's
+- [OpenFeature](/autonomy-contract) — read and flip the autonomy contract
+
+Nothing here is authenticated. On a laptop cluster reached only through an
+explicit port-forward that is a deliberate, recorded choice; anywhere else it
+would not be.
+`;
+
+/* The arc, from docs/demo-runbook.md §1. It is on the landing page rather than
+ * only in the runbook because the runbook is the operator's document -- read
+ * once, before the demo, by the person driving -- and this is the audience's.
+ * Someone handed this portal cold needs to know that the six ideas are
+ * sequential and that each one is a deployed thing, not a slide.
+ *
+ * The stage names and their order are duplicated from the runbook, which is a
+ * cost: two places to change if a stage is renamed. Accepted because the
+ * alternative is a build-time import from a markdown table, and the arc has
+ * not changed in six milestones.
+ */
+const stages = `
+Each stage is a cluster you can bring up on its own with
+\`./scripts/setup-kind.sh --stage N\`, and each one adds exactly what its idea
+needs. Stage 6 is the whole thing, and is what you are looking at.
+
+| | Stage | What it proves | Added |
+|---|---|---|---|
+| 1 | Connected | they can talk to each other, and one trace says so | the agents, the MCP servers, Jaeger |
+| 2 | Governed | the platform decides, not the agent — and identity is an *input* to that decision | Cilium, SPIFFE/SPIRE, agentgateway, the policy decision service |
+| 3 | Supervised | a refusal is not the end; a human can overturn one | reviewer console, senior settlement agent |
+| 4 | Observable | why €5,800 was paid, from telemetry alone and no new app code | OpenSearch, Prometheus, the eval scorer |
+| 5 | Progressive autonomy | one live value changes what the platform permits — no redeploy, no restart | Open Feature Operator, the \`FeatureFlag\` |
+| 6 | Golden path | the resource **is** the platform API; this portal is a view onto it | Backstage |
+
+> The platform API is the resource. Backstage is just the view a human uses to
+> read and change it.
+
+→ **[The demo runbook](/docs/default/system/northstar/demo-runbook/)** — every
+beat, in order, with what to say and what will break.
+`;
+
+const overviewWidget = HomePageWidgetBlueprint.make({
+  name: 'northstar-overview',
   params: {
-    name: 'GettingStarted',
-    title: 'Getting Started',
-    description: 'Tips and links to help you get started with Backstage',
+    name: 'NorthstarOverview',
+    title: 'Northstar — what this system is',
+    description: 'The claim path, and the four things that stop a payment',
     components: async () => ({
-      Content: () => <MarkdownContent content={content} />,
+      Content: () => <MarkdownContent content={overview} />,
+    }),
+  },
+});
+
+const surfacesWidget = HomePageWidgetBlueprint.make({
+  name: 'northstar-surfaces',
+  params: {
+    name: 'NorthstarSurfaces',
+    title: 'Everything you can look at',
+    description: 'Every surface this demo exposes, with a link to each',
+    components: async () => ({
+      Content: () => <MarkdownContent content={surfaces} />,
+    }),
+  },
+});
+
+const stagesWidget = HomePageWidgetBlueprint.make({
+  name: 'northstar-stages',
+  params: {
+    name: 'NorthstarStages',
+    title: 'The arc — six stages, one claim, one trace',
+    description: 'What each stage of the demo adds, and what it proves',
+    components: async () => ({
+      Content: () => <MarkdownContent content={stages} />,
     }),
   },
 });
 
 export const homeModule = createFrontendModule({
   pluginId: 'home',
-  extensions: [gettingStartedWidget],
+  extensions: [overviewWidget, surfacesWidget, stagesWidget],
 });

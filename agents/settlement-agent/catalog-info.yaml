@@ -47,6 +47,9 @@ spec:
   lifecycle: production
   owner: guests
   system: northstar
+  dependsOn:
+    - resource:agentgateway
+    - component:payments-mcp
   providesApis: [settlement-agent-card]
 ---
 apiVersion: backstage.io/v1alpha1

@@ -288,8 +288,8 @@ call, no browser -- a sandboxed run of `scripts/rebuild-and-deploy.sh` with
 docker/kubectl faked, same as its siblings in that file). Re-measured the
 same way.
 
-**The internal-platform pass adds six, all under `tests/unit`, taking
-the collected count from 430 to 436** (still within this same current block,
+**The internal-platform pass adds eight, all under `tests/unit`, taking
+the collected count from 430 to 438** (still within this same current block,
 for the reason the two additions above already state): the new guard
 `tests/unit/test_every_component_has_techdocs.py`, which walks the component
 tree — reusing `test_catalog_matches_the_tree.py`'s own `_component_dirs`
@@ -298,7 +298,17 @@ each have to hold for a component's Docs tab to render anything: `mkdocs.yml`
 beside its `catalog-info.yaml`, a `docs/index.md` inside it, and
 `backstage.io/techdocs-ref: dir:.` on the Component entity. A component can
 satisfy any two of the three and still show an empty tab, which is why it is
-three assertions and not one. A fourth was added after two of the nine
+three assertions and not one. A fifth guard covers the System entity: the nine components each
+document themselves, and until this pass nothing rendered what they add
+up to -- the portal could describe `settlement-agent` but not Northstar.
+It asserts the same three links at the repo root, where the System's own
+`dir:.` resolves.
+
+The eighth parses every catalog file the way Backstage parses it, rejecting
+duplicate mapping keys. PyYAML keeps the last value and reports success; the
+JS parser Backstage uses raises and drops every entity in the file. A second
+`providesApis:` added during this pass cost four entities -- two Components
+and both agent-card APIs -- while every local check stayed green. A fourth was added after two of the nine
 `mkdocs.yml` files written for this pass turned out not to parse -- an
 unquoted `site_description` containing a colon -- which the existence check
 above was green for, and which surfaces only in the build log streamed into
@@ -314,8 +324,8 @@ because each reads the repo rather than what the catalog ingested. None of these
 are gated (no model call, no browser — a directory walk and a YAML parse).
 Re-measured the same way.
 
-Bare-suite row, derived from that same collection: 436 collected − 75 gated −
-**0** xfailed = `361 passed, 75 skipped, 0 xfailed`.
+Bare-suite row, derived from that same collection: 438 collected − 75 gated −
+**0** xfailed = `363 passed, 75 skipped, 0 xfailed`.
 
 The gated figure moves to **75** — re-measured the same way as every figure
 below it, a `--collect-only` run with a plugin that counts items carrying a
@@ -329,8 +339,8 @@ M6 Task 4 adds exactly **one** — `test_golden_path.py`'s own settlement-drivin
 test, the only one of its seven that spends a model call and a browser; the
 whole-branch review fix wave's own addition (M7's `test_rebuild_and_deploy_guard.py`
 test) is `tests/unit`-only and carries no `skipif`, so it adds none, and the
-internal-platform pass's six new `tests/unit` tests carry none either — and
-reports 75 of 436, with the per-module spread and the browser split both
+internal-platform pass's eight new `tests/unit` tests carry none either — and
+reports 75 of 438, with the per-module spread and the browser split both
 moving for the first time this milestone. Full spread:
 `test_settlement_llm_trace.py` 9,
 `test_prometheus_metrics_ingest.py` 10, `test_browser_root_span.py` 8,
@@ -347,8 +357,8 @@ same reason `test_progressive_autonomy.py` was never one of the three
 either) — **3 of the 13 launch a browser** and **10 of the 13 start no
 browser**.
 
-Gate row: **PREDICTED, NOT MEASURED** — `435 passed, 1 xfailed`. That figure is
-*derived*, not observed: 436 collected above, minus the one test that xfails
+Gate row: **PREDICTED, NOT MEASURED** — `437 passed, 1 xfailed`. That figure is
+*derived*, not observed: 438 collected above, minus the one test that xfails
 only once `RUN_BROWSER_TESTS=1` ungates it, and **zero skips** — the flag
 ungates all 75 gated tests, so the gate executes the whole of `tests/`. Nobody
 has run it against this tree.
@@ -358,7 +368,7 @@ no longer describes this tree. That gate run was at commit `6588570`,
 `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh`, run by the orchestrator,
 exit **0**, 429 passed and 1 xfailed in 597.91s (9m57s), with zero skips
 (`grep -c SKIPPED` over the run's full output returned 0). 429 + 1 = 430, which
-was the full collection that day. It is **436 today**, and the six-test gap
+was the full collection that day. It is **438 today**, and the eight-test gap
 is itself the evidence that this row is stale rather than merely unre-run.
 
 **What demoted it, 2026-09-15.** A visual pass over the two demo surfaces —
@@ -380,7 +390,7 @@ the pod (`builder: local`, `generator.runIn: local`, python3 +
 itself, enriched `catalog-info.yaml` entities, and the new guard above. This
 touches `platform/`, `apps/`, `agents/`, `systems/`, `tools/`, `scripts/` and
 `tests/` — seven `GATE_PATHS` entries — and it **does** move the collection,
-430 → 436. So this row is now stale on both counts: not re-run, and no longer
+430 → 438. So this row is now stale on both counts: not re-run, and no longer
 arithmetically consistent with the block above it.
 
 What has to happen before this reads MEASURED again: one

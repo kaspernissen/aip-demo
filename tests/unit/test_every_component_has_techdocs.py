@@ -125,6 +125,53 @@ def test_every_mkdocs_config_actually_parses():
     )
 
 
+def test_the_system_documents_the_solution():
+    """The nine components each document themselves. The System documents
+    what they add up to.
+
+    A portal that can tell you what `settlement-agent` does but not what
+    Northstar *is* is half a portal, and that was the state until the System
+    entity got its own TechDocs. The same three links have to hold as for a
+    component -- entity annotation, mkdocs.yml, docs entry point -- except the
+    System's entity lives at the repo root, so `dir:.` resolves there.
+
+    The fourth link, staging the root mkdocs.yml and docs/ into the image
+    beside the staged system entity, is asserted by
+    `test_rebuild_and_deploy_guard.py`'s catalog-stage test, for the reason
+    this module's docstring gives.
+    """
+    system_entities = [
+        d
+        for d in yaml.safe_load_all((REPO_ROOT / "catalog-info.yaml").read_text())
+        if d and d.get("kind") == "System"
+    ]
+    assert system_entities, (
+        "the repo-root catalog-info.yaml declares no System entity, so this "
+        "test proves nothing. Has the catalog layout moved?"
+    )
+
+    for entity in system_entities:
+        ref = (entity.get("metadata", {}).get("annotations", {}) or {}).get(
+            "backstage.io/techdocs-ref"
+        )
+        assert ref == "dir:.", (
+            f"the System entity {entity['metadata']['name']!r} carries "
+            f"techdocs-ref {ref!r}, not 'dir:.' -- so the solution "
+            "documentation at the repo root is never rendered, and the portal "
+            "can describe every component but not the system."
+        )
+
+    assert (REPO_ROOT / "mkdocs.yml").is_file(), (
+        "no mkdocs.yml at the repo root, so the System's `techdocs-ref: dir:.` "
+        "resolves to a directory with no MkDocs config in it."
+    )
+    assert (REPO_ROOT / "docs" / "index.md").is_file(), (
+        "no docs/index.md at the repo root. The root mkdocs.yml declares "
+        "`docs_dir: docs`, and MkDocs builds an empty site from a docs/ "
+        "directory with no entry point."
+    )
+
+
 def test_every_component_entity_points_at_its_own_docs():
     dirs = _component_dirs(REPO_ROOT)
 

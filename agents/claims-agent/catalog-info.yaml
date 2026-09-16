@@ -66,6 +66,10 @@ spec:
   lifecycle: production
   owner: guests
   system: northstar
+  dependsOn:
+    - component:settlement-agent
+  consumesApis:
+    - settlement-agent-card
   providesApis: [claims-agent-card]
 ---
 apiVersion: backstage.io/v1alpha1

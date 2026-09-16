@@ -6,53 +6,48 @@ app:
   packages: all
 
   extensions:
-    # Default landing page configuration.
-    # The catalog is mounted at /catalog by default but is overridden here to
-    # serve as the root page. To switch to the Home page, comment out the
-    # catalog path override and uncomment the home path override.
-    - page:catalog:
-        config:
-          path: /
-    # - page:home:
-    #     config:
-    #       path: /
-
+    # The landing page is Home, not the catalog. The scaffold shipped the
+    # opposite (catalog at `/`, home at `/home`), which put a nine-row table
+    # in front of anyone opening this portal for the first time. The catalog
+    # is where you go once you know what you are looking at; Home is what
+    # tells you. Catalog keeps its own default path, /catalog.
     # Visit tracking records which pages users navigate to and is disabled by default.
     # Enable it to populate the Most Visited and Recently Visited widgets on the Home page.
     # Visit data is stored via UserSettings storage if available, otherwise browser localStorage.
     # - api:home/visits: true
     # - app-root-element:home/visit-listener: true
+    # Not the scaffold's links to backstage.io and the Backstage repo. This
+    # widget is not in the default layout below -- the Surfaces card covers
+    # the same ground with room to explain each one -- but it stays on-brand
+    # for anyone who adds it back through Edit.
     - home-page-widget:home/toolkit:
         config:
           tools:
-            - url: https://backstage.io/docs
-              label: Docs
-              icon: docs
-            - url: https://github.com/backstage/backstage
-              label: GitHub
-              icon: github
-            - url: https://github.com/backstage/backstage/blob/master/CONTRIBUTING.md
-              label: Contributing
-              icon: docs
-            - url: https://backstage.io/plugins
-              label: Plugins Directory
+            - url: http://localhost:8080
+              label: Claim form
               icon: kind:component
-            - url: https://github.com/backstage/backstage/issues/new/choose
-              label: Submit New Issue
-              icon: github
-    - home-page-widget:home/world-clock:
-        config:
-          clockConfigs:
-            - label: NYC
-              timeZone: America/New_York
-            - label: UTC
-              timeZone: UTC
-            - label: STO
-              timeZone: Europe/Stockholm
-            - label: TYO
-              timeZone: Asia/Tokyo
+            - url: http://localhost:8081
+              label: Review console
+              icon: kind:component
+            - url: http://localhost:16686
+              label: Jaeger
+              icon: kind:component
+            - url: http://localhost:9090
+              label: Prometheus
+              icon: kind:component
+            - url: http://localhost:5601
+              label: OpenSearch
+              icon: kind:component
     - page:home:
         config:
+          path: /
+          # `component` here is each widget's `name` param, not its extension
+          # id (packages/app/src/modules/home/homeModule.tsx). The scaffold's
+          # layout named `GettingStarted`, the widget this pass replaced, so
+          # the two Northstar cards were built, registered, and never placed --
+          # the page kept rendering Backstage's defaults, Random Joke and
+          # World Clocks included. Registered is not the same as displayed,
+          # which is the third time this milestone has paid for that lesson.
           defaultConfig:
             - component: HomePageSearchBar
               column: 0
@@ -60,40 +55,34 @@ app:
               width: 12
               height: 2
               deletable: false
-            - component: GettingStarted
+            # Heights are in grid rows of 60px with a 10px gutter, so a card
+            # of height h occupies 70h-10 pixels and does NOT shrink to its
+            # content -- an over-tall card is several hundred pixels of empty
+            # panel under the last paragraph, which is what the first cut of
+            # this page shipped (overview at 16, content needing 8).
+            - component: NorthstarOverview
               column: 0
-              row: 1
-              width: 4
-              height: 11
+              row: 2
+              width: 7
+              height: 9
+            - component: NorthstarSurfaces
+              column: 7
+              row: 2
+              width: 5
+              height: 12
+            # 12 rows, not 10: a card that is too SHORT clips its tail with no
+            # scrollbar, exactly as a too-wide `pre` clips its right-hand
+            # column. At 10 this one ended mid-blockquote and swallowed the
+            # link to the runbook underneath it.
+            - component: NorthstarStages
+              column: 0
+              row: 11
+              width: 7
+              height: 12
             - component: HomePageStarredEntities
-              column: 4
-              row: 2
-              width: 4
-              height: 4
-            - component: HomePageRandomJoke
-              column: 8
-              row: 2
-              width: 4
-              height: 4
-            - component: HomePageToolkit
-              column: 4
-              row: 6
-              width: 4
-              height: 3
-            - component: HomePageWorldClock
-              column: 8
-              row: 6
-              width: 4
-              height: 3
-            - component: HomePageMostVisited
-              column: 4
-              row: 9
-              width: 4
-              height: 4
-            - component: HomePageRecentlyVisited
-              column: 8
-              row: 9
-              width: 4
+              column: 7
+              row: 14
+              width: 5
               height: 4
 
 organization:

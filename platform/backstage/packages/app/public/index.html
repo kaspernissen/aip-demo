@@ -59,6 +59,16 @@
        * upgrades.
        */
       td, th { word-break: normal; overflow-wrap: normal; }
+
+      /* The second rule, and also not a colour. A `pre` wider than its card
+       * is CLIPPED rather than scrolled, so the ASCII call-path diagram on
+       * the home page silently lost its right-hand column --
+       * "policy-decision-serv" with nothing after it, and no scrollbar to
+       * suggest anything was missing. The diagram was narrowed to fit, and
+       * this is the guard for the next one: a too-wide block should announce
+       * itself with a scrollbar rather than quietly truncate.
+       */
+      pre { overflow-x: auto; }
     </style>
   </head>
   <body>

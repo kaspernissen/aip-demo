@@ -1,0 +1,41 @@
+# MkDocs configuration for the SYSTEM's TechDocs site -- the solution
+# documentation, as opposed to the nine per-component sites.
+#
+# Same shape as every component's mkdocs.yml (see
+# platform/policy-decision-service/mkdocs.yml for the annotated original):
+# `techdocs-core` is the only plugin, because it is the bundle Backstage
+# supports and anything outside it is a plugin the image would also have to
+# ship.
+#
+# What is different here is which entity points at it. The System entity lives
+# in the repo-root catalog-info.yaml, so its `backstage.io/techdocs-ref: dir:.`
+# resolves to the repo root -- this file -- and `docs_dir: docs` then picks up
+# the four solution documents that already existed in this repo and were,
+# until now, readable only by someone with a checkout. The portal is where
+# they belong: an internal platform whose catalog can tell you what every
+# component does, but not what the system as a whole is, is half a portal.
+#
+# scripts/rebuild-and-deploy.sh stages this file and docs/ into
+# platform/backstage/.catalog-stage/ beside the staged system-catalog-info.yaml,
+# the same way it stages each component's own mkdocs.yml and docs/.
+site_name: Northstar Platform
+site_description: "The Northstar claims-settlement system: how a claim becomes a payment, and what stops it."
+
+docs_dir: docs
+
+# docs/superpowers/ is the spec-driven-development record -- plans, designs and
+# per-milestone ruling ledgers. It is how this repo was built, not what it
+# built, and it is deliberately not part of the solution documentation. 14
+# files, 580K, none of which answers "what is Northstar and how does it work".
+exclude_docs: |
+  superpowers/
+
+nav:
+  - Overview: index.md
+  - Architecture: architecture.md
+  - Running the demo: demo-runbook.md
+  - Telemetry contract: telemetry-contract.md
+  - Upstream findings: upstream-findings.md
+
+plugins:
+  - techdocs-core

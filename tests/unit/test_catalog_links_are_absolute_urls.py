@@ -57,6 +57,62 @@ def test_the_walk_is_not_vacuous():
     )
 
 
+class _NoDuplicateKeys(yaml.SafeLoader):
+    """A loader as strict about duplicate mapping keys as Backstage's is.
+
+    PyYAML's SafeLoader silently accepts a mapping with the same key twice and
+    keeps the last one. Backstage parses with `yaml` (the JS library), which
+    raises `YAMLParseError: Map keys must be unique` and rejects the entity --
+    and, because these files hold two documents apiece for the agents, takes
+    the API entity in the same file down with the Component.
+    """
+
+
+def _no_duplicate_keys(loader, node, deep=False):
+    seen = set()
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in seen:
+            raise yaml.YAMLError(f"duplicate key {key!r}")
+        seen.add(key)
+    return yaml.SafeLoader.construct_mapping(loader, node, deep)
+
+
+_NoDuplicateKeys.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _no_duplicate_keys
+)
+
+
+def test_no_catalog_file_repeats_a_mapping_key():
+    """A duplicate key deletes entities, and Python cannot see it.
+
+    Shipped 2026-09-16 while wiring up the dependency graph: a second
+    `providesApis:` was added to two files that already had one. Every local
+    check passed -- `yaml.safe_load_all` parsed both files without complaint,
+    because PyYAML resolves a duplicate by keeping the last value -- and the
+    running catalog lost **four** entities: `claims-agent`,
+    `settlement-agent`, and both agent-card APIs, since each rejected file
+    holds a Component and an API.
+
+    So the validation this repo was doing was weaker than the validation the
+    consumer does, which is the worst shape for a check to have: it reports
+    success for input that the thing downstream refuses. This test parses the
+    way Backstage parses.
+    """
+    offending: list[str] = []
+    for path in _catalog_files():
+        try:
+            list(yaml.load_all(path.read_text(), _NoDuplicateKeys))
+        except yaml.YAMLError as exc:
+            offending.append(f"{path.relative_to(REPO_ROOT)}: {exc}")
+
+    assert not offending, (
+        "these catalog files repeat a mapping key. PyYAML tolerates that and "
+        "keeps the last value; Backstage raises `Map keys must be unique` and "
+        f"drops every entity in the file: {offending}"
+    )
+
+
 def test_every_catalog_link_is_an_absolute_url():
     offending: list[str] = []
     checked = 0
