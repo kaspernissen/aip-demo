@@ -1,5 +1,5 @@
 /* Template scaffolding — slide layout and projection-scale sizing only; every
-   color, font, radius and shadow comes from ../../styles.css. Change one
+   color, font, radius and shadow comes from bs/styles.css. Change one
    number here to re-size the whole deck. */
 deck-stage {
   --type-display: 126px;
@@ -154,8 +154,8 @@ deck-stage {
   text-box: trim-both cap alphabetic;
 }
 /* Optical left alignment — the same deliberate exception to box-edge
-   alignment the Nocturne deck documents, re-derived for this face (the rules
-   generalize, the numbers never do — see ../../../deck-templates.md). Source
+   alignment, derived for this face (the rules generalize, the numbers never
+   do). Source
    Serif's bearings are tighter and flatter than a geometric sans: measured
    ink edges (render scans agree with the font's hmtx table) put flat-stem
    caps at 0.039em, round caps at 0.041em, T 0.020em, A 0.007em, W 0.011em in

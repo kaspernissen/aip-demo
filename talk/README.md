@@ -1,8 +1,7 @@
 # Verticalizing Platform Intelligence for Regulated Domains
 
 The talk deck for KubeCon + CloudNativeCon North America 2026, Salt Lake City. It is built as HTML in the
-**Broadsheet** design system (`bs/`, rules in `bs/GUIDE.md`), with the same deck mechanics as
-`~/dash0/presentations/rethinking-observability-as-a-platform-product`: 1920×1080 slides in `<deck-stage>`, a speaker-notes
+**Broadsheet** design system (`bs/`, rules in `bs/GUIDE.md`), with 1920×1080 slides in `<deck-stage>`, a speaker-notes
 follower, and a folio with the speaker's handles.
 
 - Subtitle and thesis: **If you can't trace it, you can't govern it.**
@@ -49,6 +48,7 @@ python3 build/build.py --only slides/30-act3a.html   # preview one fragment -> p
 | `build/talk-base-bs.css` | Talk-wide components: beat marker (`.beat`, `.beat.fallback`), screenshot frame, span tree, attribute list, origin chip, and the `.bfig` layer that recolours book figures into Broadsheet tokens. |
 | `build/head.html`, `chrome.js` | Page head (Broadsheet CSS, Phosphor icons, deck-stage) and the folio / `?slide=N` handling. |
 | `deck-stage.js`, `notes.html` | Deck engine and speaker-notes follower, copied unchanged from the reference deck. |
+| `reports/` | The sources the deck cites: *If You Can't Trace It*, full edition (303 pp) and study edition (154 pp), and *Instrumenting AI Agents* (Dash0 DevRel, Aug 2026, 53 pp; the notes cite its printed page numbers, one lower than the PDF index). |
 | `assets/shots/` | Screenshots from a live Northstar run on 2026-09-28 (stage 6, commit `0af552f`). |
 
 **Lifting a book figure:** paste the book's inline `<svg>` inside `<figure class="bfig">`. The `.bfig` rules
