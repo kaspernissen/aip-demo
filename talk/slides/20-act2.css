@@ -1,0 +1,89 @@
+/* 20-act2 · Act 2, "What tracing already gives us" (Broadsheet). Everything is .a2-* scoped.
+   Cyan = the trace holding together; magenta = the break. Serif throughout, no boxes. */
+
+.a2-muted-c { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.a2-ident { font-feature-settings: "tnum" 1; font-style: italic; font-weight: inherit; }
+.a2-cap { font-size: var(--type-small); line-height: var(--baseline); margin: calc(1.5 * var(--baseline)) 0 0; }
+
+/* ---- 13 · context gets lost: two waterfalls set as type and bars ---- */
+.a2-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 128px; margin-top: calc(2.5 * var(--baseline)); }
+.a2-h { font-family: var(--font-heading); font-weight: var(--font-heading-weight, 700); font-size: var(--type-subtitle);
+  line-height: 1.1; margin: 0 0 40px; display: flex; align-items: baseline; gap: 22px; }
+.a2-count { font-size: var(--type-kicker); font-weight: 400; font-style: italic; }
+.a2-count.spot-2 { color: var(--color-accent-2-700); }
+.a2-wf { display: flex; flex-direction: column; gap: 16px; }
+.a2-tid { font-size: var(--type-kicker); color: color-mix(in srgb, var(--color-text) 55%, transparent); font-feature-settings: "tnum" 1; }
+.a2-from { font-style: italic; color: var(--color-accent-2-700); margin-left: 12px; }
+.a2-row { display: grid; grid-template-columns: 200px 1fr; align-items: center; gap: 20px; }
+.a2-svc { font-size: 26px; white-space: nowrap; }
+.a2-lane { position: relative; height: 28px; display: block; }
+.a2-bar { position: absolute; top: 0; bottom: 0; border-radius: var(--radius-sm); background: var(--color-neutral-600); }
+.a2-bar.ok { background: var(--color-accent); }
+.a2-bar.orphan { background: transparent; box-shadow: inset 0 0 0 2px var(--color-accent-2); }
+.a2-tear { height: 30px; margin: 4px 0 2px;
+  background: linear-gradient(var(--color-accent-2), var(--color-accent-2)) left center / 100% 2px no-repeat;
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 14px, transparent 14px 24px);
+          mask: repeating-linear-gradient(90deg, #000 0 14px, transparent 14px 24px); }
+
+/* ---- 14 · traceparent anatomy + carriers ---- */
+.content > .a2-anat { margin-top: calc(2 * var(--baseline)); --fig-h: 300px; }
+.a2-carriers { display: flex; flex-direction: column; gap: 22px; margin-top: calc(1.5 * var(--baseline)); padding-left: 30px; }
+.a2-car { display: grid; grid-template-columns: 420px 1fr; align-items: baseline; font-size: 30px; }
+.a2-car-k { font-weight: 600; }
+.a2-car-k .code { font-weight: 400; }
+.a2-car > .code { justify-self: start; }
+.a2-car-n { font-size: var(--type-kicker); font-style: italic; }
+
+/* ---- 13a · concept: one span, then one trace ---- */
+.a2-sp { display: grid; grid-template-columns: 1fr 1fr; gap: 128px; margin-top: calc(2.5 * var(--baseline)); }
+.a2-k { margin: 0 0 40px; font-size: var(--type-subtitle); font-weight: 600; line-height: 1.15; display: flex; align-items: baseline; gap: 20px; }
+.a2-k b { font-size: var(--type-subtitle); color: var(--color-accent-700); font-feature-settings: "tnum" 1; }
+.a2-sp-name { margin: 0 0 16px; font-size: 32px; font-weight: 600; }
+.a2-sp-bar { position: relative; height: 40px; }
+.a2-sp-bar i { position: absolute; inset: 0; border-radius: var(--radius-sm); background: var(--color-accent); }
+.a2-sp-t { display: flex; justify-content: space-between; margin-top: 12px; font-size: var(--type-kicker); font-style: italic;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.a2-sp-lab { display: flex; flex-wrap: wrap; gap: 16px 18px; margin-top: 36px; font-size: 27px; }
+.a2-sp-cap { margin: 40px 0 0; font-size: var(--type-kicker); font-style: italic; }
+.a2-tree { font-size: 29px; gap: 16px; }
+.a2-tree .i1{margin-left:40px}.a2-tree .i2{margin-left:80px}.a2-tree .i3{margin-left:120px}.a2-tree .i4{margin-left:160px}.a2-tree .i5{margin-left:200px}
+
+/* ---- 16 · vocabularies funnel into the normalizer ---- */
+.a2-fun { display: grid; grid-template-columns: auto 130px auto 130px auto; align-items: center;
+  margin-top: calc(2.5 * var(--baseline)); height: 360px; }
+.a2-src { display: flex; flex-direction: column; justify-content: space-between; height: 100%; }
+.a2-dia, .a2-out, .a2-proc { display: flex; flex-direction: column; gap: 10px; }
+.a2-dia { height: 120px; justify-content: center; }
+.a2-who { font-size: var(--type-kicker); font-style: italic; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.a2-dia .code, .a2-out .code { font-size: 32px; align-self: flex-start; }
+.a2-wire { width: 130px; height: 360px; overflow: visible; }
+.a2-wire path { fill: none; stroke: var(--color-neutral-500); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.a2-wire.out path { stroke: var(--color-accent); stroke-width: 3; }
+.a2-proc { padding: 0 28px; }
+.a2-proc b { font-family: var(--font-heading); font-size: 48px; line-height: 1.1; font-weight: 700; }
+.a2-out { padding-left: 24px; }
+.a2-kept { font-size: var(--type-kicker); font-style: italic; color: color-mix(in srgb, var(--color-text) 55%, transparent); margin-top: 8px; }
+.a2-kept .code { font-style: normal; font-size: 24px; }
+.content > .a2-cap { margin-top: calc(1.5 * var(--baseline)); }
+
+/* ---- 17 · what can gen_ai.* answer today ---- */
+.a2-tbl { margin-top: calc(1.5 * var(--baseline)); border-collapse: collapse; font-size: 29px; }
+.a2-tbl th { font-size: var(--type-kicker); font-weight: 400; font-style: italic; text-align: left;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent); padding: 0 56px 14px 0; }
+.a2-tbl td { padding: 9px 56px 9px 0; vertical-align: baseline; white-space: nowrap; }
+.a2-tbl td .code { font-size: 26px; }
+.a2-tbl td .code + .code { margin-left: 10px; }
+.a2-tbl tr.off td:nth-child(-n+2) { color: color-mix(in srgb, var(--color-text) 42%, transparent); }
+.a2-tbl tr.off .code { opacity: .5; }
+.a2-tbl tr.off td:last-child { font-style: italic; color: var(--color-accent-2-700); font-size: 26px; }
+
+
+/* ---- 18 · the attribute that does not exist ---- */
+.a2-nope { margin: calc(1.5 * var(--baseline)) 0 0; font-size: var(--type-body); display: flex; align-items: baseline; gap: 24px; }
+.a2-strike { font-feature-settings: "tnum" 1; background: var(--color-neutral-200); border-radius: var(--radius-sm); padding: 0.04em 0.28em;
+  text-decoration: line-through; text-decoration-color: var(--color-accent-2); text-decoration-thickness: 3px;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.a2-nope .muted { font-style: italic; }
+
+/* 23 · a statement in the quote layout: no hanging quote mark to indent for */
+.slide.quote blockquote.a2-stmt { text-indent: 0; }

@@ -1,0 +1,89 @@
+/* 40-act4 (Broadsheet): slides 38-47. Everything is x40-* so no other fragment collides.
+   Type and whitespace do the structure; tokens only, no raw colour. */
+
+.content > .x40-fig { margin-top: calc(1 * var(--baseline)); }
+
+/* 39: the tall dashboard, cropped to its readme and first panel */
+.x40-crop { height: 760px; align-self: center; }
+.x40-crop img { width: 100%; height: auto; }
+
+/* 40: two plate numerals beside the judged trace */
+.x40-sc { display: grid; grid-template-columns: 720px 1fr; gap: 96px; align-items: center;
+  margin-top: calc(2 * var(--baseline)); }
+.x40-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0 48px; }
+.x40-num { font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  font-size: 230px; letter-spacing: -0.03em; line-height: 1; justify-self: start; }
+.x40-n p { margin: 28px 0 0; font-size: var(--type-small); line-height: 1.2; }
+.x40-what { grid-column: 1 / -1; margin: calc(1.5 * var(--baseline)) 0 0; font-size: var(--type-small); }
+.x40-scshot { margin: 0; }
+
+/* 38a / 39a: concept slides, two type columns */
+.x40-k { margin: 0 0 36px; font-size: var(--type-subtitle); font-weight: 600; line-height: 1.15; }
+.x40-sub { margin: 36px 0 0; font-size: var(--type-kicker); font-style: italic; }
+.x40-el { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 128px; margin-top: calc(2.5 * var(--baseline)); }
+.x40-line { margin: 0; font-size: 32px; }
+.x40-log { color: color-mix(in srgb, var(--color-text) 62%, transparent); }
+.x40-ev { display: grid; grid-template-columns: auto 1fr; gap: 20px 44px; margin: 0; font-size: 30px; align-items: baseline; }
+.x40-ev dt { margin: 0; }
+.x40-ev dd { margin: 0; }
+.x40-ev .code { font-size: 27px; }
+.x40-evl { display: grid; grid-template-columns: 1fr 160px 1fr; gap: 48px; align-items: center; margin-top: calc(2.5 * var(--baseline)); }
+.x40-bars { display: flex; flex-direction: column; gap: 18px; }
+.x40-bars i { display: block; height: 32px; border-radius: var(--radius-sm); background: var(--color-accent); }
+.x40-staple { width: 160px; height: 40px; overflow: visible; }
+.x40-staple path { fill: none; stroke: var(--color-neutral-600); stroke-width: 3; vector-effect: non-scaling-stroke; }
+.x40-evl .x40-ev dt { font-feature-settings: "tnum" 1; font-weight: 600; }
+.x40-evl .x40-ev dd { color: color-mix(in srgb, var(--color-text) 62%, transparent); }
+
+/* reading aids under a dense slide's title */
+.content > .x40-read { margin: calc(0.5 * var(--baseline)) 0 0; font-size: var(--type-kicker); }
+.x40-read b { font-weight: 600; }
+.content > .x40-read + .x40-tbl { margin-top: calc(1 * var(--baseline)); }
+.content > .x40-read + .x40-fig { margin-top: calc(0.5 * var(--baseline)); }
+
+/* 41: judge vs auditor */
+.x40-jd h3 { font-size: var(--type-subtitle); }
+.x40-jd p { text-align: left; }
+.x40-jd p + p { margin-top: 12px; }
+.x40-same { margin: calc(3 * var(--baseline)) 0 0; font-size: var(--type-body); }
+
+/* 44: requirement table, set as type — no rules; the walked rows take a magenta tint */
+.x40-tbl { margin-top: calc(2 * var(--baseline)); border-collapse: collapse; width: 100%;
+  font-size: 25px; line-height: 1.3; }
+.x40-tbl th { text-align: left; font-size: var(--type-kicker); font-weight: 600; padding: 0 24px 14px 0;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent); letter-spacing: 0.04em; }
+.x40-tbl td { vertical-align: top; padding: 13px 24px 13px 0; }
+.x40-tbl td:first-child { width: 440px; font-weight: 600; padding-left: 16px; }
+.x40-tbl th:first-child { padding-left: 16px; }
+.x40-tbl td:nth-child(2) { width: 520px; }
+.x40-tbl tr.hi td { background: var(--color-accent-2-100); }
+.x40-tbl td b { color: var(--color-accent-2-700); margin-right: 14px; }
+
+/* 45 */
+.x40-us { margin: calc(0.5 * var(--baseline)) 0 0; font-size: var(--type-small); }
+
+/* 47: the AI-observability ladder, a staircase rising left to right */
+.x40-lad { display: grid; grid-template-columns: repeat(6, 1fr); gap: 20px; align-items: end;
+  margin-top: calc(1 * var(--baseline)); height: 480px; }
+.x40-st { display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; height: 100%; }
+.x40-bar { border-radius: var(--radius-sm); background: var(--color-neutral-200); }
+.x40-st.s0 .x40-bar { height: 40px; }
+.x40-st.s1 .x40-bar { height: 110px; background: var(--color-accent); }
+.x40-st.s2 .x40-bar { height: 170px; background: var(--color-accent-300); }
+.x40-st.s3 .x40-bar { height: 230px; background: var(--color-accent-100); }
+.x40-st.s4 .x40-bar { height: 290px; background: transparent; border: 2px solid var(--color-neutral-400); }
+.x40-st.s5 .x40-bar { height: 350px; background: var(--color-accent-2-100); border: 2px dashed var(--color-accent-2); }
+.x40-st b { font-size: var(--type-subtitle); line-height: 1; margin-top: 10px; font-feature-settings: "tnum" 1; }
+.x40-st.s5 b { color: var(--color-accent-2-700); }
+.x40-nm { font-size: var(--type-small); line-height: 1.2; min-height: 2.4em; }
+.x40-ec { font-size: var(--type-kicker); font-style: italic; color: var(--color-neutral-600); }
+.x40-ec.m { color: var(--color-accent-2-700); font-style: normal; font-weight: 600; }
+.x40-ladcap { margin: calc(2 * var(--baseline)) 0 0; font-size: var(--type-small); }
+
+/* "Shown as slide" marker: hollow dot. (The v1 ".beat.slide" modifier collides with
+   Broadsheet's .slide layout class, which adds page padding and press furniture.) */
+.beat.x40-asslide { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.beat.x40-asslide .dot { background: transparent; border: 2px solid currentColor; }
+
+/* 43: ragged caption, justification opened rivers at this measure */
+.hero-caption.x40-hc { text-align: left; hyphens: manual; max-width: 40ch; }

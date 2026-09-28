@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speaker notes — Verticalizing Platform Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&family=Martian+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--red:#F8494D;--ink:#121212;--ink2:#1A1A1A;--ink3:#434343;--dim:#9E9E9E}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ink);color:#fff;font:400 20px/1.55 Roboto,system-ui,sans-serif;padding:32px 40px}
+  header{display:flex;align-items:baseline;gap:20px;border-bottom:1px solid var(--ink3);padding-bottom:18px;margin-bottom:26px}
+  h1{font-size:22px;margin:0;font-weight:600}
+  .n{font-family:'Martian Mono',monospace;font-size:14px;letter-spacing:.16em;color:var(--red);font-weight:600}
+  .label{font-size:28px;font-weight:600;margin:0 0 20px;letter-spacing:-.01em}
+  .note{background:var(--ink2);border-left:3px solid var(--red);border-radius:0 12px 12px 0;padding:22px 26px;white-space:pre-wrap;font-size:21px}
+  .note.empty{border-left-color:var(--ink3);color:var(--dim);font-style:italic}
+  .next{margin-top:30px;padding-top:20px;border-top:1px solid var(--ink3);color:var(--dim);font-size:17px}
+  .next b{color:#fff;font-weight:500}
+  footer{margin-top:34px;color:var(--dim);font-family:'Martian Mono',monospace;font-size:13px;letter-spacing:.1em}
+</style>
+</head>
+<body>
+<header><span class="n" id="pos">01 / 58</span><h1>Speaker notes</h1></header>
+<p class="label" id="label">—</p>
+<div class="note empty" id="note">loading…</div>
+<p class="next" id="next"></p>
+<footer>Follows index.html in this browser. Keep both tabs open; this view polls the deck position.</footer>
+
+<script type="module">
+// deck-stage stores its position under STORAGE_PREFIX + location.pathname.
+// The deck may be reached as /index.html or as the directory root, so read both.
+// notes.html?deck=goto-cph.html follows a different cut of the talk.
+const deck = (new URLSearchParams(location.search).get('deck') || 'index.html').replace(/[^A-Za-z0-9._-]/g, '');
+const base = location.pathname.replace(/notes\.html$/, '');
+const KEYS = ['deck-stage:slide:' + base + deck];
+if (deck === 'index.html') KEYS.push('deck-stage:slide:' + base);
+let notes = [], labels = [], last = -1;
+
+document.querySelector('footer').textContent =
+  'Follows ' + deck + ' in this browser. Keep both tabs open; this view polls the deck position.';
+
+const res = await fetch(deck);
+const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+try { notes = JSON.parse(doc.querySelector('#speaker-notes').textContent) || []; } catch (e) {}
+labels = [...doc.querySelectorAll('deck-stage > section')].map(s => s.dataset.label || 'Slide');
+
+function paint() {
+  let i = NaN;
+  for (const k of KEYS) {
+    const v = parseInt(localStorage.getItem(k), 10);
+    if (Number.isFinite(v)) { i = v; break; }
+  }
+  if (!Number.isFinite(i)) i = 0;
+  if (i === last) return;
+  last = i;
+  document.getElementById('pos').textContent =
+    `${String(i + 1).padStart(2, '0')} / ${labels.length}`;
+  document.getElementById('label').textContent = labels[i] || '—';
+  const n = document.getElementById('note');
+  const text = (notes[i] || '').trim();
+  n.textContent = text || 'No note for this slide.';
+  n.className = text ? 'note' : 'note empty';
+  document.getElementById('next').innerHTML =
+    labels[i + 1] ? `Next: <b>${labels[i + 1]}</b>` : 'Last slide.';
+}
+paint();
+setInterval(paint, 250);
+window.addEventListener('storage', paint);
+</script>
+</body>
+</html>

@@ -1,0 +1,261 @@
+/* 30-act3a (Broadsheet): Act 3 divider through "HTTP 200 means no". Everything is x30-*. */
+
+/* Figures sit one gridline closer to the title than the template default, so the
+   lifted book drawings can run large enough for 20px+ labels and still clear the folio. */
+.content > figure.x30-tight, .content > .x30-tight { margin-top: var(--baseline); }
+
+/* A short muted line under a figure. */
+.x30-foot { margin: calc(0.75 * var(--baseline)) 0 0; font-size: var(--type-small); line-height: var(--baseline);
+  color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x30-foot b { color: var(--color-text); font-weight: 600; }
+
+/* Slide 20: the one building block the blueprint does not draw, set as a row under it. */
+.x30-ma { display: flex; align-items: baseline; gap: 28px; margin: calc(0.5 * var(--baseline)) 0 0;
+  font-size: var(--type-small); }
+.x30-ma b { font-weight: 600; }
+.x30-chip { font-size: var(--type-kicker); letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 14px;
+  border-radius: var(--radius-sm); background: var(--color-neutral-200);
+  color: color-mix(in srgb, var(--color-text) 65%, transparent); }
+
+/* Screenshot crops: the plate clips, the image is positioned in px (numbers per slide). */
+.shot.x30-crop { position: relative; flex: none; }
+.shot.x30-crop img { position: absolute; max-width: none; height: auto; }
+
+/* Fallback 1: label column + two crops. */
+.x30-fb1 { display: grid; grid-template-columns: 250px 1240px; gap: 36px 48px; align-items: center; }
+.x30-fb1 .lbl b { display: block; font-size: var(--type-subtitle); font-weight: 700; line-height: 1.1; }
+.x30-fb1 .lbl span { font-size: var(--type-kicker); letter-spacing: 0.06em; }
+
+/* Fallback 2: trace crop left, decision and Guardrail crops right. */
+.x30-fb2 { display: grid; grid-template-columns: 760px 760px; gap: 64px; align-items: start; }
+.x30-fb2 .col { display: flex; flex-direction: column; }
+.x30-cap { font-size: var(--type-kicker); margin: 0 0 16px; color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+
+/* Slide 25: the magenta note on the first struck-through span. */
+.stree .x30-never { font-size: 23px; font-style: italic; color: var(--color-accent-2-700); }
+
+/* Slide 27: the four keys a refusal adds, under the tree. */
+.x30-adds { margin-top: calc(1 * var(--baseline)); display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 18px;
+  font-size: 27px; max-width: 1632px; }
+.x30-adds .k { color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+
+/* Slide 28: the hero's second caption line. */
+.x30-names { margin: 0; font-size: var(--type-kicker); line-height: var(--baseline);
+  color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+
+
+/* ---- shared by the new slides ---- */
+/* "Read it like this" aid under a dense visual. */
+.x30-read { margin: calc(0.5 * var(--baseline)) 0 0; font-size: var(--type-kicker); line-height: 1.3;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x30-read b { color: var(--color-accent-2-700); font-weight: 600; }
+/* numbered call-out used on span trees */
+.stree .x30-n { flex: none; width: 34px; height: 34px; border-radius: 50%; display: inline-grid; place-items: center;
+  font-size: 20px; font-weight: 700; background: var(--color-accent-2); color: var(--color-bg); align-self: center; margin-left: -50px; }
+/* small kicker label above a group */
+.x30-lab { font-size: var(--type-kicker); letter-spacing: 0.04em; margin: 0 0 18px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+
+/* ---- We've done this before: four type columns, an arrow between built and extended ---- */
+.x30-was { display: grid; grid-template-columns: 470px 120px 600px 1fr; align-items: baseline; column-gap: 28px; row-gap: 26px;
+  margin-top: calc(1.5 * var(--baseline)); }
+.x30-was p { margin: 0; }
+.x30-was .h { font-size: var(--type-kicker); letter-spacing: 0.04em; font-style: italic; padding-bottom: 6px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-was .l { font-size: 34px; color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+.x30-was .r { font-size: 34px; font-weight: 700; }
+.x30-was .r.m { color: var(--color-accent-2-700); }
+.x30-was .r.c { color: var(--color-accent-700); }
+.x30-was .n .code { font-size: 24px; }
+.x30-was .ar { align-self: center; height: 2px; background: var(--color-neutral-500); position: relative; }
+.x30-was .ar::after { content: ""; position: absolute; right: -2px; top: -7px; border: 8px solid transparent;
+  border-left: 12px solid var(--color-neutral-500); border-right: 0; }
+
+/* ---- Connected is not governed: a six-step stair, each step with its proof ---- */
+.x30-lad { position: relative; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); column-gap: 28px; align-items: end;
+  margin-top: calc(1.5 * var(--baseline)); }
+.x30-lad .st { display: flex; flex-direction: column; }
+.x30-lad .st p { margin: 0; }
+.x30-lad .nm { font-size: 30px; font-weight: 700; line-height: 1.15; margin-bottom: 14px !important; min-height: 2.3em;
+  display: flex; flex-direction: column; justify-content: flex-end; }
+.x30-lad .no { font-size: var(--type-kicker); font-weight: 400; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-lad .bar { display: block; border-radius: var(--radius-sm); background: var(--color-accent-2-200); }
+.x30-lad .s1 .bar { height: 50px; background: var(--color-neutral-300); }
+.x30-lad .s2 .bar { height: 100px; background: var(--color-accent-2); }
+.x30-lad .s3 .bar { height: 150px; } .x30-lad .s4 .bar { height: 200px; }
+.x30-lad .s5 .bar { height: 250px; } .x30-lad .s6 .bar { height: 300px; }
+.x30-lad .s2 .nm { color: var(--color-accent-2-700); }
+.x30-lad .pf { font-size: 26px; line-height: 1.25; margin-top: 18px !important; min-height: 2.5em; font-style: italic; }
+.x30-lad .s2 .pf { color: var(--color-accent-2-700); font-weight: 600; }
+.x30-lad .ad { font-size: 20px; line-height: 1.3; margin-top: 10px !important; min-height: 2.6em;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-lad .s2 { position: relative; }
+.x30-lad-mark { position: absolute; left: -15px; bottom: 100%; margin: 0 0 12px; height: 150px; width: 320px;
+  padding-left: 14px; box-shadow: inset 2px 0 0 var(--color-accent-2);
+  font-size: var(--type-kicker); font-style: italic; color: var(--color-accent-2-700); }
+
+/* ---- The bouncer and the manager ---- */
+.x30-pep { display: grid; grid-template-columns: 520px 1fr 520px; align-items: center; column-gap: 40px;
+  margin-top: calc(2 * var(--baseline)); }
+.x30-pep .who p { margin: 0; }
+.x30-pep .who i { font-size: 120px; color: var(--color-accent-2); display: block; margin-bottom: 18px; }
+.x30-pep .k { font-family: var(--font-heading); font-size: var(--type-subtitle); font-weight: 700; line-height: 1.1; }
+.x30-pep .t { font-size: var(--type-small); line-height: 1.35; margin-top: 16px !important; }
+.x30-pep .n { margin-top: 22px !important; font-size: 28px; }
+.x30-pep .ask { display: flex; flex-direction: column; gap: 14px; }
+.x30-pep .ask .q { margin: 0; text-align: center; font-size: 26px; font-style: italic;
+  color: color-mix(in srgb, var(--color-text) 65%, transparent); }
+.x30-pep .w { display: block; height: 2px; background: var(--color-accent-2); position: relative; }
+.x30-pep .w.to::after, .x30-pep .w.back::before { content: ""; position: absolute; top: -7px; border: 8px solid transparent; }
+.x30-pep .w.to::after { right: -2px; border-left: 12px solid var(--color-accent-2); border-right: 0; }
+.x30-pep .w.back::before { left: -2px; border-right: 12px solid var(--color-accent-2); border-left: 0; }
+.x30-pep-foot { margin-top: calc(2 * var(--baseline)) !important; font-size: var(--type-small) !important; }
+
+/* ---- The toolbox: two bands of six cells, by job ---- */
+.x30-box { display: grid; grid-template-columns: repeat(6, 1fr); column-gap: 30px; row-gap: 10px;
+  margin-top: calc(1 * var(--baseline)); }
+.x30-box p { margin: 0; }
+.x30-box .band { grid-column: 1 / -1; font-size: var(--type-kicker); letter-spacing: 0.06em; text-transform: uppercase; }
+.x30-box .band.m { color: var(--color-accent-2-700); }
+.x30-box .band.c { color: var(--color-accent-700); margin-top: 26px; }
+.x30-box .cell { display: flex; flex-direction: column; gap: 6px; }
+.x30-box .job { font-size: 22px; font-style: italic; display: flex; align-items: center; gap: 8px; min-height: 40px;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x30-box .job i { font-size: 36px; font-style: normal; }
+.x30-box .job.m i { color: var(--color-accent-2); }
+.x30-box .job.c i { color: var(--color-accent); }
+.x30-box .job:not(.m):not(.c) i { color: var(--color-neutral-600); }
+.x30-box .tn { font-size: 28px; font-weight: 700; line-height: 1.12; min-height: 2.24em; display: flex; align-items: flex-end; }
+.x30-box .ow { align-self: flex-start; font-size: 20px; padding: 2px 10px; border-radius: var(--radius-sm);
+  background: var(--color-neutral-200); color: var(--color-neutral-800); }
+.x30-box .ow.own { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
+.x30-box .use { font-size: 23px; line-height: 1.3; color: color-mix(in srgb, var(--color-text) 72%, transparent); }
+
+/* ---- A passport, not a name tag: five steps on a line, then the token ---- */
+.x30-sv { display: grid; grid-template-columns: repeat(5, 1fr); column-gap: 34px; position: relative;
+  margin-top: calc(1.25 * var(--baseline)); }
+.x30-sv::before { content: ""; position: absolute; left: 24px; right: 24px; top: 24px; height: 2px; background: var(--color-neutral-400); }
+.x30-sv .step { position: relative; display: flex; flex-direction: column; gap: 8px; }
+.x30-sv .step p { margin: 0; }
+.x30-sv .no { width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; font-size: 26px; font-weight: 700;
+  background: var(--color-bg); box-shadow: inset 0 0 0 2px var(--color-text); margin-bottom: 10px; }
+.x30-sv .step.m .no { background: var(--color-accent-2); color: var(--color-bg); box-shadow: none; }
+.x30-sv .v { font-size: var(--type-small); font-weight: 700; }
+.x30-sv .step.m .v { color: var(--color-accent-2-700); }
+.x30-sv .t { font-size: 25px; line-height: 1.3; }
+.x30-sv .t .code { font-size: 23px; }
+.x30-sv .who { font-size: 21px; font-style: italic; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-pass { margin-top: calc(1.25 * var(--baseline)); }
+.x30-pass .lab { font-size: var(--type-kicker); margin: 0 0 14px; display: flex; align-items: center; gap: 12px;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x30-pass .lab i { font-size: 36px; color: var(--color-accent-2); }
+.x30-pass .attrs { font-size: 26px; gap: 10px 32px; }
+.x30-pass .attrs b { color: var(--color-accent-2-700); }
+
+/* ---- agentgateway: a left-to-right pipe of three gates, the PDS below, tracing under all ---- */
+.x30-gw { display: grid; grid-template-columns: 250px repeat(3, 1fr) 220px; column-gap: 34px; row-gap: 26px; position: relative;
+  margin-top: calc(1.5 * var(--baseline)); align-items: start; }
+.x30-gw::before { content: ""; position: absolute; left: 120px; right: 110px; top: 34px; height: 3px; background: var(--color-accent-2-300); }
+.x30-gw p { margin: 0; }
+.x30-gw .end { position: relative; font-size: 28px; font-weight: 700; padding-top: 70px; }
+.x30-gw .end span { display: block; font-size: 22px; font-weight: 400; font-style: italic; margin-top: 6px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-gw .end.out { color: var(--color-accent-700); }
+.x30-gw .g { position: relative; display: flex; flex-direction: column; gap: 10px; }
+.x30-gw .g .no { width: 68px; height: 68px; border-radius: 50%; display: grid; place-items: center; font-size: 32px; font-weight: 700;
+  background: var(--color-accent-2); color: var(--color-bg); }
+.x30-gw .key .code { font-size: 28px; }
+.x30-gw .q { font-size: var(--type-small); font-weight: 700; }
+.x30-gw .f { font-size: 24px; line-height: 1.3; color: color-mix(in srgb, var(--color-text) 65%, transparent); }
+.x30-gw .side { grid-column: 2 / -1; font-size: 25px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 14px; }
+.x30-gw .side b { font-weight: 700; }
+.x30-gw .side.pds { grid-column: 3 / -1; }
+.x30-gw .side.pds::before { content: "↓"; color: var(--color-accent-2); font-weight: 700; margin-right: 4px; }
+.x30-gw .side.tr { grid-column: 1 / -1; color: color-mix(in srgb, var(--color-text) 75%, transparent); }
+.x30-gw .side.tr b { color: var(--color-accent-700); }
+.x30-gw .side .code { font-size: 23px; }
+
+/* ---- The decision and the live policy ---- */
+.x30-pd { display: grid; grid-template-columns: 640px 1fr; column-gap: 110px; margin-top: calc(1.5 * var(--baseline)); align-items: start; }
+.x30-pd p { margin: 0; }
+.x30-pd .lab { font-size: var(--type-kicker); margin-bottom: 26px; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-pd .chain { display: flex; flex-direction: column; gap: 6px; }
+.x30-pd .nd { font-size: 29px; display: flex; flex-direction: column; gap: 6px; }
+.x30-pd .nd .s { font-size: 23px; font-style: italic; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-pd .nd .s .code { font-style: normal; font-size: 21px; }
+.x30-pd .lk { font-size: 22px; padding: 8px 0 8px 22px; margin-left: 12px; box-shadow: inset 2px 0 0 var(--color-accent-2-300);
+  color: var(--color-accent-2-700); font-style: italic; }
+.x30-pd .rows { display: grid; grid-template-columns: auto auto 1fr; column-gap: 48px; row-gap: 20px; align-items: baseline; }
+.x30-pd .rows p { font-size: 30px; }
+.x30-pd .rows .h { font-size: 22px; font-style: italic; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-pd .rows .lv { color: var(--color-accent-2-700); font-weight: 700; }
+.x30-pd .rows .amt { font-family: var(--font-heading); font-weight: 700; font-size: 46px; line-height: 1; font-feature-settings: "tnum" 1; }
+.x30-pd .rows .dim { color: color-mix(in srgb, var(--color-text) 45%, transparent); }
+.x30-pd .rows .amt.dim { font-size: 30px; font-weight: 400; font-style: italic; }
+.x30-pd .out { margin-top: 44px !important; font-size: 26px; line-height: 1.4; }
+
+/* ---- The demo: the story, the two claims, the three ways, the surfaces ---- */
+.x30-story { font-size: var(--type-body); margin: calc(0.75 * var(--baseline)) 0 0; }
+.x30-story b { color: var(--color-accent-2-700); }
+.x30-demo { display: grid; grid-template-columns: 640px 1fr; column-gap: 110px; margin-top: calc(1 * var(--baseline)); }
+.x30-demo p { margin: 0; }
+.x30-demo .lab { font-size: var(--type-kicker); margin-bottom: 18px; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-demo .cl { display: flex; align-items: baseline; gap: 26px; margin-top: 6px; }
+.x30-demo .ab { font-size: var(--type-kicker); font-weight: 700; width: 28px; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-demo .amt { font-family: var(--font-heading); font-weight: 700; font-size: 84px; line-height: 1.05; font-feature-settings: "tnum" 1; }
+.x30-demo .res { font-size: var(--type-small); font-style: italic; }
+.x30-demo .m { color: var(--color-accent-2-700); } .x30-demo .c { color: var(--color-accent-700); }
+.x30-demo .ways { display: flex; flex-direction: column; gap: 22px; }
+.x30-demo .ways .lab { margin-bottom: 4px; }
+.x30-demo .w { font-size: 32px; display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
+.x30-demo .w .no { width: 44px; height: 44px; border-radius: 50%; flex: none; display: inline-grid; place-items: center; align-self: center;
+  font-size: 22px; font-weight: 700; box-shadow: inset 0 0 0 2px var(--color-text); }
+.x30-demo .w .how { font-size: 22px; font-style: italic; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-surf { display: flex; gap: 56px; flex-wrap: wrap; margin-top: calc(1.25 * var(--baseline)); }
+.x30-surf p { margin: 0; font-size: 27px; display: flex; align-items: center; gap: 10px; }
+.x30-surf i { font-size: 38px; color: var(--color-neutral-700); }
+.x30-surf .code { font-size: 24px; }
+.x30-pd .nd .code { align-self: flex-start; }
+.x30-demo .w .code { font-size: 28px; }
+
+/* ---- 22c2 · what an agent gateway sees, next to what an API gateway sees ---- */
+.x30-ag { display: grid; grid-template-columns: 1fr 1fr; column-gap: 120px; margin-top: calc(1.5 * var(--baseline)); }
+.x30-ag p { margin: 0; }
+.x30-ag .col { display: flex; flex-direction: column; gap: 16px; }
+.x30-ag .lab { font-family: var(--font-heading); font-size: var(--type-subtitle); font-weight: 700; line-height: 1.1;
+  display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+.x30-ag .lab i { font-size: 64px; }
+.x30-ag .api .lab i { color: var(--color-neutral-500); }
+.x30-ag .agw .lab i { color: var(--color-accent-2); }
+.x30-ag .ln { font-size: 30px; }
+.x30-ag .ln .code { font-size: 28px; }
+.x30-ag .api .ln { color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x30-ag .ln.dim { font-style: italic; }
+.x30-ag .rule { margin-top: 14px; font-size: var(--type-small); font-style: italic; }
+.x30-ag .agw .rule b { color: var(--color-accent-2-700); font-style: normal; }
+.x30-ag-kinds { display: flex; gap: 70px; margin: calc(2 * var(--baseline)) 0 0; padding-top: 28px;
+  border-top: 1px solid var(--color-neutral-300); }
+.x30-ag-kinds .k { margin: 0; font-size: 28px; color: color-mix(in srgb, var(--color-text) 50%, transparent); }
+.x30-ag-kinds .k b { font-weight: 700; margin-right: 10px; }
+.x30-ag-kinds .k.on { color: var(--color-text); }
+.x30-ag-kinds .k.on b { color: var(--color-accent-2-700); }
+.x30-ag-kinds .k span { margin-left: 12px; font-size: 22px; font-style: italic; color: var(--color-accent-2-700); }
+
+/* ---- 22d2 · OpenFeature in four layers, and why a flag ---- */
+.x30-of { display: grid; grid-template-columns: 1fr 560px; column-gap: 100px; margin-top: calc(1.5 * var(--baseline)); align-items: start; }
+.x30-of p { margin: 0; }
+.x30-of .stack { display: flex; flex-direction: column; gap: 12px; }
+.x30-of .ly { display: flex; flex-direction: column; gap: 8px; padding: 16px 26px; border-radius: var(--radius-sm);
+  background: var(--color-accent-100); }
+.x30-of .ly:nth-child(2) { margin-left: 40px; background: color-mix(in srgb, var(--color-accent-100) 70%, var(--color-bg, transparent)); }
+.x30-of .ly:nth-child(3) { margin-left: 80px; background: var(--color-neutral-200); }
+.x30-of .ly:nth-child(4) { margin-left: 120px; background: var(--color-neutral-200); }
+.x30-of .ly .n { font-size: 22px; font-style: italic; color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x30-of .ly .v { font-size: 28px; }
+.x30-of .ly > .code { font-size: 26px; align-self: flex-start; }
+.x30-of .ly .v .code { font-size: 25px; }
+.x30-of .why { display: flex; flex-direction: column; gap: 22px; }
+.x30-of .why .lab { font-size: var(--type-kicker); color: color-mix(in srgb, var(--color-text) 55%, transparent); margin-bottom: 6px; }
+.x30-of .why .w { font-size: 29px; display: flex; align-items: center; gap: 16px; }
+.x30-of .why .w i { font-size: 44px; color: var(--color-accent-2); }
+.x30-of .why .w .code { font-size: 25px; }

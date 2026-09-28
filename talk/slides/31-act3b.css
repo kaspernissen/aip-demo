@@ -1,0 +1,144 @@
+/* 31-act3b · Act 3b in Broadsheet: limiting access to MCP, beats 4 and 7, the handover.
+   Everything is scoped under .x31- so no other fragment is touched. Type and whitespace
+   carry the structure; no boxes, no rules. Magenta = the governed thing, cyan = what the
+   trace shows / permitted. */
+
+.x31-fig { margin-top: var(--baseline) !important; }
+
+/* small muted label set as type (the deck's kicker scale, never an eyebrow row) */
+.x31-lab { font-size: var(--type-kicker); letter-spacing: 0.04em; margin: 0;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x31-lab.m { color: var(--color-accent-2-700); }
+.x31-lab.c { color: var(--color-accent-700); }
+
+/* ---- slide 30: CEL beside the decision ladder ---- */
+.x31-cel { display: grid; grid-template-columns: 420px 1fr; gap: 72px; align-items: start;
+  margin-top: calc(2 * var(--baseline)); }
+.x31-cel .left { display: flex; flex-direction: column; gap: 30px; }
+.x31-cel .big { font-size: var(--type-subtitle); line-height: 1.2; margin: 0; font-weight: 600; }
+.x31-cel .left p { font-size: var(--type-small); line-height: 1.35; margin: 0; }
+.x31-cel .right { display: flex; flex-direction: column; gap: 18px; }
+
+/* ---- slide 31: the config line and the probe ---- */
+.x31-two { display: grid; grid-template-columns: 1fr 1fr; gap: 110px; align-items: start;
+  margin-top: calc(3 * var(--baseline)); }
+.x31-yaml { font-size: 32px; line-height: 1.6; margin: 18px 0 0; font-feature-settings: "tnum" 1; }
+.x31-yaml .d { color: color-mix(in srgb, var(--color-text) 50%, transparent); }
+.x31-yaml .i1 { padding-left: 1.2em; } .x31-yaml .i2 { padding-left: 2.4em; }
+.x31-yaml .code.m { font-size: 34px; font-weight: 600; }
+.x31-probe { display: flex; flex-direction: column; gap: 28px; margin-top: 30px; }
+.x31-probe .r { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--type-body); }
+.x31-probe .r .v { font-size: var(--type-small); color: var(--color-accent-700); }
+.x31-probe .r.bad .v { color: var(--color-accent-2-700); font-weight: 700; }
+.x31-probe .r.bad { font-weight: 600; }
+
+/* ---- slide 32: five 401s beside the allowance rows ---- */
+.x31-id { display: grid; grid-template-columns: 1.1fr .9fr; gap: 110px; align-items: start;
+  margin-top: calc(2 * var(--baseline)); }
+.x31-401 { display: grid; grid-template-columns: auto auto; gap: 22px 40px; margin-top: 26px;
+  font-size: var(--type-small); align-items: baseline; }
+.x31-401 .e { color: color-mix(in srgb, var(--color-text) 55%, transparent); font-size: 26px; }
+.x31-401 .hi { color: var(--color-accent-2-700); font-weight: 700; }
+.x31-401 .e.hi { font-weight: 600; }
+.x31-rows { display: flex; flex-direction: column; gap: 30px; margin-top: 26px; }
+.x31-rows .who { font-size: 26px; color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x31-rows .who b { color: var(--color-text); }
+.x31-rows .amt { font-family: var(--font-heading); font-weight: 700; font-size: 84px; line-height: 1; letter-spacing: -0.02em;
+  font-feature-settings: "tnum" 1; margin-top: 6px; }
+.x31-rows .amt.sen { color: var(--color-accent-700); }
+.x31-rows .amt.none { font-size: var(--type-subtitle); font-weight: 400; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+
+/* ---- beat slides: one line under a lifted figure ---- */
+.x31-line { font-size: var(--type-body); margin: 34px 0 0; }
+.x31-line em { color: var(--color-accent-2-700); }
+.x31-back { font-size: var(--type-kicker); letter-spacing: 0.04em; color: var(--color-accent-2-700); margin: 18px 0 0; font-weight: 600; }
+
+/* ---- fallback screenshot crops ---- */
+.x31-fb { display: grid; gap: 26px 56px; margin-top: calc(2 * var(--baseline)); }
+.x31-crop { position: relative; overflow: hidden; }
+.x31-crop img { position: absolute; max-width: none; width: auto; }
+.x31-fb .shot-cap { margin-top: 12px; }
+
+/* ---- slide 37: resource, view, record ---- */
+.x31-chain { display: grid; grid-template-columns: 1.15fr 0.9fr 1.05fr; gap: 80px; margin-top: calc(2 * var(--baseline)); }
+.x31-chain h3 { font-family: var(--font-heading); font-size: var(--type-body); margin: 0 0 22px; font-weight: 700; }
+.x31-chain h3.m { color: var(--color-accent-2-700); }
+.x31-chain .t { font-size: 28px; line-height: 1.5; margin: 0; font-feature-settings: "tnum" 1; }
+.x31-chain .t .d { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x31-keep { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; margin-top: calc(1.5 * var(--baseline)); font-size: var(--type-small); }
+.x31-keep .gone { color: color-mix(in srgb, var(--color-text) 50%, transparent); }
+.x31-keep .gone s { text-decoration-color: var(--color-accent-2); }
+.x31-keep .stay { color: var(--color-accent-700); font-weight: 600; }
+.x31-hand { font-size: var(--type-subtitle); font-style: italic; margin: calc(1.2 * var(--baseline)) 0 0; }
+
+.x31-401 { grid-template-columns: max-content 1fr; }
+.x31-id { grid-template-columns: 1.3fr .7fr; gap: 90px; }
+.x31-401 { gap: 22px 36px; }
+
+/* ---- reading aids: numbered call-outs and a "read it like this" label ---- */
+.x31-n { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px;
+  margin-right: 14px; border-radius: 50%; box-shadow: inset 0 0 0 2px currentColor;
+  font-size: 20px; font-weight: 700; font-feature-settings: "tnum" 1; vertical-align: 0.1em; }
+.x31-read { position: absolute; top: 58px; right: var(--pad-x); margin: 0; font-size: var(--type-kicker);
+  letter-spacing: 0.04em; font-style: italic; color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+
+/* ---- concept slides: one idea, drawn simply, then the question the next slide answers ---- */
+.x31-idea { font-size: var(--type-subtitle); line-height: 1.3; margin: calc(1.2 * var(--baseline)) 0 0; max-width: 40ch; }
+.x31-idea em { font-style: normal; color: var(--color-accent-2-700); }
+.x31-q { font-size: var(--type-small); font-style: italic; margin: calc(0.8 * var(--baseline)) 0 0;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+
+/* defence in depth: one path through four checks */
+.x31-gates { position: relative; display: flex; justify-content: space-between; align-items: flex-end;
+  margin-top: calc(2 * var(--baseline)); padding-bottom: 8px; }
+.x31-gates::before { content: ""; position: absolute; left: 60px; right: 60px; bottom: 80px; height: 3px;
+  background: var(--color-neutral-400); }
+.x31-gates .who { position: relative; font-size: 96px; color: var(--color-neutral-700); padding-bottom: 32px; }
+.x31-gates .g { position: relative; display: flex; flex-direction: column; align-items: center; gap: 18px;
+  font-size: var(--type-body); }
+.x31-gates .g i { font-size: 110px; color: var(--color-accent-2-600); }
+.x31-gates .g::after { content: ""; order: 1; width: 14px; height: 120px; border-radius: 7px; background: var(--color-accent-2-300); }
+.x31-gates .g span { order: 2; }
+
+/* fail-closed vs fail-open: two doors */
+.x31-cut { display: flex; align-items: center; gap: 14px; margin-top: calc(1.2 * var(--baseline)) !important; font-size: var(--type-small) !important; }
+.x31-cut i { font-size: 40px; }
+.x31-doors { display: grid; grid-template-columns: 1fr 1fr; gap: 120px; margin-top: calc(2 * var(--baseline)); max-width: 1500px; }
+.x31-doors > div { display: grid; grid-template-columns: auto 1fr; column-gap: 40px; align-items: center; }
+.x31-doors i { grid-row: span 2; font-size: 260px; }
+.x31-doors h3 { font-family: var(--font-heading); font-size: 56px; margin: 0; align-self: end; }
+.x31-doors p { font-size: var(--type-body); margin: 8px 0 0; align-self: start; }
+.x31-doors .shut i, .x31-doors .shut h3 { color: var(--color-accent-2-700); }
+.x31-doors .open i { color: var(--color-neutral-600); }
+
+/* span link vs parent edge: two little timelines */
+.x31-links { display: grid; grid-template-columns: 1fr 1fr; gap: 130px; margin-top: calc(2.2 * var(--baseline)); }
+.x31-tl { position: relative; display: flex; flex-direction: column; gap: 18px; margin-top: 36px; height: 240px; }
+.x31-tl .bar { height: 72px; border-radius: var(--radius-sm); display: flex; align-items: center; padding-left: 20px;
+  font-size: var(--type-small); box-sizing: border-box; }
+.x31-tl .bar.p { background: var(--color-accent-100); color: var(--color-accent-800); }
+.x31-tl .bar.k { background: var(--color-accent-200); color: var(--color-accent-900); }
+.x31-tl .bar.l { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
+.x31-tl.two { flex-direction: row; align-items: flex-start; gap: 0; }
+.x31-tl.two .gap { width: 32%; height: 72px; display: flex; align-items: center; justify-content: center;
+  font-size: var(--type-kicker); font-style: italic; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x31-tl .arc { position: absolute; left: 0; top: 72px; width: 100%; height: 100px; overflow: visible; }
+.x31-tl .arc path { fill: none; stroke: var(--color-neutral-600); stroke-width: 2.5; stroke-dasharray: 8 6; vector-effect: non-scaling-stroke; }
+.x31-tl .see { position: absolute; left: 0; right: 0; top: 180px; text-align: center; font-size: var(--type-kicker);
+  color: var(--color-neutral-700); }
+.x31-cap { font-size: var(--type-body); margin: 10px 0 0; }
+
+/* ---- beat 7 live: the one-word diff beside the same amount ---- */
+.x31-b7 { display: grid; grid-template-columns: 1.2fr .8fr; gap: 100px; align-items: start; margin-top: calc(1.8 * var(--baseline)); }
+.x31-b7 + .x31-line { margin-top: calc(1.6 * var(--baseline)); font-size: var(--type-subtitle); }
+.x31-diff > div { margin-top: 6px; }
+.x31-diff .del { color: color-mix(in srgb, var(--color-text) 45%, transparent); text-decoration: line-through;
+  text-decoration-color: var(--color-accent-2); }
+.x31-diff .note { font-size: var(--type-kicker); font-style: italic; margin-left: 28px; }
+.x31-amt .eur { font-family: var(--font-heading); font-weight: 700; font-size: 120px; line-height: 1; letter-spacing: -0.02em;
+  font-feature-settings: "tnum" 1; margin: 20px 0 30px; }
+.x31-amt .r { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--type-body); margin-top: 18px; }
+.x31-amt .k { color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x31-amt .v { font-weight: 700; }
+.x31-amt .v.no { color: var(--color-accent-2-700); }
+.x31-amt .v.yes { color: var(--color-accent-700); }

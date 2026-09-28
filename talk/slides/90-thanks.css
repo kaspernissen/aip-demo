@@ -1,0 +1,35 @@
+/* 90-thanks · the close, then the speaker-only appendix (pre-flight, reset, triage).
+   Scoped under .x90-. Tokens only. */
+.x90-tag { position: absolute; top: 58px; right: var(--pad-x); margin: 0; font-size: var(--type-kicker); letter-spacing: 0.04em;
+  font-style: italic; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x90-code { font-size: 22px !important; }
+
+/* pre-flight: five stops on one line */
+.x90-flight { display: grid; grid-template-columns: repeat(5, 1fr); gap: 36px; margin-top: calc(1.4 * var(--baseline)); }
+.x90-flight > div { display: flex; flex-direction: column; gap: 16px; }
+.x90-flight .t { font-family: var(--font-heading); font-weight: 700; font-size: 60px; line-height: 1; font-feature-settings: "tnum" 1;
+  color: var(--color-accent-2-700); }
+.x90-flight .a { font-size: 26px; line-height: 1.35; margin: 0; }
+.x90-flight .c { font-size: 24px; line-height: 1.35; margin: 0; color: var(--color-accent-700); }
+.x90-flight .c::before { content: "\2713  "; }
+.x90-flight .w { font-size: 22px; line-height: 1.35; margin: 0; color: var(--color-accent-2-700); font-weight: 600; }
+
+/* reset: three numbered rows */
+.x90-reset { display: flex; flex-direction: column; gap: 44px; margin-top: calc(1.4 * var(--baseline)); max-width: 1500px; }
+.x90-reset > div { display: grid; grid-template-columns: 90px 1fr; column-gap: 20px; align-items: baseline; }
+.x90-reset .n { font-family: var(--font-heading); font-weight: 700; font-size: 64px; line-height: 1; color: var(--color-neutral-500); }
+.x90-reset .first .n, .x90-reset .first h3 { color: var(--color-accent-2-700); }
+.x90-reset h3 { font-family: var(--font-heading); font-size: var(--type-body); margin: 0; font-weight: 700; }
+.x90-reset p { font-size: 26px; margin: 10px 0 0; line-height: 1.4; }
+.x90-reset .d { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+
+/* triage: symptom → fix, compact */
+.x90-tri { display: grid; grid-template-columns: max-content 1fr; gap: 14px 56px; margin-top: calc(1 * var(--baseline));
+  font-size: 26px; line-height: 1.3; align-items: baseline; }
+.x90-tri .h { font-size: 20px; letter-spacing: 0.06em; text-transform: uppercase; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x90-tri .s { font-weight: 600; }
+.x90-tri .f { color: color-mix(in srgb, var(--color-text) 75%, transparent); }
+.x90-tri .hot { color: var(--color-accent-2-700); }
+.x90-never { display: flex; align-items: baseline; gap: 40px; margin-top: calc(0.9 * var(--baseline)); font-size: 26px; }
+.x90-never b { color: var(--color-accent-2-700); }
+.x90-never s { text-decoration-color: var(--color-accent-2); }

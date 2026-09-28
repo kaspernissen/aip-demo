@@ -1,0 +1,354 @@
+<!-- 02a · NEW · regulated domains: four sectors where an agent acts, one line on what it moves (Ch 10, Ch 14 "Who is in the room") -->
+<section class="slide content" data-label="When an agent acts">
+  <h2 class="slide-title">When an agent acts, someone will ask</h2>
+  <div class="x10-dom rise">
+    <div><i class="ph-duotone ph-bank"></i><b>Fintech</b><span>moves money</span></div>
+    <div><i class="ph-duotone ph-umbrella"></i><b>Insurance</b><span>settles claims</span></div>
+    <div><i class="ph-duotone ph-heartbeat"></i><b>Healthcare</b><span>reads patient records</span></div>
+    <div><i class="ph-duotone ph-cell-tower"></i><b>Telco</b><span>runs the network</span></div>
+  </div>
+  <p class="x10-same rise">Different rules. <span class="spot-2">The same few questions.</span></p>
+</section>
+
+<!-- 02b · NEW · the auditor's five questions, big type, each tagged with the requirement behind it (Ch 10; Ch 14 slide 35 table). The table itself comes at "From requirement to artifact". -->
+<section class="slide content" data-label="The auditor’s questions">
+  <h2 class="slide-title">The auditor&rsquo;s questions</h2>
+  <ol class="x10-qs rise">
+    <li><i>1</i><div><b>What did the agent do?</b><span class="x10-tags"><span class="x10-tag">EU AI Act Art. 12 &middot; record-keeping</span></span></div></li>
+    <li><i>2</i><div><b>Who allowed it, and within what limits?</b><span class="x10-tags"><span class="x10-tag">FINRA 2026 &middot; scope and authority</span></span></div></li>
+    <li><i>3</i><div><b>Could a human stop it, or reverse it?</b><span class="x10-tags"><span class="x10-tag">EU AI Act Art. 14 &middot; human oversight</span></span></div></li>
+    <li><i>4</i><div><b>Can you explain this one decision to the person it affected?</b><span class="x10-tags"><span class="x10-tag">EU AI Act Art. 86</span><span class="x10-tag">GDPR &middot; CJEU C-203/22</span></span></div></li>
+    <li><i>5</i><div><b>Are the records complete, kept, and tamper-evident?</b><span class="x10-tags"><span class="x10-tag">EU AI Act Art. 19</span><span class="x10-tag">DORA RTS Art. 12</span><span class="x10-tag">ISO/IEC 24970 (FDIS)</span></span></div></li>
+  </ol>
+</section>
+
+<!-- 02c · NEW · the stakes, as type: Ch 14 slide 09's title line -->
+<section class="slide content x10-stakes" data-label="Not an answer">
+  <div class="rise">
+    <p class="x10-st-q">&ldquo;We don&rsquo;t know what<br>the agent did.&rdquo;</p>
+    <p class="x10-st-a">is not an answer.</p>
+  </div>
+</section>
+
+<!-- 02 · NEW · the puzzle: a crop of the customer UI outcome block, €6,200 refused -->
+<section class="slide content" data-label="This is a success">
+  <h2 class="slide-title">This is a success.</h2>
+  <figure class="x10-crop rise">
+    <div class="shot x10-crop-win">
+      <img src="assets/shots/customer-ui-refused.png" alt="Northstar customer UI outcome block: claimId CLM-1842, amount 6200, currency EUR, status refused">
+      <i class="x10-hl x10-hl-amt"></i>
+      <i class="x10-hl x10-hl-st"></i>
+    </div>
+    <figcaption class="shot-cap">An AI agent tried to pay out &euro;6,200. It was refused.</figcaption>
+  </figure>
+</section>
+
+<!-- 03 · NEW · two earlier talks feed this one; speaker portrait printed as plates; beginners welcome -->
+<section class="slide content" data-label="Where this comes from">
+  <h2 class="slide-title">Where this comes from</h2>
+  <div class="x10-who rise">
+    <div class="x10-us">
+      <div class="x10-me">
+      <figure class="cmyk portrait x10-portrait">
+        <img src="assets/william.jpg" alt="William Rizzo">
+        <img class="sep-c" src="assets/william.jpg" alt="" aria-hidden="true">
+        <img class="sep-m" src="assets/william.jpg" alt="" aria-hidden="true">
+        <img class="sep-y" src="assets/william.jpg" alt="" aria-hidden="true">
+        <img class="sep-k" src="assets/william.jpg" alt="" aria-hidden="true">
+      </figure>
+      <p class="x10-me-n">William Rizzo<span class="muted">Mirantis</span></p>
+      </div>
+      <div class="x10-me">
+      <figure class="cmyk portrait x10-portrait">
+        <img src="assets/speaker.jpg" alt="Kasper Borg Nissen">
+        <img class="sep-c" src="assets/speaker.jpg" alt="" aria-hidden="true">
+        <img class="sep-m" src="assets/speaker.jpg" alt="" aria-hidden="true">
+        <img class="sep-y" src="assets/speaker.jpg" alt="" aria-hidden="true">
+        <img class="sep-k" src="assets/speaker.jpg" alt="" aria-hidden="true">
+      </figure>
+      <p class="x10-me-n">Kasper Borg Nissen<span class="muted">Dash0</span></p>
+      </div>
+    </div>
+    <div class="x10-line">
+      <div class="x10-tk">
+        <p class="x10-tk-t"><em>Your Agent Did WHAT?</em></p>
+        <p class="x10-tk-by muted">Adriana Villela &amp; Kasper &middot; SRE Day London 2026</p>
+        <p class="x10-tk-q">What does an agent actually do?</p>
+      </div>
+      <div class="x10-tk">
+        <p class="x10-tk-t"><em>Taming Complexity</em></p>
+        <p class="x10-tk-by muted">Mauricio Salatino &amp; Kasper &middot; KubeCon EU 2026</p>
+        <p class="x10-tk-q">How do you trace it?</p>
+      </div>
+      <div class="x10-tk x10-now">
+        <p class="x10-tk-by spot-2">This talk</p>
+        <p class="x10-now-q">What happens when a <span class="spot-2">regulator</span> asks?</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 04 · NEW · Act 1 divider -->
+<section class="slide divider" data-label="Act 1 — Agents change the nature of complexity">
+  <div class="press-field" aria-hidden="true"><i class="pf-y"></i><i class="pf-c"></i><i class="pf-m"></i></div>
+  <div class="scale-color" aria-hidden="true"><i class="sc-c"></i><i class="sc-m"></i><i class="sc-y"></i><i class="sc-cm"></i><i class="sc-my"></i><i class="sc-cy"></i><i class="sc-cmy"></i><i class="sc-k"></i></div>
+  <div class="scale-bw" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <i class="star-target" aria-hidden="true"></i>
+  <div class="rise">
+    <h2 class="slide-title">Agents change the nature<br>of <em>complexity</em></h2>
+    <div class="ghost-num cmyk-num"><span class="paper">01</span><span class="plate plate-c" aria-hidden="true">01</span><span class="plate plate-m" aria-hidden="true">01</span><span class="plate plate-y" aria-hidden="true">01</span></div>
+  </div>
+</section>
+
+<!-- 05 · TAMING · evolution of architectures: book Figure 1.1, lifted; the FIXED row cut, the BROKE row and the crossing lines kept -->
+<section class="slide content" data-label="The evolution of architectures">
+  <h2 class="slide-title">Building got easier. Understanding got harder.</h2>
+  <figure class="bfig rise x10-fig" style="--fig-h:600px"><svg viewBox="0 0 860 326" role="img" aria-label="Four architecture stages from monolith to agents, each with what it broke, and two trend lines: effort to build falls while effort to understand rises.">
+<defs><marker id="x10-ar-1-1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#595959"/></marker></defs>
+<g font-family="Inter, sans-serif">
+<text x="112" y="32" font-size="15" font-weight="700" text-anchor="middle" fill="#111111">Monolith</text>
+<text x="324" y="32" font-size="15" font-weight="700" text-anchor="middle" fill="#111111">Microservices</text>
+<text x="536" y="32" font-size="15" font-weight="700" text-anchor="middle" fill="#111111">Event-driven</text>
+<text x="748" y="32" font-size="15" font-weight="700" text-anchor="middle" fill="#111111">Agents</text>
+<rect x="20" y="44" width="184" height="104" rx="8" fill="#F7F7F7" stroke="#E8E8E8"/>
+<rect x="232" y="44" width="184" height="104" rx="8" fill="#F7F7F7" stroke="#E8E8E8"/>
+<rect x="444" y="44" width="184" height="104" rx="8" fill="#F7F7F7" stroke="#E8E8E8"/>
+<rect x="656" y="44" width="184" height="104" rx="8" fill="#F7F7F7" stroke="#E8E8E8"/>
+<rect x="57" y="62" width="110" height="68" rx="6" fill="#DCEBFF" stroke="#123E7A"/>
+<text x="112" y="100" font-size="12" text-anchor="middle" fill="#123E7A">one process</text>
+<line x1="270" y1="72" x2="324" y2="96" stroke="#9E9E9E"/><line x1="378" y1="72" x2="324" y2="96" stroke="#9E9E9E"/>
+<line x1="270" y1="124" x2="324" y2="96" stroke="#9E9E9E"/><line x1="378" y1="124" x2="324" y2="96" stroke="#9E9E9E"/>
+<line x1="270" y1="72" x2="270" y2="124" stroke="#9E9E9E"/>
+<rect x="252" y="61" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
+<rect x="360" y="61" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
+<rect x="306" y="85" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
+<rect x="252" y="113" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
+<rect x="360" y="113" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
+<rect x="460" y="88" width="152" height="17" rx="3" fill="#FBE997" stroke="#9E9E9E"/>
+<text x="536" y="100.5" font-size="10.5" letter-spacing="1.2" text-anchor="middle" fill="#595959">EVENT BUS</text>
+<rect x="470" y="56" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
+<rect x="518" y="56" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
+<rect x="566" y="56" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
+<rect x="494" y="118" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
+<rect x="542" y="118" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
+<line x1="488" y1="78" x2="488" y2="88" stroke="#9E9E9E"/><line x1="536" y1="78" x2="536" y2="88" stroke="#9E9E9E"/><line x1="584" y1="78" x2="584" y2="88" stroke="#9E9E9E"/>
+<line x1="512" y1="105" x2="512" y2="118" stroke="#9E9E9E"/><line x1="560" y1="105" x2="560" y2="118" stroke="#9E9E9E"/>
+<circle cx="720" cy="96" r="24" fill="#DCEBFF" stroke="#123E7A"/>
+<text x="720" y="100" font-size="11" text-anchor="middle" fill="#123E7A">agent</text>
+<path d="M706,74 A18,18 0 1,1 734,74" fill="none" stroke="#123E7A" stroke-width="1.5" marker-end="url(#x10-ar-1-1)"/>
+<rect x="766" y="52" width="64" height="22" rx="4" fill="#DBD4F8" stroke="#9078F3"/>
+<text x="798" y="67.5" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="782" y="86" width="22" height="18" rx="3" fill="#A8FBBE" stroke="#6AD186"/>
+<rect x="782" y="112" width="22" height="18" rx="3" fill="#A8FBBE" stroke="#6AD186"/>
+<rect x="752" y="124" width="22" height="18" rx="3" fill="#A8FBBE" stroke="#6AD186"/>
+<line x1="744" y1="90" x2="766" y2="68" stroke="#9E9E9E" stroke-dasharray="3 2"/>
+<line x1="744" y1="98" x2="782" y2="95" stroke="#9E9E9E" stroke-dasharray="3 2"/>
+<line x1="740" y1="108" x2="782" y2="120" stroke="#9E9E9E" stroke-dasharray="3 2"/>
+<line x1="730" y1="118" x2="756" y2="126" stroke="#9E9E9E" stroke-dasharray="3 2"/>
+<line x1="206" y1="96" x2="229" y2="96" stroke="#595959" stroke-width="1.5" marker-end="url(#x10-ar-1-1)"/>
+<line x1="418" y1="96" x2="441" y2="96" stroke="#595959" stroke-width="1.5" marker-end="url(#x10-ar-1-1)"/>
+<line x1="630" y1="96" x2="653" y2="96" stroke="#595959" stroke-width="1.5" marker-end="url(#x10-ar-1-1)"/>
+<g font-size="11" letter-spacing="1.3" fill="#F8494D">
+<text x="24" y="178">BROKE</text><text x="236" y="178">BROKE</text><text x="448" y="178">BROKE</text><text x="660" y="178">BROKE</text>
+</g>
+<g font-size="12" fill="#212121">
+<text x="24" y="199">Teams block each other;</text><text x="24" y="216">one bug takes all down</text>
+<text x="236" y="199">A request crosses many</text><text x="236" y="216">hops; stack traces stop</text><text x="236" y="233">at the network</text>
+<text x="448" y="199">Cause and effect split</text><text x="448" y="216">by queues, delays and</text><text x="448" y="233">retries</text>
+<text x="660" y="199">The path is chosen at</text><text x="660" y="216">run time; the &#8220;why&#8221;</text><text x="660" y="233">lives inside a model</text>
+</g>
+<line x1="40" y1="304" x2="820" y2="270" stroke="#F8494D" stroke-width="3"/>
+<line x1="40" y1="270" x2="820" y2="304" stroke="#6AD186" stroke-width="3"/>
+<text x="820" y="261" font-size="13" font-weight="600" text-anchor="end" fill="#F8494D">Effort to understand what happened</text>
+<text x="820" y="322" font-size="13" font-weight="600" text-anchor="end" fill="#18632F">Effort to build it</text>
+<g class="x10-co"><circle cx="6" cy="27" r="10" fill="#FFFFFF" stroke="#111111" stroke-width="1.5"/><text x="6" y="31.7" font-size="13" font-weight="700" text-anchor="middle" fill="#111111">1</text><circle cx="8" cy="174" r="10" fill="#FFFFFF" stroke="#111111" stroke-width="1.5"/><text x="8" y="178.7" font-size="13" font-weight="700" text-anchor="middle" fill="#111111">2</text><circle cx="22" cy="287" r="10" fill="#FFFFFF" stroke="#111111" stroke-width="1.5"/><text x="22" y="291.7" font-size="13" font-weight="700" text-anchor="middle" fill="#111111">3</text></g>
+</g></svg></figure>
+</section>
+
+<!-- 06 · TAMING · the model draws the call graph: book Figure 1.4 (one prompt, three runs), lifted and cropped -->
+<section class="slide content" data-label="The model draws the call graph">
+  <h2 class="slide-title">The call graph is no longer something you drew</h2>
+  <figure class="bfig rise x10-fig" style="--fig-h:560px"><svg viewBox="14 8 802 234" role="img" aria-label="The same prompt produces three different runs with different tool sequences and different token use.">
+<g font-family="Inter, sans-serif">
+<rect x="20" y="88" width="150" height="72" rx="8" fill="#F7F7F7" stroke="#9E9E9E"/>
+<text x="95" y="112" font-size="12" font-weight="700" text-anchor="middle" fill="#111111">Same prompt</text>
+<text x="95" y="131" font-size="10.5" text-anchor="middle" fill="#595959">&#8220;Remove the</text>
+<text x="95" y="146" font-size="10.5" text-anchor="middle" fill="#595959">free-plan accounts&#8221;</text>
+<path d="M170,124 C185,124 185,45 200,45" fill="none" stroke="#9E9E9E"/>
+<path d="M170,124 L200,125" fill="none" stroke="#9E9E9E"/>
+<path d="M170,124 C185,124 185,205 200,205" fill="none" stroke="#9E9E9E"/>
+<g font-size="10.5" letter-spacing="1.3" fill="#595959">
+<text x="200" y="23">RUN 1</text><text x="200" y="103">RUN 2</text><text x="200" y="183">RUN 3</text></g>
+<line x1="200" y1="45" x2="810" y2="45" stroke="#E8E8E8"/>
+<rect x="200" y="30" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="246" y="49" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="302" y="30" width="92" height="30" rx="5" fill="#A8FBBE" stroke="#6AD186"/><text x="348" y="49" font-size="11" text-anchor="middle" fill="#18632F">list_records</text>
+<rect x="404" y="30" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="450" y="49" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="506" y="30" width="96" height="30" rx="5" fill="#FCB6B8" stroke="#F8494D"/><text x="554" y="49" font-size="11" text-anchor="middle" fill="#111111">delete_records</text>
+<rect x="612" y="30" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="658" y="49" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="714" y="30" width="92" height="30" rx="5" fill="#F7F7F7" stroke="#9E9E9E"/><text x="760" y="49" font-size="11" text-anchor="middle" fill="#212121">stop</text>
+<rect x="200" y="66" width="480" height="6" rx="3" fill="#FCB6B8"/>
+<line x1="200" y1="125" x2="810" y2="125" stroke="#E8E8E8"/>
+<rect x="200" y="110" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="246" y="129" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="302" y="110" width="92" height="30" rx="5" fill="#A8FBBE" stroke="#6AD186"/><text x="348" y="129" font-size="11" text-anchor="middle" fill="#18632F">list_records</text>
+<rect x="404" y="110" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="450" y="129" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="506" y="110" width="96" height="30" rx="5" fill="#FEF1F1" stroke="#F8494D"/><text x="554" y="129" font-size="11" text-anchor="middle" fill="#111111">asks a human</text>
+<rect x="612" y="110" width="92" height="30" rx="5" fill="#F7F7F7" stroke="#9E9E9E"/><text x="658" y="129" font-size="11" text-anchor="middle" fill="#212121">stop</text>
+<rect x="200" y="146" width="330" height="6" rx="3" fill="#FCB6B8"/>
+<line x1="200" y1="205" x2="810" y2="205" stroke="#E8E8E8"/>
+<rect x="200" y="190" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="246" y="209" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="302" y="190" width="92" height="30" rx="5" fill="#A8FBBE" stroke="#6AD186"/><text x="348" y="209" font-size="11" text-anchor="middle" fill="#18632F">query</text>
+<rect x="404" y="190" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="450" y="209" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="506" y="190" width="96" height="30" rx="5" fill="#FCB6B8" stroke="#F8494D"/><text x="554" y="209" font-size="11" text-anchor="middle" fill="#111111">delete_records</text>
+<rect x="612" y="190" width="92" height="30" rx="5" fill="#F7F7F7" stroke="#9E9E9E"/><text x="658" y="209" font-size="11" text-anchor="middle" fill="#212121">stop</text>
+<rect x="200" y="226" width="400" height="6" rx="3" fill="#FCB6B8"/>
+<g class="x10-co"><circle cx="95" cy="76" r="9" fill="#FFFFFF" stroke="#111111" stroke-width="1.5"/><text x="95" y="80.0" font-size="11" font-weight="700" text-anchor="middle" fill="#111111">1</text><circle cx="186" cy="19" r="9" fill="#FFFFFF" stroke="#111111" stroke-width="1.5"/><text x="186" y="23.0" font-size="11" font-weight="700" text-anchor="middle" fill="#111111">2</text><circle cx="692" cy="73" r="9" fill="#FFFFFF" stroke="#111111" stroke-width="1.5"/><text x="692" y="77.0" font-size="11" font-weight="700" text-anchor="middle" fill="#111111">3</text></g>
+</g></svg></figure>
+  <p class="x10-under">The model draws it at run time.</p>
+</section>
+
+<!-- 06a · NEW · concept: what an agent is, in one sentence (Ch 1, "the five terms") -->
+<section class="slide content" data-label="What an agent is, in one sentence">
+  <h2 class="slide-title">What an agent is, in one sentence</h2>
+  <div class="x10-eq rise">
+    <div><i class="ph-duotone ph-brain"></i><b>A model</b><span>writes the next step</span></div>
+    <em>+</em>
+    <div><i class="ph-duotone ph-scroll"></i><b>instructions</b><span>the rules it is given</span></div>
+    <em>+</em>
+    <div><i class="ph-duotone ph-wrench"></i><b>tools</b><span>what it can touch</span></div>
+    <em>+</em>
+    <div class="x10-eq-loop"><i class="ph-duotone ph-arrows-clockwise"></i><b>a loop</b><span>asks again until the model says &ldquo;done&rdquo;</span></div>
+  </div>
+</section>
+
+<!-- 07 · DID WHAT · anatomy of an agent: book Figure 1.3 (the agent loop, mermaid in the book) redrawn as SVG, inside Figure 1.2's harness -->
+<section class="slide content" data-label="Anatomy of an agent">
+  <h2 class="slide-title">Anatomy of an agent</h2>
+  <figure class="bfig rise x10-fig" style="--fig-h:470px"><svg viewBox="0 0 1000 360" role="img" aria-label="The agent loop inside its harness: a goal arrives, the agent builds context, the model is called, and the model decides between a tool call, which runs through MCP and loops back, and a final answer, which stops.">
+<defs><marker id="x10-ar-lp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#595959"/></marker></defs>
+<g font-family="Inter, sans-serif">
+<rect x="6" y="6" width="988" height="348" rx="12" fill="#F7F7F7" stroke="#9E9E9E" stroke-dasharray="6 5"/>
+<text x="26" y="38" font-size="15" letter-spacing="1.4" fill="#595959">HARNESS · MEMORY, LIFECYCLE, PERMISSIONS, OBSERVABILITY</text>
+<rect x="26" y="110" width="150" height="80" rx="8" fill="#FFFFFF" stroke="#9E9E9E"/>
+<text x="101" y="145" font-size="19" font-weight="700" text-anchor="middle" fill="#111111">Goal</text>
+<text x="101" y="170" font-size="16" text-anchor="middle" fill="#595959">arrives</text>
+<rect x="220" y="110" width="180" height="80" rx="8" fill="#DCEBFF" stroke="#123E7A"/>
+<text x="310" y="145" font-size="19" font-weight="700" text-anchor="middle" fill="#123E7A">Agent</text>
+<text x="310" y="170" font-size="16" text-anchor="middle" fill="#123E7A">builds context</text>
+<rect x="444" y="110" width="180" height="80" rx="8" fill="#DBD4F8" stroke="#9078F3"/>
+<text x="534" y="145" font-size="19" font-weight="700" text-anchor="middle" fill="#111111">Model</text>
+<text x="534" y="170" font-size="16" text-anchor="middle" fill="#212121">billed per token</text>
+<path d="M770,82 L868,150 L770,218 L672,150 Z" fill="#FEF1F1" stroke="#F8494D" stroke-width="2.5"/>
+<text x="770" y="145" font-size="17" font-weight="700" text-anchor="middle" fill="#111111">tool call</text>
+<text x="770" y="167" font-size="17" font-weight="700" text-anchor="middle" fill="#111111">or answer?</text>
+<rect x="890" y="126" width="92" height="48" rx="8" fill="#FFFFFF" stroke="#9E9E9E"/>
+<text x="936" y="156" font-size="18" font-weight="700" text-anchor="middle" fill="#111111">stop</text>
+<rect x="680" y="262" width="180" height="70" rx="8" fill="#A8FBBE" stroke="#6AD186"/>
+<text x="770" y="292" font-size="18" font-weight="700" text-anchor="middle" fill="#18632F">Run the tool</text>
+<text x="770" y="316" font-size="16" text-anchor="middle" fill="#18632F">often through MCP</text>
+<rect x="444" y="262" width="180" height="70" rx="8" fill="#DCEBFF" stroke="#123E7A"/>
+<text x="534" y="292" font-size="18" font-weight="700" text-anchor="middle" fill="#123E7A">Add the result</text>
+<text x="534" y="316" font-size="16" text-anchor="middle" fill="#123E7A">to the context</text>
+<g stroke="#595959" stroke-width="2" fill="none">
+<line x1="176" y1="150" x2="216" y2="150" marker-end="url(#x10-ar-lp)"/>
+<line x1="400" y1="150" x2="440" y2="150" marker-end="url(#x10-ar-lp)"/>
+<line x1="624" y1="150" x2="668" y2="150" marker-end="url(#x10-ar-lp)"/>
+<line x1="868" y1="150" x2="886" y2="150" marker-end="url(#x10-ar-lp)"/>
+<line x1="770" y1="218" x2="770" y2="258" marker-end="url(#x10-ar-lp)"/>
+<line x1="680" y1="297" x2="628" y2="297" marker-end="url(#x10-ar-lp)"/>
+<line x1="534" y1="262" x2="534" y2="194" marker-end="url(#x10-ar-lp)"/>
+</g>
+<text x="786" y="246" font-size="15" fill="#595959">tool call</text>
+<text x="936" y="112" font-size="15" text-anchor="middle" fill="#595959">final answer</text>
+<text x="548" y="236" font-size="15" fill="#595959">again</text>
+<g class="x10-co"><circle cx="101" cy="90" r="13" fill="#FFFFFF" stroke="#111111" stroke-width="1.5"/><text x="101" y="96.1" font-size="17" font-weight="700" text-anchor="middle" fill="#111111">1</text><circle cx="534" cy="90" r="13" fill="#FFFFFF" stroke="#111111" stroke-width="1.5"/><text x="534" y="96.1" font-size="17" font-weight="700" text-anchor="middle" fill="#111111">2</text><circle cx="770" cy="62" r="13" fill="#FFFFFF" stroke="#111111" stroke-width="1.5"/><text x="770" y="68.1" font-size="17" font-weight="700" text-anchor="middle" fill="#111111">3</text></g>
+</g></svg></figure>
+  <p class="x10-under">The agent decides when to stop. <span class="spot-2">In a regulated domain, that is the problem.</span></p>
+</section>
+
+<!-- 07a · NEW · concept: what a protocol is for; one JSON-RPC call and its answer (Ch 2, "In plain words") -->
+<section class="slide content" data-label="What a protocol is for">
+  <h2 class="slide-title">What a protocol is for</h2>
+  <p class="x10-pr-lede rise">An agreed way for two programs to talk.</p>
+  <div class="x10-pr rise">
+    <b class="x10-pr-end">Agent</b>
+    <div class="x10-pr-wire">
+      <p class="x10-pr-msg"><span class="code">{ "method": "tools/call", "id": 7 }</span><i class="x10-pr-ar"></i></p>
+      <p class="x10-pr-msg x10-pr-back"><i class="x10-pr-ar"></i><span class="code">{ "id": 7, "result": &hellip; }</span></p>
+    </div>
+    <b class="x10-pr-end">Tool server</b>
+  </div>
+  <p class="x10-under rise">Like the rules of a phone call. <span class="muted">Agree once, and anyone can plug in.</span></p>
+</section>
+
+<!-- 08 · TAMING · MCP, A2A and Skills: book Figure 2.6 (vertical and horizontal) rebuilt with a skill folder, one dated fact each -->
+<section class="slide content" data-label="MCP, A2A and Skills">
+  <h2 class="slide-title">MCP, A2A and Skills</h2>
+  <figure class="bfig rise x10-fig" style="--fig-h:470px"><svg viewBox="0 0 1100 300" role="img" aria-label="Two agents joined horizontally by A2A, each reaching down to its own tools with MCP, and agent B loading a skill folder. One date each: MCP spec 2026-07-28, A2A v1.0.0 on 2026-03-12, Skills an open standard since 2025-12-18.">
+<defs><marker id="x10-ar-26" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#595959"/></marker>
+<marker id="x10-ar-26g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6AD186"/></marker></defs>
+<g font-family="Inter, sans-serif">
+<rect x="30" y="36" width="260" height="80" rx="10" fill="#DCEBFF" stroke="#123E7A"/>
+<text x="160" y="70" font-size="21" font-weight="700" text-anchor="middle" fill="#123E7A">Agent A</text>
+<text x="160" y="96" font-size="16" text-anchor="middle" fill="#123E7A">e.g. claims</text>
+<rect x="470" y="36" width="260" height="80" rx="10" fill="#DCEBFF" stroke="#123E7A"/>
+<text x="600" y="70" font-size="21" font-weight="700" text-anchor="middle" fill="#123E7A">Agent B</text>
+<text x="600" y="96" font-size="16" text-anchor="middle" fill="#123E7A">e.g. settlement</text>
+<line x1="294" y1="76" x2="466" y2="76" stroke="#111111" stroke-width="2.5" marker-start="url(#x10-ar-26)" marker-end="url(#x10-ar-26)"/>
+<text x="380" y="62" font-size="20" font-weight="700" text-anchor="middle" fill="#111111">A2A</text>
+<text x="380" y="102" font-size="15" text-anchor="middle" fill="#595959">v1.0.0 · 2026-03-12</text>
+<g stroke="#6AD186" stroke-width="2.5">
+<line x1="125" y1="118" x2="100" y2="192" marker-end="url(#x10-ar-26g)"/><line x1="195" y1="118" x2="220" y2="192" marker-end="url(#x10-ar-26g)"/>
+<line x1="565" y1="118" x2="540" y2="192" marker-end="url(#x10-ar-26g)"/><line x1="635" y1="118" x2="660" y2="192" marker-end="url(#x10-ar-26g)"/>
+</g>
+<text x="160" y="164" font-size="20" font-weight="700" text-anchor="middle" fill="#18632F">MCP</text>
+<text x="600" y="164" font-size="20" font-weight="700" text-anchor="middle" fill="#18632F">MCP</text>
+<g font-size="16" text-anchor="middle" fill="#18632F">
+<rect x="45" y="196" width="110" height="44" rx="6" fill="#A8FBBE" stroke="#6AD186"/><text x="100" y="224">tool</text>
+<rect x="165" y="196" width="110" height="44" rx="6" fill="#A8FBBE" stroke="#6AD186"/><text x="220" y="224">tool</text>
+<rect x="485" y="196" width="110" height="44" rx="6" fill="#A8FBBE" stroke="#6AD186"/><text x="540" y="224">tool</text>
+<rect x="605" y="196" width="110" height="44" rx="6" fill="#A8FBBE" stroke="#6AD186"/><text x="660" y="224">tool</text>
+</g>
+<text x="160" y="272" font-size="15" text-anchor="middle" fill="#595959">MCP spec 2026-07-28 · stateless</text>
+<path d="M850,48 H928 L942,62 H1070 V214 H850 Z" fill="#F7F7F7" stroke="#9E9E9E" stroke-width="1.5"/>
+<text x="872" y="108" font-size="18" fill="#111111">SKILL.md</text>
+<text x="872" y="140" font-size="18" fill="#212121">scripts/</text>
+<text x="872" y="172" font-size="18" fill="#212121">references/</text>
+<line x1="732" y1="96" x2="846" y2="96" stroke="#595959" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#x10-ar-26)"/>
+<text x="789" y="84" font-size="15" text-anchor="middle" fill="#595959">loads</text>
+<text x="960" y="246" font-size="20" font-weight="700" text-anchor="middle" fill="#111111">Skills</text>
+<text x="960" y="272" font-size="15" text-anchor="middle" fill="#595959">open standard · 2025-12-18</text>
+<g class="x10-co"><circle cx="334" cy="56" r="12" fill="#FFFFFF" stroke="#111111" stroke-width="1.5"/><text x="334" y="61.4" font-size="15" font-weight="700" text-anchor="middle" fill="#111111">1</text><circle cx="160" cy="133" r="11" fill="#FFFFFF" stroke="#111111" stroke-width="1.5"/><text x="160" y="138.4" font-size="15" font-weight="700" text-anchor="middle" fill="#111111">2</text><circle cx="908" cy="240" r="12" fill="#FFFFFF" stroke="#111111" stroke-width="1.5"/><text x="908" y="245.4" font-size="15" font-weight="700" text-anchor="middle" fill="#111111">3</text></g>
+</g></svg></figure>
+  <p class="x10-under">None of the three is a CNCF project.</p>
+</section>
+
+<!-- 09 · DID WHAT · the decoder ring (book Figure 1.5, first two columns), set as type -->
+<section class="slide content" data-label="The decoder ring">
+  <h2 class="slide-title">The decoder ring</h2>
+  <div class="x10-ring rise">
+    <span class="x10-rh">Your platform already watches</span><span></span><span class="x10-rh">It doesn&rsquo;t, yet</span>
+    <span class="x10-l">Stack trace</span><span class="x10-a">&rarr;</span><span class="x10-r">Reasoning chain</span>
+    <span class="x10-l">Status code</span><span class="x10-a">&rarr;</span><span class="x10-r">Quality signal</span>
+    <span class="x10-l">RPS and latency</span><span class="x10-a">&rarr;</span><span class="x10-r">Tokens, cost, blast radius</span>
+    <span class="x10-l">Static call graph</span><span class="x10-a">&rarr;</span><span class="x10-r">Dynamic tool invocation</span>
+    <span class="x10-l">Replayable request</span><span class="x10-a">&rarr;</span><span class="x10-r spot">Non-deterministic run</span>
+  </div>
+</section>
+
+<!-- 10 · NEW · FINRA 2026: scope and traceability, both lines verbatim from Ch 10 / Ch 14 -->
+<section class="slide quote" data-label="“We don’t know what the agent did”">
+  <figure class="rise">
+    <blockquote>&ldquo;Agents may act beyond the user&rsquo;s actual or intended <span class="spot-2">scope and authority.</span>&rdquo;</blockquote>
+    <p class="x10-q2">&ldquo;&hellip;multi-step agent reasoning tasks can make outcomes <span class="spot">difficult to trace or explain.</span>&rdquo;</p>
+    <figcaption class="text-muted">&mdash; FINRA, 2026 Annual Regulatory Oversight Report, December 2025</figcaption>
+  </figure>
+</section>
+
+<!-- 11 · NEW · the thesis: three words, each with its gloss -->
+<section class="slide content x10-thesis" data-label="Decide. Trace. Prove.">
+  <div class="x10-words rise">
+    <p class="x10-w">Decide.</p><p class="x10-g">what an agent may do</p>
+    <div class="x10-w cmyk-num"><span class="paper">Trace.</span><span class="plate plate-c" aria-hidden="true">Trace.</span><span class="plate plate-m" aria-hidden="true">Trace.</span><span class="plate plate-y" aria-hidden="true">Trace.</span></div><p class="x10-g">what it actually did</p>
+    <p class="x10-w">Prove.</p><p class="x10-g">it afterwards, from the trace</p>
+  </div>
+</section>

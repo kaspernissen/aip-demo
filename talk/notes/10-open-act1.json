@@ -1,0 +1,62 @@
+[
+ {
+  "secs": 20,
+  "note": "WILLIAM\n\nBefore we say who we are: who this talk is for. Fintech, insurance, healthcare, telco. Here an AI agent doesn't just chat. It moves money, settles claims, reads patient records, runs part of a network.\n\nEvery sector has its own rules. Strip away the legal language, and they ask the same few questions.\n\nSource: Ch 10 (opening lines, 10.7, 10.8) · Ch 14, 'Who is in the room'"
+ },
+ {
+  "secs": 60,
+  "note": "WILLIAM\n\nPicture an auditor sitting next to you with one decision your agent made. These are the five questions they will ask. The big line is the question; the small tag is the rule behind it.\n\nOne: what did the agent do? The EU AI Act, Article 12: automatic logs, for the life of the system.\nTwo: who allowed it, and within what limits? FINRA calls this scope and authority.\nThree: could a human stop it, or reverse it? Article 14, human oversight.\nFour: can you explain this one decision to the person it affected? Article 86, and the EU court's Dun and Bradstreet ruling: \"the procedure and principles actually applied\". Not the model in general. Their case.\nFive: are the records complete, kept, and safe from tampering? Six months at least, says Article 19. DORA wants them protected. ISO 24970, a draft standard, will say what an AI log contains.\n\nHold on to these five. At \"From requirement to artifact\" we answer them with what Northstar produces. Not legal advice.\n\n[verify: ISO/IEC 24970 still at FDIS; a vote could publish it around late October]\n[verify: DORA RTS Art. 12 enumeration is via a secondary summary; check Delegated Reg. (EU) 2024/1774]\n\nSource: Ch 10 (10.2 Arts. 12, 14, 19, 86; 10.3; 10.4; 10.6 C-203/22; 10.7 FINRA) · Ch 14, slide 35 table"
+ },
+ {
+  "secs": 25,
+  "note": "WILLIAM\n\nThat is the stakes. For a hobby project, \"the agent did something odd, so we changed the prompt\" is a fine post-mortem. For a bank, an insurer, a hospital or a telco, \"we don't know what the agent did\" is not an answer. Not to the auditor, and not to the customer.\n\nSo let's look at an agent that was stopped.\n\nSource: Ch 14, slide 09 title · Ch 10.1"
+ },
+ {
+  "secs": 60,
+  "note": "WILLIAM\n\nThis is a screen from a demo insurer Kasper built, called Northstar. An AI agent handled a car-damage claim and decided to pay the customer six thousand two hundred euros. The payment was refused.\n\nLook at the two ringed lines. Amount: 6200. Status: refused. Below them, the agent never tells the customer \"I was blocked\". It says a colleague with more authority has to finish the payment.\n\nSo here is the puzzle. Is this a bug? Our claim: this refusal is good news, the best thing that happened in this system all day. By the end we want you to agree, and to know how to build what made it happen.\n\nNotice what this screen cannot tell you: who refused it, under which rule, and whether anyone looked. Those are the auditor's questions two, three and four.\n\nDon't explain the refusal yet. Act 3 answers it live. This is claim CLM-1842, from a demo run on 28 September.\n\nSource: Ch 14 · Ch 5"
+ },
+ {
+  "secs": 60,
+  "note": "WILLIAM: I'm William Rizzo, Global Field CTO at Mirantis. I spend my days with platform teams in regulated industries, and the questions you just saw are the ones they bring me.\n\nKASPER: And I'm Kasper, Principal Developer Advocate at Dash0. This is the third talk in a series. Your Agent Did WHAT?, with Adriana Villela at SRE Day London, asked what an agent actually does. Taming Complexity, with Mauricio Salatino at KubeCon EU, asked how you trace it. This one asks: what happens when a regulator asks?\n\nSo I built Northstar, a pretend insurer, with only open source and open standards. You'll see it live in Act 3.\n\nWILLIAM: And beginners are welcome. If you've never read a trace before, you'll be able to read the ones in this talk. If you have, stay for the parts where they lie to you. First: why agents are different.\n\n[verify: William's line is a placeholder; let him write his own. Titles are from the KubeCon schedule, 2026-09-28.]\n\nSource: Ch 14 ('Where this comes from'; the beginners line is Ch 14's takeaway); KubeCon NA 2026 schedule, session 1238630"
+ },
+ {
+  "secs": 10,
+  "note": "WILLIAM\n\nAct one. Agents don't just add more complexity. They change what kind of complexity we have. Keep moving.\n\nSource: Ch 14"
+ },
+ {
+  "secs": 35,
+  "note": "WILLIAM\n\nYou have probably seen this picture before, and that is the point. Follow the numbers.\n\nOne, the top row: we went from one big program, the monolith, to many small services, then to services that talk through queues, and now to agents, which pick their own next step.\n\nTwo, the magenta row. Every step fixed a real problem, but what it broke was always the same kind of thing: we lost sight of what was going on.\n\nThree, the two lines at the bottom. Building got easier. Understanding got harder.\n\nSource: Ch 1"
+ },
+ {
+  "secs": 45,
+  "note": "WILLIAM\n\nIn a normal system you can draw the call graph, the map of who calls whom, on a whiteboard before it runs.\n\nAn agent is different. Start at one, on the left: one prompt, \"remove the free-plan accounts\". Two: the same prompt, run three times. Run one looks first, then deletes. Run two stops and asks a human. Run three deletes without looking. Three: the pink bars are the tokens each run used, so even the cost changes.\n\nLike a taxi driver who picks a new route every ride. The code tells you what the agent may do, not what it will do. The model draws the call graph at run time. A test that passed on run two tells you nothing about run three.\n\nSource: Ch 1"
+ },
+ {
+  "secs": 20,
+  "note": "WILLIAM\n\nWe keep saying \"agent\", so here is the definition. An agent is a model, plus instructions, plus tools, plus a loop. The model writes the next step. The instructions are its rules. The tools are what it can touch. The loop keeps asking the model until it says \"done\". Watch that last part.\n\nSource: Ch 1, 'the five terms'"
+ },
+ {
+  "secs": 45,
+  "note": "WILLIAM\n\nHere is that loop, opened up. The dashed frame is the harness, the program that runs the agent.\n\nFollow the numbers. One: a goal comes in. The agent packs it with its instructions and its list of tools. Two: it sends that to the model, and you pay per token, in and out. Three, the diamond: the model answers one of two ways. \"Run this tool\", and the agent runs it, often through an MCP server, adds the result and goes round again. Or \"here is my final answer\", and it stops.\n\nSo the model, not your code, decides when to stop. Nobody knows how many steps there will be. In a regulated domain, that is the problem.\n\nSource: Ch 1"
+ },
+ {
+  "secs": 20,
+  "note": "WILLIAM\n\nNext come three protocols, so first: what is a protocol? An agreed way for two programs to talk, like the rules of a phone call. The agent asks \"call this tool\", and numbers the question, seven. The answer comes back with the same seven. MCP and A2A both work like this.\n\nSource: Ch 2, 'In plain words' (JSON-RPC)"
+ },
+ {
+  "secs": 60,
+  "note": "WILLIAM\n\nThree open standards, one minute. Follow the numbers.\n\nTwo first, the lines going down. MCP, the Model Context Protocol, is how an agent gets tools it didn't ship with. Think USB-C for AI tools: build the plug once, and any agent can use it. The current spec is dated 28 July 2026, and it is stateless: no more sessions.\n\nOne, the line going across. A2A, Agent2Agent, is how agents talk to each other: a claims agent hands a case to a settlement agent. The A2A docs put it in two words: MCP is vertical, A2A is horizontal. Version 1.0 shipped on 12 March 2026, and A2A joined the Agentic AI Foundation, AAIF, on 17 August.\n\nThree, the folder on the right. Skills are the simplest: a folder with a SKILL.md file and some scripts, loaded only when the task needs them. An open standard since December 2025.\n\nNone of the three is a CNCF project.\n\n[verify: MCP current spec still 2026-07-28 — week of]\n[verify: Agent Skills AAIF proposal #47 still not accepted — after AGNTCon]\n[verify: A2A and agentgateway still in AAIF, not CNCF — week of]\n\nSource: Ch 2"
+ },
+ {
+  "secs": 45,
+  "note": "WILLIAM\n\nIf you already know observability, you don't start over. Think of this as a decoder ring. Each row: what you know, and its new shape.\n\nA stack trace becomes a reasoning chain, and you only have it if you saved it. A status code becomes a quality signal, because a 200 OK can still carry a wrong answer. Requests per second and latency become tokens, cost and blast radius.\n\nThe last row matters most. A request you could replay becomes a run you can't repeat. So the trace you recorded is the only copy. Like a flight recorder: you can't fly the same flight twice.\n\nAnd that brings us back to the auditor.\n\nSource: Ch 1"
+ },
+ {
+  "secs": 45,
+  "note": "WILLIAM\n\nRemember the auditor's questions from the start? Here a regulator writes two of them down.\n\nThis is FINRA, which oversees US broker-dealers, in its 2026 oversight report from December 2025. It is the first US regulatory text with advice written for agents.\n\nThe first line is question two: scope and authority. Can the agent do more than it was meant to? The second line is questions one and four: can you trace it, and can you explain it? Can you show afterwards what it did, and why?\n\nSo \"we don't know what the agent did\" was never going to be an answer. Hold on to those two lines.\n\nSource: Ch 10.1, 10.7 · Ch 14, slide 09"
+ },
+ {
+  "secs": 45,
+  "note": "WILLIAM\n\nHere is the whole talk in one sentence. Agents change the nature of complexity, so the platform has to decide what an agent may do, and prove it afterwards from the trace.\n\nThree words. Decide: the platform, not the agent, says yes or no. Trace: we record what actually happened. Prove: later, someone who isn't an engineer can check it. Think of airport security: the guard decides, the camera records, and the log proves it.\n\nNone of this is new: golden paths, guardrails and observability stacks, pointed at agents. We already have the open-source pieces.\n\nSo how much of this does tracing already give us? Kasper.\n\nSource: Ch 14 · Ch 1"
+ }
+]

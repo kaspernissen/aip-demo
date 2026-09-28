@@ -1,0 +1,314 @@
+<!-- 38 · NEW · Act 4 divider. The act title is Ch 14's alternative subtitle. -->
+<section class="slide divider" data-label="Act 4 — How you prove it">
+  <div class="press-field" aria-hidden="true"><i class="pf-y"></i><i class="pf-c"></i><i class="pf-m"></i></div>
+  <div class="scale-color" aria-hidden="true"><i class="sc-c"></i><i class="sc-m"></i><i class="sc-y"></i><i class="sc-cm"></i><i class="sc-my"></i><i class="sc-cy"></i><i class="sc-cmy"></i><i class="sc-k"></i></div>
+  <div class="scale-bw" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <i class="star-target" aria-hidden="true"></i>
+  <div class="rise">
+    <h2 class="slide-title">What the agent did, who let it, and how you prove it</h2>
+    <div class="ghost-num cmyk-num"><span class="paper">04</span><span class="plate plate-c" aria-hidden="true">04</span><span class="plate plate-m" aria-hidden="true">04</span><span class="plate plate-y" aria-hidden="true">04</span></div>
+  </div>
+</section>
+
+<!-- 38a · NEW · concept: evidence vs logs. A log line (Fig 3.1) against the five things the evidence view answers (Ch 9: who decided, rule, limit, human, ledger), all on spans, one join key -->
+<section class="slide content" data-label="Evidence vs logs">
+  <h2 class="slide-title">Evidence vs logs: what an auditor can use</h2>
+  <div class="x40-el rise">
+    <div class="x40-log">
+      <p class="x40-k">A log line</p>
+      <p class="x40-line"><span class="code">10:14:03 INFO tool call ok</span></p>
+      <p class="x40-sub muted">what one program said, at one moment</p>
+    </div>
+    <div>
+      <p class="x40-k spot-2">Evidence</p>
+      <dl class="x40-ev">
+        <dt>What was decided?</dt><dd><span class="code m">policy.decision</span></dd>
+        <dt>Under which rule?</dt><dd><span class="code m">policy.rule</span></dd>
+        <dt>At which limit?</dt><dd><span class="code m">policy.limit.amount</span></dd>
+        <dt>Who asked?</dt><dd><span class="code m">policy.caller.spiffe_id</span></dd>
+        <dt>Was a human involved?</dt><dd><span class="code m">review.decision</span></dd>
+        <dt>What reached the ledger?</dt><dd><span class="code">payments-api</span> spans</dd>
+      </dl>
+      <p class="x40-sub muted">one span field each, joined by one trace id</p>
+    </div>
+  </div>
+</section>
+
+<!-- 39 · NEW · The evidence view (beat 5 as a slide): opensearch-evidence.png, cropped -->
+<section class="slide split" data-label="The evidence view">
+  <div class="beat x40-asslide"><span class="dot"></span>Beat 5 &middot; shown as slide</div>
+  <div class="split-copy">
+    <h2 class="slide-title">No new application code</h2>
+    <p class="note">Four panels from spans already emitted, joined on <span class="code c">traceId</span>, because the claim id stops at MCP.</p>
+  </div>
+  <figure class="split-figure shot x40-crop"><img src="assets/shots/opensearch-evidence.png" alt="OpenSearch Dashboards: the northstar-evidence view, readme panel and panel 1, claims to trace ids"></figure>
+</section>
+
+<!-- 39a · NEW · concept: what an evaluation is. The gen_ai.evaluation.result fields (Ch 3 table, Fig 3.13), parented to the judged span -->
+<section class="slide content" data-label="What an evaluation is">
+  <h2 class="slide-title">An evaluation is a grade, kept with the work</h2>
+  <div class="x40-evl rise">
+    <div class="x40-work">
+      <p class="x40-k">The work: one trace</p>
+      <div class="x40-bars" aria-hidden="true"><i style="width:100%"></i><i style="margin-left:12%;width:70%"></i><i style="margin-left:24%;width:40%"></i></div>
+      <p class="x40-sub muted">the grade is parented to the span it judges</p>
+    </div>
+    <svg class="x40-staple" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><path d="M100 20 L6 20"/><path d="M16 8 L2 20 L16 32"/></svg>
+    <div>
+      <p class="x40-k">The grade</p>
+      <dl class="x40-ev">
+        <dt>name</dt><dd>which check</dd>
+        <dt>score.value</dt><dd>a number to graph</dd>
+        <dt>score.label</dt><dd>a gate: pass or fail</dd>
+        <dt>explanation</dt><dd>why, in words</dd>
+      </dl>
+      <p class="x40-sub muted">all <span class="code">gen_ai.evaluation.*</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- 40 · NEW · A score that can go to zero (beat 6 as a slide): 1.0 vs 0.0 (Fig 9.3) plus jaeger-eval-scores.png -->
+<section class="slide content" data-label="A score that can go to zero">
+  <div class="beat x40-asslide"><span class="dot"></span>Beat 6 &middot; shown as slide</div>
+  <h2 class="slide-title">A score that can go to zero</h2>
+  <div class="x40-sc rise">
+    <div class="x40-pair">
+      <div class="x40-n">
+        <div class="x40-num cmyk-num"><span class="paper">1.0</span><span class="plate plate-c" aria-hidden="true">1.0</span><span class="plate plate-m" aria-hidden="true">1.0</span><span class="plate plate-y" aria-hidden="true">1.0</span></div>
+        <p>compliant run</p>
+      </div>
+      <div class="x40-n">
+        <div class="x40-num cmyk-num"><span class="paper">0.0</span><span class="plate plate-c" aria-hidden="true">0.0</span><span class="plate plate-m" aria-hidden="true">0.0</span><span class="plate plate-y" aria-hidden="true">0.0</span></div>
+        <p class="spot-2">misrouted approval</p>
+      </div>
+      <p class="x40-what"><span class="code m">stopped_when_refused</span></p>
+    </div>
+    <figure class="x40-scshot">
+      <div class="shot"><img src="assets/shots/jaeger-eval-scores.png" alt="Jaeger: five eval-scorer evaluation spans inside the judged trace; stopped_when_refused reads 0, retry-after-refusal"></div>
+      <figcaption class="shot-cap">Each score is a span in the trace it judges.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- 41 · DID WHAT · "Enter LLM-as-judge", rebuilt as judge vs auditor on one output format (Ch 3 Fig 3.13, Ch 9 "What Northstar does not have") -->
+<section class="slide content" data-label="And LLM-as-judge?">
+  <h2 class="slide-title">And LLM-as-judge?</h2>
+  <div class="cols cols-2 x40-jd rise">
+    <div>
+      <h3>&ldquo;Was it good?&rdquo;</h3>
+      <p><b>LLM-as-judge</b></p>
+      <p class="muted">another model call; reads the prompt, the tool calls, the answer</p>
+    </div>
+    <div>
+      <h3 class="spot-2">&ldquo;Did it follow policy?&rdquo;</h3>
+      <p class="ink-2"><b>The auditor: eval-scorer</b></p>
+      <p class="muted">pure functions over spans; same input, same score; pull-only</p>
+    </div>
+  </div>
+  <p class="x40-same rise">Same output: <span class="code">gen_ai.evaluation.*</span>, beside the trace it judged</p>
+</section>
+
+<!-- 42 · NEW · Content capture as a matched pair: Fig 9.5 lifted (three layers, keys vs content) -->
+<section class="slide content" data-label="Content capture, a matched pair">
+  <h2 class="slide-title">Content capture, measured as a matched pair</h2>
+  <p class="x40-read muted"><b>Read it bottom-up:</b> 1 and 2 survive, 3 is lost. Then the counts on the right.</p>
+  <figure class="bfig rise x40-fig" style="--fig-h:600px"><svg viewBox="0 0 860 330" role="img" aria-label="Three layers of telemetry under content capture: the governance story survives, the floor survives, the model's own account is lost">
+<g font-family="Inter, sans-serif">
+<text x="20" y="26" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#595959">WHAT NORTHSTAR_CAPTURE_CONTENT=false DOES</text>
+<rect x="20" y="42" width="560" height="84" rx="6" fill="#FEF1F1" stroke="#F8494D" stroke-dasharray="6 4"/>
+<text x="35" y="64" font-size="13" font-weight="700" fill="#F8494D">3 · Lost: the model's own account of itself</text>
+<text x="35" y="86" font-size="11" fill="#212121">gen_ai.system_instructions (what it was told about this claim)</text>
+<text x="35" y="102" font-size="11" fill="#212121">message content, text and thinking; tool.call.arguments and .result</text>
+<text x="35" y="118" font-size="11" fill="#212121">the model's own statement of the amount it proposed</text>
+<rect x="20" y="136" width="560" height="84" rx="6" fill="#FBE997" stroke="#595959"/>
+<text x="35" y="158" font-size="13" font-weight="700" fill="#111111">2 · Floor: always survives</text>
+<text x="35" y="180" font-size="11" fill="#212121">model_request_parameters (static instructions, tool schemas)</text>
+<text x="35" y="196" font-size="11" fill="#212121">gen_ai.tool.definitions, message shape, tool names and ids</text>
+<text x="35" y="212" font-size="11" fill="#212121">usage, cost, model names, the full span topology</text>
+<rect x="20" y="230" width="560" height="84" rx="6" fill="#A8FBBE" stroke="#6AD186"/>
+<text x="35" y="252" font-size="13" font-weight="700" fill="#18632F">1 · Governance story: survives intact</text>
+<text x="35" y="274" font-size="11" fill="#212121">policy.* decision, rule, limit, requested, caller identity</text>
+<text x="35" y="290" font-size="11" fill="#212121">review.* reviewer and decision; executing identity; span link</text>
+<text x="35" y="306" font-size="11" fill="#212121">payments-api hops: propose, refuse, read, execute</text>
+<rect x="610" y="42" width="230" height="272" rx="8" fill="#F7F7F7" stroke="#E8E8E8"/>
+<text x="625" y="66" font-size="12" font-weight="700" fill="#111111">Keys vs content</text>
+<text x="625" y="92" font-size="11" fill="#212121">gen_ai.* keys</text>
+<text x="825" y="92" font-size="11" font-weight="700" fill="#111111" text-anchor="end">28 → 25</text>
+<text x="625" y="116" font-size="11" fill="#212121">text/thinking content</text>
+<text x="825" y="116" font-size="11" font-weight="700" fill="#F8494D" text-anchor="end">8/8 → 0/5</text>
+<text x="625" y="140" font-size="11" fill="#212121">tool-call arguments</text>
+<text x="825" y="140" font-size="11" font-weight="700" fill="#F8494D" text-anchor="end">3/3 → 0/3</text>
+<text x="625" y="164" font-size="11" fill="#212121">all_messages chars</text>
+<text x="825" y="164" font-size="11" font-weight="700" fill="#F8494D" text-anchor="end">1,599 → 657</text>
+<text x="625" y="198" font-size="11" fill="#212121">evidence view panels</text>
+<text x="825" y="198" font-size="11" font-weight="700" fill="#18632F" text-anchor="end">no change</text>
+<text x="625" y="222" font-size="11" fill="#212121">reviewer page</text>
+<text x="825" y="222" font-size="11" font-weight="700" fill="#18632F" text-anchor="end">no change</text>
+<text x="625" y="258" font-size="11" fill="#595959">Key-level survival hides</text>
+<text x="625" y="274" font-size="11" fill="#595959">the gutting: the keys stay,</text>
+<text x="625" y="290" font-size="11" fill="#595959">the prose inside them goes.</text>
+</g></svg></figure>
+</section>
+
+<!-- 43 · TAMING · "More Telemetry ≠ Better Telemetry" (p.40), reworked: the 142 vs 139 defect -->
+<section class="slide hero" data-label="Never sample the decisions">
+  <div class="hero-num cmyk-num rise"><span class="paper">142 vs 139</span><span class="plate plate-c" aria-hidden="true">142 vs 139</span><span class="plate plate-m" aria-hidden="true">142 vs 139</span><span class="plate plate-y" aria-hidden="true">142 vs 139</span></div>
+  <p class="hero-caption x40-hc">Spans in Jaeger vs OpenSearch. The missing three were exactly the decisions. <span class="spot-2">Never sample them.</span></p>
+</section>
+
+<!-- 44 · NEW · Requirement → artifact, Ch 14's six-row table; walk two rows (Art. 86 / C-203/22 and DORA) -->
+<section class="slide content" data-label="From requirement to artifact">
+  <h2 class="slide-title">From requirement to artifact</h2>
+  <p class="x40-read muted"><b>Read across:</b> the law, what it asks, what Northstar shows. We walk rows <span class="ink-2">1</span> and <span class="ink-2">2</span>.</p>
+  <table class="x40-tbl rise">
+    <thead><tr><th>Requirement</th><th>What it asks for</th><th>Northstar artifact</th></tr></thead>
+    <tbody>
+      <tr><td>EU AI Act Art. 12, 19, 26(6)</td><td>Automatic logs over the system&rsquo;s lifetime, kept at least six months</td><td>One trace per claim; <span class="code">policy.decision</span> per tool call; <span class="spot-2">no retention tier yet</span></td></tr>
+      <tr><td>EU AI Act Art. 14</td><td>Humans can override, reverse, stop</td><td>Reviewer approval via a governed identity; the autonomy contract&rsquo;s refusing resting state</td></tr>
+      <tr class="hi"><td><b>1</b>EU AI Act Art. 86; GDPR (C-203/22)</td><td>Per-decision explanation of the procedure actually applied</td><td>Rule name, limit, amount and caller on the decision span; evidence view</td></tr>
+      <tr><td>FINRA 2026 report</td><td>Prompt and output logs, model version, agent action tracking, human in the loop</td><td>GenAI spans (capture ON), <span class="code">gen_ai.request.model</span>, gateway spans, <span class="code">review.decision</span></td></tr>
+      <tr class="hi"><td><b>2</b>DORA RTS Art. 12</td><td>Logging procedures, tamper protection, detect logging failure</td><td>Span-count parity guard between Jaeger and OpenSearch; <span class="spot-2">no tamper protection</span></td></tr>
+      <tr><td>ISO/IEC 24970 (FDIS)</td><td>An information model for AI event logs</td><td><span class="spot-2">Nothing yet:</span> the OTel GenAI &rarr; 24970 mapping is unwritten</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 45 · NEW · The deadline moved: Fig 10.1 lifted (the Omnibus timeline), plus SR 26-2 -->
+<section class="slide content" data-label="The deadline moved">
+  <h2 class="slide-title">The deadline moved. The requirements didn&rsquo;t.</h2>
+  <figure class="bfig rise x40-fig" style="--fig-h:560px"><svg viewBox="0 0 860 320" role="img" aria-label="Timeline of EU AI Act application dates, with the high-risk dates moved by the Digital Omnibus">
+<defs><marker id="x40ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#F8494D"/></marker></defs>
+<g font-family="Inter, sans-serif">
+
+<line x1="40" y1="150" x2="830" y2="150" stroke="#111111" stroke-width="2"/>
+<line x1="132" y1="144" x2="132" y2="156" stroke="#111111"/><text x="132" y="170" text-anchor="middle" font-size="11" fill="#595959">2025</text>
+<line x1="315" y1="144" x2="315" y2="156" stroke="#111111"/><text x="315" y="170" text-anchor="middle" font-size="11" fill="#595959">2026</text>
+<line x1="499" y1="144" x2="499" y2="156" stroke="#111111"/><text x="499" y="170" text-anchor="middle" font-size="11" fill="#595959">2027</text>
+<line x1="683" y1="144" x2="683" y2="156" stroke="#111111"/><text x="683" y="170" text-anchor="middle" font-size="11" fill="#595959">2028</text>
+<circle cx="55" cy="150" r="5" fill="#111111"/><line x1="55" y1="145" x2="55" y2="70" stroke="#9E9E9E"/>
+<text x="59" y="52" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#595959">1 AUG 2024</text><text x="59" y="66" font-size="11" fill="#212121">Entry into force</text>
+<circle cx="147" cy="150" r="5" fill="#111111"/><line x1="147" y1="155" x2="147" y2="182" stroke="#9E9E9E"/>
+<text x="151" y="186" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#595959">2 FEB 2025</text><text x="151" y="200" font-size="11" fill="#212121">Prohibitions, AI literacy</text>
+<circle cx="239" cy="150" r="5" fill="#111111"/><line x1="239" y1="145" x2="239" y2="70" stroke="#9E9E9E"/>
+<text x="243" y="52" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#595959">2 AUG 2025</text><text x="243" y="66" font-size="11" fill="#212121">GPAI model obligations</text>
+<circle cx="422" cy="150" r="5" fill="#111111"/><line x1="422" y1="145" x2="422" y2="112" stroke="#9E9E9E"/>
+<text x="352" y="94" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#595959">2 AUG 2026</text><text x="352" y="108" font-size="11" fill="#212121">Art. 50, GPAI fines</text>
+<rect x="414" y="143" width="10" height="10" transform="rotate(45 419 148)" fill="#9078F3"/>
+<line x1="452" y1="30" x2="452" y2="150" stroke="#9078F3" stroke-dasharray="4 3"/>
+<text x="458" y="30" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#9078F3">TODAY · 28 SEP 2026</text>
+<text x="458" y="46" font-size="11" fill="#212121">Omnibus (EU) 2026/1744 in force since 27 Jul</text>
+<text x="40" y="206" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#FD6F40">ANNEX III</text>
+<circle cx="422" cy="202" r="6" fill="#E8E8E8" stroke="#9E9E9E"/>
+<text x="412" y="206" text-anchor="end" font-size="11" fill="#9E9E9E" text-decoration="line-through">was 2 Aug 2026</text>
+<line x1="430" y1="202" x2="657" y2="202" stroke="#F8494D" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#x40ar)"/>
+<circle cx="667" cy="202" r="7" fill="#F8494D"/>
+<text x="679" y="206" font-size="13" font-weight="700" fill="#F8494D">now 2 Dec 2027</text>
+<text x="40" y="256" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#FD6F40">ANNEX I</text>
+<circle cx="606" cy="252" r="6" fill="#E8E8E8" stroke="#9E9E9E"/>
+<text x="596" y="256" text-anchor="end" font-size="11" fill="#9E9E9E" text-decoration="line-through">was 2 Aug 2027</text>
+<line x1="614" y1="252" x2="780" y2="252" stroke="#F8494D" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#x40ar)"/>
+<circle cx="790" cy="252" r="7" fill="#F8494D"/>
+<text x="845" y="278" text-anchor="end" font-size="13" font-weight="700" fill="#F8494D">now 2 Aug 2028</text>
+<rect x="40" y="286" width="640" height="28" rx="4" fill="#FEF1F1"/>
+<text x="52" y="304" font-size="13" fill="#111111">The deadline moved. Arts. 12, 13, 14, 19, 26 and 86 were not rewritten.*</text>
+</g></svg></figure>
+  <p class="x40-us rise">US banking: <span class="muted"><s>SR 11-7</s></span> &rarr; SR 26-2 puts agentic AI out of scope.</p>
+</section>
+
+<!-- 46 · NEW · Sixteen findings: Fig 12.1 lifted (governance home × kind of gap); chips tinted from Fig 12.2 -->
+<section class="slide content" data-label="Sixteen findings, none filed">
+  <h2 class="slide-title">Sixteen findings, none filed yet</h2>
+  <p class="x40-read muted"><b>Read it like this:</b> columns are who governs the project; rows are the kind of gap.</p>
+  <figure class="bfig rise x40-fig x40-f16" style="--fig-h:600px"><svg viewBox="0 10 860 422" role="img" aria-label="Grid of the sixteen findings by governance home and by category">
+<g font-family="Inter, sans-serif">
+
+<!-- column headers -->
+<g font-size="16" font-weight="600" fill="#111111" text-anchor="middle">
+<text x="231" y="30">Independent pkgs</text>
+<text x="371" y="30">agentgateway</text>
+<text x="511" y="30">OpenTelemetry</text>
+<text x="651" y="30">OpenFeature</text>
+<text x="791" y="30">Backstage</text>
+</g>
+<g font-family="Martian Mono, monospace" font-size="13" letter-spacing="0.6" fill="#595959" text-anchor="middle">
+<text x="231" y="46">AS GROUPED IN DOC</text>
+<text x="371" y="46">LF · AAIF</text>
+<text x="511" y="46">CNCF</text>
+<text x="651" y="46">OPEN-FEATURE ORG</text>
+<text x="791" y="46">CNCF</text>
+</g>
+<!-- row labels -->
+<g font-size="16" font-weight="600" fill="#212121">
+<text x="12" y="92">Propagation</text>
+<text x="12" y="162">Naming &amp; metrics</text>
+<text x="12" y="232">Policy extension</text>
+<text x="12" y="302">Interop</text>
+<text x="12" y="372">Portal</text>
+</g>
+<g font-family="Martian Mono, monospace" font-size="13" letter-spacing="0.4" fill="#595959">
+<text x="12" y="110">TRACE CONTEXT</text>
+<text x="12" y="180">SEMCONV</text>
+<text x="12" y="250">EXTMCP HOOK</text>
+<text x="12" y="320">TWO CORRECT SIDES</text>
+<text x="12" y="390">GOLDEN PATH</text>
+</g>
+<!-- row bands -->
+<rect x="162" y="64" width="690" height="60" fill="#DCEBFF" rx="6"/>
+<rect x="162" y="134" width="690" height="60" fill="#FBE997" rx="6"/>
+<rect x="162" y="204" width="690" height="60" fill="#FFE1D6" rx="6"/>
+<rect x="162" y="274" width="690" height="60" fill="#DBD4F8" rx="6"/>
+<rect x="162" y="344" width="690" height="60" fill="#A8FBBE" rx="6"/>
+<!-- column separators -->
+<g stroke="#FFFFFF" stroke-width="3">
+<line x1="301" y1="60" x2="301" y2="408"/><line x1="441" y1="60" x2="441" y2="408"/><line x1="581" y1="60" x2="581" y2="408"/><line x1="721" y1="60" x2="721" y2="408"/>
+</g>
+<!-- chips: helper style -->
+<g font-size="13" font-weight="700" text-anchor="middle">
+<!-- propagation / independent: F1 F3 F4 F5 -->
+<rect x="172" y="82" width="26" height="22" rx="4" fill="#FCB6B8" stroke="#123E7A"/><text x="185" y="97" fill="#123E7A">F1</text>
+<rect x="202" y="82" width="26" height="22" rx="4" fill="#FCB6B8" stroke="#123E7A"/><text x="215" y="97" fill="#123E7A">F3</text>
+<rect x="232" y="82" width="26" height="22" rx="4" fill="#FFFFFF" stroke="#123E7A"/><text x="245" y="97" fill="#123E7A">F4</text>
+<rect x="262" y="82" width="26" height="22" rx="4" fill="#FFFFFF" stroke="#123E7A"/><text x="275" y="97" fill="#123E7A">F5</text>
+<!-- propagation / agw: F6, F10 dashed -->
+<rect x="340" y="82" width="26" height="22" rx="4" fill="#FCB6B8" stroke="#123E7A"/><text x="353" y="97" fill="#123E7A">F6</text>
+<rect x="372" y="82" width="30" height="22" rx="4" fill="#FFFFFF" stroke="#123E7A" stroke-dasharray="3 2"/><text x="387" y="97" fill="#123E7A">F10</text>
+<!-- propagation / otel: F11 dashed (also interop) -->
+<rect x="494" y="82" width="30" height="22" rx="4" fill="#FFFFFF" stroke="#123E7A" stroke-dasharray="3 2"/><text x="509" y="97" fill="#123E7A">F11</text>
+<!-- naming / independent: F1 dashed F2 F12 -->
+<rect x="176" y="152" width="26" height="22" rx="4" fill="#FFFFFF" stroke="#595959" stroke-dasharray="3 2"/><text x="189" y="167" fill="#212121">F1</text>
+<rect x="208" y="152" width="26" height="22" rx="4" fill="#FFFFFF" stroke="#595959"/><text x="221" y="167" fill="#212121">F2</text>
+<rect x="240" y="152" width="30" height="22" rx="4" fill="#FCB6B8" stroke="#595959"/><text x="255" y="167" fill="#212121">F12</text>
+<!-- naming / agw: F7 -->
+<rect x="358" y="152" width="26" height="22" rx="4" fill="#FCB6B8" stroke="#595959"/><text x="371" y="167" fill="#212121">F7</text>
+<!-- naming / openfeature: F13 F14 -->
+<rect x="617" y="152" width="30" height="22" rx="4" fill="#FCB6B8" stroke="#595959"/><text x="632" y="167" fill="#212121">F13</text>
+<rect x="655" y="152" width="30" height="22" rx="4" fill="#FCB6B8" stroke="#595959"/><text x="670" y="167" fill="#212121">F14</text>
+<!-- policy / agw: F8 F9 F10 OQ-U1 -->
+<rect x="307" y="222" width="26" height="22" rx="4" fill="#FCB6B8" stroke="#FD6F40"/><text x="320" y="237" fill="#111111">F8</text>
+<rect x="337" y="222" width="26" height="22" rx="4" fill="#FCB6B8" stroke="#FD6F40"/><text x="350" y="237" fill="#111111">F9</text>
+<rect x="367" y="222" width="30" height="22" rx="4" fill="#FCB6B8" stroke="#FD6F40"/><text x="382" y="237" fill="#111111">F10</text>
+<rect x="401" y="222" width="36" height="22" rx="4" fill="#F7F7F7" stroke="#9E9E9E"/><text x="419" y="237" fill="#595959">OQ</text>
+<!-- interop / otel: F11 ; openfeature: F13 dashed -->
+<rect x="496" y="292" width="30" height="22" rx="4" fill="#FCB6B8" stroke="#9078F3"/><text x="511" y="307" fill="#111111">F11</text>
+<rect x="636" y="292" width="30" height="22" rx="4" fill="#FFFFFF" stroke="#9078F3" stroke-dasharray="3 2"/><text x="651" y="307" fill="#111111">F13</text>
+<!-- portal / backstage: F15 F16 -->
+<rect x="757" y="362" width="30" height="22" rx="4" fill="#FFFFFF" stroke="#18632F"/><text x="772" y="377" fill="#18632F">F15</text>
+<rect x="795" y="362" width="30" height="22" rx="4" fill="#FFFFFF" stroke="#18632F"/><text x="810" y="377" fill="#18632F">F16</text>
+</g>
+<text x="12" y="426" font-size="14" fill="#595959">Tinted chip: a half nobody has reported anywhere. Dashed: touches this row too. None filed.</text>
+</g></svg></figure>
+</section>
+
+<!-- 47 · NEW · where AI observability stands: the L0–L5 ladder and the ecosystem's measured rung (Instrumenting AI Agents, Dash0 DevRel, Aug 2026, p. 10); replaces the old OTel-support maturity model, which has since changed -->
+<section class="slide content" data-label="Where AI observability stands">
+  <h2 class="slide-title">Where AI observability stands</h2>
+  <div class="x40-lad rise">
+    <div class="x40-st s0"><div class="x40-bar"></div><b>L0</b><span class="x40-nm">Prompt logs</span><span class="x40-ec">&mdash;</span></div>
+    <div class="x40-st s1"><div class="x40-bar"></div><b>L1</b><span class="x40-nm">Model telemetry</span><span class="x40-ec">7 of 7</span></div>
+    <div class="x40-st s2"><div class="x40-bar"></div><b>L2</b><span class="x40-nm">Connected AI traces</span><span class="x40-ec">3 of 7</span></div>
+    <div class="x40-st s3"><div class="x40-bar"></div><b>L3</b><span class="x40-nm">Quality observability</span><span class="x40-ec">just starting</span></div>
+    <div class="x40-st s4"><div class="x40-bar"></div><b>L4</b><span class="x40-nm">Continuous evaluation</span><span class="x40-ec">not reached</span></div>
+    <div class="x40-st s5"><div class="x40-bar"></div><b>L5</b><span class="x40-nm">Governed agent observability</span><span class="x40-ec m">not reached &middot; this talk</span></div>
+  </div>
+  <p class="x40-ladcap"><span class="muted">L5 asks for</span> identity, permissions, trajectories, MCP, privacy controls</p>
+</section>

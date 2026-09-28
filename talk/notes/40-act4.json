@@ -1,0 +1,50 @@
+[
+ {
+  "secs": 10,
+  "note": "KASPER\n\nAct four. The auditor walks in and asks: can you prove it? What did the agent do, who let it, and how do you know?\n\nSource: Ch 14"
+ },
+ {
+  "secs": 20,
+  "note": "KASPER\n\nFirst, what counts as evidence. On the left, a log line: what one program said at one moment. Fine for debugging, thin for an auditor.\n\nOn the right, what an auditor asks. What was decided, under which rule, at which limit, who asked, was a human involved, what reached the ledger. Each answer is one span field.\n\nSource: Ch 3, Ch 9"
+ },
+ {
+  "secs": 50,
+  "note": "KASPER\n\nBeat 5, shown as a slide.\nDO: nothing live; this is a screenshot of the OpenSearch dashboard.\nSHOW: the question at the top, then the panel of claims and trace ids.\n\nStart at the top: the question this dashboard answers. Why was five thousand eight hundred euros paid? SAY: \"No new application code behind this dashboard.\" It's a saved view over spans the system already emitted.\n\nFour panels, one per question from the last slide: the claims and their trace ids, what the platform decided, was a human involved, and what reached the ledger. For the five-eight-hundred claim the human panel is empty, and the empty panel is the evidence.\n\nThe catch: the claim id, our parcel label, stops at the MCP boundary. The trace id crosses every hop, so the view joins on it.\n\nCaveat: both amounts ran as CLM-1842, so the human panel is only empty once the five-eight-hundred trace is picked.\n\nSource: Ch 9"
+ },
+ {
+  "secs": 20,
+  "note": "KASPER\n\nOne more word: evaluation. A grade, kept with the work it grades.\n\nOpenTelemetry gives it four fields. A name: which check. A score: a number to graph. A label: pass or fail, to alert on. An explanation: why. The grade hangs off the span it judges.\n\nSource: Ch 3"
+ },
+ {
+  "secs": 45,
+  "note": "KASPER\n\nBeat 6, shown as a slide.\nSHOW: the two numbers, then the span on the right.\n\neval-scorer is our auditor: plain code that reads a payment's spans back and scores five policy rules. This one asks: after a refusal, did the agent stop? A compliant run scores 1.0. Then we deliberately sent the human approval to the wrong agent, the refused agent tried again, and the score dropped to 0.0. SAY: \"A scorer that returns 1.0 for everything proves nothing.\" A smoke alarm you've never seen go off might not have a battery. On the right, that score is a span in the trace it judges.\n\nSTAGE WARNING: never say \"all 1.0\" about the scripted demo. As scripted, beat 6 scores 0.0, because beat 1 submits the five-eight-hundred claim under the same claim id, CLM-1842, and the scorer reads it as a retry. The screenshot is that 0. The sinceMs fix: set sinceMs just before the deny run, which drops earlier rehearsals. It still includes the later five-eight-hundred run, so for a clean 1.0 give the permit run its own claim id (CLM-PERMIT-random), or keep beat 6 on this slide.\n\n[verify: rehearse beat 6 end to end before claiming any score live]\n\nSource: Ch 9"
+ },
+ {
+  "secs": 30,
+  "note": "KASPER\n\nThe usual answer is an LLM-as-judge: a second model reads the prompt, the tool calls and the answer, and grades the work. That answers \"was it good?\". An auditor asks \"did it follow policy?\".\n\nDriving examiner versus speed camera: the camera just checks the number. Northstar has no LLM judge anywhere. Its scorer is deterministic and pull-only: it scores when asked. Both write the same gen_ai.evaluation fields, so a judge can come later.\n\nSource: Ch 3, Ch 9"
+ },
+ {
+  "secs": 45,
+  "note": "KASPER\n\nContent capture means putting the actual words into telemetry: what the model was told, what it said, the arguments it passed to tools. Often the most sensitive data you hold.\n\nWe ran the six-thousand-two-hundred story twice, capture on and off. Read the bands bottom-up. One, cyan: the governance story, decision, rule, limit, reviewer, ledger. Intact. Two, grey: the floor, names and shapes. Always survives. Three, dashed: the model's own account, including the amount it proposed. Lost.\n\nThen the right column. Keys barely move, 28 to 25, but the text inside is gone. \"The evidence view loses nothing.\" Redaction is a trade, not a free safety win. In production, keep content outside the trace, behind its own access control.\n\nSource: Ch 9"
+ },
+ {
+  "secs": 30,
+  "note": "KASPER\n\nThe goal is the right spans, not more spans. Northstar taught us one more lesson. Our second backend, OpenSearch, quietly rejected the policy decision spans. Jaeger had 142 spans, OpenSearch 139. The missing three were exactly the decisions. Losing data looks exactly like sampling it. So never sample the decisions. A test asserts 100% capture, and a parity guard compares span IDs across both backends, like counting parcels at both ends of the belt.\n\nWe can produce the evidence. But what do the regulations actually ask for? William.\n\nSource: Ch 9"
+ },
+ {
+  "secs": 60,
+  "note": "WILLIAM\n\nRemember the questions we started with, the ones a regulator asks. Here is what answers them.\n\nRead across: the law, what it asks for, and the Northstar artifact that answers it. Magenta text means not there yet. None of this makes you compliant. It gives your compliance people something to point at.\n\nRow one: the AI Act's right to explanation, plus the EU court's Dun and Bradstreet ruling: a person is owed \"the procedure and principles actually applied\". A model card is the car's manual. A decision span is the dashcam footage: rule, limit, amount, caller.\n\nRow two: DORA, the EU's rulebook for financial IT, wants logs protected against tampering, and logging failures detected. The parity guard covers the second half. We have no tamper protection. Strong at producing the record, weak at keeping it, and keeping it is what your organisation already knows how to do.\n\nNot legal advice.\n\n[verify: DORA RTS Art. 12 enumeration is via a secondary summary; check Delegated Reg. (EU) 2024/1774 before the table goes out] [verify: ISO/IEC 24970 still at FDIS; it could publish around late October]\n\nSource: Ch 10, Ch 14"
+ },
+ {
+  "secs": 30,
+  "note": "WILLIAM\n\nMost 2025 talks said the AI Act's high-risk rules would bite on 2 August 2026, the struck-through date. They didn't. The Digital Omnibus, Regulation 2026/1744, moved Annex III to 2 December 2027. But record-keeping, oversight and explanation were not rewritten. The exam got postponed; the syllabus stayed. And in US banking, SR 26-2 replaced SR 11-7 in April and put generative and agentic AI out of scope, so platform controls fill that vacuum.\n\n[verify: \"Arts. 12, 13, 14, 19, 26, 86 not amended\" comes from a secondary analysis; check the consolidated text of 2026/1744 on EUR-Lex before slide freeze]\n\nSource: Ch 10"
+ },
+ {
+  "secs": 30,
+  "note": "WILLIAM\n\nThe sixteen upstream findings: gaps in open-source projects we depend on. Read the columns first: who governs each project. Then the rows: the kind of gap. Tinted chips are a half nobody has reported. We have filed none yet.\n\nagentgateway owns the whole policy-extension row. A trace crosses every column, so no single foundation can fix the whole path. The dominant failure is silent: nothing errors, and the spans land in two traces.\n\nIf any finding is filed before the talk, say the issue number. Maintainers may be in the room.\n\n[verify: sixteen findings, none filed; search each tracker at slide freeze] [verify: governance homes on the day; OpenFeature is CNCF incubating, the doc groups it separately]\n\nSource: Ch 12"
+ },
+ {
+  "secs": 40,
+  "note": "WILLIAM\n\nSo where does the industry stand? Here is a ladder for AI observability. Read it left to right, one rung at a time.\n\nL0 is prompt logs: what was asked and answered, with a timestamp. L1 is model telemetry: model, latency, tokens, cost. L2 is connected traces: tools, retrieval and orchestration in one story. L3 is quality: evaluations and feedback. L4 is evaluation running all the time. And L5, top right, is governed agent observability: identity, permissions, trajectories, MCP, privacy controls.\n\nKasper's team measured seven ways to instrument the same agent. All seven reach L1. Three of seven reach L2. L3 is just starting, and nothing measured reached L4 or L5.\n\nL5 is what this talk has been about. Everything you saw in Northstar is a piece of it. Like a building site: the ground floor is solid, the top floor is still scaffolding.\n\nSource: Instrumenting AI Agents (Dash0 DevRel, Aug 2026), p. 10"
+ }
+]

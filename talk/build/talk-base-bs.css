@@ -1,0 +1,118 @@
+/* This talk's components on the Broadsheet deck layer.
+   Grammar (bs/GUIDE.md): serif everywhere, paper ground, no dark surfaces, whitespace instead
+   of rules and boxes, cyan and magenta as spot colours used small.
+   Roles in this talk: CYAN = what the trace shows (observability). MAGENTA = the governed
+   thing: a decision, a refusal, the gateway. Never both accents in one small component. */
+
+html, body { margin: 0; background: var(--color-neutral-300); }
+deck-stage { --page-foot-note: "kaspernissen.xyz"; }
+
+/* Slide text scale beyond the template's tokens (all serif). */
+.lede { font-size: var(--type-subtitle); line-height: var(--baseline); max-width: 34ch; margin: 0; }
+.small { font-size: var(--type-small); line-height: var(--baseline); }
+.muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.spot { color: var(--color-accent-700); }          /* cyan text at body size uses the 700 step */
+.spot-2 { color: var(--color-accent-2); }          /* magenta: the governed thing */
+.ink-2 { color: var(--color-accent-2-700); }
+
+/* Literal code tokens: set in the serif (no mono in this system) on a tag-like tint. */
+.code { font-family: var(--font-body); font-feature-settings: "tnum" 1; background: var(--color-neutral-200);
+  color: var(--color-neutral-900); border-radius: var(--radius-sm); padding: 0.04em 0.28em; white-space: nowrap; }
+.code.c { background: var(--color-accent-100); color: var(--color-accent-800); }
+.code.m { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
+
+/* Live demo beat marker — top-right in the margin, magenta dot for live, hollow for fallback. */
+.beat { position: absolute; top: 58px; right: var(--pad-x); display: flex; align-items: center; gap: 14px;
+  font-size: var(--type-kicker); letter-spacing: 0.04em; color: var(--color-accent-2-700); }
+.beat .dot { width: 16px; height: 16px; border-radius: 50%; background: var(--color-accent-2); }
+.beat.fallback { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.beat.fallback .dot { background: transparent; border: 2px solid currentColor; }
+
+/* Screenshot plate — interface imagery stays legible (no separation filter), tipped in with
+   the system's medium shadow and 2px radius. */
+.shot { margin: 0; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-md); background: #fff; }
+.shot img { display: block; width: 100%; height: auto; }
+.shot-cap { font-size: var(--type-kicker); color: color-mix(in srgb, var(--color-text) 55%, transparent); margin-top: 18px; }
+
+/* Span tree — a trace set as type: service tint chip, operation, muted detail. */
+.stree { display: flex; flex-direction: column; gap: 14px; font-size: 27px; line-height: 1.2; font-feature-settings: "tnum" 1; }
+.stree .r { display: flex; align-items: baseline; gap: 16px; white-space: nowrap; }
+.stree .svc { flex: none; font-size: 20px; letter-spacing: 0.02em; padding: 4px 10px; border-radius: var(--radius-sm);
+  background: var(--color-neutral-200); color: var(--color-neutral-900); }
+.stree .svc.agent { background: var(--color-neutral-200); }
+.stree .svc.gw    { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
+.stree .svc.pds   { background: var(--color-accent-2-200); color: var(--color-accent-2-900); }
+.stree .svc.tool  { background: var(--color-accent-100); color: var(--color-accent-800); }
+.stree .svc.sys   { background: var(--color-neutral-300); }
+.stree .svc.human { background: var(--color-accent-200); color: var(--color-accent-900); }
+.stree .op { font-weight: 600; }
+.stree .v  { color: color-mix(in srgb, var(--color-text) 55%, transparent); font-size: 23px; }
+.stree .i1{margin-left:48px}.stree .i2{margin-left:96px}.stree .i3{margin-left:144px}.stree .i4{margin-left:192px}.stree .i5{margin-left:240px}
+.stree .r.absent { color: color-mix(in srgb, var(--color-text) 40%, transparent); }
+.stree .r.absent .op { text-decoration: line-through; text-decoration-color: var(--color-accent-2); font-weight: 400; }
+.stree .r.absent .svc { background: transparent; box-shadow: inset 0 0 0 1.5px var(--color-divider); color: inherit; }
+.stree .r.hl .op { color: var(--color-accent-2-700); }
+.stree .flag { font-size: 20px; padding: 3px 10px; border-radius: var(--radius-sm); }
+.stree .flag.deny { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
+.stree .flag.ok   { background: var(--color-accent-100); color: var(--color-accent-800); }
+
+/* Attribute list — key and value as two type columns, no rules. */
+.attrs { display: grid; grid-template-columns: auto 1fr; gap: 12px 40px; align-items: baseline; font-size: 27px; margin: 0; font-feature-settings: "tnum" 1; }
+.attrs dt { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.attrs dd { margin: 0; }
+.attrs .hot { color: var(--color-accent-2-700); font-weight: 600; }
+
+/* Origin note for reused slides — muted single-line furniture, bottom-left in the margin
+   (mirrors the folio at bottom-right). */
+.origin { position: absolute; left: var(--pad-x); bottom: 38px; font-size: var(--type-kicker); letter-spacing: 0.04em;
+  font-style: italic; color: color-mix(in srgb, currentColor 55%, transparent); text-box: trim-both cap alphabetic; }
+
+/* Speaker portrait printed as process plates (the system's showcase treatment). */
+.portrait { width: 420px; aspect-ratio: 1; }
+
+/* ---- Figures lifted from the research book ----
+   The book's hand-drawn SVGs carry inline Dash0-palette hex fills and Martian Mono/Inter
+   labels. Wrap a lifted <svg> in <figure class="bfig"> and this layer reprints it in
+   Broadsheet: CSS outranks SVG presentation attributes, so every hex maps to a token.
+   Role mapping: red/orange (governed, refused) -> magenta; blue and green (traced, permitted)
+   -> cyan; purple and yellow -> neutrals; greys -> the neutral ramp; labels -> the serif. */
+.bfig { margin: 0; }
+.bfig svg { display: block; width: 100%; height: auto; overflow: visible; }
+.bfig svg text, .bfig svg tspan { font-family: var(--font-body) !important; }
+.bfig [fill="#212121" i], .bfig [fill="#111111" i] { fill: var(--color-text); }
+.bfig [stroke="#212121" i], .bfig [stroke="#111111" i] { stroke: var(--color-text); }
+.bfig [fill="#595959" i] { fill: var(--color-neutral-700); }
+.bfig [stroke="#595959" i] { stroke: var(--color-neutral-600); }
+.bfig [fill="#9E9E9E" i] { fill: var(--color-neutral-500); }
+.bfig [stroke="#9E9E9E" i] { stroke: var(--color-neutral-500); }
+.bfig [fill="#E8E8E8" i], .bfig [fill="#DBD4F8" i] { fill: var(--color-neutral-200); }
+.bfig [stroke="#E8E8E8" i], .bfig [stroke="#D6D6D6" i], .bfig [stroke="#DBD4F8" i], .bfig [stroke="#F7F7F7" i] { stroke: var(--color-neutral-300); }
+.bfig [fill="#F7F7F7" i], .bfig [fill="#F5F2FE" i], .bfig [fill="#FFFFFF" i] { fill: var(--color-neutral-100); }
+.bfig [stroke="#FFFFFF" i] { stroke: var(--color-neutral-100); }
+.bfig [fill="#F8494D" i] { fill: var(--color-accent-2); }
+.bfig [stroke="#F8494D" i] { stroke: var(--color-accent-2); }
+.bfig [fill="#FEF1F1" i], .bfig [fill="#FFE1D6" i] { fill: var(--color-accent-2-100); }
+.bfig [fill="#FCB6B8" i] { fill: var(--color-accent-2-300); }
+.bfig [stroke="#FCB6B8" i] { stroke: var(--color-accent-2-300); }
+.bfig [fill="#FD6F40" i] { fill: var(--color-accent-2-500); }
+.bfig [stroke="#FD6F40" i] { stroke: var(--color-accent-2-500); }
+.bfig [fill="#9F1239" i], .bfig [fill="#8A2A0B" i] { fill: var(--color-accent-2-800); }
+.bfig [fill="#123E7A" i] { fill: var(--color-accent-800); }
+.bfig [stroke="#123E7A" i] { stroke: var(--color-accent-700); }
+.bfig [fill="#DCEBFF" i] { fill: var(--color-accent-100); }
+.bfig [stroke="#DCEBFF" i], .bfig [stroke="#9DBBE8" i] { stroke: var(--color-accent-300); }
+.bfig [fill="#18632F" i] { fill: var(--color-accent-700); }
+.bfig [stroke="#18632F" i] { stroke: var(--color-accent-700); }
+.bfig [fill="#A8FBBE" i] { fill: var(--color-accent-200); }
+.bfig [stroke="#A8FBBE" i] { stroke: var(--color-accent-300); }
+.bfig [fill="#6AD186" i] { fill: var(--color-accent-500); }
+.bfig [stroke="#6AD186" i] { stroke: var(--color-accent-500); }
+.bfig [fill="#9078F3" i] { fill: var(--color-neutral-600); }
+.bfig [stroke="#9078F3" i] { stroke: var(--color-neutral-600); }
+.bfig [fill="#3B2A8C" i] { fill: var(--color-neutral-900); }
+.bfig [fill="#FBE997" i] { fill: var(--color-neutral-300); }
+.bfig [stroke="#FBE997" i] { stroke: var(--color-neutral-400); }
+/* Lifted figures must clear the folio: cap the drawing's height and let width follow.
+   Tune per slide with style="--fig-h:560px". Trim unneeded rows from a lifted SVG rather
+   than shrinking type below ~20px at stage size. */
+.bfig svg { max-height: var(--fig-h, 640px); width: auto; max-width: 100%; }

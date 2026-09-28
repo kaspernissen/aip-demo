@@ -1,0 +1,167 @@
+<!-- 12 · NEW · Act 2 divider: what tracing already gives us -->
+<section class="slide divider" data-label="Act 2 — What tracing already gives us">
+  <div class="press-field" aria-hidden="true"><i class="pf-y"></i><i class="pf-c"></i><i class="pf-m"></i></div>
+  <div class="scale-color" aria-hidden="true"><i class="sc-c"></i><i class="sc-m"></i><i class="sc-y"></i><i class="sc-cm"></i><i class="sc-my"></i><i class="sc-cy"></i><i class="sc-cmy"></i><i class="sc-k"></i></div>
+  <div class="scale-bw" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <i class="star-target" aria-hidden="true"></i>
+  <div class="rise">
+    <h2 class="slide-title">What tracing already gives us</h2>
+    <div class="ghost-num cmyk-num"><span class="paper">02</span><span class="plate plate-c" aria-hidden="true">02</span><span class="plate plate-m" aria-hidden="true">02</span><span class="plate plate-y" aria-hidden="true">02</span></div>
+  </div>
+</section>
+
+<!-- 13a · NEW · concept: what a span is, and how spans make a trace (Ch 3 Fig 3.2 and 3.3, values illustrative) -->
+<section class="slide content" data-label="What a span is">
+  <h2 class="slide-title">A span is one step. A trace is the story.</h2>
+  <div class="a2-sp rise">
+    <div>
+      <p class="a2-k"><b>1</b>One span</p>
+      <p class="a2-sp-name">execute_tool execute_payment</p>
+      <div class="a2-sp-bar" aria-hidden="true"><i></i></div>
+      <div class="a2-sp-t"><span>start</span><span>end</span></div>
+      <div class="a2-sp-lab">
+        <span class="code">trace 4bf92f35&hellip;</span>
+        <span class="code">parent 9a3c7e11&hellip;</span>
+        <span class="code c">gen_ai.tool.name = execute_payment</span>
+      </div>
+      <p class="a2-sp-cap muted">a name, a start, an end, and labels</p>
+    </div>
+    <div>
+      <p class="a2-k"><b>2</b>One trace</p>
+      <div class="stree a2-tree">
+        <div class="r"><span class="op">claim.submit</span><span class="svc">customer-ui</span></div>
+        <div class="r i1"><span class="op">POST /</span><span class="svc">claims-agent</span></div>
+        <div class="r i2"><span class="op">invoke_agent</span><span class="v">settlement_agent</span></div>
+        <div class="r i3"><span class="op">chat</span><span class="v">the model thinks</span></div>
+        <div class="r i3"><span class="op">execute_tool</span><span class="v">propose_payment</span></div>
+        <div class="r i4"><span class="op">tools/call</span><span class="svc gw">agentgateway</span></div>
+        <div class="r i5"><span class="op">policy.decision</span><span class="svc pds">PDS</span></div>
+      </div>
+      <p class="a2-sp-cap muted">every span with the same trace id; indent = who caused whom</p>
+    </div>
+  </div>
+</section>
+
+<!-- 13 · TAMING · context gets lost: one whole trace next to the same work split into two traces (Ch 3 parcel-label idea) -->
+<section class="slide content" data-label="Context gets lost">
+  <h2 class="slide-title">Context gets lost</h2>
+  <div class="a2-pair rise">
+    <div class="a2-side">
+      <h3 class="a2-h">Label kept <span class="a2-count spot">one trace</span></h3>
+      <div class="a2-wf">
+        <div class="a2-tid">trace 4bf92f35&hellip;</div>
+        <div class="a2-row"><span class="a2-svc">agent</span><span class="a2-lane"><i class="a2-bar ok" style="left:0;width:100%"></i></span></div>
+        <div class="a2-row"><span class="a2-svc">gateway</span><span class="a2-lane"><i class="a2-bar ok" style="left:18%;width:64%"></i></span></div>
+        <div class="a2-row"><span class="a2-svc">tool server</span><span class="a2-lane"><i class="a2-bar ok" style="left:28%;width:46%"></i></span></div>
+        <div class="a2-row"><span class="a2-svc">payments api</span><span class="a2-lane"><i class="a2-bar ok" style="left:38%;width:28%"></i></span></div>
+      </div>
+    </div>
+    <div class="a2-side">
+      <h3 class="a2-h">Label peeled off <span class="a2-count spot-2">two traces</span></h3>
+      <div class="a2-wf">
+        <div class="a2-tid">trace 4bf92f35&hellip;</div>
+        <div class="a2-row"><span class="a2-svc">agent</span><span class="a2-lane"><i class="a2-bar" style="left:0;width:100%"></i></span></div>
+        <div class="a2-row"><span class="a2-svc">gateway</span><span class="a2-lane"><i class="a2-bar" style="left:18%;width:64%"></i></span></div>
+        <div class="a2-tear" aria-hidden="true"></div>
+        <div class="a2-tid">trace 331e&hellip; <span class="a2-from">a new root, from nowhere</span></div>
+        <div class="a2-row"><span class="a2-svc">tool server</span><span class="a2-lane"><i class="a2-bar orphan" style="left:28%;width:46%"></i></span></div>
+        <div class="a2-row"><span class="a2-svc">payments api</span><span class="a2-lane"><i class="a2-bar orphan" style="left:38%;width:28%"></i></span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 · TAMING · traceparent anatomy (Ch 3 Fig 3.4, cropped, labels shortened), then the two carriers: HTTP header and MCP params._meta (Ch 3 Fig 3.5 rows 1 and 4) -->
+<section class="slide content" data-label="traceparent, now also in MCP">
+  <h2 class="slide-title"><span class="a2-ident">traceparent</span>, now also in MCP</h2>
+  <figure class="bfig rise a2-anat"><svg viewBox="30 14 820 142" role="img" aria-label="Anatomy of a W3C traceparent header: version, trace-id, parent-id, flags">
+<g font-family="Inter, sans-serif">
+<text x="45" y="34" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1.4" fill="#595959">TRACEPARENT:</text>
+<rect x="45" y="48" width="56" height="40" rx="6" fill="#E8E8E8" stroke="#595959"/>
+<rect x="121" y="48" width="400" height="40" rx="6" fill="#DCEBFF" stroke="#123E7A"/>
+<rect x="541" y="48" width="220" height="40" rx="6" fill="#DBD4F8" stroke="#9078F3"/>
+<rect x="781" y="48" width="56" height="40" rx="6" fill="#A8FBBE" stroke="#18632F"/>
+<g font-family="Martian Mono, monospace" font-size="14" fill="#111111" text-anchor="middle">
+<text x="73" y="73">00</text><text x="111" y="73">-</text>
+<text x="321" y="73" font-size="13">4bf92f3577b34da6a3ce929d0e0e4736</text><text x="531" y="73">-</text>
+<text x="651" y="73" font-size="13">00f067aa0ba902b7</text><text x="771" y="73">-</text>
+<text x="809" y="73">01</text>
+</g>
+<g font-size="12" fill="#212121">
+<text x="45" y="112" font-weight="600">version</text>
+<text x="45" y="129" fill="#595959">always 00</text>
+<text x="121" y="112" font-weight="600">trace-id</text>
+<text x="121" y="129" fill="#595959">the tracking number:</text>
+<text x="121" y="145" fill="#595959">the same on every span</text>
+<text x="541" y="112" font-weight="600">parent-id</text>
+<text x="541" y="129" fill="#595959">the caller&#8217;s span:</text>
+<text x="541" y="145" fill="#595959">replaced at every hop</text>
+<text x="837" y="112" font-weight="600" text-anchor="end">flags</text>
+<text x="837" y="129" fill="#595959" text-anchor="end">01 = sampled</text>
+</g>
+</g></svg></figure>
+  <div class="a2-carriers">
+    <div class="a2-car"><span class="a2-car-k">HTTP header</span><span class="code">traceparent: 00-4bf9&hellip;-01</span></div>
+    <div class="a2-car"><span class="a2-car-k">MCP <span class="code">params._meta</span></span><span class="code c">"_meta": { "traceparent": "00-4bf9&hellip;-01" }</span></div>
+    <div class="a2-car"><span class="a2-car-k"></span><span class="a2-car-n muted">new: SEP-414, MCP spec 2026-07-28</span></div>
+  </div>
+</section>
+
+<!-- 16 · DID WHAT · three dialects for "which model" funnel into one Collector processor (Ch 3 Fig 3.15 and 3.16, redrawn; OpenLLMetry row updated 2026-09-28: it emits gen_ai.* since v0.53.4) -->
+<section class="slide content" data-label="Competing vocabularies, one processor">
+  <h2 class="slide-title">You can&rsquo;t query what you can&rsquo;t name</h2>
+  <div class="a2-fun rise">
+    <div class="a2-src">
+      <div class="a2-dia"><span class="a2-who">OpenInference</span><span class="code">llm.model_name</span></div>
+      <div class="a2-dia"><span class="a2-who">OpenLLMetry, before v0.53.4</span><span class="code">llm.request.model</span></div>
+      <div class="a2-dia"><span class="a2-who">OTel GenAI &middot; and OpenLLMetry since v0.53.4</span><span class="code">gen_ai.request.model</span></div>
+    </div>
+    <svg class="a2-wire" viewBox="0 0 120 360" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M0 60 C60 60 60 180 120 180"/>
+      <path d="M0 180 L120 180"/>
+      <path d="M0 300 C60 300 60 180 120 180"/>
+    </svg>
+    <div class="a2-proc">
+      <span class="a2-who">OTel Collector processor</span>
+      <b>gen_ai_normalizer</b>
+    </div>
+    <svg class="a2-wire out" viewBox="0 0 120 360" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M0 180 L108 180"/>
+      <path d="M98 168 L114 180 L98 192"/>
+    </svg>
+    <div class="a2-out">
+      <span class="a2-who">one name to query</span>
+      <span class="code c">gen_ai.request.model</span>
+      <span class="a2-kept"><span class="code">llm.model_name</span> kept beside it</span>
+    </div>
+  </div>
+  <p class="a2-cap muted">Semantic conventions: OpenTelemetry&rsquo;s shared dictionary. Translate once, in the platform.</p>
+</section>
+
+
+<!-- 17 · DID WHAT · the "what can the conventions answer today" table (Ch 3 Fig 3.10, minus the gap row, which is slide 18); the four opt-in rows dimmed -->
+<section class="slide content" data-label="What can gen_ai.* answer today?">
+  <h2 class="slide-title">What can <span class="a2-ident">gen_ai.*</span> answer today?</h2>
+  <table class="a2-tbl rise">
+    <thead><tr><th>1 &middot; The question</th><th>2 &middot; The attribute that answers it</th><th>3 &middot; Dimmed: the content</th></tr></thead>
+    <tbody>
+      <tr><td>What kind of step?</td><td><span class="code">gen_ai.operation.name</span></td><td></td></tr>
+      <tr><td>Which model, whose?</td><td><span class="code">gen_ai.request.model</span> <span class="code">gen_ai.provider.name</span></td><td></td></tr>
+      <tr class="off"><td>What was it told?</td><td><span class="code">gen_ai.input.messages</span></td><td>opt-in in the spec</td></tr>
+      <tr class="off"><td>What did it decide?</td><td><span class="code">gen_ai.output.messages</span></td><td>opt-in in the spec</td></tr>
+      <tr><td>Act, or stop?</td><td><span class="code">gen_ai.response.finish_reasons</span></td><td></td></tr>
+      <tr><td>Which tool?</td><td><span class="code">gen_ai.tool.name</span> <span class="code">gen_ai.tool.call.id</span></td><td></td></tr>
+      <tr class="off"><td>Asking for what?</td><td><span class="code">gen_ai.tool.call.arguments</span></td><td>opt-in in the spec</td></tr>
+      <tr class="off"><td>What actually happened?</td><td><span class="code">gen_ai.tool.call.result</span></td><td>opt-in in the spec</td></tr>
+      <tr><td>Same conversation?</td><td><span class="code">gen_ai.conversation.id</span></td><td></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 18 · DID WHAT · statement from the quote bank: we can prove what, not why; the missing attribute; bridge into Act 3 -->
+<section class="slide quote" data-label="We can prove what, not why">
+  <figure class="rise">
+    <blockquote class="a2-stmt">A trace proves <em>what</em> happened. Not <span class="spot-2">why</span>.</blockquote>
+  </figure>
+  <p class="a2-nope"><span class="a2-strike">gen_ai.tool.call.reason</span> <span class="muted">does not exist</span></p>
+</section>

@@ -1,0 +1,18 @@
+[
+ {
+  "secs": 60,
+  "note": "WILLIAM\n\nLet me point at the holes before you go looking. An audience of platform engineers will spot all of these, and naming them first is worth more than the features.\n\nOn the left, Northstar as built. Identity is checked on one hop only, the tools/call into the payment tool. The tool and the ledger just trust the network. The reviewer isn't logged in: one human, one click, once. Backstage: the backend checks a credential, but anyone who can reach port 7007 can mint one. They can flip the contract, and nothing else. The claim id stops at the MCP boundary, so the evidence joins on trace id. Model calls skip the gateway. One GenAI metric of twelve arrives.\n\nOn the right, dashed, two layers the demo lacks. A context layer needs retrieval and memory spans. Multi-agent over shared context needs span links and one identity per agent.\n\nSource: Ch 14, Ch 11\n[verify: 1 of 12 GenAI metrics still true at slide freeze]"
+ },
+ {
+  "secs": 45,
+  "note": "WILLIAM\n\nBecoming an AI observability wizard starts with six basics. They're on the left, dimmed, and they all still hold. One footnote: Northstar's step five is the deterministic auditor you just saw, not a model judge.\n\nRegulated domains add three steps. Seven: decide at a choke point. Like airport security: every passenger goes through one gate, and if the gate is down, nobody boards. Eight: make identity an input. The caller is half the policy key: the same six thousand two hundred euros is refused for one agent and executed by another. Nine: keep every decision span. Never sample it away.\n\nSource: Ch 3, Ch 14"
+ },
+ {
+  "secs": 45,
+  "note": "WILLIAM\n\nSo what do you do on Monday? Five verbs, and none of them needs a purchase order.\n\nInstrument: turn on what your agent framework already emits, follow the gen_ai conventions, and carry trace context over every hop: A2A, MCP, skills, the policy call. Put a gateway in the path: one choke point, a decision span, and failClosed written down. Make identity an input: one SPIFFE identity per agent, a passport for a workload, checked at the gateway. Contribute upstream: sixteen findings are written up and waiting. Map to the standard: nobody has mapped OTel's GenAI conventions to ISO/IEC 24970, the AI logging standard, yet.\n\nSixteen gaps. Pick one.\n\nSource: Ch 14\n[verify: ISO/IEC 24970 still at FDIS the week of the talk; sixteen findings still unfiled at slide freeze]"
+ },
+ {
+  "secs": 30,
+  "note": "WILLIAM\n\nIf you keep three sentences, keep these. One: a refusal is the platform working, so instrument decisions, not only errors. Two: decide at the gateway, with identity as an input. Three: prove it from spans you already emit, then map them to the regulation.\n\nPause. Then the line from the cover.\n\nIf you can't trace it, you can't govern it.\n\nSource: Ch 14"
+ }
+]

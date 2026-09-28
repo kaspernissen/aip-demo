@@ -1,0 +1,45 @@
+/* 50-close: slides 48-51, Broadsheet. Everything is x50-* so no other fragment collides. */
+
+.x50-k { margin: 0 0 32px; font-size: var(--type-kicker); letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent); display: flex; align-items: center; gap: 12px; }
+.x50-k.m { color: var(--color-accent-2-700); }
+.x50-k i { font-size: 34px; color: var(--color-accent-2); }
+
+/* ---- 48: limitations ---- */
+.x50-lim { display: grid; grid-template-columns: 1.05fr 1fr; gap: 120px; margin-top: calc(2 * var(--baseline)); }
+.x50-gaps { display: grid; grid-template-columns: auto 1fr; gap: 18px 36px; align-items: baseline; margin: 0; font-size: var(--type-small); }
+.x50-gaps dt { font-weight: 600; }
+.x50-gaps dd { margin: 0; color: color-mix(in srgb, var(--color-text) 62%, transparent); }
+/* The two missing layers, drawn as the blueprint draws them: dashed and empty. */
+.x50-ghost { display: flex; gap: 28px; align-items: center; padding: 30px 34px;
+  border: 2.5px dashed var(--color-neutral-500); border-radius: var(--radius-md); }
+.x50-ghost + .x50-ghost { margin-top: 28px; }
+.x50-ghost > i { flex: none; font-size: 64px; color: var(--color-neutral-600); }
+.x50-ghost b { display: block; font-size: var(--type-body); line-height: 1.2; font-weight: 600; }
+.x50-ghost span { display: block; margin-top: 10px; font-size: 27px; color: var(--color-accent-700); }
+
+/* ---- 49: wizard steps ---- */
+.x50-wz { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 110px; margin-top: calc(2 * var(--baseline)); }
+.x50-old { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 20px;
+  font-size: 28px; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x50-old i { display: inline-block; width: 44px; font-style: normal; font-feature-settings: "tnum" 1; }
+.x50-step { display: flex; gap: 36px; align-items: baseline; }
+.x50-step + .x50-step { margin-top: 36px; }
+.x50-step > i { flex: none; width: 70px; font-style: normal; font-size: 96px; line-height: 0.9; font-weight: 700; color: var(--color-accent-2); }
+.x50-step b { display: block; font-size: 48px; line-height: 1.15; font-weight: 700; letter-spacing: -0.01em; }
+.x50-step span { display: block; margin-top: 8px; font-size: 28px; color: color-mix(in srgb, var(--color-text) 62%, transparent); }
+.x50-step span span { display: inline; margin: 0; }
+
+/* ---- 50: five verbs ---- */
+.x50-verbs { list-style: none; margin: calc(2 * var(--baseline)) 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 48px; }
+.x50-verbs li { display: flex; flex-direction: column; }
+.x50-verbs i { font-style: normal; font-size: 72px; line-height: 1; font-weight: 700; color: var(--color-accent-700); }
+.x50-verbs b { margin-top: 20px; font-size: 38px; line-height: 1.15; font-weight: 700; letter-spacing: -0.01em; min-height: 88px; }
+.x50-verbs span { margin-top: 16px; font-size: 27px; color: color-mix(in srgb, var(--color-text) 62%, transparent); }
+.x50-pick { margin: calc(2 * var(--baseline)) 0 0; font-size: 104px; line-height: 1.05; font-weight: 700; letter-spacing: -0.02em; }
+.x50-pick em { color: var(--color-accent-2); }
+
+/* ---- 51: three boxes (lifted Fig 14.4) and the callback ---- */
+.x50-three { margin-top: calc(1.5 * var(--baseline)); }
+.x50-callback { margin: calc(1.5 * var(--baseline)) 0 0; font-size: 80px; line-height: 1.1; font-weight: 700; letter-spacing: -0.02em; }
+.x50-callback em { color: var(--color-accent-2); }
