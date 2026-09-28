@@ -28,7 +28,7 @@ def build_app():
     app = A2AStarletteApplication(
         agent_card=load_agent_card(), http_handler=handler
     ).build()
-    # A18: a2a-sdk 0.3.7 never extracts inbound W3C trace context itself
+    # a2a-sdk 0.3.7 never extracts inbound W3C trace context itself
     # (verified in NOTES.md) — StarletteInstrumentor is the OTel project's
     # own ASGI-level instrumentation, applied per-app since the Starlette
     # instance doesn't exist until `.build()` returns. It extracts the

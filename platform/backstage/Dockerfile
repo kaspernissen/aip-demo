@@ -1,25 +1,25 @@
-# M6 Task 1: Backstage, built the same way every other component in this repo
-# is built -- `docker build -t <image> <context>` with no host-side prerequisite
+# Backstage is built the same way every other component in this repo is
+# built -- `docker build -t <image> <context>` with no host-side prerequisite
 # (scripts/rebuild-and-deploy.sh's COMPONENTS convention; see its own header
-# comment for why an out-of-band build step is the thing this repo refuses to
-# add). Backstage's own scaffolded packages/backend/Dockerfile requires
-# `yarn install`, `yarn tsc` and `yarn build:backend` to have already run on the
-# HOST before `docker build` -- a second build pattern this milestone was told
-# not to invent. This is instead the documented multi-stage alternative
+# comment for why an out-of-band build step is avoided). Backstage's own
+# scaffolded packages/backend/Dockerfile requires `yarn install`, `yarn tsc`
+# and `yarn build:backend` to have already run on the HOST before `docker
+# build` -- a second build pattern this repo does not use. This is instead
+# the documented multi-stage alternative
 # (https://backstage.io/docs/deployment/docker#multi-stage-build), which builds
 # entirely inside the container from the app's own root -- the same
 # self-contained shape every other component's Dockerfile already has.
 #
-# Verified against the upstream docs page 2026-09-15 and reproduced verbatim
-# except for two things: the base image tag is read from backstage.json's own
-# "version" via the create-app scaffold rather than hand-copied twice, and this
-# comment block replaces the doc's inline ones. Node 24 (`node:24-trixie-slim`)
-# is the version upstream's own current docs pin, independent of the Node 22
-# this repo's other seven images and its host use -- Backstage does not publish
-# a Node 22 base image variant for this Dockerfile, and mixing a host build
-# step (which would need 22) with this container-only build (which needs 24)
-# is exactly the risk multi-stage avoids: nothing outside this file cares what
-# Node version built the image.
+# Reproduced from the upstream docs page verbatim except for two things: the
+# base image tag is read from backstage.json's own "version" via the
+# create-app scaffold rather than hand-copied twice, and this comment block
+# replaces the doc's inline ones. Node 24 (`node:24-trixie-slim`) is
+# upstream's own current docs pin for this Dockerfile, independent of the
+# Node 22 this repo's other seven images and its host use -- Backstage does
+# not publish a Node 22 base image variant for this Dockerfile, and mixing a
+# host build step (which would need 22) with this container-only build
+# (which needs 24) is exactly the risk multi-stage avoids: nothing outside
+# this file cares what Node version built the image.
 
 # Stage 1 - Create yarn install skeleton layer
 FROM node:24-trixie-slim AS packages
@@ -35,15 +35,14 @@ RUN find packages \! -name "package.json" -mindepth 2 -maxdepth 2 -exec rm -rf {
 # Stage 2 - Install dependencies and build packages
 FROM node:24-trixie-slim AS build
 # Install sqlite3 dependencies, PLUS a C/C++ toolchain (python3, make, g++).
-# Measured 2026-09-15: the docs' own multi-stage Dockerfile lists only
-# libsqlite3-dev, and `yarn install --immutable` failed on this base image
-# without the toolchain -- several of @backstage/cli's transitive native
-# dependencies (cpu-features, tree-sitter, tree-sitter-json, ssh2's
-# prerequisites) have no prebuilt binary for this platform and node-gyp falls
-# back to compiling from source, which needs a compiler this slim image does
-# not ship. This is not a stage-4/5 "add a backend" gap -- every other
-# component's Dockerfile builds a Python service with no C extensions to
-# compile -- so nothing else in this repo needed this before.
+# The docs' own multi-stage Dockerfile lists only libsqlite3-dev, but
+# `yarn install --immutable` fails on this base image without the toolchain --
+# several of @backstage/cli's transitive native dependencies (cpu-features,
+# tree-sitter, tree-sitter-json, ssh2's prerequisites) have no prebuilt binary
+# for this platform, and node-gyp falls back to compiling from source, which
+# needs a compiler this slim image does not ship. Every other component's
+# Dockerfile builds a Python service with no C extensions to compile, so
+# nothing else in this repo needs this.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
@@ -102,29 +101,25 @@ COPY --chown=node:node catalog-info.yaml ./
 COPY --chown=node:node mkdocs.yml ./
 COPY --chown=node:node docs ./docs
 COPY --chown=node:node examples ./examples
-# M6 Task 2: the software catalog, static and read from this image's own
-# filesystem (design §3 -- no git discovery, this repo has no remote).
-# scripts/rebuild-and-deploy.sh stages this directory (mirroring the real
-# repo's component paths) into platform/backstage/.catalog-stage/ before this
-# build and removes it after; see that script's own comment on the
-# "backstage" branch. `app-config.production.yaml`'s `catalog.locations`
-# reads it back out at ./catalog/...
+# The software catalog, static and read from this image's own filesystem --
+# no git discovery, this repo has no remote. scripts/rebuild-and-deploy.sh
+# stages this directory (mirroring the real repo's component paths) into
+# platform/backstage/.catalog-stage/ before this build and removes it after;
+# see that script's own comment on the "backstage" branch.
+# `app-config.production.yaml`'s `catalog.locations` reads it back out at
+# ./catalog/...
 COPY --chown=node:node .catalog-stage ./catalog
 
-# M6-R9's durable fix: the Task 3 review found the running image predated
-# the commit under review by an hour, and nothing in this repo would have
-# caught that -- an RBAC matrix and a healthy pod both verify without the
-# committed code ever running. `GIT_SHA` is passed by
-# scripts/rebuild-and-deploy.sh as `--build-arg GIT_SHA=$(git rev-parse
-# HEAD)` for this component only, and stamped into a label
-# `tests/e2e/test_backstage_image_matches_head.py` reads back with `docker
-# image inspect` and compares against the checkout's own `git rev-parse
-# HEAD` -- the same comparison the reviewer made by hand
-# (`docker image inspect --format {{.Created}}` vs `git show -s --format=%ci`).
-# Placed here, after every COPY/RUN in this stage, so changing it invalidates
-# only this one metadata layer, not the expensive yarn-install/tsc/build
-# layers above -- it must still change on every commit, or the check it
-# backs is worthless.
+# `GIT_SHA` is passed by scripts/rebuild-and-deploy.sh as `--build-arg
+# GIT_SHA=$(git rev-parse HEAD)` for this component only, and stamped into a
+# label `tests/e2e/test_backstage_image_matches_head.py` reads back with
+# `docker image inspect` and compares against the checkout's own `git
+# rev-parse HEAD` -- catching a running image that predates the commit it is
+# supposed to be serving, something neither an RBAC matrix nor a healthy pod
+# can see on their own. Placed here, after every COPY/RUN in this stage, so
+# changing it invalidates only this one metadata layer, not the expensive
+# yarn-install/tsc/build layers above -- it must still change on every
+# commit, or the check it backs is worthless.
 ARG GIT_SHA=unknown
 LABEL org.opencontainers.image.revision=$GIT_SHA
 

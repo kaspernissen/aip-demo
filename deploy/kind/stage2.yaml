@@ -15,10 +15,10 @@
 #     a podSubnet here would have to be kept in sync with that by hand for no
 #     gain.
 #   - `kubeProxyMode`: kube-proxy stays in place. Cilium's kube-proxy
-#     replacement is not required for this demo -- the M2 spec is explicit that
-#     the DNS-aware egress denial in M2.2 is ordinary CiliumNetworkPolicy
-#     (`toFQDNs`) and works with kube-proxy present -- and enabling it on kind
-#     invites cgroup-v2 and kernel-version problems.
+#     replacement is not required for this demo -- the DNS-aware egress denial
+#     is ordinary CiliumNetworkPolicy (`toFQDNs`) and works with kube-proxy
+#     present -- and enabling it on kind invites cgroup-v2 and kernel-version
+#     problems.
 #
 # Everything below (containerdConfigPatches for the shared `kind-registry`, and
 # all three extraPortMappings) is byte-for-byte stage1.yaml.

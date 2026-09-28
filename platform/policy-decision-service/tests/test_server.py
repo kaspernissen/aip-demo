@@ -46,14 +46,12 @@ def test_malformed_params_do_not_raise():
     assert call.tool is None and call.amount is None
 
 
-# --- Beyond the brief -------------------------------------------------------
-# Ruling R13 and Task 1's measured deny mapping are the two things most likely
-# to be broken by a well-meaning later edit, and neither is covered above.
+# --- the deny mapping a well-meaning later edit could most easily break -----
 
 
 def test_the_human_readable_reason_is_on_the_authorization_error_itself():
-    """R13, and Task 1's measured mapping: the gateway puts
-    `AuthorizationError.reason` in `error.message`, which is what survives
+    """The gateway puts `AuthorizationError.reason` in `error.message`,
+    which is what survives
     `str(McpError)` and therefore the only part of the refusal that reaches the
     A2A caller and the model that has to narrate it. `mcp_error` lands whole in
     `error.data`, which `str(McpError)` drops. A refusal explained only in
@@ -76,7 +74,7 @@ def test_the_deny_body_carries_what_was_requested_not_only_the_limit():
 
 
 def test_a_permit_carries_no_error_and_no_body():
-    """`Pass` unmodified. The response side is unused in M2.2 and a permit must
+    """`Pass` unmodified. The response side is unused and a permit must
     not put the PDS in the data path of a successful call."""
     result = build_result(permit=True, reason="within the limit", rule="r",
                           limit=6000.0, requested=100.0)
@@ -85,7 +83,7 @@ def test_a_permit_carries_no_error_and_no_body():
 
 
 def test_parses_the_float_amount_the_agent_actually_sends():
-    """Task 1 measured `6200.0`, not `6200`, because that is what
+    """Measured as `6200.0`, not `6200`, because that is what
     settlement-agent serialises. Parsing must not assume an integer."""
     params = (b'{"name":"propose_payment","arguments":'
               b'{"claim_id":"CLM-1842","amount":6200.0,"currency":"EUR"}}')
@@ -124,7 +122,7 @@ def test_no_params_shape_makes_parse_call_raise(params):
     assert isinstance(call.currency, str)
 
 
-# --- F5, the parser's half of the fix ---------------------------------------
+# --- the parser refuses non-finite amounts before they reach the policy -----
 
 
 @pytest.mark.parametrize("literal", [b"NaN", b"Infinity", b"-Infinity",
@@ -132,13 +130,13 @@ def test_no_params_shape_makes_parse_call_raise(params):
 def test_a_non_finite_amount_never_becomes_a_policy_input(literal):
     """Python's `json` accepts the non-standard literals `NaN`, `Infinity` and
     `-Infinity` by default, and `1e309` overflows to `inf`, so a caller really
-    can put one of these on the wire -- the reviewer did.
+    can put one of these on the wire.
 
     Refusing here is defence in depth behind `rules.decide`, and it earns its
     place twice: `json.dumps` would otherwise write `NaN` straight back out
     into `mcp_error.data.requested`, which is not valid JSON, so the gateway
     would drop the whole deny body with a `warn!` and the structured refusal
-    Task 5 keys off would silently vanish.
+    a caller keys off would silently vanish.
     """
     params = b'{"name":"execute_payment","arguments":{"amount":' + literal + b"}}"
     call = parse_call(params)

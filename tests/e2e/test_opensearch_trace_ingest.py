@@ -1,8 +1,7 @@
-"""M4 Task 1, fix round 1: the guard ruling M4-R6 asks for.
+"""The guard against silent span loss between Jaeger and OpenSearch.
 
-**Why this file exists at all.** M4 Task 1 shipped with the `opensearch/trace`
-exporter permanently rejecting every `policy-decision-service` span. The
-`policy.decision` span sets both `policy.decision` (a string) and
+**Why this file exists at all.** A real ingestion defect was measured here:
+`policy.decision` spans set both `policy.decision` (a string) and
 `policy.decision.retryable` (a bool); OpenSearch expands dotted keys into
 objects at index time, so one document needed `attributes.policy.decision` to
 be a scalar and an object at once, and OpenSearch answered `can't merge a non
@@ -10,32 +9,32 @@ object mapping [attributes.policy.decision] with an object mapping` -- once per
 document, permanently, with the only evidence in a collector log nobody reads.
 Jaeger held 142 spans for the reference trace and OpenSearch 139; the three
 missing ones were exactly the three decision spans, and 0 of the index's 1,723
-documents came from the policy decision service. **119 green unit tests saw
-none of it**, and the report that shipped it called the path verified.
+documents came from the policy decision service. **A green unit suite saw
+none of it.**
 
-So ruling M4-R6: the re-measurement needs a guard, not a paragraph. Prose in a
-config comment is what failed last time. These tests are the deliverable (the
-fourth arrived in fix round 2, as re-review finding N2's live-data half; the
-count is published in docs/telemetry-contract.md, where a guard checks it
-against `pytest --collect-only`, so it is not repeated here):
+The re-measurement needs a guard, not a paragraph. Prose in a config comment
+is what failed last time. These tests are the deliverable (the count is
+published in docs/telemetry-contract.md, where a guard checks it against
+`pytest --collect-only`, so it is not repeated here):
 
 1. every span Jaeger holds for one driven trace is in OpenSearch, compared as
    span-ID *sets* rather than counts, because "139 of 142" is a count that
    survived and a set difference names what did not;
 2. the `policy.decision` span is in OpenSearch by name, by service, and with
-   its decision attribute readable -- that single span is what Task 3's
-   evidence view and Task 4's policy-adherence scorer exist to query;
+   its decision attribute readable -- that single span is what the evidence
+   view and the eval-scorer's policy-adherence scoring exist to query;
 3. no attribute key the driven trace actually carries collides uncovered --
    the unit guard reads this repo's own sources, and this reads what Jaeger
    holds, which is the only end that sees third-party library keys;
-4. Jaeger still receives the canonical attribute names (ruling M4-R5): the
-   OpenSearch-compat rewrite lives in the `traces/opensearch` branch only, and
-   an evidence view whose field names differ from the trace an operator reads
-   in Jaeger is worse than no evidence view;
+4. Jaeger still receives the canonical attribute names: the OpenSearch-compat
+   rewrite lives in the `traces/opensearch` branch only, and an evidence view
+   whose field names differ from the trace an operator reads in Jaeger is
+   worse than no evidence view;
 5. the collector logged no export rejection during the run -- read over the
-   **whole** window since the run began, never a `--tail` of it. Finding F2 was
-   a `--tail=200` against a 17,173-line log reported as "no errors at any point
-   during or after the run".
+   **whole** window since the run began, never a `--tail` of it. A
+   `--tail=200` against a much longer log has reported "no errors at any
+   point during or after the run" while the rejections were still there,
+   further back.
 
 **This file drives its own trace and never reads a recorded one.** It speaks
 MCP to the gateway directly with a SPIRE-minted JWT-SVID, following
@@ -48,7 +47,7 @@ rejected permits and denials alike, because `policy.decision.retryable` is set
 on every decision span (`pds/server.py:277`).
 
 **It supplies its own `traceparent`** so the trace id is known before the call
-is made, rather than searched for afterwards. Measured 2026-09-13: agentgateway
+is made, rather than searched for afterwards. Measured: agentgateway
 honours an inbound `traceparent` and the whole chain lands under it.
 
 **Stage gate, and why it is not a way to hide.** OpenSearch is a stage-4
@@ -56,27 +55,24 @@ component, so on a stage-1/2/3 cluster there is nothing to compare against.
 This file skips only when the OpenSearch Service is absent *and* no traces
 pipeline in the deployed collector ConfigMap routes to OpenSearch -- i.e. only
 when the cluster is coherently below stage 4. A collector configured to export
-to an OpenSearch that is not installed is finding F10's exact broken state, and
+to an OpenSearch that is not installed is exactly that broken state, and
 that combination **fails** here rather than skipping.
 
-Until M4 Task 5 the second half of that read `'opensearch/trace' in <the config
-text>`, which is the inert shape `test_prometheus_metrics_ingest.py` measured
-and recorded and which had been fixed in both other callers but not in this,
-the oldest, one: the id occurs three times in that text, so deleting the one
-occurrence that routes anything left the gate satisfied. It now reads the
-pipelines, via `tests/harness/collector.py`, and requires both halves of the
-tee.
+The stage gate reads the deployed pipelines structurally, via
+`tests/harness/collector.py`'s `pipeline_exporters`, and requires both
+halves of the tee -- not a substring search over the config text. The
+exporter id `opensearch/trace` occurs three times in that text, and only
+one occurrence is the pipeline entry that routes anything to it; a plain
+`'opensearch/trace' in <config text>` check stays true even after that one
+entry is deleted, which is the inert shape this file avoids.
 
-M4 Task 5 closed the third case here too, discharging ruling M4-R14: "absent"
-means the API server said `NotFound`, and every other way `kubectl` can exit
-non-zero -- unreachable server, wrong context, expired credential, timeout --
-is a hard failure. Until then this file read `returncode == 0`, so a kubectl
-that could not reach the API server produced "the cluster is coherently below
-stage 4" and skipped every assertion in it. That shape was
-`test_prometheus_metrics_ingest.py`'s review finding F7, fixed there and
-deliberately not widened into this file without a ruling; the ruling is
-M4-R14, and the single definition both files now import is
-`tests/harness/kube.py`'s `absent_or_fail`.
+"Absent" means the API server said `NotFound`, and every other way `kubectl`
+can exit non-zero -- unreachable server, wrong context, expired credential,
+timeout -- is a hard failure, never a skip: a `kubectl` that cannot reach
+the API server must not read as "the cluster is coherently below stage 4".
+This file and `test_prometheus_metrics_ingest.py` both import the same one
+definition, `tests/harness/kube.py`'s `absent_or_fail`, rather than each
+keeping its own looser check.
 """
 from __future__ import annotations
 
@@ -99,19 +95,16 @@ from tests.e2e.test_caller_identity import (
     _json_body,
 )
 from tests.harness.jaeger import JaegerClient
-# Ruling M4-R14, discharged in M4 Task 5. This file used to read
-# `returncode == 0` as "it exists" and every other exit as "it is absent", so
-# an unreachable API server made the fixture below skip all of this file's
-# assertions as "coherently below stage 4" -- the loose half of the two skip
-# shapes M4 carried. The strict one (Task 2's review finding F7) is now the
-# only one, and it lives in neither caller.
+# Reading `returncode == 0` as "it exists" and every other exit as "it is
+# absent" would let an unreachable API server make the fixture below skip
+# all of this file's assertions as "coherently below stage 4". This shared
+# definition avoids that: every non-`NotFound` failure is a hard failure,
+# never a skip.
 from tests.harness.kube import absent_or_fail
-# M4 Task 5, the second half of the same finding: this file's stage gate asked
-# whether the exporter id occurred *anywhere in the config text*, which the
-# mutation recorded in test_prometheus_metrics_ingest.py had already shown
-# stays true after the pipeline entry that makes it do anything is deleted.
-# Both other callers had been fixed; this one had not. One definition now, in
-# tests/harness/collector.py.
+# Asking whether the exporter id occurs *anywhere in the config text* stays
+# true even after the pipeline entry that makes it do anything is deleted --
+# the id appears elsewhere too (under `exporters:` and in a comment). This
+# shared helper reads the parsed pipeline structure instead.
 from tests.harness.collector import pipeline_exporters
 
 OBSERVABILITY_NAMESPACE = "observability"
@@ -147,8 +140,8 @@ ATTR_RETRYABLE_OPENSEARCH = "policy.decision_retryable"
 ATTR_DECISION = "policy.decision"
 
 # €6,200 against settlement-agent's €6,000 assisted execute allowance -- the
-# same numbers the M3 denial scenario uses, so this file and the demo exercise
-# the same rule.
+# same numbers `test_policy_denial.py`'s denial scenario uses, so this file
+# and the demo exercise the same rule.
 DENIED_AMOUNT = 6200
 
 # Services whose spans must all have landed before the trace is compared.
@@ -226,18 +219,18 @@ def _deployed_collector_config() -> str:
 
 @pytest.fixture(scope="module", autouse=True)
 def stage_4_or_a_reason():
-    """Skip below stage 4; fail on finding F10's incoherent middle state.
+    """Skip below stage 4; fail on the incoherent middle state.
 
     The discriminator is the OpenSearch Service and the deployed collector's
     traces pipelines -- **not** the index, the documents or the attribute names
     on them, which are what this file asserts. A stage-4 cluster whose spans
     never arrive reddens `_opensearch_spans`, and must.
 
-    M4 Task 5 replaced `EXPORTER_ID in <config text>` here with a read of the
-    pipelines themselves, and requires both halves of the tee: the id occurs
+    Reads the deployed pipelines themselves rather than a substring of the
+    config text, and requires both halves of the tee: the exporter id occurs
     three times in that text -- under `exporters:`, in a comment, and in the
-    `traces/opensearch` branch -- so the substring form stayed true after the
-    only occurrence that routes anything was deleted.
+    `traces/opensearch` branch -- so a substring check stays true even after
+    the only occurrence that routes anything is deleted.
     """
     installed = _opensearch_is_installed()
     exporters = pipeline_exporters(_deployed_collector_config(), "traces")
@@ -254,7 +247,7 @@ def stage_4_or_a_reason():
         f"the deployed collector ConfigMap tees traces to "
         f"{OPENSEARCH_TEE_ID!r} and on to {OPENSEARCH_EXPORTER_ID!r} "
         f"but svc/{OPENSEARCH_SERVICE} does not exist in the "
-        f"{OBSERVABILITY_NAMESPACE} namespace. That is review finding F10: a "
+        f"{OBSERVABILITY_NAMESPACE} namespace: a "
         "traces pipeline exporting to a backend this cluster does not have, "
         "which fails permanently and logs into a file nobody reads. "
         "scripts/setup-kind.sh strips the stage-4-only regions of the "
@@ -455,7 +448,7 @@ def _opensearch_spans(trace_id: str, expected: int) -> list[dict]:
 
 
 def test_opensearch_holds_every_span_jaeger_holds_for_the_driven_trace(ingest_run):
-    """Ruling M4-R6's parity assertion, compared as sets and not as counts.
+    """The parity assertion this file exists for, compared as sets and not as counts.
 
     The shipped defect was reported as "every one of that trace's 139 spans is
     queryable" -- individually true, and the trace had 142. Equal counts alone
@@ -488,9 +481,9 @@ def test_opensearch_holds_every_span_jaeger_holds_for_the_driven_trace(ingest_ru
 
 
 def test_the_policy_decision_span_is_queryable_out_of_opensearch(ingest_run):
-    """The one span M4 exists to make queryable.
+    """The one span this file exists to make queryable.
 
-    Tasks 3 and 4 both consume it: the evidence view reconstructs why a payout
+    Two consumers depend on it: the evidence view reconstructs why a payout
     happened from it, and the policy-adherence scorer reads its decision. It is
     also the span the shipped ingest path rejected 100% of the time, so this
     asserts it by name, by service and by attribute value rather than trusting
@@ -559,7 +552,7 @@ def test_the_policy_decision_span_is_queryable_out_of_opensearch(ingest_run):
 
 
 def test_no_attribute_key_in_the_driven_trace_collides_uncovered(ingest_run):
-    """Re-review finding N2, from the live-data end.
+    """The live-data half of the attribute-collision guard.
 
     `tests/unit/test_stage4_config.py` scans every first-party service's
     source for colliding attribute keys, but it cannot see keys emitted by
@@ -626,7 +619,7 @@ def test_no_attribute_key_in_the_driven_trace_collides_uncovered(ingest_run):
 
 
 def test_jaeger_still_receives_the_canonical_attribute_names(ingest_run):
-    """Ruling M4-R5, asserted rather than assumed.
+    """Asserted rather than assumed.
 
     The OpenSearch-compat rewrite runs in the `traces/opensearch` pipeline,
     downstream of the `forward/opensearch` connector. Jaeger and Dash0 export
@@ -648,7 +641,8 @@ def test_jaeger_still_receives_the_canonical_attribute_names(ingest_run):
             f"Jaeger's {DECISION_SPAN} span carries the OpenSearch-only name "
             f"{ATTR_RETRYABLE_OPENSEARCH!r}. The `attributes/opensearch-compat` "
             "processor has leaked out of the `traces/opensearch` branch into "
-            "what Jaeger and Dash0 receive, which ruling M4-R5 forbids."
+            "what Jaeger and Dash0 receive, which this repo's telemetry "
+            "contract forbids."
         )
         assert decision.attrs.get(ATTR_DECISION) in {"permit", "deny"}, (
             f"Jaeger's {DECISION_SPAN} span has no readable {ATTR_DECISION!r}: "
@@ -657,12 +651,12 @@ def test_jaeger_still_receives_the_canonical_attribute_names(ingest_run):
 
 
 def test_the_collector_rejected_no_spans_during_the_run(ingest_run):
-    """Finding F2: read the whole window, never a tail of it.
+    """Read the whole window, never a tail of it.
 
-    The report that shipped the defect ran `logs --tail=200 | grep -i error`
-    against a collector that had emitted 17,173 lines, and wrote down "no
-    errors at any point during or after the run". The four rejections were in
-    the window and outside the tail.
+    A `logs --tail=200 | grep -i error` against a collector that has emitted
+    many more lines than that can report "no errors at any point during or
+    after the run" while genuine rejections sit further back, outside the
+    tail.
 
     So this sizes `--since` from the instant the run began and reads every line
     of it. It asserts on `Exporting failed` specifically -- the exporterhelper
@@ -670,19 +664,19 @@ def test_the_collector_rejected_no_spans_during_the_run(ingest_run):
     "error", so it cannot be tripped by an unrelated warning and cannot be
     quieted by one either.
 
-    **Scope, and why it stays wide (re-review finding N7).** This reddens on a
+    **Scope, and why it stays wide.** This reddens on a
     rejection from *any* exporter, not only `opensearch/trace`. That is
     deliberate: the standing constraint is that nothing drops spans, and the
     deployed collector also exports to Jaeger and Dash0, so narrowing this to
     one component would make the guard blind to the same harm by another
-    route -- which is exactly how F1 shipped. It is also the only assertion
+    route. It is also the only assertion
     that covers a collision on a service this file's driven trace does not
     reach.
 
-    The cost N7 names is real, though: a transient Dash0 outage during a gate
+    The cost of that width is real, though: a transient Dash0 outage during a
     run would redden a test whose name says "the collector rejected no spans"
-    with a message that used to read as if OpenSearch were at fault. So the
-    failure message now names the component ids it actually found, and says
+    with a message that could otherwise read as if OpenSearch were at fault.
+    So the failure message names the component ids it actually found, and says
     plainly when none of them is the OpenSearch exporter.
     """
     age_seconds = max(int(time.time() - ingest_run.started_at) + 30, 60)
@@ -701,7 +695,7 @@ def test_the_collector_rejected_no_spans_during_the_run(ingest_run):
     )
     if OPENSEARCH_EXPORTER_ID in components:
         diagnosis = (
-            f"{OPENSEARCH_EXPORTER_ID!r} is among them, so this is M4 Task 1's "
+            f"{OPENSEARCH_EXPORTER_ID!r} is among them, so this is this file's "
             "own path: check the `attributes/opensearch-compat` processor and "
             "whether a new colliding attribute key has appeared."
         )

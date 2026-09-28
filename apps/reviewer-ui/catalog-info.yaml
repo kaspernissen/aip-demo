@@ -1,10 +1,9 @@
-# M6 Task 2: this component's software-catalog entry. Staging/build-context
-# note lives in the top-level catalog-info.yaml -- read that once, not once
+# This component's software-catalog entry. The staging/build-context note
+# lives in the top-level catalog-info.yaml -- read that once, not once
 # per component.
 #
 # No entry in contracts/agent-cards/ -- reviewer-ui is a UI, not an A2A
-# agent, so there is nothing here to link (design's own rule: "where one
-# exists").
+# agent, so there is nothing here to link.
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:

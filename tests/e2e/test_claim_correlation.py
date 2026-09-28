@@ -1,14 +1,12 @@
 """Asserts northstar.claim.id correlation, at the boundary it actually reaches.
 
-Task 7's brief (Step 9) sketched one blanket assertion — northstar.claim.id
-present on every span across {claims-agent, settlement-agent, payments-mcp,
-payments-api}. Two structural facts, both verified by live capture (see
-agents/claims-agent/NOTES.md, agents/settlement-agent/NOTES.md,
-tools/payments-mcp/NOTES.md, and this task's report for the raw evidence),
-mean that blanket claim is not achievable, and this file asserts the real,
-capture-verified boundary instead of a weakened or hopeful version of it
-(A19 — this is a plan defect, recorded here and in the task report, not
-silently patched around):
+A blanket assertion — northstar.claim.id present on every span across
+{claims-agent, settlement-agent, payments-mcp, payments-api} — is not
+achievable, and this file asserts the real, capture-verified boundary
+instead of a weakened or hopeful version of it. Two structural facts, both
+verified by live capture (see agents/claims-agent/NOTES.md,
+agents/settlement-agent/NOTES.md, tools/payments-mcp/NOTES.md for the raw
+evidence), explain why:
 
 1. **claims-agent's own spans are split across two asyncio tasks.** a2a-sdk's
    DefaultRequestHandler runs AgentExecutor.execute() in its own producer task
@@ -16,8 +14,8 @@ silently patched around):
    parsed the claim and attached northstar.claim.id to its own context.
    Baggage attached inside one task is invisible to a sibling task whose own
    copy of the ambient context was captured earlier — confirmed with an
-   isolated reproduction against a2a-sdk's own DefaultRequestHandler (see the
-   task report). Concretely:
+   isolated reproduction against a2a-sdk's own DefaultRequestHandler.
+   Concretely:
    - claims-agent's ASGI entry span ("POST /") and every a2a-sdk-owned
      request-handling/event-queue/consumer span run in the "main" task a2a-sdk
      manages, which predates the attach — the same structural reason
@@ -38,13 +36,11 @@ silently patched around):
    never `baggage`, even though mcp_tools.py's client now injects a `baggage`
    key into `_meta` per SEP-414 (see agents/settlement-agent/mcp_tools.py).
    So the MCP hop joins the *trace* (traceparent crosses correctly — proven
-   by the six flipped xfails in test_claims_chain_trace.py and
-   test_settlement_agent_trace.py), but northstar.claim.id never reaches
-   payments-mcp's own spans, and therefore never reaches its outbound call to
-   payments-api either. This is the "fourth candidate upstream gap" the
-   brief's Step 11 anticipated; per its own instruction, these two services
-   are correlated by trace ID (already proven elsewhere in this suite), not
-   by the attribute — the gap is recorded, not faked.
+   elsewhere in test_claims_chain_trace.py and test_settlement_agent_trace.py),
+   but northstar.claim.id never reaches payments-mcp's own spans, and
+   therefore never reaches its outbound call to payments-api either. These
+   two services are correlated by trace ID (already proven elsewhere in this
+   suite), not by the attribute — the gap is recorded, not faked.
 """
 import json
 import os
@@ -55,7 +51,7 @@ import httpx
 import pytest
 
 from tests.harness.jaeger import JaegerClient, assert_attr_on_all_spans
-# --- RULING M4-R15 (amended), discharged in M4 Task 5 -------------------------
+# --- Why this file is gated behind RUN_BROWSER_TESTS=1 -----------------------
 #
 # `RUN_BROWSER_TESTS=1` is this repo's COST gate, not a browser gate. Four
 # modules already ride it with no browser (`test_settlement_llm_trace.py`,
@@ -63,12 +59,11 @@ from tests.harness.jaeger import JaegerClient, assert_attr_on_all_spans
 # each saying so in its own `pytestmark`; `scripts/smoke-test.sh` sets the flag
 # unconditionally, so the gate loses nothing.
 #
-# This file was one of THREE that drove a real settlement on a bare
-# `pytest tests/` -- three settlements' worth of Anthropic tokens, on someone's
-# account, from a command the README presents as the ordinary way to run the
-# suite. Measured in M4 Task 5, not inferred: the three are this file,
-# `test_claims_chain_trace.py` and `test_settlement_agent_trace.py`, one
-# module-scoped driving fixture each.
+# This file drives a real settlement on a bare `pytest tests/` -- along with
+# `test_claims_chain_trace.py` and `test_settlement_agent_trace.py` (one
+# module-scoped driving fixture each), that is three settlements' worth of
+# Anthropic tokens, on someone's account, from a command the README presents
+# as the ordinary way to run the suite.
 #
 # What is deliberately NOT gated, and why the line is drawn at tokens: three
 # ungated tests still write an `executed` row to the ledger -- measured by
@@ -77,17 +72,16 @@ from tests.harness.jaeger import JaegerClient, assert_attr_on_all_spans
 # policy decision is made at all) and 1 x EUR 100 from
 # `test_policy_denial.py::test_criterion_5...`, which is that test's whole
 # assertion. Those cost nothing: payments-api's ledger is an in-memory,
-# per-process store on a kind cluster (ruling 32), so "money moved" is a demo
-# fiction and gating it would buy a developer nothing while removing the only
-# ungated coverage of the money path from a bare run. Tokens are the real
+# per-process store on a kind cluster, so "money moved" is a demo fiction and
+# gating it would buy a developer nothing while removing the only ungated
+# coverage of the money path from a bare run. Tokens are the real
 # externality, and they are what this flag gates.
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
     reason=(
         "drives a real settlement (model tokens) on the live cluster; gated "
         "behind the same RUN_BROWSER_TESTS=1 flag scripts/smoke-test.sh sets "
-        "unconditionally -- no browser is started (ruling M4-R15 amended, "
-        "discharged in M4 Task 5)"
+        "unconditionally -- no browser is started"
     ),
 )
 
@@ -95,7 +89,7 @@ JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 CLAIMS_URL = os.environ.get("CLAIMS_AGENT_URL", "http://localhost:19001")
 
 CLAIM_ID_KEY = "northstar.claim.id"
-ENTRY_SPAN = "POST /"  # StarletteInstrumentor's ASGI server span (A18)
+ENTRY_SPAN = "POST /"  # StarletteInstrumentor's ASGI server span
 
 # Every span in these services carries northstar.claim.id, confirmed by
 # capture: settlement-agent receives it via an inbound baggage header
@@ -115,13 +109,12 @@ def claim_id() -> str:
 
 @pytest.fixture(scope="module")
 def correlated_trace(claim_id):
-    # A14: this test originates the request, so it mints its own trace/span
-    # ID and sends it as a traceparent header, then looks the trace up by
-    # that exact ID — never by service search. (The brief's Step 9 sketch
-    # used a plain wait_for_trace(service="claims-agent") search; per A14
-    # that is unsound whenever the test itself originates the request, so
-    # this fixture uses wait_for_trace_id instead — another brief defect,
-    # recorded per A19.)
+    # This test originates the request, so it mints its own trace/span ID
+    # and sends it as a traceparent header, then looks the trace up by that
+    # exact ID — never by service search. A plain
+    # wait_for_trace(service="claims-agent") search would be unsound here:
+    # that shape is only safe when the test does not itself originate the
+    # request whose trace it is looking for.
     trace_id = uuid.uuid4().hex
     span_id = uuid.uuid4().hex[:16]
     traceparent = f"00-{trace_id}-{span_id}-01"
@@ -150,8 +143,8 @@ def correlated_trace(claim_id):
             }
         },
     }
-    # 180s, matching every other call site that drives a settlement: since M1.2
-    # this is three sequential model turns plus two MCP round trips, not one
+    # 180s, matching every other call site that drives a settlement: this is
+    # three sequential model turns plus two MCP round trips, not one
     # hardcoded function call. Observed latency is 2.6-7.9s, so the margin is
     # for the Anthropic SDK's exponential backoff after a 429/529 on a slow
     # uplink -- conference wifi. A timeout here raises inside a module-scoped
@@ -164,7 +157,7 @@ def correlated_trace(claim_id):
     assert "error" not in response.json(), response.text
 
     client = JaegerClient(JAEGER_URL)
-    # A20: wait for the whole reachable chain to land and hold steady. All
+    # Wait for the whole reachable chain to land and hold steady. All
     # four backend services join this *trace* (traceparent crosses every
     # hop, including MCP) even though only some of them gain the attribute.
     trace = client.wait_for_trace_id(
@@ -177,16 +170,16 @@ def correlated_trace(claim_id):
 
 
 def test_correlated_trace_entry_span_is_parented_to_the_injected_context(correlated_trace):
-    """A14's other half: minting trace_id/span_id and injecting a traceparent
-    header is only sound evidence of propagation if something actually
-    checks that the resulting entry span is a *child* of the injected span
-    id, not merely that a trace with the injected trace_id exists (Jaeger
-    would happily return an unrelated orphan sharing the same trace_id if
-    propagation were silently broken at the very first hop). Mirrors
+    """Minting trace_id/span_id and injecting a traceparent header is only
+    sound evidence of propagation if something actually checks that the
+    resulting entry span is a *child* of the injected span id, not merely
+    that a trace with the injected trace_id exists (Jaeger would happily
+    return an unrelated orphan sharing the same trace_id if propagation were
+    silently broken at the very first hop). Mirrors
     test_claims_chain_trace.py's identical idiom for the same claims-agent
-    entry span. Per A17, the one orphan this whole chain is expected to
-    contain is pinned precisely (operation and parent_id), not tolerated by
-    a bare count or name allowlist."""
+    entry span. The one orphan this whole chain is expected to contain is
+    pinned precisely (operation and parent_id), not tolerated by a bare
+    count or name allowlist."""
     trace = correlated_trace.trace
     entry = trace.span(ENTRY_SPAN, service="claims-agent")
     assert entry.parent_id == correlated_trace.span_id, (
@@ -281,13 +274,13 @@ def test_claim_id_is_on_every_mcp_hop_span(correlated_trace):
     NOTES.md): FastMCP 4.0.3's extract_trace_context() only copies
     traceparent/tracestate out of params._meta, never baggage, even though
     mcp_tools.py's client injects a baggage key per SEP-414. The MCP hop
-    still joins the *trace* (traceparent crosses fine — see the six flipped
+    still joins the *trace* (traceparent crosses fine — see the flipped
     xfails elsewhere in this suite); only the northstar.claim.id attribute
     itself does not reach payments-mcp or payments-api, which are correlated
-    by trace ID instead (brief Step 11's own sanctioned fallback).
+    by trace ID instead.
 
-    This is a manual xfail, not `@pytest.mark.xfail(strict=True)` (review
-    finding, should-fix 1): a bare decorator on a test that depends on the
+    This is a manual xfail, not `@pytest.mark.xfail(strict=True)`: a bare
+    decorator on a test that depends on the
     module-scoped `correlated_trace` fixture also catches exceptions raised
     during that fixture's *own* setup (pytest's xfail machinery covers the
     setup phase, not just the call phase) — so if the MCP hop were severed

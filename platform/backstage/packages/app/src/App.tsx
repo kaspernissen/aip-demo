@@ -1,35 +1,30 @@
 import { createApp } from '@backstage/frontend-defaults';
 import catalogPlugin from '@backstage/plugin-catalog/alpha';
-// M6 Task 2: shows each catalog entity's live workload (design §2, "The
-// Kubernetes plugin"). Registers its own `entity-content:kubernetes/kubernetes`
-// tab on the entity page -- the new frontend system's plugins self-attach, so
-// no manual EntityPage composition is needed the way the old system required.
-// Backend half: packages/backend/src/index.ts already registers
+// Shows each catalog entity's live workload. Registers its own
+// `entity-content:kubernetes/kubernetes` tab on the entity page -- the new
+// frontend system's plugins self-attach, so no manual EntityPage
+// composition is needed the way the old system required. Backend half:
+// packages/backend/src/index.ts already registers
 // @backstage/plugin-kubernetes-backend (scaffold default); app-config.
 // production.yaml's `kubernetes:` block is what actually points it at this
 // cluster.
 import kubernetesPlugin from '@backstage/plugin-kubernetes/alpha';
 import { navModule } from './modules/nav';
 // No theme module. This app deliberately runs Backstage's own default light
-// and dark themes.
+// and dark themes: recolouring a design system means owning every surface
+// it has, and a partial override reliably breaks some surface just outside
+// the one being fixed -- a table override that outgrows its card, page and
+// card sitting too close to separate, a browser scrollbar still painted for
+// a light page. Backstage's defaults are internally consistent in a way a
+// partial override is not.
 //
-// There WAS one -- a full Northstar palette: navy surfaces on the brand hue,
-// custom page banners for all nine page types, table and scrollbar overrides.
-// It was removed 2026-09-16 after three rounds of trying to make it look
-// right. The lesson is worth keeping, because the failures were not random:
-// recolouring a design system means owning every surface it has, and each
-// round fixed the surface in the screenshot while breaking one just outside
-// it -- a table override that outgrew its card, page and card sat too close
-// to separate, a browser scrollbar still painted for a light page. Backstage's
-// defaults are internally consistent in a way a partial override is not.
-//
-// Northstar's identity now rides entirely on things that are NOT the
-// colour system, and it survives every Backstage upgrade for free:
+// Northstar's identity rides entirely on things that are NOT the colour
+// system, and it survives every Backstage upgrade for free:
 //   - the logo lockup in modules/nav (LogoFull/LogoIcon)
 //   - `app.title` and `organization.name` in app-config.yaml
 //   - the catalog's own content: the components, docs and links
 import { homeModule } from './modules/home';
-// M6 Task 3: the autonomy card, its own frontend plugin --
+// The autonomy card, its own frontend plugin --
 // modules/autonomyContract/plugin.tsx. Backend half: packages/backend/src/
 // plugins/autonomyContract, registered in packages/backend/src/index.ts.
 import { autonomyContractPlugin } from './modules/autonomyContract/plugin';

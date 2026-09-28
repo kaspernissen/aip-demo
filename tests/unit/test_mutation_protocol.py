@@ -2,8 +2,8 @@
 
 **What this guards and why it is in `tests/unit` rather than in a task report.**
 This repo's standing convention is that a guard is not trusted until it has
-been mutated and watched go red for the reason it names. M4 Task 4 found that
-the naive edit/run/revert loop is unsound: CPython validates a cached `.pyc`
+been mutated and watched go red for the reason it names. The naive
+edit/run/revert loop is unsound: CPython validates a cached `.pyc`
 against `(int(source_mtime), source_size)` and nothing else, so a
 length-preserving mutation (`6000` -> `6500`) that lands in the same integer
 second as the cached write produces either
@@ -28,13 +28,13 @@ Reads two files, and runs `scripts/mutate-guard.sh` itself against a target
 in pytest's `tmp_path` -- outside the working tree, so a round that failed to
 restore cannot leave a mutant in the repo. No cluster, no network, no model.
 
-The four behavioural tests at the bottom are behavioural on purpose. This
-file's own first version asserted the no-op refusal by matching the literal
-`if old not in text`, and M4 Task 5's fix for the non-unique-pattern defect
-rewrote exactly that condition -- so the substring guard would have reddened
-for a correct change while a rewrite that deleted the check and kept the
-words would have stayed green. A guard on a script's behaviour is worth more
-than a guard on its source when running it costs a subprocess and a second.
+The four behavioural tests at the bottom are behavioural on purpose. A guard
+that instead matched the literal source of the uniqueness check, such as
+`if old not in text`, would redden the moment that condition is rewritten to
+an equivalent but differently-worded one, and would stay green if the check
+were deleted and the surrounding words kept. A guard on a script's behaviour
+is worth more than a guard on its source when running it costs a subprocess
+and a second.
 """
 import os
 import re
@@ -90,7 +90,7 @@ def test_the_mutation_script_disables_bytecode_caching_on_the_run_itself():
     """
     script = _effective_script()
     assert re.search(r'PYTHONDONTWRITEBYTECODE=1\s+"\$@"', script), (
-        "scripts/mutate-guard.sh no longer runs the test command with "
+        "scripts/mutate-guard.sh does not run the test command with "
         "PYTHONDONTWRITEBYTECODE=1 in front of it. Without it a "
         "length-preserving mutation reverted inside the same integer second "
         "leaves the MUTANT bytecode executing against reverted source -- so "
@@ -109,9 +109,8 @@ def test_the_mutation_script_purges_stale_caches_around_the_run():
     script = _effective_script()
     # The `-exec rm -rf` half is asserted, not just the `find`: swapping the
     # deletion for `-print` leaves a line that still looks like a purge and
-    # purges nothing. Found by mutating this guard -- the first version matched
-    # only `find … -name __pycache__ -type d` and stayed green on exactly that
-    # edit.
+    # purges nothing, and a guard matching only `find … -name __pycache__ -type
+    # d` would stay green on exactly that edit.
     assert re.search(
         # Bounded `.{0,300}?` rather than a bare `.*?`: the real command wraps
         # across lines, so the match has to cross a newline, but an unbounded
@@ -120,7 +119,7 @@ def test_the_mutation_script_purges_stale_caches_around_the_run():
         r"find .{0,300}?-name __pycache__ -type d.{0,300}?-exec\s+rm\s+-rf",
         script, re.S,
     ), (
-        "scripts/mutate-guard.sh no longer DELETES __pycache__ directories. "
+        "scripts/mutate-guard.sh does not delete __pycache__ directories. "
         "PYTHONDONTWRITEBYTECODE stops new caches being written; it does not "
         "stop an existing one being read, so a find that merely lists them "
         "leaves the vector open."
@@ -143,7 +142,7 @@ def test_the_mutation_script_restores_the_file_on_every_exit_path():
     failed cases, which are the ones a plain trailing `cp` misses."""
     script = _effective_script()
     assert re.search(r"trap\s+restore\s+EXIT\s+INT\s+TERM", script), (
-        "scripts/mutate-guard.sh no longer restores the mutated file via a "
+        "scripts/mutate-guard.sh does not restore the mutated file via a "
         "trap on EXIT/INT/TERM. A round interrupted with ctrl-C, or one whose "
         "test command aborts, would leave the mutation in the working tree."
     )
@@ -190,7 +189,7 @@ def test_the_mutation_script_refuses_a_replacement_that_changes_nothing(tmp_path
 
 
 def test_the_mutation_script_refuses_a_pattern_that_is_not_unique(tmp_path):
-    """**The defect M4 Task 4 hit, and the reason this test is behavioural.**
+    """**Why a pattern must be unique, and why this test is behavioural.**
 
     The script replaced the FIRST match and said nothing about the others, so a
     mutation whose text also appears in a test the command does not run lands
@@ -198,11 +197,11 @@ def test_the_mutation_script_refuses_a_pattern_that_is_not_unique(tmp_path):
     guard covers this" -- about a line that was never mutated. The tool built
     to stop false GREENs produced one.
 
-    Asserted by running it, not by grepping for the check: the previous version
-    of this file's no-op test matched the literal `if old not in text`, and
-    rewriting that condition to `text.count(old)` -- which is exactly the change
-    that fixed this -- would have reddened it for no reason while a rewrite that
-    dropped the check entirely and kept the words would have stayed green.
+    Asserted by running it, not by grepping for the check: a guard that
+    matched the literal `if old not in text` would redden the moment that
+    condition is rewritten to an equivalent but differently-worded one (such
+    as `text.count(old)`), and would stay green if the check were deleted and
+    the surrounding words kept.
     """
     path, rel = _target(tmp_path, "assert count >= 5\nfiller\nassert count >= 5\n")
     result = _run_guard(rel, "assert count >= 5", "assert count >= 99", "true")
@@ -256,11 +255,11 @@ def test_the_mutation_script_really_mutates_and_really_restores(tmp_path):
 def test_the_usage_help_prints_the_whole_header(tmp_path):
     """Called with too few arguments, the script prints its header as usage.
 
-    That range used to be the hand-written `sed -n '2,50p'`, and the paragraph
-    M4 Task 5 appended pushed the header past 50 lines -- so the usage text
-    stopped mid-sentence, several paragraphs before the uniqueness rule that is
-    the most common reason for the exit-2 it was printed by. It derives the
-    range now, and this pins that it still covers the last line of the header.
+    The range is derived rather than hard-coded (e.g. a fixed `sed -n
+    '2,50p'`): a hard-coded line count stops the usage text mid-sentence the
+    moment the header grows past it, cutting off the uniqueness rule that is
+    the most common reason for the exit-2 it is printed by. This pins that the
+    derived range still covers the last line of the header.
     """
     result = _run_guard("only", "three", "args")
     assert result.returncode == 2
@@ -280,22 +279,22 @@ def test_the_usage_help_prints_the_whole_header(tmp_path):
 
 def test_the_readme_documents_the_protocol_and_names_the_script():
     """The script is the tool; the README is how the next implementer finds
-    it. Task reports are not where anyone looks, which is the whole reason
-    this moved out of one.
+    it. A convention documented only in an internal report is invisible to
+    anyone who doesn't know to look for it.
     """
     readme = README_PATH.read_text()
     assert "scripts/mutate-guard.sh" in readme, (
-        "README.md no longer names scripts/mutate-guard.sh, so the mutation "
+        "README.md does not name scripts/mutate-guard.sh, so the mutation "
         "protocol is a script nobody is told about"
     )
     assert "PYTHONDONTWRITEBYTECODE" in readme, (
-        "README.md's mutation-testing section no longer names "
+        "README.md's mutation-testing section does not name "
         "PYTHONDONTWRITEBYTECODE=1. The reason the loop is unsound without it "
         "is the only part of that section that is not obvious, and it is the "
         "part that gets trimmed."
     )
     assert __name__.split(".")[-1] in readme or "test_mutation_protocol" in readme, (
-        "README.md no longer points at tests/unit/test_mutation_protocol.py. "
+        "README.md does not point at tests/unit/test_mutation_protocol.py. "
         "A convention with a guard nobody knows about gets 'simplified' by "
         "the next person to read the script."
     )

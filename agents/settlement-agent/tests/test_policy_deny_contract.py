@@ -1,7 +1,7 @@
 """The deny-marker contract, asserted against **both** real implementations.
 
-Fix round 1, finding F7. Before this file the marker was hand-duplicated: the
-PDS wrote `"decision": "deny"` in `pds/server.py::build_result`, and
+Before this file the marker was hand-duplicated: the PDS wrote
+`"decision": "deny"` in `pds/server.py::build_result`, and
 `tests/test_mcp_tools.py` carried a copied literal of the same body. Producer
 and consumer of a contract with nothing asserting they agree is the classic
 silent-drift shape, and it was measured: changing the PDS to emit `"denied"`
@@ -21,8 +21,8 @@ from the bytes the gateway measurably sends the PDS to the exception
       -> mcp_tools._policy_denial       (the real detector)
 
 Only one hop in that chain is a stand-in, and it is the one hop that is not
-Python: agentgateway. Its mapping is not invented here either -- Task 1
-measured it byte-for-byte (`AuthorizationError.reason` -> `error.message`,
+Python: agentgateway. Its mapping is not invented here either -- it was
+measured byte-for-byte (`AuthorizationError.reason` -> `error.message`,
 `mcp_error` parsed whole -> `error.data`, `error.code` -> the gateway's own
 `-32001`, never the `-32003` inside the body) and `_as_it_arrives_at_the_agent`
 is that mapping and nothing else.
@@ -30,16 +30,15 @@ is that mapping and nothing else.
 **The import of `pds` is test-only.** Nothing in `agents/settlement-agent`'s
 production code imports the PDS, and nothing may: the agent reaches the policy
 through the gateway, never directly, and a Python-level dependency would
-quietly contradict the architecture this milestone exists to demonstrate. The
-`sys.path` insertion below happens in a test module, so it cannot reach
-`mcp_tools.py`, `settlement.py` or the image.
+quietly contradict that architecture. The `sys.path` insertion below happens
+in a test module, so it cannot reach `mcp_tools.py`, `settlement.py` or the
+image.
 
-M5 Task 3: `pds/server.py` now imports `openfeature` at module scope (the
-autonomy-level client it builds once, per ruling M5-R4/Step 7), which is not
-a dependency this file's own venv (`agents/settlement-agent/.venv`) carries
-and never should -- house style is one clean venv per service
-(`requirements.txt`'s own "resolved once" ruling), and this file borrows the
-PDS's *source* rather than pip-installing it for exactly that reason. So the
+`pds/server.py` imports `openfeature` at module scope (the autonomy-level
+client it builds once), which is not a dependency this file's own venv
+(`agents/settlement-agent/.venv`) carries and never should -- house style is
+one clean venv per service, and this file borrows the PDS's *source* rather
+than pip-installing it for exactly that reason. So the
 `sys.path` insertion below also appends the PDS's own already-built `.venv`
 site-packages -- `append`, not `insert(0, ...)`, so any package name the two
 services' venvs happen to share (`grpcio`, `protobuf`,
@@ -52,8 +51,8 @@ transitive closure). This does not add anything to
 service's `.venv` -- it reads a sibling venv's already-installed packages
 exactly as it already reads a sibling service's already-written source.
 
-Concrete regression check (measured -- see the task report's fix round):
-change `"decision": "deny"` to `"denied"` in `pds/server.py::build_result` and
+Concrete regression check: change `"decision": "deny"` to `"denied"` in
+`pds/server.py::build_result` and
 `test_the_pds_deny_body_is_recognised_by_the_agents_own_detector` fails here,
 outside the PDS suite, which is the whole point of the file.
 """
@@ -80,14 +79,13 @@ _PDS_SITE_PACKAGES = sorted(_PDS_DIR.glob(".venv/lib/python3.*/site-packages"))
 
 _HOW = (
     "\n\n"
-    "This is the producer/consumer contract test for the policy deny marker\n"
-    "(M2.2 Task 5, fix round finding F7). It imports the PDS's own deny-body\n"
-    "builder so that a change to the marker on the PDS side cannot leave this\n"
-    "service's suite green.\n"
+    "This is the producer/consumer contract test for the policy deny marker.\n"
+    "It imports the PDS's own deny-body builder so that a change to the\n"
+    "marker on the PDS side cannot leave this service's suite green.\n"
     "\n"
-    "The generated ExtMCP gRPC stubs it needs are git-ignored on purpose\n"
-    "(ruling R22), and since M5 Task 3 it also needs the PDS's own `.venv`\n"
-    "built (for `openfeature`, imported at `pds/server.py` module scope).\n"
+    "The generated ExtMCP gRPC stubs it needs are git-ignored on purpose, and\n"
+    "it also needs the PDS's own `.venv` built (for `openfeature`, imported\n"
+    "at `pds/server.py` module scope).\n"
     "Generate/build both, then re-run:\n"
     "\n"
     "    cd platform/policy-decision-service && ./gen-stubs.sh\n"
@@ -115,7 +113,7 @@ except ImportError as exc:
 
 AGENT = "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
 
-# The `mcp_request` payload shape Task 1 measured on the wire, with the float
+# The `mcp_request` payload shape measured on the wire, with the float
 # amount the gateway actually sends (`6200.0`, not `6200`). Built here the way
 # the PDS's own servicer tests build it, so this file exercises the parser
 # rather than assuming what it produces.
@@ -140,11 +138,11 @@ def _pds_decision(params: bytes):
     Mirrors `PolicyServicer.CheckRequest`'s own call sequence
     (`parse_call` -> `decide` -> `build_result`, with `requested=call.amount`),
     minus the gRPC and span plumbing, which is the PDS suite's business and not
-    this contract's. Also minus `resolve_autonomy` (M5): this contract is
-    about the deny-marker shape `parse_call`/`decide`/`build_result` produce,
-    not about which autonomy level flagd hands back, so the level is fixed
-    at `RESTRICTIVE_LEVEL` -- the same "assisted" every call in this file
-    exercised before M5, when it was `server.py`'s own constant.
+    this contract's. Also minus `resolve_autonomy`: this contract is about the
+    deny-marker shape `parse_call`/`decide`/`build_result` produce, not about
+    which autonomy level flagd hands back, so the level is fixed at
+    `RESTRICTIVE_LEVEL` -- the "assisted" level every call in this file
+    exercises.
     """
     call = parse_call(params)
     decision = decide(
@@ -167,7 +165,7 @@ def _pds_decision(params: bytes):
 
 
 def _as_it_arrives_at_the_agent(result) -> MCPError:
-    """agentgateway's mapping, measured byte-for-byte in Task 1 finding 1.
+    """agentgateway's mapping, measured byte-for-byte.
 
     The one hop in this chain that is not Python. `reason` becomes
     `error.message`; `mcp_error` is parsed whole and becomes `error.data`; the
@@ -290,18 +288,17 @@ def test_the_agent_does_not_import_the_pds_in_production():
 
     The import above is test-only. If a production module ever grows a `pds`
     import, the agent has acquired a Python dependency on the policy service --
-    which would contradict the architecture the milestone demonstrates, where
-    the agent reaches the policy only through the gateway and cannot reach
-    around it.
+    which would contradict the architecture this demonstrates, where the
+    agent reaches the policy only through the gateway and cannot reach around
+    it.
 
-    **Recursive, deliberately.** This used `here.glob("*.py")` until the M2.2
-    fix round (final-review finding 7), which scanned only the component root
-    and would therefore have passed a `pds` import from any future subpackage
-    under `agents/settlement-agent/` -- the blind spot, not the guard. Its
-    sibling guard, `tests/e2e/test_policy_denial.py::_source_files`, already
-    used `rglob` and already documented recursion as the point ("so that a
-    future subpackage cannot become a blind spot"); this now matches it,
-    including the same exclusion set and the same reasons:
+    **Recursive, deliberately.** A glob scoped to the component root would
+    pass a `pds` import from any future subpackage under
+    `agents/settlement-agent/` -- a blind spot, not a guard. Its sibling
+    guard, `tests/e2e/test_policy_denial.py::_source_files`, uses `rglob` for
+    the same reason ("so that a future subpackage cannot become a blind
+    spot"); this matches it, including the same exclusion set and the same
+    reasons:
 
     * `tests/` is excluded because *this file* is the licensed exception -- it
       imports `pds` on purpose, three lines from the top.

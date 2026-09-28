@@ -55,8 +55,8 @@ e2e-test-report/
 # Cache
 .cache/
 
-# M6 Task 2: scripts/rebuild-and-deploy.sh stages the catalog-info.yaml
-# files and agent cards it bakes into the image here, then removes it —
-# belt-and-braces on top of that cleanup, the same way agents/*/agent-card.json
-# is at the repo root .gitignore.
+# scripts/rebuild-and-deploy.sh stages the catalog-info.yaml files and
+# agent cards it bakes into the image here, then removes it — belt-and-braces
+# on top of that cleanup, the same way agents/*/agent-card.json is at the
+# repo root .gitignore.
 .catalog-stage/

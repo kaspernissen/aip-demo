@@ -97,16 +97,13 @@ def test_execute_span_is_a_child_of_the_injected_context(executed_payment):
 
 
 def test_span_carries_http_semantic_conventions(executed_payment_trace):
-    # otelhttp v0.71.0 (2026-09-11, M3; v0.66.0 before that, itself bumped
-    # from v0.57.0 per amendment A12) emits the stable HTTP
-    # semantic-convention spelling by default, no opt-in env var needed.
-    # Confirmed empirically against a deployed payments-api trace; see the
-    # telemetry contract in Task 8 and task-2-report.md for the full
-    # attribute map and otelhttp version. Re-measured after the v0.71.0 bump
-    # on trace eacff63cc15a0868cee60332b1728735: the attribute set is
-    # unchanged -- http.request.method / http.response.status_code /
+    # otelhttp v0.71.0 (bumped from v0.66.0, itself bumped from v0.57.0)
+    # emits the stable HTTP semantic-convention spelling by default, no
+    # opt-in env var needed. Confirmed empirically against a deployed
+    # payments-api trace: http.request.method / http.response.status_code /
     # http.route / url.path / url.scheme / server.* / network.peer.* /
-    # network.protocol.version, and still no network.protocol.name.
+    # network.protocol.version are present, and network.protocol.name is
+    # not.
     span = executed_payment_trace.span("POST /payments/{paymentId}/execute")
     assert span.attrs.get("http.request.method") == "POST"
     assert span.attrs.get("http.response.status_code") == 200

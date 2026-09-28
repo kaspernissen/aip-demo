@@ -47,13 +47,11 @@ async def healthz():
 
 
 # The reviewer's queue: every refusal the ledger is currently holding for a
-# human. One owned span, `review.queue`, added in the M3 final-review fix
-# round (controller ruling R36) for the same reason `review.decision` gained
-# its ledger read -- without a current span, `HTTPXClientInstrumentor`'s
-# CLIENT span for `list_refused()` was the root of a trace of its own, and
-# payments-api's server span for the read landed in yet another. Measured
-# before the change: zero shared trace ids across the 30 most recent traces
-# of each shape.
+# human. One owned span, `review.queue`, wraps the ledger read for the same
+# reason `review.decision` does -- without a current span,
+# `HTTPXClientInstrumentor`'s CLIENT span for `list_refused()` would be the
+# root of a trace of its own, and payments-api's server span for the read
+# would land in yet another.
 #
 # **How the name was chosen, since an authored span name is a claim.** This
 # repo's owned spans are `<domain>.<the thing this span is>`, never a

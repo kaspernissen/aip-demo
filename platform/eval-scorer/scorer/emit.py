@@ -1,7 +1,7 @@
-"""Emitting the five scores as OTel spans, through the spiked SDK.
+"""Emitting the five scores as OTel spans, through the scoring SDK.
 
-**The M1 record, and the correction this module is built on.** M1 spec §13
-records the spike's finding as
+**Written against the measured signature, not an assumed one.** An earlier
+record of the signature was
 `score(name, value, trace_id, span_id, label, explanation)`. Read against the
 package as actually published -- `opensearch-genai-observability-sdk-py`
 0.2.8, `opensearch_genai_observability_sdk_py/score.py`, downloaded from PyPI
@@ -10,15 +10,14 @@ and unpacked on 2026-09-13 -- the real signature is:
     score(name, value=None, *, trace_id=None, span_id=None, label=None,
           explanation=None, response_id=None, attributes=None) -> None
 
-The names and the order of the six the record lists are right; what the record
-gets wrong is that **only `name` and `value` are positional**. Everything after
-them is keyword-only, and there are two further parameters the record does not
-mention. Calling it the way the record reads -- `score(n, v, tid, sid, lbl,
-exp)` -- is a `TypeError`, not a subtly different span. The M1 spec has been
-corrected with a dated note; this module is written against the measured
-signature, and `tests/test_emit.py` asserts that signature with
-`inspect.signature` so a future bump that moves it reddens here rather than in
-production.
+The names and the order of the six that record lists are right; what it gets
+wrong is that **only `name` and `value` are positional**. Everything after
+them is keyword-only, and there are two further parameters it does not
+mention. Calling it the way that record reads -- `score(n, v, tid, sid, lbl,
+exp)` -- is a `TypeError`, not a subtly different span. This module is
+written against the measured signature, and `tests/test_emit.py` asserts that
+signature with `inspect.signature` so a future bump that moves it reddens
+here rather than in production.
 
 **What the SDK actually emits**, read from the same source rather than assumed:
 
@@ -37,10 +36,9 @@ production.
 
 It emits through `opentelemetry.trace.get_tracer(...)`, i.e. through whatever
 TracerProvider is globally installed. So it rides this repo's existing OTLP
-pipeline with no exporter of its own, exactly as the spike recorded -- which
-is the property M4 depends on, because it is what makes the scores land in the
-same index as the spans they judge, and reach the optional Dash0 export at no
-extra cost.
+pipeline with no exporter of its own -- the property this service depends on,
+because it is what makes the scores land in the same index as the spans they
+judge, and reach the optional Dash0 export at no extra cost.
 
 **Why every score is attached span-level rather than trace-level.** Passing a
 `trace_id` with no `span_id` is the SDK's "trace-level" mode, and
@@ -112,9 +110,9 @@ def configure() -> None:
     No MeterProvider, unlike the five services `tests/unit/
     test_metrics_wiring.py` enumerates. This service authors no metric: what
     it produces is a judgment per settlement, which is a span with a value on
-    it, and a counter derived from those spans would be derivable from the
-    spans themselves. M4 Task 2's §6 rule -- do not author a metric to make a
-    dashboard look fuller -- applies here exactly as it applied to the PDS.
+    it, and a counter derived from those spans would be redundant with them.
+    This repo's rule -- do not author a metric to make a dashboard look
+    fuller -- applies here exactly as it applies to the PDS.
 
     No propagator registration either, for a reason worth naming rather than
     leaving as an omission: this service never continues an inbound trace. The

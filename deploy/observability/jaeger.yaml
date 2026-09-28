@@ -15,33 +15,28 @@ spec:
     spec:
       containers:
         - name: jaeger
-          # Jaeger v2 (2026-09-16). Was `jaegertracing/all-in-one:1.62.0` --
-          # the v1 line, whose last release was October 2024; v1 is retired
-          # upstream and gets no fixes. Checked against
+          # Jaeger v2, not the v1 image (`jaegertracing/all-in-one`): the v1
+          # line's last release was October 2024, it is retired upstream, and
+          # gets no fixes. Version checked against
           # api.github.com/repos/jaegertracing/jaeger/releases rather than a
           # local image list.
           #
-          # **v2.20.0 deliberately, not v2.21.0 (the newest, 2026-09-14).**
-          # v2.21.0's release notes carry one breaking change: "remove v1 http
-          # endpoints the ui no longer calls"
-          # (jaegertracing/jaeger#9260). Measured against a running v2.21.0
-          # pod before pinning back: `/api/services` and `/api/traces` return
-          # 404 there, and only `/api/v3/*` answers. Those two v1 endpoints are
-          # what tests/harness/jaeger.py is built on, and its Span/Trace
-          # parsing expects v1 trace JSON -- the v3 API returns OTLP-JSON,
-          # a different shape, so moving to 2.21 is a harness rewrite, not a
-          # version bump. Every e2e trace assertion in this repo runs through
-          # that harness, and all of them are gated behind RUN_BROWSER_TESTS,
-          # so the breakage would not show up in a local `pytest tests/unit`.
-          #
-          # This pin is therefore a decision with a cost attached, not an
-          # oversight: 1.62.0 -> 2.20.0 leaves the retired v1 line for the
-          # current v2 one, and the last step to 2.21 is owed the harness
-          # migration it actually requires.
+          # **v2.20.0 deliberately, not the newest v2.21.0.** v2.21.0's
+          # release notes carry one breaking change: "remove v1 http
+          # endpoints the ui no longer calls" (jaegertracing/jaeger#9260).
+          # Checked against a running v2.21.0 pod: `/api/services` and
+          # `/api/traces` return 404 there, and only `/api/v3/*` answers.
+          # Those two v1 endpoints are what tests/harness/jaeger.py is built
+          # on, and its Span/Trace parsing expects v1 trace JSON -- the v3 API
+          # returns OTLP-JSON, a different shape, so moving to 2.21 needs a
+          # harness rewrite, not just a version bump. Every e2e trace
+          # assertion in this repo runs through that harness, and all of them
+          # are gated behind RUN_BROWSER_TESTS, so the breakage would not show
+          # up in a local `pytest tests/unit`.
           #
           # v2 is a different program wearing the same name -- it is the
           # OpenTelemetry Collector with Jaeger's storage and UI built in, so
-          # the v1 environment variables below are gone rather than renamed:
+          # the v1 environment variables below do not apply:
           #
           #   COLLECTOR_OTLP_ENABLED  OTLP is always on in v2; there is no
           #                           switch to set.
@@ -51,13 +46,12 @@ spec:
           #                           this demo wants (all-in-one, in-memory),
           #                           so no ConfigMap is mounted.
           #
-          # The image name changes too: `jaegertracing/jaeger`, not
+          # The image name is `jaegertracing/jaeger`, not
           # `jaegertracing/all-in-one`, which is a v1-only repository.
           #
           # The ports and the v1 query API this repo's harness uses
           # (/api/services, /api/traces, /api/traces/{id} -- tests/harness/
-          # jaeger.py) are unchanged in v2, and were re-checked against the
-          # running pod after this upgrade rather than assumed.
+          # jaeger.py) are confirmed against the running pod.
           image: jaegertracing/jaeger:2.20.0
           ports:
             - name: query

@@ -3,8 +3,8 @@
 Imported before fastmcp as a matter of convention (see NOTES.md): on the
 installed fastmcp==4.0.3, `fastmcp.telemetry.get_tracer()` resolves
 `trace.get_tracer_provider()` fresh on every span creation rather than
-binding a tracer at import time, so import order relative to fastmcp is no
-longer load-bearing for that version (verified empirically — see NOTES.md).
+binding a tracer at import time, so import order relative to fastmcp is not
+load-bearing for this version (see NOTES.md for how that was verified).
 Kept first regardless, for clarity and because it costs nothing.
 
 FastMCP's own instrumentation is controlled by `FASTMCP_TELEMETRY_MODE`
@@ -28,10 +28,9 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-# N1 (final-review.md): ClaimIdSpanProcessor lives in correlation.py now, not
-# here — it is the mechanism that implements that file's own correlation
-# rule, and a reader told "correlation.py is the shared file" (A18) should
-# find it there.
+# ClaimIdSpanProcessor lives in correlation.py, not here — it is the
+# mechanism that implements that file's own correlation rule, and a reader
+# told "correlation.py is the shared file" should find it there.
 from correlation import ClaimIdSpanProcessor
 
 
@@ -43,7 +42,7 @@ def configure() -> None:
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
 
-    # M4 Task 2, before HTTPXClientInstrumentor below rather than after it:
+    # Must run before HTTPXClientInstrumentor below, not after it:
     # that instrumentor resolves a meter once, inside `_instrument`
     # (`get_meter(...)`, opentelemetry/instrumentation/httpx/__init__.py:775
     # and three sibling call sites), so a provider installed afterwards is
@@ -52,8 +51,7 @@ def configure() -> None:
     _configure_metrics(resource)
 
     # W3C trace-context + baggage, explicitly, matching the other two Python
-    # services (A18) and payments-api's Go side. This service had no explicit
-    # registration before this task; FastMCP's own params._meta extraction
+    # services and payments-api's Go side. FastMCP's own params._meta extraction
     # (fastmcp/telemetry.py) is independent of this global propagator (it
     # hand-builds its own carrier), but the outbound HTTPXClientInstrumentor
     # call to payments-api below relies on this propagator to inject
@@ -79,7 +77,7 @@ def _metric_reader() -> PeriodicExportingMetricReader:
 
 
 def _configure_metrics(resource: Resource) -> None:
-    """Install a MeterProvider (M4 Task 2). Endpoint and protocol come from the
+    """Install a MeterProvider. Endpoint and protocol come from the
     standard `OTEL_EXPORTER_OTLP_*` variables, as for traces.
 
     Identical in shape to every other Python service here.
@@ -89,12 +87,12 @@ def _configure_metrics(resource: Resource) -> None:
     rather than a second copy that can drift from it;
     `tests/unit/test_metrics_wiring.py` asserts the five copies stay identical.
 
-    **This service is the one that decides M4 §6's `gen_ai.execute_tool.duration`
-    row.** Tool execution happens here, under FastMCP, so this is the process in
+    **This service is the one that can emit `gen_ai.execute_tool.duration`.**
+    Tool execution happens here, under FastMCP, so this is the process in
     which that metric would be recorded if FastMCP recorded it. Without a
     provider here, "FastMCP emits no `execute_tool` metric" would be a claim
     about our own wiring rather than about FastMCP -- exactly the false negative
-    the inventory must not contain.
+    a telemetry inventory of this system must not contain.
     """
     metrics.set_meter_provider(
         MeterProvider(resource=resource, metric_readers=[_metric_reader()])

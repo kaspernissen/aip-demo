@@ -1,25 +1,19 @@
 """The one definition of "does this object exist, or could I not look?".
 
-**Ruling M4-R14.** M4 finished Task 3 carrying two different skip shapes for the
-same question:
+Several `tests/e2e` modules (`test_prometheus_metrics_ingest.py`,
+`test_opensearch_trace_ingest.py`, and others) need to skip when a cluster is
+below the stage that provisions some object, but only when that object is
+genuinely absent -- not when `kubectl` merely failed to reach the API server.
+Reading `returncode == 0` as "it exists" and every other exit as "absent"
+makes a transient kubectl failure look exactly like the object being absent,
+turning a skip into a false negative: the checks that were supposed to run
+silently don't. This module is the one place that tells the two cases apart,
+so every caller shares the strict shape instead of each keeping its own,
+weaker copy.
 
-  * `tests/e2e/test_prometheus_metrics_ingest.py` (Task 2) hard-failed any
-    non-`NotFound` `kubectl` exit -- its review finding F7 -- so an unreachable
-    API server could not be mistaken for "this cluster is below stage 4".
-  * `tests/e2e/test_opensearch_trace_ingest.py` (Task 1) still read
-    `returncode == 0` and treated every other exit as "absent". F7 was raised
-    against Task 2's file and deliberately not widened into Task 1's without a
-    review asking for it; that file's own docstring said so.
-
-Task 3 then *imported* the stricter one rather than copying it, which is why
-this reconciliation is a move rather than a merge: there was one definition,
-and this module is where it now lives so that neither of the two callers owns
-it and a third cannot pick the weaker shape by accident.
-
-The shape that survives is the strict one. A skip that says "nothing to check
-here" when the truth is "I could not look" is the same false negative these
-files exist to prevent, one level up -- and it is worse in the gate, where a
-skip is invisible in a green run (ruling M4-R9).
+A skip that says "nothing to check here" when the truth is "I could not
+look" is worse in a gate run, where a skip is invisible in an otherwise green
+result.
 """
 from __future__ import annotations
 
@@ -57,18 +51,17 @@ def absent_or_fail(result: subprocess.CompletedProcess, what: str) -> bool:
     An unreachable API server, a missing or misspelled context, an expired
     credential and a genuine `NotFound` are all non-zero exits, so reading
     `returncode == 0` as "it exists" and everything else as "it is absent"
-    makes a transient kubectl failure look exactly like a cluster below stage 4
-    -- silently removing a milestone's assertions from the one gate run that
-    performs them.
+    makes a transient kubectl failure look exactly like the object being
+    absent -- silently skipping the checks that were supposed to run.
 
     `NotFound` is matched on kubectl's own error text, which is stable across
     resource kinds: `Error from server (NotFound): services "x" not found`.
     Either half of that is accepted, because `kubectl wait` and some subresource
     paths print the quoted-name half without the API reason -- but a bare
-    lowercase `not found` anywhere in stderr is *not*, which M4 Task 5's first
-    test of this function caught: `kubectl: command not found` is a missing
-    binary, and reading it as a missing object would skip a milestone's
-    assertions on a machine that cannot run kubectl at all.
+    lowercase `not found` anywhere in stderr is *not* accepted, because
+    `kubectl: command not found` is a missing binary, not a missing object,
+    and reading it as one would skip the checks on a machine that cannot run
+    kubectl at all.
     """
     if result.returncode == 0:
         return True

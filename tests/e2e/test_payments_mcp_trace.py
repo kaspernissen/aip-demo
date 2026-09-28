@@ -1,40 +1,32 @@
 """Asserts the MCP hop is traced and joined to the payments-api span.
 
-Trace lookup (A14 / A14a): this test originates its own MCP `execute_payment`
-call, so it mints its own W3C trace context and injects it — not as an HTTP
-header (there is no `traceparent` header across an MCP boundary), but into
-the JSON-RPC `params._meta` field, which is where MCP carries trace context
-(SEP-414). `mcp==1.9.4`'s high-level `ClientSession.call_tool()` has no way to
-set `_meta`, so the injected call goes through the lower-level
+Trace lookup: this test originates its own MCP `execute_payment` call, so it
+mints its own W3C trace context and injects it — not as an HTTP header
+(there is no `traceparent` header across an MCP boundary), but into the
+JSON-RPC `params._meta` field, which is where MCP carries trace context
+(SEP-414). mcp's high-level `ClientSession.call_tool()` has no way to set
+`_meta`, so the injected call goes through the lower-level
 `ClientSession.send_request()` with a hand-built `CallToolRequest` whose
-`params._meta = {"traceparent": ...}`. At 1.x that value had to be built as a
-`RequestParams.Meta` model (which allowed extra fields); since the mcp 2.x bump
-(2026-09-11) `params._meta` is the `RequestParamsMeta` **TypedDict**, so the
-plain dict IS the value and `types.ClientRequest` is a union rather than a
-wrapper model. The serialised request is unchanged, which is why every
-server-side assertion below stayed as it was. The trace is then looked up by the exact ID this test
-generated (`wait_for_trace_id`), never by service/operation search — a search
-was proven live to return an unrelated trace from 14 minutes earlier (see
-task-3-review.md finding 1), which would pass even with propagation broken.
+`params._meta = {"traceparent": ...}`. At the pinned mcp version,
+`params._meta` is the `RequestParamsMeta` **TypedDict**, so the plain dict
+IS the value and `types.ClientRequest` is a union rather than a wrapper
+model. The trace is then looked up by the exact ID this test generated
+(`wait_for_trace_id`), never by service/operation search — a search can
+return an unrelated trace from an earlier pod lifetime, which would pass
+even with propagation broken.
 
 This is test-side infrastructure only: it proves FastMCP's *server-side*
 extraction of `params._meta.traceparent` works (see the parent-ID assertion
-below and NOTES.md), not that our production MCP client (settlement-agent)
-injects it — that remains Task 7's job. No HTTP-header workaround is used
-anywhere.
+below and NOTES.md), not that a production MCP client injects it. No
+HTTP-header workaround is used anywhere.
 
-**S5 (final-review.md):** `contracts/mcp/payments-mcp.json` — spec §7's
-"source of truth" for this tool's schema — had drifted from what the live
-server actually serves: it claimed `amount: {minimum: 0}`, `currency:
-{enum: ["EUR"]}`, and no `additionalProperties`, none of which FastMCP's
-auto-generated schema (from the plain Python type hints in `server.py`)
-actually produces, and nothing compared them. A one-time correction to the
-file would only prevent today's drift, not tomorrow's — the agent-card half
-of `contracts/` is already diffed against the live server this way
-(`test_claims_chain_trace.py`/`test_settlement_agent_trace.py`), and the MCP
-tool schema deserved the same guard, not a one-off fix. `test_tool_schema_matches_the_committed_contract`
-below does that: it diffs the *whole* served `list_tools()` document against
-the committed file, the same pattern the agent-card tests already use.
+`contracts/mcp/payments-mcp.json` is the committed source of truth for this
+tool's schema, and it can drift from what the live server actually serves
+(FastMCP auto-generates the schema from the plain Python type hints in
+`server.py`). `test_tool_schema_matches_the_committed_contract` below guards
+against that drift by diffing the whole served `list_tools()` document
+against the committed file, the same pattern the agent-card tests use
+(`test_claims_chain_trace.py`/`test_settlement_agent_trace.py`).
 """
 import json
 import os
@@ -230,12 +222,11 @@ def test_span_kinds_are_correct(mcp_trace):
 
 
 def test_tool_schema_matches_the_committed_contract():
-    """S5 (final-review.md): diffs the whole served tool list against
-    contracts/mcp/payments-mcp.json, so a served/contract drift (a changed
-    type hint, a new/removed parameter, an annotation flip) fails here
-    instead of shipping silently — mirroring the agent-card diff tests
-    (test_claims_chain_trace.py/test_settlement_agent_trace.py) rather than
-    leaving this file's schema as a one-time, unguarded correction."""
+    """Diffs the whole served tool list against contracts/mcp/payments-mcp.json,
+    so a served/contract drift (a changed type hint, a new/removed
+    parameter, an annotation flip) fails here instead of shipping silently
+    — mirroring the agent-card diff tests
+    (test_claims_chain_trace.py/test_settlement_agent_trace.py)."""
     import anyio
 
     async def _list_tools():

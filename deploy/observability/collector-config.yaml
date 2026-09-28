@@ -11,15 +11,14 @@ receivers:
           allowed_headers:
             - "*"
 
-  # M2.1 Task 4: SPIRE's own telemetry.
+  # SPIRE's own telemetry.
   #
   # SPIRE 1.15.3 has no OpenTelemetry support at all -- no OTLP exporter and no
   # tracing (its telemetry block offers Prometheus, DogStatsD, Statsd, M3 and
   # an in-memory sink and nothing else; see deploy/platform/spire/values.yaml).
   # Prometheus metrics are therefore the only real telemetry it emits, and
-  # without this receiver they would be exposed on :9988 and thrown away --
-  # exactly the "component with no telemetry configured is invisible" hole
-  # M2.1 Task 3 found in agentgateway.
+  # without this receiver they would be exposed on :9988 and thrown away: a
+  # component with no telemetry configured is invisible.
   #
   # Two jobs rather than one with two targets, so the receiver stamps a
   # distinguishable `service.name` (it derives it from job_name) on each side
@@ -48,74 +47,54 @@ processors:
     override: false
 
   # BEGIN stage-4-only
-  # M4 Task 1, fix round 1 (review finding F1): the spec's own prior art, an
-  # OpenSearch-only branch that carries "the same enriched spans, minus the
-  # keys OpenSearch cannot map" (spec §3 quotes the reference's
-  # `resource/opensearch-compat` processor saying exactly that).
-  #
-  # WHAT BREAKS WITHOUT IT, measured on this cluster 2026-09-13:
-  # the `policy.decision` span sets BOTH `policy.decision` (a string) and
-  # `policy.decision.retryable` (a bool) -- ATTR_DECISION and ATTR_RETRYABLE in
+  # WHAT BREAKS WITHOUT IT: the `policy.decision` span sets BOTH
+  # `policy.decision` (a string) and `policy.decision.retryable` (a bool) --
+  # ATTR_DECISION and ATTR_RETRYABLE in
   # platform/policy-decision-service/pds/telemetry.py -- cited by NAME rather
   # than by line, the one form that survives an edit to the file above them.
-  # (M4's final review found the previous citation -- line numbers 32 and 40 --
-  # pointed at the wrong constants entirely, SPAN_NAME and ATTR_CURRENCY, in
-  # the comment explaining this milestone's central mechanism; naming by line
-  # is what let that drift happen unnoticed.) OpenSearch expands dotted keys into
-  # objects at index time, so one document would need
-  # `attributes.policy.decision` to be a scalar and an object at once. It
-  # refuses the bulk item permanently, per document, forever:
+  # OpenSearch expands dotted keys into objects at index time, so one document
+  # would need `attributes.policy.decision` to be a scalar and an object at
+  # once. It refuses the bulk item permanently, per document, forever:
   #   kubectl -n observability logs deploy/otel-collector --since=48h \
   #     | grep "Exporting failed"
-  #   -> 4 events, 13 rejected span items, all of them:
-  #      "can't merge a non object mapping [attributes.policy.decision] with an
+  #   -> "can't merge a non object mapping [attributes.policy.decision] with an
   #       object mapping"
-  # Result before this processor existed, and STILL true of the traces driven
-  # before it, because a rejection here is permanent rather than retried:
-  # trace e25671d61d40b117763d4ceb46637dcd holds 142 spans in Jaeger and 139
-  # documents in OpenSearch, re-counted 2026-09-13 after the fix was live. The
-  # three missing ones are exactly its three `policy.decision` spans. Every
-  # `policy-decision-service` document now in the index (14 at the time of
-  # writing) belongs to a trace driven after this processor existed; none
-  # predates it.
+  # A rejection here is permanent rather than retried, so a trace driven
+  # without this processor in the path keeps missing exactly its
+  # `policy.decision` spans in OpenSearch.
   #
-  # WHY A RENAME AND NOT AN INDEX TEMPLATE. Mechanism (1) of ruling M4-R4 was
-  # tried first and measured insufficient; the transcript is in
-  # .superpowers/sdd/2026-09-11-m4-observable/task-1-fix-round-1-report.md.
-  # Short version, all against OpenSearch 3.8.0 on this cluster: `subobjects:
-  # false` is rejected outright ("unsupported parameters: [subobjects : false]");
-  # `index.mapping.ignore_malformed` does not apply to an object-vs-scalar path
-  # collision and the document is still rejected; only `"type": "flat_object"`
-  # on the whole `attributes` subtree indexes the document, and it costs more
-  # than it buys -- `_field_caps` then reports `attributes` as one
-  # non-aggregatable field with NO subfields (so Task 3's Dashboards index
-  # pattern would not list `attributes.policy.decision` at all), a terms
-  # aggregation returns `java.lang.Object@...` buckets, and ranges become
-  # lexical ("42" > "100" matches).
+  # WHY A RENAME AND NOT AN INDEX TEMPLATE. Against OpenSearch 3.8.0 on this
+  # cluster: `subobjects: false` is rejected outright ("unsupported
+  # parameters: [subobjects : false]"); `index.mapping.ignore_malformed` does
+  # not apply to an object-vs-scalar path collision and the document is still
+  # rejected; only `"type": "flat_object"` on the whole `attributes` subtree
+  # indexes the document, and it costs more than it buys -- `_field_caps` then
+  # reports `attributes` as one non-aggregatable field with NO subfields (so
+  # the Dashboards index pattern would not list `attributes.policy.decision`
+  # at all), a terms aggregation returns `java.lang.Object@...` buckets, and
+  # ranges become lexical ("42" > "100" matches).
   #
-  # WHY ONLY HERE (ruling M4-R5). This processor runs in the `traces/opensearch`
-  # pipeline only. Jaeger and Dash0 are exported from the main `traces`
-  # pipeline, upstream of the `forward/opensearch` tee, so they keep the
-  # canonical `policy.decision.retryable` the telemetry contract defines. An
-  # evidence view whose field names differ from the trace an operator reads in
-  # Jaeger is worse than none -- so exactly one key is rewritten, the collider,
-  # and never the `policy.decision` key the whole milestone is about.
+  # WHY ONLY HERE. This processor runs in the `traces/opensearch` pipeline
+  # only. Jaeger and Dash0 are exported from the main `traces` pipeline,
+  # upstream of the `forward/opensearch` tee, so they keep the canonical
+  # `policy.decision.retryable` the telemetry contract defines. An evidence
+  # view whose field names differ from the trace an operator reads in Jaeger
+  # is worse than none -- so exactly one key is rewritten, the collider, and
+  # never the `policy.decision` key itself.
   # tests/e2e/test_opensearch_trace_ingest.py asserts both halves of that
   # against the live cluster.
   #
-  # ONE key, because one is all that collides. Measured 2026-09-13 by
-  # enumerating every attribute key Jaeger held across all ten of its services
-  # (/api/traces per service): 114 distinct span attribute keys, of which
-  # `policy.decision` -> `policy.decision.retryable` is the only pair where
-  # one key is a dotted prefix of another. No resource attribute and no
-  # span-event attribute collides at all.
+  # ONE key, because one is all that collides: enumerating every attribute
+  # key Jaeger holds across all ten services (/api/traces per service) turns
+  # up 114 distinct span attribute keys, of which `policy.decision` ->
+  # `policy.decision.retryable` is the only pair where one key is a dotted
+  # prefix of another. No resource attribute and no span-event attribute
+  # collides at all.
   #
-  # WHAT PINS THAT, stated precisely -- because the mapping is index-wide, so
-  # the two colliding keys need not be on the same span or even come from the
-  # same service, and an earlier version of this comment claimed a coverage it
-  # did not have (re-review finding N2: it said a unit test pinned the
-  # ten-service claim, while that test read only pds/telemetry.py):
-  #   * tests/unit/test_stage4_config.py now scans EVERY first-party service's
+  # WHAT PINS THAT, stated precisely -- the mapping is index-wide, so the two
+  # colliding keys need not be on the same span or even come from the same
+  # service:
+  #   * tests/unit/test_stage4_config.py scans EVERY first-party service's
   #     source -- agents/, apps/, platform/, systems/, tools/ -- for
   #     attribute-shaped string literals, and fails if any collision among
   #     them is not renamed here. It cannot see keys emitted by third-party
@@ -151,52 +130,35 @@ exporters:
     verbosity: normal
 
   # BEGIN stage-4-only
-  # M4 Task 1: the trace-ingest path, MEASURED rather than assumed (spec §3).
-  # The user's own otel-platform-demo (infrastructure/collector/
-  # deployment-values.yaml) proves the `opensearch` exporter for LOGS only --
-  # its traces pipeline goes to otlp/dash0 and otlp/jaeger, never to
-  # OpenSearch. Reuse was tried against traces first anyway (the user's own
-  # instruction), and no Data Prepper was needed: the opensearchexporter for
-  # THIS pinned collector image (otel/opentelemetry-collector-contrib:0.160.0,
-  # see .env) supports Traces in its default `ss4o` mapping mode -- the prior
-  # art's repo just never exercised the traces half.
+  # The trace-ingest path. The opensearchexporter for this pinned collector
+  # image (otel/opentelemetry-collector-contrib:0.160.0, see .env) supports
+  # Traces in its default `ss4o` mapping mode, so no Data Prepper is needed.
   #
-  # What the exporter alone did NOT survive is the attribute collision the
+  # The exporter alone does not survive the attribute collision the
   # `attributes/opensearch-compat` processor above fixes; read that comment
-  # before changing anything here. What is measured now, on this cluster
-  # (2026-09-13, transcript in
-  # .superpowers/sdd/2026-09-11-m4-observable/task-1-fix-round-1-report.md):
-  # for one driven trace, Jaeger and OpenSearch hold the SAME span-id set --
-  # equal counts and an empty symmetric difference, the `policy.decision`
-  # spans included -- and the collector logs zero `Exporting failed` events
-  # over the whole window (`logs --since=...`, not a `--tail` of it: reading a
-  # 200-line tail of a 17,173-line log is exactly how the earlier version of
-  # this comment came to claim "no errors").
+  # before changing anything here. Verified on this cluster: for one driven
+  # trace, Jaeger and OpenSearch hold the SAME span-id set -- equal counts and
+  # an empty symmetric difference, the `policy.decision` spans included --
+  # and the collector logs zero `Exporting failed` events over its full log
+  # window (a short tail of a long-running log can miss those events).
   #
-  # `http://`, not the reference's `https://` + basicauth: this cluster's
-  # OpenSearch (deploy/observability/opensearch/values.yaml) runs with
+  # `http://`, not `https://` + basicauth: this cluster's OpenSearch
+  # (deploy/observability/opensearch/values.yaml) runs with
   # DISABLE_SECURITY_PLUGIN=true, so there is no TLS listener and no auth to
-  # satisfy -- a plain HTTP endpoint is the correct one for THIS cluster, not
-  # a simplification of the reference's shape.
+  # satisfy -- a plain HTTP endpoint is the correct one for this cluster.
   opensearch/trace:
     http:
       endpoint: http://opensearch-cluster-master.observability.svc.cluster.local:9200
   # END stage-4-only
 
   # BEGIN stage-4-only
-  # M5 Task 4: the logs pipeline's first real exporter. Before this it was
-  # `exporters: [debug]` alone -- exactly the shape the traces and metrics
-  # pipelines had before M4 Tasks 1 and 2, and nothing in this repo emits an
-  # OTLP log record yet (grepped: no first-party service imports
-  # `opentelemetry._logs`/`LoggerProvider`/`OTLPLogExporter` anywhere before
-  # this task's `pds/telemetry.py` change), so this is a genuinely new signal
-  # rather than an extension of one already flowing.
+  # The logs pipeline's real exporter, alongside `debug`.
   #
-  # `stage-4-only`, not `stage-5-only`. OpenSearch is the backend this names,
-  # and OpenSearch is installed starting stage 4 (`setup-kind.sh` Step 8c),
-  # exactly like the traces branch above -- ruling M4-R8's rule is about
-  # backend existence, not about which milestone's task happened to add the
-  # region. Reusing the existing marker and the existing
+  # This marker is named `stage-4-only`, not `stage-5-only`: OpenSearch is
+  # the backend it names, and OpenSearch is installed starting stage 4
+  # (`setup-kind.sh` Step 8c), exactly like the traces branch above -- the
+  # marker tracks backend existence, not which task added the region.
+  # Reusing the existing marker and the existing
   # `STAGE4_ONLY_STRIP`/`-lt 4` machinery in `scripts/setup-kind.sh` means a
   # `--stage 1|2|3` cluster still gets no reference to a backend it does not
   # have, with no change to that script at all --
@@ -221,16 +183,15 @@ exporters:
   # END stage-4-only
 
   # BEGIN stage-4-only
-  # M4 Task 2: Prometheus, fed by the collector rather than scraping anything.
-  # M4 exit criterion 5 is "Prometheus receives metrics over OTLP with no
-  # application change to the routing and no scrape configuration", and this
-  # exporter is that whole routing change -- the services below it set no
-  # `OTEL_METRICS_*` variable and know nothing about Prometheus; they export
-  # OTLP to this collector exactly as they already did for traces.
+  # Prometheus, fed by the collector rather than scraping anything: the
+  # services below set no `OTEL_METRICS_*` variable and know nothing about
+  # Prometheus, they export OTLP to this collector exactly as they already do
+  # for traces, and this exporter is the whole routing change that gets those
+  # metrics to Prometheus with no application change and no scrape
+  # configuration.
   #
-  # The endpoint's shape is copied from the user's own otel-platform-demo,
-  # which reaches Prometheus at `/api/v1/otlp`. It is a BASE path: the
-  # otlp_http exporter appends the signal's own suffix, so what is actually
+  # The endpoint path is a BASE path: the otlp_http exporter appends the
+  # signal's own suffix, so what is actually
   # POSTed is `/api/v1/otlp/v1/metrics`, which is the path Prometheus v3.14.0
   # serves once `--web.enable-otlp-receiver` is passed (see
   # deploy/observability/prometheus/values.yaml, which reads that flag's
@@ -243,24 +204,22 @@ exporters:
   # check `server.fullnameOverride` and `server.service.servicePort` there
   # first.
   #
-  # `tls.insecure: true` is carried over verbatim from the reference config
-  # and is INERT for this endpoint: the scheme in `endpoint` decides, and
-  # `http://` never negotiates TLS for the setting to relax. It is kept rather
-  # than trimmed so this block matches the prior art it came from, and named as
-  # inert here so nobody later reads it as evidence that a TLS listener exists.
-  # `otlp_http/`, not the reference config's `otlphttp/`. The pinned collector
-  # image (otel/opentelemetry-collector-contrib:0.160.0, see .env) accepts both
-  # and says so on startup, verbatim from
+  # `tls.insecure: true` is INERT for this endpoint: the scheme in `endpoint`
+  # decides, and `http://` never negotiates TLS for the setting to relax. It
+  # is named here as inert so nobody later reads it as evidence that a TLS
+  # listener exists.
+  #
+  # `otlp_http/`, not `otlphttp/`: the pinned collector image
+  # (otel/opentelemetry-collector-contrib:0.160.0, see .env) accepts both and
+  # says so on startup, verbatim from
   # `kubectl -n observability logs deploy/otel-collector`:
   #
   #   warn  builders/builders.go:40  "otlphttp" alias is deprecated; use
   #   "otlp_http" instead  {... "otelcol.component.id": "otlp_http/prometheus",
   #   "otelcol.component.kind": "exporter", "otelcol.signal": "metrics"}
   #
-  # The deprecated spelling was what shipped first here and produced exactly
-  # that line. It is renamed rather than left to warn, which also puts it in
-  # step with the two exporters above it -- this file has said `otlp_grpc/` and
-  # not `otlpgrpc/` since M1.
+  # `otlp_http/` is used consistently, matching the two exporters above it --
+  # this file spells the grpc one `otlp_grpc/`, not `otlpgrpc/`.
   otlp_http/prometheus:
     endpoint: http://prometheus.observability.svc.cluster.local:9090/api/v1/otlp
     tls:
@@ -268,12 +227,10 @@ exporters:
   # END stage-4-only
 
 # BEGIN stage-4-only
-# The `forward/` connector tee the spec names as worth stealing from the prior
-# art (§3): the OpenSearch branch reuses the main traces pipeline's receivers
-# and processors instead of re-declaring them, so it cannot silently drift
-# from what Jaeger and Dash0 see. It is also what makes ruling M4-R5
-# enforceable -- everything before the tee is shared and canonical, and the
-# single rewrite lives after it.
+# The `forward/` connector tee: the OpenSearch branch reuses the main traces
+# pipeline's receivers and processors instead of re-declaring them, so it
+# cannot silently drift from what Jaeger and Dash0 see. Everything before the
+# tee is shared and canonical, and the single attribute rewrite lives after it.
 connectors:
   forward/opensearch: {}
 # END stage-4-only
@@ -304,9 +261,8 @@ service:
       # One exporter per line, for the same reason the traces pipeline above is
       # written that way: scripts/setup-kind.sh strips the stage-4-only entry
       # below stage 4 with a line-range sed, and it cannot edit inside a flow
-      # sequence. Below stage 4 this list is `- debug` alone -- which is
-      # exactly what it was before M4 Task 2 (ruling M4-R8: the collector must
-      # not name a backend the cluster does not have).
+      # sequence. Below stage 4 this list is `- debug` alone: the collector
+      # must not name a backend the cluster does not have.
       exporters:
         # BEGIN stage-4-only
         - otlp_http/prometheus
@@ -318,9 +274,8 @@ service:
       # One exporter per line, same reason as the traces/metrics pipelines
       # above: scripts/setup-kind.sh strips the stage-4-only entry below
       # stage 4 with a line-range sed and cannot edit inside a flow sequence.
-      # Below stage 4 this list is `- debug` alone -- which is what it was
-      # before this task (ruling M4-R8: the collector must not name a
-      # backend the cluster does not have).
+      # Below stage 4 this list is `- debug` alone: the collector must not
+      # name a backend the cluster does not have.
       exporters:
         # BEGIN stage-4-only
         - opensearch/logs

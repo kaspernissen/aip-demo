@@ -1,11 +1,8 @@
 /* The portal's landing page.
  *
- * This replaced the create-app scaffold's card, which said "Welcome to
- * Backstage! 👋", linked to backstage.io, and closed with a section titled
- * "How to Edit This Card" explaining how to edit itself. That is a fine
- * placeholder for a fresh scaffold and a poor first screen for an internal
- * platform -- the demo opens Backstage at its punchline, and the punchline
- * was a tutorial about the tool rather than anything about Northstar.
+ * A tutorial about Backstage itself is a poor first screen for an internal
+ * platform -- the demo opens Backstage at its punchline, so the landing page
+ * needs to be about Northstar, not about the tool.
  *
  * Three cards rather than one, because they answer different questions and get
  * read at different moments: "what is this system" (the story, once), "what
@@ -35,14 +32,14 @@ than aspirational, is what this system is for.
  * This card renders through `MarkdownContent`, which handles no blocks of any
  * kind, so it takes the `<Mermaid>` component directly.
  *
- * Coarser on purpose, and this is the second version. The first drew all
- * seven services the documentation does. In a 700px card `useMaxWidth` then
- * scales a seven-column chart down until the labels are a few pixels tall --
- * legible in a screenshot at full resolution, not from the third row of a
- * room, which is the only place this card is ever read from. The two pairs
- * that are always adjacent are collapsed into one node each, giving four
- * columns and labels that survive a projector. The seven-service version is
- * one click away, and the card's own last line is the link to it.
+ * Coarser on purpose: drawing all seven services the documentation does
+ * would, in a 700px card, have `useMaxWidth` scale a seven-column chart down
+ * until the labels are a few pixels tall -- legible in a screenshot at full
+ * resolution, not from the third row of a room, which is the only place this
+ * card is ever read from. The two pairs that are always adjacent are
+ * collapsed into one node each, giving four columns and labels that survive
+ * a projector. The seven-service version is one click away, and the card's
+ * own last line is the link to it.
  */
 const claimPath = `
 flowchart LR
@@ -103,8 +100,8 @@ would not be.
  *
  * The stage names and their order are duplicated from the runbook, which is a
  * cost: two places to change if a stage is renamed. Accepted because the
- * alternative is a build-time import from a markdown table, and the arc has
- * not changed in six milestones.
+ * alternative is a build-time import from a markdown table, and the arc is
+ * stable.
  */
 const stages = `
 Each stage is a cluster you can bring up on its own with

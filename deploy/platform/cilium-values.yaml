@@ -3,9 +3,9 @@
 #
 # kube-proxy replacement is deliberately OFF: the demo needs DNS-aware egress
 # denial (toFQDNs), which is ordinary CiliumNetworkPolicy and works with
-# kube-proxy in place. See the M2 spec, "Cilium and the cluster recreate".
-# This equals the chart default ("false" as a string; the schema accepts a
-# boolean too) and is stated explicitly to record the decision.
+# kube-proxy in place. This equals the chart default ("false" as a string;
+# the schema accepts a boolean too) and is stated explicitly to record the
+# decision.
 kubeProxyReplacement: false
 
 # Deliberate deviation from the chart default of "cluster-pool": in `kubernetes`
@@ -14,7 +14,7 @@ kubeProxyReplacement: false
 ipam:
   mode: kubernetes
 
-# M2.2's toFQDNs egress policy needs NO values change here: it depends on the
+# The toFQDNs egress policy needs NO values change here: it depends on the
 # DNS proxy, which is gated by `l7Proxy` -- default true. The `dnsProxy` block
 # in this chart carries tuning knobs only and has no `enabled` key.
 

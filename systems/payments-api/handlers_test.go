@@ -251,10 +251,9 @@ func TestExecuteWithBodyOmittingTheAmountIsRejected(t *testing.T) {
 // literal `0.1 + 0.2` is a constant expression whose float64 result is
 // *bit-identical* to `0.3` (verified: both are 0x3fd3333333333333). Written
 // that way, this test passes just as happily against an exact `==` comparison
-// and asserts nothing about the tolerance -- which is exactly the defect fix
-// round 1 F1 found here. Values that arrive through a runtime decode cannot be
-// folded, and `0.1 + 0.2` computed on them is 0x3fd3333333333334: one ULP
-// away from 0.3, and genuinely `!=` it.
+// and asserts nothing about the tolerance. Values that arrive through a
+// runtime decode cannot be folded, and `0.1 + 0.2` computed on them is
+// 0x3fd3333333333334: one ULP away from 0.3, and genuinely `!=` it.
 func decodeFloat(t *testing.T, jsonNumber string) float64 {
 	t.Helper()
 	var v float64
@@ -354,9 +353,9 @@ func TestPaymentIDsAreDeterministicAndSequential(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The refusal cause on the span (M2.2 rulings R23/R18).
+// The refusal cause on the span.
 //
-// After M2.2 Task 4 there are two refusal mechanisms at two layers: the Policy
+// There are two refusal mechanisms at two layers: the Policy
 // Decision Service denies an over-limit `execute_payment` before it ever
 // reaches this service, and this service refuses an execution that either
 // fails to confirm the recorded amount or has already happened. All three
@@ -511,15 +510,14 @@ func TestTheRefusalCauseAttributeIsNorthstarPrefixed(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// M3 Task 2: the refusal record in the ledger.
+// The refusal record in the ledger.
 //
-// This is the ledger side of "a human reviewer can see, and later approve,
-// the payout M2 refused." `refused` is terminal-until-approved, not a new
-// state machine: the execute path stays exactly as guarded as it always was,
-// so a refused payment must still be executable through it. These tests are
-// against the two consumers who are not written yet (Task 3's settlement
-// agent, Task 4's reviewer UI), so the request/response shape asserted here
-// is a contract, not a guess.
+// This is the ledger side of "a human reviewer can see, and later approve, a
+// refused payout." `refused` is terminal-until-approved, not a new state
+// machine: the execute path stays exactly as guarded as it always was, so a
+// refused payment must still be executable through it. These tests pin the
+// request/response shape as a contract for its consumers -- the settlement
+// agent and the reviewer UI -- not a guess.
 // ---------------------------------------------------------------------------
 
 func refusePayment(srv http.Handler, paymentID string, body any) *httptest.ResponseRecorder {
@@ -537,13 +535,13 @@ func refusePayment(srv http.Handler, paymentID string, body any) *httptest.Respo
 	return rec
 }
 
-// refusalBody is the request/response shape both later tasks are written
+// refusalBody is the request/response shape its consumers are written
 // against: rule, limit and requested come from the PDS's own denial, and
 // refusedTraceId is the id of the trace that recorded it. Values are literals
 // throughout these tests -- no arithmetic on them -- so there is no constant-
 // folding hazard to guard against here.
 //
-// M3 Task 3: refusedSpanId joins refusedTraceId. Measured against the
+// refusedSpanId joins refusedTraceId. Measured against the
 // installed opentelemetry-sdk (1.44.0): a Link built from a SpanContext with
 // span_id=0 and no attributes is silently dropped by
 // Span._new_links'/_is_valid_link's is_valid check before it ever reaches an
@@ -761,14 +759,13 @@ func TestRefuseWithMalformedBodyIsRejected(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// M3 Task 3 review fix round (finding 2 / R12, ledger-side half). The
-// reviewer's point: propose CREATES a record; refuse MUTATES the one a human
-// uses to release money. Before this, POST /payments/{id}/refuse validated
-// only that `rule` was non-empty, so a second refuse call could silently
-// replace an existing refusal's record -- including its refusedTraceId/
-// refusedSpanId, the exact link a reviewer follows into a trace -- and any
-// caller could refuse for any `requested` amount, whether or not it matched
-// what was actually proposed. This supersedes ruling R6.
+// POST /payments/{id}/refuse must guard against overwrite: propose CREATES a
+// record; refuse MUTATES the one a human uses to release money. Validating
+// only that `rule` is non-empty is not enough -- a second refuse call could
+// then silently replace an existing refusal's record, including its
+// refusedTraceId/refusedSpanId (the exact link a reviewer follows into a
+// trace), and any caller could refuse for any `requested` amount, whether or
+// not it matched what was actually proposed.
 // ---------------------------------------------------------------------------
 
 func TestRefusingAnAlreadyRefusedPaymentIsRejected(t *testing.T) {

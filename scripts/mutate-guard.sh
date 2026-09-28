@@ -7,8 +7,7 @@
 # This repo's standing rule is that a guard is not trusted until it has been
 # mutated and watched go red for the reason it names. That loop -- edit, run,
 # revert -- has a trap in it that produces BOTH false negatives and false
-# positives, and it was hit for real in M4 Task 4 and reproduced in both
-# directions by that task's review.
+# positives.
 #
 # CPython validates a cached `.pyc` against `(int(source_mtime), source_size)`
 # and nothing else. So if a mutation preserves the file's byte length -- and
@@ -55,16 +54,16 @@
 #
 # ---------------------------------------------------------------------------
 # AND IT REFUSES A NON-UNIQUE PATTERN, which is the third route to a false
-# GREEN and the one this script itself produced.
+# GREEN and one this script itself can produce if it replaces only the first
+# match.
 #
-# Until M4 Task 5 this replaced the FIRST occurrence and said nothing about the
-# others. M4 Task 4 mutated `decisionCount >= 5` in an e2e file where the
-# identical line also appears in the COMPLIANT test, earlier in the file. The
-# edit landed there; the <test command> ran the non-compliant test; the suite
-# stayed green; and the round recorded GREEN -- "no guard covers this" -- about
-# a line that was never mutated. (It was re-run anchored on surrounding text and
-# went red with `assert 5 >= 99`, so the guard was fine. The tool was not.)
-# The tool built to stop false GREENs produced one.
+# A pattern that also matches earlier in the same file -- e.g. an identical
+# line repeated in a compliant test case above the non-compliant one a
+# mutation is meant to land in -- can have the edit land in the wrong copy:
+# the <test command> then runs against the untouched line, the suite stays
+# green, and the round records GREEN -- "no guard covers this" -- about a line
+# that was never mutated, even though the guard is fine once the mutation is
+# anchored on surrounding text so it lands in the right place.
 #
 # Picking the first match is a silent choice made on the operator's behalf, and
 # a mutation round's whole value is that no choice in it is silent. So a
@@ -77,12 +76,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [[ $# -lt 4 ]]; then
   # Every comment line from line 2 down to the first line that is not one --
-  # i.e. the whole header, however long it grows. It was `sed -n '2,50p'`
-  # until M4 Task 5, and the paragraph that task appended pushed the header
-  # past 50 lines, so the usage text this branch prints stopped mid-sentence
-  # and the reader never saw the rule the exit-2 below most often fires for.
-  # A line range written by hand is one more fact to keep in sync; deriving it
-  # is the fix this repo keeps reaching for.
+  # i.e. the whole header, however long it grows. A hand-written line range
+  # (e.g. `sed -n '2,50p'`) silently truncates the usage text the moment the
+  # header grows past it, so the reader never sees the rule the exit-2 below
+  # most often fires for. Deriving the range instead of writing it down keeps
+  # the two in sync automatically.
   awk 'NR == 1 { next } /^#/ { print; next } { exit }' "${BASH_SOURCE[0]}"
   exit 2
 fi
@@ -118,11 +116,11 @@ if occurrences > 1:
         f"the mutation text occurs {occurrences} times in {path}"
         + (f" (lines {', '.join(map(str, lines))})" if lines else "")
         + f":\n  {old!r}\n"
-        "This script used to replace the FIRST one and say nothing, which is how "
-        "M4 Task 4 recorded a GREEN for a mutation that landed in a line its test "
-        "command never ran. Narrow the pattern until it identifies the one line "
-        "you mean -- include the surrounding text -- or mutate each occurrence in "
-        "its own run."
+        "Replacing only the first match would let the edit land in the wrong "
+        "copy while a test command that exercises a different one stays green, "
+        "reporting a mutation that never actually ran. Narrow the pattern "
+        "until it identifies the one line you mean -- include the surrounding "
+        "text -- or mutate each occurrence in its own run."
     )
 path.write_text(text.replace(old, new))
 PY

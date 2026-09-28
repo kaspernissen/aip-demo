@@ -19,17 +19,17 @@ export default function Page() {
   const [claim, setClaim] = useState<Claim>(DEFAULT_CLAIM);
   // The amount is held as TEXT, not as a number, and parsed once at submit.
   //
-  // It used to be `value={claim.estimatedAmount}` against
-  // `onChange={... Number(e.target.value)}`, which has a specific and very
-  // visible failure: clearing the field makes `e.target.value` the empty
-  // string, `Number("")` is `0`, and the controlled input immediately
-  // re-renders showing `0`. The field can therefore never be emptied -- the
-  // caret sits beside a zero you cannot delete -- and the next digits typed
-  // land next to it, so changing 6200 to 5800 by hand produced `05800`.
-  // It still parsed to 5800, so nothing failed; it just looked broken at
-  // exactly the point in the demo where the amount is changed on stage.
-  // Playwright's `fill()` replaces the whole value in one step, which is why
-  // no test ever saw it.
+  // Holding it as `value={claim.estimatedAmount}` against
+  // `onChange={... Number(e.target.value)}` has a specific and very visible
+  // failure: clearing the field makes `e.target.value` the empty string,
+  // `Number("")` is `0`, and the controlled input immediately re-renders
+  // showing `0`. The field can therefore never be emptied -- the caret sits
+  // beside a zero you cannot delete -- and the next digits typed land next
+  // to it, so changing 6200 to 5800 by hand produces `05800`. It still
+  // parses to 5800, so nothing fails; it just looks broken at exactly the
+  // point in a demo where the amount is changed live. Playwright's `fill()`
+  // replaces the whole value in one step, which is why no test would catch
+  // this.
   const [amountText, setAmountText] = useState(String(DEFAULT_CLAIM.estimatedAmount));
   const [log, setLog] = useState<string[]>([]);
   const [result, setResult] = useState<ClaimResult | null>(null);

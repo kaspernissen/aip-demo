@@ -1,24 +1,18 @@
 """The one definition of "what does the DEPLOYED collector actually route?".
 
-Three `tests/e2e` modules ask a version of this question to decide whether the
-cluster is at stage 4, and the substring form of it is demonstrably inert.
-`test_prometheus_metrics_ingest.py` recorded the measurement in its own
-docstring: deleting `otlp_http/prometheus` from the `metrics` pipeline's
-exporter list -- the edit that stops every metric in this system reaching
-Prometheus -- left `PROMETHEUS_EXPORTER_ID in <config text>` true and all
-fourteen tests in that file green, because the id still occurs twice more in
-the file, once as the exporter's own declaration under `exporters:` and once in
-the comment above it.
+Several `tests/e2e` modules ask a version of this question to decide whether
+metrics or traces are actually reaching their backend, and a plain substring
+check (`EXPORTER_ID in <config text>`) is unreliable for it: deleting an
+exporter from a pipeline's exporter list can still leave its id present
+elsewhere in the same YAML (its own declaration under `exporters:`, or a
+comment), so the substring stays `True` even though nothing is routed to it
+any more. Parsing the pipeline structure and checking the exporter list
+directly avoids that false positive, which is why every caller shares this
+one definition rather than repeating its own substring check.
 
-That finding was fixed in two of the three callers and, until M4 Task 5, not in
-the third: `test_opensearch_trace_ingest.py` still read
-`OPENSEARCH_EXPORTER_ID in _deployed_collector_config()`. Same defect, same
-repo, written down twice, still live in the earliest file -- which is the
-argument for one definition rather than three careful copies.
-
-Takes the config *text* rather than running `kubectl` itself, so the three
-callers keep their own `_kubectl` (each carries its own timeout and namespace
-constants) and this stays unit-testable with no cluster.
+Takes the config *text* rather than running `kubectl` itself, so callers keep
+their own `_kubectl` (each carries its own timeout and namespace constants)
+and this stays unit-testable with no cluster.
 """
 from __future__ import annotations
 

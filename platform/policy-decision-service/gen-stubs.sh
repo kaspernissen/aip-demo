@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Generate the ExtMCP gRPC stubs from the vendored proto.
 #
-# Ruling R22: the generated `ext_mcp_pb2.py` / `ext_mcp_pb2_grpc.py` are
-# git-ignored and produced by this script -- at dev time by hand, and at Docker
+# The generated `ext_mcp_pb2.py` / `ext_mcp_pb2_grpc.py` are git-ignored and
+# produced by this script -- at dev time by hand, and at Docker
 # build time by the Dockerfile, which runs this same file. Committing them would
 # let the image and the repo disagree about a contract whose only source of
 # truth is `proto/ext_mcp.proto` (vendored at agentgateway v1.5.0).

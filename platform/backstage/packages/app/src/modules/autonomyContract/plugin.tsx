@@ -1,20 +1,18 @@
 /**
- * M6 Task 3: registers the autonomy card as its own page, `/autonomy-contract`,
+ * Registers the autonomy card as its own page, `/autonomy-contract`,
  * following `@backstage/plugin-app-visualizer`'s own minimal `PageBlueprint`
  * pattern (that plugin's `packages/app-visualizer/src/plugin.tsx` is the
  * template this file copies the shape of). Picked up by the Sidebar's
  * `nav.rest({ sortBy: 'title' })` (packages/app/src/modules/nav/Sidebar.tsx).
  *
- * **`icon` is required for that to happen, and this file shipped without one.**
- * The Sidebar renders each nav item as
- * `<SidebarItem icon={() => item.icon} ... />`, so an item with no icon
- * contributes nothing visible: the route stayed live, `/autonomy-contract`
- * answered 200, the backend API returned the real contract, and the page was
- * simply unreachable from the UI -- there was no link to it anywhere in the
- * portal. The demo's whole last beat is opening this page and flipping the
- * flag, and nothing on screen said it existed. Found 2026-09-16 by a human
- * asking where OpenFeature was; the template it was copied from passes an
- * icon, and that difference is the entire defect.
+ * **`icon` is required for that to happen.** The Sidebar renders each nav
+ * item as `<SidebarItem icon={() => item.icon} ... />`, so an item with no
+ * icon contributes nothing visible: the route would stay live,
+ * `/autonomy-contract` would answer 200, the backend API would return the
+ * real contract, and the page would simply be unreachable from the UI --
+ * no link to it anywhere in the portal. The demo's whole last beat is
+ * opening this page and flipping the flag, so the icon here is load-bearing,
+ * not decorative.
  */
 import { createRouteRef, createFrontendPlugin, PageBlueprint } from '@backstage/frontend-plugin-api';
 import { RiToggleLine } from '@remixicon/react';

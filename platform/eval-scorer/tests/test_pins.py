@@ -1,10 +1,10 @@
 """The advisory-pin tripwire every Python service in this repo carries.
 
-`agents/settlement-agent/tests/test_pins.py` is the original (M1.2's
-final-review fix round, SF-2, closing the "no service has any advisory gate"
-mechanism gap); `agents/claims-agent`, `tools/payments-mcp`,
-`platform/policy-decision-service` and `apps/reviewer-ui` each have their own.
-eval-scorer is the sixth Python service and this is its copy.
+`agents/settlement-agent/tests/test_pins.py` is the original, closing the "no
+service has any advisory gate" mechanism gap; `agents/claims-agent`,
+`tools/payments-mcp`, `platform/policy-decision-service` and
+`apps/reviewer-ui` each have their own. eval-scorer is the sixth Python
+service and this is its copy.
 
 No `pytest-asyncio` assertion: this service pins none, because it has no async
 tests -- verified by

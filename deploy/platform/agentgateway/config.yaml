@@ -3,37 +3,23 @@
 # `1.5.0` with no `v` does not exist on cr.agentgateway.dev; confirmed by a
 # failed `docker pull` against that exact string. `agentgateway --version`
 # reports the bare "1.5.0" as its internal version string, but the pullable
-# image tag carries the `v` prefix. Recorded here because the M2.1 brief's
-# literal image string was wrong on this one point).
+# image tag carries the `v` prefix).
 #
-# M2.1 deliberately carried NO policy. Both policy mechanisms this project
-# examined (native CEL `mcpAuthorization`, and the external `ExtMCP` gRPC hook)
-# were absent on purpose while M2.1 proved the proxy does not break the trace;
-# M2.2 adds the decision. See the M2 spec.
-#
-# CORRECTION, M2.2 fix round (final-review finding 4). The paragraph above was
-# written in the present tense at M2.1 and survived M2.2 unread, so this file
-# opened by telling an auditor that the enforcement it now configures is not
-# here. What is true as of M2.2: the external `ExtMCP` gRPC hook IS configured
-# below, as `mcpGuardrails`, pointed at the Policy Decision Service and set to
-# `failureMode: failClosed`. Native CEL `mcpAuthorization` is still absent and
-# still deliberately so -- the decision belongs to the PDS, not to this file
-# (M2 spec §9 criterion 4).
+# The external `ExtMCP` gRPC hook is configured below, as `mcpGuardrails`,
+# pointed at the Policy Decision Service and set to `failureMode: failClosed`.
+# Native CEL `mcpAuthorization` is deliberately absent: the authorization
+# decision belongs to the PDS, not to this file.
 #
 # Schema verified directly against the pinned image: `docker run --rm
 # cr.agentgateway.dev/agentgateway:v1.5.0 -f config.yaml --validate-only`
-# returned "Configuration is valid!" for exactly the shape below, with no
-# changes needed from the brief's reconstructed version -- no divergence to
-# record here. Source of truth for this schema is the agentgateway repo's
-# examples/ directory, NOT its documentation site -- the docs were found thin
-# and unreliable; the examples matched real behaviour exactly.
+# returns "Configuration is valid!" for exactly the shape below. Source of
+# truth for this schema is the agentgateway repo's examples/ directory, NOT
+# its documentation site -- the docs are thin and unreliable; the examples
+# match real behaviour exactly.
 #
-# M2.1 Task 3 added the `frontendPolicies.tracing` block below. Task 2 shipped
-# this file with no tracing configuration at all, which meant the gateway
-# emitted no spans whatsoever -- correct for Task 2 (nothing routed through it)
-# but a hard blocker for Task 3, whose whole job is measuring the gateway's
-# real spans. Without this block the gateway is a silent hop: MCP calls pass
-# through it and the trace shows settlement-agent talking directly to
+# The `frontendPolicies.tracing` block below is what keeps the gateway from
+# being a silent hop: without it, MCP calls pass through with no span at
+# all, and the trace shows settlement-agent talking directly to
 # payments-mcp, with the proxy invisible.
 #
 # Schema source: the agentgateway repo's own `examples/mcp-telemetry/config.yaml`
@@ -72,29 +58,23 @@ binds:
 - port: 3000
   listeners:
   - routes:
-    # M2.1 Task 4 added this `policies` block, and nothing else in this file.
+    # This `policies` block is the only policy configuration in this file.
     #
     # `jwtAuth` is JWT *verification*, not authorization: on its own it decides
     # whether the caller is authenticated, never whether it may do what it
     # asked. There is deliberately no `mcpAuthorization` and no `authorization`
-    # key here -- M2.1's Task 4 made identity real and checkable and left the
-    # decision to a later milestone.
+    # key here -- this block makes identity real and checkable and leaves the
+    # authorization decision to `mcpGuardrails` below.
     #
-    # CORRECTION, M2.2 fix round (final-review finding 4). This paragraph used
-    # to end "The gateway still permits every tool call it can authenticate."
-    # That was true when it was written and became false 78 lines below it: the
-    # `mcpGuardrails` block in this same `policies` map sends every `tools/call`
-    # to the Policy Decision Service at the request phase and refuses the call
-    # when the PDS says deny (or cannot answer -- `failureMode: failClosed`).
-    # The absence of `mcpAuthorization` is what still holds; the absence of
-    # authorization is not. The sentence is replaced rather than annotated in
-    # place because, unlike the `failureMode` correction below, nobody ever
-    # acted on it -- there is no measurement to preserve, only a stale claim in
-    # the file an auditor reads first.
+    # The absence of `mcpAuthorization` is deliberate; the absence of
+    # authorization overall is not: the `mcpGuardrails` block in this same
+    # `policies` map sends every `tools/call` to the Policy Decision Service at
+    # the request phase and refuses the call when the PDS says deny (or cannot
+    # answer -- `failureMode: failClosed`).
     #
     # Schema source: the pinned v1.5.0 image's own `examples/`, cross-read
-    # against the Rust types, NOT the documentation site (Task 2 found the docs
-    # thin and the examples exact). `jwtAuth` is a field of
+    # against the Rust types, NOT the documentation site -- the docs are thin,
+    # the examples exact. `jwtAuth` is a field of
     # `LocalGatewayPolicy`/`FilterOrPolicy` in
     # crates/agentgateway/src/types/local.rs, typed
     # `crate::http::jwt::LocalJwtConfig`; the single-issuer shape used here is
@@ -167,19 +147,18 @@ binds:
           # SPIRE CA in order to fetch a public key set.
           jwks:
             url: http://spire-spiffe-oidc-discovery-provider.northstar-platform.svc.cluster.local/keys
-        # M2.2 Task 4: the decision. `mcpGuardrails` is a route-level policy and
-        # a SIBLING of `jwtAuth` above -- the two do different jobs on the same
-        # hop. `jwtAuth` establishes *who* is calling; this establishes *what*
-        # that caller may do. Losing either makes the other meaningless: an
+        # `mcpGuardrails` is a route-level policy and a SIBLING of `jwtAuth`
+        # above -- the two do different jobs on the same hop. `jwtAuth`
+        # establishes *who* is calling; this establishes *what* that caller
+        # may do. Losing either makes the other meaningless: an
         # unauthenticated caller with a policy is a policy deciding on a
-        # self-asserted name, and an authenticated caller with no policy is
-        # M2.1, which permitted every tool call it could authenticate.
+        # self-asserted name, and an authenticated caller with no policy
+        # permits every tool call it can authenticate.
         #
-        # EVERY KEY AND ENUM VALUE HERE IS camelCase, and this shape was
-        # established by iterating against the pinned image's own validator
-        # (M2.2 Task 1), not read off documentation -- four of the five
-        # spellings the M2.2 plan reconstructed were wrong. Validate before
-        # deploying, from deploy/platform/agentgateway:
+        # EVERY KEY AND ENUM VALUE HERE IS camelCase; this shape is confirmed
+        # by iterating against the pinned image's own validator, not read off
+        # documentation. Validate before deploying, from
+        # deploy/platform/agentgateway:
         #   docker run --rm -v .:/c cr.agentgateway.dev/agentgateway:v1.5.0 \
         #     --validate-only -f /c/config.yaml
         # A rejected config names the offending key. Note that the validator
@@ -213,14 +192,12 @@ binds:
               # which is the correct trade for a component whose entire job is
               # refusing them, and it is why the PDS's own readiness probe and
               # its ingress network policy (see
-              # deploy/platform/cilium-policies.yaml, ruling R6) are
-              # load-bearing rather than hygiene.
+              # deploy/platform/cilium-policies.yaml) are load-bearing rather
+              # than hygiene.
               #
-              # CORRECTION, M2.2 Task 8. This comment previously said that
-              # v1.5.0's `FailureMode` derives `Default` with `FailOpen` listed
-              # first, so that omitting this key would PERMIT EVERY PAYMENT
-              # during a PDS outage. THAT IS FALSE, and it was carried from the
-              # M2.2 plan through four tasks without anyone measuring it.
+              # `FailureMode`'s default matters here because omitting this key
+              # would PERMIT EVERY PAYMENT during a PDS outage if the default
+              # were `FailOpen` -- so it is measured rather than assumed.
               # Measured against this exact image, whose `--version` reports
               # git_revision fe6732474a96a0363dfb9822859af4e9bab360fa (= the
               # v1.5.0 tag), with a guardrail pointed at a dead address so
@@ -245,15 +222,15 @@ binds:
               # verified -- signature, issuer, audience and expiry -- so what
               # arrives at the PDS is an attested subject, which for a JWT-SVID
               # is the caller's SPIFFE ID. It lands in
-              # `McpRequest.metadata_context` under `caller` (measured, Task 1)
-              # and is exactly what pds/identity.py reads.
+              # `McpRequest.metadata_context` under `caller` and is exactly
+              # what pds/identity.py reads.
               #
               # Note what is deliberately NOT here: `jwtAuth.preserveToken:
-              # true` (ruling R14). This delivers the verified subject without
-              # forwarding a live bearer credential to a second service, which
-              # would be a security regression relative to M2.1's config for
-              # no gain at all -- pds/identity.py accepts the `headers` half of
-              # the request and documents that it does not read it.
+              # true`. This delivers the verified subject without forwarding a
+              # live bearer credential to a second service, which would be a
+              # security regression for no gain at all -- pds/identity.py
+              # accepts the `headers` half of the request and documents that
+              # it does not read it.
               metadata:
                 caller: 'jwt.sub'
               # `requestHeaders.allowed` IS A STRICT ALLOWLIST, and this is
@@ -261,23 +238,22 @@ binds:
               # was measured right. Recorded in full because the failure was
               # silent and the fix is counter-intuitive.
               #
-              # The M2.2 Task 4 brief carried `allowed: ["authorization"]` as
-              # the validated shape. It validates, the gateway starts, the PDS
-              # is called, and the policy decides correctly -- the €6,200 was
-              # refused on the first run with that value. What it does NOT do
-              # is forward `traceparent`, because the list is exhaustive rather
-              # than additive. So `pds/telemetry.context_from_headers` found no
-              # trace context, `extract` returned an empty context, and every
-              # `policy.decision` span started A NEW ROOT TRACE OF ITS OWN. In
-              # Jaeger that reads as the policy working perfectly and the
-              # milestone's observability claim -- the decision appears in the
-              # same trace as the gateway's `tools/call` and the model's
-              # reasoning -- being quietly false. Measured: two orphan
-              # single-span traces, `refs=[]`, service present in Jaeger's
-              # service list, nothing wrong anywhere in any log.
+              # `allowed: ["authorization"]` alone validates, the gateway
+              # starts, the PDS is called, and the policy decides correctly.
+              # What it does NOT do is forward `traceparent`, because the list
+              # is exhaustive rather than additive. So
+              # `pds/telemetry.context_from_headers` finds no trace context,
+              # `extract` returns an empty context, and every
+              # `policy.decision` span starts A NEW ROOT TRACE OF ITS OWN. In
+              # Jaeger that reads as the policy working perfectly while the
+              # observability claim -- that the decision appears in the same
+              # trace as the gateway's `tools/call` and the model's reasoning
+              # -- is quietly false: orphan single-span traces, `refs=[]`,
+              # service present in Jaeger's service list, nothing wrong in any
+              # log.
               #
-              # Three values were then measured against the running cluster,
-              # each by driving one real `tools/call` (`propose_payment`, so no
+              # Three values were measured against the running cluster, each
+              # by driving one real `tools/call` (`propose_payment`, so no
               # model tokens were spent) with a minted JWT-SVID and a known
               # `traceparent`:
               #   allowed: ["authorization"]              -> orphan root span
@@ -291,8 +267,8 @@ binds:
               # trace context and costs nothing; `baggage` is deliberately not
               # here, because nothing in the PDS reads it.
               #
-              # `authorization` is deliberately NOT in this list (ruling R14).
-              # It would be inert anyway -- without `preserveToken`, `jwtAuth`
+              # `authorization` is deliberately NOT in this list. It would be
+              # inert anyway -- without `preserveToken`, `jwtAuth`
               # removes the credential from its location on the way out
               # (`if !self.preserve_token { self.location.remove(req)?; }`,
               # crates/agentgateway/src/http/jwt.rs) -- but an allowlist is

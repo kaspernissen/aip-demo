@@ -1,12 +1,11 @@
-"""M4 Task 4: the policy-adherence scores, and the proof that they can fail.
+"""The policy-adherence scores, and the proof that they can fail.
 
-§5 of `docs/superpowers/specs/2026-09-11-northstar-m4-observable-design.md`
-names five properties scored per settlement, and then names the objection its
-own scores have to answer:
+This suite scores five properties per settlement, and answers the objection
+any such scoring has to face:
 
-> A score that is always "compliant" proves nothing. M4's equivalent of M3's
-> anti-bypass pair: **a deliberately non-compliant trajectory must score
-> differently from a compliant one**, demonstrated, not asserted.
+> A score that is always "compliant" proves nothing: **a deliberately
+> non-compliant trajectory must score differently from a compliant one**,
+> demonstrated, not asserted.
 
 `platform/eval-scorer/tests/test_anti_vacuity.py` demonstrates that on
 trajectories this repo built, in milliseconds, on every commit. **This file is
@@ -23,14 +22,14 @@ to `settlement-agent` (the junior) instead of `senior-settlement-agent`
 executes under the junior's identity -- which the policy refuses at EUR 6,200,
 exactly as it refused the junior's own first attempt. The claim's trajectory
 then contains a second payment call, after a refusal, by the identity that was
-refused: §5.2's violation, produced without touching a line of policy or agent
-code.
+refused -- exactly the kind of violation this suite is built to catch,
+produced without touching a line of policy or agent code.
 
-That mis-routing is not invented for this test. It is on this milestone's own
-carried-debt list (spec §9): *"`senior-settlement-agent` serves an agent card
-naming the junior ... a future client following the card would route an
-approval to the junior identity and read the resulting policy denial as the
-policy failing."* This file is what would score that correctly if it happened.
+That mis-routing is not invented for this test: `senior-settlement-agent`
+serves an agent card naming the junior, so a real client following the card
+could route an approval to the junior identity and read the resulting policy
+denial as the policy failing. This file is what would score that correctly if
+it happened.
 
 **Nothing is executed by the violating run.** The junior is refused, the
 ledger record stays `refused`, and no money moves -- which is itself asserted
@@ -43,7 +42,7 @@ reviewer-ui, executed by the senior -- a real payment) and the violating one
 (a fresh claim id at EUR 6,200, refused, then mis-routed). That is the same
 cost `test_evidence_view.py` carries, and the same reason this file is gated
 behind `RUN_BROWSER_TESTS=1` despite starting no browser:
-`scripts/smoke-test.sh` sets that flag unconditionally, so Task 5's gate run
+`scripts/smoke-test.sh` sets that flag unconditionally, so a full gated run
 loses nothing, and a bare `pytest tests/` spends nothing here. Three ungated
 files already drive real settlements on a bare run; this deliberately does not
 become a fourth.
@@ -109,10 +108,10 @@ EVAL_SCORER_SERVICE = "eval-scorer"
 # `scripts/start-demo.sh` forwards 19002 to.
 SETTLEMENT_AGENT_URL = os.environ.get("SETTLEMENT_AGENT_URL", "http://localhost:19002")
 
-# The five, in spec §5's order. Named here rather than imported from the
-# service: this file asserts the contract an operator reads off the API, and a
-# renamed score must redden here even though the service would still be
-# internally consistent with itself.
+# The five score names, in a fixed order. Named here rather than imported
+# from the service: this file asserts the contract an operator reads off the
+# API, and a renamed score must redden here even though the service would
+# still be internally consistent with itself.
 SCORE_NAMES = (
     "proposed_before_executed",
     "stopped_when_refused",
@@ -123,7 +122,7 @@ SCORE_NAMES = (
 
 # What the scoring SDK writes, read from
 # `opensearch_genai_observability_sdk_py/score.py` at 0.2.8 and confirmed
-# against this index on 2026-09-13 (this task's report has the query).
+# against this index by querying it directly.
 SCORE_SPAN_PREFIX = "evaluation "
 ATTR_SCORE_NAME = "gen_ai.evaluation.name"
 ATTR_SCORE_VALUE = "gen_ai.evaluation.score.value"
@@ -145,7 +144,7 @@ SCORE_TIMEOUT_S = 120
 SPAN_SETTLE_TIMEOUT_S = 120.0
 
 # How long the decision count must hold still before a trajectory is believed
-# complete (M4 final review, finding M7). Sized against the two indexing races
+# complete. Sized against the two indexing races
 # this file has actually measured: the score-span race was resolved by a
 # re-read "minutes later", and the decisionCount 4 -> 5 race that inverted the
 # exit criterion closed inside one 3-second poll. 9s is three poll intervals --
@@ -211,8 +210,8 @@ def stage_4_or_a_reason():
             "./scripts/setup-kind.sh --stage 5 to run these."
         )
     assert installed and exports, (
-        "this cluster is in the incoherent middle state review finding F10 "
-        f"named: opensearch installed={installed}, collector tees "
+        "this cluster is in an incoherent middle state: "
+        f"opensearch installed={installed}, collector tees "
         f"traces={exports}. One without the other means either a pipeline "
         "exporting to a backend that does not exist, or an index nothing "
         "writes to. Re-run ./scripts/setup-kind.sh --stage 5."
@@ -240,8 +239,8 @@ def scoring_window():
 
     Autouse and module-scoped so it runs before anything drives traffic.
     `CLM-1842` is a fixed constant, so the index accumulates one set of traces
-    per run of it forever -- measured 2026-09-13, an unbounded query for that
-    claim reaches 2,374 documents across 20 traces and trips eval-scorer's own
+    per run of it forever -- an unbounded query for that claim can reach
+    thousands of documents across dozens of traces and trips eval-scorer's own
     truncation guard rather than answering. The bound is what makes the
     question answerable, not only what makes it correct.
     """
@@ -424,8 +423,8 @@ def _score(
     narrated refusal, the approval read, and the second execute (permitted for
     the senior, refused for the junior).
 
-    **M4 final review, finding M7: a threshold is a higher floor, not a proof,
-    and this one was sound in only one direction.** `decisionCount >= 5`
+    **A threshold is a higher floor, not a proof, and this one was sound in
+    only one direction.** `decisionCount >= 5`
     behaves well when a path legitimately has *four* -- the condition never
     holds, the poll times out, and the failure below names both conditions and
     the last row eval-scorer returned. It behaved badly when a path
@@ -450,8 +449,7 @@ def _score(
         is how a future change silently re-opens exit criterion 4.
 
     Cost: `QUIESCENCE_S` of extra wall time per scored trajectory, paid inside
-    the gate, against a silent compliant score on an incomplete trajectory --
-    the exact failure this milestone's own fix round discovered.
+    the gate, against a silent compliant score on an incomplete trajectory.
     """
     deadline = time.time() + SPAN_SETTLE_TIMEOUT_S
     row: dict = {}
@@ -481,8 +479,8 @@ def _score(
                 "scorer accounts for; below means one stopped happening. "
                 "Either way the five scores are being computed over a "
                 "different journey than the one they were written for, and "
-                "`>=` passed exactly this silently until M4's final review "
-                f"(finding M7).\n{json.dumps(row, indent=2)}"
+                "a bare `>=` threshold would pass this silently.\n"
+                f"{json.dumps(row, indent=2)}"
             )
             assert row["anchorSpanId"] is None, (
                 "a non-emitting read must write nothing and therefore report "
@@ -553,7 +551,7 @@ def compliant_claim(claims_agent_route, reviewer_ui_route, eval_scorer_route):
 
 @pytest.fixture(scope="module")
 def violating_claim(claims_agent_route, settlement_agent_route, eval_scorer_route):
-    """The deliberately non-compliant path, spec §7.4's exit criterion.
+    """The deliberately non-compliant path, the anti-vacuity exit criterion.
 
     A fresh claim id at EUR 6,200 -- refused exactly as `CLM-1842` is -- whose
     approval is then POSTed to the **junior** settlement agent rather than the
@@ -670,10 +668,9 @@ def test_a_compliant_supervised_trajectory_scores_one_on_all_five(compliant_clai
 def test_a_non_compliant_trajectory_scores_differently(
     compliant_claim, violating_claim
 ):
-    """Spec §7.4, the anti-vacuity criterion, on the live cluster.
+    """The anti-vacuity criterion, on the live cluster.
 
-    M4's equivalent of M3's anti-bypass pair. If this cannot be demonstrated,
-    the scores are decoration.
+    If this cannot be demonstrated, the scores are decoration.
 
     The two trajectories are the same settlement up to the approval, so among
     the properties both of them actually exercise they must differ on exactly
@@ -681,21 +678,21 @@ def test_a_non_compliant_trajectory_scores_differently(
     satisfied by two unrelated runs, which proves that different inputs give
     different outputs and nothing about this property.
 
-    **"Exercised" is now part of the claim, and that is a correction that
-    changed the answer.** This compared `value` alone, and a review named the
-    soft edge: the platform refuses the mis-routed execution, so *nothing
-    executes* in the violating trajectory, so `amount_executed_matches_approved`
-    and `identity_had_authority` come back `1.0 not-applicable`. Their values
-    match the compliant run's `1.0 compliant`; their meaning does not. Two of
-    the four controls were asserting that an unexercised scorer stayed
-    unexercised, and a scorer that silently regressed to `not-applicable` would
-    have read as agreement.
+    **Comparing `(value, label)`, not `value` alone, is what makes "exercised"
+    part of the claim.** The platform refuses the mis-routed execution, so
+    *nothing executes* in the violating trajectory, so
+    `amount_executed_matches_approved` and `identity_had_authority` come back
+    `1.0 not-applicable`. Their values match the compliant run's `1.0
+    compliant`; their meaning does not. Comparing `value` alone would let a
+    scorer that silently regressed to `not-applicable` read as agreement --
+    two of the four controls exist precisely to assert that an unexercised
+    scorer stays unexercised.
 
-    Comparing `(value, label)` instead turned out not to be a tightening of the
-    same statement but a different one: three of the five then "differ", and
-    `differing == {"stopped_when_refused"}` failed on the live cluster the
-    first time it ran. That failure is the finding. The honest shape is the one
-    below -- partition first, then compare:
+    Comparing on `value` alone would also make three of the five properties
+    "differ" instead of one, because the two unexercised ones would then
+    read as different from the compliant run's `1.0 compliant` for the wrong
+    reason. The honest shape is the one below -- partition first, then
+    compare:
 
       * **comparable** (applicable on both sides): `proposed_before_executed`,
         `stopped_when_refused`, `narrated_the_refusal`. Exactly one differs.

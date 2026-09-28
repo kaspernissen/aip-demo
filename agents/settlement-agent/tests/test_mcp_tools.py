@@ -1,11 +1,11 @@
-"""Pins the two correctness fixes in mcp_tools.py (review Finding 2 / A19),
-and (Task 7) the client-side params._meta injection that closes the MCP hop.
+"""Pins two correctness fixes in mcp_tools.py, and the client-side
+params._meta injection that closes the MCP hop.
 
-Both original fixes were verified live in the original round (NOTES.md §7),
-but neither had a test: deleting either the `is_error` branch in `_unwrap` or
-the `except BaseExceptionGroup` clause in `_call` would still leave every
-prior test green while a real 404/409 from payments-api was buried again —
-exactly the failure mode this file guards against. Concrete regression checks:
+Both fixes were verified live (NOTES.md), but neither had a test: deleting
+either the `is_error` branch in `_unwrap` or the `except BaseExceptionGroup`
+clause in `_call` would still leave every prior test green while a real
+404/409 from payments-api was buried again — exactly the failure mode this
+file guards against. Concrete regression checks:
 
 - Delete the `if getattr(result, "is_error", False): ...` branch from
   `_unwrap` -> `test_unwrap_raises_tool_call_error_with_the_tools_own_text`
@@ -16,27 +16,28 @@ exactly the failure mode this file guards against. Concrete regression checks:
   fails (a bare ExceptionGroup propagates instead of ToolCallError).
 
 The `_call` test also exercises pytest.ini's `asyncio_mode = auto` for a
-real reason (review nit 7): it is the one test in this suite that needs it.
+real reason: it is the one test in this suite that needs it.
 
-Task 7 adds `test_call_injects_params_meta_traceparent_from_the_ambient_context`
-and `test_call_injects_params_meta_baggage_from_the_ambient_context`: reverting
-`_call` to `session.call_tool(tool, arguments)` (the pre-Task-7 shape) makes
-both fail, since `call_tool` has no way to set `_meta` at all (see
-NOTES.md and mcp_tools.py's own module docstring).
+`test_call_injects_params_meta_traceparent_from_the_ambient_context` and
+`test_call_injects_params_meta_baggage_from_the_ambient_context` pin the
+params._meta injection: reverting `_call` to `session.call_tool(tool,
+arguments)` makes both fail, since `call_tool` has no way to set `_meta` at
+all (see NOTES.md and mcp_tools.py's own module docstring).
 
-M2.1 Task 4 adds the identity half, at the bottom of this file, and changes
-every `_call` test's transport fake: the old `lambda url:
-_FakeReadWriteContext()` accepted no `headers` argument, so it could not have
-observed a credential even if one were sent. See `_patch_transport` (named
-`_capturing_transport` until the mcp 2.x bump split it in two, because the
-credential and the transport are no longer built by the same call).
+The identity half, at the bottom of this file, changes every `_call` test's
+transport fake: the old fake `lambda url: _FakeReadWriteContext()` accepted
+no `headers` argument, so it could not have observed a credential even if
+one were sent. See `_patch_transport`: mcp 2.x builds the transport and the
+credential in two separate calls rather than one, which is what this fake
+now has to capture.
 
-M2.2 Task 5 adds the denial half, in the last section: `PolicyDenial`, and the
-branch in `_call` that produces it. Its own header block carries that
-section's regression checks. The agent-level half of the same task -- how many
-execute attempts a refused settlement makes, and what the A2A caller gets --
-is in `tests/test_settlement.py`, which imports this file's denial fixtures so
-there is one definition of the exception shape the deployed gateway produces.
+The denial half, in the last section, covers `PolicyDenial` and the branch
+in `_call` that produces it. Its own header block carries that section's
+regression checks. The agent-level half -- how many execute attempts a
+refused settlement makes, and what the A2A caller gets -- is in
+`tests/test_settlement.py`, which imports this file's denial fixtures so
+there is one definition of the exception shape the deployed gateway
+produces.
 """
 from __future__ import annotations
 
@@ -169,7 +170,7 @@ class _FakeHttpClient:
 
 
 # ---------------------------------------------------------------------------
-# M2.1 Task 4: identity on the wire.
+# Identity on the wire.
 # ---------------------------------------------------------------------------
 _FAKE_SVID = "fake.jwt.svid"
 
@@ -221,8 +222,8 @@ def _patch_transport(monkeypatch, captured: dict):
 class _FakeSessionRaisingNestedGroup:
     """Stands in for mcp.ClientSession, reproducing the doubly-nested
     BaseExceptionGroup that anyio's TaskGroups actually produce (verified
-    empirically, NOTES.md §7) around a single ToolCallError raised from
-    the tool call. Task 7: `_call` now calls `send_request`, not `call_tool`
+    empirically, NOTES.md) around a single ToolCallError raised from
+    the tool call. `_call` calls `send_request`, not `call_tool`
     (see mcp_tools.py) — this fake follows that same call site so this test
     still exercises the real code path."""
 
@@ -246,16 +247,16 @@ class _FakeSessionRaisingNestedGroup:
         raise BaseExceptionGroup("outer", [BaseExceptionGroup("inner", [leaf])])
 
     async def call_tool(self, name, arguments):
-        # Review nit 6: without this method, reverting `_call` to the
-        # pre-Task-7 `session.call_tool(...)` shape would fail this fake
-        # with a bare `AttributeError` (no such attribute), not a message
-        # that says anything about what's actually wrong. Fail loudly with
-        # the real reason instead, in case a future revert lands here.
+        # Without this method, reverting `_call` to `session.call_tool(...)`
+        # would fail this fake with a bare `AttributeError` (no such
+        # attribute), not a message that says anything about what's actually
+        # wrong. Fail loudly with the real reason instead, in case a future
+        # revert lands here.
         raise AssertionError(
             "_call() invoked session.call_tool(), not send_request() — this "
-            "fake exercises the send_request() path Task 7 introduced (see "
-            "mcp_tools.py's module docstring); call_tool() gives no way to "
-            "set params._meta at all"
+            "fake exercises the send_request() path (see mcp_tools.py's "
+            "module docstring); call_tool() gives no way to set params._meta "
+            "at all"
         )
 
 
@@ -272,7 +273,7 @@ async def test_call_unwraps_a_doubly_nested_exception_group_to_the_tool_call_err
 class _FakeSessionCapturingRequest:
     """Stands in for mcp.ClientSession, capturing the request passed to
     send_request instead of executing anything, so params._meta can be
-    inspected directly — the one thing session.call_tool() (mcp==1.9.4's
+    inspected directly — the one thing session.call_tool() (mcp's
     high-level API) gives no way to observe or control."""
 
     captured: dict = {}
@@ -294,9 +295,9 @@ class _FakeSessionCapturingRequest:
         return _FakeCallToolResult(structured_content={"paymentId": "PAY-000001"})
 
     async def call_tool(self, name, arguments):
-        # Review nit 6: same rationale as _FakeSessionRaisingNestedGroup's
-        # call_tool above — a substantive failure, not AttributeError, if
-        # _call is ever reverted to the pre-Task-7 call_tool() shape.
+        # Same rationale as _FakeSessionRaisingNestedGroup's call_tool
+        # above — a substantive failure, not AttributeError, if _call is
+        # ever reverted to the call_tool() shape.
         raise AssertionError(
             "_call() invoked session.call_tool(), not send_request() — "
             "params._meta was never set because call_tool() gives no way "
@@ -314,13 +315,12 @@ def _remote_span_context() -> SpanContext:
 
 
 async def test_call_injects_params_meta_traceparent_from_the_ambient_context(monkeypatch):
-    """mcp==1.9.4's high-level ClientSession.call_tool() has no way to set
+    """mcp's high-level ClientSession.call_tool() has no way to set
     params._meta at all (agents/settlement-agent/NOTES.md), so `_call` reaches
     for the lower-level send_request() API instead — the same technique
-    tests/e2e/test_payments_mcp_trace.py used as test infrastructure (A14a).
-    This test proves the *production* client does the injection, which is
-    Task 7's job specifically (that e2e test's injection does not pre-empt
-    it)."""
+    tests/e2e/test_payments_mcp_trace.py uses as test infrastructure.
+    This test proves the *production* client does the injection (that e2e
+    test's injection does not pre-empt it)."""
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
     _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
@@ -369,8 +369,7 @@ async def test_call_injects_params_meta_baggage_from_the_ambient_context(monkeyp
 async def test_call_omits_meta_entirely_when_context_is_empty(monkeypatch):
     """No active span, no baggage: propagate.inject() produces an empty
     carrier, and _meta should be omitted (None) rather than sent as an empty
-    object — matching the pre-Task-7 wire shape for a caller with nothing to
-    propagate."""
+    object for a caller with nothing to propagate."""
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
     _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
@@ -388,8 +387,8 @@ async def test_call_omits_meta_entirely_when_context_is_empty(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# M2.1 Task 4: the JWT-SVID rides in an HTTP header, the trace context rides
-# in params._meta, and the two carriers stay separate.
+# The JWT-SVID rides in an HTTP header, the trace context rides in
+# params._meta, and the two carriers stay separate.
 #
 # Concrete regression checks:
 # - Drop `headers=` from the create_mcp_http_client call ->
@@ -548,22 +547,21 @@ async def test_execute_defaults_the_currency_but_never_the_amount():
 
 
 # ---------------------------------------------------------------------------
-# M2.2 Task 5: a policy denial is terminal, and the model gets to see it.
+# A policy denial is terminal, and the model gets to see it.
 #
-# The spec calls this the load-bearing hazard: "If a denial reads as a
-# retryable tool error, the agent can sit on stage retrying a payment it will
-# never be allowed to make. The implementation gets an explicit test for the
-# absence of a retry loop, not merely for the presence of a deny."
+# The load-bearing hazard: if a denial reads as a retryable tool error, the
+# agent can sit on stage retrying a payment it will never be allowed to make.
+# So there is an explicit test for the absence of a retry loop, not merely
+# for the presence of a deny.
 #
-# The exception that actually arrives here was measured, not guessed
-# (task-1-findings.md §3): `mcp.shared.exceptions.MCPError`, because the
-# gateway denies on **HTTP 200** with an `application/json` JSON-RPC error
-# body, so `raise_for_status()` is a no-op and there is no
-# `httpx.HTTPStatusError` on this path at all. Every fixture below therefore
-# builds a real `MCPError` (2.x renamed it from `McpError`, and its
-# constructor now takes `code`/`message`/`data` directly rather than an
-# `ErrorData` instance), in the real
-# nesting the gateway produces, rather than a hand-rolled stand-in.
+# The exception that actually arrives here was measured, not guessed:
+# `mcp.shared.exceptions.MCPError`, because the gateway denies on **HTTP
+# 200** with an `application/json` JSON-RPC error body, so
+# `raise_for_status()` is a no-op and there is no `httpx.HTTPStatusError` on
+# this path at all. Every fixture below therefore builds a real `MCPError`
+# (2.x renamed it from `McpError`, and its constructor now takes
+# `code`/`message`/`data` directly rather than an `ErrorData` instance), in
+# the real nesting the gateway produces, rather than a hand-rolled stand-in.
 #
 # Concrete regression checks:
 # - Make `PolicyDenial` subclass `ModelRetry` ->
@@ -574,16 +572,15 @@ async def test_execute_defaults_the_currency_but_never_the_amount():
 #   test_a_denial_shaped_message_with_no_marker_is_not_a_denial fails.
 # - Drop the `_policy_denial` call from `_call`'s handler ->
 #   test_call_translates_a_denied_tool_call_into_a_policy_denial fails (a bare
-#   MCPError propagates, which is exactly the pre-task behaviour that gave the
-#   A2A caller a -32603 with no narration).
+#   MCPError propagates, giving the A2A caller a -32603 with no narration).
 # - Read only `str(exc)` instead of `exc.error.data` ->
 #   test_a_policy_denial_carries_the_structured_facts_str_drops fails.
 # ---------------------------------------------------------------------------
 
-# The reason string the deployed PDS emits, verbatim (task-1-findings.md /
-# the M2.2 deny body). It is on `error.message` deliberately: that is the one
-# place `str(MCPError)` preserves, and therefore the only text that can reach
-# the model that must narrate the refusal.
+# The reason string the deployed PDS emits, verbatim. It is on
+# `error.message` deliberately: that is the one place `str(MCPError)`
+# preserves, and therefore the only text that can reach the model that must
+# narrate the refusal.
 DENY_REASON = (
     "requested 6200 EUR exceeds the 6000 EUR limit for this agent at "
     "autonomy level assisted"
@@ -616,9 +613,9 @@ def _denial_error(**kwargs) -> MCPError:
     """The exception as it arrives inside mcp_tools, end to end.
 
     `error.code` is the gateway's own `-32001` (PERMISSION_DENIED), *not* the
-    `-32003` inside the body -- `mcp_error` only ever lands in `data`
-    (task-1-findings.md §1). Pinning the gateway's code here means a test that
-    accidentally started depending on -32003 would be caught.
+    `-32003` inside the body -- `mcp_error` only ever lands in `data`.
+    Pinning the gateway's code here means a test that accidentally started
+    depending on -32003 would be caught.
     """
     return MCPError(code=-32001, message=DENY_REASON, data=_denial_body(**kwargs))
 
@@ -672,8 +669,8 @@ def test_the_denial_message_reaches_the_model_intact():
 
 
 def test_a_policy_denial_carries_the_structured_facts_str_drops():
-    """`str(MCPError)` silently drops `error.data`. Task 1 measured the
-    consequence: the deny marker did not reach the A2A caller at all. The
+    """`str(MCPError)` silently drops `error.data`: without reading it
+    separately, the deny marker never reaches the A2A caller at all. The
     structured facts have to be read off `exc.error.data`."""
     denial = _policy_denial(_denial_error())
     assert denial.rule == "settlement-agent.assisted.execute_limit"
@@ -703,7 +700,7 @@ def test_a_transport_error_is_still_a_transport_error():
     """Regression guard: the new branch must not swallow real failures and
     report them as policy denials.
 
-    This exact message is the PDS-unreachable case, measured in Task 4's
+    This exact message is the PDS-unreachable case, measured in the
     failClosed test. It arrives as an MCPError too, and it carries no marker.
     An outage reported as "policy said no" is a lie the model would go on to
     narrate to a claimant.
@@ -734,20 +731,19 @@ def test_a_denial_shaped_message_with_no_marker_is_not_a_denial():
 def test_a_permit_marker_is_not_a_denial():
     """A body that says `permit` is not a denial, *even carrying deny prose*.
 
-    Fix round 1, finding F6: this test used the message `"fine"`, which made it
-    inert against the one mutation it should have caught. Swapping the
-    structural check for a prose one while still reading the facts out of the
-    body --
+    The message here carries real deny prose deliberately, rather than an
+    inert placeholder: swapping the structural check for a prose one while
+    still reading the facts out of the body --
 
         for candidate in (data.get("data"), data):
             if isinstance(candidate, dict) and "exceeds the" in str(exc):
                 return candidate
 
-    -- passed all 73 tests, because no test ever handed the detector deny
-    prose together with a body that structurally says permit. That is the
-    realistic shape of the mistake: someone reaching for the message keeps
-    reading the body for the rule and the limit, so every test that asserts on
-    those still passes.
+    -- would pass every other test in this file, because no test hands the
+    detector deny prose together with a body that structurally says permit.
+    That is the realistic shape of the mistake: someone reaching for the
+    message keeps reading the body for the rule and the limit, so every test
+    that asserts on those still passes.
 
     The two ways to get the detection wrong pull in opposite directions, so
     both messages have to appear somewhere in this file: this test is
@@ -821,8 +817,7 @@ async def test_call_translates_a_denied_tool_call_into_a_policy_denial(
 
     Without the translation, `_call` re-raises the MCPError leaf: it
     propagates out of Agent.run(), the a2a-sdk turns it into JSON-RPC -32603
-    with no `result`, and nothing narrates the refusal (measured, Task 4
-    §11.4).
+    with no `result`, and nothing narrates the refusal.
     """
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
     _patch_transport(monkeypatch, {})
@@ -871,10 +866,10 @@ async def test_call_leaves_a_transport_failure_as_an_mcp_error(monkeypatch):
 
 
 async def test_refuse_sends_every_field_in_the_tool_call_arguments(monkeypatch):
-    """M3 Task 3: recording a refusal through the same governed MCP path --
-    not a new HTTP path from this agent to payments-api. The refuse endpoint
-    validates only that `rule` is non-empty (M3 Task 2), so this client is
-    what has to send every field, always."""
+    """Recording a refusal through the same governed MCP path -- not a new
+    HTTP path from this agent to payments-api. The refuse endpoint validates
+    only that `rule` is non-empty, so this client is what has to send every
+    field, always."""
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
     _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
@@ -905,8 +900,8 @@ async def test_refuse_sends_every_field_in_the_tool_call_arguments(monkeypatch):
 
 
 async def test_get_sends_the_payment_id_in_the_tool_call_arguments(monkeypatch):
-    """M3 Task 3 review fix round (finding 1, R11): execute_approved reads the
-    ledger back through this call before executing an approval."""
+    """`execute_approved` reads the ledger back through this call before
+    executing an approval."""
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
     _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)
@@ -923,8 +918,8 @@ async def test_get_sends_the_payment_id_in_the_tool_call_arguments(monkeypatch):
 async def test_call_still_unwraps_a_tool_call_error_after_the_denial_branch(
     monkeypatch,
 ):
-    """The new branch sits in the same handler as the M1.1 unwrapping and must
-    not have displaced it: payments-api's 404/409 still arrives as a
+    """The denial branch sits in the same handler as the unwrapping above and
+    must not have displaced it: payments-api's 404/409 still arrives as a
     ToolCallError carrying its own text."""
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
     _patch_transport(monkeypatch, {})

@@ -1,13 +1,11 @@
-"""M2.2's exit criteria 1-6, one test each, named for the criterion it discharges.
+"""Six governed-payment exit criteria, one test each, named for the criterion it
+discharges.
 
-Tasks 1-5 built the governed path and it demonstrably works when a human drives
-it. This file is the part that makes it *provable by a repeatable suite* rather
-than by someone watching a browser. The six tests below map one-to-one onto the
-six exit criteria the spec assigns to this task
-(`docs/superpowers/specs/2026-09-09-northstar-m2-governed-design.md` §9,
-criteria 1-6; criterion 7 is Task 7's, 8 and 9 are Task 8's), and each test's
-name states which criterion it closes so a reader can check the suite against
-the spec without a decoder ring.
+The governed path demonstrably works when a human drives it through a browser;
+this file is the part that makes it *provable by a repeatable suite* instead.
+The six tests below map one-to-one onto six numbered criteria for the governed
+payment path, and each test's name states which criterion it closes so a
+reader can check the suite's coverage directly.
 
 **What each criterion costs.** Two of the six need a live model call and four do
 not, and the split is deliberate rather than incidental:
@@ -29,16 +27,17 @@ not, and the split is deliberate rather than incidental:
 
 Two settlements per full run of this file, therefore, and never more.
 
-**Reference traces are cited, not asserted against.** Task 5's report records a
-denial (`b05167ba11744cff81bcedce615cb379`) and a permit
-(`88cdfbcf5720487c9597ba573c02c33d`). Both were read while writing this file, to
+**Reference traces are cited, not asserted against.** Two previously captured
+traces -- a denial (`b05167ba11744cff81bcedce615cb379`) and a permit
+(`88cdfbcf5720487c9597ba573c02c33d`) -- were read while writing this file, to
 fix the span shape asserted below; neither is what the tests run against, and
 neither could be. Both were driven straight at settlement-agent's A2A endpoint,
 so they contain no `customer-ui` and no `claims-agent` span at all and cannot
-witness a browser-owned root; and the denial one predates Task 5, so its
-`invoke_agent` span is still `ERROR` with the `McpError` propagating out of
-`Agent.run()` — the exact behaviour Task 5 replaced. Every assertion here runs
-against a trace this file itself causes on the run.
+witness a browser-owned root; and the denial one shows an `invoke_agent` span
+still `ERROR`, with the `McpError` propagating out of `Agent.run()` -- not what
+a handled denial looks like in this trace (see criterion 3's assertion on this
+span). Every assertion here runs against a trace this file itself causes on
+the run.
 
 **Environment.** The browser tests need `RUN_BROWSER_TESTS=1`, playwright, and
 the live `kind-northstar` cluster; they are skipped without the flag, in line
@@ -46,7 +45,7 @@ with every other browser test here. Criteria 4 and 5 are *not* behind that flag:
 criterion 4 needs nothing, and criterion 5 needs only the cluster, which it
 fails rather than skips on (same rule as `tests/e2e/test_caller_identity.py`).
 
-**Port-forward ownership (A9).** The browser reaches claims-agent at whatever
+**Port-forward ownership.** The browser reaches claims-agent at whatever
 `NEXT_PUBLIC_CLAIMS_AGENT_URL` was baked into the customer-ui image at build
 time (`apps/customer-ui/Dockerfile`, default `http://localhost:19001`), so that
 port is not negotiable the way an ephemeral one would be. `claims_agent_route`
@@ -104,7 +103,7 @@ CLAIMS_AGENT_URL = os.environ.get("CLAIMS_AGENT_URL", "http://localhost:19001")
 # The ledger itself, for criterion 1's read-back. Same env var and same default
 # `tests/e2e/test_payments_api_trace.py` already uses, and 18080 is one of the
 # four repo-managed port-forwards `scripts/smoke-test.sh` requires before it
-# runs anything (A9), so this needs no fixture of its own.
+# runs anything, so this needs no fixture of its own.
 PAYMENTS_API_URL = os.environ.get("PAYMENTS_API_URL", "http://localhost:18080")
 
 KUBE_CONTEXT = "kind-northstar"
@@ -125,7 +124,7 @@ browser_test = pytest.mark.skipif(
 DENIED_CLAIM_ID = "CLM-1842"
 DENIED_AMOUNT = 6200.0
 
-# Criterion 6's amount: below the €6,000 allowance, and the same value Task 5's
+# Criterion 6's amount: below the €6,000 allowance, and the same value the
 # reference permit trace was captured at. The claim id is unique per run so the
 # permit run can never be confused with the denial run in a shared Jaeger.
 PERMITTED_AMOUNT = 5800.0
@@ -163,13 +162,13 @@ ATTR_POLICY_RULE = "policy.rule"
 ATTR_POLICY_CALLER = "policy.caller.spiffe_id"
 ATTR_POLICY_LIMIT = "policy.limit.amount"
 ATTR_POLICY_AMOUNT = "policy.request.amount"
-# M5 Task 3/6: the contract's own two signals on this span.
-# `ATTR_AUTONOMY` is set unconditionally (`pds/server.py`); `ATTR_FLAG_VERSION`
-# is set only when flagd's response actually carries a version, which
-# measurably never happens against this deployment (`featureflag.yaml`
-# declares no flag `metadata` -- M5-R29) -- reproduced here, not imported
-# from `pds/telemetry.py`, per this file's own "read off what the PDS was
-# measured emitting" rule for every attribute above it.
+# The contract's own two signals on this span. `ATTR_AUTONOMY` is set
+# unconditionally (`pds/server.py`); `ATTR_FLAG_VERSION` is set only when
+# flagd's response actually carries a version, which measurably never
+# happens against this deployment (`featureflag.yaml` declares no flag
+# `metadata`) -- reproduced here, not imported from `pds/telemetry.py`, per
+# this file's own "read off what the PDS was measured emitting" rule for
+# every attribute above it.
 ATTR_AUTONOMY = "policy.autonomy.level"
 ATTR_FLAG_VERSION = "feature_flag.version"
 
@@ -306,10 +305,9 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
 
     Reads the `traceparent` the browser actually put on the wire (Playwright
     request interception) rather than searching Jaeger for a plausible trace:
-    A14 permits `find_trace` only where the id genuinely cannot be known, and
-    here it can be observed. Two reviewers elsewhere in this milestone proved
-    `find_trace` can return a trace minutes old, which this cannot do by
-    construction.
+    that kind of heuristic search is only safe where the trace id genuinely
+    cannot be known, and here it can be observed directly. A heuristic search
+    can return a trace minutes old, which this cannot do by construction.
     """
     from playwright.sync_api import sync_playwright
 
@@ -380,7 +378,7 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
         f"browser reported CORS errors; traceparent is being rejected: {cors_errors}"
     )
 
-    # A20: wait for the whole chain to land *and hold steady* past the 5s
+    # Wait for the whole chain to land *and hold steady* past the 5s
     # BatchSpanProcessor delay, not merely for one span to appear.
     trace = client.wait_for_trace_id(
         trace_id,
@@ -408,7 +406,7 @@ def denial_run(claims_agent_route):
     Shared by criteria 1, 2 and 3, which are three views of this single event.
     Costs one model call per run of this file.
 
-    **M5 Task 6 (review finding I4):** criterion 1 hardcodes
+    Criterion 1 hardcodes
     `settlement-agent.assisted.execute_limit` and requires the junior
     identity to be *denied* -- true again the moment
     `test_progressive_autonomy.py`'s own flip test restores the contract,
@@ -510,7 +508,7 @@ def _tool_calls(messages: list[dict], tool: str) -> list[dict]:
 def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
     denial_run,
 ):
-    """§9.1: CLM-1842 submitted in the browser -- the model proposes €6,200,
+    """Criterion 1: CLM-1842 submitted in the browser -- the model proposes €6,200,
     requests execution, and the platform denies it. No payment is executed.
 
     Four things, in the order the criterion states them.
@@ -532,44 +530,27 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
     *No payment is executed*: **the ledger says so, and the trace agrees.**
 
     The ledger read-back is the primary evidence and it is a positive one.
-    `payments-api` does expose `GET /payments/{paymentId}`
-    (`systems/payments-api/handlers.go:285`, and it predates this branch), so
-    the record the proposal created can simply be fetched and required to read
-    the status the system actually produces for a denied settlement. That is a
-    direct statement about the thing the criterion is about: the money did not
-    move.
+    `payments-api` exposes `GET /payments/{paymentId}`
+    (`systems/payments-api/handlers.go:285`), so the record the proposal
+    created can simply be fetched and required to read the status the system
+    actually produces for a denied settlement. That is a direct statement
+    about the thing the criterion is about: the money did not move. The
+    execute handler itself reads the record through the same route, at
+    `handlers.go:243`.
 
-    **M3 changed which status that is, and this assertion moved with it (M3
-    Task 5B, ruling R28).** Through M2.2 this required `status == "proposed"`,
-    justified in this docstring by *"`store.go`'s only other status is
-    `executed`, and `s.execute` is the only writer of it"* — true when written
-    and falsified twice since. M3 Task 2 added a third status, `StatusRefused`,
-    written only by `store.refuse`; M3 Task 3 made
-    `agents/settlement-agent/settlement.py`'s `decide_settlement` call
-    `POST /payments/{id}/refuse` on its refused branch (`_record_refusal`), so
-    a denied settlement now leaves the ledger reading `refused` rather than
-    `proposed`. Verified by reading that branch, not inferred from the
-    milestone's intent.
-
-    The repair keeps the criterion rather than weakening it, which matters
-    because `refused` is *stronger* evidence here than `proposed` was and
-    neither is satisfiable by an execution: `refused` is reachable only from
-    `proposed` and only through the refuse route, `executed` is still reachable
-    only through `store.execute`, and the two are distinct terminal values. So
-    this assertion fails on each of the two ways the criterion can break, and
-    says which: `executed` means the money moved despite the denial, and
-    `proposed` now means the refusal was never recorded, so the human reviewer
-    this milestone exists for would never see it (`_record_refusal` logs and
+    A denied settlement leaves the ledger reading `refused`, written only by
+    `store.refuse`: `agents/settlement-agent/settlement.py`'s
+    `decide_settlement` calls `POST /payments/{id}/refuse` on its refused
+    branch (`_record_refusal`). `refused` is reachable only from `proposed`
+    and only through the refuse route, `executed` is reachable only through
+    `store.execute`, and the two are distinct terminal values. So this
+    assertion fails on each of the two ways the criterion can break, and says
+    which: `executed` means the money moved despite the denial, and
+    `proposed` means the refusal was never recorded, so the human reviewer
+    the platform exists for would never see it (`_record_refusal` logs and
     swallows a recording failure rather than surfacing it to the claimant,
     which is correct for the claimant and is exactly why a test has to be the
     thing that notices).
-
-    An earlier revision of this docstring claimed the opposite — *"`payments-api`
-    exposes no `GET /payments/{id}` ... so there is nothing to read"* — and used
-    that false premise to justify proving the criterion by span absence alone.
-    The route was there the whole time; the execute handler itself reads the
-    record through it at `handlers.go:243`. Corrected in the M2.2 fix round
-    (final-review finding 2), and the read-back it was excusing is now here.
 
     The three span absences are kept as *corroboration*, not as the whole
     argument, because they say something the read-back cannot: not only did the
@@ -666,7 +647,7 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
 
 @browser_test
 def test_criterion_2_the_model_narrates_the_denial_and_never_retries(denial_run):
-    """§9.2: the model narrates the denial in its own words and does not retry
+    """Criterion 2: the model narrates the denial in its own words and does not retry
     -- "asserted by a test that would fail on a retry loop".
 
     **The retry half, and why it is a count.** A test asserting only "a denial
@@ -787,22 +768,22 @@ def test_criterion_2_the_model_narrates_the_denial_and_never_retries(denial_run)
 def test_criterion_3_one_trace_one_browser_root_zero_orphans_with_all_four_parts(
     denial_run,
 ):
-    """§9.3: one trace, one browser-owned root, zero orphans, containing the
+    """Criterion 3: one trace, one browser-owned root, zero orphans, containing the
     model's reasoning, the refused tool call, the gateway, and the PDS's
     decision span.
 
-    **"Zero orphans", defined precisely, because an imprecise version of this
-    has already cost this project a review round.** The assertion is:
+    **"Zero orphans", defined precisely: an imprecise version of this check is
+    easy to satisfy by accident.** The assertion is:
 
         every span in this trace either declares a parent that is itself
         present in this trace, or is the single browser-owned root.
 
     That is `assert_no_orphans` plus `assert_single_root` plus the identity of
-    that root, and it is asserted here **unweakened, with no carve-out**. Task
-    4's review found `settlement-agent/POST /` legitimately parented to a
-    *synthetic* root -- a span id that exists on the wire but was never
-    exported -- and both of Task 5's reference traces show exactly that: zero
-    roots and one orphan, every time. That is not a defect and not a
+    that root, and it is asserted here **unweakened, with no carve-out**.
+    `settlement-agent/POST /` can legitimately be parented to a *synthetic*
+    root -- a span id that exists on the wire but was never exported -- and
+    the reference traces show exactly that: zero roots and one orphan, every
+    time. That is not a defect and not a
     counter-example to this assertion; it is an artifact of how those traces
     were driven. A script that mints a `traceparent` and POSTs it to
     settlement-agent names a parent span that no process will ever export, so
@@ -871,8 +852,8 @@ def test_criterion_3_one_trace_one_browser_root_zero_orphans_with_all_four_parts
         "invoke_agent settlement_agent", service="settlement-agent"
     )
     assert len(invoke) == 1, f"expected one invoke_agent span, got {len(invoke)}"
-    # Task 5's change, visible in the telemetry: before it, the McpError
-    # propagated out of `Agent.run()` and this span carried
+    # A handled denial must not surface as a span error here: if the McpError
+    # instead propagated out of `Agent.run()`, this span would carry
     # `otel.status_code=ERROR` with the refusal text as its description (that
     # is exactly what reference trace b05167ba... still shows). A denial the
     # agent handles and narrates is not an error, and this is where that shows.
@@ -975,24 +956,19 @@ ALLOWED_MONEY_COMPARISONS = {
         "about how much may be paid."
     ),
     ("settlement-agent", "settlement.py", "amount < 0"): (
-        "malformed-input rejection in _validate, present since M1.1 when this "
-        "path was deliberately ungoverned. It is not a policy allowance: it "
+        "malformed-input rejection in _validate, on a path that is "
+        "deliberately ungoverned. It is not a policy allowance: it "
         "does not depend on the caller, the autonomy level or any configurable "
         "limit, it compares against zero rather than against an amount anyone "
         "may spend, and it refuses rather than authorises. payments-api makes "
         "the same check independently (handlers.go)."
     ),
     # ---------------------------------------------------------------------
-    # M3 Task 5B. These four entries are added LATE and that is the point
-    # worth recording: M3 Tasks 2 and 3 introduced all four comparisons, this
-    # guard went red the moment they landed, and nothing caught it until the
-    # milestone's last task ran the gate's own suite. It is an *ungated* test,
-    # so every `pytest tests/` since Task 2 has been red here. The defect is
-    # not that the comparisons exist -- each is justified below -- it is that
-    # an allowlist whose whole design is "declare the exception with a reason"
-    # was left undeclared for two tasks. Written up as a finding in
-    # .superpowers/sdd/2026-09-10-m3-supervised/task-5b-report.md rather than
-    # quietly appended.
+    # This allowlist is checked only by this e2e test, which needs a live
+    # cluster and is not part of the unit-test gate -- so a money comparison
+    # can land in either component without this guard catching it until the
+    # e2e suite next runs. Each of the four entries below stands on its own
+    # justification rather than on being here first.
     #
     # The classification each entry rests on is not invented here. It is the
     # one docs/architecture.md already applies to payments-api's own
@@ -1012,7 +988,7 @@ ALLOWED_MONEY_COMPARISONS = {
         "exemption."
     ),
     ("settlement-agent", "settlement.py", "abs(float(ledger_amount) - amount) > AMOUNT_EPSILON"): (
-        "_verify_refusal's confirmation of intent (M3 Task 3, R11). It compares "
+        "_verify_refusal's confirmation of intent. It compares "
         "the amount an approval asks to execute against the amount THE LEDGER "
         "ITSELF recorded as refused -- two representations of one figure -- "
         "within payments-api's own half-cent tolerance. It is not a policy "
@@ -1022,7 +998,7 @@ ALLOWED_MONEY_COMPARISONS = {
         "from the system of record rather than held here. Deleting it would "
         "not widen what anyone may be paid; it would let an approval for one "
         "amount execute against a refusal recorded for another, which is why "
-        "the Task 3 review required it. The genuine policy question -- may "
+        "this check exists. The genuine policy question -- may "
         "senior-settlement-agent pay this much at all -- is still decided "
         "only by the PDS, and tests/e2e/test_supervised.py's criterion 6 is "
         "what proves the junior identity still cannot."
@@ -1052,7 +1028,7 @@ def _load_pds_rules():
 
     By path rather than by asserting a copied constant: `rules.py` is the
     auditable artifact, and this test's whole value is that it tracks whatever
-    that file actually says. If M5 changes the allowance, this guard follows it
+    that file actually says. If the allowance changes, this guard follows it
     instead of going stale. It imports only `math` and `dataclasses`, so it
     loads cleanly in this venv without the PDS's own.
     """
@@ -1127,10 +1103,11 @@ def _composed_rule_names(
     this cannot safely resolve, because silently under-checking a rule name
     this guard does not understand is worse than failing loudly on it.
 
-    M5's `pds/rules.py` composes exactly one shape,
+    `pds/rules.py` composes exactly one shape,
     `f"settlement-agent.{req.autonomy_level}.execute_limit"` (see that file's
-    own long comment on why the literal had to go): the caller segment is a
-    plain string piece that cannot vary, and the one interpolation is
+    own comment on why the name is composed rather than a literal): the
+    caller segment is a plain string piece that cannot vary, and the one
+    interpolation is
     `req.autonomy_level`, whose live vocabulary is `EXECUTE_LIMITS`'s own
     second key element -- already collected by the caller, not re-derived
     here.
@@ -1153,7 +1130,7 @@ def _composed_rule_names(
 
 
 def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp():
-    """§9.4: settlement-agent and payments-mcp contain no policy logic; the only
+    """Criterion 4: settlement-agent and payments-mcp contain no policy logic; the only
     change to either is mcp_tools.py's denial-to-terminal-result branch.
 
     This is a property of the code, so it is asserted against the code -- no
@@ -1162,9 +1139,10 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
     fail here, measured on this tree.**
 
     * A guard reading "no threshold number appears" would go **red for the
-      wrong reason**: `agents/settlement-agent/executor.py:9` says "EUR 6,200
-      left the company" and `settlement.py:16` says "There was no €5,000 check
-      here in M1" -- prose about the milestone, in comments.
+      wrong reason**: comments elsewhere in these files can legitimately
+      mention specific euro figures in prose -- describing what a claim
+      contains, or what a log line prints -- without holding a policy
+      threshold.
     * A guard reading "the word `limit` does not appear" would also go red:
       `settlement.py:223` logs `"...(rule %s, limit %s, requested %s)"` and
       reads `refused.limit`. Which is exactly the distinction that matters --
@@ -1193,43 +1171,34 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
 
     **Where this test is honest about the spec.** The criterion's second clause
     -- "the only change to either is `mcp_tools.py`'s denial-to-terminal-result
-    branch" -- was written before Task 5 and is now narrower than what shipped.
-    Five other files changed (four until 2026-09-11), and assertion 4 names all
-    six with a reason:
+    branch" -- is narrower than what shipped: five other files also changed,
+    and assertion 4 names all six with a reason:
 
     * `mcp_tools.py` -- the branch the criterion names.
-    * `settlement.py` -- Task 5's `_latch` and the `status: "refused"` reply.
-      Not policy logic: the latch holds no threshold and consults nothing but
+    * `settlement.py` -- its `_latch` and the `status: "refused"` reply. Not
+      policy logic: the latch holds no threshold and consults nothing but
       whether *the platform* already refused this run; it cannot refuse
       anything the platform permitted. Assertions 1-3 above cover it.
-    * `executor.py` -- a docstring and a log line that no longer calls a
-      refusal a settlement.
-    * `payments-mcp/server.py` and `payments_client.py` -- M2.2 Task 2's
-      amount threading on `execute_payment`, so that the instruction states
-      what it pays and the choke point has arguments to decide on. Plumbing,
-      and a precondition for governing at all rather than an instance of it.
+    * `executor.py` -- a docstring and a log line that describe the outcome
+      as a refusal, not a settlement.
+    * `payments-mcp/server.py` and `payments_client.py` -- amount threading
+      on `execute_payment`, so that the instruction states what it pays and
+      the choke point has arguments to decide on. Plumbing, and a
+      precondition for governing at all rather than an instance of it.
 
-      **M3 added two more tools to both files, and this bullet said only
-      "Task 2's amount threading" until the M3 final-review fix round.**
-      `refuse_payment` (so the agent records *why* a payment did not execute,
-      through the same governed path everything else uses) and `get_payment`
-      (so `execute_approved` can read the ledger back before acting on an
-      approval, R11). Both are in the PDS's own `UNLIMITED_TOOLS` and
-      `refuse_payment` is additionally caller-scoped there, which is exactly
-      the point: the decision about them lives only in `rules.py`, and these
-      two files carry nothing but the call. The assertion below was correct
-      throughout -- M3's feature work added tools, not files, so the five-file
-      set did not move then -- and only the reason written beside it went
-      stale, which is the same class this milestone's own review found in a
-      dozen other places. (M3's *dependency* bumps did move it, later the same
-      milestone; that is the sixth bullet.)
+      Both files also carry `refuse_payment` (so the agent records *why* a
+      payment did not execute, through the same governed path everything
+      else uses) and `get_payment` (so `execute_approved` can read the
+      ledger back before acting on an approval). Both are in the PDS's own
+      `UNLIMITED_TOOLS`, and `refuse_payment` is additionally caller-scoped
+      there, which is exactly the point: the decision about them lives only
+      in `rules.py`, and these two files carry nothing but the call.
 
-    * `bootstrap.py` -- **added to the set on 2026-09-11 (M3 remaining-bumps),
-      making it six.** It is settlement-agent's OpenTelemetry bootstrap: it
+    * `bootstrap.py` -- settlement-agent's OpenTelemetry bootstrap: it
       builds the TracerProvider, registers the propagators, turns on the two
       httpx instrumentors and calls `Agent.instrument_all`. It decides nothing
       about money, reads nothing from the PDS, and holds no branch any payment
-      passes through. The M3 dependency bumps changed it **in comments only** --
+      passes through. Its changes since `m2.1-verified` are **comments only** --
       `git diff m2.1-verified..HEAD -- agents/settlement-agent/bootstrap.py` is
       a corrected module docstring (the MCP client moved from `httpx` to
       `httpx2` at `mcp` 2.2.0, so `HTTPX2ClientInstrumentor` is now what covers
@@ -1241,8 +1210,7 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
       file in the component, so listing it widens nothing except the change
       surface it accounts for.
 
-    * `svid.py` -- **added to the set 2026-09-14 (M5 Task 1, `01606af`,
-      the deferred-pins batch).** `git diff m2.1-verified..HEAD -- agents/
+    * `svid.py` -- `git diff m2.1-verified..HEAD -- agents/
       settlement-agent/svid.py` is one line: a comment recording the
       `spiffe/spire` chart version the Workload API socket path matches
       (`0.30.1` -> `0.30.2`). No executable line moved, same class as
@@ -1283,10 +1251,11 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
     # which is the point of the rule -- one rule, two conclusions.
     rule_names = {node.value.value for node in literal_rule_keywords}
 
-    # M5: the execute-limit rule's autonomy segment is composed
+    # The execute-limit rule's autonomy segment is composed
     # (`f"settlement-agent.{req.autonomy_level}.execute_limit"`), not a
-    # literal -- rules.py's own comment explains why the literal used to lie.
-    # A composed `rule=` is not a blind spot to route around silently: each
+    # literal -- rules.py's own comment explains why a literal would
+    # mislabel some autonomy levels. A composed `rule=` is not a blind spot to
+    # route around silently: each
     # one is expanded into the concrete name it produces for every autonomy
     # level `EXECUTE_LIMITS` actually has, so the vocabulary this guard scans
     # for downstream stays exactly as complete as when every `rule=` was a
@@ -1323,9 +1292,9 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
     literal_hits: list[str] = []
     comparison_hits: list[str] = []
     # Which allowlist entries were actually encountered. An entry that is never
-    # hit is describing code that no longer exists, and a stale allowlist is a
-    # silently widening guard -- so the allowlist is checked against reality
-    # too, not just consulted.
+    # hit describes code that does not exist in this tree, and a stale
+    # allowlist is a silently widening guard -- so the allowlist is checked
+    # against reality too, not just consulted.
     allowlist_used: set[tuple[str, str, str]] = set()
 
     for component, root in GOVERNED_COMPONENTS.items():
@@ -1386,12 +1355,13 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
     )
     stale = set(ALLOWED_MONEY_COMPARISONS) - allowlist_used
     assert not stale, (
-        "ALLOWED_MONEY_COMPARISONS describes comparisons that are no longer in "
+        "ALLOWED_MONEY_COMPARISONS describes comparisons that are not in "
         "the source. A stale allowlist entry widens this guard without anyone "
         f"deciding to; drop it: {sorted(stale)}"
     )
 
-    # 4. The change surface since M2.1, which is the criterion's second clause.
+    # 4. The change surface since m2.1-verified, which is the criterion's
+    #    second clause.
     changed = subprocess.run(
         [
             "git",
@@ -1420,40 +1390,31 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
         "agents/settlement-agent/mcp_tools.py",
         "agents/settlement-agent/settlement.py",
         "agents/settlement-agent/executor.py",
-        # Comment-only changes since m2.1-verified; the OTel bootstrap, no
-        # policy logic. See this test's docstring for the full reason and for
-        # what the M3 dependency bumps actually changed in it.
+        # Comment-only changes since m2.1-verified; the OTel bootstrap holds
+        # no policy logic. See this test's docstring for the measured diff.
         "agents/settlement-agent/bootstrap.py",
         "tools/payments-mcp/server.py",
         "tools/payments-mcp/payments_client.py",
-        # M4 Task 2's MeterProvider. Added by M4 Task 5, because the run that
-        # would have caught it is the one Task 5 makes: this assertion lives in
-        # `tests/e2e`, and no task in this milestone was permitted a gate run,
-        # so four tasks' green `pytest tests/unit` reports could not see it.
-        # The file gained `_metric_reader()` and `_configure_metrics()` -- an
-        # OTel SDK MeterProvider and an OTLP exporter, the same shape
-        # `tests/unit/test_metrics_wiring.py` asserts is identical across all
-        # five services -- and nothing else. No comparison, no allowance, no
-        # policy vocabulary: parts 1-3 of this test read this same file's AST
-        # on every run, so this entry widens the change-surface clause alone
-        # and leaves the substantive ones exactly as strict.
+        # The MeterProvider wiring: an OTel SDK MeterProvider and an OTLP
+        # exporter (`_metric_reader()` and `_configure_metrics()`), the same
+        # shape `tests/unit/test_metrics_wiring.py` asserts is identical
+        # across all five services -- and nothing else. No comparison, no
+        # allowance, no policy vocabulary: parts 1-3 of this test read this
+        # same file's AST on every run, so this entry widens the
+        # change-surface clause alone and leaves the substantive ones exactly
+        # as strict.
         "tools/payments-mcp/bootstrap.py",
-        # M5 Task 1 (`01606af`): a comment-only pin-version correction (the
-        # `spiffe/spire` chart's Workload API socket path, 0.30.1 -> 0.30.2).
-        # See this test's docstring for the measured one-line diff.
+        # A comment-only pin-version correction (the `spiffe/spire` chart's
+        # Workload API socket path, 0.30.1 -> 0.30.2). See this test's
+        # docstring for the measured one-line diff.
         "agents/settlement-agent/svid.py",
     }
     assert production_changed <= expected, (
         "production source changed in these components since m2.1-verified, "
         f"beyond the {len(expected)} files this criterion accounts for (see "
         "this test's docstring for why none of them is policy logic). The "
-        "count is derived from the set rather than typed: this sentence read "
-        "'the six files ... each of the five' and was therefore wrong in one "
-        "of its two halves no matter which number a later edit corrected. "
-        "This "
-        "message named M2.2 alone until the M3 final-review fix round; the "
-        "window this comparison actually covers is m2.1-verified..HEAD, which "
-        "is every milestone since, M3 included. New: "
+        "count is derived from the set rather than typed, so it cannot drift "
+        f"out of sync with the entries above. New: "
         f"{sorted(production_changed - expected)}"
     )
 
@@ -1487,7 +1448,7 @@ def stranger_svid(mint_svid):
 def test_criterion_5_the_decision_changes_when_the_callers_spiffe_id_changes(
     gateway_url, valid_svid, stranger_svid
 ):
-    """§9.5: the caller's SPIFFE identity is a required input to the decision,
+    """Criterion 5: the caller's SPIFFE identity is a required input to the decision,
     demonstrated by the decision changing when the identity changes.
 
     Two `execute_payment` calls for **the same amount** -- €100, far under the
@@ -1505,8 +1466,9 @@ def test_criterion_5_the_decision_changes_when_the_callers_spiffe_id_changes(
     `gateway_url`, `mint_svid` and `call_tool_directly` this file imports rather
     than reimplements). Routing through settlement-agent could not do this at
     all: the agent presents its own attested SVID and has no way to present
-    somebody else's, which is the property M2.1 exists to guarantee. Minting
-    server-side is the only way to hold everything constant but the subject.
+    somebody else's, which is the identity guarantee SPIRE attestation
+    provides. Minting server-side is the only way to hold everything constant
+    but the subject.
 
     **Both halves are asserted, and the permit half is not optional.** A test
     that only checked the stranger is refused would pass against a gateway that
@@ -1640,14 +1602,14 @@ def test_criterion_5_the_decision_changes_when_the_callers_spiffe_id_changes(
 def test_criterion_6_a_payment_below_the_threshold_still_executes_end_to_end(
     permit_run,
 ):
-    """§9.6: a payment below the threshold still executes end to end, proving
+    """Criterion 6: a payment below the threshold still executes end to end, proving
     the platform permits as well as refuses.
 
     The same browser, the same page, the same chain, the same policy hook on
-    every `tools/call` -- one number different. Without this test the whole
-    milestone is satisfiable by a platform that refuses everything, which is not
-    governance, and this project has shipped a guard whose green and red meant
-    the same thing before.
+    every `tools/call` -- one number different. Without this test the platform's
+    permit path is unverified: a platform that refuses everything would still
+    pass every denial-only assertion in this suite, which is not governance --
+    the defect class where green and red mean the same thing.
 
     "End to end" is asserted at both ends and in the middle: the browser's own
     reply says `executed` at €5,800; the PDS's decision span says `permit` under

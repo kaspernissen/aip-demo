@@ -1,8 +1,8 @@
 """Refuse to run at all without the generated ExtMCP stubs.
 
-Ruling R22: `ext_mcp_pb2.py` / `ext_mcp_pb2_grpc.py` are git-ignored and
-generated from the vendored proto by `./gen-stubs.sh`. Their absence is a
-broken build and must look like one.
+`ext_mcp_pb2.py` / `ext_mcp_pb2_grpc.py` are git-ignored and generated from
+the vendored proto by `./gen-stubs.sh`. Their absence is a broken build and
+must look like one.
 
 Deliberately *not* a `pytest.importorskip` or a `skipif`: a skip does not fail
 a run. This project has already been burned by exactly that shape -- deleting a
@@ -18,8 +18,8 @@ _HOW = (
     "\n"
     "    cd platform/policy-decision-service && ./gen-stubs.sh\n"
     "\n"
-    "They are git-ignored on purpose (M2.2 ruling R22): proto/ext_mcp.proto is\n"
-    "the single source of truth, and committing the stubs would let the image\n"
+    "They are git-ignored on purpose: proto/ext_mcp.proto is the single\n"
+    "source of truth, and committing the stubs would let the image\n"
     "and the repo disagree. The Dockerfile runs the same script at build time.\n"
 )
 

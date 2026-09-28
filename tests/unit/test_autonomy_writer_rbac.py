@@ -1,16 +1,15 @@
-"""M6 Task 3: the write grant, pinned the same way Task 1's read-only grant
-is (tests/unit/test_stage6_backstage_config.py). Design (docs/superpowers/
-specs/2026-09-15-northstar-m6-golden-path-design.md §4) makes every clause
-below a named, testable requirement, not an incidental property of
-`deploy/k8s/backstage.yaml`:
+"""The FeatureFlag write grant, pinned the same way the read-only grant is
+(tests/unit/test_stage6_backstage_config.py). Every clause below is a named,
+testable requirement on `deploy/k8s/backstage.yaml`, not an incidental
+property:
 
 - namespaced `Role`, verbs `get`/`list`/`patch` only -- no `delete`, no
   `create`, no wildcard verb;
 - `resourceNames: [northstar-autonomy]` -- not `*`;
-- a SEPARATE ServiceAccount from `backstage` (Task 1's read-only identity),
-  bound by its own RoleBinding;
-- no access to Secrets anywhere in this Role (M6-R5: the read-only
-  ClusterRole must also never grow one, so both are checked);
+- a SEPARATE ServiceAccount from `backstage` (the read-only identity), bound
+  by its own RoleBinding;
+- no access to Secrets anywhere in this Role (the read-only ClusterRole must
+  also never grow one, so both are checked);
 - the RoleBinding actually binds the write Role to the write ServiceAccount,
   not to `backstage`.
 
@@ -68,9 +67,9 @@ def _the_write_role() -> dict:
 
 
 def test_the_write_role_is_namespaced_not_a_clusterrole():
-    """Design §4: this grant is scoped to one namespace, unlike the read-only
-    grant's ClusterRole (which needs cluster scope for a different reason --
-    the catalog spans four namespaces). A ClusterRole with the same
+    """This grant is scoped to one namespace, unlike the read-only grant's
+    ClusterRole (which needs cluster scope for a different reason -- the
+    catalog spans four namespaces). A ClusterRole with the same
     resourceNames would still be narrower than `*`, but it would also make
     this Role bindable in every namespace at once via a ClusterRoleBinding,
     which nothing here needs."""
@@ -93,18 +92,19 @@ def test_the_write_role_grants_only_get_list_patch():
     ]
     assert not offending, (
         f"{WRITE_ROLE_NAME} grants a verb outside {sorted(ALLOWED_VERBS)}: "
-        f"{offending}. Design §4: 'get/list/patch ... No delete.'"
+        f"{offending}. Only get/list/patch are allowed -- no delete."
     )
 
 
 def test_the_write_role_never_grants_delete_or_create_specifically():
-    """Belt and suspenders on the verb the design calls out by name twice."""
+    """Belt and suspenders: checks the dangerous verbs by name, not just via
+    the allow-list above."""
     role = _the_write_role()
     all_verbs = {v for rule in role.get("rules", []) for v in rule.get("verbs", [])}
     assert "delete" not in all_verbs, f"delete is granted: {role['rules']}"
     assert "create" not in all_verbs, f"create is granted: {role['rules']}"
     assert "update" not in all_verbs, (
-        "update is granted -- design §4 says patch only, and update would "
+        "update is granted -- patch only is allowed, and update would "
         f"let a caller replace the whole object: {role['rules']}"
     )
 
@@ -120,8 +120,9 @@ def test_the_write_role_uses_no_wildcard_anywhere():
         or "*" in rule.get("resourceNames", [])
     ]
     assert not offending, (
-        f"{WRITE_ROLE_NAME} uses a wildcard somewhere: {offending}. Design "
-        "§4, verbatim: 'not `*`, not cluster-wide, not other verbs.'"
+        f"{WRITE_ROLE_NAME} uses a wildcard somewhere: {offending}. No "
+        "verb, resource, apiGroup or resourceName may be `*`; the grant "
+        "must stay scoped to exactly one flag."
     )
 
 
@@ -140,16 +141,16 @@ def test_the_write_role_is_scoped_to_exactly_the_one_named_flag():
         )
         assert rule.get("resourceNames") == [ALLOWED_RESOURCE_NAME], (
             f"a rule's resourceNames is {rule.get('resourceNames')!r}, not "
-            f"exactly {[ALLOWED_RESOURCE_NAME]!r} -- design §4: "
-            "'resourceNames: [northstar-autonomy] -- not `*`'"
+            f"exactly {[ALLOWED_RESOURCE_NAME]!r} -- must name the one flag, "
+            "never `*`"
         )
 
 
 def test_neither_backstage_role_grants_any_access_to_secrets():
-    """M6-R5's own warning: the temptation an implementer might have is to
-    widen the READ-ONLY ClusterRole to give the card its `get`. This checks
-    both Roles in this file, not only the new one, so that mistake reddens
-    here regardless of which object it lands in."""
+    """Guards against the tempting shortcut of widening the READ-ONLY
+    ClusterRole to give the card its `get`, instead of using the separate
+    write grant. Checks both Roles in this file, not only the write one, so
+    that mistake fails here regardless of which object it lands in."""
     offending = []
     for kind, name in (("ClusterRole", "backstage-read-only"), ("Role", WRITE_ROLE_NAME)):
         for doc in _docs_of_kind(kind, name):
@@ -167,7 +168,7 @@ def test_the_write_serviceaccount_is_separate_from_the_read_only_one():
     )
     assert WRITE_SA_NAME != READ_ONLY_SA_NAME, (
         "the write ServiceAccount's name must differ from the read-only "
-        "one -- design §4's whole point is that these are two identities"
+        "one -- they are two identities, kept independently revocable"
     )
 
 
@@ -232,8 +233,8 @@ def test_the_deployment_mounts_the_writer_token_read_only():
         f"{mounts['autonomy-writer-token']}"
     )
 
-    # The pod's OWN identity is still the read-only ServiceAccount -- Task 1's
-    # invariant, unweakened by this task's write grant.
+    # The pod's OWN identity is still the read-only ServiceAccount, unweakened
+    # by the separate write grant.
     assert pod_spec.get("serviceAccountName") == READ_ONLY_SA_NAME, (
         "the backstage Deployment's own serviceAccountName changed away "
         f"from {READ_ONLY_SA_NAME!r}: {pod_spec.get('serviceAccountName')!r}. "

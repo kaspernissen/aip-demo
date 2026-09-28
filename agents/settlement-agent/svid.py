@@ -15,7 +15,7 @@ pod for it to be derived from, and one cannot be copied out and replayed
 elsewhere, because the audience scopes it to a single verifier and the socket
 only ever answers with the identity of whoever is actually calling it.
 
-M2.1 uses a JWT-SVID rather than mTLS deliberately. `docs/architecture.md`
+This uses a JWT-SVID rather than mTLS deliberately. `docs/architecture.md`
 ("Workload identity: what is real and what is deferred") records why, and
 records mTLS as later hardening rather than leaving the weaker bearer-token
 choice silent.
@@ -32,7 +32,7 @@ from spiffe import WorkloadApiClient
 # handed out with less than this remaining could expire in flight -- between
 # this process reading it from the cache and agentgateway checking `exp` --
 # and the resulting 401 would be indistinguishable from a real identity
-# failure. 30s is the margin the M2.1 plan specifies.
+# failure. 30s is the margin used here.
 _REFRESH_MARGIN_SECONDS = 30
 
 # Default matches deploy/k8s/settlement-agent.yaml's SPIFFE_ENDPOINT_SOCKET,
@@ -60,8 +60,7 @@ class SvidUnavailable(RuntimeError):
     and a permission error are different operational problems.
 
     It is NOT raised for a token that verifies and is then rejected by policy.
-    That is a decision, it arrives as an MCP/HTTP error from the gateway, and
-    M2.2 is where it starts happening.
+    That is a decision, and it arrives as an MCP/HTTP error from the gateway.
     """
 
 

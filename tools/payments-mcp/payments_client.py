@@ -54,13 +54,13 @@ class PaymentsClient:
         refused_trace_id: str,
         refused_span_id: str,
     ) -> dict:
-        """Record why a payout was refused, beside the payout (M3 Task 2's
-        `POST /payments/{id}/refuse`). Every field is sent, always -- this
+        """Record why a payout was refused, beside the payout, via
+        `POST /payments/{id}/refuse`. Every field is sent, always -- this
         client is the endpoint's only caller.
 
-        `refused_span_id` travels beside `refused_trace_id` (M3 Task 3): a
-        span link needs a real span id to survive the OpenTelemetry SDK's own
-        validity check, not just a trace id.
+        `refused_span_id` travels beside `refused_trace_id`: a span link
+        needs a real span id to survive the OpenTelemetry SDK's own validity
+        check, not just a trace id.
         """
         response = self._client.post(
             f"/payments/{payment_id}/refuse",

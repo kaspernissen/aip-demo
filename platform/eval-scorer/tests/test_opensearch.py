@@ -45,8 +45,8 @@ def _trace_bucket_response(*trace_ids, sum_other_doc_count=0, error_bound=0):
     """A step-1 response.
 
     The two aggregation-level keys default to 0 — OpenSearch always sends
-    both — so that the happy-path callers below read as they did before the
-    M4 final review, and the truncation cases have to ask for it explicitly.
+    both — so that the happy-path callers below read as an untruncated
+    response, and the truncation cases have to ask for it explicitly.
     """
     return {
         "aggregations": {
@@ -134,21 +134,20 @@ def test_a_truncated_page_raises_rather_than_scoring_what_it_got():
     assert isinstance(excinfo.value, OpenSearchError)
 
 
-# --- M4 final review, H1: step 1 truncated silently while step 2 refused to --
+# --- Step 1 must refuse a truncated trace list the same way step 2 does ---
 
 
 def test_step_one_refuses_a_truncated_trace_list():
-    """The HIGH finding of M4's final review, pinned in the direction it bites.
+    """Pinned in the direction the failure actually bites.
 
-    `trace_ids_for_claim` capped the terms aggregation at
-    `MAX_TRACES_PER_CLAIM` and inspected neither `sum_other_doc_count` nor
-    `doc_count_error_upper_bound` — thirty lines above `spans_in_traces`,
-    which refuses to score a truncated page and explains why in a message
-    written for this milestone.
+    `trace_ids_for_claim` caps the terms aggregation at
+    `MAX_TRACES_PER_CLAIM` and must inspect both `sum_other_doc_count` and
+    `doc_count_error_upper_bound` -- thirty lines above `spans_in_traces`,
+    which refuses to score a truncated page and explains why.
 
-    Measured against the live index on 2026-09-14, this was not hypothetical:
-    `CLM-1842` had **57** distinct traces across 2,263 documents, and the
-    aggregation returned 20 with `sum_other_doc_count: 874`.
+    Measured against the live index, this is not hypothetical: `CLM-1842`
+    has **57** distinct traces across 2,263 documents, and the aggregation
+    returns 20 with `sum_other_doc_count: 874`.
     """
     client = RecordingClient(
         [_trace_bucket_response(*(f"trace{n:02d}" for n in range(20)),
@@ -170,13 +169,12 @@ def test_step_one_refuses_a_truncated_trace_list():
 def test_the_step_one_refusal_says_which_traces_get_dropped():
     """A terms aggregation drops the SMALLEST buckets.
 
-    That is the whole severity of the finding rather than a detail: in a
-    supervised pair the smaller trace is the approval trace, which holds the
-    second execute decision — the span whose absence inverted
-    `stopped_when_refused` from 0.0 to 1.0 during Task 4's fix round. An
-    operator who reads "some traces were dropped" and not "the ones that get
-    dropped are the ones that make a trajectory look compliant" will widen the
-    cap and move on.
+    That is the whole severity of this rather than a detail: in a supervised
+    pair the smaller trace is the approval trace, which holds the second
+    execute decision — the span whose absence would invert
+    `stopped_when_refused` from 0.0 to 1.0. An operator who reads "some
+    traces were dropped" and not "the ones that get dropped are the ones
+    that make a trajectory look compliant" will widen the cap and move on.
     """
     client = RecordingClient([_trace_bucket_response("aaaa", sum_other_doc_count=1)])
     with pytest.raises(TrajectoryTruncated) as excinfo:
@@ -202,10 +200,10 @@ def test_step_one_refuses_an_approximate_bucket_count():
 
 
 def test_step_one_refuses_when_sum_other_doc_count_is_entirely_absent():
-    """S-b (M4 debt list, closed M5 Task 5): a genuinely missing
-    `sum_other_doc_count` must not be read the same as a present, honest
-    zero. `_trace_bucket_response`'s default supplies the key (OpenSearch
-    always sends it); this test builds a response without it at all."""
+    """A genuinely missing `sum_other_doc_count` must not be read the same
+    as a present, honest zero. `_trace_bucket_response`'s default supplies
+    the key (OpenSearch always sends it); this test builds a response
+    without it at all."""
     client = RecordingClient(
         [
             {
@@ -231,9 +229,9 @@ def test_step_one_refuses_when_sum_other_doc_count_is_entirely_absent():
 
 
 def test_step_one_refuses_when_sum_other_doc_count_is_null():
-    """M1 (task-5 review), folded into this fix round: a presence check
-    alone still let a PRESENT `None` through, because `if dropped:` is
-    falsy for `None` exactly as it is for an absent key defaulted to 0."""
+    """A presence check alone would still let a PRESENT `None` through,
+    because `if dropped:` is falsy for `None` exactly as it is for an
+    absent key defaulted to 0."""
     client = RecordingClient([_trace_bucket_response("aaaa", sum_other_doc_count=None)])
     with pytest.raises(TrajectoryTruncated) as excinfo:
         client.trace_ids_for_claim("CLM-1842", SINCE_MS)
@@ -241,10 +239,9 @@ def test_step_one_refuses_when_sum_other_doc_count_is_null():
 
 
 def test_step_one_refuses_when_doc_count_error_upper_bound_is_entirely_absent():
-    """I4 (task-5 review, closed this fix round): the third S-b instance,
-    `aggregation.get("doc_count_error_upper_bound") or 0`, eight lines below
-    `sum_other_doc_count`'s own fix in the same method -- not named at the
-    time, and not closed by it."""
+    """The same `.get(...) or 0` risk as `sum_other_doc_count`, for
+    `doc_count_error_upper_bound` in the same method: a genuinely missing key
+    must not read as an honest zero."""
     client = RecordingClient(
         [
             {
@@ -270,7 +267,7 @@ def test_step_one_refuses_when_doc_count_error_upper_bound_is_entirely_absent():
 
 
 def test_step_one_refuses_when_doc_count_error_upper_bound_is_null():
-    """M1's other half, folded in alongside I4."""
+    """The null-value counterpart of the absent-key test above."""
     client = RecordingClient([_trace_bucket_response("aaaa", error_bound=None)])
     with pytest.raises(TrajectoryTruncated) as excinfo:
         client.trace_ids_for_claim("CLM-1842", SINCE_MS)
@@ -278,10 +275,10 @@ def test_step_one_refuses_when_doc_count_error_upper_bound_is_null():
 
 
 def test_step_two_refuses_when_total_is_entirely_absent():
-    """S-b's other half: `(result.get("total") or {}).get("value",
-    len(hits))` compared `len(hits)` to itself whenever `total` (or
-    `total.value`) was missing, which can never redden. This constructs that
-    exact shape and proves it now raises instead."""
+    """`(result.get("total") or {}).get("value", len(hits))` would compare
+    `len(hits)` to itself whenever `total` (or `total.value`) is missing,
+    which can never redden. This constructs that exact shape and proves it
+    raises instead."""
     client = RecordingClient(
         [{"hits": {"hits": [{"_source": fixtures.root(0.0)}]}}]  # no "total" key
     )
@@ -330,12 +327,12 @@ def test_the_cap_clears_what_one_gate_run_puts_in_the_window():
     Deliberately **not** a test that `MAX_TRACES_PER_CLAIM == 20`. Restating a
     constant in a test protects nothing — it reddens for a correct tuning
     change and catches no defect, and the guard that matters (refusing a
-    truncated read) is now independent of the cap's value, which is why raising
-    the cap no longer re-opens the H1 defect. Mutating the constant to 2000
-    leaves this file green, and that is the intended property rather than a
-    gap.
+    truncated read) is independent of the cap's value, so raising the cap
+    cannot silently let a truncated read back through. Mutating the constant
+    to 2000 leaves this file green, and that is the intended property rather
+    than a gap.
 
-    What is worth pinning is the other direction. Measured 2026-09-14: one
+    What is worth pinning is the other direction. Measured: one
     `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` contributes **8** distinct
     `CLM-1842` traces, all inside `DEFAULT_WINDOW_S`. A cap below that turns
     every score request issued during or just after a gate run into a 502 —

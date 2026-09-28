@@ -1,20 +1,15 @@
-"""M6-R9's durable fix: nothing in this repo asserted that the running image
-contains the committed code, and that is how Task 3's security boundary got
-reported as verified twice -- first by the implementer, then by the opus
-reviewer's own initial pass -- against an image built an hour before the
-commit under review.
+"""Asserts the running Backstage image contains the committed code.
 
-Evidence, from `.superpowers/sdd/2026-09-15-m6-golden-path/task-3-review.md`
-§0: `docker image inspect localhost:5001/northstar/backstage:dev --format
-{{.Created}}` gave `2026-09-15T09:28:24Z`; `git show -s --format=%ci
-1b4c62c` gave `2026-09-15 12:28:35 +0200` (10:28Z). Inside the pod:
-`grep -rl autonomyContract /app` found nothing, the backend's plugin-init log
-never named `autonomy-contract`, and `GET /api/autonomy-contract/status` was
-404 -- while every RBAC check and every healthy-pod signal was green, because
-neither needs the application code to be running at all.
+A stale image can look completely healthy: `grep -rl autonomyContract /app`
+finds nothing, the backend's plugin-init log never names
+`autonomy-contract`, and `GET /api/autonomy-contract/status` is 404 --
+while every RBAC check and every healthy-pod signal stays green, because
+none of them need the application code to actually be running. A pod being
+`Ready` and a route responding say nothing about which commit's code is
+inside the image.
 
-This test closes that gap the way the reviewer closed it by hand, except
-asserted instead of eyeballed: `platform/backstage/Dockerfile`'s final stage
+This test asserts what a manual check would otherwise have to eyeball:
+`platform/backstage/Dockerfile`'s final stage
 takes a `GIT_SHA` build-arg (default `unknown`) and stamps it into the image
 label `org.opencontainers.image.revision`; `scripts/rebuild-and-deploy.sh`
 passes `--build-arg GIT_SHA=$(git rev-parse HEAD)` for the `backstage`
@@ -119,10 +114,10 @@ def test_the_deployed_backstage_image_was_built_from_the_current_commit():
     assert label == head, (
         f"{IMAGE} was built from commit {label}, but this checkout's HEAD is "
         f"{head} -- the running image does not contain the committed code. "
-        "This is the exact defect M6-R9 records: a security boundary was "
-        "reviewed and reported as verified against an image that predated "
-        "the commit under review. Run ./scripts/rebuild-and-deploy.sh "
-        "backstage and re-run this test."
+        "A healthy pod and a passing endpoint check cannot see this: a "
+        "security boundary can be reviewed and reported as verified against "
+        "an image that predates the commit under review. Run "
+        "./scripts/rebuild-and-deploy.sh backstage and re-run this test."
     )
 
 
@@ -155,18 +150,15 @@ def _local_repo_digest() -> str:
 
 
 def test_the_running_pod_is_using_the_exact_image_bytes_the_local_build_produced():
-    """Whole-branch review M3: this used to compare the pod's
-    `spec.containers[0].image` STRING against the same mutable tag constant
-    (`localhost:5001/northstar/backstage:dev`) -- which any node-cached older
-    pull of that same tag also carries, so equal tags proved nothing about
-    equal content. Worse, that comparison PASSED against a mutated,
-    uncommitted image the review built during this same mutation round, while
-    the anti-vacuity e2e was RED against it -- so the guard's own assertion
-    message ("the running image does not contain the committed code") was one
-    it could not actually back up.
+    """Compares image DIGESTS, not tags. Comparing the pod's
+    `spec.containers[0].image` STRING against the mutable tag constant
+    (`localhost:5001/northstar/backstage:dev`) would prove nothing: any
+    node-cached older pull of that same tag carries an identical string, so
+    equal tags do not mean equal content, and a guard built on tag equality
+    could pass against a stale or even uncommitted image.
 
-    Comparing DIGESTS instead closes both a and c of the review's finding in
-    one guard: `status.containerStatuses[0].imageID` is what the kubelet on
+    Comparing DIGESTS instead closes that gap:
+    `status.containerStatuses[0].imageID` is what the kubelet on
     THIS node actually pulled and is running (not merely what the Deployment
     spec asks for), and `docker image inspect --format
     '{{index .RepoDigests 0}}'` is the content-addressed digest the local
@@ -194,8 +186,7 @@ def test_the_running_pod_is_using_the_exact_image_bytes_the_local_build_produced
     assert pod_image_id == local_digest, (
         f"the running pod's image digest is {pod_image_id!r}, but the local "
         f"build's registry digest is {local_digest!r} -- the node is NOT "
-        "running the bytes this checkout just built and pushed. This is the "
-        "exact gap the tag-comparison version of this test could not see: "
-        "identical tags, different content. Run "
-        "./scripts/rebuild-and-deploy.sh backstage and re-run this test."
+        "running the bytes this checkout just built and pushed -- identical "
+        "tags, different content, which a tag comparison alone cannot see. "
+        "Run ./scripts/rebuild-and-deploy.sh backstage and re-run this test."
     )

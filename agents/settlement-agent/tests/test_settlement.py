@@ -3,7 +3,7 @@
 FunctionModel drives an exact tool-call script for every case below,
 including the happy path. It never touches Anthropic.
 
-M2.2 Task 5's tests are the exception to "an exact tool-call script", and
+The denial tests below are the exception to "an exact tool-call script", and
 deliberately so: the property under test is whether the *framework* asks the
 model to retry a policy denial, and a script that makes one execute call
 whatever the code does would assert nothing about that. `_obedient_model`
@@ -207,7 +207,7 @@ async def test_model_finishing_without_executing_a_payment_raises():
 
 
 # ---------------------------------------------------------------------------
-# M2.2 Task 5: the platform refuses, the agent explains, and it tries once.
+# The platform refuses, the agent explains, and it tries once.
 #
 # The spec's load-bearing hazard: "If a denial reads as a retryable tool
 # error, the agent can sit on stage retrying a payment it will never be
@@ -329,9 +329,9 @@ async def test_the_agent_makes_exactly_one_execute_attempt_after_a_denial():
 
     calls = [c[0] for c in payments.calls]
     assert calls.count("execute") == 1, f"expected one execute attempt, got {calls}"
-    # M3 Task 3: a refused settlement now also records the refusal in the
-    # ledger, so the full sequence gains one call at the end -- the property
-    # this test guards (exactly one execute attempt) is unchanged.
+    # A refused settlement also records the refusal in the ledger, so the
+    # full sequence gains one call at the end -- the property this test
+    # guards (exactly one execute attempt) is unchanged.
     assert calls == ["propose", "execute", "refuse"]
 
 
@@ -353,13 +353,11 @@ async def test_a_second_execute_attempt_never_reaches_the_payment_system():
 
 
 async def test_the_model_sees_the_denial_reason_and_can_narrate_it():
-    """The refusal has to arrive as something the model reads.
-
-    Before this task it arrived as a bare MCPError that propagated out of
-    Agent.run(), so the model was never told anything at all. Here the
-    scripted narrative is built from what the model was actually handed, so
-    the assertion is about the reason reaching it -- not about a string the
-    test itself chose.
+    """The refusal has to arrive as something the model reads, not as a bare
+    MCPError that propagates out of Agent.run() leaving the model with
+    nothing to narrate. The scripted narrative is built from what the model
+    was actually handed, so the assertion is about the reason reaching it --
+    not about a string the test itself chose.
     """
     seen: list[str] = []
 
@@ -397,10 +395,10 @@ async def test_the_model_sees_the_denial_reason_and_can_narrate_it():
 async def test_a_refused_settlement_replies_instead_of_raising():
     """The demo's moment. status "refused", and the narrative survives.
 
-    Task 4 measured the pre-task behaviour: JSON-RPC -32603 with the reason
-    intact but no `result` at all, so nothing narrated the refusal. A demo
-    that shows an error envelope where a customer-facing explanation belongs
-    undercuts the whole milestone.
+    Left untranslated, a policy denial is a bare JSON-RPC -32603 with the
+    reason intact but no `result` at all, so nothing narrates the refusal. A
+    demo that shows an error envelope where a customer-facing explanation
+    belongs defeats the whole point of the agent.
     """
     payments = FakePayments(execute_raises=_denial())
     result = await _run(
@@ -437,8 +435,8 @@ async def test_a_refused_propose_is_reported_as_refused_too():
 
 
 # ---------------------------------------------------------------------------
-# M3 Task 3 Step 5: the refusal is recorded in the ledger, from
-# decide_settlement's existing refused branch. Two rules: a recording failure
+# The refusal is recorded in the ledger, from decide_settlement's refused
+# branch. Two rules: a recording failure
 # must not turn the refusal into an error the claimant sees, and the reply's
 # shape is unchanged (asserted above already; not repeated here).
 # ---------------------------------------------------------------------------
@@ -530,7 +528,7 @@ async def test_a_transport_failure_still_propagates_rather_than_being_narrated()
     """Regression guard at the agent level.
 
     The PDS being unreachable arrives as an MCPError with no deny marker
-    (Task 4's failClosed measurement). It is an outage, not a decision: it
+    (the failClosed measurement). It is an outage, not a decision: it
     must reach the caller as an error, never as a refusal the model explains
     away to a claimant.
     """

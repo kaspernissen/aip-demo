@@ -2,16 +2,15 @@
 
 Imported first in main.py. The a2a-sdk telemetry extra instruments the A2A
 server's own internal call graph (see NOTES.md); nothing here creates A2A
-spans by hand. The httpx instrumentors are added here (not in the brief's
-original sketch) because settlement-agent's MCP client
-(`mcp.client.streamable_http`) is httpx-based under the hood, and A13
-requires measuring this service's own outbound HTTP spans rather than
-assuming payments-mcp's spelling carries over. Since the `mcp` 2.x bump
-(2026-09-11) that client is built on `httpx2` rather than `httpx`, so it is
+spans by hand. The httpx instrumentors are added here because
+settlement-agent's MCP client (`mcp.client.streamable_http`) is httpx-based
+under the hood, and this service's own outbound HTTP spans need to be
+measured rather than assuming payments-mcp's spelling carries over. That
+client is built on `httpx2` rather than `httpx`, so it is
 `HTTPX2ClientInstrumentor` that covers the payments-mcp hop; see the comment
 on that call below.
 
-A18: a2a-sdk 0.3.7's own telemetry does not extract inbound W3C trace context
+a2a-sdk 0.3.7's own telemetry does not extract inbound W3C trace context
 (verified empirically — see NOTES.md); StarletteInstrumentor (applied to the
 built app in main.py, since the a2a-sdk's Starlette instance doesn't exist
 until then) is what does that, using the global propagator configured below.
@@ -37,10 +36,8 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
 
-# N1 (final-review.md): ClaimIdSpanProcessor lives in correlation.py now, not
-# here — it is the mechanism that implements that file's own correlation
-# rule, and a reader told "correlation.py is the shared file" (A18) should
-# find it there.
+# ClaimIdSpanProcessor lives in correlation.py, the module shared with
+# claims-agent that implements claim-id/trace correlation for both agents.
 from correlation import ClaimIdSpanProcessor
 
 
@@ -59,7 +56,7 @@ def configure() -> None:
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
 
-    # M4 Task 2. **Ordering is load-bearing here, not stylistic**: this call
+    # **Ordering is load-bearing here, not stylistic**: this call
     # must precede `_instrument_pydantic_ai()` below and both httpx
     # instrumentors. Each of those resolves a meter once, at instrumentation
     # time -- PydanticAI in `InstrumentationSettings.__init__`
@@ -70,15 +67,15 @@ def configure() -> None:
     # call sites). Resolving before a provider is set yields the API's proxy
     # meter; the proxy does rebind when `set_meter_provider` runs later, but
     # depending on that rebinding is depending on an implementation detail of
-    # the API package for the one property this whole task rests on.
+    # the API package rather than on an explicit ordering guarantee.
     _configure_metrics(resource)
 
     # W3C trace-context + baggage, explicitly, matching payments-api's Go
     # side (systems/payments-api/telemetry.go:
     # propagation.NewCompositeTextMapPropagator(propagation.TraceContext{},
     # propagation.Baggage{})) — this is already OTel Python's own default
-    # (OTEL_PROPAGATORS defaults to "tracecontext,baggage"), but A18 asks for
-    # it registered explicitly, the same way the rest of the repo does, not
+    # (OTEL_PROPAGATORS defaults to "tracecontext,baggage"), registered
+    # explicitly here, the same way the rest of the repo does, rather than
     # left to an implicit default.
     set_global_textmap(
         CompositePropagator([TraceContextTextMapPropagator(), W3CBaggagePropagator()])
@@ -98,16 +95,13 @@ def configure() -> None:
     # (agents/settlement-agent/requirements.txt pins httpx2==2.12.0), so
     # instrument() cannot raise ModuleNotFoundError here.
     #
-    # **2026-09-11 (M3 remaining-bumps, step 1): this line stopped being only
-    # about the model call.** This file's own header used to say the MCP client
-    # "is httpx-based under the hood", and that was true of `mcp==1.28.1`.
-    # `mcp==2.2.0`'s streamable-HTTP client is built on `httpx2`
-    # (`mcp.client.streamable_http` imports `httpx2`, and
-    # `streamable_http_client(http_client=...)` is typed
-    # `httpx2.AsyncClient | None`), so THIS instrumentor is now what emits the
-    # CLIENT span for the payments-mcp hop and injects `traceparent` into it.
-    # Deleting it as "the anthropic one" would sever the money path's trace,
-    # not just lose a model-call span.
+    # This instrumentor covers more than the model call: the MCP client's
+    # streamable-HTTP transport (`mcp.client.streamable_http` imports
+    # `httpx2`, and `streamable_http_client(http_client=...)` is typed
+    # `httpx2.AsyncClient | None`) is also built on `httpx2`, so this is what
+    # emits the CLIENT span for the payments-mcp hop and injects
+    # `traceparent` into it. Removing it as "the anthropic-only instrumentor"
+    # would sever the money path's trace, not just drop a model-call span.
     HTTPX2ClientInstrumentor().instrument()
 
     _instrument_pydantic_ai()
@@ -133,19 +127,20 @@ def _configure_metrics(resource: Resource) -> None:
 
     `resource` is the TracerProvider's own, passed in rather than rebuilt: a
     metric whose `service.name` disagreed with the spans from the same process
-    would not join to them, and joining is the whole point of M4.
+    would not join to them, and joining metrics to their spans depends on that
+    agreement.
 
-    **Until this existed, `metrics.get_meter_provider()` returned the API's
+    **Without this, `metrics.get_meter_provider()` returns the API's
     `_ProxyMeterProvider`** -- an object that forwards to a real provider if one
-    is ever set and silently discards every measurement if one is not. M4 §6
-    measured that state across the whole system during design, and it is why the
-    milestone's agent-health question could not previously be asked at all:
+    is ever set and silently discards every measurement if one is not.
     PydanticAI creates its histograms against whatever provider is installed
     when `InstrumentationSettings` is constructed, so with none installed,
-    "the framework emits nothing" and "we installed nothing" looked identical.
+    "the framework emits nothing" and "we installed nothing" look identical --
+    installing a real provider here is what makes agent-health metrics
+    observable at all.
 
-    **Nothing is configured beyond the reader, deliberately.** This demo records
-    100% of its telemetry, and as of M4 that includes metrics:
+    **Nothing is configured beyond the reader, deliberately.** This demo
+    records 100% of its telemetry, metrics included:
 
       * No `views=`. A `View` carrying `DropAggregation` is the metrics-side
         tail sampler, and one narrowing `attribute_keys` discards series just
@@ -173,8 +168,8 @@ def capture_content_enabled() -> bool:
 
     Defaults to ON. Redacting is not a free safety win: with content off, a
     span still proves *that* a payment was executed and by which tool, but not
-    why that amount or on what stated grounds. The trade-off is the subject of
-    OQ-1 in docs/telemetry-contract.md.
+    why that amount or on what stated grounds. The trade-off is discussed in
+    docs/telemetry-contract.md's "Content capture" section.
     """
     raw = os.environ.get("NORTHSTAR_CAPTURE_CONTENT")
     if raw is None:
@@ -185,18 +180,16 @@ def capture_content_enabled() -> bool:
 def _instrument_pydantic_ai() -> None:
     """Turn on PydanticAI's own OTel instrumentation.
 
-    Verified against pydantic-ai-slim 2.42.0 (2.41.0 until 2026-09-11; every
-    bullet below was re-checked against the installed 2.42.0 at the bump, and
-    all four still hold):
+    Verified against pydantic-ai-slim 2.42.0:
       * `Agent(..., instrument=True)` does NOT exist at this version — it
         raises TypeError. `Agent.instrument_all()` is a staticmethod setting a
         process-wide default, which is what we want: one call, every agent.
       * `include_content` gates whether prompts, completions and tool
         arguments/results are recorded, or only message *shape* (role,
-        parts[].type). This is now `NORTHSTAR_CAPTURE_CONTENT`, defaulting to
-        ON — see `capture_content_enabled()` and
-        docs/telemetry-contract.md's "Content capture" section for why the
-        earlier hardcoded `False` was reversed.
+        parts[].type). This is controlled by `NORTHSTAR_CAPTURE_CONTENT`,
+        defaulting to ON — see `capture_content_enabled()` and
+        docs/telemetry-contract.md's "Content capture" section for the
+        trade-off.
       * `include_model_request_parameters` is left at its library default
         (`True`), deliberately — it carries the agent's static system
         instructions and tool JSON schemas, which contain no claim-specific

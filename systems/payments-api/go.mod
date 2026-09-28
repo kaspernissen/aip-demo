@@ -1,13 +1,13 @@
 module github.com/kaspernissen/northstar/systems/payments-api
 
-// 2026-09-11 (M3): was `go 1.24.0`. `go.opentelemetry.io/otel` v1.42.0 and
-// later declare `go 1.25.0` -- v1.41.0's CHANGELOG says "This release is the
-// last to support Go 1.24", v1.42.0's Removed section says "Drop support for
-// Go 1.24. (#7984)" -- and v1.42.0 is the first release that stops discarding
-// a W3C Trace Context Level 2 traceparent (docs/upstream-findings.md Finding
-// 11). The `go` line is the minimum language version otel actually requires;
-// the `toolchain` line pins the build to an exact Go release rather than
-// letting it float, matching this repo's rule for its Python pins.
+// `go.opentelemetry.io/otel` v1.42.0 and later declare `go 1.25.0` --
+// v1.41.0's CHANGELOG says "This release is the last to support Go 1.24",
+// v1.42.0's Removed section says "Drop support for Go 1.24. (#7984)" -- and
+// v1.42.0 is the first release that stops discarding a W3C Trace Context
+// Level 2 traceparent (see docs/upstream-findings.md). The `go` line is the
+// minimum language version otel actually requires; the `toolchain` line pins
+// the build to an exact Go release rather than letting it float, matching
+// this repo's rule for its Python pins.
 go 1.25.0
 
 toolchain go1.27.1

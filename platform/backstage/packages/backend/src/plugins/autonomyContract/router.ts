@@ -1,11 +1,11 @@
 /**
- * M6 Task 3: the two HTTP routes the autonomy card calls, mounted at
+ * The two HTTP routes the autonomy card calls, mounted at
  * `/api/autonomy-contract/*` by Backstage's httpRouter service (namespaced
  * by this plugin's own `pluginId`, the same convention every other backend
  * plugin here uses -- see `@backstage/plugin-kubernetes-backend`'s own
  * router for the pattern this file follows).
  *
- * `GET /status` -- read live, per identity (design §4/§5.3).
+ * `GET /status` -- read live, per identity.
  * `POST /variant` -- the one write this plugin can make: flip the targeting
  * `if[1]` branch between `assisted` and `autonomous`. Nothing else is
  * reachable through this router: no path parameter names a resource, no
@@ -27,8 +27,8 @@ import {
 } from './evaluate';
 import { emitContractChangeSpan } from './telemetry';
 
-// The two identities design §5.3 means by "per agent identity": the two
-// SPIFFE IDs the settlement flow can present (deploy/platform/spire/
+// The two identities meant by "per agent identity": the two SPIFFE IDs the
+// settlement flow can present (deploy/platform/spire/
 // registration.yaml for the junior's explicit ClusterSPIFFEID; the senior
 // gets its identity from the chart's own fallback CR, same ns/sa template).
 // Reproduced as literals rather than imported from a Python module -- same
@@ -86,14 +86,14 @@ export interface RouterDeps {
 }
 
 /**
- * M6 fix round (M5): mounted instead of `createAutonomyContractRouter` when
- * the writer credential could not be acquired at startup (see `index.ts`'s
+ * Mounted instead of `createAutonomyContractRouter` when the writer
+ * credential could not be acquired at startup (see `index.ts`'s
  * `initAutonomyContract`). Answers 503 with the reason on every route this
- * plugin owns, rather than the alternative that used to happen -- an
- * unguarded throw out of `registerInit` that Backstage's `BackendInitializer`
- * turns into a fatal `BackendStartupError`, taking the WHOLE backend down
- * (scaffolder, techdocs, catalog, everything) for a token only this one
- * plugin needs. A missing writer token now degrades this plugin only.
+ * plugin owns, rather than an unguarded throw out of `registerInit` that
+ * Backstage's `BackendInitializer` would turn into a fatal
+ * `BackendStartupError`, taking the WHOLE backend down (scaffolder,
+ * techdocs, catalog, everything) for a token only this one plugin needs. A
+ * missing writer token degrades this plugin only.
  */
 export function createDegradedAutonomyContractRouter(opts: {
   reason: string;

@@ -13,40 +13,25 @@ elapsed time measures how long the *human* took, not how long a browser tab
 was open, and a timer started when `GET /` was handled would measure the
 latter.
 
-**Correction, M3 final-review fix round 2026-09-11 (controller ruling R36) --
-the span now opens BEFORE the ledger read, and this paragraph used to say the
-opposite.** It read:
+**The `review.decision` span opens BEFORE the ledger read.** With no span
+current, `HTTPXClientInstrumentor`'s CLIENT span for `ledger.get` would be
+the root of a trace of its own, and the `traceparent` it injects would name
+that root -- so payments-api's server span for the read would land in a
+second, unrelated trace instead of joining the reviewer's own. This project's
+whole product is the single correlated trace, so every ledger read a human
+decision depends on has to be part of it.
 
-> The span is only ever created once a real, refused ledger record for this
-> exact payment is in hand (`PaymentNotAwaitingReview` and a ledger lookup
-> failure both raise *before* `tracer.start_as_current_span`) -- a review that
-> never actually happened (a stale link, a race with another reviewer, an
-> unknown payment id) is not telemetry this service owns to invent.
-
-That was a defensible rule about *which reviews deserve a span*, and it had a
-measured cost nobody had looked for until the whole-branch review did: with no
-span current, `HTTPXClientInstrumentor`'s CLIENT span for `ledger.get` became
-the root of a **trace of its own**, and the `traceparent` it injected named
-that root -- so payments-api's server span for the read landed in a second,
-unrelated trace too. Measured before the change, over the 30 most recent
-traces of each shape: **zero** shared trace ids between reviewer-ui's outbound
-`GET` spans and payments-api's `GET /payments` spans, and a 67-span approval
-trace containing no reviewer-ui ledger read at all. This project's whole
-product is the single correlated trace, and this milestone's honesty story is
-that every figure the human reads comes from the ledger; those reads being
-untraceable was that story failing in the one surface M3 added.
-
-So `ledger.get` now runs *inside* `review.decision`, and the consequence is
-stated rather than hidden: a stale link, a race with another reviewer or an
-unknown payment id **does** now produce a `review.decision` span. It carries
+`ledger.get` therefore runs *inside* `review.decision`, and the consequence
+is stated rather than hidden: a stale link, a race with another reviewer, or
+an unknown payment id **does** produce a `review.decision` span. It carries
 the four attributes that are known before the read (payment id, decision,
 reviewer id, reviewer SPIFFE ID) and not the two that are read off the record
 (`review.refused.trace_id`, `review.elapsed_ms`), and
 `start_as_current_span`'s own default `set_status_on_exception`/
 `record_exception` mark it ERROR with the exception on it. That is a more
-honest record than the silence it replaces -- a reviewer clicked, and nothing
-was recorded -- and it is the only shape in which the ledger read is part of
-the reviewer's trace at all.
+honest record than silence -- a reviewer clicked, and nothing was recorded --
+and it is the only shape in which the ledger read is part of the reviewer's
+trace at all.
 """
 from __future__ import annotations
 
@@ -67,11 +52,9 @@ class PaymentNotAwaitingReview(RuntimeError):
     real `refusedAt` may not even exist, so `review.elapsed_ms` could not be
     computed honestly, and this function raises without ever setting it.
 
-    This sentence ended "and this function raises before creating any span"
-    until the M3 final-review fix round (R36). It now raises *inside* the
-    `review.decision` span, which ends ERROR carrying this exception -- see
-    the module docstring's correction note for the measurement that forced
-    the change."""
+    This raises *inside* the `review.decision` span, which ends ERROR
+    carrying this exception -- see the module docstring for why the span
+    must already be open when this happens."""
 
 
 class LedgerLike(Protocol):
@@ -144,7 +127,7 @@ async def decide(
     ledger.LedgerUnavailable) unchanged, and PaymentNotAwaitingReview if the
     ledger's record for this payment is not `status: "refused"` -- in both
     cases from *inside* the `review.decision` span, which ends ERROR carrying
-    the exception (R36; see the module docstring).
+    the exception (see the module docstring).
     """
     reviewer_id = reviewer_id.strip()
     if decision not in _VALID_DECISIONS:
@@ -158,8 +141,8 @@ async def decide(
     # The four attributes below are everything that is known before the ledger
     # is read. The other two (`review.refused.trace_id`, `review.elapsed_ms`)
     # are set after it, because they are read off the record -- the honesty
-    # rule this module exists for, unchanged by R36: no figure on this span
-    # comes from the HTTP request.
+    # rule this module exists for: no figure on this span comes from the HTTP
+    # request.
     with tracer.start_as_current_span(
         "review.decision",
         kind=SpanKind.SERVER,
@@ -170,7 +153,7 @@ async def decide(
             "review.reviewer.spiffe_id": reviewer_spiffe_id,
         },
     ) as span:
-        # Inside the span deliberately (R36): this is the call whose
+        # Inside the span deliberately: this is the call whose
         # `HTTPXClientInstrumentor` CLIENT span -- and the `traceparent` it
         # injects -- had no parent to attach to, which put both it and
         # payments-api's own server span in a trace of their own.
@@ -210,10 +193,10 @@ async def decide(
             try:
                 result.approved_execution = await approver.execute_approved(payload)
             except Exception as exc:
-                # Surface the failure honestly rather than showing a success
-                # (the task brief's own words): the span records that this
-                # approval did not go through, and result.approval_error is
-                # what render.py reads to say so on the page. The decision
+                # Surface the failure honestly rather than showing a success:
+                # the span records that this approval did not go through, and
+                # result.approval_error is what render.py reads to say so on
+                # the page. The decision
                 # attribute above is left as "approve" -- that is still what
                 # the reviewer chose, independent of whether it executed.
                 span.set_status(Status(StatusCode.ERROR, str(exc)))

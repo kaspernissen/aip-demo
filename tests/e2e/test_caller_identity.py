@@ -1,14 +1,13 @@
 """Proves the JWT-SVID verification on Hop 3 has teeth: identity decides.
 
-M2.1's line is *"the model can request; the platform decides if it becomes an
-effect."* Task 4 made the platform *know* who is calling — SPIRE issues
+This platform's own line is *"the model can request; the platform decides if
+it becomes an effect."* It knows who is calling — SPIRE issues
 `settlement-agent` a JWT-SVID, agentgateway verifies it, and the verified
 subject lands on the gateway's SERVER span as `jwt.sub`
 (`tests/e2e/test_gateway_trace.py`). None of that, on its own, proves the
 verification is load-bearing: a gateway that recorded `jwt.sub` from any token
 it was handed, or that forwarded regardless, would satisfy every one of those
-assertions. This file is the negative half, and Task 4 explicitly deferred it
-here.
+assertions. This file is the negative half.
 
 **Why the wrong-audience case is the one that matters, and why "no token" is
 not enough on its own.** A no-token refusal only proves `mode: strict` is in
@@ -32,8 +31,7 @@ looks the signing key up by the token header's `kid` and only then calls
 and `aud`. So a token bearing an untrusted issuer is refused for the reason it
 *should* be refused — this gateway does not trust that issuer's keys — one or
 two steps before the `iss` string is ever compared. Both crafted forms are
-asserted below, and each names the layer that actually rejects it; the report
-for this task records the measured wire shape of every case.
+asserted below, and each names the layer that actually rejects it.
 
 **Cost: no model call.** Unlike the other live-cluster files here, nothing in
 this one drives `settlement-agent` or spends Anthropic tokens. It speaks MCP to
@@ -44,7 +42,7 @@ it needs the live `kind-northstar` cluster the same way
 `tests/e2e/test_payments_api_trace.py` does, and like that file it fails rather
 than skips when the cluster is not there.
 
-**One test here is not about identity at all** (M3 final-review fix round):
+**One test here is not about identity at all:**
 `test_a_jsonrpc_batch_is_rejected_before_the_policy_hook_and_changes_nothing`
 is the regression guard `docs/upstream-findings.md`'s OQ-U1 says it lacks. It
 lives in this file because it reuses exactly this file's machinery — the
@@ -53,7 +51,7 @@ no-model-tokens, not-behind-`RUN_BROWSER_TESTS=1` property — and building a
 second copy of that dance elsewhere is the thing this repo's own conventions
 argue against. See that test's own docstring for what it asserts and why.
 
-**Port-forward ownership (A9).** The four forwards this repo manages —
+**Port-forward ownership.** The four forwards this repo manages —
 19001/19002/18000/18080, started and verified by `scripts/setup-kind.sh` — are
 none of this file's business and are never touched. The gateway has no
 repo-managed forward, so `gateway_url` starts one of its own and asks
@@ -157,13 +155,13 @@ class _Outcome:
     only one of them was measured:
 
     * **HTTP 401 with a `text/plain` body.** What agentgateway v1.5.0 actually
-      does, in every rejection case measured for this task. `TokenError`'s
+      does, in every rejection case measured here. `TokenError`'s
       `Display` text is the whole body (`crates/agentgateway/src/http/jwt.rs`),
       e.g. `authentication failure: no bearer token found`.
-    * **A JSON-RPC error object riding on a non-2xx status.** The shape the M2
-      spike expected and the brief for this task describes. It was *not* what
-      the deployed gateway produced for any identity rejection — the refusal
-      never reaches JSON-RPC framing at all, because `jwtAuth` runs as an HTTP
+    * **A JSON-RPC error object riding on a non-2xx status.** A plausible
+      shape for a JSON-RPC-framed rejection, but *not* what the deployed
+      gateway produces for any identity rejection — the refusal never
+      reaches JSON-RPC framing at all, because `jwtAuth` runs as an HTTP
       filter before the MCP backend is consulted. Handled anyway rather than
       dropped: if a later version moves the rejection into the MCP layer, these
       tests should keep asserting the property instead of silently inverting.
@@ -262,7 +260,7 @@ def call_tool_directly(
             "params": {
                 "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": {},
-                "clientInfo": {"name": "task5-identity-probe", "version": "0"},
+                "clientInfo": {"name": "identity-probe", "version": "0"},
             },
         },
         headers,
@@ -437,7 +435,7 @@ def self_signed_tokens():
     }
     return {
         "own_kid": pyjwt.encode(
-            claims, key, algorithm="RS256", headers={"kid": "task5-untrusted-key"}
+            claims, key, algorithm="RS256", headers={"kid": "untrusted-key"}
         ),
         "spire_kid": pyjwt.encode(
             claims, key, algorithm="RS256", headers={"kid": _spire_jwks_kid()}
@@ -499,7 +497,7 @@ def test_a_valid_svid_is_accepted_and_the_tool_really_runs(gateway_url, valid_sv
     `propose_payment` through the whole interposed path, gateway to
     payments-mcp to payments-api.
 
-    Ruling 32: payments-api's store is in-memory and every probe adds a row, so
+    payments-api's store is in-memory and every probe adds a row, so
     nothing here asserts a record count or a payment id — only that *this*
     call's own result names the claim it was given and came back `proposed`.
     """
@@ -536,8 +534,9 @@ def test_a_valid_svid_is_accepted_and_the_tool_really_runs(gateway_url, valid_sv
 def test_gateway_refuses_a_call_with_no_svid_at_all(gateway_url):
     """Identity has teeth: without a JWT-SVID the gateway does not forward.
 
-    This is the property M2.2's policy decision rests on — a PDS that trusts
-    the caller identity is only as good as the gateway's verification of it.
+    This is the property the policy decision service's decisions rest on — a
+    PDS that trusts the caller identity is only as good as the gateway's
+    verification of it.
 
     It is `mode: strict` that makes this true, and `strict` is a deliberate
     override: agentgateway v1.5.0's `Mode` enum marks `Optional` as its
@@ -697,10 +696,10 @@ def test_gateway_refuses_a_bearer_value_that_is_not_a_jwt(gateway_url):
     )
 
 
-# --- OQ-U1's regression guard (M3 final-review fix round) --------------------
+# --- OQ-U1's regression guard ------------------------------------------------
 #
-# `docs/upstream-findings.md`'s OQ-U1 closed the one policy-bypass shape M2.2's
-# final review could not rule out: whether agentgateway v1.5.0's
+# `docs/upstream-findings.md`'s OQ-U1 closes a policy-bypass shape that would
+# otherwise go unruled-out: whether agentgateway v1.5.0's
 # `mcpGuardrails` evaluates every message inside a batched JSON-RPC array. It
 # does not have to -- the gateway rejects the array at deserialization, before
 # the hook runs at all. That write-up names its own gap in as many words:
@@ -718,7 +717,7 @@ JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 PAYMENTS_API_URL = os.environ.get("PAYMENTS_API_URL", "http://localhost:18080")
 
 # The status agentgateway v1.5.0 answers a JSON-RPC array with, measured
-# (M3 Task 5B's probe, and re-measured on this test's own first run).
+# directly against the live gateway.
 BATCH_REJECTED = 400
 
 # Over `settlement-agent`'s assisted allowance of 6,000, so a batch that DID
@@ -824,7 +823,7 @@ def test_a_jsonrpc_batch_is_rejected_before_the_policy_hook_and_changes_nothing(
     assert structured.get("status") == "proposed", control_body
 
     # A trace id this test mints, so the trace is fetched by id rather than
-    # searched for (A14).
+    # searched for.
     trace_id = uuid.uuid4().hex
     span_id = uuid.uuid4().hex[:16]
     batch = [

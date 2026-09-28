@@ -3,98 +3,84 @@
 Chain under test: A2A client -> settlement-agent (**model decides**) ->
 payments-mcp -> payments-api.
 
-M1.1 proved one trace spans a *deterministic* chain. M1.2 replaced
-settlement-agent's hardcoded decision with a real PydanticAI agent on Claude
-that chooses and calls the MCP payment tools itself (`settlement.py`). The
-only question this file exists to answer is whether the chain is still *one*
+settlement-agent's decision of which payment tools to call is made by a real
+PydanticAI agent on Claude, not hardcoded (`settlement.py`). The only
+question this file exists to answer is whether the chain is still *one*
 trace once a model sits in the middle of it — and, second, whether prompt/
 completion capture (`NORTHSTAR_CAPTURE_CONTENT`, `bootstrap.py`) genuinely
 behaves as configured, so the telemetry contract's content-capture claim is
 testable rather than aspirational.
 
-**Task 5 reverses the earlier default.** `include_content=False` was
-hardcoded; it is now `NORTHSTAR_CAPTURE_CONTENT`, an env var defaulting to
-ON (see `bootstrap.capture_content_enabled()` and docs/telemetry-contract.md's
-"Content capture" section for why). A test that only ever asserted absence
-would now be trivially false and the tempting move would be to delete it —
-instead `test_content_capture_matches_the_deployed_mode` reads the mode off
-the *running* deployment and asserts presence when ON, absence when OFF, so
-it has teeth in both directions and can never pass by asserting nothing.
+`include_content` is controlled by `NORTHSTAR_CAPTURE_CONTENT`, an env var
+defaulting to ON (see `bootstrap.capture_content_enabled()` and
+docs/telemetry-contract.md's "Content capture" section for why). A test that
+only ever asserted absence would be toothless in the direction that matters
+most — instead `test_content_capture_matches_the_deployed_mode` reads the
+mode off the *running* deployment and asserts presence when ON, absence when
+OFF, so it has teeth in both directions and can never pass by asserting
+nothing.
 
-Everything asserted below was measured from a live capture first and only
-then written down. Where this task's brief predicted an attribute name or a
-trace shape and the measurement disagreed, the measurement won and the
-difference is recorded — in the docstrings here and in
-`.superpowers/sdd/2026-09-08-m1.2-intelligence/task-4-report.md`. Five such
-differences are worth knowing before reading further:
+Everything asserted below was measured from a live capture, not assumed.
+Five points are worth knowing before reading further:
 
 1. **`assert_single_root`/`assert_no_orphans` cannot apply to this fixture.**
-   The brief's sketch called both. An A2A-originated trace has *zero* roots
-   and exactly one orphan by construction: the test mints its own
-   `traceparent`, so the injected span never itself lands in Jaeger and
-   settlement-agent's ASGI entry span (`POST /`) is parented to an ID no
-   span in the trace owns. That is A17's known, legitimate orphan, pinned
-   here by operation *and* `parent_id` exactly as
-   `test_settlement_agent_trace.py` and `test_claim_correlation.py` already
-   pin it — never by a count tolerance. The genuinely root-owning,
+   An A2A-originated trace has *zero* roots and exactly one orphan by
+   construction: the test mints its own `traceparent`, so the injected span
+   never itself lands in Jaeger and settlement-agent's ASGI entry span
+   (`POST /`) is parented to an ID no span in the trace owns. That is a
+   known, legitimate orphan, pinned here by operation *and* `parent_id`
+   exactly as `test_settlement_agent_trace.py` and `test_claim_correlation.py`
+   already pin it — never by a count tolerance. The genuinely root-owning,
    zero-orphan form of this claim is `tests/e2e/test_browser_root_span.py`,
-   whose real browser root now drives this same LLM path end to end.
+   whose real browser root drives this same LLM path end to end.
 
 2. **`Trace.services` is a method, not a property** (`tests/harness/jaeger.py`),
-   so the brief's `{"payments-mcp", ...} <= trace.services` would have
-   compared a set against a bound method. Called as `trace.services()` here.
+   so `{"payments-mcp", ...} <= trace.services` would compare a set against a
+   bound method. Called as `trace.services()` here.
 
 3. **`model_request_parameters` is governed by a different setting than
    `NORTHSTAR_CAPTURE_CONTENT`.** `gen_ai.input.messages` and
    `gen_ai.output.messages` carry message *shape* — role, `parts[].type`,
    tool-call ids and tool names — plus a `content` key exactly when capture
-   is ON, absent when OFF (Task 5, measured both directions). But
-   pydantic-ai 2.41.0 additionally sets a non-semconv
-   `model_request_parameters` attribute on every `chat` span that contains
-   the agent's system instructions verbatim plus the full tool JSON schemas,
-   gated by the separate `include_model_request_parameters` setting
-   (`bootstrap.py` leaves it at its library default, `True`, deliberately —
-   no claim-specific data reaches it). Pinned unconditionally by
+   is ON, absent when OFF (measured both directions). But pydantic-ai 2.41.0
+   additionally sets a non-semconv `model_request_parameters` attribute on
+   every `chat` span that contains the agent's system instructions verbatim
+   plus the full tool JSON schemas, gated by the separate
+   `include_model_request_parameters` setting (`bootstrap.py` leaves it at
+   its library default, `True`, deliberately — no claim-specific data
+   reaches it). Pinned unconditionally by
    `test_model_request_parameters_carries_instructions_regardless_of_capture_mode`
    so a change to that gating cannot be forgotten, and left for the
    telemetry contract to state rather than papered over here.
 
-5. **The brief's `test_content_capture_matches_the_deployed_mode(trace,
-   reply)` sketch names two separate fixtures.** This file has one
-   module-scoped fixture, `llm_settlement`, carrying both as attributes
-   (`llm_settlement.trace`, `llm_settlement.reply`) — the same pattern every
-   other test in this file already uses, so the sketch's body is used
-   verbatim with its two arguments unpacked from that one fixture instead of
-   introducing two new fixture names for a single live model run to share.
+4. **The model's own HTTP hop has a CLIENT span.** `anthropic==1.4.0` speaks
+   `httpx2`, not `httpx`; `bootstrap.py` instruments both
+   `HTTPXClientInstrumentor` (`_module_name = "httpx"`, covers the MCP hop)
+   and `HTTPX2ClientInstrumentor` (covers the `api.anthropic.com` request) —
+   see `test_anthropic_client_span_exists_and_is_parented_to_chat` below,
+   which asserts the span exists and is correctly parented.
 
-4. **The model's own HTTP hop now has a CLIENT span (Task 8; this was a gap
-   at the time this file was written).** `anthropic==1.4.0` speaks `httpx2`,
-   not `httpx`; `bootstrap.py` originally instrumented only
-   `HTTPXClientInstrumentor` (`_module_name = "httpx"`), so the MCP hop got
-   httpx CLIENT spans and the `api.anthropic.com` request did not —
-   pydantic-ai's own `chat` span was the only span representing it. Recorded
-   and pinned here at the time (`bootstrap.py` was out of scope for this
-   task), then closed by Task 8 adding `HTTPX2ClientInstrumentor().instrument()`
-   alongside the existing call — see
-   `test_anthropic_client_span_exists_and_is_parented_to_chat` below, which
-   asserts the span exists and is correctly parented.
+5. **This file has one module-scoped fixture, `llm_settlement`,** carrying
+   both the trace and the reply as attributes (`llm_settlement.trace`,
+   `llm_settlement.reply`) — the same pattern every other test in this file
+   uses, so a single live model run is shared across all of them rather than
+   re-run per test.
 
 **Cost gate — scoped to this file, not to the suite.** Every test in this
 file shares one module-scoped live model run, and the whole file is gated
 behind `RUN_BROWSER_TESTS=1` — the same convention `test_browser_root_span.py`
 uses, and the only skip convention this suite has. That keeps *this file's*
-model run out of a bare `pytest tests/`. Fix round (final-review.md SF-8):
-this used to claim that gating this one file "keeps a bare `pytest tests/`
-free of both a cluster dependency and a token bill" for the suite as a
-whole — false. `test_settlement_agent_trace.py` and `test_claims_chain_trace.py`
-are pre-existing, deliberately ungated M1.1 files (by design: the default
-suite is supposed to prove the backend chain against the live cluster, see
-`docs/telemetry-contract.md`'s "What the default suite proves" section), and
-Tasks 2-3 made the settlement they each drive a real three-turn model call —
-so a bare `pytest tests/` today needs the live cluster and spends real
-tokens on two live settlements, regardless of this file's own gate. Prose is
-asserted nowhere in this file: the model's wording varies run to run, so
-only structure, names and numbers are checked.
+model run out of a bare `pytest tests/`. It does not make a bare
+`pytest tests/` free of a cluster dependency or a token bill for the suite
+as a whole: `test_settlement_agent_trace.py` and `test_claims_chain_trace.py`
+are deliberately ungated (by design: the default suite is supposed to prove
+the backend chain against the live cluster, see `docs/telemetry-contract.md`'s
+"What the default suite proves" section), and the settlement each of those
+drives is itself a real three-turn model call — so a bare `pytest tests/`
+today needs the live cluster and spends real tokens on two live
+settlements, regardless of this file's own gate. Prose is asserted nowhere
+in this file: the model's wording varies run to run, so only structure,
+names and numbers are checked.
 """
 import json
 import os
@@ -110,7 +96,7 @@ from tests.harness.jaeger import JaegerClient
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 SETTLEMENT_URL = os.environ.get("SETTLEMENT_AGENT_URL", "http://localhost:19002")
 
-ENTRY_SPAN = "POST /"  # StarletteInstrumentor's ASGI server span (A18)
+ENTRY_SPAN = "POST /"  # StarletteInstrumentor's ASGI server span
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
@@ -128,16 +114,12 @@ pytestmark = pytest.mark.skipif(
 # surfaced on the fixture (and in this file's failure messages) so a divergence
 # is *reported*, never clamped.
 #
-# **M2.2 re-point, 6200 -> 5800.** The original sentence here read "M1 is
-# ungoverned by design — the model can propose any amount and nothing stops
-# it", and that stopped being true: the platform now denies `execute_payment`
-# above the €6,000 allowance for this caller
-# (`platform/policy-decision-service/pds/rules.py`), so at €6,200 the
-# settlement comes back `refused` and the fixture's own `status == "executed"`
-# assertion fails before any test body runs. What is left true, and is what
-# this constant was always for, is that nothing in *this repo's agent* clamps
-# the amount — the ceiling lives in the platform, one hop away, and the model
-# is free to propose whatever it likes.
+# Nothing in *this repo's agent* clamps the amount — the model is free to
+# propose whatever it likes. The ceiling lives one hop away, in the platform:
+# it denies `execute_payment` above the €6,000 allowance for this caller
+# (`platform/policy-decision-service/pds/rules.py`), so an amount above that
+# comes back `refused` and the fixture's own `status == "executed"` assertion
+# fails before any test body runs.
 #
 # €5,800 rather than a refusal, deliberately. Every one of this file's nine
 # tests is about the *model's* instrumentation — the `gen_ai.*` vocabulary,
@@ -155,15 +137,12 @@ pytestmark = pytest.mark.skipif(
 REQUESTED_AMOUNT = 5800
 
 # Measured, not predicted. The `gen_ai.usage.*` names below are the ones
-# pydantic-ai 2.41.0 actually emitted in live capture; see the report for the
-# complete measured inventory. Deliberately excluded from the assertion
-# because they are conditional on what the model did, not on our wiring:
+# pydantic-ai 2.41.0 actually emitted in live capture. Deliberately excluded
+# from the assertion because they are conditional on what the model did, not
+# on our wiring:
 #   * gen_ai.usage.details.thinking_tokens          (only when it thought)
 #   * gen_ai.usage.details.cache_creation_input_tokens
 #   * gen_ai.usage.details.cache_read_input_tokens
-# The brief guessed `gen_ai.usage.input_tokens` and that guess happened to be
-# right — it is asserted here because it was measured, not because it was
-# guessed.
 CHAT_TOKEN_ATTRS = {"gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens"}
 AGENT_TOKEN_ATTRS = {
     "gen_ai.aggregated_usage.input_tokens",
@@ -175,8 +154,7 @@ TOOL_NAMES = {"propose_payment", "execute_payment"}
 
 def _send(text: str, traceparent: str) -> dict:
     """Minimal A2A JSON-RPC message/send, same wire-level shape as
-    test_settlement_agent_trace.py's helper (the fixture style this task's
-    brief asks to reuse rather than re-invent)."""
+    test_settlement_agent_trace.py's helper."""
     payload = {
         "jsonrpc": "2.0",
         "id": uuid.uuid4().hex,
@@ -202,11 +180,11 @@ def _send(text: str, traceparent: str) -> dict:
 def llm_settlement():
     """One live, LLM-driven settlement, shared by every test in this file.
 
-    A14: this test originates the request, so it mints its own trace and span
-    ID, sends them as a `traceparent` header, and looks the trace up by that
+    This test originates the request, so it mints its own trace and span ID,
+    sends them as a `traceparent` header, and looks the trace up by that
     exact ID. Never `find_trace`/`wait_for_trace` — a search by operation
-    name or service silently returned a 14-minute-old trace twice during
-    M1.1, and by construction `wait_for_trace_id` cannot.
+    name or service can silently return a stale trace instead, and by
+    construction `wait_for_trace_id` cannot.
     """
     trace_id = uuid.uuid4().hex
     span_id = uuid.uuid4().hex[:16]
@@ -223,12 +201,12 @@ def llm_settlement():
     assert reply["narrative"], "the model returned an empty narrative"
 
     client = JaegerClient(JAEGER_URL)
-    # A20/A20a: wait for the whole chain to land *and hold steady* for the
-    # harness's 10s quiet window — comfortably past every service's default
-    # 5s BatchSpanProcessor delay. 2s and 6s windows both produced false
-    # negatives during M1.1; 10s is the value that held. The three model
-    # turns make this trace larger and slower to assemble than M1.1's, so
-    # the overall budget is wider than the deterministic tests' too.
+    # Wait for the whole chain to land *and hold steady* for the harness's
+    # 10s quiet window — comfortably past every service's default 5s
+    # BatchSpanProcessor delay. Shorter windows (2s, 6s) produced false
+    # negatives; 10s is the value that holds. The three model turns make
+    # this trace larger and slower to assemble than a deterministic chain's,
+    # so the overall budget is wider than the deterministic tests' too.
     trace = client.wait_for_trace_id(
         trace_id,
         operation=ENTRY_SPAN,
@@ -278,13 +256,12 @@ def _descends_from(trace, span, ancestor_id):
 def test_gen_ai_spans_join_the_existing_trace(llm_settlement):
     """The model's spans land inside the caller's trace, not in a new root.
 
-    This is the milestone's gate, stated at the boundary this fixture can
-    actually own. Two halves:
+    Stated at the boundary this fixture can actually own. Two halves:
 
-      * the trace's only orphan is A17's known synthetic one — the entry span
-        parented to the injected span ID that was never itself exported —
-        pinned by operation *and* parent, so a real propagation defect
-        anywhere else still fails here;
+      * the trace's only orphan is the expected synthetic one — the entry
+        span parented to the injected span ID that was never itself
+        exported — pinned by operation *and* parent, so a real propagation
+        defect anywhere else still fails here;
       * every span carrying a `gen_ai.*` attribute descends from that entry
         span, which is what "the model did not detach the trace" means
         concretely. A `gen_ai.*` span merely *present* in the trace would not
@@ -355,20 +332,18 @@ def test_mcp_hop_still_carries_the_trace(llm_settlement):
     instrumentation and the MCP client ever stopped sharing a context, this
     parentage would break while a bare service-list check still passed.
 
-    **M2.1 Task 3 update — this said "direct child" and asserted
-    `mcp_span.parent_id == tool_span.span_id` until the gateway was
-    interposed.** With `PAYMENTS_MCP_URL` now pointing at agentgateway, the
-    measured chain has two proxy spans between those two:
+    This asserts ancestry, not direct parentage: `PAYMENTS_MCP_URL` points at
+    agentgateway, so the measured chain has two proxy spans between the tool
+    span and the MCP server span —
     `settlement-agent:execute_tool propose_payment` ->
     `settlement-agent:POST` (httpx CLIENT) -> `agentgateway:tools/call`
     (SERVER) -> `agentgateway:tools/call payments-mcp_propose_payment`
-    (CLIENT) -> `payments-mcp:tools/call propose_payment` (SERVER). So the
-    direct-parent form failed against a correctly-behaving deployment.
-    Relaxing to ancestry is deliberately paired with a *new* assertion that
-    the immediate parent is an agentgateway span, so the total strictness
-    does not drop: this test still fails if the causal chain from the
-    model's tool choice to the MCP server span is broken anywhere, and it now
-    additionally fails if that chain stops running through the gateway.
+    (CLIENT) -> `payments-mcp:tools/call propose_payment` (SERVER). Ancestry
+    is paired with a separate assertion that the immediate parent is an
+    agentgateway span, so the total strictness does not drop: this test
+    still fails if the causal chain from the model's tool choice to the MCP
+    server span is broken anywhere, and it also fails if that chain stops
+    running through the gateway.
     """
     trace = llm_settlement.trace
     services = trace.services()
@@ -397,14 +372,14 @@ def test_mcp_hop_still_carries_the_trace(llm_settlement):
 def _deployed_capture_mode() -> bool:
     """Read the mode off the actual serving pod, not the Deployment spec.
 
-    Task 5 fix round 1, Finding 4: `kubectl apply` updates the Deployment's
-    own spec the instant it runs, before the new ReplicaSet's pod exists or
-    has finished starting — reading `deploy/settlement-agent` mid-rollout
-    could report a mode the pod actually answering requests is not yet
-    running. A Pod's spec is copied from the Deployment's template at that
-    Pod's creation time and never changes afterward, so reading it from the
-    Running pod reports what is *actually* serving, not what the manifest
-    says it should eventually be.
+    `kubectl apply` updates the Deployment's own spec the instant it runs,
+    before the new ReplicaSet's pod exists or has finished starting —
+    reading `deploy/settlement-agent` mid-rollout could report a mode the
+    pod actually answering requests is not yet running. A Pod's spec is
+    copied from the Deployment's template at that Pod's creation time and
+    never changes afterward, so reading it from the Running pod reports what
+    is *actually* serving, not what the manifest says it should eventually
+    be.
     """
     pod_name = subprocess.run(
         ["kubectl", "-n", "northstar-agents", "get", "pod",
@@ -430,15 +405,12 @@ def _deployed_capture_mode() -> bool:
 def test_content_capture_matches_the_deployed_mode(llm_settlement):
     """Proves the configured behaviour in whichever direction it is set.
 
-    Task 5 replaced the earlier, one-directional `include_content=False`
-    assertion (which would now be trivially false with capture defaulting
-    ON) with this mode-aware one: it reads `NORTHSTAR_CAPTURE_CONTENT` off
-    the *running* settlement-agent deployment and asserts presence when ON,
-    absence when OFF — so it can never pass by asserting nothing. Verified
-    both directions live (see the task report): with the deployment at
-    `true`, the needles below are found inside `gen_ai.input.messages` /
-    `gen_ai.output.messages`; flipped to `false` and redeployed, the same
-    test asserts their absence and still passes.
+    Reads `NORTHSTAR_CAPTURE_CONTENT` off the *running* settlement-agent
+    deployment and asserts presence when ON, absence when OFF — so it can
+    never pass by asserting nothing. Verified both directions live: with the
+    deployment at `true`, the needles below are found inside
+    `gen_ai.input.messages` / `gen_ai.output.messages`; flipped to `false`
+    and redeployed, the same test asserts their absence and still passes.
 
     Needles must be things that genuinely traverse the model: a fragment of
     the prompt settlement.py builds, and the narrative the model returned.
@@ -447,7 +419,7 @@ def test_content_capture_matches_the_deployed_mode(llm_settlement):
     """
     trace = llm_settlement.trace
     reply = llm_settlement.reply
-    # HAZARD (Task 5 fix round 1): "is assessed as covered" — the run
+    # HAZARD: "is assessed as covered" — the run
     # prompt's exact wording (settlement.py:122) — sits one word away from
     # colliding with `model_request_parameters`'s static instructions text,
     # "has already **been** assessed as covered" (settlement.py's
@@ -475,7 +447,7 @@ def test_content_capture_matches_the_deployed_mode(llm_settlement):
     if _deployed_capture_mode():
         assert hits, (
             "capture is ON but no span carries any model content — "
-            "the trade-off this milestone documents is not actually being made"
+            "content capture is not actually happening"
         )
     else:
         assert not hits, f"capture is OFF but model content leaked: {hits}"
@@ -493,17 +465,17 @@ def test_message_shape_is_recorded(llm_settlement):
     dressed up as a compliance win).
 
     Whether a `content` key exists *inside* that shape is what actually
-    depends on the deployed mode (Task 5) — but only for `text`/`thinking`
-    parts. Measured live (this run had three chat turns): a `text` part
-    carries `content` set to the model's prose, a `thinking` part carries
-    `content` (empty string here, since the model did no visible extended
-    thinking) — both present with capture ON, both keys absent with it OFF.
-    A `tool_call` part carries `id`/`name`/`arguments` instead and has no
+    depends on the deployed mode — but only for `text`/`thinking` parts.
+    Measured live (this run had three chat turns): a `text` part carries
+    `content` set to the model's prose, a `thinking` part carries `content`
+    (empty string here, since the model did no visible extended thinking) —
+    both present with capture ON, both keys absent with it OFF. A
+    `tool_call` part carries `id`/`name`/`arguments` instead and has no
     `content` key at either setting — one whole chat turn in this run
     (`execute_payment`'s own call) produced an output message that was
     *only* a `tool_call` part, so asserting `content` on every single
     (span, key) surface regardless of what part types it holds would be
-    wrong; measurement, not the brief's original sketch, settled this.
+    wrong.
 
     The `invoke_agent` span's own `pydantic_ai.all_messages` — a non-semconv
     attribute holding the whole conversation, and therefore the single
@@ -574,14 +546,12 @@ def test_message_shape_is_recorded(llm_settlement):
 
 def test_tool_call_arguments_carries_the_settled_amount(llm_settlement):
     """Pins `gen_ai.tool.call.arguments` — the single strongest argument for
-    defaulting capture ON (Task 5 fix round 1, Finding 2).
+    defaulting capture ON.
 
     A span proving *that* €5,800 was executed says nothing about *why that
     amount* or on what stated grounds. `gen_ai.tool.call.arguments` on the
     `execute_tool propose_payment` span is what actually answers that: it is
-    the literal amount and currency the model chose to propose. Before this
-    fix round, that attribute — the one that justifies the whole default
-    flip — appeared in no test and no doc.
+    the literal amount and currency the model chose to propose.
 
     Measured (`pydantic_ai/capabilities/instrumentation.py`'s
     `_tool_span_attributes`, `InstrumentationNames.for_version(5)`):
@@ -618,15 +588,15 @@ def test_tool_call_arguments_carries_the_settled_amount(llm_settlement):
 def test_token_usage_is_recorded(llm_settlement):
     """Token accounting, at the names actually emitted.
 
-    Measured at pydantic-ai 2.41.0, not taken from this task's plan:
-    `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` on every
-    `chat` span, and `gen_ai.aggregated_usage.input_tokens` /
+    Measured at pydantic-ai 2.41.0: `gen_ai.usage.input_tokens` /
+    `gen_ai.usage.output_tokens` on every `chat` span, and
+    `gen_ai.aggregated_usage.input_tokens` /
     `gen_ai.aggregated_usage.output_tokens` on the `invoke_agent` span. The
     `aggregated_usage` spelling is a pydantic-ai extension with no
     counterpart in the GenAI semantic conventions; it is asserted because it
     was measured. Conditional `gen_ai.usage.details.*` counters
-    (thinking/cache tokens) are recorded in the report but not asserted —
-    they depend on what the model did, not on our wiring.
+    (thinking/cache tokens) are not asserted — they depend on what the model
+    did, not on our wiring.
     """
     trace = llm_settlement.trace
     emitted = sorted({k for s in trace.spans for k in s.attrs if k.startswith("gen_ai.")})
@@ -655,7 +625,7 @@ def test_model_request_parameters_carries_instructions_regardless_of_capture_mod
 ):
     """`model_request_parameters` is gated by a *different* setting entirely.
 
-    Task 5 makes `NORTHSTAR_CAPTURE_CONTENT` (`include_content`) configurable,
+    `NORTHSTAR_CAPTURE_CONTENT` (`include_content`) is configurable,
     defaulting ON. `model_request_parameters` — a non-semconv attribute
     pydantic-ai 2.41.0 sets on every `chat` span, carrying the agent's system
     instructions verbatim together with the full JSON schema and docstring of
@@ -668,9 +638,9 @@ def test_model_request_parameters_carries_instructions_regardless_of_capture_mod
 
     Nothing claimant-specific reaches it — the instructions are static text
     this repo wrote, and the schemas are our own function signatures — so
-    this is not a data-subject leak. It is a deliberate ruling (not a gap):
-    those instructions and schemas contain no claim-specific data and are an
-    audit asset — see docs/telemetry-contract.md. Pinned in the same spirit
+    this is not a data-subject leak. Those instructions and schemas contain
+    no claim-specific data and are treated as an audit asset by design, not
+    a gap — see docs/telemetry-contract.md. Pinned in the same spirit
     as `tests/e2e/test_claim_correlation.py`'s treatment of the FastMCP
     baggage gap: if a later pydantic-ai version starts gating this
     differently, or the instructions move, this test fails loudly and the
@@ -697,16 +667,13 @@ def test_model_request_parameters_carries_instructions_regardless_of_capture_mod
 
 
 def test_anthropic_client_span_exists_and_is_parented_to_chat(llm_settlement):
-    """Task 8: the model's own HTTP hop now has a CLIENT span.
+    """The model's own HTTP hop has a CLIENT span, distinct from the MCP hop's.
 
-    History: `anthropic==1.4.0` speaks `httpx2`, a distribution separate from
-    `httpx`. `bootstrap.py` applied only `HTTPXClientInstrumentor`, whose
-    `_module_name` is `"httpx"` — so settlement-agent's MCP round trips each
-    got an httpx CLIENT span, and the model's own HTTPS request to
-    `api.anthropic.com` got none. That gap was pinned by this test's
-    predecessor (`test_the_models_own_http_hop_has_no_client_span`, see
-    git history) and closed here by adding `HTTPX2ClientInstrumentor()
-    .instrument()` alongside the existing call in `bootstrap.py`.
+    `anthropic==1.4.0` speaks `httpx2`, a distribution separate from
+    `httpx`. `bootstrap.py` instruments both `HTTPXClientInstrumentor`
+    (`_module_name` `"httpx"`, covers settlement-agent's MCP round trips)
+    and `HTTPX2ClientInstrumentor` (covers the model's own HTTPS request to
+    `api.anthropic.com`).
 
     Both `HTTPXClientInstrumentor` and `HTTPX2ClientInstrumentor` live in the
     same `opentelemetry.instrumentation.httpx` module and share its
@@ -732,12 +699,11 @@ def test_anthropic_client_span_exists_and_is_parented_to_chat(llm_settlement):
     also produce *more* than one such span: `anthropic`'s own SDK retries
     (`DEFAULT_MAX_RETRIES = 2`) by re-entering the transport the instrumentor
     wraps, so a 429/529 that succeeds on retry is one CLIENT span per HTTP
-    attempt, not per turn. Fix round (final-review.md SF-1): the assertion
-    below no longer requires every attempt to be `200` — only that every
-    attempt is a well-formed span and that each turn got a `200` on *some*
-    attempt — because the all-attempts-200 version failed a healthy,
-    retried-then-succeeded settlement on stage, which is precisely the
-    scenario this span exists to make visible rather than to forbid.
+    attempt, not per turn. The assertions below do not require every attempt
+    to be `200` — only that every attempt is a well-formed span and that
+    each turn got a `200` on *some* attempt — because a healthy,
+    retried-then-succeeded settlement is precisely the scenario this span
+    exists to make visible rather than to forbid.
     """
     trace = llm_settlement.trace
     httpx_spans = [
@@ -757,26 +723,24 @@ def test_anthropic_client_span_exists_and_is_parented_to_chat(llm_settlement):
     chat_span_ids = {s.span_id for s in chat_spans}
     assert chat_span_ids, "no chat span in the trace to parent the CLIENT span to"
 
-    # Fix round (final-review.md SF-1): this used to assert
-    # `http.response.status_code == 200` on *every* anthropic-bound span.
-    # That is wrong. `anthropic` retries (`DEFAULT_MAX_RETRIES = 2`,
+    # Asserting `http.response.status_code == 200` on *every* anthropic-bound
+    # span would be wrong. `anthropic` retries (`DEFAULT_MAX_RETRIES = 2`,
     # `anthropic/_constants.py`) by re-entering its own transport per
     # attempt, and the installed instrumentor wraps
     # `AsyncHTTPTransport.handle_async_request` -- a per-attempt wrap point,
     # not a per-logical-request one (`opentelemetry/instrumentation/httpx/
     # __init__.py:1295-1299`) -- so a retried call produces one CLIENT span
     # *per HTTP attempt*, each with its own status. A 429 or 529 that
-    # succeeds on retry is exactly the signal Task 8 was built to surface
-    # (docs/telemetry-contract.md's Gap 7 rationale names "a 429 that
-    # succeeded on retry" outright), so asserting every attempt is 200 would
-    # fail a *healthy* demo -- the settlement completes, the amount is
-    # executed, and this test reports `assert 429 == 200` on stage. The
-    # replacement below pins two properties instead: every attempt is a
-    # well-formed CLIENT span (an int status code, correctly parented), and
-    # each model turn -- attempts grouped by the chat span they are parented
-    # to -- got a 200 on *some* attempt. A turn where every attempt failed
-    # still fails this loudly; only a turn that failed then succeeded is now
-    # tolerated.
+    # succeeds on retry is exactly the signal this span exists to surface
+    # (see docs/telemetry-contract.md's rationale for this gap), so asserting
+    # every attempt is 200 would fail a *healthy* demo -- the settlement
+    # completes and the amount is executed even though one attempt reported
+    # `429`. The assertions below pin two properties instead: every attempt
+    # is a well-formed CLIENT span (an int status code, correctly parented),
+    # and each model turn -- attempts grouped by the chat span they are
+    # parented to -- got a 200 on *some* attempt. A turn where every attempt
+    # failed still fails this loudly; only a turn that failed then succeeded
+    # is tolerated.
     by_chat_parent: dict[str, list] = {}
     for span in to_model:
         assert span.kind == "client", (span.operation, span.kind)
@@ -800,9 +764,9 @@ def test_anthropic_client_span_exists_and_is_parented_to_chat(llm_settlement):
             "attempt for this model turn failed"
         )
 
-    # The positive half kept from the predecessor test: pydantic-ai's own
-    # chat span still names the hop too (it wraps the httpx CLIENT span).
-    # Restricted to chat spans that actually carry a server.address: an
+    # pydantic-ai's own chat span also names the hop (it wraps the httpx
+    # CLIENT span). Restricted to chat spans that actually carry a
+    # server.address: an
     # errored turn can lack it entirely, and that is not the same failure as
     # a turn that reached the wrong host (the thing this assertion exists to
     # catch) -- exact set equality over the *full* `chat_spans` list turned

@@ -1,7 +1,7 @@
 """The ExtMCP servicer: wire format in, policy decision out.
 
-Everything about the wire shape below was measured against agentgateway v1.5.0
-on this cluster in Task 1, not assumed. The three facts this file is built on:
+Everything about the wire shape below is measured against agentgateway
+v1.5.0 on this cluster, not assumed. The three facts this file is built on:
 
 1. The caller's SPIFFE ID is in `McpRequest.metadata_context` under `caller`
    (a `google.protobuf.Struct`), put there by the gateway config
@@ -18,9 +18,9 @@ And one fact about the way out, measured byte-for-byte: the gateway maps
 `AuthorizationError.reason` to `error.message` and `AuthorizationError.mcp_error`
 to `error.data`, parsed whole. `error.code` comes from the four-value
 `AuthorizationError.Code` enum (`PERMISSION_DENIED` -> `-32001`) and is not ours
-to choose. So the refusal a human or a model reads has to be in `reason`
-(ruling R13): that is what survives `str(McpError)` at the agent, while
-`error.data` is dropped by it.
+to choose. So the refusal a human or a model reads has to be in `reason`:
+that is what survives `str(McpError)` at the agent, while `error.data` is
+dropped by it.
 """
 from __future__ import annotations
 
@@ -54,10 +54,10 @@ from pds.rules import Decision, PolicyInput, decide
 
 log = logging.getLogger("pds")
 
-# M2 ran at one autonomy level, as a constant (`AUTONOMY_LEVEL = "assisted"`).
-# M5 turns this into a flag: the rule table in `rules.py` is already keyed by
-# the level, so resolving it per decision instead of compiling it in is a
-# value change, not a shape change -- `decide()` itself is untouched.
+# The autonomy level is resolved per decision through a flag rather than
+# compiled in as a constant: the rule table in `rules.py` is already keyed by
+# the level, so this is a value change at lookup time, not a shape change --
+# `decide()` itself never learns a flag exists.
 #
 # One client, built once at import time rather than per request: the
 # provider owns a gRPC channel and a background connection-monitor thread
@@ -73,18 +73,19 @@ log = logging.getLogger("pds")
 # against the live sidecar: `error_code=PROVIDER_NOT_READY`,
 # `value=default_value`, i.e. `RESTRICTIVE_LEVEL`).
 #
-# `TracingHook()` (ruling M5-R6's sibling concern for Task 4's log record,
-# not the span here) puts a `feature_flag.evaluation` event on whatever span
-# is active when the flag is resolved -- `_decide` below resolves inside the
-# `policy.decision` span, so that event lands there.
+# `TracingHook()` puts a `feature_flag.evaluation` event on whatever span is
+# active when the flag is resolved -- `_decide` below resolves inside the
+# `policy.decision` span, so that event lands there. `emit_evaluation_event`
+# (see `pds/autonomy.py`) sends a separate log record with the fields the
+# hook does not.
 api.set_provider(FlagdProvider(host=FLAGD_HOST, port=FLAGD_PORT))
 _flag_client = api.get_client()
 _flag_client.add_hooks([TracingHook()])
 
 # The JSON-RPC application-error range. The exact code is ours because this is
 # our error -- and it is worth being clear that the client never sees it:
-# Task 1 measured `mcp_error` landing whole under `error.data`, so this code
-# appears at `$.error.data.code` while `$.error.code` is the gateway's -32001.
+# `mcp_error` lands whole under `error.data`, so this code appears at
+# `$.error.data.code` while `$.error.code` is the gateway's -32001.
 DENY_JSONRPC_CODE = -32003
 
 # Only `tools/call` is configured to reach us (the gateway's `methods` block),
@@ -124,8 +125,8 @@ def _amount(value) -> float | None:
     default, and `1e309` overflows to `inf`, so a caller really can put one on
     the wire. And `json.dumps` would happily write `NaN` back out into
     `mcp_error.data.requested` -- which is not valid JSON, so the gateway would
-    drop the whole deny body with a `warn!` and the structured refusal Task 5
-    keys off would silently vanish.
+    drop the whole deny body with a `warn!` and the structured refusal a
+    caller keys off would silently vanish.
 
     A JSON integer literal too large for a float raises `OverflowError` on
     `float()` rather than returning `inf`; caught, because `parse_call` must
@@ -184,15 +185,15 @@ def build_result(
     """The `McpRequestResult` for a decision.
 
     A permit is `Pass` and nothing else: no mutation, no `header_mutation`, no
-    `metadata`. The response side is unused in M2.2 and touching a successful
-    call would put the PDS in its data path for no gain.
+    `metadata`. The response side is unused and touching a successful call
+    would put the PDS in its data path for no gain.
 
     A deny carries the reason twice, because two different consumers read two
     different places and neither can see the other's:
 
     - `AuthorizationError.reason` becomes `error.message`, which is what
       `str(McpError)` yields at the agent and therefore the only text that
-      reaches the A2A caller and the model that must narrate the refusal (R13).
+      reaches the A2A caller and the model that must narrate the refusal.
     - `mcp_error` becomes `error.data`, parsed whole, which `str(McpError)`
       drops -- but which `mcp_tools.py` can still read off `exc.error.data` to
       key its terminal branch on `retryable: false`.
@@ -243,16 +244,15 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
         try:
             parent = telemetry.context_from_headers(request.headers)
             # SpanKind.SERVER: the gateway emits a CLIENT `Guardrail` span for
-            # this very RPC (measured, Task 1 Q6), and the server span for an
-            # inbound RPC is the matching half of that pairing, which is what
-            # makes the decision hop show up as one hop rather than two halves.
+            # this very RPC, and the server span for an inbound RPC is the
+            # matching half of that pairing, which is what makes the decision
+            # hop show up as one hop rather than two halves.
             #
             # Note this span is a SIBLING of `Guardrail`, not its child --
-            # measured in Task 4's denial and permit traces, where `Guardrail`
-            # (CLIENT) and `policy.decision` (SERVER) carry the *same* parent
-            # span id, the gateway's `tools/call`. The gateway propagates the
-            # context it received rather than the context of its own client
-            # span, so the parent here is `tools/call`.
+            # `Guardrail` (CLIENT) and `policy.decision` (SERVER) carry the
+            # *same* parent span id, the gateway's `tools/call`. The gateway
+            # propagates the context it received rather than the context of
+            # its own client span, so the parent here is `tools/call`.
             #
             # record_exception/set_status_on_exception are off because we do
             # both ourselves below, and because nothing propagates out of this
@@ -287,18 +287,15 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
         call = parse_call(request.mcp_request if request.HasField("mcp_request")
                           else None)
 
-        # Resolved unconditionally, exactly where `AUTONOMY_LEVEL` used to be
-        # read unconditionally: M5 makes this a per-decision lookup instead
-        # of a module constant, but every `policy.decision` span still
-        # carries the level in effect, even on the `_undecidable_method`
-        # path below -- a value change, not a shape change.
+        # Resolved unconditionally: every `policy.decision` span carries the
+        # level in effect, even on the `_undecidable_method` path below.
         resolution = resolve_autonomy(caller, _flag_client)
-        # M5 Task 4: the second of "two records per evaluation" -- a log
-        # record carrying the full seven-field set, alongside (not instead
-        # of) the span event `TracingHook` already put on the active span
-        # inside `resolve_autonomy` above. See `pds/autonomy.py`'s comment
-        # for why this is a separate call rather than folded into
-        # `resolve_autonomy` itself.
+        # The second of "two records per evaluation" -- a log record
+        # carrying the full seven-field set, alongside (not instead of) the
+        # span event `TracingHook` already put on the active span inside
+        # `resolve_autonomy` above. See `pds/autonomy.py`'s comment for why
+        # this is a separate call rather than folded into `resolve_autonomy`
+        # itself.
         emit_evaluation_event(resolution, caller)
 
         if request.method != DECIDABLE_METHOD:
@@ -323,11 +320,11 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
         # or STATIC) from "assisted because we could not ask" (reason ERROR).
         span.set_attribute(telemetry.ATTR_AUTONOMY, resolution.level)
         span.set_attribute(telemetry.ATTR_AUTONOMY_REASON, resolution.reason)
-        # Ruling M5-R6: the ruleset version too, on this span and not only on
-        # Task 4's log record -- Task 5's audit already reads this span, and
-        # must not have its correctness depend on the logs pipeline M5 is
-        # standing up for the first time. Absent like every other optional
-        # field below: the live sidecar's `autonomy-level` flag carries no
+        # The ruleset version goes on this span too, not only on the log
+        # record `emit_evaluation_event` writes -- the audit trail reads this
+        # span, and must not have its correctness depend on the logs
+        # pipeline as well. Absent like every other optional field below:
+        # the live sidecar's `autonomy-level` flag carries no
         # `flagSetId`/`version` metadata today (measured, `flag_metadata`
         # comes back `{}`), so this is routinely missing rather than always
         # present, and a missing version must read as missing.
@@ -354,7 +351,7 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
 
         # The span status stays unset on a deny. A refusal is this service
         # working correctly, and marking it ERROR would put a red span in the
-        # trace for the one thing M2.2 exists to do.
+        # trace for the one thing this service exists to do.
         return build_result(
             permit=decision.permit,
             reason=decision.reason,
@@ -366,7 +363,7 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
     def CheckResponse(self, request, context):
         """`Pass`, unmodified.
 
-        The response side is not used in M2.2. Mutating it would put the PDS in
+        The response side is not used. Mutating it would put the PDS in
         the data path of every successful call with nothing to gain, and the
         gateway treats an unparseable mutation as a protocol violation.
         """

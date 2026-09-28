@@ -16,22 +16,14 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
-# M4 Task 5: renamed from "M3", which is the THIRD time this pair has gone
-# stale -- 8c0e980 took it from M2.2 to M3, M3 Task 5B repeated the rename, and
-# it then sat at M3 through the whole of M4 while this gate grew four new e2e
-# files of M4 assertions (OpenSearch trace ingest, Prometheus over OTLP, the
-# evidence view, the policy-adherence scores). A banner and a sign-off naming
-# an older milestone misreport what a passing run proved, which is the reason
-# 8c0e980 gives for the first rename.
-#
-# The M3 comment here ended "No test pins either string". That is now false and
-# deliberately so: tests/unit/test_stage4_config.py::
-# test_the_gates_banner_names_the_milestone_it_actually_proves DERIVES the
-# expected milestone from the newest design spec in docs/superpowers/specs/ and
-# checks both echoes against it. The next milestone does not have to remember
-# to come here -- the guard reddens when the spec lands. The sign-off also
-# gained the word "Northstar" so the two strings match one pattern instead of
-# two.
+# A banner and a sign-off naming an older milestone would misreport what a
+# passing run proved, so neither string is hand-maintained:
+# tests/unit/test_stage4_config.py::test_the_gates_banner_names_the_milestone_it_actually_proves
+# DERIVES the expected milestone from the newest design spec in
+# docs/superpowers/specs/ and checks both echoes against it. The next
+# milestone does not have to remember to come here -- the guard reddens when
+# the spec lands. Both strings share the word "Northstar" so they match one
+# pattern instead of two.
 echo -e "${BLUE}=== Northstar M6 smoke test ===${NC}"
 
 echo -e "${BLUE}--- Checking prerequisites ---${NC}"
@@ -42,49 +34,25 @@ command_exists npx || { echo -e "${RED}npx (Node.js) is required${NC}" >&2; exit
   echo "Create it: uv venv --python 3.13 .venv && uv pip install -r tests/requirements.txt && .venv/bin/playwright install chromium" >&2
   exit 1
 }
-# `platform/policy-decision-service` joined this loop in the M2.2 fix round
-# (final-review finding 1, ruling R42). It is not a new dependency — it is an
-# existing one finally being declared. `agents/settlement-agent`'s
-# `tests/test_policy_deny_contract.py` imports `pds.rules` and `pds.server`,
-# which import the git-ignored generated stub `ext_mcp_pb2`, so this gate
-# already could not run without the PDS being set up: removing the stubs
-# aborts the settlement-agent suite at collection (0 of 114 tests run -- 79
-# when this comment was written) and
-# reddens `tests/unit`'s per-service count guard. The gate was paying the whole
-# cost of that dependency and collecting none of the PDS's own tests, while
-# README told a new operator the PDS setup was not needed. Both halves are
-# fixed: the venv is required here, the stubs are generated below, and the
-# suite is run.
+# Every service below needs its own venv before this gate can run at all, and
+# this loop is what turns a missing one into a clear message here rather than
+# a confusing failure deep inside a later step:
 #
-# `apps/reviewer-ui` joins the loop in M3 Task 5B for the same reason, and it is
-# the same kind of fix: an existing undeclared dependency, not a new one.
-# `tests/unit/test_telemetry_contract_counts.py` (which Step 2/2 below runs,
-# because it runs the whole `tests/` tree) calls
-# `_pytest_collected_count(apps/reviewer-ui)`, and that helper asserts
-# `<service>/.venv/bin/python` exists before it will count anything. So without
-# this venv the gate already failed -- just four minutes later, inside a unit
-# test, with a message about a contract count rather than about a missing
-# prerequisite. Measured, not assumed: the helper's venv assertion is
-# `_pytest_collected_count` in tests/unit/test_telemetry_contract_counts.py and
-# the reviewer-ui row is its `_PER_SERVICE_SUITES` entry. (Those were cited by
-# line number until M4 Task 4 and both numbers had already drifted — the row had
-# moved from :296 to :312 — so they are cited by name now, which is the one form
-# that survives an edit to the file above it.) Its own suite is run below
-# alongside the rest.
-#
-# No counts in this comment. It said "its own 50-test suite ... alongside the
-# other six", then M4 Task 4 updated the 50 to 56 and left "the other six"
-# in the same sentence while adding the seventh other suite 236 lines below.
-# docs/telemetry-contract.md's per-service row is the one place the figures
-# live and tests/unit/test_telemetry_contract_counts.py re-measures it.
-#
-# `platform/eval-scorer` joins the loop in M4 Task 4, the task that creates it,
-# rather than a milestone later. The two services before it were both added
-# late, both for the same stated reason, and both times the gap meant a suite
-# that nothing ran: the same `_pytest_collected_count` helper re-measures its
-# published per-service row, so without this line the gate would fail inside a
-# unit test about a contract count rather than here, about a missing
-# prerequisite.
+# * `platform/policy-decision-service` -- `agents/settlement-agent`'s
+#   `tests/test_policy_deny_contract.py` imports `pds.rules` and `pds.server`,
+#   which import the git-ignored generated stub `ext_mcp_pb2`, so the gate
+#   cannot run without the PDS being set up regardless of this check; the
+#   stubs themselves are generated below, and the PDS's own suite is run
+#   alongside the rest.
+# * `apps/reviewer-ui` and `platform/eval-scorer` -- `tests/unit/
+#   test_telemetry_contract_counts.py` (which Step 2/2 below runs, since it
+#   runs the whole `tests/` tree) calls `_pytest_collected_count` against
+#   each service's directory, and that helper asserts
+#   `<service>/.venv/bin/python` exists before it will count anything.
+#   Without the venv the gate would fail anyway, minutes later, inside a unit
+#   test about a contract count rather than about a missing prerequisite.
+#   docs/telemetry-contract.md's per-service row publishes each suite's
+#   count, and that same test module re-measures it -- not restated here.
 for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui platform/eval-scorer; do
   [[ -x "$ROOT/$svc/.venv/bin/python" ]] || {
     echo -e "${RED}Error: $ROOT/$svc/.venv not found.${NC}" >&2
@@ -92,14 +60,14 @@ for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platfo
     exit 1
   }
 done
-# Whole-branch review C1: `platform/backstage`'s own jest suites -- six
-# autonomy-contract plugin test files plus the two scaffold-default suites --
-# were run by NOTHING. `_jest_test_count` in
-# tests/unit/test_telemetry_contract_counts.py now re-measures the ninth
-# `_PER_SERVICE_SUITES` row against `backstage-cli repo test`'s own count, the
-# same contract every row above keeps, so this checks the same prerequisite
-# the same way: fail here, at a clear missing-toolchain message, rather than
-# four minutes later inside a unit test about a contract count.
+# `platform/backstage`'s own jest suites -- six autonomy-contract plugin test
+# files plus the two scaffold-default suites -- need `node_modules` in place
+# before `backstage-cli repo test` can run. `_jest_test_count` in
+# tests/unit/test_telemetry_contract_counts.py re-measures that suite's row
+# against `backstage-cli repo test`'s own count, the same contract every row
+# above keeps, so this checks the same prerequisite the same way: fail here,
+# at a clear missing-toolchain message, rather than later inside a unit test
+# about a contract count.
 [[ -x "$ROOT/platform/backstage/node_modules/.bin/backstage-cli" ]] || {
   echo -e "${RED}Error: $ROOT/platform/backstage/node_modules not found.${NC}" >&2
   echo "Create it: (cd platform/backstage && yarn install)" >&2
@@ -108,42 +76,26 @@ done
 command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1; }
 kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
   echo -e "${RED}Error: cannot reach the 'kind-northstar' cluster.${NC}" >&2
-  # M2.1 Task 1: this said `--stage 1` until Cilium arrived. Following that
-  # after a cluster loss rebuilds on kindnet, silently reverting the CNI this
-  # gate's own trace assertions exist to verify — and the stage-2 kindnet
-  # guard would then refuse, but only after a second delete. `--stage 1` and
-  # `--stage 2` are both still supported; they are just no longer what this
-  # repo's own instructions should point a reader at.
-  #
-  # M3 Task 5B: and it said `--stage 2` until now, which is the SAME defect
-  # one stage later and with a worse failure. Stage 3 is the current cluster,
-  # and the port loop immediately below requires five ports including
-  # reviewer-ui's 8081 — a workload no stage-2 cluster has. So an operator who
-  # followed this line rebuilt at stage 2 and then failed the very next check,
-  # on a component this script had just told them not to install.
+  # Always names the current stage, never an older one: rebuilding at an
+  # older stage would silently revert the CNI this gate's own trace
+  # assertions exist to verify, and would come up without the workloads
+  # (reviewer-ui, OpenSearch, ...) the checks below require -- so an operator
+  # following an older instruction would just fail the very next check, on a
+  # component this script had just told them not to install.
   # tests/unit/test_stage2_cilium_config.py's
-  # `test_no_operator_facing_instruction_still_points_at_an_older_stage` now
-  # pins both numbers, so the M4 recurrence is caught by a test rather than by
-  # a reader.
-  #
-  # M4 Task 1 fix round 1: it recurred, and the guard caught it. This line
-  # said `--stage 3` after stage 4 became real; raising the guard's
-  # CURRENT_STAGE to 4 (ruling M4-R7) is what turned it red. Stage 4 is a
-  # superset of stage 3 -- same cluster config, plus OpenSearch -- so an
-  # operator following this still gets the reviewer-ui the port loop below
-  # requires, and also gets the OpenSearch the M4 assertions need.
+  # `test_no_operator_facing_instruction_still_points_at_an_older_stage`
+  # keeps this pinned to the current stage as a test rather than trusting a
+  # reader to notice it drifted.
   echo "Run ./scripts/setup-kind.sh --stage 5 first." >&2
   exit 1
 }
-# RULING M4-R9 (re-review finding N3): the gate must PROVE it is running on a
-# stage-4 cluster rather than be told so by a README.
+# The gate must PROVE it is running on a stage-4 cluster rather than be told
+# so by a README.
 #
-# tests/e2e/test_opensearch_trace_ingest.py is M4 Task 1's whole deliverable --
-# it is what catches a span silently failing to reach OpenSearch, which is the
-# defect that shipped at 955dd18 and that 119 green unit tests did not see. It
-# SKIPS on a coherently stage-3 cluster, deliberately: OpenSearch is a stage-4
-# component, and a test that failed for its absence would cry wolf on every
-# lower stage.
+# tests/e2e/test_opensearch_trace_ingest.py is what catches a span silently
+# failing to reach OpenSearch. It SKIPS on a coherently stage-3 cluster,
+# deliberately: OpenSearch is a stage-4 component, and a test that failed for
+# its absence would cry wolf on every lower stage.
 #
 # But a skip is invisible in a green gate. Run this gate on a stage-3 cluster
 # and it reports that file's every assertion as a skip, exit 0, with the checks
@@ -158,27 +110,26 @@ kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
 # here and that it is not conditional.
 kubectl --context kind-northstar -n observability get svc/opensearch-cluster-master >/dev/null 2>&1 || {
   echo -e "${RED}Error: svc/opensearch-cluster-master not found in the observability namespace.${NC}" >&2
-  echo "This cluster is below stage 4. The gate runs tests/e2e/test_opensearch_trace_ingest.py -- M4's trace-ingest guard -- and on a cluster without OpenSearch every one of its assertions SKIPs, so the gate would pass while proving nothing about them (ruling M4-R9)." >&2
+  echo "This cluster is below stage 4. The gate runs tests/e2e/test_opensearch_trace_ingest.py -- the trace-ingest guard -- and on a cluster without OpenSearch every one of its assertions SKIPs, so the gate would pass while proving nothing about them." >&2
   echo "Bring the cluster to stage 4. No recreate is needed: stage 4 runs on stage 3's cluster config unchanged." >&2
   echo "Run ./scripts/setup-kind.sh --stage 5 first." >&2
   exit 1
 }
 # The e2e/browser assertions below need all five ports up. Four are
 # `kubectl port-forward`s that die after any redeploy and simply need
-# re-establishing (A9); the fifth (reviewer-ui, M3 Task 5A) is normally kept
-# alive by kind's own host-port mapping instead (deploy/kind/stage3.yaml),
-# but the check below asks the same liveness question of it regardless —
-# check for that now, so a stale/missing port fails in a second, not after
-# minutes of test timeouts that look like a broken chain.
+# re-establishing; the fifth (reviewer-ui) is normally kept alive by kind's
+# own host-port mapping instead (deploy/kind/stage3.yaml), but the check
+# below asks the same liveness question of it regardless — check for that
+# now, so a stale/missing port fails in a second, not after minutes of test
+# timeouts that look like a broken chain.
 #
 # TWO checks per port, and the second one is the one that matters.
 # `lsof -sTCP:LISTEN` answers "is a socket bound", which is NOT the same
-# question. RULING R20 measured exactly this: a `kubectl port-forward` whose
-# target pod has been replaced keeps its listening socket open forever, and
-# three of four forwards were dead while `lsof` called all four healthy. So
-# until the M2.2 fix round (final-review finding 3) this block could pass on a
-# set of dead forwards and the gate would then spend minutes in e2e timeouts —
-# the precise outcome the paragraph above claims it prevents.
+# question: a `kubectl port-forward` whose target pod has been replaced
+# keeps its listening socket open forever -- measured directly: three of four
+# forwards were dead while `lsof` called all four healthy. `lsof` alone would
+# pass on a set of dead forwards, and the gate would then spend minutes in
+# e2e timeouts — the precise outcome the paragraph above exists to prevent.
 #
 # The liveness check is therefore an actual HTTP request through the forward,
 # which is what `tests/e2e/test_policy_denial.py::_claims_agent_alive` already
@@ -199,7 +150,7 @@ command_exists curl || { echo -e "${RED}curl is required (the port-forward liven
 # authentication or a session. The two agents serve their A2A agent card; the
 # ledger serves /healthz; payments-mcp answers /mcp with 400 and that is fine.
 #
-# M3 Task 5A: reviewer-ui joins this loop as the fifth port. Unlike the four
+# reviewer-ui joins this loop as the fifth port. Unlike the four
 # above (plain ClusterIP Services, each reached only through an ephemeral
 # `kubectl port-forward`), reviewer-ui's own Service is NodePort and
 # deploy/kind/stage3.yaml maps host port 8081 straight to it, so in the
@@ -221,27 +172,18 @@ for probe in \
   path="${rest#*:}"
   lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1 || {
     echo -e "${RED}Error: nothing is listening on port ${port} (${name}).${NC}" >&2
-    # M4 Task 1 (plan amendment A2): this used to hand the operator a
-    # `kubectl port-forward` line to assemble by hand, per-port -- exactly
-    # the ad-hoc pattern rulings R10 and R20 came from. The script the echo
-    # below now names owns every port-forward this demo needs (and
+    # scripts/start-demo.sh owns every port-forward this demo needs (and
     # re-verifies each one with this same lsof-then-curl shape), so the
-    # remedy is one command, not a line an operator has to get right five
-    # times. This file still creates nothing itself -- that division
-    # predates this milestone and is unchanged; only the remedy text below
-    # points somewhere new.
+    # remedy the echo below names is one command, not a line an operator has
+    # to assemble by hand and get right five times. This file still creates
+    # no port-forwards itself; only the remedy text below points at the
+    # script that does.
     #
-    # This comment used to claim that leaving the script's name out of it was
-    # what kept the guard honest -- "otherwise reverting only the echo below
-    # would still leave that guard green". Review finding F7: that was false
-    # as written. The remedy at the end of the `curl` branch below names the
-    # script too, so reverting *this* echo alone always left the old
-    # substring guard green regardless of what this comment said. The
-    # precaution is still worth keeping (a comment must not be able to satisfy
-    # a guard), but the guard is what was actually fixed:
-    # tests/unit/test_stage4_config.py now strips whole-line comments and
-    # requires BOTH remedies to name the script, so reverting either one goes
-    # red on its own.
+    # A comment must not be able to satisfy a guard: the remedy at the end of
+    # the `curl` branch below also names the script, and
+    # tests/unit/test_stage4_config.py strips whole-line comments and
+    # requires BOTH remedies to name it by their own text, so reverting
+    # either one goes red on its own.
     echo "Port-forwards die after a redeploy and need re-establishing: ./scripts/start-demo.sh (or re-run ./scripts/setup-kind.sh --stage 5 first if the cluster itself is gone)." >&2
     exit 1
   }
@@ -250,7 +192,7 @@ for probe in \
   # far past that and still a second per port in the worst case.
   curl -s -o /dev/null -m 5 "http://localhost:${port}${path}" || {
     echo -e "${RED}Error: port ${port} (${name}) is LISTENING but carries no request.${NC}" >&2
-    echo "This is a dead kubectl port-forward: its target pod was replaced, the socket stayed bound, and lsof still calls it healthy (ruling R20). Nothing here is broken in the cluster." >&2
+    echo "This is a dead kubectl port-forward: its target pod was replaced, the socket stayed bound, and lsof still calls it healthy. Nothing here is broken in the cluster." >&2
     echo "Re-establish every forward, verified live rather than merely bound: ./scripts/start-demo.sh" >&2
     exit 1
   }
@@ -262,30 +204,27 @@ echo -e "${BLUE}--- Step 1/2: Unit tests ---${NC}"
 # Generate the ExtMCP gRPC stubs FIRST, before any suite runs. Two suites below
 # need them and neither says so today:
 #   * platform/policy-decision-service/tests/ refuses to import without them
-#     (its conftest.py raises rather than skipping — ruling R22);
+#     (its conftest.py raises rather than skipping);
 #   * agents/settlement-agent/tests/test_policy_deny_contract.py imports
 #     pds.server, which imports ext_mcp_pb2, so it aborts at collection.
-# They are git-ignored on purpose (R22): proto/ext_mcp.proto is the single
-# source of truth and the Dockerfile runs this same script at image build time,
-# so committing the stubs would let the image and the repo disagree. Generating
-# them here — rather than committing them, and rather than the previous
-# arrangement of depending on them silently — is the whole of the fix for
-# final-review finding 1.
+# They are git-ignored on purpose: proto/ext_mcp.proto is the single source of
+# truth and the Dockerfile runs this same script at image build time, so
+# committing the stubs would let the image and the repo disagree. Generating
+# them here, rather than committing them, is what keeps the two from drifting.
 echo -e "${YELLOW}policy-decision-service: ExtMCP stubs (gen-stubs.sh)${NC}"
 (cd "$ROOT/platform/policy-decision-service" && ./gen-stubs.sh)
 
 echo -e "${YELLOW}payments-api (Go)${NC}"
-# 2026-09-11 (M3): was `GOTOOLCHAIN=local`. Retired, not weakened. `local`
-# means "whatever `go` PATH resolves to and nothing else", which made the
-# toolchain a property of the operator's machine rather than of this
-# repository -- and that coupling is exactly what docs/upstream-findings.md
-# Finding 11 recorded as the blocker to taking otel-go's fix ("adopting the
-# fix is a Go toolchain bump, not a module bump"). `go.mod` now carries an
-# explicit `toolchain go1.27.1` line, so `auto` resolves to that one exact
-# release on every machine; it does not float. The first run on a cold
-# machine fetches that toolchain once into the module cache and every run
-# after is offline (measured: `GOTOOLCHAIN=auto GOPROXY=off go test ./...
-# -list '.*'` exits 0 once it is cached).
+# `GOTOOLCHAIN=auto`, not `local`: `local` means "whatever `go` PATH resolves
+# to and nothing else", which would make the toolchain a property of the
+# operator's machine rather than of this repository -- the same coupling
+# docs/upstream-findings.md Finding 11 records as the blocker to taking
+# otel-go's fix ("adopting the fix is a Go toolchain bump, not a module
+# bump"). `go.mod` carries an explicit `toolchain go1.27.1` line, so `auto`
+# resolves to that one exact release on every machine; it does not float.
+# The first run on a cold machine fetches that toolchain once into the
+# module cache and every run after is offline (measured: `GOTOOLCHAIN=auto
+# GOPROXY=off go test ./... -list '.*'` exits 0 once it is cached).
 (cd "$ROOT/systems/payments-api" && GOTOOLCHAIN=auto go test ./...)
 
 echo -e "${YELLOW}payments-mcp${NC}"
@@ -297,62 +236,49 @@ echo -e "${YELLOW}settlement-agent${NC}"
 echo -e "${YELLOW}claims-agent${NC}"
 (cd "$ROOT/agents/claims-agent" && .venv/bin/python -m pytest tests -q)
 
-# The suite covering the component that makes the decision this whole milestone
-# is named for. Outside the gate until the M2.2 fix round; see the venv loop's
-# comment above and limitation 10 in docs/telemetry-contract.md.
+# The suite covering the component that makes the policy decision. See the
+# venv loop's comment above and limitation 10 in docs/telemetry-contract.md.
 echo -e "${YELLOW}policy-decision-service${NC}"
 (cd "$ROOT/platform/policy-decision-service" && .venv/bin/python -m pytest tests -q)
 
 echo -e "${YELLOW}customer-ui${NC}"
 (cd "$ROOT/apps/customer-ui" && npx vitest run)
 
-# M3 Task 5B: reviewer-ui, which was the last per-service suite still outside
-# the gate when it was added. Same shape as the PDS row above -- the venv is
-# required in the prerequisite loop, so reaching here means it exists, and the
-# suite is hermetic and sub-second, so this costs the gate nothing.
+# reviewer-ui. Same shape as the PDS row above -- the venv is required in the
+# prerequisite loop, so reaching here means it exists, and the suite is
+# hermetic and sub-second, so this costs the gate nothing.
 # docs/telemetry-contract.md's per-service row publishes every figure and
-# tests/unit/test_telemetry_contract_counts.py re-measures each of them, which
-# means this suite's count was gating before its assertions were.
-#
-# (Counts removed in M4 Task 4's fix round: "50 tests, 0.36s" was stale at 56
-# from M3, and "all seven figures" was falsified by the eighth row added eight
-# lines below this comment, in the same commit that left this one alone.)
+# tests/unit/test_telemetry_contract_counts.py re-measures each of them, so
+# no count is restated here.
 echo -e "${YELLOW}reviewer-ui${NC}"
 (cd "$ROOT/apps/reviewer-ui" && .venv/bin/python -m pytest tests -q)
 
-# M4 Task 4: the eighth per-service suite, added in the same task as the
-# service. Sub-second, and every test is either a pure function over a span
-# list or a request to a handler on an ephemeral port -- no cluster, no
-# collector, no OpenSearch, no model. (No count in this comment. The figure
-# lives in docs/telemetry-contract.md's per-service row, which
-# tests/unit/test_telemetry_contract_counts.py re-measures against the suite;
-# a second copy in a shell comment is only a way to be wrong somewhere nothing
-# checks, and this one said 106 the day the suite reached 128.) The
-# anti-vacuity half of M4 spec §7.4 lives here (tests/test_anti_vacuity.py):
-# the same trajectory with one call moved scores 1.0 and 0.0, so a scorer that
-# regressed to always-compliant reddens on every commit rather than at the next
-# live demo.
+# eval-scorer's own suite. Sub-second, and every test is either a pure
+# function over a span list or a request to a handler on an ephemeral port --
+# no cluster, no collector, no OpenSearch, no model. The count lives in
+# docs/telemetry-contract.md's per-service row, which
+# tests/unit/test_telemetry_contract_counts.py re-measures against the suite,
+# so it is not restated here. The anti-vacuity half lives in
+# tests/test_anti_vacuity.py: the same trajectory with one call moved scores
+# 1.0 and 0.0, so a scorer that regressed to always-compliant reddens on
+# every commit rather than at the next live demo.
 echo -e "${YELLOW}eval-scorer${NC}"
 (cd "$ROOT/platform/eval-scorer" && .venv/bin/python -m pytest tests -q)
 
-# Whole-branch review C1: the ninth per-service suite, and the third
-# recurrence of the exact defect this file's own comments have named twice
-# above -- a service shipped in deploy/k8s/ (backstage.yaml, M6 Task 1) whose
-# suite nothing ran. Six autonomy-contract plugin test files (evaluate,
+# backstage's own suite: six autonomy-contract plugin test files (evaluate,
 # k8sClient, router, telemetry, index, AutonomyContractPage) carry, among
-# other things, the jest guards for all four of Task 3's review-round
-# correctness fixes -- each was proven GREEN-to-RED exactly once, by hand, in
-# a transcript, and this line is what makes that a standing regression guard
-# instead of a one-time transcript. `CI=true` is NOT optional:
-# `backstage-cli repo test` is a thin wrapper over jest, and jest defaults to
-# watch mode without it -- found the hard way in the M6 Task 3 fix round, and
-# an unset `CI` here would hang the gate forever rather than fail it.
+# other things, the jest guards for its review-round correctness fixes -- each
+# was proven GREEN-to-RED once, by hand, and this line is what makes that a
+# standing regression guard instead of a one-time check. `CI=true` is NOT
+# optional: `backstage-cli repo test` is a thin wrapper over jest, and jest
+# defaults to watch mode without it, which would hang the gate forever rather
+# than fail it.
 echo -e "${YELLOW}backstage (jest)${NC}"
 (cd "$ROOT/platform/backstage" && CI=true node_modules/.bin/backstage-cli repo test --silent)
 
 echo ""
 echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included ---${NC}"
-# A22: the milestone's headline claim is that ONE trace spans the browser down
+# This system's headline claim is that ONE trace spans the browser down
 # to payments-api. The default pytest run skips tests/e2e/test_browser_root_span.py
 # entirely (it is gated behind RUN_BROWSER_TESTS=1, since it needs a real
 # Chromium via Playwright) — which would verify nothing about the top hop of
@@ -363,21 +289,21 @@ echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included 
 #
 # This also runs the whole `tests/` tree, not just `tests/e2e` — tests/unit/
 # pins the harness's own correctness (single-root/orphan detection, and the
-# A20a quiet-window timing the multi-service trace-completeness wait depends
-# on). A narrower `tests/e2e`-only invocation would silently drop harness
-# coverage the e2e assertions themselves rely on being correct.
+# quiet-window timing the multi-service trace-completeness wait depends on).
+# A narrower `tests/e2e`-only invocation would silently drop harness coverage
+# the e2e assertions themselves rely on being correct.
 #
-# M4 FINAL REVIEW, finding L2: a skip is invisible in a green gate, and until
-# now this gate acted on that for exactly one object -- the OpenSearch Service
-# it refuses to run without (ruling M4-R9). The pytest invocation itself
-# carried nothing that fails on a skip, while at least six modules running
-# inside it hold reachable `pytest.skip` calls on conditions the stage-4 check
-# does not cover (test_egress_policy.py, test_gateway_is_the_only_route.py,
-# test_gateway_config_drift.py, test_supervised.py, test_settlement_llm_trace.py
-# and the four M4 modules' cluster-reachability skips). Each is defensible on
-# its own; collectively, nothing stopped a future green gate that had silently
-# skipped a milestone's assertions. "Zero skips" was a property of one 2026-09-14
-# run, verified by grep after the fact. It is a property of the gate now.
+# A skip is invisible in a green gate. The stage-4 refusal above covers the
+# OpenSearch Service this gate refuses to run without, but the pytest
+# invocation itself carries nothing that fails on a skip, while several
+# modules running inside it hold reachable `pytest.skip` calls on conditions
+# that refusal does not cover (test_egress_policy.py,
+# test_gateway_is_the_only_route.py, test_gateway_config_drift.py,
+# test_supervised.py, test_settlement_llm_trace.py and the cluster-reachability
+# skips in the OpenSearch/Prometheus modules). Each is defensible on its own;
+# collectively, nothing would stop a green gate that had silently skipped an
+# assertion it exists to run. So "zero skips" is checked below as a property
+# of the gate, not merely verified once by hand after the fact.
 #
 # `tee` rather than a variable so the operator still watches it live, and
 # PIPESTATUS so pytest's own exit code survives the pipe -- under `set -e` a
@@ -408,7 +334,7 @@ SKIPPED=${SKIPPED:-0}
 if [[ "$SKIPPED" -ne 0 ]]; then
   echo "" >&2
   echo -e "${RED}The gate passed with ${SKIPPED} skipped test(s), which is a failure.${NC}" >&2
-  echo "A skip inside this gate is invisible in a green run: the milestone's" >&2
+  echo "A skip inside this gate is invisible in a green run: the gate's" >&2
   echo "assertions simply do not execute and the summary still says 'passed'." >&2
   echo "Every gated module is unskipped here by RUN_BROWSER_TESTS=1, and the" >&2
   echo "stage-4 refusal above covers the cluster, so a skip means a condition" >&2

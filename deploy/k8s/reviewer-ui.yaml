@@ -1,11 +1,11 @@
-# M3 Task 4: reviewer-ui, the HITL stage surface.
+# reviewer-ui: the HITL stage surface.
 #
 # Its own ServiceAccount, for the same reason settlement-agent.yaml's own
 # comment gives: without one this pod attests as
 # spiffe://northstar.local/ns/northstar-agents/sa/default, an identity a
 # policy cannot decide on. It is a REQUIREMENT here, not a nicety --
 # reviewer-ui must have a real SPIFFE ID of its own so the Policy Decision
-# Service's `unknown_caller` refusal (spec §7 criterion 7; Task 5's test) is
+# Service's `unknown_caller` refusal is
 # a decision about a real, distinct identity, not one that happens to match
 # some other workload's `default` by accident. It grants no RBAC and this pod
 # makes no Kubernetes API call. No new SPIRE registration is needed: the
@@ -42,7 +42,7 @@ metadata:
     app: reviewer-ui
     northstar.io/plane: agents
     northstar.io/owner: claims-team
-    # M6 Task 2: read by @backstage/plugin-kubernetes-backend's default
+    # Read by @backstage/plugin-kubernetes-backend's default
     # label selector (`backstage.io/kubernetes-id=<entity name>`), so this
     # Component's catalog entry (apps/reviewer-ui/catalog-info.yaml) shows
     # its live workload. Added to the Pod template below too -- the plugin
@@ -64,7 +64,7 @@ spec:
       serviceAccountName: reviewer-ui
       containers:
         - name: reviewer-ui
-          # A1: images go through the local registry, never `kind load`.
+          # Images go through the local registry, never `kind load`.
           image: localhost:5001/northstar/reviewer-ui:dev
           imagePullPolicy: Always
           env:
@@ -74,12 +74,12 @@ spec:
               value: http://otel-collector.observability.svc.cluster.local:4318
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
               value: http/protobuf
-            # Task 2's ledger listing/read routes, reached directly -- no MCP
+            # The ledger listing/read routes, reached directly -- no MCP
             # hop, no agentgateway, no Policy Decision Service. See
             # apps/reviewer-ui/ledger.py's module docstring for why.
             - name: PAYMENTS_API_URL
               value: http://payments-api.northstar-systems.svc.cluster.local:8080
-            # Task 3's colleague with higher approval authority. reviewer-ui's
+            # The colleague with higher approval authority. reviewer-ui's
             # only outbound A2A peer -- it holds no NORTHSTAR_ALLOWED_AGENTS
             # list of its own because it is a client to exactly one agent, not
             # a delegating one.
@@ -87,7 +87,7 @@ spec:
               value: http://senior-settlement-agent.northstar-agents.svc.cluster.local:9002
             - name: PORT
               value: "8080"
-            # M2.1 Task 4's socket path, mounted here for the narrower reason
+            # The Workload API socket path, mounted here for the narrower reason
             # this file's header comment gives: reading this workload's own
             # SPIFFE ID back, not presenting a JWT-SVID to anything.
             - name: SPIFFE_ENDPOINT_SOCKET
@@ -105,10 +105,10 @@ spec:
               path: /healthz
               port: 8080
             initialDelaySeconds: 2
-          # Both memory figures are measured, not guessed (M3 Task 5B, ruling
-          # R32). They replace `requests: 32Mi` / `limits: 64Mi`, which were
+          # Both memory figures are measured, not guessed. They replace
+          # `requests: 32Mi` / `limits: 64Mi`, which were
           # estimates and were wrong in the direction that looks like nothing:
-          # this pod OOMKilled three times during Task 5A's live testing
+          # this pod OOMKilled three times during load testing
           # (`kubectl get pod` restart count 3, and the container's own
           # `lastState.terminated` reads `exitCode: 137, reason: OOMKilled`),
           # self-recovered each time, and would have turned an ordinary gate

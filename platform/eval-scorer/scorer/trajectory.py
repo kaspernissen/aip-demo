@@ -8,11 +8,10 @@ testable without a cluster. `scorer/opensearch.py` adapts the wire format to
 this; this module never learns what a wire is.
 
 **Every constant below is a MEASURED span shape, not a predicted one.** They
-were read off this cluster's own `ss4o_traces-default-namespace` index on
-2026-09-13, by querying the two traces of one supervised `CLM-1842`
-settlement (trace ids `598983e3...` and `7722c5ab...`) and printing every
-document. The transcript is in this task's report. Three things that
-transcript settles, and that a reader would otherwise guess wrong:
+were read off this cluster's own `ss4o_traces-default-namespace` index, by
+querying the two traces of one supervised `CLM-1842` settlement (trace ids
+`598983e3...` and `7722c5ab...`) and printing every document. Three things
+that settles, and that a reader would otherwise guess wrong:
 
   * `resource.service.name` is `settlement-agent` for **both** settlement
     Deployments. The junior and the senior run the same image with the same
@@ -53,10 +52,10 @@ EXECUTE_APPROVED_SPAN = "settlement.execute_approved"
 #
 # The `policy.*` set is `platform/policy-decision-service/pds/telemetry.py`'s
 # own ATTRIBUTES tuple, minus `policy.decision.retryable`, which nothing here
-# reads. **Ruling M4-R10 applies to that one key and no other**: in OpenSearch
-# it is spelled `policy.decision_retryable`, because `policy.decision` is both
-# a leaf and a prefix and the index cannot hold both. Every other key below is
-# identical in OpenSearch, Jaeger and Dash0.
+# reads. That one key, and no other, is spelled differently in OpenSearch:
+# `policy.decision_retryable`, because `policy.decision` is both a leaf and a
+# prefix and the index cannot hold both. Every other key below is identical
+# in OpenSearch, Jaeger and Dash0.
 ATTR_DECISION = "policy.decision"
 ATTR_TOOL = "policy.tool.name"
 ATTR_CALLER = "policy.caller.spiffe_id"
@@ -64,16 +63,16 @@ ATTR_AMOUNT = "policy.request.amount"
 ATTR_CURRENCY = "policy.request.currency"
 ATTR_LIMIT = "policy.limit.amount"
 ATTR_AUTONOMY = "policy.autonomy.level"
-# M5 Task 5 / ruling M5-R6: the ruleset version the PDS resolved this
-# decision under, read off the SAME `policy.decision` span this module
-# already reads -- not from OpenSearch's `feature_flag.evaluation` log event,
-# which would make the score's correctness depend on Task 4's brand-new logs
-# pipeline rather than just its evidence. Measured 2026-09-14: absent on
-# every live decision today (`deploy/platform/openfeature/featureflag.yaml`
-# defines no flag `metadata` block, so `AutonomyResolution.version` is always
-# `None`; see `scorer/contract.py`'s module docstring for what that means for
-# scoring). A missing value is absent, never zero -- so this reads `None`
-# exactly like `ATTR_AMOUNT` and `ATTR_LIMIT` do below, not `""`.
+# The ruleset version the PDS resolved this decision under, read off the
+# SAME `policy.decision` span this module already reads -- not from
+# OpenSearch's `feature_flag.evaluation` log event, which would make the
+# score's correctness depend on the logs pipeline rather than just its
+# evidence. Measured: absent on every live decision today
+# (`deploy/platform/openfeature/featureflag.yaml` defines no flag `metadata`
+# block, so `AutonomyResolution.version` is always `None`; see
+# `scorer/contract.py`'s module docstring for what that means for scoring).
+# A missing value is absent, never zero -- so this reads `None` exactly like
+# `ATTR_AMOUNT` and `ATTR_LIMIT` do below, not `""`.
 ATTR_FLAG_VERSION = "feature_flag.version"
 
 ATTR_REVIEW_DECISION = "review.decision"
@@ -216,9 +215,8 @@ class Decision:
             amount=None if amount is None else float(amount),
             currency=str(attributes.get(ATTR_CURRENCY) or ""),
             limit=None if limit is None else float(limit),
-            # No `or ""` here, as of fix round 1 (C1) -- and none for
-            # `version` below either, for the reason this comment used to
-            # give only for `version`: collapsing an ABSENT
+            # No `or ""` here -- and none for `version` below either:
+            # collapsing an ABSENT
             # `policy.autonomy.level` into `""` made "no level recorded" and
             # "the empty-string level" the same value. `""` is falsy, so
             # `scores.py`'s mismatch check (`execution.autonomy and
@@ -372,12 +370,12 @@ class Trajectory:
         This is what "narrated the refusal" is observable AS. The narrative
         text itself never reaches a span -- `agents/settlement-agent/
         settlement.py::_record_refusal` passes it as an MCP tool *argument*,
-        and the M1 spike measured that agentgateway's CEL cannot see MCP tool
-        arguments at all (M1 spec §13) -- so no attribute anywhere in this
-        system carries it. What the trace does carry is the call that put it
-        in the ledger, which is the same call reviewer-ui reads it back from
-        and the same text the claimant's reply quotes. This scorer claims
-        exactly that and no more; see `score_narrated_the_refusal`.
+        and agentgateway's CEL cannot see MCP tool arguments at all -- so no
+        attribute anywhere in this system carries it. What the trace does
+        carry is the call that put it in the ledger, which is the same call
+        reviewer-ui reads it back from and the same text the claimant's
+        reply quotes. This scorer claims exactly that and no more; see
+        `score_narrated_the_refusal`.
         """
         seen_refusal = False
         after: list[Decision] = []

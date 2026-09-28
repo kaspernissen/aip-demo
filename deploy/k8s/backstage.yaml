@@ -1,27 +1,23 @@
-# M6 Task 1: Backstage, the view over the platform API this milestone puts a
-# UI on. Design: docs/superpowers/specs/2026-09-15-northstar-m6-golden-path-
-# design.md §3 (the shape), §4 (the security boundary).
+# Backstage: the view over the platform API.
 #
 # It lives in `northstar-platform`, with the gateway, SPIRE, the PDS and
 # eval-scorer, for the same reason all four of those do: platform machinery,
 # not a tool an agent may call and not an agent's own dependency. No agent
 # knows this exists.
 #
-# **This task grants READ-ONLY.** The ServiceAccount below carries the
-# Kubernetes-plugin's read RBAC (§4: "the Kubernetes plugin's read access and
-# the contract card's write access are two different ServiceAccounts"). The
-# SECOND ServiceAccount -- the one that can PATCH
-# featureflags.core.openfeature.dev -- is Task 3's, deliberately not this
-# task's, so the two grants are reviewed and can be revoked separately.
+# **The ServiceAccounts here are deliberately split.** The one below carries
+# only the Kubernetes-plugin's read RBAC. The SECOND ServiceAccount -- the one
+# that can PATCH featureflags.core.openfeature.dev -- is separate, so the two
+# grants are reviewed and can be revoked independently of each other.
 #
 # No SPIRE ClusterSPIFFEID is registered for this pod. Nothing Backstage does
 # is on the SPIFFE-verified path (it calls the Kubernetes API with this
 # ServiceAccount's own bearer token, not through agentgateway), so -- unlike
 # eval-scorer, which took one purely so the answer would be its own name if
-# something ever did check -- nothing here checks one either. Revisit if a
-# later task puts Backstage behind SPIRE-verified ingress.
+# something ever did check -- nothing here checks one either. Revisit if
+# Backstage is ever put behind SPIRE-verified ingress.
 ---
-# A dedicated ServiceAccount, for the same measured reason every workload in
+# A dedicated ServiceAccount, for the same reason every workload in
 # this repo has one (see deploy/k8s/eval-scorer.yaml's identical note): a pod
 # running as `default` attests as `.../sa/default`, an identity that verifies
 # perfectly and identifies nothing. This one additionally CARRIES RBAC, unlike
@@ -36,19 +32,17 @@ metadata:
     northstar.io/plane: platform
 ---
 # Read-only, cluster-scoped because the eight catalog components this
-# ServiceAccount's Kubernetes plugin will show (Task 2) span four namespaces --
+# ServiceAccount's Kubernetes plugin shows span four namespaces --
 # northstar-agents, northstar-tools, northstar-systems, northstar-platform --
 # and a catalog entry's owner does not always match the namespace Backstage
 # itself runs in. `get`/`list`/`watch` only: no `create`, `update`, `patch` or
-# `delete` anywhere in this Role, and no Secrets at all -- matching design §4's
-# "no access to Secrets ... beyond what the read-only Kubernetes plugin needs"
-# (the plugin needs none). ConfigMaps ARE included: Backstage's
+# `delete` anywhere in this Role, and no Secrets at all -- the plugin needs
+# none. ConfigMaps ARE included: Backstage's
 # @backstage/plugin-kubernetes-backend reads them by default alongside Pods,
 # Deployments, ReplicaSets, Services, HorizontalPodAutoscalers, Ingresses,
 # StatefulSets, LimitRanges, Jobs, CronJobs and Events -- the same default
-# object-type list upstream's docs publish -- which is what design §4 means by
-# "beyond what the plugin needs": this Role grants exactly that list, nothing
-# past it.
+# object-type list upstream's docs publish. This Role grants exactly that
+# list, nothing past it.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -63,17 +57,17 @@ rules:
       - services
       - configmaps
       - limitranges
-      # `resourcequotas` was MISSING until 2026-09-15, and it is the one gap in
-      # this list a user actually sees. `@backstage/plugin-kubernetes-backend`
-      # fetches LimitRange and ResourceQuota as a pair in its default object
-      # set; this list took the first and not the second, so every entity page
-      # rendered a red banner -- "There was a problem retrieving some
-      # Kubernetes resources for the entity: policy-decision-service ...
+      # `resourcequotas` sits alongside `limitranges`, not on its own:
+      # `@backstage/plugin-kubernetes-backend` fetches LimitRange and
+      # ResourceQuota as a pair in its default object set, so granting only
+      # the first makes every entity page render a red banner -- "There was a
+      # problem retrieving some Kubernetes resources for the entity:
+      # policy-decision-service ...
       # '/api/v1/namespaces/northstar-platform/resourcequotas', error:
-      # UNKNOWN_ERROR, status code: 403". Nothing was broken underneath it: the
+      # UNKNOWN_ERROR, status code: 403". Nothing is broken underneath it: the
       # plugin degrades to a warning and still renders every other resource,
-      # which is exactly why no test and no health check ever went red. It was
-      # found by opening the page.
+      # which is exactly why no test and no health check would catch a
+      # missing grant here -- only opening the page does.
       #
       # Read-only like every other rule here, and still no Secrets.
       - resourcequotas
@@ -119,10 +113,10 @@ rules:
       - jobs
       - cronjobs
     verbs: ["get", "list", "watch"]
-  # No metrics.k8s.io rule: this cluster installs no metrics-server (verified
-  # 2026-09-15, `kubectl get apiservices` -- no such APIService registered),
-  # so granting it would be RBAC for an API nothing here serves. Add it in the
-  # same change that adds metrics-server, not before.
+  # No metrics.k8s.io rule: this cluster installs no metrics-server (`kubectl
+  # get apiservices` shows no such APIService registered), so granting it
+  # would be RBAC for an API nothing here serves. Add it in the same change
+  # that adds metrics-server, not before.
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -140,16 +134,15 @@ subjects:
     name: backstage
     namespace: northstar-platform
 ---
-# M6 Task 3: the SECOND ServiceAccount, promised by Task 1's own comment above
-# and by design §4. This is the write grant -- "Backstage can see the
-# cluster" (backstage-read-only, above) and "Backstage can change policy"
-# (this) are separate objects, bound to separate ServiceAccounts, so either
-# can be revoked without touching the other. M6-R5 (progress ledger): this
-# ServiceAccount is the card's OWN read *and* write -- it is not layered on
-# top of the read-only ClusterRole, and the read-only ClusterRole must never
-# be widened to give the card its `get`. Widening it would put the narrow
-# grant's read behind the broad grant's identity, defeating the separation
-# design §4 asks for.
+# The SECOND ServiceAccount, promised by the header comment above. This is
+# the write grant -- "Backstage can see the cluster" (backstage-read-only,
+# above) and "Backstage can change policy" (this) are separate objects, bound
+# to separate ServiceAccounts, so either can be revoked without touching the
+# other. This ServiceAccount is the card's OWN read *and* write -- it is not
+# layered on top of the read-only ClusterRole, and the read-only ClusterRole
+# must never be widened to give the card its `get`. Widening it would put the
+# narrow grant's read behind the broad grant's identity, defeating the
+# separation this split is for.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -162,10 +155,10 @@ metadata:
 # Namespaced Role, not ClusterRole: the one resource this grant ever touches
 # lives in `northstar-platform` and nowhere else, so a namespaced Role is the
 # tighter of the two, unlike backstage-read-only's ClusterRole (which needs
-# cluster scope because the catalog it reads spans four namespaces). Design
-# §4, verbatim: "get/list/patch on featureflags ... restricted by
-# resourceNames to northstar-autonomy alone. Not `*`, not cluster-wide, not
-# other verbs. No `delete`."
+# cluster scope because the catalog it reads spans four namespaces).
+# `get`/`list`/`patch` on featureflags only, restricted by `resourceNames` to
+# `northstar-autonomy` alone -- not `*`, not cluster-wide, no other verbs, no
+# `delete`.
 #
 # `list` is granted alongside `get` because @kubernetes/client-node's
 # CustomObjectsApi -- used here exactly as the read-only ClusterRole's own
@@ -231,15 +224,14 @@ subjects:
 # running pod's own RBAC could use to go discover or read *other* Secrets. A
 # ServiceAccount that could list arbitrary Secrets and one that has this one
 # named Secret's contents handed to it by the kubelet are different
-# privileges, and design §4's "no access to Secrets" is about the former --
+# privileges: "no access to Secrets" is about the former --
 # tests/unit/test_autonomy_writer_rbac.py asserts neither Role in this file
 # ever grants it.
 #
 # THAT IS ONLY THE FAVOURABLE HALF of this trade-off, and a comment that
 # states only the favourable half is worse than no comment -- it reads as
-# having weighed the question when it has not (M6 task-3 review, M1/M6-R10;
-# full accounting in design §10). The unfavourable half, measured by
-# decoding both tokens live in the running pod: this Secret's token has NO
+# having weighed the question when it has not. The unfavourable half, measured
+# by decoding both tokens live in the running pod: this Secret's token has NO
 # `exp`, NO `aud`, and NO binding to a pod or object -- unlike the pod's own
 # kubelet-projected token (backstage-read-only's, mounted automatically),
 # which has all three and rotates. Both token files sit `0644` in the SAME
@@ -251,14 +243,11 @@ subjects:
 # that can patch `northstar-autonomy` forever, from anywhere -- surviving
 # this pod's deletion and a fix to whatever let the compromise happen -- and
 # nothing here monitors for that Secret being used. The more dangerous grant
-# got the WEAKER credential mechanism, not a matching one. The structural
+# gets the WEAKER credential mechanism, not a matching one. The structural
 # fix -- a separate Deployment running as `backstage-autonomy-writer`,
 # called over HTTP from this one, so a Backstage compromise yields the
-# ability to ASK for the write rather than a credential to KEEP -- was not
-# built. That is carried as recorded debt (design §10), not a judgment that
-# the trade-off is fine: Kasper is time-pressured and this milestone is
-# scoped lean. Read design §10 before repeating only the first half of this
-# comment elsewhere.
+# ability to ASK for the write rather than a credential to KEEP -- is not
+# built here. That is a known gap, not a judgment that the trade-off is fine.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -301,7 +290,7 @@ spec:
           image: localhost:5001/northstar/backstage:dev
           imagePullPolicy: Always
           env:
-            # M6 Task 3: where the autonomy-contract backend plugin
+            # Where the autonomy-contract backend plugin
             # (platform/backstage/packages/backend/src/plugins/autonomyContract)
             # finds the SECOND ServiceAccount's credential -- see the
             # backstage-autonomy-writer-token Secret and its mount below.
@@ -320,12 +309,12 @@ spec:
             # cluster sets (deploy/k8s/eval-scorer.yaml, deploy/k8s/policy-
             # decision-service.yaml, ...), read by
             # plugins/autonomyContract/telemetry.ts through the standard
-            # `OTEL_EXPORTER_OTLP_*` names. This did not exist before Task 3:
-            # Task 1's Backstage made no decision and changed nothing, so it
-            # emitted nothing. The card's write does both, so it is the first
-            # thing in this manifest with anything to say to the collector --
-            # design §4's auditability clause, discharged as telemetry rather
-            # than left as a claim in a comment.
+            # `OTEL_EXPORTER_OTLP_*` names. The read-only Kubernetes plugin
+            # makes no decision and changes nothing, so it emits nothing; the
+            # card's write does both, so it is the one thing in this manifest
+            # with anything to say to the collector -- the auditability this
+            # platform requires, discharged as telemetry rather than left as a
+            # claim in a comment.
             - name: OTEL_SERVICE_NAME
               value: backstage
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -355,7 +344,7 @@ spec:
               port: 7007
             initialDelaySeconds: 20
             periodSeconds: 10
-          # Measured 2026-09-15 against this pod, warm and idle 30s after
+          # Measured against this pod, warm and idle 30s after
           # rollout (this cluster has no metrics-server, so `kubectl top` is
           # unavailable -- measured instead with
           # `kubectl exec deploy/backstage -- cat /proc/1/status` and
@@ -380,7 +369,7 @@ spec:
             # one route that needs it. It is a second credential sitting
             # beside the pod's own automounted backstage-SA token, not a
             # replacement for it -- the Kubernetes plugin keeps using the
-            # pod's own (read-only) identity exactly as Task 1 left it.
+            # pod's own (read-only) identity, unchanged.
             - name: autonomy-writer-token
               mountPath: /var/run/secrets/northstar/autonomy-writer
               readOnly: true
@@ -390,8 +379,8 @@ spec:
             secretName: backstage-autonomy-writer-token
             # `token` and `ca.crt` are populated onto this Secret by the
             # cluster's own service-account-token controller once it exists
-            # (verified live, 2026-09-15: both keys present within a few
-            # seconds of `kubectl apply`) -- nothing here writes them.
+            # (both keys are present within a few seconds of
+            # `kubectl apply`) -- nothing here writes them.
             optional: false
 ---
 apiVersion: v1

@@ -1,14 +1,11 @@
 """A2A delegation.
 
-Which agents may be delegated to is configuration, never discovery. In M1 that
-configuration is an environment variable; in M2 these become agentgateway route
-names enforced at the gateway. M6 does NOT generate this from a Crossplane
-`Agent` CRD -- that was the plan when this docstring was written, but M5's own
-spec dropped Crossplane and Argo CD in favour of Backstage over the
-`FeatureFlag` resource it introduced (docs/superpowers/specs/
-2026-09-15-northstar-m6-golden-path-design.md §1), and M6 does not reintroduce
-a CRD layer here either. This allow-list is unchanged by M6: it is still the
-M2-era environment variable, read by `allowed_agents_from_env()` below.
+Which agents may be delegated to is configuration, never discovery: this
+allow-list is an environment variable, read by `allowed_agents_from_env()`
+below, and enforced as agentgateway route names at the gateway. It is not
+generated from a Crossplane `Agent` CRD or any other generated source --
+Backstage and its `FeatureFlag` resource own catalog and rollout concerns
+elsewhere; this module only ever reads the env var.
 
 No spans are created here by hand. `bootstrap.py`'s HTTPXClientInstrumentor
 instruments the `httpx.AsyncClient` this module builds, emitting the CLIENT

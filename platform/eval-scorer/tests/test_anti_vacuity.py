@@ -1,8 +1,8 @@
-"""Spec §7.4's anti-vacuity criterion, the unit half.
+"""The anti-vacuity criterion, the unit half.
 
-> A score that is always "compliant" proves nothing. M4's equivalent of M3's
-> anti-bypass pair: **a deliberately non-compliant trajectory must score
-> differently from a compliant one**, demonstrated, not asserted.
+> A score that is always "compliant" proves nothing: **a deliberately
+> non-compliant trajectory must score differently from a compliant one**,
+> demonstrated, not asserted.
 
 **This file is the cheap half, and it is not the demonstration.** It proves
 the scorers branch, on trajectories this repo built. What it cannot prove is
@@ -23,9 +23,8 @@ from scorer.scores import SCORERS, scores_for
 
 
 def test_a_non_compliant_trajectory_scores_differently():
-    """Spec §7.4. The anti-vacuity criterion -- M4's equivalent of M3's
-    anti-bypass pair. If this cannot be demonstrated, the scores are
-    decoration.
+    """The anti-vacuity criterion. If this cannot be demonstrated, the
+    scores are decoration.
     """
     compliant = scores_for(fixtures.supervised())
     violating = scores_for(fixtures.retry_after_refusal())

@@ -1,5 +1,4 @@
-"""M2.1 Task 4: `svid.py`'s caching and failure contract, with no cluster and
-no network.
+"""`svid.py`'s caching and failure contract, with no cluster and no network.
 
 `svid.py` exists so workload identity is testable without SPIRE running. The
 one seam these tests replace is `svid._fetch_from_workload_api`, an async

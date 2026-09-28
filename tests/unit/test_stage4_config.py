@@ -1,58 +1,43 @@
-"""M4 Task 1: guards for what actually shipped for stage 4.
+"""Guards for what stage 4 actually ships.
 
-Plan amendment A1: the human partner declined a cluster recreate on
-2026-09-12 -- Dashboards' fifth host port mapping can only be added at cluster
-CREATION (`extraPortMappings`), the same create-time rule that already governs
-`disableDefaultCNI` (see tests/unit/test_stage2_cilium_config.py). So stage 4
-runs on stage 3's cluster config unchanged, and OpenSearch Dashboards is
-reached by port-forward via `scripts/start-demo.sh` (plan amendment A2).
+Stage 4 has no stage4.yaml: Dashboards' host port mapping can only be added
+at cluster CREATION (`extraPortMappings`), the same create-time rule that
+already governs `disableDefaultCNI` (see
+tests/unit/test_stage2_cilium_config.py). So stage 4 runs on stage 3's
+cluster config unchanged, and OpenSearch Dashboards is reached by
+port-forward via `scripts/start-demo.sh`.
 
-**Fix round 1 rewrote most of this file, because two of its three original
-assertions were inert against the edit they claimed to catch.** That is the
-defect class this repo keeps producing, and the review found it here twice:
+Several guards here bind to a script's actual content rather than a loose
+substring, because a filename or remedy text can appear in help text,
+comments or an unrelated `echo` and stay green through the edit it was meant
+to catch:
 
-* `"stage3.yaml" in setup` (finding F6) could not distinguish the three
-  load-bearing lines that map `--stage 4` onto stage 3's kind config from the
-  four other places the filename appears -- help text, two comments and an
-  `echo`. Deleting the load-bearing lines left it green while `--stage 4`
-  stopped being able to create a cluster at all. It now binds to the
-  `STAGE -eq 4` -> `stage3.yaml` mapping itself, in the comment-stripped
+* `test_stage_4_reuses_the_stage_3_cluster_config` binds to the
+  `STAGE -eq 4|5|6` -> `stage3.yaml` mapping itself, in the comment-stripped
   script.
-* `"start-demo.sh" in smoke` (finding F7) was satisfied by either of the two
-  remedies in `smoke-test.sh`, so reverting one of them alone left it green.
-  It now requires both, by their own text, with whole-line comments stripped
-  so no comment can supply either.
+* `test_the_port_forward_remedy_points_at_the_script` requires BOTH of
+  `smoke-test.sh`'s two remedies (the lsof branch and the curl branch) to
+  name `start-demo.sh`, matched against a comment-stripped file so no comment
+  can supply either.
 
-Two guards are new in the fix round:
-
-* `test_below_stage_4_the_collector_config_names_no_opensearch` (finding F10,
-  ruling M4-R8) runs `setup-kind.sh`'s own sed program -- read out of the
-  script, so the two cannot drift -- and checks the result is a valid
-  collector config that still exports traces to Jaeger and names OpenSearch
-  nowhere.
+* `test_below_stage_4_the_collector_config_names_no_opensearch` and
+  `test_below_stage_4_the_collector_config_names_no_prometheus_exporter` run
+  `setup-kind.sh`'s own sed program -- read out of the script, so the two
+  cannot drift -- and check the result is a valid collector config that still
+  exports traces to Jaeger, keeps the `prometheus/spire` receiver, and names
+  neither OpenSearch nor a Prometheus exporter anywhere below stage 4.
 * `test_the_opensearch_compat_processor_covers_every_colliding_attribute`
-  (finding F1) derives the colliding attribute keys from the PDS's own
-  declared attribute list, so a second collider added later fails a unit test
-  instead of a bulk request.
-
-`test_start_demo_skips_stage_gated_surfaces_that_do_not_exist` (finding F8) is
-behavioural rather than textual: it runs the real script against fake
-`kubectl`/`lsof`/`curl` and asserts on what it did.
-
-**M4 Task 2 and its own fix round widened the file's subject from OpenSearch to
-"whatever is stage-4-only", which is now two backends rather than one.** Task 2
-added `prometheus` to the absent-services cases above, and its fix round added
-three guards for findings F1 and F2:
-
-* `test_below_stage_4_the_collector_config_names_no_prometheus_exporter` --
-  ruling M4-R8's *metrics* half, which had been unenforced. The strip was
-  correct and nothing said so, which is the state that lets the next
-  regression through silently.
-* `test_the_strip_message_names_every_backend_it_drops` -- the operator-facing
-  `echo` still described a one-backend strip after the commit that made it a
-  two-backend one. The list it must name is now DERIVED from the configs, so
-  the third bracketed region reddens a test instead of ageing a sentence.
-* (the third is the second parametrisation of the first.)
+  derives the colliding attribute keys from every first-party service's own
+  source (not just the PDS's), so a second collider added anywhere fails a
+  unit test instead of a bulk request.
+* `test_start_demo_skips_stage_gated_surfaces_that_do_not_exist` is
+  behavioural rather than textual: it runs the real script against fake
+  `kubectl`/`lsof`/`curl` and asserts on what it did.
+* `test_the_strip_message_names_every_backend_it_drops` and
+  `test_the_stage_4_completion_message_names_everything_stage_4_installs`
+  derive the operator-facing text each guard checks from the script's own
+  config and install list, so a strip or an install that grows silently
+  reddens a test instead of ageing a sentence.
 
 The live end-to-end assertions -- span parity between Jaeger and OpenSearch,
 the decision span being queryable, and Jaeger keeping the canonical attribute
@@ -85,7 +70,7 @@ COLLECTOR_CONFIGS = [
 ]
 PDS_TELEMETRY = REPO_ROOT / "platform/policy-decision-service/pds/telemetry.py"
 
-# M4 Task 3's deliverable, and the three names every other reference to it
+# The evidence-view export, and the three names every other reference to it
 # derives from rather than restates.
 EVIDENCE_NDJSON = REPO_ROOT / "deploy/observability/dashboards/evidence.ndjson"
 EVIDENCE_DASHBOARD_ID = "northstar-evidence"
@@ -111,64 +96,53 @@ def _without_comments(path: Path) -> str:
     )
 
 
-# --- Amendment A1: no stage4.yaml, and --stage 4 still creates a cluster ----
+# --- No stage4.yaml, and --stage 4 still creates a cluster ------------------
 
 
 def test_stage_4_reuses_the_stage_3_cluster_config():
-    """Amendment A1: no stage4.yaml exists, deliberately, and `--stage 4` is
-    wired to stage 3's kind config.
+    """No stage4.yaml exists, deliberately, and `--stage 4` is wired to stage
+    3's kind config.
 
-    The human partner declined a cluster recreate on 2026-09-12, so stage 4
+    Dashboards' host port mapping can only be added at cluster CREATION time
+    (`extraPortMappings`), so a cluster recreate is out of scope: stage 4
     runs on stage 3's cluster and reaches OpenSearch Dashboards by
-    port-forward. A stage4.yaml appearing later means someone recreated the
-    cluster without asking -- which is a standing constraint, not a preference.
+    port-forward instead. A stage4.yaml appearing later means someone
+    recreated the cluster without accounting for that constraint.
 
-    The second assertion is the one finding F6 rewrote. The edit it has to
-    catch is the deletion of the conditional in `setup-kind.sh` that maps
-    `--stage 4` onto `deploy/kind/stage3.yaml`. Delete it and `--stage 4`
-    falls through to `deploy/kind/stage${STAGE}.yaml`, fails the
-    `[[ -f ... ]]` check with "deploy/kind/stage4.yaml not found", and cannot
-    bring a cluster up at all. The old assertion -- `"stage3.yaml" in setup`
-    -- stayed green through that edit, because the filename also appears in
-    the help text, in two comments and in an `echo`. This one binds to the
-    conditional and the assignment together, in the comment-stripped script.
+    The second assertion binds to the actual conditional and assignment
+    together, in the comment-stripped script, rather than to a loose
+    `"stage3.yaml" in setup` substring test -- the filename also appears in
+    the help text, in comments and in an `echo`, so a substring test can stay
+    green while the mapping itself is deleted: `--stage 4` would then fall
+    through to `deploy/kind/stage${STAGE}.yaml`, fail the `[[ -f ... ]]`
+    check with "deploy/kind/stage4.yaml not found", and be unable to bring a
+    cluster up at all.
 
-    **M5 Task 2 widened both halves to stage 5, for the same amendment-A1
-    reasoning stage 4 already established: nothing that task installs needs a
-    new host port either.** The conditional this test binds to used to be a
-    bare `if [[ "${STAGE}" -eq 4 ]]; then`; M5 made it
-    `if [[ "${STAGE}" -eq 4 || "${STAGE}" -eq 5 ]]; then`.
-
-    **M6 Task 1 widens it again, to stage 6: Backstage is reached by
-    port-forward, same as every platform component here, so it needs no new
-    host port either.** The conditional is now
-    `if [[ "${STAGE}" -eq 4 || "${STAGE}" -eq 5 || "${STAGE}" -eq 6 ]]; then`,
-    and this test's regex is written to match that combined form
-    specifically, not a generic `-eq 4` fragment -- so a future edit that
-    split it back into separate `if` blocks, or that dropped any one
-    disjunct while leaving the others, reddens here rather than passing on a
-    coincidental substring match.
+    Stages 5 and 6 share the same reasoning and the same cluster config --
+    nothing either stage installs needs a new host port, so the conditional
+    covers all three: `if [[ "${STAGE}" -eq 4 || "${STAGE}" -eq 5 ||
+    "${STAGE}" -eq 6 ]]; then`. This test's regex matches that combined form
+    specifically, not a generic `-eq 4` fragment, so an edit that split it
+    back into separate `if` blocks, or that dropped any one disjunct while
+    leaving the others, reddens here rather than passing on a coincidental
+    substring match.
     """
     assert not (REPO_ROOT / "deploy/kind/stage4.yaml").exists(), (
         "deploy/kind/stage4.yaml exists. Stage 4 was deliberately built on "
-        "stage 3's cluster config (plan amendment A1) because extraPortMappings "
-        "is create-time only and the recreate was declined. If a recreate has "
-        "since been authorised, delete this test in the same commit that adds "
-        "the file, and say who authorised it."
+        "stage 3's cluster config because extraPortMappings is create-time "
+        "only. If a recreate has since been authorised, delete this test in "
+        "the same commit that adds the file, and say who authorised it."
     )
     assert not (REPO_ROOT / "deploy/kind/stage5.yaml").exists(), (
-        "deploy/kind/stage5.yaml exists. M5 Task 2 deliberately built stage 5 "
-        "on stage 3's cluster config too (nothing it installs needs a new "
-        "host port) -- the same amendment-A1 reasoning stage 4 already "
-        "established. If a recreate has since been authorised, delete this "
-        "test in the same commit that adds the file, and say who authorised "
-        "it."
+        "deploy/kind/stage5.yaml exists. Stage 5 was deliberately built on "
+        "stage 3's cluster config too (nothing it installs needs a new host "
+        "port). If a recreate has since been authorised, delete this test in "
+        "the same commit that adds the file, and say who authorised it."
     )
     assert not (REPO_ROOT / "deploy/kind/stage6.yaml").exists(), (
-        "deploy/kind/stage6.yaml exists. M6 Task 1 deliberately built stage 6 "
-        "on stage 3's cluster config too -- Backstage is reached by "
-        "port-forward, not a kind host port, the same amendment-A1 reasoning "
-        "stages 4 and 5 already established. If a recreate has since been "
+        "deploy/kind/stage6.yaml exists. Stage 6 was deliberately built on "
+        "stage 3's cluster config too -- Backstage is reached by "
+        "port-forward, not a kind host port. If a recreate has since been "
         "authorised, delete this test in the same commit that adds the file, "
         "and say who authorised it."
     )
@@ -181,39 +155,37 @@ def test_stage_4_reuses_the_stage_3_cluster_config():
         setup,
     )
     assert mapping, (
-        "scripts/setup-kind.sh no longer maps `--stage 4`, `--stage 5` and "
+        "scripts/setup-kind.sh does not map `--stage 4`, `--stage 5` and "
         "`--stage 6` onto deploy/kind/stage3.yaml via one combined condition. "
         "Without that mapping KIND_CONFIG falls through to "
-        "deploy/kind/stage${STAGE}.yaml, which amendment A1 says must never "
-        "exist for any of the three, so the affected `--stage N` cannot "
-        "create a cluster at all -- it dies at the "
-        "`[[ -f \"$KIND_CONFIG\" ]]` check. (This assertion used to be a bare "
-        "`\"stage3.yaml\" in setup`, which five other mentions of the "
-        "filename kept green through exactly that deletion: review "
-        "finding F6.)"
+        "deploy/kind/stage${STAGE}.yaml, which must never exist for any of "
+        "the three, so the affected `--stage N` cannot create a cluster at "
+        "all -- it dies at the `[[ -f \"$KIND_CONFIG\" ]]` check. (A loose "
+        "`\"stage3.yaml\" in setup` substring test would stay green through "
+        "that deletion, because the filename appears elsewhere too -- bind "
+        "to the actual mapping instead.)"
     )
 
 
-# --- Amendment A2: the port-forward remedy names the script ----------------
+# --- The port-forward remedy names the script -------------------------------
 
 
 def test_the_port_forward_remedy_points_at_the_script():
-    """Step A2: BOTH of smoke-test.sh's remedies tell the operator to run
-    start-demo.sh.
+    """BOTH of smoke-test.sh's remedies tell the operator to run start-demo.sh.
 
     `smoke-test.sh` fails a port two different ways -- "nothing is listening"
-    (lsof) and "LISTENING but carries no request" (curl, ruling R20) -- and
-    each has its own remedy line. Finding F7: the original assertion was
-    `"start-demo.sh" in smoke`, so reverting *either* remedy on its own left
-    it green, and only the mutation that replaced every occurrence went red.
-    Both are required here, matched by the text of the remedy that carries
-    them, against a comment-stripped file so no comment can supply either.
+    (lsof) and "LISTENING but carries no request" (curl) -- and each has its
+    own remedy line. A loose `"start-demo.sh" in smoke` substring test would
+    stay green if either remedy alone dropped the name, since the other still
+    carries it. Both are required here, matched by the text of the remedy
+    that carries them, against a comment-stripped file so no comment can
+    supply either.
     """
     smoke = _without_comments(SMOKE_TEST)
     remedies = {
         "the lsof branch (nothing is listening on that port)":
             "Port-forwards die after a redeploy and need re-establishing",
-        "the curl branch (bound but dead, ruling R20)":
+        "the curl branch (bound but dead)":
             "Re-establish every forward, verified live rather than merely bound",
     }
     for description, anchor in remedies.items():
@@ -227,15 +199,15 @@ def test_the_port_forward_remedy_points_at_the_script():
         assert "./scripts/start-demo.sh" in lines[0], (
             f"the remedy for {description} no longer names "
             "./scripts/start-demo.sh: {}\n"
-            "Assembling a `kubectl port-forward` line by hand is what rulings "
-            "R10 and R20 came from, and a remedy that names the script in only "
-            "one of the two branches is the half-inert guard review finding F7 "
-            "found.".format(lines[0].strip())
+            "Assembling a `kubectl port-forward` line by hand instead is "
+            "exactly what a script-naming remedy exists to prevent, and a "
+            "remedy that names the script in only one of the two branches is "
+            "a half-inert guard.".format(lines[0].strip())
         )
     assert START_DEMO.exists(), "scripts/start-demo.sh is referenced but missing"
 
 
-# --- Finding F10 / ruling M4-R8: no OpenSearch in the config below stage 4 --
+# --- No OpenSearch or Prometheus in the collector config below stage 4 -----
 
 
 def _stage4_strip_expression() -> str:
@@ -251,8 +223,7 @@ def _stage4_strip_expression() -> str:
         "scripts/setup-kind.sh no longer defines STAGE4_ONLY_STRIP, so below "
         "stage 4 it is applying the collector config whole -- which deploys a "
         "collector naming an OpenSearch AND a Prometheus that cluster does "
-        "not have (review finding F10, ruling M4-R8; the metrics half arrived "
-        "with M4 Task 2)"
+        "not have"
     )
     return match.group(1)
 
@@ -266,7 +237,7 @@ def test_setup_kind_strips_the_stage_4_regions_below_stage_4():
         "scripts/setup-kind.sh no longer branches on `STAGE -lt 4` around the "
         "collector ConfigMap assembly, so either every stage gets the "
         "stage-4-only regions -- the OpenSearch branch and the Prometheus "
-        "metrics exporter (finding F10) -- or no stage does"
+        "metrics exporter -- or no stage does"
     )
     assert re.search(
         r'sed "\$STAGE4_ONLY_STRIP" "\$COLLECTOR_CONFIG" > "\$COLLECTOR_CONFIG_APPLIED"',
@@ -299,9 +270,9 @@ def test_below_stage_4_the_collector_config_names_no_opensearch(config):
     assert "opensearch" not in stripped.lower(), (
         f"stripping the stage-4-only regions of {config.name} leaves an "
         "OpenSearch reference behind, so a stage-1/2/3 cluster would deploy a "
-        "collector exporting to a backend it does not have (finding F10). "
-        "Every OpenSearch-only region must sit between `# BEGIN stage-4-only` "
-        "and `# END stage-4-only`, including the single `- forward/opensearch` "
+        "collector exporting to a backend it does not have. Every "
+        "OpenSearch-only region must sit between `# BEGIN stage-4-only` and "
+        "`# END stage-4-only`, including the single `- forward/opensearch` "
         "entry in the traces pipeline's exporter list."
     )
     parsed = yaml.safe_load(stripped)
@@ -309,8 +280,9 @@ def test_below_stage_4_the_collector_config_names_no_opensearch(config):
     traces = parsed["service"]["pipelines"]["traces"]
     assert "otlp_grpc/jaeger" in traces["exporters"], (
         f"the stripped {config.name} no longer exports traces to Jaeger. The "
-        "strip took too much: below stage 4 the collector must behave exactly "
-        f"as it did before M4. Exporters left: {traces['exporters']}"
+        "strip took too much: below stage 4 the collector must keep exporting "
+        f"to every backend a pre-stage-4 cluster has. Exporters left: "
+        f"{traces['exporters']}"
     )
     assert "traces/opensearch" not in parsed["service"]["pipelines"], (
         "the OpenSearch branch pipeline survived the strip"
@@ -325,21 +297,19 @@ def test_below_stage_4_the_collector_config_names_no_opensearch(config):
 
 @pytest.mark.parametrize("config", COLLECTOR_CONFIGS, ids=lambda p: p.name)
 def test_below_stage_4_the_collector_config_names_no_prometheus_exporter(config):
-    """The metrics half of ruling M4-R8, added in M4 Task 2's fix round 1.
+    """The metrics half: no Prometheus exporter below stage 4 either.
 
-    The guard above is the traces half and was the whole of it until M4 Task 2
-    bracketed a second stage-4-only region -- the `otlp_http/prometheus`
-    exporter and its entry in the `metrics` pipeline. Review finding F1: the
-    strip was correct, and nothing asserted it. Remove or misplace either
-    marker pair and a `--stage 1|2|3` cluster deploys a collector exporting
-    metrics to `prometheus.observability.svc.cluster.local:9090`, a Service
-    that does not exist -- F10's exact shape one signal over, with all of
-    `tests/unit` staying green through it.
+    The guard above is the traces half; this is the second stage-4-only
+    region -- the `otlp_http/prometheus` exporter and its entry in the
+    `metrics` pipeline. Remove or misplace either marker pair and a
+    `--stage 1|2|3` cluster deploys a collector exporting metrics to
+    `prometheus.observability.svc.cluster.local:9090`, a Service that does
+    not exist.
 
     **Why this is not `"prometheus" not in stripped`.** The metrics pipeline
-    legitimately keeps its `prometheus/spire` RECEIVER below stage 4 (M2.1 Task
-    4 scrapes SPIRE at every stage), so the broad word would false-positive on
-    a correct config. The assertion is the exporter id, and then the same
+    legitimately keeps its `prometheus/spire` RECEIVER below stage 4 (SPIRE is
+    scraped at every stage), so the broad word would false-positive on a
+    correct config. The assertion is the exporter id, and then the same
     declared-ness walk the traces pipeline already gets.
     """
     stripped = subprocess.run(
@@ -349,23 +319,24 @@ def test_below_stage_4_the_collector_config_names_no_prometheus_exporter(config)
     assert "otlp_http/prometheus" not in stripped, (
         f"stripping the stage-4-only regions of {config.name} leaves "
         "`otlp_http/prometheus` behind, so a stage-1/2/3 cluster would deploy "
-        "a collector exporting metrics to a Prometheus it does not have "
-        "(ruling M4-R8, metrics half). Both the exporter's declaration and its "
-        "entry in the `metrics` pipeline's exporter list must sit between "
-        "`# BEGIN stage-4-only` and `# END stage-4-only` -- which is why that "
-        "list is written one-per-line."
+        "a collector exporting metrics to a Prometheus it does not have. "
+        "Both the exporter's declaration and its entry in the `metrics` "
+        "pipeline's exporter list must sit between `# BEGIN stage-4-only` and "
+        "`# END stage-4-only` -- which is why that list is written "
+        "one-per-line."
     )
     parsed = yaml.safe_load(stripped)
     metrics = parsed["service"]["pipelines"]["metrics"]
     assert "debug" in metrics["exporters"], (
         f"the stripped {config.name}'s metrics pipeline exports nowhere at "
-        "all. The strip took too much: below stage 4 the collector must behave "
-        f"exactly as it did before M4. Exporters left: {metrics['exporters']}"
+        "all. The strip took too much: below stage 4 the collector must keep "
+        f"exporting metrics the way a pre-stage-4 cluster does. Exporters "
+        f"left: {metrics['exporters']}"
     )
     assert "prometheus/spire" in metrics["receivers"], (
         f"the stripped {config.name}'s metrics pipeline lost the "
-        "`prometheus/spire` receiver, which is not stage-4-only -- SPIRE has "
-        "been scraped at every stage since M2.1 Task 4"
+        "`prometheus/spire` receiver, which is not stage-4-only -- SPIRE is "
+        "scraped at every stage"
     )
     for exporter in metrics["exporters"]:
         assert exporter in parsed["exporters"], (
@@ -388,12 +359,11 @@ _GENERIC_EXPORTER_SEGMENTS = frozenset({
 def test_the_strip_message_names_every_backend_it_drops():
     """The operator-facing `echo` must name every backend the strip removes.
 
-    Review finding F2, and the structural half of its fix. M4 Task 2 added a
-    second stage-4-only exporter and left that message saying the strip drops
-    "the stage-4-only OpenSearch branch" -- true when written, false the moment
-    a second region was bracketed, in a file that same commit edited. Correcting
-    the sentence fixes today; this stops tomorrow, because the message is no
-    longer a restatement anyone has to remember to update.
+    A hand-written message describing "the stage-4-only OpenSearch branch" is
+    only true until a second stage-4-only region is bracketed, so this does
+    not check a restated sentence: it derives the expected message content
+    instead, and a strip that grows silently reddens the test rather than
+    leaving the message stale.
 
     The list is DERIVED, not duplicated: run the script's own sed program, diff
     the `exporters` section before and after, and require each removed
@@ -444,33 +414,29 @@ def test_the_strip_message_names_every_backend_it_drops():
 
 
 def test_the_stage_4_completion_message_names_everything_stage_4_installs():
-    """The same structural fix as the test above, one message over.
+    """The same structural check as the test above, one message over.
 
     The `Stage 4 (Observable) is up: ...` line is the last thing an operator
-    reads, and it is where they learn what they now have. M4 Task 2 added a
-    third Helm release to the stage-4 block and left that line describing two
-    -- the same defect as finding F2, in the same file, found by sweeping for
-    it rather than by review. Restating an install list in prose is what keeps
-    producing this, so the list is derived instead: every
-    `helm upgrade --install <release>` between the `STAGE -ge 4` guard and that
-    block's closing `fi` must be named in the message.
+    reads, and it is where they learn what they now have. Restating an
+    install list in prose is fragile -- a block that grows a new release
+    can silently outpace a hand-written summary -- so the list is derived
+    instead: every `helm upgrade --install <release>` between the
+    `STAGE -ge 4` guard and that block's closing `fi` must be named in the
+    message.
 
     Release names are matched case-insensitively, because the message spells
     them as products (`OpenSearch`) and the script as Helm releases
     (`opensearch`); a release whose name is genuinely absent from the message
     fails regardless of case.
 
-    **M4 Task 4 widened "installs" past Helm.** The block gained a workload
+    **"Installs" covers more than Helm.** The block also deploys a workload
     that is not a chart at all -- `scripts/rebuild-and-deploy.sh eval-scorer`,
     a container image built, pushed and applied -- and a helm-only derivation
-    cannot see it, so the very defect this test was written for (a completion
-    message describing less than the block installs) was reachable again one
-    task after it was closed. Components deployed through
-    `rebuild-and-deploy.sh` *inside this block* are now derived too. Only
-    inside it: Step 9's unconditional `rebuild-and-deploy.sh payments-api ...`
-    line deploys the stage-1 workloads at every stage, and requiring the
-    stage-4 message to name those would be requiring it to restate the whole
-    system.
+    cannot see it. Components deployed through `rebuild-and-deploy.sh`
+    *inside this block* are derived too. Only inside it: the unconditional
+    `rebuild-and-deploy.sh payments-api ...` line deploys the stage-1
+    workloads at every stage, and requiring the stage-4 message to name those
+    would be requiring it to restate the whole system.
     """
     lines = SETUP_KIND.read_text().splitlines()
 
@@ -529,13 +495,12 @@ def test_the_stage_4_markers_are_balanced_and_never_nested(config):
     """The markers must alternate strictly BEGIN, END, BEGIN, END, ...
 
     An unbalanced pair deletes to end-of-file (missing END) or not at all.
-    **Nesting is the subtler case, and re-review finding N6 is that the first
-    version of this guard could not see it**: it counted BEGINs and ENDs and
-    zipped them, so `BEGIN, BEGIN, END, END` passed while `sed` pairs
-    `(BEGIN1 ... END1)` and leaves `BEGIN2` deleted and `END2` stranded in the
-    output -- a different deletion than the file intends. Walking the markers
-    in order and tracking depth is what actually models `sed`'s range
-    behaviour, so that is what this does now.
+    **Nesting is the subtler case**: merely counting BEGINs and ENDs and
+    zipping them would let `BEGIN, BEGIN, END, END` pass, while `sed` actually
+    pairs `(BEGIN1 ... END1)` and leaves `BEGIN2` deleted and `END2` stranded
+    in the output -- a different deletion than the file intends. Walking the
+    markers in order and tracking depth is what actually models `sed`'s range
+    behaviour, so that is what this does.
     """
     lines = config.read_text().splitlines()
     markers = [
@@ -570,21 +535,21 @@ def test_the_stage_4_markers_are_balanced_and_never_nested(config):
     )
 
 
-# --- Finding N4: the SHIPPED config must declare what its pipelines name ----
+# --- The SHIPPED config must declare what its pipelines name ---------------
 
 
 @pytest.mark.parametrize("config", COLLECTOR_CONFIGS, ids=lambda p: p.name)
 def test_the_shipped_collector_config_declares_every_component_it_names(config):
-    """Re-review finding N4: the same check the stripped config already gets,
-    run over the config as shipped.
+    """The same declared-ness check the stripped config already gets, run over
+    the config as shipped.
 
     `test_below_stage_4_the_collector_config_names_no_opensearch` verifies
     declared-ness only on the *stripped* output and only for the `traces`
     pipeline. Nothing covered the stage-4 config itself, so deleting the
     `connectors:` block from **both** files (the sync guard compares them to
     each other, and `None == None` passes) or dropping `- forward/opensearch`
-    from the main traces exporter list left all unit tests green while the
-    collector refuses to start at stage 4.
+    from the main traces exporter list would leave all unit tests green while
+    the collector refuses to start at stage 4.
 
     A connector is the interesting case and the reason this is not merely
     symmetry: it must be used as an exporter in one pipeline and as a receiver
@@ -624,9 +589,9 @@ def test_the_shipped_collector_config_declares_every_component_it_names(config):
 
     assert connectors, (
         f"{config.name} declares no connectors at all. The OpenSearch branch "
-        "is a `forward/opensearch` tee off the main traces pipeline (spec "
-        "§3); without it, either the branch is gone or it has been "
-        "re-declared with its own receivers, which is the silent-drift shape "
+        "is a `forward/opensearch` tee off the main traces pipeline; without "
+        "it, either the branch is gone or it has been re-declared with its "
+        "own receivers, which is the silent-drift shape "
         "the tee exists to prevent."
     )
     for connector in connectors:
@@ -643,7 +608,7 @@ def test_the_shipped_collector_config_declares_every_component_it_names(config):
         )
 
 
-# --- Finding F1: the attribute collision, and the processor that fixes it ---
+# --- The attribute collision, and the processor that fixes it --------------
 
 
 def _pds_attribute_keys() -> set[str]:
@@ -677,8 +642,8 @@ def _pds_attribute_keys() -> set[str]:
 # mapping is index-wide, so a collision does not have to occur within one
 # span or even within one service: a scalar `x.y` on one service's span and an
 # object-valued `x.y.z` on another's, in the same index, is enough for the
-# second to be rejected permanently. Re-review finding N2 -- reading only the
-# PDS could never have seen that.
+# second to be rejected permanently -- reading only one service's source could
+# never see that.
 SERVICE_SOURCE_DIRS = ["agents", "apps", "platform", "systems", "tools"]
 SERVICE_SOURCE_SUFFIXES = {".py", ".go", ".ts", ".tsx"}
 _SKIP_DIR_NAMES = {
@@ -703,13 +668,10 @@ _SKIP_DIR_NAMES = {
 # collision (`policy.decision` / `policy.decision.retryable`) and the
 # `attributes/opensearch-compat` processor must rename it.
 #
-# The scan's file and key totals are NOT written down any more. This said
-# "Measured 2026-09-13: 41 files, 52 candidate keys" and was falsified the
-# same day by the seven `platform/eval-scorer/scorer/*.py` files added in the
-# same commit -- re-derived, 48 files and 68 candidate keys. Nothing reddened,
-# because those totals change whenever any service gains a source file and no
-# assertion could usefully pin them. A number that moves on every unrelated
-# commit is a number that will be stale on most of them.
+# The scan's file and key totals are deliberately NOT written down here: they
+# change whenever any service gains a source file, so no assertion could
+# usefully pin them, and a number that moves on every unrelated commit is a
+# number that goes stale almost immediately.
 _ATTRIBUTE_KEY = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$")
 _STRING_LITERAL = re.compile(
     r"\"([^\"\\\n]{1,120})\"|'([^'\\\n]{1,120})'|`([^`\\\n]{1,120})`"
@@ -780,7 +742,7 @@ def _collisions(keys: set[str]) -> set[tuple[str, str]]:
 
 
 def test_the_opensearch_compat_processor_covers_every_colliding_attribute():
-    """Finding F1: the rename must cover every collider, not just today's one.
+    """The rename must cover every collider, not just today's one.
 
     The shipped ingest path rejected 100% of `policy.decision` spans because
     the span sets both `policy.decision` and `policy.decision.retryable`. A
@@ -788,15 +750,13 @@ def test_the_opensearch_compat_processor_covers_every_colliding_attribute():
     export fails permanently, per document, and only the collector log says
     so.
 
-    **Re-review finding N2 widened what this reads.** It used to derive the
-    collision set from `pds/telemetry.py` alone, while the comment it backed
-    in `collector-config.yaml` claimed ten services. That gap mattered rather
-    than being a scoping nit: the OpenSearch mapping is index-wide, so a
-    scalar `x.y` on one service's span and an object-valued `x.y.z` on
-    another's is enough for the second to be rejected -- and a collider added
-    anywhere but the PDS, or added to the PDS as an inline
+    **Deriving the collision set from the PDS's declared constants alone is
+    not enough.** The OpenSearch mapping is index-wide, so a scalar `x.y` on
+    one service's span and an object-valued `x.y.z` on another's is enough
+    for the second to be rejected -- and a collider added anywhere but the
+    PDS, or added to the PDS as an inline
     `set_attribute("policy.decision.reason", ...)` rather than as an `ATTR_*`
-    constant, failed no unit test at all. It now scans every first-party
+    constant, would fail no unit test at all. So this scans every first-party
     service's source; `_first_party_attribute_keys` documents exactly what
     that can and cannot see, and the e2e file covers the rest against live
     data.
@@ -849,8 +809,7 @@ def test_the_opensearch_compat_processor_covers_every_colliding_attribute():
                 "the OpenSearch branch. Every document carrying both keys -- "
                 "and they need not be the same span, or even the same "
                 "service, because the mapping is index-wide -- will be "
-                f"rejected permanently. That is review finding F1. Seen in: "
-                f"{where}"
+                f"rejected permanently. Seen in: {where}"
             )
             assert longer in copied_from, (
                 f"{config.name}: {longer!r} is deleted on the OpenSearch "
@@ -860,7 +819,7 @@ def test_the_opensearch_compat_processor_covers_every_colliding_attribute():
 
 
 def test_the_rename_is_confined_to_the_opensearch_branch():
-    """Ruling M4-R5, as far as a unit test can see it.
+    """The rename is OpenSearch-branch only, as far as a unit test can see it.
 
     What Jaeger and Dash0 actually receive is asserted against the live
     cluster by tests/e2e/test_opensearch_trace_ingest.py. This is the static
@@ -885,10 +844,10 @@ def test_the_rename_is_confined_to_the_opensearch_branch():
                 "processors", []
             ), (
                 f"{config.name}: pipeline {name!r} runs "
-                "attributes/opensearch-compat. Ruling M4-R5: the rewrite is "
-                "OpenSearch-branch only -- Jaeger and Dash0 must receive the "
-                "canonical attribute names, or the evidence view's field names "
-                "stop matching the trace an operator reads in Jaeger."
+                "attributes/opensearch-compat. The rewrite is OpenSearch-branch "
+                "only -- Jaeger and Dash0 must receive the canonical attribute "
+                "names, or the evidence view's field names stop matching the "
+                "trace an operator reads in Jaeger."
             )
         assert pipelines["traces/opensearch"]["receivers"] == ["forward/opensearch"], (
             f"{config.name}: the OpenSearch branch no longer receives from the "
@@ -897,14 +856,14 @@ def test_the_rename_is_confined_to_the_opensearch_branch():
         )
 
 
-# --- Finding F8: start-demo.sh must not hard-fail below stage 4 ------------
+# --- start-demo.sh must not hard-fail below stage 4 -------------------------
 
 
 _FAKE_KUBECTL = r"""#!/usr/bin/env bash
 # `get svc/NAME -o name` decides whether a stage-gated surface "exists".
-# `get featureflag/NAME -o name` does the same for flagd (M5 Task 6: it has
-# no Service of its own, so start-demo.sh asks for the FeatureFlag object
-# instead -- see FLAGD_AVAILABLE). Both are matched against the same
+# `get featureflag/NAME -o name` does the same for flagd, which has no
+# Service of its own, so start-demo.sh asks for the FeatureFlag object
+# instead -- see FLAGD_AVAILABLE. Both are matched against the same
 # FAKE_ABSENT_SERVICES list, keyed by the name after the slash.
 if [[ "$*" == *"get svc/"* || "$*" == *"get featureflag/"* ]]; then
   for absent in $FAKE_ABSENT_SERVICES; do
@@ -915,8 +874,9 @@ fi
 if [[ "$*" == *"port-forward"* ]]; then
   # An absent Service fails the same way real kubectl does -- immediately, so
   # the pid the caller recorded is already dead and fake lsof (which lists
-  # live pids) cannot report it. That reproduces finding F8's actual cascade:
-  # verify_owned_forward exits 1 and the EXIT trap kills the good forwards.
+  # live pids) cannot report it. That reproduces the cascade this guards
+  # against: verify_owned_forward exits 1 and the EXIT trap kills the good
+  # forwards.
   for absent in $FAKE_ABSENT_SERVICES; do
     if [[ "$*" == *"svc/$absent"* ]]; then exit 1; fi
   done
@@ -942,14 +902,13 @@ def _run_start_demo(
 ):
     """Run the real start-demo.sh against fakes and return its output.
 
-    `refusing_ports` (whole-branch review, carry-in 3): the fake `curl` used
-    to be `"#!/usr/bin/env bash\\nexit 0\\n"` unconditionally -- inert on the
-    one dimension `verify_owned_forward`/`verify_existing_surface` exist to
-    check (ruling R20: a bound port proves nothing, only an answering one
-    does). It is now `_start_demo_fakes.port_aware_fake_curl`, shared with
-    `test_start_demo_v11.py`, which fails only for the ports named here. The
-    default (no port refuses) reproduces the old fake's behaviour exactly, for
-    callers that only need curl to get out of the way.
+    `refusing_ports`: a bound port proves nothing on its own, only an
+    answering one does, which is exactly what `verify_owned_forward` /
+    `verify_existing_surface` check. The fake `curl` is
+    `_start_demo_fakes.port_aware_fake_curl`, shared with
+    `test_start_demo_v11.py`, and fails only for the ports named here; with no
+    port refusing, it answers every port, for callers that only need curl to
+    get out of the way.
 
     The script ends in `wait`, so it never exits on its own: read until it
     prints its final line, then kill the whole process group (which is this
@@ -1005,15 +964,14 @@ def _run_start_demo(
 
 
 def test_start_demo_skips_stage_gated_surfaces_that_do_not_exist(tmp_path):
-    """Finding F8, behaviourally: below stage 4 the script must still work.
+    """Below stage 4, start-demo.sh must still work, behaviourally verified.
 
-    As shipped, `start-demo.sh` forwarded `svc/opensearch-dashboards`
-    unconditionally. On a stage-1/2/3 cluster that Service does not exist, the
-    forward never binds, `verify_owned_forward` exits 1, and the EXIT trap then
-    kills the four good forwards it had just created -- so the remedy for a
-    dead port-forward left the operator with no port-forwards at all. And it
-    was reachable by the documented path: both of `smoke-test.sh`'s remedies
-    send the operator here.
+    Forwarding a stage-gated Service unconditionally would be catastrophic on
+    a stage-1/2/3 cluster: that Service does not exist, so the forward never
+    binds, `verify_owned_forward` exits 1, and the EXIT trap then kills the
+    other, good forwards it had just created -- leaving the operator with no
+    port-forwards at all, on the very remedy both of `smoke-test.sh`'s failure
+    messages send them to.
 
     Asserted by running the script, not by reading it.
     """
@@ -1024,11 +982,9 @@ def test_start_demo_skips_stage_gated_surfaces_that_do_not_exist(tmp_path):
         "start-demo.sh did not get as far as verifying its surfaces on a "
         "cluster without the stage-gated Services:\n" + output
     )
-    # `prometheus` joined this list in M4 Task 2, in the same commit that added
-    # its forward. It is the third stage-gated surface and takes the same
+    # `prometheus` is the third stage-gated surface and takes the same
     # `service_exists` guard as the other two; leaving it off the absent list
-    # here would have let an unconditional Prometheus forward -- finding F8
-    # exactly -- ship green.
+    # here would let an unconditional Prometheus forward ship green.
     for surface in (
         "OpenSearch Dashboards: SKIPPED",
         "reviewer-ui: SKIPPED",
@@ -1076,20 +1032,19 @@ def test_start_demo_forwards_the_stage_4_surfaces_when_they_do_exist(tmp_path):
 
 
 def test_the_all_verified_banner_requires_eval_scorer_and_flagd_too(tmp_path):
-    """Whole-branch review, J1: `start-demo.sh:369`'s "All surfaces verified
-    up." gate used to check only `DASHBOARDS_AVAILABLE`, `REVIEWER_UI_AVAILABLE`
-    and `PROMETHEUS_AVAILABLE`, omitting `EVAL_SCORER_AVAILABLE` and
-    `FLAGD_AVAILABLE` -- both forwarded and verified earlier in the same
-    script, with their own real SKIPPED branches. On a stage-4 cluster (which
-    has neither eval-scorer nor the flagd FeatureFlag, both stage-5-only) the
-    old gate printed two YELLOW `SKIPPED` lines immediately followed by GREEN
-    `All surfaces verified up.` -- the exact contradiction the else-branch
-    exists to prevent, and it never fired.
+    """The "All surfaces verified up." gate must check every stage-gated
+    surface, not a subset of them.
 
-    Dashboards, reviewer-ui and Prometheus are all present here -- the old
-    gate's three conditions are individually satisfied -- so this reproduces
-    the contradiction precisely: it is eval-scorer and flagd alone that must
-    still turn the banner over to the honest branch.
+    `EVAL_SCORER_AVAILABLE` and `FLAGD_AVAILABLE` are forwarded and verified
+    earlier in the same script, with their own real SKIPPED branches, so a
+    gate that checked only `DASHBOARDS_AVAILABLE`, `REVIEWER_UI_AVAILABLE`
+    and `PROMETHEUS_AVAILABLE` could print two YELLOW `SKIPPED` lines
+    immediately followed by GREEN `All surfaces verified up.` -- the exact
+    contradiction the else-branch exists to prevent.
+
+    Dashboards, reviewer-ui and Prometheus are all present here, so this
+    isolates eval-scorer and flagd: they alone must turn the banner over to
+    the honest branch.
     """
     output, _ = _run_start_demo(
         tmp_path, absent_services="eval-scorer northstar-autonomy",
@@ -1105,10 +1060,9 @@ def test_the_all_verified_banner_requires_eval_scorer_and_flagd_too(tmp_path):
 
 
 def test_reviewer_uis_bound_but_dead_forward_is_refused_ruling_r20(tmp_path):
-    """Whole-branch review, carry-in 3: `verify_existing_surface`'s R20 branch
-    (port bound, but the request it carries never answers) had no test
-    anywhere -- the only path this fake `curl` could not previously exercise,
-    because it always answered.
+    """`verify_existing_surface`'s bound-but-dead branch (port bound, but the
+    request it carries never answers) needs a fake `curl` that can refuse a
+    specific port -- one that always answers cannot exercise it.
 
     reviewer-ui is a `NodePort`, not a forward this script owns, so it is
     checked through `verify_existing_surface` rather than
@@ -1125,20 +1079,20 @@ def test_reviewer_uis_bound_but_dead_forward_is_refused_ruling_r20(tmp_path):
         f"dead port:\n{output}"
     )
     assert "reviewer-ui" in output and "ruling R20" in output, (
-        "expected the R20 refusal, naming reviewer-ui, for a bound port that "
-        f"carries no request:\n{output}"
+        "expected the bound-but-dead refusal, naming reviewer-ui, for a bound "
+        f"port that carries no request:\n{output}"
     )
     assert "All surfaces verified up." not in output, output
 
 
 def test_start_demo_skips_backstage_when_its_service_does_not_exist(tmp_path):
-    """M6 Task 4: the same F8 discipline (skip a stage-gated surface loudly,
-    never hard-fail below the stage that provides it), one surface later.
-    `svc/backstage` does not exist below stage 6 -- this reproduces that on a
-    cluster that otherwise has every other surface, so a script that regressed
-    to forwarding `svc/backstage` unconditionally would exit 1 here (the fake
-    `kubectl port-forward` for an absent Service fails immediately, same
-    cascade shape F8 fixed for Dashboards).
+    """The same discipline as every other stage-gated surface -- skip it
+    loudly, never hard-fail below the stage that provides it -- applied to
+    Backstage. `svc/backstage` does not exist below stage 6, so this
+    reproduces that on a cluster that otherwise has every other surface: a
+    script that regressed to forwarding `svc/backstage` unconditionally would
+    exit 1 here, because the fake `kubectl port-forward` for an absent
+    Service fails immediately.
     """
     output, _ = _run_start_demo(tmp_path, absent_services="backstage")
     assert "Backstage: SKIPPED" in output, (
@@ -1152,15 +1106,12 @@ def test_start_demo_skips_backstage_when_its_service_does_not_exist(tmp_path):
 
 
 def test_the_all_verified_banner_requires_backstage_too(tmp_path):
-    """M6 Task 4's own version of J1 (whole-branch review, M5): the "All
-    surfaces verified up." gate must include `BACKSTAGE_AVAILABLE`, not just
-    the five conditions M5's fix wave left it with. Every other stage-gated
+    """The "All surfaces verified up." gate must include `BACKSTAGE_AVAILABLE`
+    along with every other stage-gated condition. Every other stage-gated
     surface -- Dashboards, reviewer-ui, Prometheus, eval-scorer, flagd -- is
     present here; Backstage alone is absent, so a gate that forgot to add it
-    (the exact shape J1 was) would print the all-clear banner directly under
-    a YELLOW `Backstage: SKIPPED` line. M6 Task 1's own brief named this
-    finding by number and asked for this test before the surface even existed
-    in the script.
+    would print the all-clear banner directly under a YELLOW
+    `Backstage: SKIPPED` line.
     """
     output, _ = _run_start_demo(tmp_path, absent_services="backstage")
     assert "Backstage: SKIPPED" in output, output
@@ -1172,7 +1123,7 @@ def test_the_all_verified_banner_requires_backstage_too(tmp_path):
     assert "Some stage-gated surfaces are absent" in output, output
 
 
-# --- M4 Task 3: the evidence view, and the two things that make it real -----
+# --- The evidence view, and the two things that make it real ---------------
 
 
 def _evidence_objects() -> list[dict]:
@@ -1268,16 +1219,15 @@ def test_the_evidence_view_is_a_complete_importable_export():
     )
     assert attributes["timeFieldName"] == "startTime", attributes
     assert attributes.get("fields"), (
-        "the index-pattern carries no cached field list. Measured 2026-09-13: "
-        "without it every `min(startTime)` agg on this dashboard throws "
-        "`SavedObjectNotFound: Could not locate that index-pattern-field "
-        "(id: startTime)` and the panel 400s. Re-export from the UI rather "
-        "than hand-trimming the file."
+        "the index-pattern carries no cached field list. Without it every "
+        "`min(startTime)` agg on this dashboard throws `SavedObjectNotFound: "
+        "Could not locate that index-pattern-field (id: startTime)` and the "
+        "panel 400s. Re-export from the UI rather than hand-trimming the file."
     )
 
 
 def test_the_evidence_views_header_records_the_permitted_claim_id_choice():
-    """Spec §4 left the €5,800 claim's id to the plan; the choice is recorded.
+    """The €5,800 claim has no fixed id, and the reason is recorded in the view.
 
     Both options were defensible -- a fixed fixture id, or a parameterised
     dashboard -- and an *unrecorded* choice is not. The record lives in the
@@ -1334,11 +1284,11 @@ def test_setup_kind_imports_the_evidence_view_at_stage_4():
         "setup-kind.sh names the evidence file but never calls the saved "
         "objects import API with it"
     )
-    # Review finding F8: `'"success":true' in setup` was a substring test, and
-    # it stayed green for an INVERTED check -- `if [[ $X == *'"success":true'* ]];
-    # then exit 1; fi` contains the same substring and aborts on success. Bound
-    # to the guard's actual shape instead: the negative comparison, and an
-    # `exit 1` inside the block it opens.
+    # A loose `'"success":true' in setup` substring test would stay green for
+    # an INVERTED check too -- `if [[ $X == *'"success":true'* ]]; then exit 1;
+    # fi` contains the same substring and aborts on success. Bound to the
+    # guard's actual shape instead: the negative comparison, and an `exit 1`
+    # inside the block it opens.
     guard = re.search(
         r'if \[\[ "\$\{EVIDENCE_IMPORT\}" != \*\'"success":true\'\* \]\]; then(.*?)\n  fi',
         setup,
@@ -1356,17 +1306,16 @@ def test_setup_kind_imports_the_evidence_view_at_stage_4():
         "stage-4 cluster that looks complete and has no evidence view in it."
     )
 
-    # The readiness poll finding F1 added, bound the same way: `--wait` on the
-    # Helm install is a TCP-accept probe (measured), so the saved-objects API
-    # can still answer 503 when the import runs.
+    # The readiness poll is bound the same way: `--wait` on the Helm install is
+    # only a TCP-accept probe, so the saved-objects API can still answer 503
+    # when the import runs.
     assert "/api/status" in setup, (
         "the import no longer waits for OpenSearch Dashboards' /api/status to "
         "answer before posting. The chart's readiness probe is `tcpSocket` on "
-        "5601 (measured 2026-09-13 on the deployed object), which says nothing "
-        "about whether the saved-objects API is serving -- OSD answers 503 "
-        "'OpenSearch Dashboards server is not ready yet' for a window after "
-        "the socket binds, and a single unretried import would `exit 1` "
-        "mid-stage-4."
+        "5601, which says nothing about whether the saved-objects API is "
+        "serving -- OSD answers 503 'OpenSearch Dashboards server is not "
+        "ready yet' for a window after the socket binds, and a single "
+        "unretried import would `exit 1` mid-stage-4."
     )
 
     stage_4_block = re.search(
@@ -1379,12 +1328,11 @@ def test_setup_kind_imports_the_evidence_view_at_stage_4():
     assert relative in stage_4_block.group(1), (
         "the evidence-view import is not inside the `STAGE -ge 4` block. "
         "Below stage 4 there is no OpenSearch Dashboards to import into, so an "
-        "ungated import fails every `--stage 1|2|3` run -- finding F10's shape "
-        "applied to a saved object."
+        "ungated import fails every `--stage 1|2|3` run."
     )
 
 
-# --- M4 Task 3 fix round 1: the SHIPPED panels' own fields and queries -------
+# --- The SHIPPED panels' own fields and queries -----------------------------
 
 
 def _e2e_string_constants(*relative_paths: str) -> dict[str, str]:
@@ -1428,17 +1376,15 @@ def _panel_fields_and_query(visualization: dict) -> tuple[set[str], str]:
 
 
 def test_the_shipped_panels_query_the_fields_the_evidence_tests_name():
-    """Review finding F4: assert the SAVED OBJECT's queries, not a copy of them.
+    """Assert the SAVED OBJECT's queries, not a copy of them.
 
     `tests/e2e/test_evidence_view.py` re-implements the two-step join in Python
-    and asserts the instrumentation. That is what the brief asks for and it is
-    valuable -- but a re-implementation can agree with itself perfectly while
-    the shipped dashboard drifts. Before this test, changing panel 4's query off
-    `payments-api`, mistyping a rule field in panel 2, or deleting the money
-    panel outright left every test in this repository green while the dashboard
-    rendered blank or wrong. That is the exact failure
-    `test_evidence_view.py`'s own docstring says it exists to prevent, applied
-    to the artefact instead of the data.
+    and asserts the instrumentation. That is valuable on its own, but a
+    re-implementation can agree with itself perfectly while the shipped
+    dashboard drifts: changing panel 4's query off `payments-api`, mistyping a
+    rule field in panel 2, or deleting the money panel outright would leave
+    every test in this repository green while the dashboard rendered blank or
+    wrong.
 
     Every name below is **derived from the e2e file's own constants**, read out
     of its source by AST rather than restated here, so a renamed attribute has
@@ -1446,9 +1392,8 @@ def test_the_shipped_panels_query_the_fields_the_evidence_tests_name():
     red.
 
     Cross-checking each field against the index-pattern's cached `fields` list
-    also closes the implementer's own concern 1 ("a *new* attribute will not
-    appear ... Nothing detects that today"): a panel that queries a field the
-    cached list does not carry now reddens here.
+    also catches a *new* attribute that never gets added to that cache: a
+    panel that queries a field the cached list does not carry reddens here.
     """
     constants = _e2e_string_constants(
         "tests/e2e/test_evidence_view.py",
@@ -1534,12 +1479,12 @@ def test_the_shipped_panels_query_the_fields_the_evidence_tests_name():
 
 
 def test_the_evidence_view_ships_exactly_its_six_panels():
-    """Review finding F5: `>= 4` let two panels vanish silently.
+    """All six named panels must be present, not merely "at least four".
 
-    `len(panels) >= 4` was satisfied by five, so the money panel -- the half of
-    the story a claim-id filter drops, and the reason the join has two steps at
-    all -- could be deleted without a single test noticing. The panels are now
-    named, in the order the dashboard lays them out.
+    A lower-bound count like `len(panels) >= 4` would let the money panel --
+    the half of the story a claim-id filter drops, and the reason the join
+    has two steps at all -- be deleted without a single test noticing. The
+    panels are named here instead, in the order the dashboard lays them out.
     """
     dashboards = [o for o in _evidence_objects() if o["type"] == "dashboard"]
     assert len(dashboards) == 1, dashboards
@@ -1565,25 +1510,16 @@ def test_the_evidence_view_ships_exactly_its_six_panels():
 
 
 def test_the_surface_table_and_start_demos_printed_list_agree():
-    """Review finding F3: prose that sent the reader to a shorter list.
+    """`docs/architecture.md`'s surface table and start-demo.sh's printed
+    output must agree in BOTH directions, not just one.
 
-    `docs/architecture.md`'s "See it yourself" table told a reader to prefer
-    `scripts/start-demo.sh`'s printed output when the two disagree -- and that
-    output named neither the Customer UI nor Jaeger, rows 1 and 3 of the table,
-    which are the two URLs the walkthrough's first two steps open. Both were
-    added to the script; this is what stops them diverging again, in either
-    direction, rather than a third sentence asserting that they do not.
-
-    **M4 final review, finding M2: "in either direction" was a claim this test
-    did not implement, and the divergence it would have caught already
-    existed.** The body was `for url in urls: assert url in printed` -- table ->
-    script only. M4 Task 2 added `Prometheus: http://localhost:9090` to
-    `start-demo.sh`; Task 3 then wrote this guard in the one direction that
-    could not see it, and wrote the docstring above; `architecture.md`'s table
-    went the rest of the milestone with no Prometheus row while the prose under
-    it asserted the property this test lacked. An inert guard whose docstring
-    claims otherwise is the class M4 found eight times, reproduced inside the
-    guard built to end it.
+    The "See it yourself" table tells a reader to prefer
+    `scripts/start-demo.sh`'s printed output when the two disagree, so a
+    one-directional check (`for url in urls: assert url in printed` -- table
+    -> script only) can go green while the table itself falls behind: a URL
+    the script starts printing has no guard requiring it to also be in the
+    table, so the two silently diverge in that direction. This test checks
+    both.
 
     The reverse direction is not "every printed URL is in the table": the
     script deliberately prints agent and tool ports the walkthrough never
@@ -1631,8 +1567,8 @@ def test_the_surface_table_and_start_demos_printed_list_agree():
         "either a documented walkthrough surface (add it to "
         f"{ARCHITECTURE.relative_to(REPO_ROOT)}'s 'See it yourself' table and "
         "mark the line `#surface`) or deliberately undocumented (mark it "
-        "`#tool-port`). Skipping the choice is how Prometheus stayed out of "
-        "that table for four tasks."
+        "`#tool-port`). Skipping the choice is how a surface stays out of "
+        "that table unnoticed."
     )
     surfaces = {url for url, marker in echoed if marker == "#surface"}
     assert surfaces == set(urls), (
@@ -1645,7 +1581,7 @@ def test_the_surface_table_and_start_demos_printed_list_agree():
     )
 
 
-# --- M4 Task 5: two operator-facing strings that kept going stale ------------
+# --- Two operator-facing strings that must not go stale ---------------------
 
 SPECS_DIR = REPO_ROOT / "docs/superpowers/specs"
 README = REPO_ROOT / "README.md"
@@ -1655,13 +1591,11 @@ CONTRACT = REPO_ROOT / "docs/telemetry-contract.md"
 def _current_milestone() -> str:
     """The milestone this repo is on, derived from the newest design spec.
 
-    Not a constant. `scripts/smoke-test.sh`'s banner has now been renamed three
-    times by hand -- `8c0e980` took it from M2.2 to M3, M3 Task 5B's commit
-    message called that rename "the same stale-prose class the final review
-    found thirteen times", and it then sat at M3 for the whole of M4 while the
-    gate grew four new e2e files' worth of M4 assertions. The specs are named
-    `<date>-northstar-<milestone>-<name>-design.md` and sort by date, so the
-    milestone is a fact this directory already knows and nobody has to retype.
+    Not a constant: a hand-maintained milestone string in a banner is prone
+    to going stale the moment the repo moves on and nobody remembers to
+    rename it. The specs are named `<date>-northstar-<milestone>-<name>-design.md`
+    and sort by date, so the milestone is a fact this directory already
+    knows and nobody has to retype.
     """
     specs = sorted(SPECS_DIR.glob("*-northstar-m*-design.md"))
     assert specs, f"no design specs found in {SPECS_DIR.relative_to(REPO_ROOT)}"
@@ -1674,13 +1608,10 @@ def test_the_gates_banner_names_the_milestone_it_actually_proves():
     """The gate announces which milestone a green run signs off on, and it has
     to be the current one.
 
-    A gate that prints `=== Northstar M3 smoke test ===` while running M4's
-    OpenSearch ingest, Prometheus, evidence-view and policy-score assertions
-    misreports what a passing run proved -- which is the precise reason
-    `8c0e980` renamed it from M2.2 in the first place, and the reason its own
-    comment gives. That comment then noted "no test pins either string". This
-    is that test, and it derives the expected milestone rather than restating
-    it, so the next milestone does not have to remember either.
+    A gate that prints an old milestone's banner while running the current
+    milestone's assertions misreports what a passing run proved. This test
+    derives the expected milestone rather than restating it, so a future
+    milestone does not have to remember to update it by hand.
     """
     milestone = _current_milestone()
     script = SMOKE_TEST.read_text()
@@ -1700,25 +1631,24 @@ def test_the_gates_banner_names_the_milestone_it_actually_proves():
         f"{signoff.group(1)!r}, but the newest design spec in "
         f"{SPECS_DIR.relative_to(REPO_ROOT)} is {milestone}'s. A gate that "
         "names an older milestone tells an operator that a green run proved "
-        "less than it did -- and this is the third time the pair has gone "
-        "stale. Update both strings; the expected value is derived, so nothing "
-        "else needs touching."
+        "less than it did. Update both strings; the expected value is "
+        "derived, so nothing else needs touching."
     )
 
 
 def test_the_bare_run_failure_names_the_command_that_fixes_it():
     """A bare `pytest tests/` fails without port-forwards, deliberately (see
-    the contract's "The first run of `pytest tests/`" section). The ruling that
-    leaves it failing is only defensible while the remedy is one command away
-    in the two documents a reader has open, so the remedy is pinned rather than
+    the contract's "The first run of `pytest tests/`" section). Leaving it
+    failing is only defensible while the remedy is one command away in the
+    two documents a reader has open, so the remedy is pinned rather than
     trusted to survive an edit.
     """
     readme = README.read_text()
     contract = CONTRACT.read_text()
     assert "The first run of `pytest tests/`" in contract, (
         "docs/telemetry-contract.md no longer carries the section that rules "
-        "on the bare-run failure. If the ruling changed, change this guard "
-        "with it; do not drop the ruling silently."
+        "on the bare-run failure. If that changed, change this guard with "
+        "it; do not drop the rule silently."
     )
     for name, text in (("README.md", readme), ("docs/telemetry-contract.md", contract)):
         assert "./scripts/start-demo.sh" in text, (

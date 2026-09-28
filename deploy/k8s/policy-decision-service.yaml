@@ -1,6 +1,5 @@
-# M2.2 Task 4: the Policy Decision Service, the component that turns "the
-# platform knows who is calling" (M2.1) into "the platform decides whether the
-# call becomes an effect".
+# The Policy Decision Service: the platform component that decides whether a
+# call becomes an effect, given who is calling.
 #
 # agentgateway calls it over gRPC on every MCP `tools/call`
 # (`mcpGuardrails` in deploy/platform/agentgateway/config.yaml) and it answers
@@ -12,15 +11,13 @@
 # an agent may call and not an agent's own dependency. Nothing in
 # northstar-agents can reach it (see deploy/platform/cilium-policies.yaml).
 ---
-# A dedicated ServiceAccount, for the same measured reason
+# A dedicated ServiceAccount, for the same reason
 # deploy/k8s/settlement-agent.yaml and deploy/platform/agentgateway/deployment.yaml
 # each have one: SPIRE's ID template is
 # spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}
 # (deploy/platform/spire/registration.yaml), so a pod running as `default`
 # attests as `spiffe://northstar.local/ns/northstar-platform/sa/default` -- an
-# identity that verifies perfectly and identifies nothing. That was measured in
-# M2.1, on this cluster, for settlement-agent, before it was given a
-# ServiceAccount of its own.
+# identity that verifies perfectly and identifies nothing.
 #
 # Grants no RBAC. This pod makes no Kubernetes API calls.
 apiVersion: v1
@@ -40,7 +37,7 @@ metadata:
   labels:
     app: policy-decision-service
     northstar.io/plane: platform
-    # M6 Task 2: read by @backstage/plugin-kubernetes-backend's default
+    # Read by @backstage/plugin-kubernetes-backend's default
     # label selector (`backstage.io/kubernetes-id=<entity name>`), so this
     # Component's catalog entry (platform/policy-decision-service/
     # catalog-info.yaml) shows its live workload. Added to the Pod template
@@ -57,12 +54,12 @@ spec:
         app: policy-decision-service
         northstar.io/plane: platform
         backstage.io/kubernetes-id: policy-decision-service
-      # M5 Task 2: these two annotations are what the Open Feature Operator's
+      # These two annotations are what the Open Feature Operator's
       # mutating webhook reads to inject the flagd sidecar into this pod at
       # admission time. `featureflagsource` names
       # deploy/platform/openfeature/featureflagsource.yaml, whose `port: 8013`
       # is what makes the sidecar answer on localhost:8013 -- the address
-      # Task 3's PDS code resolves the `autonomy-level` flag against.
+      # the PDS code resolves the `autonomy-level` flag against.
       annotations:
         openfeature.dev/enabled: "true"
         openfeature.dev/featureflagsource: "northstar-autonomy-source"
@@ -99,11 +96,11 @@ spec:
           ports:
             - name: grpc
               containerPort: 9100
-          # Ruling R26: a TCP-socket probe on the gRPC port, NOT a gRPC health
+          # A TCP-socket probe on the gRPC port, NOT a gRPC health
           # check. `grpcio-health-checking` is deliberately outside this
-          # service's pinned dependency closure (requirements.txt, resolved
-          # once under ruling R4) and R4 forbids re-resolving that closure to
-          # add it. A TCP connect proves the gRPC server has called
+          # service's pinned dependency closure (requirements.txt), and
+          # adding it would mean re-resolving that whole closure. A TCP
+          # connect proves the gRPC server has called
           # `add_insecure_port` and `start()`, which is the transition this
           # probe exists to detect; it cannot prove the servicer is registered,
           # and pds/server.py registers it before the port is opened.
@@ -114,8 +111,8 @@ spec:
           # never becomes Ready therefore does not degrade the demo, it stops
           # it -- and it stops it with a refusal that looks exactly like a
           # policy denial to anyone reading the agent's reply. That is also why
-          # the ingress network policy for this pod must admit the node (ruling
-          # R6): kubelet dials this probe from the host, and a dropped probe
+          # the ingress network policy for this pod must admit the node:
+          # kubelet dials this probe from the host, and a dropped probe
           # packet becomes "every payment refused", with nothing in the output
           # mentioning networking.
           readinessProbe:

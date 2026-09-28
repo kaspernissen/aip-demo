@@ -1,16 +1,16 @@
 /**
- * M6 Task 3: the autonomy card itself. Design §5.3/§4: shows, per agent
- * identity, the level `northstar-autonomy` currently resolves to -- read
- * live from the backend's `/api/autonomy-contract/status`, never cached in
- * this component's own state beyond one render -- and offers the one write
- * this whole plugin can make: flip `settlement-agent`'s targeting branch
- * between `assisted` and `autonomous`.
+ * The autonomy card itself. Shows, per agent identity, the level
+ * `northstar-autonomy` currently resolves to -- read live from the
+ * backend's `/api/autonomy-contract/status`, never cached in this
+ * component's own state beyond one render -- and offers the one write this
+ * whole plugin can make: flip `settlement-agent`'s targeting branch between
+ * `assisted` and `autonomous`.
  *
  * Talks only to `platform/backstage/packages/backend/src/plugins/
  * autonomyContract`'s two routes. It never constructs a Kubernetes API call,
  * a resource name, or a JSON Patch path itself -- those are fixed, on the
  * backend, in `k8sClient.ts`. This component is a view over that plugin, not
- * a second place any of design §4's constraints could be re-litigated.
+ * a second place any of its constraints could be re-litigated.
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -141,7 +141,7 @@ export function AutonomyContractPage() {
         <Typography variant="body2" paragraph>
           This card edits the <code>northstar-autonomy</code> FeatureFlag
           through its own narrow ServiceAccount (get/list/patch, restricted to
-          this one resource -- design §4). It does not decide anything: the
+          this one resource). It does not decide anything: the
           Policy Decision Service is still the only decision point, and this
           card only ever changes the resource the PDS already reads.
         </Typography>

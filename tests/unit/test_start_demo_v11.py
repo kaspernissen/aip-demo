@@ -1,14 +1,10 @@
-"""M5 Task 1 fix round 1: V11 shipped with no regression test.
+"""`scripts/start-demo.sh::verify_owned_forward` accepts a healthy foreign
+port-forward instead of refusing outright, and does not fire the EXIT trap
+on a genuine refusal. That fix shipped with no regression test of its own,
+in a repo whose defect history is specifically about untested/inert guards --
+a real risk worth covering regardless.
 
-The Task 1 review (Important finding) named it precisely: the fix to
-`scripts/start-demo.sh::verify_owned_forward` -- accepting a healthy foreign
-port-forward instead of refusing outright, and not firing the EXIT trap on a
-genuine refusal -- was the one fix in that batch's whole guard-and-pin batch
-with zero coverage, in a repo whose defect history is specifically about
-untested/inert guards. Not a brief violation (Task 1's Step 8 did not demand
-a test); a real risk worth a follow-up regardless.
-
-Behavioural, not structural, per the review's own steer: this runs the REAL
+Behavioural, not structural: this runs the REAL
 `scripts/start-demo.sh` against fake `kubectl`/`lsof`/`curl` on `PATH` (same
 shape `test_stage4_config.py::test_start_demo_skips_stage_gated_surfaces_that_do_not_exist`
 already uses for this script), and asserts on what actually happened --
@@ -65,7 +61,7 @@ if [[ "$*" == *"port-forward"* ]]; then
   # claims-agent and payments-api: simulate the local port already being
   # held by something else -- the real `kubectl port-forward` fails to bind
   # immediately in that case, exactly like an absent Service does (the same
-  # trick test_stage4_config.py's fake uses for finding F8).
+  # trick test_stage4_config.py's fake uses).
   if [[ "$*" == *"svc/claims-agent"* ]] || [[ "$*" == *"svc/payments-api"* ]]; then
     exit 1
   fi
@@ -96,12 +92,12 @@ ps -axo pid= | while read -r p; do echo "fake $p user 1u IPv4 0x0 0t0 TCP *:1 (L
 exit 0
 """
 
-# Port-aware, from the shared `_start_demo_fakes` helper (whole-branch review
-# carry-in 3 promoted this from a one-off defined here to a helper
-# `test_stage4_config.py` also uses): this test needs curl to distinguish
-# "answers" from "does not answer" per port, since that distinction is the
-# entire subject of V11. Every port answers except payments-api's (18080),
-# which is the one genuine refusal.
+# Port-aware, from the shared `_start_demo_fakes` helper, which
+# `test_stage4_config.py` also uses: this test needs curl to distinguish
+# "answers" from "does not answer" per port, since that distinction is what
+# separates an accepted healthy foreign holder from a genuine refusal. Every
+# port answers except payments-api's (18080), which is the one genuine
+# refusal.
 _FAKE_CURL = port_aware_fake_curl(refusing_ports={"18080"})
 
 
@@ -168,10 +164,10 @@ def test_v11_accepts_a_healthy_foreign_forward_and_does_not_tear_down_the_others
                 os.kill(pid, 0)
             except ProcessLookupError:
                 raise AssertionError(
-                    f"{service}'s forward (pid {pid}) is no longer running after "
+                    f"{service}'s forward (pid {pid}) is not running after "
                     "start-demo.sh exited on payments-api's refusal -- the EXIT "
-                    "trap tore it down, which is exactly the defect V11 fixed. "
-                    f"Full output:\n{output}"
+                    "trap tore it down, which is exactly the regression this "
+                    f"test guards against. Full output:\n{output}"
                 )
     finally:
         # Clean up whatever background `sleep 300`s this test's run of the

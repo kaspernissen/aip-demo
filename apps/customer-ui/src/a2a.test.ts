@@ -91,26 +91,19 @@ describe("sendClaim", () => {
     );
   });
 
-  it("injects the active span's traceparent into the outbound request, surviving sendClaim's own await boundary (A19)", async () => {
-    // Plan defect, found empirically against the real deployed browser: the
-    // brief's Step 6 sketch read `injectContext` via
-    // `const { injectContext } = await import("./telemetry")` as the first
-    // thing inside sendClaim, immediately before the fetch call. The cause is
-    // crossing *any* `await` before `injectContext` runs, not dynamic import
-    // specifically — a reviewer's own follow-up experiment confirmed this by
-    // reproducing the identical dropped header with a static import plus a
-    // bare, unrelated `await Promise.resolve();` in the same spot. Under
-    // Zone.js's ZoneContextManager, native async/await bypasses Zone's
+  it("injects the active span's traceparent into the outbound request, surviving sendClaim's own await boundary", async () => {
+    // Under Zone.js's ZoneContextManager, native async/await bypasses Zone's
     // monkey-patched global Promise via realm-intrinsic continuation
-    // scheduling, so the request that reaches claims-agent carries no
-    // traceparent header at all — the browser's root span never connects to
-    // anything downstream. Fixed: `injectContext` is imported statically AND
-    // called before sendClaim's own first await, so no context ever needs to
-    // survive crossing one. This test asserts the actual header's substance
-    // (a real traceparent carrying the active span's own trace and span
-    // IDs), not merely that no error occurred, and reproduces the same real
-    // ZoneContextManager used in production (telemetry.ts's initTelemetry),
-    // not a hand-rolled stand-in.
+    // scheduling: crossing any `await` before `injectContext` runs drops the
+    // active span context, so the request that reaches claims-agent would
+    // carry no traceparent header at all and the browser's root span would
+    // never connect to anything downstream. `injectContext` is therefore
+    // imported statically (see a2a.ts) and called before sendClaim's own
+    // first await, so no context ever needs to survive crossing one. This
+    // test asserts the actual header's substance (a real traceparent
+    // carrying the active span's own trace and span IDs), not merely that no
+    // error occurred, and reproduces the same real ZoneContextManager used in
+    // production (telemetry.ts's initTelemetry), not a hand-rolled stand-in.
     initTelemetry();
 
     const fetchMock = vi.fn(async () =>

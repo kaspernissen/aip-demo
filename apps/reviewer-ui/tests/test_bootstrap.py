@@ -1,35 +1,13 @@
-"""bootstrap.py's OTel setup -- and the record of the departure it used to have.
+"""bootstrap.py's OTel setup: the trace-context propagator it registers.
 
-**Retired 2026-09-11 (M3).** Until this date this file pinned
-`_Level1CompatibleTraceContextPropagator`, a `TraceContextTextMapPropagator`
-subclass in `bootstrap.py` that masked reviewer-ui's *injected* flag byte down
-to `TraceFlags.SAMPLED`. Its five tests were:
-
-  * `test_the_installed_sdk_really_does_set_the_level_2_random_trace_id_bit`
-  * `test_the_injected_traceparent_carries_only_the_sampling_bit`
-  * `test_nothing_but_the_flag_byte_differs_from_the_upstream_propagator`
-  * `test_injecting_with_no_active_span_writes_nothing`
-  * `test_extraction_is_untouched_and_still_accepts_a_level_2_parent`
-
-and its docstring closed *"The day payments-api reaches otel-go >= v1.42.0,
-delete the workaround and this file together."* The first three existed only
-to pin the workaround and its premise; they are gone with it. The last two
-pinned *inherited* behaviour that the override happened to touch, so with no
-override there is nothing left for them to guard that upstream does not guard
-itself.
-
-What retired them: `systems/payments-api` moved from `go.opentelemetry.io/otel
-v1.41.0` -- whose `propagation/trace_context.go:107` reads `if version == 0 &&
-(h != "" || opts[0] > 2)`, discarding a Level 2 `-03` traceparent outright --
-to **v1.46.0**, whose same line reads `opts[0] > 3` and which masks the
-extracted flags to `FlagsSampled | FlagsRandom`. `docs/upstream-findings.md`
-Finding 11 is the full account and stays standing.
-
-The file itself does not go, because the *positive* claim is now worth
-pinning and was not pinnable before: reviewer-ui injects a plain,
-unmodified, Level 2 `-03` traceparent, exactly like every other Python
-service here. If someone reintroduces a mask -- or an SDK downgrade stops
-setting `0x02` -- the two tests below say so.
+reviewer-ui registers the stock upstream `TraceContextTextMapPropagator`, with
+no flag-byte masking, so it injects a plain, unmodified, Level 2 `-03`
+traceparent, exactly like every other Python service here. This matters
+because `systems/payments-api`'s pinned `go.opentelemetry.io/otel` version
+must accept that flag byte rather than discard the traceparent outright --
+see `docs/upstream-findings.md` Finding 11 for the full account. If someone
+reintroduces a mask -- or an SDK downgrade stops setting `0x02` -- the two
+tests below say so.
 
 The cross-service half of the proof is not here and cannot be: that
 payments-api *accepts* what this service sends is asserted on the live
@@ -51,11 +29,12 @@ import bootstrap  # noqa: F401
 
 
 def test_the_registered_trace_context_propagator_is_upstreams_own():
-    """No subclass, no mask, no departure.
+    """No subclass, no mask.
 
-    `type(...) is` rather than `isinstance(...)`: the retired workaround *was*
-    a `TraceContextTextMapPropagator` and would sail through an isinstance
-    check, so that is precisely the assertion that would not have caught it.
+    `type(...) is` rather than `isinstance(...)`: a masking subclass would
+    still *be* a `TraceContextTextMapPropagator` and would sail through an
+    isinstance check, so that is precisely the assertion that would not catch
+    it.
     """
     propagator = get_global_textmap()
     assert isinstance(propagator, CompositePropagator), propagator
@@ -76,7 +55,7 @@ def test_the_registered_trace_context_propagator_is_upstreams_own():
 
 
 def test_the_injected_traceparent_carries_the_level_2_random_trace_id_bit():
-    """The thing the workaround used to prevent, asserted as the wanted state.
+    """Asserts the wanted state directly, not just the absence of a mask.
 
     Injected from inside a genuinely recording, sampled span of a real SDK
     TracerProvider -- not a hand-built SpanContext, since the flag byte under

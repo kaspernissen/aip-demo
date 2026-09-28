@@ -1,9 +1,7 @@
-"""M1.2's final-review fix round (SF-2) added a `pytest`-pin tripwire to
-`agents/settlement-agent/tests/test_pins.py`, closing the "no service has any
-advisory gate" mechanism gap the final review named there -- but only for
-settlement-agent. `agents/claims-agent` and `tools/payments-mcp` got their own
-copies in M2.1 Task 6 (spec §11); `policy-decision-service` is the fourth and
-last Python service and had none until this file (M3 Task 1, Part A).
+"""A `pytest`-pin tripwire, one of a matching set across
+`agents/settlement-agent`, `agents/claims-agent`, `tools/payments-mcp` and
+this, the fourth and last Python service, so no service is left without an
+advisory gate on its own pinned versions.
 
 No `pytest-asyncio` assertion here: this service pins no `pytest-asyncio` at
 all (`requirements.txt`) because it has no async tests -- verified by
@@ -15,12 +13,12 @@ telemetry about this service's own dependency closure.
 Asserted from the installed tree via `importlib.metadata`, never by parsing
 `requirements.txt` -- a pin file is not an installed tree.
 
-M5 Task 3 (Step 3) adds three direct pins here: `openfeature-sdk`,
+Three direct pins here besides `pytest`: `openfeature-sdk`,
 `openfeature-provider-flagd` and `openfeature-hooks-opentelemetry`. Their own
 transitive closure (cachebox, mmh3, openfeature-flagd-api,
 openfeature-flagd-core, panzi-json-logic, pyyaml, semver) is not asserted
-individually, for the same reason the pre-M5 transitive closure above it
-never was: a pin *this file's own code imports directly* earns a tripwire so
+individually, for the same reason no other transitive closure in this file
+is: a pin *this file's own code imports directly* earns a tripwire so
 a floating reinstall cannot silently change behaviour underneath it; a
 dependency of a dependency does not, or every requirements.txt in this repo
 would need one test per transitive package.

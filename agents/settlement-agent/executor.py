@@ -1,28 +1,26 @@
 """A2A executor for settlement-agent.
 
-As of M1.2, decide_settlement is a real PydanticAI agent: it decides whether
-and how to pay, and drives payments-mcp itself (propose, then execute). The
-executor's job is just intake and reply — parse the incoming message, call
+decide_settlement is a real PydanticAI agent: it decides whether and how to
+pay, and drives payments-mcp itself (propose, then execute). The executor's
+job is just intake and reply — parse the incoming message, call
 decide_settlement once, and report what the ledger recorded.
 
-There is no policy check here, and there is none in settlement.py either. In
-M1 that was the whole point: EUR 6,200 left the company because a message
-asked for it, and the model itself chose to spend it. As of M2.2 the check
-exists, but it is deliberately somewhere this code cannot reach around -- the
-gateway's policy hook, deciding on the `tools/call` request itself. What
-changed in this file's neighbourhood is only the *reply*: a refused settlement
-comes back as a reply with `status: "refused"` carrying the model's
-explanation, not as a JSON-RPC error envelope (M2.2 Task 5).
+There is no policy check in this file, and none in settlement.py either: left
+unchecked, the model could choose to pay out any amount simply because a
+message asked for it. That check lives deliberately somewhere this code
+cannot reach around -- the gateway's policy hook, deciding on the
+`tools/call` request itself. A refused settlement comes back as a reply with
+`status: "refused"` carrying the model's explanation, not as a JSON-RPC error
+envelope.
 
-M3 Task 3: this same executor, in this same image, also runs as
+This same executor, in this same image, also runs as
 senior-settlement-agent -- a second Deployment, its own ServiceAccount, its
 own SPIFFE ID, nothing else different. So the one thing this file's `execute`
-method has to do that it didn't before is tell the two requests it can
-receive apart: a claim to settle (the shape above, routed to
-decide_settlement) and a human's approval of a payment already refused
-(routed to execute_approved). The two are distinguished structurally, by the
-presence of an `approval` key -- never by which workload is running, since
-both workloads run this exact code.
+method has to do is tell the two requests it can receive apart: a claim to
+settle (the shape above, routed to decide_settlement) and a human's approval
+of a payment already refused (routed to execute_approved). The two are
+distinguished structurally, by the presence of an `approval` key -- never by
+which workload is running, since both workloads run this exact code.
 """
 from __future__ import annotations
 
@@ -69,7 +67,7 @@ def _validate_approval(
         raise ValueError("approval.reviewerId is required")
 
     # The refusal's trace/span ids are optional on the wire (an approval for
-    # a refusal recorded before M3 Task 3 added refusedSpanId, say) --
+    # a refusal recorded without a `refusedSpanId`, say) --
     # `execute_approved`/`_refusal_link` already treat an empty pair as "no
     # link to draw", not as malformed.
     refused_trace_id = payload.get("refusedTraceId") or ""
@@ -88,8 +86,9 @@ class SettlementAgentExecutor(AgentExecutor):
         self, request_context: RequestContext, event_queue: EventQueue
     ) -> None:
         # Named request_context, not context: `context` shadows
-        # opentelemetry.context, which Task 7 needs in the claims-agent
-        # executor. Keeping the name consistent across agents avoids a rename.
+        # opentelemetry.context, which the claims-agent executor needs to
+        # import directly. Keeping the name consistent across agents avoids a
+        # rename.
         payload = json.loads(request_context.get_user_input())
 
         if "approval" in payload:
@@ -111,9 +110,9 @@ class SettlementAgentExecutor(AgentExecutor):
         # sees the real reason a settlement failed rather than a flattened
         # success or a swallowed exception.
         decision = await decide_settlement(claim, self._payments)
-        # Not "Settled claim": as of M2.2 this reply can say `refused`, and a
-        # log line that calls a refusal a settlement is the same lie the
-        # milestone exists to prevent.
+        # Not "Settled claim": this reply can say `refused`, and a log line
+        # that calls a refusal a settlement would misrepresent exactly what
+        # happened.
         logger.info(
             "Claim %s: %s -- %s",
             claim["claimId"],
@@ -126,13 +125,10 @@ class SettlementAgentExecutor(AgentExecutor):
         # `message/send` handler (ResultAggregator.consume_and_break_on_interrupt)
         # returns as soon as it sees the *first* Message-kind event and closes
         # the queue — any Message enqueued after that is silently dropped
-        # ("Queue is closed. Event will not be enqueued."). The brief's
-        # original sketch enqueued three messages assuming the caller would
-        # see the last one; that assumption doesn't hold for message/send, so
-        # the caller would have received only the intermediate "Assessed
-        # settlement" text and never the promised JSON reply. Emitting a
-        # single message here is what actually satisfies this agent's
-        # documented interface: "replies with a JSON object {claimId,
+        # ("Queue is closed. Event will not be enqueued."). Enqueuing more than
+        # one message here would mean the caller only ever sees the first of
+        # them; emitting a single message is what actually satisfies this
+        # agent's documented interface: "replies with a JSON object {claimId,
         # paymentId, amount, status, narrative}".
         await event_queue.enqueue_event(
             new_agent_text_message(
@@ -194,4 +190,4 @@ class SettlementAgentExecutor(AgentExecutor):
     async def cancel(
         self, request_context: RequestContext, event_queue: EventQueue
     ) -> None:
-        raise NotImplementedError("settlement-agent does not support cancellation in M1")
+        raise NotImplementedError("settlement-agent does not support cancellation")

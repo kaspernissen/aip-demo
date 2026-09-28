@@ -1,4 +1,4 @@
-"""Guards the M2.1 Task 4 workload-identity configuration.
+"""Guards the workload-identity configuration.
 
 Identity in this system is one string repeated in four files. The gateway's
 SPIFFE ID is what SPIRE's template renders, what settlement-agent asks SPIRE to
@@ -14,9 +14,9 @@ from it, so an install that lost the override would still come up, still mint
 SVIDs, and still verify them -- against `spiffe://example.org/...`. That is a
 system that passes its own tests while proving nothing about this platform.
 
-**Written against the failure modes the M2.1 Task 1 guard round documented**
-(see `tests/unit/test_stage2_cilium_config.py`'s module docstring for the full
-account of five guards that shipped inert):
+Design constraints that shape every check below (see
+`tests/unit/test_stage2_cilium_config.py`'s module docstring for the same
+family of guards applied to the cluster bring-up script):
 
 1. **No assertion here can be satisfied by a comment.** Every check either
    parses structure -- `yaml.safe_load` and `ast.parse`, both of which discard
@@ -26,20 +26,18 @@ account of five guards that shipped inert):
    *exactly one* assignment each and match a whole stripped line, so neither a
    stale second assignment nor a trailing comment can satisfy them.
 2. **No assertion reads only the first element of a list the schema allows to
-   be longer.** Fix round 1's whole subject. Every gateway check walks all
-   binds, all listeners and all routes; every pod check walks
-   `initContainers + containers`; every Service check walks all ports; the
-   behavioural checks assert on *every* matching `helm` invocation, not the
-   first. The inversion that makes this hold as the config grows: the rule is
-   not "there is one route and it is authenticated" but "every route that
-   exists is authenticated".
+   be longer.** Every gateway check walks all binds, all listeners and all
+   routes; every pod check walks `initContainers + containers`; every Service
+   check walks all ports; the behavioural checks assert on *every* matching
+   `helm` invocation, not the first. The rule is not "there is one route and
+   it is authenticated" but "every route that exists is authenticated".
 3. **The load-bearing orderings are proven behaviourally**, by running the real
    script against fake `helm`/`kubectl`/`kind`/`docker` and asserting on what
    it actually invoked. Nothing written in the file -- comment, string literal
    or echo -- can satisfy those.
 4. **Enumerations normalise whitespace before matching.** `deploy/` YAML and
-   this repo's docs both hard-wrap, and a hard-wrapped claim has already
-   defeated two independent enumerations in this project.
+   this repo's docs both hard-wrap, and a hard-wrapped claim can defeat a
+   naive enumeration.
 5. **Published measurements are guarded too.** The SPIFFE IDs
    `docs/telemetry-contract.md` and `docs/architecture.md` publish are checked
    against the two this repo registers. A document that has been quietly
@@ -47,33 +45,15 @@ account of five guards that shipped inert):
    specific stale value available here -- `.../sa/default` -- is exactly the
    failure the dedicated ServiceAccounts exist to prevent.
 
-Every check below was proven RED by breaking its input, twice: 78 mutations in
-the first round and 25 more in fix round 1, each applied to the real file and
-reverted, enumerated over the *checkers' decision paths* rather than over
-plausible document edits (the distinction that let a previous guard survive
-twelve mutations without covering the branch it existed for). Some of those
-mutations are expected to leave the suite GREEN -- a hard-wrapped header,
-doubled spaces inside a Go template, a commented-out second version
+Some edits are expected to leave this suite GREEN on purpose -- a hard-wrapped
+header, doubled spaces inside a Go template, a commented-out second version
 assignment, a comment merely mentioning cert-manager, a value moved
 consistently across every file that names it, and a *correctly* authenticated
 second listener -- because a guard that fires on those would be a guard nobody
 can edit around.
 
-Four real weaknesses surfaced that way and are fixed here rather than noted.
-Two from round one: a bare `"1.15.3" in header` was satisfiable by an unrelated
-sentence elsewhere in the same file, and a blanket ban on the string
-`cert-manager` in `setup-kind.sh` would have forbidden `--help` from honestly
-saying it is not installed. Two from fix round 1, both found by review: the
-`mcp_tools.py` audience check read text and took `literals[0]`, so a comment
-quoting the old value kept it green; and every gateway check read
-`binds[0].listeners[0]`, so a second listener with no `jwtAuth` at all left the
-suite green. A fifth was found while enumerating for those two and had not been
-reported: with the pod check widened to all containers, a mount and env var
-present only on an *init* container would have satisfied "at least one
-container is wired" while being unreachable at request time.
-
 Two deliberate non-goals. This module does not talk to a cluster, mint a token,
-or read a trace: the live evidence for those is the task report's captures and
+or read a trace: the live evidence for those lives in
 `tests/e2e/test_gateway_trace.py`. And it does not assert that SPIRE *works* --
 it asserts that the configuration says what the rest of the repo believes it
 says.
@@ -131,54 +111,43 @@ JWT_ISSUER = (
 )
 SETTLEMENT_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/settlement-agent"
 GATEWAY_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-platform/sa/agentgateway"
-# M2.2 Task 4: the third registered workload. Registered, but NOT fetched --
-# the PDS's pod carries no Workload API mount, because the identity it decides
-# on is the caller's, handed to it by the gateway as an already-verified
-# `jwt.sub`. See deploy/platform/spire/registration.yaml's closing note.
+# The third registered workload. Registered, but NOT fetched -- the PDS's pod
+# carries no Workload API mount, because the identity it decides on is the
+# caller's, handed to it by the gateway as an already-verified `jwt.sub`. See
+# deploy/platform/spire/registration.yaml's closing note.
 PDS_SPIFFE_ID = (
     f"spiffe://{TRUST_DOMAIN}/ns/northstar-platform/sa/policy-decision-service"
 )
-# M3 Tasks 3 and 4: the fourth and fifth registered workloads. Both are real
-# ServiceAccounts in `deploy/k8s/`, so SPIRE's `spiffeIDTemplate` derives these
-# without any new registration.
+# The fourth and fifth registered workloads. Both are real ServiceAccounts in
+# `deploy/k8s/`, so SPIRE's `spiffeIDTemplate` derives these without any new
+# registration.
 #
-# These two were added late, and the reason is worth keeping. The allow-list
-# below sat at three entries while Tasks 3 and 4 created two more identities,
-# so a document publishing either *correct* new ID was rejected as an offender
-# -- and both tasks did what this file's own comment predicts anyone would do:
-# they edited the document to match the test, substituting a placeholder for
-# the real SPIFFE ID. The guard was passing while both documents had been made
-# less true. That is the failure mode this comment already warned about, caught
-# happening twice, so: adding an identity to the cluster means adding it here,
-# in the same task.
+# Adding an identity to the cluster and adding it to this allow-list must
+# happen together: an allow-list that lags a real new identity rejects a
+# document that publishes the *correct* new SPIFFE ID as an offender, and the
+# fix that suggests itself -- editing the document to match the test rather
+# than widening the list -- makes the document less true while the guard
+# stays green.
 SENIOR_SETTLEMENT_SPIFFE_ID = (
     f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/senior-settlement-agent"
 )
 REVIEWER_UI_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/reviewer-ui"
-# M4 Task 4: the sixth registered workload, and the third in
-# `northstar-platform`.
+# The sixth registered workload, and the third in `northstar-platform`.
 #
-# **This comment said something false for most of the task that wrote it**, and
-# the correction is the useful part. It read: "`deploy/k8s/eval-scorer.yaml`
-# gives it a dedicated ServiceAccount, so SPIRE's `spiffeIDTemplate` derives
-# this ID from the chart's catch-all `default` CR without any new registration
-# -- exactly as it does for the two M3 identities above". The two M3 identities
-# are in `northstar-agents`; eval-scorer is in `northstar-platform`, and the
-# chart's catch-all CR *excludes* that namespace by name (`NotIn
-# [northstar-platform, spire-server, spire-system]`, read off the live CR). So
-# no entry was ever created: `spire-server entry show` listed an entry for
-# every other workload and none for it. The workload had a ServiceAccount, this constant, an
-# allow-list entry -- and no identity. It was inferred from the two nearest
-# precedents instead of being measured, which is exactly the defect class this
-# milestone keeps finding, committed inside the guard written against it.
-# `deploy/platform/spire/registration.yaml` now carries an explicit
+# Unlike the two identities above, this one is not covered by the chart's
+# catch-all `default` CR: that CR's namespace selector excludes
+# `northstar-platform` by name (`NotIn [northstar-platform, spire-server,
+# spire-system]`, read off the live CR). A workload placed in that namespace
+# without a ClusterSPIFFEID of its own gets no identity at all, silently --
+# `spire-server entry show` lists an entry for every other workload and none
+# for it. `deploy/platform/spire/registration.yaml` carries an explicit
 # non-fallback ClusterSPIFFEID for it, like agentgateway's and the PDS's.
 #
-# Added in the SAME task as the workload, which is the whole point of this
-# block's own account of ruling R22: two M3 tasks created an identity, found
-# this allow-list rejecting the correct new ID, and edited their *documents*
-# to substitute a placeholder rather than widen the list. The guard was
-# passing while both documents had been made less true.
+# Adding a workload and its allow-list entry belong in the same change: an
+# allow-list that lags a real new identity rejects the correct new SPIFFE ID
+# in any document that publishes it, and the fix that suggests itself --
+# editing the document to match the test -- makes the document less true
+# while the guard stays green.
 #
 # Registered, but NOT fetched, the same relationship
 # `policy-decision-service` has with its own: eval-scorer's pod carries no
@@ -283,12 +252,11 @@ def _prose(path: Path) -> str:
 def _python_spiffe_literals(path: Path) -> list[str]:
     """Every `spiffe://…` string *constant* in a Python module, via `ast`.
 
-    Regex over the file text was the first version of this, and review's
-    mutation R1 defeated it: changing the real literal while leaving a comment
-    that quoted the old one kept `literals[0]` correct and all 24 tests green.
-    That is this project's sixth instance of a guard satisfiable by a comment,
-    so this one does not read the file as text at all -- `ast.parse` has
-    discarded every comment before anything here can look at one.
+    A regex over the file text would be defeated by changing the real literal
+    while leaving a comment that quotes the old one: `literals[0]` would still
+    read as correct and every test would stay green. So this reads no file as
+    text at all -- `ast.parse` has discarded every comment before anything
+    here can look at one.
 
     Docstrings are excluded as well. They are not comments, so the parser keeps
     them, and a module that *documents* the audience in prose would otherwise
@@ -455,8 +423,8 @@ def test_the_values_header_records_both_pinned_chart_versions():
 def test_spires_own_prometheus_telemetry_is_enabled_on_both_server_and_agent():
     """SPIRE 1.15.3 emits no OTLP and no spans; Prometheus is its only real
     telemetry surface. Left at the chart default (`enabled: false`) SPIRE is
-    invisible -- the same hole M2.1 Task 3 found in agentgateway, which is why
-    this is asserted rather than assumed."""
+    invisible -- the same hole a component can leave in agentgateway's
+    telemetry, which is why this is asserted rather than assumed."""
     values = _yaml(SPIRE_VALUES)
     for chart in ("spire-server", "spire-agent"):
         prom = values.get(chart, {}).get("telemetry", {}).get("prometheus", {})
@@ -472,25 +440,19 @@ def test_spires_own_prometheus_telemetry_is_enabled_on_both_server_and_agent():
 
 
 def test_cert_manager_is_not_installed_below_stage_5():
-    """The M2 spec includes cert-manager "only to the extent SPIRE actually
-    needs it". The pinned SPIRE chart needs it for nothing this install
-    enables -- the OIDC provider's ingress TLS, spire-server federation TLS,
-    and the `certManager` upstreamAuthority, all off -- so SPIRE's own values
-    must never configure it.
+    """cert-manager is included in this system only to the extent something
+    actually needs it. The pinned SPIRE chart needs it for nothing this
+    install enables -- the OIDC provider's ingress TLS, spire-server
+    federation TLS, and the `certManager` upstreamAuthority, all off -- so
+    SPIRE's own values must never configure it.
 
-    **M5 Task 2 gave this guard a second half.** Until then the whole
-    assertion was an absence -- cert-manager was not installed anywhere in
-    this script, full stop, and this test's own docstring told the next task
-    that genuinely needed it to "install it pinned and record why, then
-    update this guard" rather than delete it. M5 Task 2 is that task: the
-    Open Feature Operator's webhooks need cert-manager for TLS, so
-    `scripts/setup-kind.sh` now installs it, pinned (`CERT_MANAGER_VERSION`),
-    inside the `"${STAGE}" -ge 5` block. What must stay true is narrower than
-    before but not gone: SPIRE (stage 2+) still needs no certManager-backed
-    feature, and nothing below stage 5 may invoke cert-manager tooling --
-    installing it a stage early would be the same "component installed
-    because a document named it" defect this guard has always existed to
-    catch, just moved one stage later.
+    The Open Feature Operator's webhooks (stage 5+) do need cert-manager for
+    TLS, so `scripts/setup-kind.sh` installs it, pinned
+    (`CERT_MANAGER_VERSION`), inside the `"${STAGE}" -ge 5` block. SPIRE
+    (stage 2+) still needs no certManager-backed feature, and nothing below
+    stage 5 may invoke cert-manager tooling -- installing it a stage early
+    would be a "component installed because a document named it" defect, just
+    at an earlier stage than the one that actually needs it.
 
     Scoped to *invocations* rather than to any mention of the string, on
     purpose. `setup-kind.sh --help` says out loud when cert-manager arrives
@@ -528,10 +490,10 @@ def test_cert_manager_is_not_installed_below_stage_5():
         and re.search(r"\b(helm|kubectl|jetstack)\b", line)
     ]
     assert installs, (
-        "setup-kind.sh no longer invokes cert-manager tooling at all -- if M5 "
-        "Task 2's install was removed, this guard's other half (SPIRE must "
-        "configure no certManager feature) still applies, but this half "
-        "should be deleted or rewritten rather than trivially satisfied"
+        "setup-kind.sh installs no cert-manager tooling at all -- if that "
+        "install was removed, this guard's other half (SPIRE must configure "
+        "no certManager feature) still applies, but this half should be "
+        "deleted or rewritten rather than trivially satisfied"
     )
 
     # Every such line must sit inside the `-ge 5` gate, not merely somewhere
@@ -572,21 +534,14 @@ def test_every_cluster_spiffeid_sets_the_controller_managers_class_name():
     only symptom is a workload that cannot fetch an SVID. The chart's own
     install NOTES say so in as many words.
 
-    **M2.2 Task 4 widened the count below from two to three**: the Policy
-    Decision Service is the third registered workload
-    (deploy/platform/spire/registration.yaml). The check's intent is unchanged
-    -- every ClusterSPIFFEID in this file must carry the controller-manager's
-    className -- and the count is what makes a silently *absent* CR fail here
-    as well as a classless one. It is still an exact count, deliberately: an
-    identity appearing in this trust domain without review still fails.
-
-    **M4 Task 4 widened it to four**, adding eval-scorer, and the count is now
-    read from `test_the_registered_spiffe_ids_are_built_from_this_projects_
-    trust_domain`'s `expected` map rather than restated -- that map already
-    names every CR this file must contain, and keeping a second hand-written
-    number beside it is how the two drift. It went red on the fourth CR before
-    that change, which is the guard working; deriving it means the *next* one
-    is reviewed in one place instead of two.
+    Every ClusterSPIFFEID in this file must carry the controller-manager's
+    className, and the count is checked too, so a silently *absent* CR fails
+    here as well as a classless one -- an identity appearing in this trust
+    domain without review still fails. The count is read from
+    `test_the_registered_spiffe_ids_are_built_from_this_projects_trust_domain`'s
+    `expected` map rather than restated -- that map already names every CR
+    this file must contain, and keeping a second hand-written number beside it
+    is how the two would drift.
     """
     docs = _yaml_docs(SPIRE_REGISTRATION)
     crs = [d for d in docs if d.get("kind") == "ClusterSPIFFEID"]
@@ -638,26 +593,20 @@ def test_the_registered_spiffe_ids_are_built_from_this_projects_trust_domain():
 
     Rendered by substitution here rather than asserted as a literal, so the
     guard fails if the *template* changes shape (say to `/sa/{{...}}/ns/{{...}}`)
-    as well as if the trust domain drifts.
+    as well as if the trust domain drifts. It is an exact set comparison, so
+    an unreviewed identity fails, and each entry's template is rendered rather
+    than matched as a string.
 
-    **M2.2 Task 4 widened `expected` from two entries to three**, adding the
-    Policy Decision Service. Nothing about the check's shape changed: it is
-    still an exact set comparison, so an unreviewed identity fails, and each
-    entry's template is still rendered rather than matched as a string.
-
-    **M4 Task 4 widened it to four**, adding eval-scorer -- and the reason is
-    worth keeping, because it is the thing no guard in this file could see. The
-    chart's catch-all `default` CR excludes the `northstar-platform` namespace
-    (measured on the live CR: `NotIn [northstar-platform, spire-server,
-    spire-system]`), so a workload added there without a CR of its own gets
-    **no identity at all**, silently. eval-scorer ran in that state:
-    `spire-server entry show` on this cluster listed an entry for every other
-    workload and none for it. Nothing went red, because every SPIFFE check in this file
-    compares strings the documents publish against configuration the repo
-    writes, and an identity that was never registered appears in neither.
-    Registering it here is the fix; publishing the ID in `docs/architecture.md`
-    in the same task is what makes the allow-list further down this file live
-    rather than decorative.
+    The chart's catch-all `default` CR excludes the `northstar-platform`
+    namespace (measured on the live CR: `NotIn [northstar-platform,
+    spire-server, spire-system]`), so a workload added there without a CR of
+    its own gets **no identity at all**, silently -- `spire-server entry show`
+    lists an entry for every other workload and none for it. Nothing in this
+    file goes red on that by itself, because every SPIFFE check here compares
+    strings the documents publish against configuration the repo writes, and
+    an identity that was never registered appears in neither. Registering it
+    is the fix; publishing the ID in `docs/architecture.md` is what makes the
+    allow-list further down this file live rather than decorative.
     """
     crs = {
         d["metadata"]["name"]: d["spec"]
@@ -905,37 +854,30 @@ _DOC_SPIFFE_ID_RE = re.compile(r"spiffe://[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+")
     "doc", DOCS_PUBLISHING_SPIFFE_IDS, ids=lambda p: p.name
 )
 def test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures(doc):
-    """The published identity is a measurement, so it gets a guard.
+    """A SPIFFE ID published in the docs is a measurement, so it gets a guard.
 
-    Review's finding, and the one that matters most out of proportion to its
-    label: `docs/telemetry-contract.md` publishes
+    `docs/telemetry-contract.md` publishes
     `jwt.sub = spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent`
-    as read off a live span, and nothing checked it. Swapping it to
-    `.../sa/default` left the whole suite green -- and `.../sa/default` is not
-    an arbitrary wrong value, it is exactly what SPIRE minted for this pod
-    before it was given a ServiceAccount of its own. A regression to the one
-    failure this task exists to prevent would have shipped with a passing
-    suite, having also quietly rewritten the document that would have exposed
-    it.
+    as read off a live span. Swapping it to `.../sa/default` would leave the
+    whole suite green -- and `.../sa/default` is not an arbitrary wrong value,
+    it is exactly what SPIRE mints for a pod with no ServiceAccount of its
+    own. A regression to that failure would ship with a passing suite, having
+    also quietly rewritten the document that would have exposed it.
 
     Two things follow from that about the shape of this check.
 
-    It is an **allow-list over every occurrence**, not an equality check on the
-    one line review happened to name. The value appears in several places in
-    that file and in `architecture.md`; a check pinned to a line number, or to
-    the attribute block alone, would leave the others exactly as unguarded as
-    they were. So the enumeration unit is "every SPIFFE ID anywhere in the
-    document", and the permitted set is every ID this repo actually configures
-    -- which makes a wrong trust domain, a wrong namespace and a wrong service
-    account all fail, not only `sa/default`.
+    It is an **allow-list over every occurrence**, not an equality check on
+    one line. The value appears in several places in that file and in
+    `architecture.md`; a check pinned to a line number, or to one attribute
+    block alone, would leave the others exactly as unguarded as they were. So
+    the enumeration unit is "every SPIFFE ID anywhere in the document", and
+    the permitted set is every ID this repo actually configures -- which makes
+    a wrong trust domain, a wrong namespace and a wrong service account all
+    fail, not only `sa/default`.
 
-    **No count is written here, deliberately.** This paragraph said "the three
-    IDs this repo actually registers" while `permitted` already held five, and
-    said "three places in that file" without anything checking it. Both were
-    the stale-prose class this milestone keeps finding, in the docstring of a
-    guard written against exactly that failure. The set below is the single
-    place the answer lives; prose that restates its size only goes stale
-    again.
+    No count is written in this docstring, deliberately: the `permitted` set
+    below is the single place the answer lives, so prose restating its size
+    cannot go stale against it.
 
     And it enumerates over the **raw text**, deliberately including prose,
     tables and fenced blocks. A published measurement is wrong wherever it
@@ -950,16 +892,11 @@ def test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures(doc):
         "point this at where it went rather than deleting the check."
     )
     # Every identity this repository configures, whether or not it has a
-    # ClusterSPIFFEID of its own. `PDS_SPIFFE_ID` was registered by M2.2 Task 4
-    # and checked against the CR's own rendered template by
-    # `test_the_registered_spiffe_ids_are_built_from_this_projects_trust_domain`
-    # -- but it was missing from *this* allow-list, so the moment a document
-    # published an identity this repository genuinely configures, the guard
-    # would have called a correct document an offender. A guard that fails on a
-    # correct document is as harmful as one that passes a wrong one: both
-    # teach a reader to edit the document to match the test. M3 added the two
-    # `northstar-agents` identities and M4 Task 4 added eval-scorer's, each in
-    # the task that created the workload (ruling R22).
+    # ClusterSPIFFEID of its own. A guard that fails on a document publishing
+    # a genuinely correct new SPIFFE ID is as harmful as one that passes a
+    # wrong one: both teach a reader to edit the document to match the test
+    # instead of fixing the guard. Adding a workload's identity here belongs
+    # in the same change that creates the workload.
     permitted = {
         SETTLEMENT_SPIFFE_ID,
         GATEWAY_SPIFFE_ID,
@@ -983,7 +920,7 @@ def test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures(doc):
 
 
 def test_the_documented_jwt_sub_value_is_the_callers_attested_identity():
-    """The specific site review named, checked structurally rather than by line.
+    """Checked structurally rather than by line.
 
     The allow-list above catches a swap to any unregistered ID. This one
     additionally pins *which* of the two registered IDs belongs in the
@@ -1020,16 +957,12 @@ def test_the_documented_jwt_sub_value_is_the_callers_attested_identity():
 def _jwt_auth_blocks(config: dict) -> list[tuple[str, dict]]:
     """The `jwtAuth` block of **every** route, and every route must have one.
 
-    Previously this read `binds[0].listeners[0].routes[0]` and additionally
-    asserted `len(routes) == 1`. Review showed why that is not the same thing:
-    a *second listener* with no `jwtAuth` satisfied every assertion in this
-    file, because nothing looked past the first one. The route count assertion
-    was load-bearing for exactly one level of a three-level structure.
-
-    So the shape of the check is inverted. Instead of "there is one route and
-    it is authenticated", it is "every route that exists is authenticated" --
-    which stays true when a route or a listener is legitimately added, and goes
-    red the moment one of them is anonymous.
+    A second listener with no `jwtAuth` would satisfy a check that only looked
+    at the first route of the first listener, because nothing would look past
+    it. So the shape of the check is "every route that exists is
+    authenticated", not "there is one route and it is authenticated" -- which
+    stays true when a route or a listener is legitimately added, and goes red
+    the moment one of them is anonymous.
     """
     blocks = []
     unauthenticated = []
@@ -1069,8 +1002,8 @@ def test_the_gateway_requires_a_valid_jwt_rather_than_merely_validating_one():
             f"{where}.jwtAuth.mode must be 'strict'; got "
             f"{jwt_auth.get('mode')!r}. 'optional' (the agentgateway default) "
             "and 'permissive' both admit requests with a missing or invalid "
-            "JWT, which would make every identity assertion in this milestone "
-            "conditional on the caller's goodwill."
+            "JWT, which would make every identity assertion here conditional "
+            "on the caller's goodwill."
         )
 
 
@@ -1098,39 +1031,21 @@ def test_the_gateway_trusts_exactly_the_issuer_spire_is_configured_to_mint():
 
 
 def test_the_gateway_carries_only_the_reviewed_authorization_mechanism():
-    """**SUPERSEDES `test_the_gateway_carries_no_authorization_policy_yet`
-    (M2.1 Task 4). Read this before assuming a guard was relaxed.**
+    """This gateway's only authorization mechanism is `mcpGuardrails`, checked
+    key by key in `tests/unit/test_stage2_pds_config.py` (including that it is
+    fail-closed). A native `mcpAuthorization` CEL rule, a generic
+    `authorization` block or an `extAuthz` hook would each be a second,
+    independent place a payment could be permitted or denied -- with no test
+    asserting its shape, no fail-closed guarantee, and nothing in a trace
+    distinguishing its decision from the PDS's. The net number of unchecked
+    authorization mechanisms this file permits is zero.
 
-    That guard's own docstring read: "M2.1 makes identity real; a later
-    milestone decides what to do with it" and, in its failure message, "The
-    denial is a later milestone." Its forbidden set was
-    `("mcpAuthorization", "authorization", "extAuthz", "mcpGuardrails")`.
-
-    That later milestone is M2.2, and its Task 4 is what added `mcpGuardrails`
-    -- the whole point of the milestone. So this is not an M2.1 measurement
-    quietly widened to accommodate new code: it is a scope assertion that
-    named its own expiry condition, reaching it. The distinction matters
-    because the two are indistinguishable from the diff alone, which is why it
-    is written out here rather than left to a commit message.
-
-    What is deliberately preserved is the property the original guard actually
-    protected: that no *unreviewed* authorization mechanism appears on this
-    gateway. Three of the four forbidden keys are still forbidden. A native
-    `mcpAuthorization` CEL rule, a generic `authorization` block or an
-    `extAuthz` hook would each be a second, independent place a payment could
-    be permitted or denied -- with no test asserting its shape, no fail-closed
-    guarantee, and nothing in a trace distinguishing its decision from the
-    PDS's. `mcpGuardrails` moves from "forbidden" to "required, and asserted in
-    detail": `tests/unit/test_stage2_pds_config.py` pins its failure mode, its
-    phase, its target and its identity contract, key by key. The net number of
-    unchecked authorization mechanisms this file permits is still zero.
-
-    Structural, over the parsed document, for the original's reason: a comment
-    discussing `mcpAuthorization` must not trip it (this config now carries
-    several paragraphs of them) and an actual rule block must not hide from it.
-    Still enumerated over every bind, listener and route, and over
-    `frontendPolicies`, which is a document-level block Task 3's tracing lives
-    in and therefore a third place a policy can hide.
+    Structural, over the parsed document: a comment discussing
+    `mcpAuthorization` must not trip it (this config carries several
+    paragraphs of them) and an actual rule block must not hide from it.
+    Enumerated over every bind, listener and route, and over
+    `frontendPolicies`, which is a document-level block the tracing policy
+    lives in and therefore a third place a policy can hide.
     """
     config = _yaml(GATEWAY_CONFIG)
     forbidden = ("mcpAuthorization", "authorization", "extAuthz")
@@ -1153,20 +1068,18 @@ def test_the_gateway_carries_only_the_reviewed_authorization_mechanism():
         "platform can stop governing without any test noticing."
     )
     # The other half of "only": the reviewed mechanism must actually be there.
-    # Without this the test above passes on a gateway with no authorization at
-    # all, which is precisely the M2.1 state this one supersedes -- a guard
-    # that permits the thing it replaced is not a replacement.
+    # Without this the test above would pass on a gateway with no
+    # authorization at all -- a guard that permits an ungoverned gateway is
+    # not doing its job.
     governed = [
         where
         for where, route in _all_routes(config)
         if ((route.get("policies") or {}).get("mcpGuardrails") or {}).get("processors")
     ]
     assert governed, (
-        "no route on this gateway carries an mcpGuardrails processor. M2.2 "
-        "replaced M2.1's 'no authorization yet' with 'exactly this "
-        "authorization', so an absent guardrail is now a regression, not a "
-        "prior state -- the gateway would permit every tool call it can "
-        "authenticate."
+        "no route on this gateway carries an mcpGuardrails processor. An "
+        "absent guardrail is a regression, not an acceptable state -- the "
+        "gateway would permit every tool call it can authenticate."
     )
 
 
@@ -1359,11 +1272,10 @@ _COPIED = [
     Path("deploy/platform/spire/values.yaml"),
     Path("deploy/platform/spire/registration.yaml"),
     Path("deploy/platform/spire/metrics.yaml"),
-    # M4 Task 1, fix round 1: setup-kind.sh now *reads* the collector config
-    # (it strips the stage-4-only OpenSearch regions below stage 4), so a tree
-    # without these files makes the script die at Step 7 under `set -e` before
-    # it ever reaches the SPIRE step these tests assert on. The ConfigMap
-    # creation itself was always faked, which is why they were absent before.
+    # setup-kind.sh reads the collector config (it strips the stage-4-only
+    # OpenSearch regions below stage 4), so a tree without these files makes
+    # the script die at Step 7 under `set -e` before it ever reaches the SPIRE
+    # step these tests assert on. The ConfigMap creation itself is faked.
     Path("deploy/observability/collector-config.yaml"),
     Path("deploy/observability/collector-config-dash0.yaml"),
 ]
@@ -1421,20 +1333,17 @@ def _capture_path(tmp_path):
 def _write_capture(tmp_path, stage, returncode, combined, invocations):
     """Persist the sandboxed run's whole output next to the test that caused it.
 
-    **Why this exists (M2.2 final review, adjudication 4 / ruling R38).**
-    `test_stage_two_installs_spire_with_the_pinned_versions_and_values` failed
-    once, mid-task, and not in ~90 further runs. Its assertion message already
-    interpolates this script's entire captured output, so the failing run
-    printed the reason it died — and the record kept only the line number. The
-    evidence was on screen and was discarded, and the ruling has now cost two
-    milestones' worth of re-runs precisely because nobody has that output.
+    `test_stage_two_installs_spire_with_the_pinned_versions_and_values` can
+    fail intermittently, and its assertion message already interpolates this
+    script's entire captured output -- but a failing run's scrollback is easy
+    to lose if the only record kept is the line number, and the natural
+    response to an intermittent failure is to re-run it, which destroys the
+    scrollback that held the reason it died.
 
     So the output is written to a file as well as interpolated. `tmp_path` is
     pytest's own per-test temporary directory, which pytest retains for the
     last three runs, so this survives the re-run that usually clears the
-    intermittency — which is the whole problem: the natural response to a red
-    R38 is to re-run, and a re-run is exactly what destroys the terminal
-    scrollback.
+    intermittency.
 
     Written on every run, not only on failure: the assertion has no way to know
     a failure is coming, and a passing run's capture is the healthy baseline to
@@ -1463,14 +1372,14 @@ def _write_capture(tmp_path, stage, returncode, combined, invocations):
 
 def _diagnostics(tmp_path) -> str:
     """The tail every assertion in this harness carries, naming the capture
-    file. See `_write_capture` for why (adjudication 4 / R38)."""
+    file. See `_write_capture` for why."""
     return (
         f"\n\nFull harness capture (invocations, stdout and stderr) written to:"
         f"\n  {_capture_path(tmp_path)}\n"
         "pytest keeps the last three temporary directories, so this file "
-        "survives the re-run that clears this failure. If R38 has recurred, "
-        "paste that file rather than re-running: the reason the sandboxed "
-        "script exited early is in it."
+        "survives the re-run that clears an intermittent failure. Read that "
+        "file rather than re-running: the reason the sandboxed script exited "
+        "early is in it."
     )
 
 
@@ -1495,8 +1404,8 @@ def test_stage_two_installs_the_crds_chart_before_the_spire_chart(tmp_path):
         for i, c in enumerate(installs)
         if "spiffe/spire " in c or c.rstrip().endswith("spiffe/spire")
     ]
-    # Same failure mode as the R38 assertion below, from the same harness, so
-    # it carries the same pointer at the capture file (adjudication 4).
+    # Same intermittent-failure risk as the assertion below, from the same
+    # harness, so it carries the same pointer at the capture file.
     assert crds, (
         f"`spiffe/spire-crds` was never installed. Invocations:\n{installs}\n{out}"
         + _diagnostics(tmp_path)
@@ -1525,11 +1434,11 @@ def test_stage_two_installs_spire_with_the_pinned_versions_and_values(tmp_path):
     installs = _helm_installs(calls)
     crds = [c for c in installs if "spiffe/spire-crds" in c]
     spire = [c for c in installs if "spiffe/spire " in c and "spire-crds" not in c]
-    # THIS is the R38 assertion. When it fails, `installs` lacks the
-    # `helm upgrade --install spire` line, which means the sandboxed script
-    # exited before scripts/setup-kind.sh's SPIRE install -- so the reason is
-    # in the output below and in the capture file named at the end of this
-    # message. Do not re-run before reading it (adjudication 4).
+    # When this fails, `installs` lacks the `helm upgrade --install spire`
+    # line, which means the sandboxed script exited before
+    # scripts/setup-kind.sh's SPIRE install -- so the reason is in the output
+    # below and in the capture file named at the end of this message. Read it
+    # before re-running.
     assert crds and spire, (
         f"missing a SPIRE install:\n{installs}\n{out}" + _diagnostics(tmp_path)
     )

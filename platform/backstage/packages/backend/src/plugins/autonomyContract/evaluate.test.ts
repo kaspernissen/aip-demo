@@ -25,7 +25,7 @@ function shippedFlagSpec(thenBranch: string, elseBranch: string) {
 }
 
 describe('resolveAutonomyLevel', () => {
-  it('resolves the named caller to the then-branch (M5-R8 shipped state)', () => {
+  it('resolves the named caller to the then-branch (shipped state)', () => {
     const spec = shippedFlagSpec('assisted', 'assisted');
     expect(resolveAutonomyLevel(spec, SETTLEMENT_AGENT)).toEqual({
       level: 'assisted',
@@ -52,11 +52,11 @@ describe('resolveAutonomyLevel', () => {
   });
 
   it('fails closed to the PDS restrictive constant, NOT defaultVariant, when the flag is DISABLED', () => {
-    // M6 task-3 review, M4(a): flagd errors on DISABLED (FLAG_NOT_FOUND),
-    // and the PDS's own caller-supplied default (RESTRICTIVE_LEVEL) is what
-    // actually resolves -- never this flag's defaultVariant. defaultVariant
-    // is deliberately 'autonomous' here, NOT 'assisted': the old (wrong)
-    // behaviour of echoing defaultVariant would return 'autonomous' and
+    // flagd errors on DISABLED (FLAG_NOT_FOUND), and the PDS's own
+    // caller-supplied default (RESTRICTIVE_LEVEL) is what actually
+    // resolves -- never this flag's defaultVariant. defaultVariant is
+    // deliberately 'autonomous' here, NOT 'assisted': echoing defaultVariant
+    // instead of the restrictive constant would return 'autonomous' and
     // this assertion would catch it.
     const spec = {
       ...shippedFlagSpec('autonomous', 'autonomous'),
@@ -70,11 +70,11 @@ describe('resolveAutonomyLevel', () => {
   });
 
   it('refuses when the targeting branch names a variant flagd would not resolve either', () => {
-    // M6 task-3 review, M4(b): this reader used to echo the targeting
-    // branch's variant NAME verbatim without checking `variants`. flagd
-    // looks the name up and errors if it is not declared (and the PDS then
-    // denies) -- a renamed/typo'd branch must not be displayed as if it
-    // were a real, PDS-enforced level.
+    // The targeting branch's variant NAME is checked against `variants`
+    // rather than echoed verbatim. flagd looks the name up and errors if
+    // it is not declared (and the PDS then denies) -- a renamed/typo'd
+    // branch must not be displayed as if it were a real, PDS-enforced
+    // level.
     const spec = {
       state: 'ENABLED',
       variants: { assisted: 'assisted', autonomous: 'autonomous' },
@@ -150,14 +150,14 @@ describe('resolveAutonomyLevel', () => {
     );
   });
 
-  it('refuses when defaultVariant names a variant that is not declared in variants (whole-branch review M2)', () => {
+  it('refuses when defaultVariant names a variant that is not declared in variants', () => {
     // The sibling of the "refuses when the targeting branch names a variant
     // flagd would not resolve either" test above, but for the NO-TARGETING
-    // path: until this fix, an absent/null targeting block returned
-    // defaultVariant verbatim without ever consulting `variants`, so a
-    // typo'd defaultVariant displayed as a real level while flagd/the PDS
-    // would have refused it. No `targeting` key at all, so this can only go
-    // red through the default-variant path.
+    // path: an absent/null targeting block must not return defaultVariant
+    // verbatim without consulting `variants`, or a typo'd defaultVariant
+    // would display as a real level while flagd/the PDS would refuse it.
+    // No `targeting` key at all, so this can only go red through the
+    // default-variant path.
     const spec = {
       state: 'ENABLED',
       variants: { assisted: 'assisted', autonomous: 'autonomous' },

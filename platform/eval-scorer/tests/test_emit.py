@@ -1,14 +1,14 @@
 """What the SDK's `score()` really takes, and what this service really emits.
 
-**The first test in this file is the correction to the M1 record.** M1 spec
-§13 recorded the spike's finding as
+**The first test in this file pins the measured signature against a stale
+assumption.** An earlier record described the signature as
 `score(name, value, trace_id, span_id, label, explanation)`. The published
-package takes only the first two positionally. Calling it the way the record
-reads raises `TypeError`, so the record is not a harmless approximation -- it
-is a call that does not work. The record has been corrected with a dated note
-(M1 spec §13); this asserts the measured signature so a future bump that moves
-it reddens here rather than in production, which is the difference between a
-corrected record and a record that will go stale again.
+package takes only the first two positionally. Calling it the way that
+record reads raises `TypeError`, so the record was not a harmless
+approximation -- it was a call that does not work. This asserts the measured
+signature so a future bump that moves it reddens here rather than in
+production, which is the difference between a corrected record and a record
+that goes stale again.
 """
 from __future__ import annotations
 
@@ -46,16 +46,15 @@ def test_the_sdks_score_signature_is_the_measured_one_not_the_m1_record():
     ], (
         "opensearch-genai-observability-sdk-py's `score()` parameter list has "
         f"changed: {list(parameters)}. scorer/emit.py calls it by keyword and "
-        "M1 spec §13's dated correction describes this exact list."
+        "depends on exactly this list."
     )
     assert parameters["name"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
     assert parameters["value"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
     for name in ("trace_id", "span_id", "label", "explanation", "response_id", "attributes"):
         assert parameters[name].kind is inspect.Parameter.KEYWORD_ONLY, (
-            f"{name} is no longer keyword-only. The M1 record described all "
-            "six of name/value/trace_id/span_id/label/explanation as "
-            "positional, which was wrong at 0.2.8; if that has changed back, "
-            "the correction in M1 spec §13 needs revisiting."
+            f"{name} is no longer keyword-only. name/value/trace_id/span_id/"
+            "label/explanation are not all positional at 0.2.8; if that "
+            "changes, scorer/emit.py's keyword call needs revisiting."
         )
 
 

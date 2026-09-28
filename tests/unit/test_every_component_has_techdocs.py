@@ -43,13 +43,12 @@ class MkDocsLoader(yaml.SafeLoader):
 
         format: !!python/name:pymdownx.superfences.fence_code_format
 
-    `yaml.safe_load` raises `ConstructorError` on that tag, so every mkdocs.yml
-    in this repo became unparseable to the guards here the moment mermaid
-    rendering was added. The fix is not to loosen the loader to PyYAML's unsafe
-    one -- that would IMPORT the named module, which is not installed in this
-    venv and does not need to be -- but to construct the tag as the string it
-    names. Nothing is imported and nothing is called; the guards get a value
-    they can assert on.
+    `yaml.safe_load` raises `ConstructorError` on that tag, so any mkdocs.yml
+    using mermaid's custom fence is unparseable to the guards here. The fix is
+    not to loosen the loader to PyYAML's unsafe one -- that would IMPORT the
+    named module, which is not installed in this venv and does not need to be
+    -- but to construct the tag as the string it names. Nothing is imported
+    and nothing is called; the guards get a value they can assert on.
 
     Exported rather than private because `test_mermaid_diagrams.py` needs the
     same reading of the same files, and two loaders that disagree about what an
@@ -134,19 +133,19 @@ def test_every_mkdocs_config_actually_parses():
     """An `mkdocs.yml` that exists but does not parse fails exactly like one
     that is missing, and reports itself worse.
 
-    Two of the nine written for this pass had an unquoted `site_description`
-    whose value contained a colon --
+    An unquoted `site_description` whose value contains a colon --
 
         site_description: The one decision point: permit or deny, ...
 
-    -- which YAML reads as a nested mapping and rejects. The component's page
-    still loads, its Docs tab still appears, and the failure surfaces only as
-    `bad indentation of a mapping entry (13:41)` streamed into the tab's own
-    build log, at the moment a person clicks it. On stage, that is the click.
+    -- is a common way to hit this: YAML reads it as a nested mapping and
+    rejects it. The component's page still loads, its Docs tab still appears,
+    and the failure surfaces only as `bad indentation of a mapping entry
+    (13:41)` streamed into the tab's own build log, at the moment a person
+    clicks it. On stage, that is the click.
 
-    The test above asserts the file is *there*; it was, in both cases, and
-    stayed green. Existence and validity are separate claims, and the cheap
-    one was the only one being made.
+    The test above only asserts the file is *there*. Existence and validity
+    are separate claims, and this test is the one that makes the second claim
+    too.
     """
     dirs = _component_dirs(REPO_ROOT)
 
@@ -181,8 +180,8 @@ def test_the_system_documents_the_solution():
     what they add up to.
 
     A portal that can tell you what `settlement-agent` does but not what
-    Northstar *is* is half a portal, and that was the state until the System
-    entity got its own TechDocs. The same three links have to hold as for a
+    Northstar *is* is half a portal, which is why the System entity needs its
+    own TechDocs too. The same three links have to hold as for a
     component -- entity annotation, mkdocs.yml, docs entry point -- except the
     System's entity lives at the repo root, so `dir:.` resolves there.
 

@@ -53,7 +53,7 @@ describe('AutonomyContractPage', () => {
       'http://localhost:7007/api/autonomy-contract/status',
     );
     // Two "assisted" chips -- one per identity -- plus the defaultVariant
-    // chip: this is the fail-closed shipped state (M5-R8), not a guess.
+    // chip: this is the fail-closed shipped state, not a guess.
     expect(screen.getAllByText('assisted').length).toBeGreaterThanOrEqual(2);
   });
 

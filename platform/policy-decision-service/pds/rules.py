@@ -8,7 +8,7 @@ this module never learns what a wire is.
 import math
 from dataclasses import dataclass
 
-# The rule shape the spec fixes, and the one M5 mutates:
+# The rule shape:
 #   "settlement-agent, at autonomy level `assisted`, may execute up to €6,000."
 # Keyed by (SPIFFE ID, autonomy level) so the identity is structurally required
 # rather than merely consulted.
@@ -17,57 +17,57 @@ EXECUTE_LIMITS: dict[tuple[str, str], float] = {
      "assisted"): 6000.0,
     ("spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent",
      "autonomous"): 1_000_000.0,
-    # M3: the colleague with higher approval authority the agent already
+    # The colleague with higher approval authority the agent already
     # narrates. Higher limit, same rule, same code path. Approval changes who
-    # asks; it does not change what is allowed. `decide()` below is
-    # untouched -- this row is the entire M3 change to this file's policy.
+    # asks; it does not change what is allowed -- this row is the only
+    # policy difference for that identity; `decide()` itself needs no
+    # branch for it.
     ("spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent",
      "assisted"): 25_000.0,
 }
 
-# Whole-branch review, finding N6: EXECUTE_LIMITS is keyed by (caller, level),
-# so a miss below is ambiguous between "this caller has no row at all" and
-# "this caller is known, but not at this level" -- a contract typo in the
-# autonomy level (or, before M5, an unreachable variant) used to be reported
-# under the same `unknown_caller` rule name as a genuinely unrecognised
-# identity. The label names the wrong dimension in that second case: the
-# caller IS known, the level is not, and in an audit trail that distinction
-# is the whole point. Derived from EXECUTE_LIMITS' own keys, not retyped, so
+# EXECUTE_LIMITS is keyed by (caller, level), so a miss below is ambiguous
+# between "this caller has no row at all" and "this caller is known, but not
+# at this level" -- a contract typo in the autonomy level (or an unreachable
+# variant) would otherwise be reported under the same `unknown_caller` rule
+# name as a genuinely unrecognised identity. The label names the wrong
+# dimension in that second case: the caller IS known, the level is not, and
+# in an audit trail that distinction is the whole point. Derived from
+# EXECUTE_LIMITS' own keys, not retyped, so
 # a caller added or removed there needs no matching edit here.
 _KNOWN_CALLERS = frozenset(caller for caller, _level in EXECUTE_LIMITS)
 
 # Tools with no world-changing effect. Proposing is reversible; executing moves
 # money. Only the latter is limited.
 #
-# M3 Task 3: `refuse_payment` joins `propose_payment` here. It is
-# settlement-agent recording, through the same governed MCP path everything
-# else in this repo uses, the reason a payment already did not execute -- it
-# moves no money and reverses nothing, so it is unlimited for the same reason
+# `refuse_payment` joins `propose_payment` here. It is settlement-agent
+# recording, through the same governed MCP path everything else in this
+# repo uses, the reason a payment already did not execute -- it moves no
+# money and reverses nothing, so it is unlimited for the same reason
 # proposing is.
 #
-# M3 Task 3 fix round (R11): `get_payment` joins them too. `execute_approved`
+# `get_payment` joins them too. `execute_approved`
 # (agents/settlement-agent/settlement.py) reads the ledger back before
 # executing an approval, and a read that moves nothing and reverses nothing is
 # exactly this set's own admission rule.
 UNLIMITED_TOOLS = frozenset({"propose_payment", "refuse_payment", "get_payment"})
 LIMITED_TOOLS = frozenset({"execute_payment"})
 
-# M3 Task 3 fix round (R12b, finding 2): `refuse_payment` was unconditional for
-# ANY caller, including `caller=None` -- so any holder of a valid SVID (or, in
+# Without this table, `refuse_payment` would be unconditional for ANY
+# caller, including `caller=None` -- so any holder of a valid SVID (or, in
 # principle, none at all) could mark an arbitrary `proposed` payment `refused`
 # with attacker-chosen `rule`/`limit`/`requested`/`narrative`, inject it into
 # the reviewer's queue, and overwrite an existing refusal's
 # `refusedTraceId`/`refusedSpanId` -- authorship of the exact surface a human
 # reads before releasing money.
 #
-# The reviewer put a caller restriction on the milestone's debt list because
-# it "needs a branch in decide()", which Task 3 was rightly forbidden from
-# adding. That reading is overruled (ruling R12): the no-new-logic constraint
-# exists to stop the policy engine acquiring an input that WIDENS what is
-# permitted -- an override flag, an approval token. A caller restriction on an
-# already-unlimited tool NARROWS what is permitted; it is data, exactly like
-# EXECUTE_LIMITS above, not a widening input. So this is one more table,
-# consulted by decide() as one more lookup -- never a tool-name branch.
+# A caller restriction here does not need a branch in `decide()`: the
+# no-new-logic constraint exists to stop the policy engine acquiring an
+# input that WIDENS what is permitted -- an override flag, an approval
+# token. A caller restriction on an already-unlimited tool NARROWS what is
+# permitted; it is data, exactly like EXECUTE_LIMITS above, not a widening
+# input. So this is one more table, consulted by decide() as one more
+# lookup -- never a tool-name branch.
 #
 # Only tools actually named here are restricted; a tool in UNLIMITED_TOOLS but
 # absent from this mapping (propose_payment, get_payment) stays unconditional,
@@ -133,10 +133,10 @@ def decide(req: PolicyInput) -> Decision:
     limit = EXECUTE_LIMITS.get((req.caller or "", req.autonomy_level))
     if limit is None:
         # Fail-closed behaviour is identical either way -- a dict miss denies,
-        # full stop (review mutation A15, RED). Only the audit-trail LABEL
-        # changes: `unknown_caller` when the identity itself has no row at
-        # any level, `unknown_autonomy_level` when the identity is known but
-        # this particular level is not (see the N6 note above `_KNOWN_CALLERS`).
+        # full stop. Only the audit-trail LABEL changes: `unknown_caller`
+        # when the identity itself has no row at any level,
+        # `unknown_autonomy_level` when the identity is known but this
+        # particular level is not (see the note above `_KNOWN_CALLERS`).
         if (req.caller or "") not in _KNOWN_CALLERS:
             return Decision(
                 False,
@@ -157,9 +157,9 @@ def decide(req: PolicyInput) -> Decision:
 
     # Fail closed on anything that is not money. The limit test below is
     # `amount > limit`, so *every* value that is merely "not greater" would
-    # otherwise permit -- and NaN is not greater than anything, so `NaN`,
-    # `-Infinity`, `0` and `-500000` all used to be approved, and approved
-    # under the rule name `settlement-agent.assisted.execute_limit`, which made
+    # otherwise permit -- and NaN is not greater than anything, so without
+    # this check `NaN`, `-Infinity`, `0` and `-500000` would all be approved,
+    # under the rule name `settlement-agent.assisted.execute_limit`, making
     # the audit record claim the limit rule had considered them and said yes.
     #
     # These are outside the domain the limit reasons about, not inside a
@@ -172,8 +172,8 @@ def decide(req: PolicyInput) -> Decision:
     # from a non-finite number, so this is defence in depth. It lives here as
     # well because `rules.py` is the auditable artifact -- someone reading the
     # rule must see that these are refused -- and because the guarantee must
-    # hold for a second caller (M5's autonomy work, a REST facade, a harness)
-    # that never goes through that parser.
+    # hold for a second caller (a REST facade, a harness) that never goes
+    # through that parser.
     if not math.isfinite(req.amount) or req.amount <= 0:
         return Decision(
             False,
@@ -182,42 +182,33 @@ def decide(req: PolicyInput) -> Decision:
             limit=limit,
         )
 
-    # **`rule` used to be a literal that mislabelled one of the three
+    # **`rule` must not be a literal that mislabels one of the three
     # principals that can reach here. Read this before changing it again** --
     # `policy.rule` on the `policy.decision` span is what a reader on stage
     # reads off the trace.
     #
-    # M5 composes only the autonomy segment: `f"settlement-agent.
+    # Composes only the autonomy segment: `f"settlement-agent.
     # {req.autonomy_level}.execute_limit"`. The lookup above is keyed by
     # `(caller, autonomy_level)` and EXECUTE_LIMITS holds three rows, and this
-    # composition was chosen to touch exactly one of them:
+    # composition touches each of them as follows:
     #
-    #   * `(settlement-agent, assisted)` -> composes back to the same string
-    #     the old literal was, byte for byte: unchanged.
+    #   * `(settlement-agent, assisted)` -> composes to
+    #     `settlement-agent.assisted.execute_limit`.
     #   * `(senior-settlement-agent, assisted)` -> ALSO composes to
-    #     `settlement-agent.assisted.execute_limit`, unchanged, because the
-    #     composition is keyed on `autonomy_level` only, never on `caller`.
-    #     That the name still names the junior is **deliberate and
-    #     load-bearing**, not an oversight this task left alone: M3's whole
-    #     claim is that approval changes *who is asking*, not what is
-    #     allowed, and the shared rule name across two different callers is
-    #     what makes that visible in one span. `tests/e2e/test_supervised.py`
-    #     criterion 4 asserts this exact string on the permitting decision.
-    #   * `(settlement-agent, autonomous)` -> now composes to
-    #     `settlement-agent.autonomous.execute_limit`, which is the first
-    #     honest name this row has ever had. It was a plain mislabel before
-    #     M5 (the row landed with this file itself, `fb3e294`, M2.2, and
-    #     nothing in this repo could drive an `autonomous` request until M5's
-    #     `pds/autonomy.py` made the level a per-decision resolution instead
-    #     of `server.py`'s old `AUTONOMY_LEVEL = "assisted"` constant, so no
-    #     emitted span had ever actually carried the wrong name against this
-    #     row) -- M5 is the milestone that makes `autonomous` reachable, and
-    #     therefore the milestone in which composing the segment, rather than
-    #     leaving it a literal, stops being able to break anything: the only
-    #     caller-segment string this file ever emits is `settlement-agent`,
-    #     for both settlement identities, so composing just the autonomy
-    #     segment cannot touch the senior/junior naming criterion 4 depends
-    #     on.
+    #     `settlement-agent.assisted.execute_limit`, because the composition
+    #     is keyed on `autonomy_level` only, never on `caller`. That the name
+    #     still names the junior is **deliberate and load-bearing**: approval
+    #     changes *who is asking*, not what is allowed, and the shared rule
+    #     name across two different callers is what makes that visible in
+    #     one span. `tests/e2e/test_supervised.py` criterion 4 asserts this
+    #     exact string on the permitting decision.
+    #   * `(settlement-agent, autonomous)` -> composes to
+    #     `settlement-agent.autonomous.execute_limit`, reachable once
+    #     `pds/autonomy.py` resolves the level per-decision rather than
+    #     through a fixed constant. The only caller-segment string this file
+    #     ever emits is `settlement-agent`, for both settlement identities,
+    #     so composing just the autonomy segment cannot touch the
+    #     senior/junior naming criterion 4 depends on.
     if req.amount > limit:
         return Decision(
             False,

@@ -8,8 +8,7 @@ __pycache__/
 *.pyc
 tests/
 # Generated locally by ./gen-stubs.sh. The image generates its own, inside the
-# build, from proto/ (ruling R22) -- a host copy must never leak in and shadow
-# it, because it would have been built by a different grpcio-tools than the
-# image's.
+# build, from proto/ -- a host copy must never leak in and shadow it, because
+# it would have been built by a different grpcio-tools than the image's.
 ext_mcp_pb2.py
 ext_mcp_pb2_grpc.py

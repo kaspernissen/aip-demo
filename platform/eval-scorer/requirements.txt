@@ -1,4 +1,4 @@
-# eval-scorer (M4 Task 4): policy-adherence scores, computed from the trace.
+# eval-scorer: policy-adherence scores, computed from the trace.
 #
 # House style: nothing floats. Direct dependencies first, each with the reason
 # it is here; the transitive closure below, pinned exactly as `uv pip install`
@@ -11,20 +11,20 @@
 # trace -- the one place these scores must not be. See
 # `scorer/emit.py::configure`.
 
-# The scoring SDK the M1 spike validated (M1 spec §13). 0.2.8 is the newest
-# release on PyPI, verified against the package's own JSON API on 2026-09-13
-# (0.2.5 2026-03-05, 0.2.6 2026-03-12, 0.2.7 2026-03-17, 0.2.8 2026-03-30; no
-# newer release and no pre-release). It emits scores as `gen_ai.evaluation.*`
-# OTel spans through whatever TracerProvider is globally installed -- which is
+# The scoring SDK this service is built on. 0.2.8 is the newest release on
+# PyPI, verified against the package's own JSON API on 2026-09-13 (0.2.5
+# 2026-03-05, 0.2.6 2026-03-12, 0.2.7 2026-03-17, 0.2.8 2026-03-30; no newer
+# release and no pre-release). It emits scores as `gen_ai.evaluation.*` OTel
+# spans through whatever TracerProvider is globally installed -- which is
 # what lets them ride the existing OTLP pipeline with no exporter of their
-# own, the property the spike recorded and this milestone depends on.
+# own, the property this service depends on.
 #
 # It is also the only reason `botocore`, `jmespath`, `python-dateutil` and
 # `six` appear below: `botocore>=1.29.0` is one of its five hard dependencies
 # (its `AWSSigV4OTLPExporter`, which this service does not use and cannot use
 # -- there is no AWS here). Unavoidable without vendoring the one function
-# this service calls, which would be a fork of a spike-validated dependency to
-# save 15 MB of image.
+# this service calls, which would be a fork of this dependency to save 15 MB
+# of image.
 opensearch-genai-observability-sdk-py==0.2.8
 
 # OpenTelemetry. Versions match every other Python service's pin

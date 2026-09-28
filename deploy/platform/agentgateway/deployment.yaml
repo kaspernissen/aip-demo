@@ -1,14 +1,14 @@
-# M2.1 Task 4: a dedicated ServiceAccount so the gateway's SPIFFE ID names it.
-# The ID SPIRE derives is
+# A dedicated ServiceAccount so the gateway's SPIFFE ID names it. The ID
+# SPIRE derives is
 # `spiffe://northstar.local/ns/northstar-platform/sa/agentgateway`, and that
 # exact string is the JWT-SVID audience settlement-agent mints for and the
 # `audiences` entry this gateway's own config.yaml checks -- so it has to be a
 # real registered identity, not a label.
 #
-# The gateway itself never fetches an SVID in M2.1 and carries no Workload API
-# mount: it verifies tokens by fetching SPIRE's JWKS over HTTP. That asymmetry
-# is deliberate and recorded in deploy/platform/spire/registration.yaml.
-# Grants no RBAC.
+# The gateway itself never fetches an SVID and carries no Workload API mount:
+# it verifies tokens by fetching SPIRE's JWKS over HTTP. That asymmetry is
+# deliberate and recorded in deploy/platform/spire/registration.yaml. Grants
+# no RBAC.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -60,9 +60,9 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/agentgateway
-          # Measured idle RSS for this image is 11.2 MiB (M2 spike). 64Mi
-          # request / 128Mi limit is generous headroom, not copied from a
-          # larger service's values.
+          # Measured idle RSS for this image is 11.2 MiB. 64Mi request /
+          # 128Mi limit is generous headroom, not copied from a larger
+          # service's values.
           resources:
             requests:
               memory: 64Mi

@@ -5,19 +5,15 @@ metadata:
   namespace: northstar-agents
   labels:
     app: customer-ui
-    # N9 (final-review.md): claims-agent/settlement-agent both carry
-    # northstar.io/plane, and customer-ui deploys into the same
-    # northstar-agents namespace but had been left out — spec §2 wants each
-    # component's platform configuration in exactly one consistent place so
-    # M6 is a collapse rather than a rewrite, which needs this label present
-    # everywhere from M1 onward, not just on the two agents that happened to
-    # add it first.
+    # Every workload in northstar-agents carries northstar.io/plane, including
+    # customer-ui, so each component's platform configuration lives in
+    # exactly one consistent place rather than being inferred per-workload.
     northstar.io/plane: agents
-    # M6 Task 2: read by @backstage/plugin-kubernetes-backend's default
-    # label selector (`backstage.io/kubernetes-id=<entity name>`), so this
-    # Component's catalog entry (apps/customer-ui/catalog-info.yaml) shows
-    # its live workload. Added to the Pod template below too -- the plugin
-    # queries Pods, not just Deployments.
+    # Read by @backstage/plugin-kubernetes-backend's default label selector
+    # (`backstage.io/kubernetes-id=<entity name>`), so this Component's
+    # catalog entry (apps/customer-ui/catalog-info.yaml) shows its live
+    # workload. Set on the Pod template below too -- the plugin queries
+    # Pods, not just Deployments.
     backstage.io/kubernetes-id: customer-ui
 spec:
   replicas: 1
@@ -33,15 +29,15 @@ spec:
     spec:
       containers:
         - name: customer-ui
-          # A1: images go through the local registry, never `kind load`.
+          # Images go through the local registry, never `kind load`.
           image: localhost:5001/northstar/customer-ui:dev
           imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080
-          # S6 (final-review.md): see claims-agent.yaml for the general fix.
-          # nginx serves the built static export, so a 200 on / means the
-          # container is actually ready to serve.
+          # See claims-agent.yaml for why every component here carries a
+          # readiness probe. nginx serves the built static export, so a 200
+          # on / means the container is actually ready to serve.
           readinessProbe:
             httpGet:
               path: /

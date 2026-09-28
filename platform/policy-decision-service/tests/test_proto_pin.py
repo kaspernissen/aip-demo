@@ -2,20 +2,19 @@
 
 `proto/ext_mcp.proto` is the single source of truth for the ExtMCP wire
 contract: `gen-stubs.sh` generates `ext_mcp_pb2*.py` from it at dev time and
-the Dockerfile runs the same script at build time (ruling R22), so every
-message this service parses and every result it returns is shaped by this one
-file. Its header block publishes the upstream tag it was fetched at and the
-sha256 of the upstream bytes.
+the Dockerfile runs the same script at build time, so every message this
+service parses and every result it returns is shaped by this one file. Its
+header block publishes the upstream tag it was fetched at and the sha256 of
+the upstream bytes.
 
-Until the M2.2 fix round nothing recomputed that digest (final-review finding
-6, ruling R45). An edit to the vendored proto -- a field renumbered, a field
-made non-optional, a message removed -- was invisible to every suite in this
-repository: the stubs would regenerate happily from the edited file, the
-service would keep passing its own tests against its own new shape, and the
-published pin would go on claiming agentgateway v1.5.0. In a repo that guards
-the published test counts, the attribute inventory and the SPIFFE ID for
-exactly this reason, this was the one published constant with nothing behind
-it.
+Without this test, nothing recomputes that digest. An edit to the vendored
+proto -- a field renumbered, a field made non-optional, a message removed --
+would be invisible to every suite in this repository: the stubs would
+regenerate happily from the edited file, the service would keep passing its
+own tests against its own new shape, and the published pin would go on
+claiming agentgateway v1.5.0. In a repo that guards the published test
+counts, the attribute inventory and the SPIFFE ID for exactly this reason,
+this would be the one published constant with nothing behind it.
 
 **What this test does and does not prove.** It proves the bytes below the
 header still hash to the digest the header publishes -- i.e. that nobody
@@ -85,7 +84,7 @@ def test_the_vendored_protos_bytes_match_the_sha256_its_header_publishes():
         f"header publishes:\n  published: {published}\n  actual:    {actual}\n"
         "This file is VENDORED and marked DO NOT EDIT: it is the single source "
         "of truth for the ExtMCP wire contract that gen-stubs.sh and the "
-        "Dockerfile both generate from (ruling R22). Either revert the edit, or "
+        "Dockerfile both generate from. Either revert the edit, or "
         "-- if this is a deliberate refresh to a new upstream tag -- follow the "
         "header's own instructions: re-fetch the URL at the new tag, replace "
         "everything below the header, and update the tag, the fetch date and "

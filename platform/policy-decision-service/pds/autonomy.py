@@ -3,7 +3,7 @@
 Deliberately free of gRPC and of the rule engine: `server.py` adapts the wire
 to this, `rules.py` never learns a flag exists.
 
-Ruling M5-R4: the client `server.py` builds is configured explicitly
+The client `server.py` builds is configured explicitly
 (`host="localhost", port=8013`) rather than left to the library's own
 default -- `FLAGD_HOST`/`FLAGD_PORT` below are that configuration, named once
 so `server.py` and this module's own guard test
@@ -12,12 +12,12 @@ cite the same constant rather than two numbers that could drift apart. Port
 8013 is not arbitrary: it is what
 `deploy/platform/openfeature/featureflagsource.yaml` configures the Open
 Feature Operator to render the flagd sidecar's gRPC evaluation listener onto,
-measured off the running pod in Task 2 and asserted against that resource
-here rather than merely believed.
+measured off the running pod and asserted against that resource here rather
+than merely believed.
 
-Ruling M5-R4 also requires proving the resolver is actually RPC, not
-in-process or file resolution silently substituted underneath an
-unconsulted host/port pair -- `openfeature-provider-flagd==0.5.2`'s
+This also requires proving the resolver is actually RPC, not in-process or
+file resolution silently substituted underneath an unconsulted host/port
+pair -- `openfeature-provider-flagd==0.5.2`'s
 `FlagdProvider` picks its resolver from `FLAGD_RESOLVER` when no
 `resolver_type` is passed (`openfeature/contrib/provider/flagd/config.py`),
 defaulting to RPC only when that variable is unset. Nothing in
@@ -48,12 +48,12 @@ from pds import telemetry
 FLAG_KEY = "autonomy-level"
 CONTEXT_KEY = "spiffeId"
 
-# M5-R4: explicit, not the library default. `DEFAULT_PORT_RPC` in
+# Explicit, not the library default. `DEFAULT_PORT_RPC` in
 # openfeature-provider-flagd's own `config.py` happens to already be 8013,
-# but relying on that default is exactly the silent-drift risk the ruling
-# names -- passing it here means a future upstream default change cannot
-# move this service off the sidecar's actual port without this file
-# changing too.
+# but relying on that default is exactly the silent-drift risk explicit
+# configuration guards against -- passing it here means a future upstream
+# default change cannot move this service off the sidecar's actual port
+# without this file changing too.
 FLAGD_HOST = "localhost"
 FLAGD_PORT = 8013
 
@@ -67,8 +67,8 @@ RESTRICTIVE_LEVEL = "assisted"
 class AutonomyResolution:
     """What a flag lookup told us -- or, on the fail-closed path, could not.
 
-    Ruling M5-R5: seven fields, not five. `provider_name` and `set_id` join
-    `level`, `reason`, `variant`, `version` and `error_type` because Task 4
+    Seven fields, not five. `provider_name` and `set_id` join `level`,
+    `reason`, `variant`, `version` and `error_type` because this service
     emits all seven on a semantic-convention log record and must not invent
     two of them at the call site. `provider_name` comes off the client's own
     provider metadata (always present -- `FlagdProvider.get_metadata()`
@@ -141,8 +141,8 @@ def resolve_autonomy(caller: str | None, client) -> AutonomyResolution:
     error_type = (
         str(details.error_code) if details.error_code is not None else None
     )
-    # I2 (task-3 review, fix round 1): fail-closed on the non-raising error
-    # path must be enforced HERE, not merely observed to hold because of how
+    # Fail-closed on the non-raising error path must be enforced HERE, not
+    # merely observed to hold because of how
     # `openfeature-provider-flagd==0.5.2` currently behaves. The module
     # docstring traces four SDK paths that all set `value=default_value`
     # (i.e. `RESTRICTIVE_LEVEL`) whenever `error_code` is present -- that is a
@@ -165,23 +165,23 @@ def resolve_autonomy(caller: str | None, client) -> AutonomyResolution:
     )
 
 
-# M5 Task 4: the second of "two records per evaluation" (the task's own
-# title). Signal #1 is the `feature_flag.evaluation` SPAN EVENT `TracingHook`
-# already puts on the active span the moment `resolve_autonomy` above calls
+# The second of "two records per evaluation." Signal #1 is the
+# `feature_flag.evaluation` SPAN EVENT `TracingHook` already puts on the
+# active span the moment `resolve_autonomy` above calls
 # `client.get_string_details` -- that is registered, not written by us, and
 # `tests/test_autonomy.py::
 # test_the_tracing_hook_puts_a_feature_flag_evaluation_event_on_the_active_span`
 # proves it lands. Signal #2 is this function: a genuine LOG RECORD, sent
-# through the logs pipeline `pds/telemetry.py`'s `configure()` now wires,
+# through the logs pipeline `pds/telemetry.py`'s `configure()` wires,
 # carrying the full seven-field set -- including `feature_flag.set.id` and
 # `feature_flag.version`, which the hook declares constants for and never
 # emits (its own `EventAttributes` class names them; `finally_after` never
-# reads `flag_metadata` to fill them in -- Finding 14).
+# reads `flag_metadata` to fill them in).
 #
 # THE TENSION THIS DOES NOT PAPER OVER: `resolution.version` (and `.set_id`)
 # measure `None` for every real evaluation against this deployment --
 # `featureflag.yaml`'s `autonomy-level` flag defines no `flag_metadata`
-# (Task 3 measured `{}` coming back from the live sidecar). Per this repo's
+# (measured `{}` coming back from the live sidecar). Per this repo's
 # standing rule that a missing value is absent, never zero or invented (see
 # `test_a_missing_value_is_absent_from_the_span_not_zero`), both are OMITTED
 # from the attribute dict below when `None` -- exactly the convention
@@ -191,17 +191,16 @@ def resolve_autonomy(caller: str | None, client) -> AutonomyResolution:
 # unreachable-provider resolution has neither), matching the hook's own
 # conditional inclusion of `RESULT_VARIANT` and `PROVIDER_NAME`.
 #
-# CONSEQUENCE FOR TASK 5, stated plainly: reading `feature_flag.version` off
-# THIS log event will find it absent for every real evaluation today, same
-# as the span. Ruling M5-R6 already anticipated this and routed the audit's
-# *correctness* around it -- the scorer reads `policy.decision`'s own
+# WHAT A READER OF THIS LOG EVENT MUST KNOW: reading `feature_flag.version`
+# off THIS log event will find it absent for every real evaluation today,
+# same as the span. `scorer/contract.py` already routes the audit's
+# *correctness* around this -- the scorer reads `policy.decision`'s own
 # `feature_flag.version` span attribute (also absent, same reason) and
 # resolves the CURRENT contract version from flagd directly; this log event
-# is "the human-readable record and the parity target, not a dependency of
-# the score" (M5-R6's own words). Task 5 must not read this log event
-# expecting a populated `feature_flag.version` to exist, and must not treat
-# its absence as a bug in this function -- it is a fact about
-# `featureflag.yaml`, not about the emission path.
+# is the human-readable record and the parity target, not a dependency of
+# the score. A reader must not expect a populated `feature_flag.version` to
+# exist here, and must not treat its absence as a bug in this function -- it
+# is a fact about `featureflag.yaml`, not about the emission path.
 FEATURE_FLAG_EVALUATION_EVENT = "feature_flag.evaluation"
 
 
@@ -223,8 +222,8 @@ def emit_evaluation_event(resolution: AutonomyResolution, caller: str | None) ->
     the OTLP exporter serialises an unset `timestamp` as zero. A Dashboards
     time-range query defaults to `@timestamp` and would never surface a
     record time-stamped at the epoch, which is a real loss dressed as a
-    successful export -- the same shape this task's whole parity guard
-    exists to catch, one field over."""
+    successful export -- the same silent-loss shape this repo's telemetry
+    parity guard exists to catch, one field over."""
     attributes = {
         FEATURE_FLAG_KEY: FLAG_KEY,
         FEATURE_FLAG_RESULT_VALUE: resolution.level,

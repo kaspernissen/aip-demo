@@ -63,13 +63,12 @@ global:
 
 ## spire-server -----------------------------------------------------------
 spire-server:
-  # SPIRE's own telemetry, turned on deliberately.
-  #
-  # Task 3 found agentgateway deployed with no tracing configured at all,
-  # which made the gateway a silent hop in the one demo whose whole point is
-  # that you can trace it. Same seam checked here, and the honest answer for
-  # SPIRE 1.15.3 is narrower than it was for the gateway: SPIRE has NO
-  # OpenTelemetry support of any kind. Its telemetry block (see the
+  # SPIRE's own telemetry, turned on deliberately: a platform component with
+  # no telemetry configured is a silent hop in the one demo whose whole point
+  # is that you can trace it (the same seam agentgateway's own deployment
+  # guards against). The honest answer for SPIRE 1.15.3 is narrower than for
+  # the gateway, though: SPIRE has NO OpenTelemetry support of any kind. Its
+  # telemetry block (see the
   # sub-charts' own `telemetry:` values, and the `telemetry` stanza the
   # server/agent ConfigMap templates render) offers Prometheus, DogStatsD,
   # Statsd, M3 and an in-memory sink -- no OTLP exporter and no tracing at

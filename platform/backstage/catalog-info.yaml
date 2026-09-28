@@ -5,8 +5,7 @@ metadata:
   annotations:
     backstage.io/techdocs-ref: dir:.
   description: >-
-    This Backstage instance itself -- the view M6 puts on the platform API
-    (docs/superpowers/specs/2026-09-15-northstar-m6-golden-path-design.md).
+    This Backstage instance itself -- the view it puts on the platform API.
     Not one of the eight components tests/unit/test_catalog_matches_the_tree.py
     guards; it is the thing serving their catalog entries, not one of them.
   tags:

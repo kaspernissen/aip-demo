@@ -1,28 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# M4 Task 1 (plan amendment A2). Owns every `kubectl port-forward` this demo
-# needs, so an operator has exactly one command to run when a forward dies --
-# which, per rulings R10 and R20, is this project's single most-repeated
-# operational failure. Every prior milestone re-established these forwards by
-# hand; one task even measured against dead ones without noticing (R20: a
-# dead `kubectl port-forward` keeps its listening socket bound, so `lsof`
-# alone reports it healthy).
+# Owns every `kubectl port-forward` this demo needs, so an operator has
+# exactly one command to run when a forward dies -- which is this project's
+# single most-repeated operational failure. A dead `kubectl port-forward`
+# keeps its listening socket bound, so `lsof` alone reports it healthy even
+# when nothing behind it answers.
 #
-# Modelled on the human partner's own
-# /Users/kaspernissen/dash0/demos/otel-platform-demo/01_start-demo.sh (a
-# `PIDS` array, background `kubectl port-forward` per surface, `cleanup` on
-# `trap ... EXIT INT TERM`), with two deliberate departures from it, both
-# required here:
+# The shape is a common one: a `PIDS` array, one background
+# `kubectl port-forward` per surface, and `cleanup` on
+# `trap ... EXIT INT TERM`. Two choices are deliberate:
 #
-#   1. NO `pkill -f "kubectl port-forward"` fallback. The reference's cleanup
-#      has one; it kills every port-forward on the machine, including the
-#      human partner's own in another terminal, not just the ones this script
-#      started. The tracked PIDS array below is the whole cleanup.
+#   1. NO `pkill -f "kubectl port-forward"` fallback. That kills every
+#      port-forward on the machine, including an operator's own in another
+#      terminal, not just the ones this script started. The tracked PIDS
+#      array below is the whole cleanup.
 #   2. Liveness is a real HTTP request, never process existence. A live PID
-#      proves nothing (R20). This reuses the exact two-question shape
-#      scripts/smoke-test.sh already implements -- lsof, then curl -- rather
-#      than inventing a second one.
+#      proves nothing, since a dead forward's socket stays bound. This reuses
+#      the exact two-question shape scripts/smoke-test.sh already implements
+#      -- lsof, then curl -- rather than inventing a second one.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -63,7 +59,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Departure 2: a live PID proves nothing (R20) -- the target pod behind a
+# Departure 2: a live PID proves nothing -- the target pod behind a
 # `kubectl port-forward` can be replaced while the forward's own socket stays
 # bound and `lsof` keeps calling it healthy. Every surface below is verified
 # with the SAME two questions scripts/smoke-test.sh's prerequisite loop asks:
@@ -73,31 +69,30 @@ trap cleanup EXIT INT TERM
 # good a proof as a 200 elsewhere.
 
 # For a forward THIS script started: also confirm the PID we launched is the
-# one holding the port, not merely that something is (A9: a stray forward
-# from another cluster on this machine has silently shadowed a host port
-# before).
+# one holding the port, not merely that something is -- a stray forward from
+# another cluster on this machine can silently shadow a host port.
 verify_owned_forward() {
   local port="$1" pid="$2" name="$3" path="$4"
-  # `grep -x ... >/dev/null` and NOT `grep -qx` (review suspicion S1, and the
-  # identical construct in scripts/setup-kind.sh is fixed the same way). Under
-  # `set -o pipefail`, `grep -q` exits the moment it matches, which can SIGPIPE
-  # the `awk` still writing to it; awk then exits 141 and pipefail reports 141
-  # for the whole pipeline even though grep matched. That turns a healthy
-  # forward into "never bound" and exits 1 -- whose EXIT trap then kills the
-  # forwards this script had already established. Dropping -q makes grep drain
-  # its input, so nothing upstream can be signalled. It is a race rather than a
+  # `grep -x ... >/dev/null` and NOT `grep -qx` (the identical construct in
+  # scripts/setup-kind.sh uses the same fix). Under `set -o pipefail`,
+  # `grep -q` exits the moment it matches, which can SIGPIPE the `awk` still
+  # writing to it; awk then exits 141 and pipefail reports 141 for the whole
+  # pipeline even though grep matched. That turns a healthy forward into
+  # "never bound" and exits 1 -- whose EXIT trap then kills the forwards this
+  # script had already established. Dropping -q makes grep drain its input,
+  # so nothing upstream can be signalled. It is a race rather than a
   # certainty (lsof's output is small enough that the write usually completes
   # first), which is exactly why it is worth removing rather than reasoning
   # about.
   if ! lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $2}' | grep -x "${pid}" >/dev/null; then
-    # V11 (M5 Task 1): the port is held by something other than the PID this
-    # script just launched -- a foreign forward, possibly left over from an
-    # earlier run (A9). Refusing on an UNVERIFIED holder is correct (ruling
-    # R20: a dead `kubectl port-forward` keeps its socket bound, so "something
-    # is bound" is not evidence) -- but a foreign holder that actually answers
-    # is not a problem to fix. Ask it the same question verify_existing_surface
-    # already asks of reviewer-ui's NodePort, rather than inventing a second
-    # liveness check.
+    # The port is held by something other than the PID this script just
+    # launched -- a foreign forward, possibly left over from an earlier run.
+    # Refusing on an UNVERIFIED holder is correct: a dead `kubectl
+    # port-forward` keeps its socket bound, so "something is bound" is not
+    # evidence -- but a foreign holder that actually answers is not a problem
+    # to fix. Ask it the same question verify_existing_surface already asks
+    # of reviewer-ui's NodePort, rather than inventing a second liveness
+    # check.
     if curl -s -o /dev/null -m 5 "http://localhost:${port}${path}"; then
       echo -e "${YELLOW}  - ${name}: port ${port} is already held by another process and it answers -- accepting it instead of starting a second forward.${NC}"
       # This script's own kubectl process for this surface never bound (the
@@ -119,7 +114,7 @@ verify_owned_forward() {
   fi
   if ! curl -s -o /dev/null -m 5 "http://localhost:${port}${path}"; then
     echo -e "${RED}Error: port ${port} (${name}) is LISTENING but carries no request.${NC}" >&2
-    echo "This is a dead kubectl port-forward: its target pod was replaced, the socket stayed bound, and lsof still calls it healthy (ruling R20)." >&2
+    echo "This is a dead kubectl port-forward: its target pod was replaced, the socket stayed bound, and lsof still calls it healthy." >&2
     # Same reasoning as above: this refusal must not tear down the other
     # surfaces this script already verified live.
     trap - EXIT
@@ -143,24 +138,18 @@ verify_existing_surface() {
   fi
 }
 
-# Review finding F8: this script is now the universal remedy smoke-test.sh
-# sends an operator to, and it was unconditional -- it forwarded
-# svc/opensearch-dashboards on every cluster. On a stage-1/2/3 cluster that
-# Service does not exist, the forward never binds, verify_owned_forward exits
-# 1, and the EXIT trap then kills the four good forwards it had just created:
-# the remedy for a dead port-forward would leave the operator with no
-# port-forwards at all.
+# This script is the universal remedy smoke-test.sh sends an operator to, so
+# it must not forward a Service unconditionally: on a cluster below the stage
+# that provides it, an unconditional forward for e.g. svc/opensearch-dashboards
+# never binds, verify_owned_forward exits 1, and the EXIT trap then kills every
+# good forward it had just created -- the remedy for a dead port-forward would
+# leave the operator with no port-forwards at all.
 #
-# So the four stage-gated surfaces -- reviewer-ui, OpenSearch Dashboards,
-# Prometheus and eval-scorer -- are asked for rather than assumed, one
-# `service_exists` call each below. ("Two" until M4's final review: Prometheus
-# was added by M4 Task 2 and the sentence counting them was not; "three" until
-# M5 Task 1, for the same reason one milestone later -- eval-scorer joined
-# this block in M4 final review finding L5 and the count beside it was not
-# re-derived then either.) The four
-# stage-1 surfaces below are NOT optional -- a cluster without them is broken,
-# not merely younger -- and nothing here is silently skipped: each skip prints
-# the stage that would provide it.
+# So the stage-gated surfaces -- reviewer-ui, OpenSearch Dashboards, Prometheus
+# and eval-scorer -- are asked for rather than assumed, one `service_exists`
+# call each below. The stage-1 surfaces below are NOT optional -- a cluster
+# without them is broken, not merely younger -- and nothing here is silently
+# skipped: each skip prints the stage that would provide it.
 service_exists() {
   kubectl -n "$1" get "svc/$2" -o name >/dev/null 2>&1
 }
@@ -182,12 +171,12 @@ if service_exists northstar-platform eval-scorer; then
   EVAL_SCORER_AVAILABLE=1
 fi
 
-# M5 Task 6: flagd has no Service of its own (it is a sidecar injected into
+# flagd has no Service of its own (it is a sidecar injected into
 # policy-decision-service's own pod, not a separate Deployment -- measured, no
 # Service anywhere in this cluster exposes 8013/8014/8016), so
 # `service_exists` cannot be the discriminator. The `FeatureFlag` object is:
-# it is the resource Task 2's manifest creates and the one thing that is
-# genuinely absent below stage 5.
+# it is the resource the autonomy-contract manifest creates and the one thing
+# that is genuinely absent below stage 5.
 featureflag_exists() {
   kubectl -n "$1" get "featureflag/$2" -o name >/dev/null 2>&1
 }
@@ -196,12 +185,9 @@ if featureflag_exists northstar-platform northstar-autonomy; then
   FLAGD_AVAILABLE=1
 fi
 
-# M6 Task 4: Backstage, the view M6 puts on the platform API. Stage-6 only
-# (svc/backstage does not exist below it), same `service_exists` discipline as
-# the four surfaces above. Unlike those four, this was a documented MANUAL
-# `kubectl port-forward` until now (scripts/setup-kind.sh's own stage-6
-# completion message used to say so in as many words) -- this is the wiring
-# that closes it.
+# Backstage, the view over the platform API. Stage-6 only (svc/backstage
+# does not exist below it), same `service_exists` discipline as the surfaces
+# above.
 BACKSTAGE_AVAILABLE=""
 if service_exists northstar-platform backstage; then
   BACKSTAGE_AVAILABLE=1
@@ -229,11 +215,11 @@ kubectl -n northstar-systems port-forward svc/payments-api 18080:8080 >/dev/null
 API_PID=$!
 PIDS+=("$API_PID")
 
-# M4 Task 1, plan amendment A1: Dashboards has no kind host port --
-# extraPortMappings is create-time only and the human partner declined the
-# cluster recreate that would have added a fifth one -- so this is the ONLY
-# way to reach it. Stage 4 installs it; below stage 4 it does not exist, and
-# forwarding it anyway is finding F8.
+# Dashboards has no kind host port -- extraPortMappings is create-time only
+# and this cluster was not recreated to add a fifth one -- so this is the
+# ONLY way to reach it. Stage 4 installs it; below stage 4 it does not exist,
+# and forwarding it anyway would leave the forward dangling on a cluster that
+# has never bound it.
 DASHBOARDS_PID=""
 if [[ -n "$DASHBOARDS_AVAILABLE" ]]; then
   echo "  - OpenSearch Dashboards (5601 -> 5601)"
@@ -244,17 +230,16 @@ else
   echo -e "${YELLOW}  - OpenSearch Dashboards: SKIPPED, svc/opensearch-dashboards does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
 fi
 
-# M4 Task 2, filling the place the previous task marked for it. Prometheus has
-# no kind host port either (same create-time `extraPortMappings` constraint as
-# Dashboards, plan amendment A1), so a forward is the only way to reach it --
-# and it is stage 4 only, so it takes Dashboards' `service_exists` guard rather
-# than the four unconditional forwards above (review finding F8).
+# Prometheus has no kind host port either (same create-time
+# `extraPortMappings` constraint as Dashboards), so a forward is the only way
+# to reach it -- and it is stage 4 only, so it takes the same `service_exists`
+# guard as Dashboards rather than one of the unconditional forwards above.
 #
 # 9090 -> 9090 and not an offset like the 1xxxx ports above: the Service's own
 # port is 9090 (`server.service.servicePort` in
 # deploy/observability/prometheus/values.yaml overrides the chart's default of
-# 80), and every command in the M4 Task 2 report queries
-# http://localhost:9090, so the host side is kept identical to the cluster side.
+# 80), so the host side is kept identical to the cluster side, matching every
+# other command in this repo that queries http://localhost:9090.
 PROMETHEUS_PID=""
 if [[ -n "$PROMETHEUS_AVAILABLE" ]]; then
   echo "  - Prometheus         (9090 -> 9090)"
@@ -265,15 +250,14 @@ else
   echo -e "${YELLOW}  - Prometheus: SKIPPED, svc/prometheus does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
 fi
 
-# M4 final review, finding L5: eval-scorer was reachable from nothing a reader
-# is told to run. The policy scores of spec §5 are one of M4's exit criteria,
-# `docs/telemetry-contract.md` documents the `POST /score` surface, and the
-# only route to it was a port-forward each reader had to invent -- so the
-# demo path could not show the milestone's own headline output.
+# eval-scorer's policy scores are one of this system's headline outputs, and
+# `docs/telemetry-contract.md` documents the `POST /score` surface -- so this
+# forward is what lets the demo path show it, rather than leaving each reader
+# to invent a port-forward by hand.
 #
 # Stage 4 only, on Dashboards' and Prometheus' `service_exists` guard rather
-# than the four unconditional forwards (review finding F8): the Deployment
-# reads `ss4o_traces-default-namespace`, which exists only at stage 4.
+# than one of the unconditional forwards: the Deployment reads
+# `ss4o_traces-default-namespace`, which exists only at stage 4.
 #
 # 18300 -> 8300 follows the 1xxxx offset convention of the tool ports above,
 # not Prometheus' identity mapping: no committed command queries port 8300 on
@@ -288,8 +272,8 @@ else
   echo -e "${YELLOW}  - eval-scorer: SKIPPED, svc/eval-scorer does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
 fi
 
-# M5 Task 6: flagd's own metrics, on its "management" port (8014) alongside
-# `/healthz` -- both flagd's own naming, not this project's
+# flagd's own metrics, on its "management" port (8014) alongside `/healthz`
+# -- both flagd's own naming, not this project's
 # (deploy/k8s/policy-decision-service.yaml's openfeature.dev/* annotations
 # wire the Open Feature Operator's mutating webhook to inject the sidecar
 # with `--management-port 8014`). Genuinely worth forwarding, not merely
@@ -297,9 +281,7 @@ fi
 # `feature_flag_flagd_impression_total`, broken down by
 # `feature_flag_result_variant` -- the only place in this system that shows
 # how many evaluations resolved "assisted" versus "autonomous" without
-# querying Prometheus or OpenSearch by hand, which matters more here than for
-# any earlier stage because this milestone's whole point is that the variant
-# changes.
+# querying Prometheus or OpenSearch by hand.
 #
 # `deployment/policy-decision-service`, not a pod name: flagd is a sidecar
 # inside that Deployment's own pod, not a separate Deployment or Service (no
@@ -317,7 +299,7 @@ else
   echo -e "${YELLOW}  - flagd metrics: SKIPPED, no northstar-autonomy FeatureFlag in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
 fi
 
-# M6 Task 4: Backstage has no kind host port (its Service is ClusterIP-only,
+# Backstage has no kind host port (its Service is ClusterIP-only,
 # deploy/k8s/backstage.yaml) and no NodePort the way reviewer-ui has, so a
 # forward is the only way to reach it -- same constraint as Dashboards and
 # Prometheus above, stage-6-gated the same way.
@@ -327,9 +309,8 @@ fi
 # with `verify_existing_surface` rather than `verify_owned_forward`: the
 # latter's PID-ownership check would refuse a cluster where an operator
 # already has `kubectl -n northstar-platform port-forward svc/backstage
-# 7007:7007` running by hand (scripts/setup-kind.sh's own stage-6 completion
-# message tells them to run exactly that, and told them to before this task).
-# `verify_existing_surface` asks the two questions that actually matter here --
+# 7007:7007` running by hand. `verify_existing_surface` asks the two
+# questions that actually matter here --
 # is the port bound, does it answer -- without caring which process bound it,
 # so it accepts a healthy foreign port-forward on 7007 without this script
 # needing to special-case one, and without weakening the rule that cleanup()
@@ -383,10 +364,9 @@ fi
 if [[ -n "$BACKSTAGE_PID" ]]; then
   # `/`, not an `/api/...` route: every `/api/*` route in this app requires a
   # Backstage credential (guest or otherwise) and answers 401 unauthenticated
-  # (M6 Task 3's httpRouter default policy) -- a curl with no token would read
-  # a healthy backend as dead. `/` is the served frontend bundle, which
-  # answers 200 with no credential, the same reason Dashboards' own check
-  # above uses its bare root.
+  # by design -- a curl with no token would read a healthy backend as dead.
+  # `/` is the served frontend bundle, which answers 200 with no credential,
+  # the same reason Dashboards' own check above uses its bare root.
   verify_existing_surface 7007 backstage "/"
 fi
 # reviewer-ui: covered here for the same reason smoke-test.sh covers it --
@@ -394,7 +374,7 @@ fi
 # not a forward this script starts, but an operator running this script
 # wants to know ALL the surfaces smoke-test.sh will check are actually up,
 # not just the ones this script itself launched. Stage 3 installs it; on a
-# stage-1/2 cluster there is nothing to verify (finding F8 again).
+# stage-1/2 cluster there is nothing to verify.
 if [[ -n "$REVIEWER_UI_AVAILABLE" ]]; then
   verify_existing_surface 8081 reviewer-ui "/healthz"
 else
@@ -405,31 +385,11 @@ else
   # tests/e2e/test_opensearch_trace_ingest.py's guards skips, missing
   # everything a later stage added. `tests/unit/test_stage2_cilium_config.py`'s
   # `test_no_operator_facing_instruction_still_points_at_an_older_stage`
-  # (ruling M5-R17) enforces exactly this for every operator-facing
-  # instruction in this repo: an instruction naming a stage older than
-  # `CURRENT_STAGE` is an offender there regardless of whether that older
-  # stage happens to be sufficient for the one surface being described, which
-  # is why this line must always track `CURRENT_STAGE` and never a fixed
-  # literal.
-  #
-  # Re-review finding N1: this line said `--stage 3`, which was the FOURTH
-  # recurrence of the class ruling M4-R7 exists for -- authored inside the fix
-  # for the third, in the one file
-  # tests/unit/test_stage2_cilium_config.py's guard did not open. Its file
-  # list is now a `scripts/*.sh` glob rather than four hand-listed paths, so
-  # this file is covered and so is the next script anyone adds.
-  #
-  # Whole-branch review (M5), finding N1, fifth recurrence, and it was the
-  # COMMENT that had gone stale, not the code: M4's fix round wrote this
-  # comment naming `--stage 4` because 4 was `CURRENT_STAGE` at the time; M5
-  # Task 6 raised `CURRENT_STAGE` to 5 and correctly bumped the line below to
-  # `--stage 5` in the same move, but nobody re-derived this paragraph's own
-  # conclusion alongside it, so the prose and the code it justifies fell out
-  # of step. Fixed here by updating the comment to track `CURRENT_STAGE`
-  # rather than by changing the line to `--stage 4`: M5-R17's guard was run
-  # against that alternative and rejects it -- any operator-facing instruction
-  # naming a stage below `CURRENT_STAGE` is an offender there, by design, so
-  # `--stage 4` is not an available fix regardless of "first provides."
+  # enforces exactly this for every operator-facing instruction in this repo:
+  # an instruction naming a stage older than `CURRENT_STAGE` is an offender
+  # there regardless of whether that older stage happens to be sufficient for
+  # the one surface being described, which is why this line must always track
+  # `CURRENT_STAGE` and never a fixed literal.
   echo -e "${YELLOW}  - reviewer-ui: SKIPPED, svc/reviewer-ui does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
 fi
 
@@ -441,26 +401,19 @@ else
   echo -e "${YELLOW}Some stage-gated surfaces are absent -- see the SKIPPED lines above.${NC}"
 fi
 echo ""
-# M4 Task 3 fix round 1 (review finding F3). docs/architecture.md's "See it
-# yourself" table tells the reader to prefer this list when the two disagree,
-# and this list did not name the Customer UI or Jaeger -- rows 1 and 3 of that
-# table, and the two URLs walkthrough steps 1 and 2 open with. They are kind
-# host ports mapped at cluster creation rather than forwards this script owns,
-# which is why they were absent and why they are labelled as such here.
+# docs/architecture.md's "See it yourself" table tells the reader to prefer
+# this list when the two disagree, so this list names the Customer UI and
+# Jaeger too, even though they are kind host ports mapped at cluster creation
+# rather than forwards this script owns.
 #
-# M4 FINAL REVIEW, finding M2: every line below must end in `#surface` or
-# `#tool-port`, and the guard reads the marker rather than guessing.
-#
-# The F3 guard was one-directional -- "every URL in the table is printed here"
-# -- while its own docstring claimed it stopped divergence "in either
-# direction". Prometheus had ALREADY defeated it: Task 2 added the line below,
-# Task 3 then wrote the guard in the one direction that could not see it, and
-# the architecture table still has no Prometheus row. A reverse check cannot be
-# "every printed URL is in the table", because this list deliberately prints
-# agent and tool ports the walkthrough never opens. So each line declares which
-# it is, and the guard requires the `#surface` set to EQUAL the table's. A new
-# echo here that carries neither marker fails the guard, which is the point: a
-# URL an operator can reach is either a documented surface or an explicitly
+# Every line below must end in `#surface` or `#tool-port`, and
+# tests/unit/test_stage4_config.py's agreement guard reads the marker rather
+# than guessing. It cannot simply check "every printed URL is in the table",
+# because this list deliberately also prints agent and tool ports the
+# walkthrough never opens. So each line declares which it is, and the guard
+# requires the `#surface` set to EQUAL the table's. A new echo here that
+# carries neither marker fails the guard, which is the point: a URL an
+# operator can reach is either a documented surface or an explicitly
 # undocumented one, and nobody gets to skip the choice by adding a line.
 echo "  Customer UI:               http://localhost:8080   (kind host port, not forwarded by this script)"  #surface
 echo "  Jaeger:                    http://localhost:16686  (kind host port, not forwarded by this script)"  #surface

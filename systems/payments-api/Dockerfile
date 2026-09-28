@@ -1,8 +1,7 @@
-# 2026-09-11 (M3): was `golang:1.24-alpine`. otel-go v1.46.0 declares
-# `go 1.25.0`, so 1.24 can no longer build this module. Pinned to the exact
-# patch rather than the `1.27-alpine` floating tag, and deliberately the same
-# release as `go.mod`'s `toolchain` line, so the builder never has to fetch a
-# second toolchain. go1.27.1 was the current Go stable on that date (go.dev/dl).
+# otel-go v1.46.0 declares `go 1.25.0`, so a 1.24 toolchain cannot build this
+# module. Pinned to the exact patch rather than the `1.27-alpine` floating
+# tag, and deliberately the same release as `go.mod`'s `toolchain` line, so
+# the builder never has to fetch a second toolchain.
 FROM golang:1.27.1-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum* ./

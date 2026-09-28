@@ -1,4 +1,4 @@
-"""M3 Task 3 Step 4: `execute_approved` -- the human-approved execution path.
+"""`execute_approved` -- the human-approved execution path.
 
 No model call, ever: the reasoning happened in the refused run, a human
 reviewed *that*, and this function's only job is to carry an approved
@@ -103,8 +103,8 @@ async def test_execute_approved_calls_execute_directly_with_no_propose(traced):
         payments, REFUSED_TRACE_ID, REFUSED_SPAN_ID,
     )
 
-    # `get` reads the ledger back before `execute` moves anything -- the
-    # ledger-verification fix (R11) sits between the two.
+    # `get` reads the ledger back before `execute` moves anything -- ledger
+    # verification sits between the two.
     assert [c[0] for c in payments.calls] == ["get", "execute"]
     assert ("execute", "PAY-000001", 6200.0, "EUR") in payments.calls
 
@@ -186,12 +186,9 @@ async def test_a_malformed_approval_payload_fails_loudly_not_silently_executing(
 
 
 # ---------------------------------------------------------------------------
-# M3 Task 3 review fix round, finding 1 (R11) -- the hole this milestone
-# exists to close: `execute_approved` never read the ledger, so it would
-# execute ANY proposed payment up to the caller's limit on an unverified
-# `reviewerId` string, with no check that a refusal or a review ever
-# happened. It now reads the ledger back (`payments.get`) and refuses unless
-# the payment exists, carries a refusal record, and the amount matches within
+# `execute_approved` must never execute on an unverified `reviewerId` string
+# alone. It reads the ledger back (`payments.get`) and refuses unless the
+# payment exists, carries a refusal record, and the amount matches within
 # the ledger's own `amountEpsilon` -- never executing on the way to any of
 # those failures.
 # ---------------------------------------------------------------------------
@@ -199,9 +196,7 @@ async def test_a_malformed_approval_payload_fails_loudly_not_silently_executing(
 
 async def test_execute_approved_refuses_a_payment_that_was_never_refused(traced):
     """The decisive case: a payment that is merely `proposed` -- no human ever
-    reviewed it -- must not execute just because a caller reached this port.
-    Before the fix, this exact call executed it (see the task report for the
-    before/after comparison)."""
+    reviewed it -- must not execute just because a caller reached this port."""
     payments = FakePayments(ledger={
         "paymentId": "PAY-000001", "claimId": "CLM-1842",
         "amount": 6200.0, "currency": "EUR", "status": "proposed",
@@ -251,10 +246,10 @@ async def test_execute_approved_refuses_on_amount_mismatch():
 
 
 # ---------------------------------------------------------------------------
-# M3 Task 3 review, the question (R16): correlation by claim id must not
-# break across the refusal -> approval pair. The approval payload itself
-# carries no claim id; the ledger record `_verify_refusal` reads does
-# (FakePayments' default ledger carries "claimId": "CLM-1842").
+# Correlation by claim id must not break across the refusal -> approval pair.
+# The approval payload itself carries no claim id; the ledger record
+# `_verify_refusal` reads does (FakePayments' default ledger carries
+# "claimId": "CLM-1842").
 # ---------------------------------------------------------------------------
 
 

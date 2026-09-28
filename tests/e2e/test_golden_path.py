@@ -1,18 +1,18 @@
-"""M6 Task 4: the demo's own anti-vacuity e2e -- design §5, plan Task 4 step 2.
+"""The demo's own anti-vacuity e2e.
 
 **Why this file exists, stated as bluntly as the two failures that made it
-necessary.** This milestone has already shipped two things reported as
-"verified" that were not, and both survived because the check that passed was
-adjacent to the claim rather than the claim itself:
+necessary.** This repo has shipped things reported as "verified" that were
+not, because the check that passed was adjacent to the claim rather than
+the claim itself:
 
-* **M6-R7.** Task 2's catalog was complete and correct, and every backend
-  signal was green -- zero processor errors, "Collating documents for
-  software-catalog succeeded", RBAC verified live. Nobody could see the
-  catalog: the guest auth provider 403s under `NODE_ENV=production`, which is
-  what the in-cluster image actually runs under. *A backend health signal is
-  not a delivery check.*
-* **M6-R9.** Task 3's security boundary was reviewed and reported as verified
-  -- an `kubectl auth can-i` matrix, every permit permitted and every deny
+* **A complete, correct catalog with every backend signal green** -- zero
+  processor errors, "Collating documents for software-catalog succeeded",
+  RBAC verified live -- and nobody could see the catalog: the guest auth
+  provider 403s under `NODE_ENV=production`, which is what the in-cluster
+  image actually runs under. *A backend health signal is not a delivery
+  check.*
+* **A security boundary reviewed and reported as verified** -- a
+  `kubectl auth can-i` matrix, every permit permitted and every deny
   denied -- against an image built an **hour before** the commit under
   review. `grep -rl autonomyContract /app` found nothing in the running pod;
   `GET /api/autonomy-contract/status` was 404. The RBAC matrix was correct
@@ -30,32 +30,31 @@ config-shaped check already exists and is sufficient
 it; it drives the one thing none of those can: the actual HTTP route, as the
 actual caller, changing the actual resource.
 
-**The milestone's whole claim is `test_driving_the_cards_write_over_http_...`
-below, and it is proven by mutation, not by reading the code.** M5's own
-equivalent (`tests/e2e/test_progressive_autonomy.py`) was neutered at its
-harness -- `set_targeted_branch` patched to always write `"assisted"`
-regardless of what was asked -- and watched go red with
+**The whole claim of this file is `test_driving_the_cards_write_over_http_...`
+below, and it is proven by mutation, not by reading the code.** The
+equivalent claim in `tests/e2e/test_progressive_autonomy.py` was verified by
+neutering its harness -- `set_targeted_branch` patched to always write
+`"assisted"` regardless of what was asked -- and watching it go red with
 `assert 'refused' == 'executed'`, reproduced twice, once in a clean tree, with
-the unmutated control passing in the same session. That is the standard this
-file was held to: see the commit message / progress ledger for the quoted RED
-from mutating `platform/backstage/packages/backend/src/plugins/
+the unmutated control passing in the same session. This file is held to the
+same standard: mutating `platform/backstage/packages/backend/src/plugins/
 autonomyContract/router.ts`'s `POST /variant` handler to skip the actual
 `client.patchThenBranch(...)` call while still returning a 200 -- the exact
-"looks like it worked" shape a convenience UI can produce and the shape this
-file's independent object-read assertion (not merely the HTTP response) is
-built to catch.
+"looks like it worked" shape a convenience UI can produce -- reddens this
+file's independent object-read assertion (not merely the HTTP response),
+which is exactly what it is built to catch.
 
-**`tests/harness/contract.py` already exists from M5 and is reused, not
-reimplemented.** `contract.assert_assisted` is the precondition every
+**`tests/harness/contract.py` is reused, not reimplemented.**
+`contract.assert_assisted` is the precondition every
 settlement-driving test here calls first (same reason
 `test_policy_denial.py::denial_run` and `test_supervised.py::denial_run` call
 it: a leaked flip from a crashed earlier run must fail loudly here, not three
 assertions later as an inexplicable "the junior executed?!"). What this file
 adds that `contract.py` does not have is the write path itself: `contract.py`
-flips the contract with `kubectl patch` on purpose ("one word in the
-contract. It is not one word in the repo" -- M5-R8's own phrase); this file
+flips the contract with `kubectl patch` on purpose -- "one word in the
+contract. It is not one word in the repo"; this file
 flips the identical resource through Backstage's HTTP route instead, because
-proving *that* changes the same real outcome is this milestone's entire
+proving *that* changes the same real outcome is this file's entire
 point. `contract.get_committed_then_branch()` (a synchronous, independent
 `kubectl get` of the object's own spec) is used here specifically as the
 witness that the HTTP write actually reached the object -- independent of
@@ -115,9 +114,9 @@ PLATFORM_NAMESPACE = "northstar-platform"
 AGENTS_NAMESPACE = "northstar-agents"
 BACKSTAGE_PORT = 7007
 
-# The same over-the-assisted-limit figure test_progressive_autonomy.py and
-# M2.2 both use -- this file drives the identical claim through a second
-# write path, not a different one.
+# The same over-the-assisted-limit figure test_progressive_autonomy.py uses
+# -- this file drives the identical claim through a second write path, not a
+# different one.
 AMOUNT = 6200.0
 
 
@@ -135,8 +134,8 @@ def stage_6_backstage_deployed_or_a_reason():
     """Skip if this is not even a live cluster; skip if Backstage's own
     Deployment does not exist (absence of stage 6, not a regression); FAIL if
     Backstage exists but the write Role this whole file depends on does not
-    (a stage-6 cluster missing its own Task 3 is this file's own regression,
-    never an absence to skip past -- same discipline
+    (a stage-6 cluster missing its own write Role is this file's own
+    regression, never an absence to skip past -- same discipline
     `test_autonomy_writer_live_rbac.py`'s own fixture uses for the identical
     Role).
     """
@@ -201,7 +200,7 @@ def backstage_url():
         )
         base = f"http://127.0.0.1:{port}"
         # Confirm it actually answers before handing it to every test below --
-        # ruling R20: a bound socket proves nothing, only an answering one does.
+        # a bound socket proves nothing, only an answering one does.
         deadline = time.monotonic() + 30
         last_exc = None
         while time.monotonic() < deadline:
@@ -255,11 +254,11 @@ def auth_headers(backstage_url):
 
 def test_unauthenticated_is_refused_authenticated_is_not(backstage_url, auth_headers):
     """The surface an audience actually touches: a bare HTTP client gets 401
-    on every `/api/*` route (`httpRouter`'s default policy, M6 Task 3), and a
-    caller that went through the real guest-auth flow gets through. Design
-    §10's own stated posture -- "Backstage here is unauthenticated" -- means
+    on every `/api/*` route (`httpRouter`'s default policy), and a
+    caller that went through the real guest-auth flow gets through. This
+    repo's stated posture -- "Backstage here is unauthenticated" -- means
     guest auth is trivial to obtain, not that no auth flow exists at all;
-    this is the distinction the design draws and the one this test pins.
+    this is the distinction this test pins.
     """
     unauth = requests.get(f"{backstage_url}/api/catalog/entities", timeout=10)
     assert unauth.status_code == 401, (
@@ -276,20 +275,21 @@ def test_unauthenticated_is_refused_authenticated_is_not(backstage_url, auth_hea
     )
 
 
-# --- 2. The running code is the committed code (M6-R9) ---------------------
+# --- 2. The running code is the committed code -----------------------------
 
 
 def test_the_autonomy_status_route_answers_which_a_stale_image_cannot(
     backstage_url, auth_headers,
 ):
-    """M6-R9's own evidence, restated as a live HTTP assertion instead of a
+    """Restated as a live HTTP assertion instead of a
     `docker image inspect` label comparison (that half is
     `tests/e2e/test_backstage_image_matches_head.py`, which this does not
-    repeat). `GET /api/autonomy-contract/status` exists only because Task 3's
-    plugin registered it; measured directly against the actual stale image
-    the review found, this route was 404 ("Plugin initialization started:"
-    never named `autonomy-contract`). A 200 here, with this exact shape,
-    cannot be produced by an image built before that plugin existed --
+    repeat). `GET /api/autonomy-contract/status` exists only because the
+    autonomy-contract plugin registered it; measured directly against a
+    stale image that predates the plugin, this route was 404 ("Plugin
+    initialization started:" never named `autonomy-contract`). A 200 here,
+    with this exact shape, cannot be produced by an image built before that
+    plugin existed --
     whereas a healthy pod, a passing RBAC matrix, or a 200 from `/` (the
     static frontend bundle, unrelated to this plugin) all could be, and all
     were, which is the whole lesson this file exists to not repeat.
@@ -300,7 +300,7 @@ def test_the_autonomy_status_route_answers_which_a_stale_image_cannot(
     assert resp.status_code == 200, (
         f"GET /api/autonomy-contract/status returned {resp.status_code}, not "
         f"200 -- either this plugin is not registered (the running image "
-        f"predates M6 Task 3, exactly M6-R9's defect) or it failed for some "
+        f"predates the autonomy-contract plugin) or it failed for some "
         f"other reason: {resp.text[:300]}"
     )
     body = resp.json()
@@ -323,14 +323,14 @@ def test_the_catalog_serves_every_component_the_tree_actually_has(
     reimplemented, so this file cannot drift into a hand-typed list of eight
     (or nine) names that quietly stops matching the tree. `_component_dirs`
     walks `agents/`, `apps/`, `platform/`, `systems/`, `tools/` and includes
-    `platform/backstage` itself (a real ninth entry, not one of the eight the
-    design counts, but a real Component in the live catalog all the same --
-    Backstage catalogs itself).
+    `platform/backstage` itself (a real ninth entry, not one of the eight
+    components typically counted, but a real Component in the live catalog
+    all the same -- Backstage catalogs itself).
     """
     expected = {d.name for d in _component_dirs(REPO_ROOT)}
     assert len(expected) >= 8, (
         f"the tree walk found only {sorted(expected)} -- fewer than the "
-        "eight components this milestone's design names; either the repo "
+        "eight components this demo's catalog names; either the repo "
         "layout changed or this guard is reading the wrong root"
     )
 
@@ -368,9 +368,9 @@ def test_the_catalog_serves_every_component_the_tree_actually_has(
 def test_the_card_reads_assisted_for_both_identities_on_the_refusing_contract(
     backstage_url, auth_headers,
 ):
-    """Design §5.3: on a freshly built cluster (and at every point this suite
+    """On a freshly built cluster (and at every point this suite
     is not itself mid-flip) both identities read `assisted`, because the
-    contract ships refusing and M6 does not change that (M5-R8). Precondition
+    contract ships refusing by design. Precondition
     checked live against flagd's own OFREP resolution
     (`contract.assert_assisted`), not merely against the object's spec, for
     the same reason `test_policy_denial.py`/`test_supervised.py`'s
@@ -378,8 +378,8 @@ def test_the_card_reads_assisted_for_both_identities_on_the_refusing_contract(
     run in this same suite must fail loudly here, immediately, rather than
     surface as a confusing mismatch three assertions later.
 
-    Whole-branch review M1: on the shipped contract BOTH targeting branches
-    are `assisted` (M5-R8's deliberate no-op), so `level` alone cannot fail --
+    On the shipped contract BOTH targeting branches
+    are `assisted` (a deliberate no-op), so `level` alone cannot fail --
     every path through `resolveAutonomyLevel` (`targeting-then`,
     `targeting-else`, `default-variant`, `flag-disabled`) returns the same
     string here. A reader that ignores `spiffeId` entirely, hardcodes
@@ -420,7 +420,7 @@ def test_the_card_reads_assisted_for_both_identities_on_the_refusing_contract(
 
 
 def test_no_workload_is_redeployed_by_a_card_driven_flip(backstage_url, auth_headers):
-    """The cheap half of design §5's claim -- no model call, no browser --
+    """The cheap half of this file's claim -- no model call, no browser --
     proving the card's write, alone, restarts nothing in `northstar-agents`.
     Same mechanism `test_progressive_autonomy.py::
     test_no_workload_was_redeployed_by_the_flip` uses (pod UID + image digest,
@@ -459,7 +459,7 @@ def test_no_workload_is_redeployed_by_a_card_driven_flip(backstage_url, auth_hea
             f"changed: before={before!r} after={after!r}"
         )
 
-        # Whole-branch review M1: this test already holds the contract
+        # This test already holds the contract
         # flipped, at no extra cost -- the discriminating check that
         # `test_the_card_reads_assisted_for_both_identities...` cannot make on
         # the shipped (both-assisted) contract. With the then-branch flipped,
@@ -505,7 +505,7 @@ def test_no_workload_is_redeployed_by_a_card_driven_flip(backstage_url, auth_hea
         contract.assert_assisted("test_no_workload_is_redeployed_by_a_card_driven_flip (revert)")
 
 
-# --- 6. The milestone's own claim: the card's write changes a real ---------
+# --- 6. This file's central claim: the card's write changes a real ---------
 # --- settlement decision, live, with no redeploy -----------------------------
 
 
@@ -513,7 +513,7 @@ def test_no_workload_is_redeployed_by_a_card_driven_flip(backstage_url, auth_hea
 def test_driving_the_cards_write_over_http_flips_a_refused_settlement_to_executed(
     backstage_url, auth_headers, claims_agent_route,
 ):
-    """Design §5.4/§5.5, driven through the surface an audience actually
+    """Driven through the surface an audience actually
     uses. Submit the identical over-the-assisted-limit claim twice, under the
     junior identity, with nothing between the two runs but a card-driven flip
     of the live contract -- the same claim
@@ -521,13 +521,12 @@ def test_driving_the_cards_write_over_http_flips_a_refused_settlement_to_execute
     already proves for a `kubectl patch`, proven again here for the card's own
     HTTP route.
 
-    **This is the test that was mutated to prove it can fail** (task report
-    carries the exact command and the quoted RED): with
+    **This is the test that was mutated to prove it can fail**: with
     `router.ts`'s `POST /variant` handler changed to skip the actual
     `client.patchThenBranch(...)` call while still returning 200, the
     `landed == "autonomous"` assertion below reddens immediately --
     `assert 'assisted' == 'autonomous'` -- before a second settlement is even
-    driven, which is a faster and just as conclusive RED as M5's own
+    driven, which is a faster and just as conclusive RED as
     `assert 'refused' == 'executed'` would have been had this file reached
     that assertion first.
     """
@@ -561,7 +560,7 @@ def test_driving_the_cards_write_over_http_flips_a_refused_settlement_to_execute
         )
         # Independent witness that the write reached the object -- not merely
         # that the HTTP response claimed success. This is the assertion the
-        # mutation round (docstring above) reddens.
+        # mutation described above reddens.
         landed = contract.get_committed_then_branch()
         assert landed == contract.AUTONOMOUS, (
             f"the card reported a successful flip to 'autonomous' but the "
@@ -601,7 +600,7 @@ def test_driving_the_cards_write_over_http_flips_a_refused_settlement_to_execute
         assert record.get("status") == "executed", record
         assert record.get("amount") == AMOUNT, record
     finally:
-        # Leave the contract refusing (M5-R8) whether the assertions above
+        # Leave the contract refusing whether the assertions above
         # passed or raised, through the SAME route this test claims to prove
         # -- verified, not merely attempted.
         revert = requests.post(
@@ -617,13 +616,13 @@ def test_driving_the_cards_write_over_http_flips_a_refused_settlement_to_execute
         contract.assert_assisted("test_driving_the_cards_write_over_http_... (revert)")
 
 
-# --- 7. The durable audit signal actually lands (design §10's own -----------
-# --- instruction: "Task 4's e2e should assert the span lands") --------------
+# --- 7. The durable audit signal actually lands -----------------------------
 
 # Reused rather than retyped from telemetry.ts, the same way this file already
 # reuses contract.py's constants for the flag/namespace instead of restating
-# them: the module docstring names three signals design §4 asks for, and says
-# plainly that only this one -- the OTLP span -- is durable. Reproduced as a
+# them: the module docstring names three signals this system emits for a
+# contract change, and says plainly that only this one -- the OTLP span --
+# is durable. Reproduced as a
 # literal because this is a Python file reading a TypeScript module's
 # behaviour, not importing it.
 SPAN_NAME = "northstar.autonomy_contract.change"
@@ -649,8 +648,8 @@ def _opensearch_contract_change_spans(new_variant: str, not_before: str) -> list
     (`buildOtlpTracePayload`'s `hex(16)`/`hex(8)`), never linked to any
     inbound request, and `router.ts`'s `POST /variant` response carries no
     trace id back to attach to either -- see that module's own docstring on
-    why this is the ONE durable signal design §4 asks for, and the one none
-    of this milestone's other tests assert actually reaches the collector.
+    why this is the ONE durable signal among the three, and the one none
+    of this file's other tests assert actually reaches the collector.
     """
     deadline = time.time() + OPENSEARCH_SETTLE_TIMEOUT_S
     query = {
@@ -677,22 +676,22 @@ def _opensearch_contract_change_spans(new_variant: str, not_before: str) -> list
 
 
 def test_the_contract_change_span_lands_in_opensearch(backstage_url, auth_headers):
-    """Design §10, verbatim: *"Task 4's e2e should assert the span lands, the
+    """Asserts that the span lands, the
     way `test_opensearch_trace_ingest.py` already does for `policy.decision`
-    -- nothing today does for this span."* This is that assertion.
+    -- nothing else in this suite does for this span.
 
-    Design §4 asks for three independent signals; two are already covered
-    elsewhere and are not repeated here. The RBAC grant that lets the write
-    happen at all is `tests/e2e/test_autonomy_writer_live_rbac.py`'s own
+    This system emits three independent signals for a contract change; two
+    are already covered elsewhere and are not repeated here. The RBAC grant
+    that lets the write happen at all is
+    `tests/e2e/test_autonomy_writer_live_rbac.py`'s own
     subject; the k8s write itself (and, by extension, the `managedFields`
     field-manager entry the object carries afterward) is what this file's
     other tests already prove with `contract.get_committed_then_branch()`,
-    though no test anywhere asserts `managedFields` directly, because design
-    §10 is explicit that it is a point-in-time fact about who wrote a field
-    *last*, not a history worth pinning. What none of them prove is that the
-    THIRD signal -- the one design §10 says is the only durable one of the
-    three -- actually reaches the collector and is queryable, the same
-    standard M4-R6 already holds `policy.decision` to.
+    though no test anywhere asserts `managedFields` directly, because it is
+    a point-in-time fact about who wrote a field *last*, not a history worth
+    pinning. What none of them prove is that the THIRD signal -- the only
+    durable one of the three -- actually reaches the collector and is
+    queryable, the same standard this suite already holds `policy.decision` to.
     """
     if not _opensearch_is_installed():
         pytest.skip(
@@ -729,8 +728,8 @@ def test_the_contract_change_span_lands_in_opensearch(backstage_url, auth_header
             f"live against the object itself), but no {SPAN_NAME!r} span "
             f"naming new_variant='autonomous' appeared in OpenSearch's "
             f"{TRACE_INDEX!r} within {OPENSEARCH_SETTLE_TIMEOUT_S:.0f}s -- the "
-            "write is real but the durable audit signal design §10 asks for "
-            f"is not reaching the collector. Documents found for this window: "
+            "write is real but the durable audit signal this span is meant "
+            f"to provide is not reaching the collector. Documents found for this window: "
             f"{documents!r}"
         )
         span = matching[0]

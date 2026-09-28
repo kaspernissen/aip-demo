@@ -1,7 +1,7 @@
 """MCP client for payments-mcp.
 
 settlement-agent is the only agent permitted to reach payments-mcp. That
-boundary is configuration here and enforcement at the gateway in M2.
+boundary is configuration here and enforcement at the gateway.
 
 Two different things cross this boundary, in two different carriers, and they
 are separate concerns that happen to share a hop:
@@ -10,45 +10,36 @@ are separate concerns that happen to share a hop:
     below via the standard propagator. It is about *correlation* -- it says
     which trace this call belongs to and nothing about who is calling.
   * Identity rides in an HTTP `Authorization: Bearer` header, as a JWT-SVID
-    fetched from svid.py (M2.1 Task 4). It is about *authentication* -- it
-    says who is calling and nothing about the trace.
+    fetched from svid.py. It is about *authentication* -- it says who is
+    calling and nothing about the trace.
 
 Neither substitutes for the other, and neither may be folded into the other.
 Trace context is not a credential (it is attacker-supplied, and treating it as
-identity would be the security bug this milestone exists to avoid); the SVID
-is not correlation (it says nothing about the call). agentgateway happens to
-read both -- the header for JWT verification, and, separately, the
-`traceparent` HTTP header that HTTPXClientInstrumentor injects for the trace
--- but as two independent mechanisms.
+identity would be a security bug); the SVID is not correlation (it says
+nothing about the call). agentgateway happens to read both -- the header for
+JWT verification, and, separately, the `traceparent` HTTP header that
+HTTPX2ClientInstrumentor injects for the trace -- but as two independent
+mechanisms.
 
 Note what is *not* claimed here: this file does not hand-inject `traceparent`
 into an HTTP header. That is the httpx instrumentation's job, done for every
 outbound request in this process, and it is what carries the trace across the
-gateway (tests/e2e/test_gateway_trace.py). `params._meta` is a second,
-MCP-native carrier for the same context.
+gateway (tests/e2e/test_gateway_trace.py). Because `mcp`'s streamable-HTTP
+client is built on `httpx2` rather than `httpx`, it is `HTTPX2ClientInstrumentor`
+(applied in bootstrap.py) that injects `traceparent` on this hop -- deleting
+it as "the anthropic-only instrumentor" would silently sever this hop.
+`params._meta` is a second, MCP-native carrier for the same context.
 
-**Corrected 2026-09-11 (M3 remaining-bumps, step 1).** The paragraph above said
-"That is HTTPXClientInstrumentor's job, done for every outbound httpx request
-in this process". Half of that is now wrong and the half that matters is the
-distribution: `mcp` 2.x's streamable-HTTP client is built on `httpx2`, not
-`httpx`, so the instrumentor that injects `traceparent` on THIS hop is
-`HTTPX2ClientInstrumentor`. Both are applied in bootstrap.py (the second has
-been since M1.2 Task 8, for `anthropic`), so nothing had to be added -- but a
-reader who deleted the `httpx2` one as "the anthropic one" would silently
-sever this hop, which is why the correction is written down rather than left
-as a stale sentence that still reads plausibly.
-
-Task 7: mcp==1.9.4's high-level ClientSession.call_tool() (used until this
-task) has no way to set params._meta, and does not inject one automatically
-(confirmed empirically, see NOTES.md and tests/e2e/test_payments_mcp_trace.py,
-which used the same technique as test-side infrastructure). This client now
-goes through the lower-level ClientSession.send_request() with a hand-built
-CallToolRequest instead, injecting the ambient OTel context (trace context
-*and* baggage — whatever the global propagator produces) into
-params._meta via the standard `opentelemetry.propagate.inject()` API. This is
-the one piece of production code in the repo that needs the lower-level
-request API rather than the SDK's own convenience wrapper; see this task's
-report for whether that gap is upstream-contribution evidence.
+This client goes through the lower-level `ClientSession.send_request()` with
+a hand-built `CallToolRequest`, injecting the ambient OTel context (trace
+context *and* baggage — whatever the global propagator produces) into
+`params._meta` via the standard `opentelemetry.propagate.inject()` API,
+because the high-level `ClientSession.call_tool()` has no way to set
+`params._meta` and does not inject one automatically (confirmed empirically,
+see NOTES.md and tests/e2e/test_payments_mcp_trace.py, which uses the same
+technique as test-side infrastructure). This is the one piece of production
+code in the repo that needs the lower-level request API rather than the
+SDK's own convenience wrapper.
 """
 from __future__ import annotations
 
@@ -95,9 +86,9 @@ class ToolCallError(RuntimeError):
 class PolicyDenial(ToolFailed):
     """The platform refused this call, and no retry will change that.
 
-    This is the load-bearing type of M2.2. The hazard it exists to prevent:
-    "If a denial reads as a retryable tool error, the agent can sit on stage
-    retrying a payment it will never be allowed to make."
+    This is the load-bearing type for policy refusals. The hazard it exists to
+    prevent: "If a denial reads as a retryable tool error, the agent can sit
+    on stage retrying a payment it will never be allowed to make."
 
     Three properties, each deliberate:
 
@@ -105,12 +96,11 @@ class PolicyDenial(ToolFailed):
         turns a `ToolFailed` raised anywhere under a tool call into a
         `ToolReturnPart(outcome='failed')` carrying `.message`
         (`tool_manager.py::_wrap_error_as_failed`, read from the installed
-        2.42.0 -- 2.41.0 until 2026-09-11, re-read at the bump and unchanged).
-        The model therefore reads the refusal and can narrate it,
-        which is the whole point: before this, a denial left `_call` as a bare
-        `MCPError`, propagated out of `Agent.run()`, and the A2A caller got a
-        JSON-RPC `-32603` where a customer-facing explanation belongs
-        (measured in Task 4, §11 concern 4).
+        2.42.0). The model therefore reads the refusal and can narrate it,
+        which is the whole point: without this, a denial would leave `_call`
+        throwing a bare `MCPError`, propagated out of `Agent.run()`, and the
+        A2A caller would get a JSON-RPC `-32603` where a customer-facing
+        explanation belongs.
       * **It is emphatically NOT a `pydantic_ai.ModelRetry`.** `ModelRetry` is
         handed back to the model *as a correction prompt* and consumes the
         tool's retry budget (`_wrap_error_as_retry` -> `RetryPromptPart`) — the
@@ -163,8 +153,8 @@ def _deny_marker(exc: BaseException) -> dict[str, Any] | None:
     (and for the model to narrate); it will be reworded, and a reworded message
     must not silently turn a terminal denial back into a retryable error.
 
-    Measured shape (Task 1 finding 1, Task 3's body): agentgateway parses the
-    PDS's `AuthorizationError.mcp_error` — itself a JSON-RPC error object —
+    Measured shape: agentgateway parses the PDS's
+    `AuthorizationError.mcp_error` — itself a JSON-RPC error object —
     whole into `error.data`, so the marker sits one level down at
     `exc.error.data["data"]`. The un-nested position is accepted too, so this
     still recognises a denial if the gateway ever stops double-wrapping;
@@ -189,10 +179,10 @@ def _policy_denial(exc: BaseException) -> PolicyDenial | None:
     `None` for everything else, which is the regression guard that matters
     here: a transport error must stay a transport error. The PDS being
     *unreachable* also arrives as an `MCPError` ("mcpGuardrails checkRequest
-    failed: upstream call failed: Connect: Connection refused", measured in
-    Task 4's failClosed test) and carries no marker — that is an outage, not a
-    decision, and reporting it as "policy said no" would be a lie the model
-    would then narrate.
+    failed: upstream call failed: Connect: Connection refused", measured
+    directly) and carries no marker — that is an outage, not a decision, and
+    reporting it as "policy said no" would be a lie the model would then
+    narrate.
     """
     marker = _deny_marker(exc)
     if marker is None:
@@ -200,7 +190,7 @@ def _policy_denial(exc: BaseException) -> PolicyDenial | None:
 
     # The narration text. `error.message` is where the PDS puts the
     # human-readable reason precisely because it is the one place
-    # `str(MCPError)` preserves (R13); `str(exc)` is the same string, and is
+    # `str(MCPError)` preserves; `str(exc)` is the same string, and is
     # the fallback if some other carrier ever grows a marker.
     reason = getattr(getattr(exc, "error", None), "message", None) or str(exc)
     rule = marker.get("rule")
@@ -229,9 +219,9 @@ def _leaf_exception(exc: BaseException) -> BaseException:
     Prefers a ToolCallError leaf if one is present anywhere in the group —
     that is the case this whole mechanism exists for, and it is the one
     whose text a caller actually needs to see. Falls back to the first leaf
-    found if no ToolCallError is present (fine for M1.1's single-failure
-    paths; a real anyio cancellation/transport error ahead of a ToolCallError
-    would previously have won by accident of ordering — see review nit 9).
+    found if no ToolCallError is present -- fine for a single-failure path;
+    a real anyio cancellation/transport error ahead of a ToolCallError would
+    otherwise win by accident of ordering.
     """
     if not isinstance(exc, BaseExceptionGroup):
         return exc
@@ -245,10 +235,9 @@ def _leaf_exception(exc: BaseException) -> BaseException:
 def _unwrap(result: Any) -> dict:
     """Extract the structured payload from a CallToolResult.
 
-    M3 remaining-bumps step 1: `mcp` 2.x renamed both attributes read here.
-    `CallToolResult.isError` is `is_error` and `.structuredContent` is
-    `.structured_content` on the Python object; the JSON field names on the
-    wire are unchanged, because 2.x keeps `isError`/`structuredContent` as the
+    `mcp`'s Python object exposes `CallToolResult.isError` as `is_error` and
+    `.structuredContent` as `.structured_content`; the JSON field names on the
+    wire are unchanged, because `isError`/`structuredContent` remain the
     pydantic aliases (read off `CallToolResult.model_fields` in the installed
     2.2.0, not from the changelog). So this is a rename in this process only —
     nothing about what payments-mcp sends changed.
@@ -287,14 +276,14 @@ class PaymentsTools:
         # crates/agentgateway/src/http/jwt.rs uses as the `location` default.
         svid = await fetch_jwt_svid(_GATEWAY_AUDIENCE)
         try:
-            # M3 remaining-bumps step 1 (mcp 1.28.1 -> 2.2.0). Three changes
-            # here, each read off the installed 2.2.0 source rather than the
-            # migration guide, because getting the first one wrong would mean
-            # sending no credential at all while every test still passed:
+            # Three points about `mcp`'s `streamable_http_client`, each read
+            # off the installed 2.2.0 source rather than the migration guide,
+            # because getting the first one wrong would mean sending no
+            # credential at all while every test still passed:
             #
-            #   * `streamablehttp_client` is gone. At 1.28.1 it already carried
-            #     `@deprecated("Use `streamable_http_client` instead.")`; 2.x
-            #     deleted it. `streamable_http_client` is the replacement.
+            #   * `streamablehttp_client` (no underscore before "http") does
+            #     not exist at this version; `streamable_http_client` is the
+            #     current name.
             #   * It takes **no `headers=` parameter**. Its own docstring says
             #     so: "To configure headers, authentication, or other HTTP
             #     settings, create an httpx2.AsyncClient and pass it here."
@@ -306,18 +295,15 @@ class PaymentsTools:
             #     manages the lifecycle of a client it created itself
             #     (`client_provided` in its source); one passed in is ours to
             #     close.
-            #   * It yields a **two**-tuple, not a three-tuple: the third
-            #     element at 1.28.1 was a session-id callback this code never
-            #     used (`as (read, write, _)`).
+            #   * It yields a **two**-tuple (`as (read, write)`), not a
+            #     session-id callback as a third element.
             #
-            # What did NOT change, and is the reason this stays one hop rather
-            # than two: the client is still an ordinary HTTP client in this
-            # process, so trace context still rides out in the `traceparent`
-            # header injected by instrumentation rather than by this file. It
-            # is now `httpx2` rather than `httpx`, so the instrumentor that
-            # does it is `HTTPX2ClientInstrumentor` -- already applied in
-            # bootstrap.py since M1.2 Task 8, for `anthropic`. Both are applied
-            # there; neither was added for this bump.
+            # The client is still an ordinary HTTP client in this process, so
+            # trace context still rides out in the `traceparent` header
+            # injected by instrumentation rather than by this file. It is
+            # `httpx2` rather than `httpx`, so the instrumentor that does it
+            # is `HTTPX2ClientInstrumentor` -- already applied in
+            # bootstrap.py, for `anthropic`. Both are applied there.
             async with create_mcp_http_client(
                 headers={"Authorization": f"Bearer {svid}"},
             ) as http_client:
@@ -341,8 +327,8 @@ class PaymentsTools:
                         # multiplexed stream), so the context has to travel with
                         # the message.
                         #
-                        # M2.1 Task 4 note: this is emphatically NOT the carrier
-                        # the JWT-SVID uses. The SVID goes in the HTTP
+                        # This is emphatically NOT the carrier the JWT-SVID
+                        # uses. The SVID goes in the HTTP
                         # Authorization header set above, one level down at the
                         # transport, and the two never mix -- see this module's
                         # docstring for why folding one into the other would be
@@ -350,22 +336,19 @@ class PaymentsTools:
                         carrier: dict[str, str] = {}
                         propagate.inject(carrier)
 
-                        # mcp 2.x: `types.ClientRequest` is a plain union of
-                        # request models, not the 1.x `RootModel` wrapper, and
-                        # `send_request` accepts a member of that union
-                        # directly (its signature reads
-                        # `types.ClientRequest | types.Request[Any, Any]`). So
-                        # the `ClientRequest(...)` wrapping is gone, not
-                        # replaced.
+                        # `types.ClientRequest` is a plain union of request
+                        # models, and `send_request` accepts a member of that
+                        # union directly (its signature reads
+                        # `types.ClientRequest | types.Request[Any, Any]`), so
+                        # `request` below is passed as-is, with no wrapping.
                         #
-                        # `params._meta` is now the TypedDict
-                        # `RequestParamsMeta` -- "an open map: arbitrary keys
-                        # round-trip via `extra_items=Any`", its own docstring
-                        # -- so the carrier dict IS the value; 1.x's
-                        # `RequestParams.Meta(**carrier)` model no longer
-                        # exists. The serialised wire shape is byte-identical,
-                        # checked with `model_dump(by_alias=True,
-                        # exclude_none=True)` against the installed 2.2.0:
+                        # `params._meta` is the TypedDict `RequestParamsMeta`
+                        # -- "an open map: arbitrary keys round-trip via
+                        # `extra_items=Any`", its own docstring -- so the
+                        # carrier dict IS the value passed to `_meta` below.
+                        # The serialised wire shape, checked with
+                        # `model_dump(by_alias=True, exclude_none=True)`
+                        # against the installed 2.2.0:
                         # `{'method': 'tools/call', 'params': {'_meta':
                         # {'traceparent': ...}, 'name': ..., 'arguments': ...}}`.
                         request = types.CallToolRequest(
@@ -393,14 +376,14 @@ class PaymentsTools:
             # design (PEP 654) — so unwrap by hand instead and re-raise the
             # leaf exception the caller actually needs to see.
             #
-            # M2.2: and if that leaf is the platform refusing, translate it
-            # into a PolicyDenial first. The leaf is an
+            # And if that leaf is the platform refusing, translate it into a
+            # PolicyDenial first. The leaf is an
             # `mcp.shared.exceptions.MCPError` (measured — the gateway denies
             # on HTTP 200 with a JSON-RPC error body, so `raise_for_status()`
             # never fires and there is no `httpx.HTTPStatusError` anywhere on
             # this path), whose `str()` keeps the reason but drops
-            # `error.data`. Re-raising the leaf unchanged is what lost the
-            # structure and left the A2A caller a bare `-32603`.
+            # `error.data`. Re-raising the leaf unchanged would lose that
+            # structure and leave the A2A caller a bare `-32603`.
             leaf = _leaf_exception(eg)
             raise (_policy_denial(leaf) or leaf) from eg
         except MCPError as exc:
@@ -410,7 +393,8 @@ class PaymentsTools:
             # wrapping is anyio's business, not ours: if a future anyio or mcp
             # stopped wrapping, a denial would silently stop being terminal
             # and the failure mode would be a retry loop on stage — the exact
-            # hazard this module now guards. Cheaper to cover than to detect.
+            # hazard this module guards against. Cheaper to cover than to
+            # detect.
             denial = _policy_denial(exc)
             if denial is None:
                 raise
@@ -434,11 +418,11 @@ class PaymentsTools:
         )
 
     async def get(self, payment_id: str) -> dict:
-        """Read back what the ledger recorded for a payment (M3 Task 3 fix
-        round, R11). `execute_approved` calls this before executing an
-        approval, to confirm a refusal record actually exists and that its
-        recorded amount matches -- through the same governed MCP path every
-        other payments call in this repo takes, not a new HTTP path."""
+        """Read back what the ledger recorded for a payment. `execute_approved`
+        calls this before executing an approval, to confirm a refusal record
+        actually exists and that its recorded amount matches -- through the
+        same governed MCP path every other payments call in this repo takes,
+        not a new HTTP path."""
         return await self._call("get_payment", {"payment_id": payment_id})
 
     async def refuse(
@@ -452,20 +436,20 @@ class PaymentsTools:
         refused_trace_id: str,
         refused_span_id: str,
     ) -> dict:
-        """Record why a payout was refused, beside the payout (M3 Task 2's
-        `POST /payments/{id}/refuse`, reached through the same governed MCP
-        path every other payments call in this repo takes -- not a new HTTP
-        path from this agent to payments-api).
+        """Record why a payout was refused, beside the payout (`POST
+        /payments/{id}/refuse`, reached through the same governed MCP path
+        every other payments call in this repo takes -- not a new HTTP path
+        from this agent to payments-api).
 
-        M3 Task 3 review fix round (R12) superseded validating only `rule`:
-        payments-api's refuse endpoint now also rejects an already-refused
-        payment and confirms `requested` against the recorded proposal.
-        `refused_span_id` travels alongside `refused_trace_id` so
-        `execute_approved` can link to the settlement-agent span active when
-        the refusal was recorded -- settlement-agent's own A2A server span,
-        not the Policy Decision Service's `policy.decision` span (finding 3 /
-        R13) -- rather than only to the trace as a whole (see settlement.py's
-        `_refusal_link` and its measurement note).
+        payments-api's refuse endpoint validates more than `rule`: it also
+        rejects an already-refused payment and confirms `requested` against
+        the recorded proposal. `refused_span_id` travels alongside
+        `refused_trace_id` so `execute_approved` can link to the
+        settlement-agent span active when the refusal was recorded --
+        settlement-agent's own A2A server span, not the Policy Decision
+        Service's `policy.decision` span -- rather than only to the trace as
+        a whole (see settlement.py's `_refusal_link` and its measurement
+        note).
         """
         return await self._call(
             "refuse_payment",

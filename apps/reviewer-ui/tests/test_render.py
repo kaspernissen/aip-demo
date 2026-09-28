@@ -110,8 +110,8 @@ def test_result_page_for_a_successful_approval_shows_the_executed_ledger_record(
 
 
 def test_result_page_for_a_failed_approval_never_says_executed():
-    """The honesty requirement stated directly in the task brief: surface a
-    failure honestly rather than showing a success."""
+    """The honesty requirement: surface a failure honestly rather than
+    showing a success."""
     outcome = render.ResultView(
         payment_id="PAY-000053",
         decision="approve",

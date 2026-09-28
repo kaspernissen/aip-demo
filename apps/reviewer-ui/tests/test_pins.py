@@ -1,7 +1,6 @@
 """Advisory gate for reviewer-ui, following the pattern established in
-agents/settlement-agent/tests/test_pins.py (M3 Task 1 Part A extended it to
-every service that lacked one; this is a new service, so it gets one from
-the start rather than being added later as debt).
+agents/settlement-agent/tests/test_pins.py: every service in this repo gets
+one of these from the start.
 
 Not a general vulnerability scanner -- a tripwire against this exact set of
 versions silently drifting, so a change to requirements.txt that is not also

@@ -11,7 +11,7 @@ STAGE=1
 # pinned by tests/unit/test_stage2_cilium_config.py so the two cannot drift.
 CILIUM_CHART_VERSION="1.20.1"
 CILIUM_HELM_REPO="https://helm.cilium.io/"
-# M2.1 Task 4: SPIRE. Two charts, and the ORDER MATTERS -- `spiffe/spire`
+# SPIRE. Two charts, and the ORDER MATTERS -- `spiffe/spire`
 # installed on its own fails on the missing spire.spiffe.io CRDs, which its own
 # bundled spire-controller-manager needs before it can reconcile a single
 # ClusterSPIFFEID. The hardened charts repo ships them separately for exactly
@@ -29,40 +29,38 @@ CILIUM_HELM_REPO="https://helm.cilium.io/"
 SPIRE_CRDS_CHART_VERSION="0.6.1"
 SPIRE_CHART_VERSION="0.30.2"
 SPIFFE_HELM_REPO="https://spiffe.github.io/helm-charts-hardened/"
-# M4 Task 1: OpenSearch. Verified 2026-09-13 against TWO independent sources,
-# not a local Helm cache -- Artifact Hub's opensearch-project-helm-charts/
-# opensearch package (version AND app_version both "3.8.0") and
-# https://api.github.com/repos/opensearch-project/helm-charts/releases
-# (tag opensearch-3.8.0, published 2026-08-05, prerelease: false, the newest
-# entry). Unlike Cilium/SPIRE this chart's tags equal its appVersion. The
-# same number and the same evidence are recorded in
-# deploy/observability/opensearch/values.yaml and dashboards-values.yaml's
-# headers.
+# OpenSearch. Verified against TWO independent sources, not a local Helm
+# cache -- Artifact Hub's opensearch-project-helm-charts/opensearch package
+# (version AND app_version both "3.8.0") and
+# https://api.github.com/repos/opensearch-project/helm-charts/releases (tag
+# opensearch-3.8.0, prerelease: false, the newest entry). Unlike Cilium/SPIRE
+# this chart's tags equal its appVersion. The same number and the same
+# evidence are recorded in deploy/observability/opensearch/values.yaml and
+# dashboards-values.yaml's headers.
 OPENSEARCH_CHART_VERSION="3.8.0"
 OPENSEARCH_HELM_REPO="https://opensearch-project.github.io/helm-charts"
-# M4 Task 2: Prometheus. Verified 2026-09-13 against TWO independent sources,
-# not a local Helm cache -- Artifact Hub's prometheus-community/prometheus
-# package (version "29.29.0", app_version "v3.14.0", prerelease false) and
+# Prometheus. Verified against TWO independent sources, not a local Helm
+# cache -- Artifact Hub's prometheus-community/prometheus package (version
+# "29.29.0", app_version "v3.14.0", prerelease false) and
 # https://api.github.com/repos/prometheus-community/helm-charts/releases
-# (tag prometheus-29.29.0, published 2026-09-12T23:55:41Z, prerelease false,
-# the newest `prometheus-*` entry; that repo tags per chart, so the many
-# `prometheus-<exporter>-*` tags alongside it are unrelated series). Unlike
-# the OpenSearch chart, chart version and appVersion are independent here:
-# 29.29.0 installs Prometheus v3.14.0. The same numbers and the same evidence
-# are recorded in deploy/observability/prometheus/values.yaml's header, and
-# pinned by tests/unit/test_metrics_wiring.py so the two cannot drift.
+# (tag prometheus-29.29.0, prerelease false, the newest `prometheus-*` entry;
+# that repo tags per chart, so the many `prometheus-<exporter>-*` tags
+# alongside it are unrelated series). Unlike the OpenSearch chart, chart
+# version and appVersion are independent here: 29.29.0 installs Prometheus
+# v3.14.0. The same numbers and the same evidence are recorded in
+# deploy/observability/prometheus/values.yaml's header, and pinned by
+# tests/unit/test_metrics_wiring.py so the two cannot drift.
 PROMETHEUS_CHART_VERSION="29.29.0"
 PROMETHEUS_HELM_REPO="https://prometheus-community.github.io/helm-charts"
-# M5 Task 2: cert-manager and the Open Feature Operator (OFO). Both verified
-# 2026-09-14 against the upstream releases API directly --
-# `curl -s https://api.github.com/repos/<org>/<repo>/releases/latest | grep
-# tag_name` -- not against OFO's own installation docs, which as of this same
-# date still pin cert-manager `v1.14.3` (seven minor releases stale; see
-# docs/installation.md in the open-feature-operator repo). cert-manager's
-# latest release is `v1.21.2`; OFO's is `v0.9.3`, chart version literally
-# tagged with the "v" prefix (confirmed with `helm search repo
-# openfeature/open-feature-operator --versions`, unlike every other chart
-# pinned in this file). Neither had moved from the plan's expected values.
+# cert-manager and the Open Feature Operator (OFO). Both verified against the
+# upstream releases API directly -- `curl -s
+# https://api.github.com/repos/<org>/<repo>/releases/latest | grep tag_name`
+# -- not against OFO's own installation docs, which can lag several minor
+# releases behind on cert-manager (see docs/installation.md in the
+# open-feature-operator repo). cert-manager's latest release is `v1.21.2`;
+# OFO's is `v0.9.3`, chart version literally tagged with the "v" prefix
+# (confirmed with `helm search repo openfeature/open-feature-operator
+# --versions`, unlike every other chart pinned in this file).
 #
 # flagd itself is not installed by a line in this script -- OFO's chart
 # injects it as a sidecar, at whatever image tag its own values pin. The
@@ -70,9 +68,9 @@ PROMETHEUS_HELM_REPO="https://prometheus-community.github.io/helm-charts"
 # tags, which mix flagd, flagd-proxy and core under one series -- filter on
 # the `flagd/` prefix specifically). OFO v0.9.3's chart defaults
 # `sidecarConfiguration.image.tag` to `v0.16.2`, one patch behind (`helm show
-# values openfeature/open-feature-operator --version v0.9.3`, checked
-# 2026-09-14) -- recorded here rather than silently overridden, since Task 2's
-# brief pins the OFO chart version, not the sidecar image inside it.
+# values openfeature/open-feature-operator --version v0.9.3`) -- recorded
+# here rather than silently overridden, since this script pins the OFO chart
+# version, not the sidecar image inside it.
 CERT_MANAGER_VERSION="1.21.2"
 OPENFEATURE_CHART_VERSION="v0.9.3"
 OPENFEATURE_HELM_REPO="https://open-feature.github.io/open-feature-operator/"
@@ -99,17 +97,14 @@ Usage: setup-kind.sh [--stage N]
   --stage 2   Governed:   stage 1, on a Cilium dataplane -- the cluster is
                           created with kind's default CNI disabled
                           [installs Cilium, SPIFFE/SPIRE, agentgateway and
-                          the Policy Decision Service. The gateway is in the
-                          MCP path as of M2.1 Task 3, verifies a
-                          SPIRE-issued JWT-SVID on every MCP call as of
-                          Task 4, and as of M2.2 Task 4 asks the PDS for a
-                          permit/deny on every tools/call -- FAIL-CLOSED, so
-                          a PDS outage refuses payments rather than waving
-                          them through. Kyverno is part of this stage in the
-                          design but is NOT installed yet. cert-manager is
-                          NOT installed and is not needed: the pinned SPIRE
-                          chart only uses it for optional features this
-                          install does not enable -- see
+                          the Policy Decision Service. The gateway sits in
+                          the MCP path, verifies a SPIRE-issued JWT-SVID on
+                          every MCP call, and asks the PDS for a permit/deny
+                          on every tools/call -- FAIL-CLOSED, so a PDS outage
+                          refuses payments rather than waving them through.
+                          cert-manager is NOT installed and is not needed:
+                          the pinned SPIRE chart only uses it for optional
+                          features this install does not enable -- see
                           deploy/platform/spire/values.yaml]
   --stage 3   Supervised:           stage 2, plus a human in the loop, on a
                           cluster created with a fourth host port reserved
@@ -124,42 +119,30 @@ Usage: setup-kind.sh [--stage N]
                           record and the PDS's senior row are in stage 2's
                           images already, since they are code in payments-api
                           and the Policy Decision Service rather than separate
-                          workloads. This paragraph read "no M3 workload
-                          exists yet" from M3 Task 1 until Task 5B; that was
-                          true when written and false from Task 4 onward]
+                          workloads]
   --stage 4   Observable:           + OpenSearch, Prometheus, eval-scorer
-                          [as of M4 Task 1: OpenSearch (single node,
-                          security plugin off) and OpenSearch Dashboards are
-                          installed, and the trace-ingest path into
-                          OpenSearch is live. As of M4 Task 2 Prometheus is
-                          installed too, OTLP-ingest only: every default
-                          scrape job is off, so the only way a series reaches
-                          it is the collector's otlp_http/prometheus exporter.
-                          As of M4 Task 3 the evidence view is imported into
-                          Dashboards from
+                          [OpenSearch (single node, security plugin off) and
+                          OpenSearch Dashboards are installed, and the
+                          trace-ingest path into OpenSearch is live.
+                          Prometheus is installed too, OTLP-ingest only:
+                          every default scrape job is off, so the only way a
+                          series reaches it is the collector's
+                          otlp_http/prometheus exporter. The evidence view is
+                          imported into Dashboards from
                           deploy/observability/dashboards/evidence.ndjson, so
                           it survives a cluster recreate instead of living
-                          only in a pod's volume. As of M4 Task 4 eval-scorer
-                          is deployed here too -- the service that scores a
-                          settlement's trajectory against the five
-                          policy-adherence properties -- which completes the
-                          stage. The one-line summary above says
-                          "+ OpenSearch, Prometheus, eval-scorer" and this
-                          paragraph is where the detail lives; that sentence
-                          still quoted the PRE-Task-5 summary until M4's final
-                          review -- the doc pass fixed the summary and left
-                          the sentence quoting what it used to say; M4 Task 5's
-                          doc pass added this sentence, the same doc-lag the
-                          M3 note two paragraphs up records for stage 3.
-                          Runs on stage 3's cluster config
+                          only in a pod's volume. eval-scorer is deployed
+                          here too -- the service that scores a settlement's
+                          trajectory against the five policy-adherence
+                          properties. Runs on stage 3's cluster config
                           UNCHANGED -- see the KIND_CONFIG note below --
                           Dashboards is reached by port-forward
                           (./scripts/start-demo.sh), never by a kind host
                           port]
   --stage 5   Progressive autonomy: + flagd
-                          [as of M5 Task 2: cert-manager (a prerequisite the
-                          Open Feature Operator's webhooks need for TLS, not
-                          used by anything else in this cluster) and the Open
+                          [cert-manager (a prerequisite the Open Feature
+                          Operator's webhooks need for TLS, not used by
+                          anything else in this cluster) and the Open
                           Feature Operator are installed, then the
                           FeatureFlag/FeatureFlagSource pair in
                           deploy/platform/openfeature/ is applied. The
@@ -173,30 +156,21 @@ Usage: setup-kind.sh [--stage N]
                           host port is needed, the sidecar is reached only
                           from inside its own pod]
   --stage 6   Golden path:          + Backstage
-                          [M6 dropped Crossplane and Argo CD -- see
-                          docs/superpowers/specs/2026-09-15-northstar-m6-
-                          golden-path-design.md §1: M5's own spec had already
-                          reassigned the platform-API role to the
-                          `FeatureFlag` resource M5 Task 2 introduced, so a
-                          Crossplane `Agent` CRD composing Deployments that
-                          already work would be a wrapper over working things.
-                          As of M6 Task 1: Backstage is deployed in
-                          `northstar-platform` (deploy/k8s/backstage.yaml),
-                          built and pushed the same way every other
-                          component's image is, on SQLite rather than
-                          PostgreSQL (design
-                          §3: this cluster is torn down and rebuilt, not
-                          operated, and the catalog is re-read from committed
-                          catalog-info.yaml files on every start regardless).
-                          This task's ServiceAccount is READ-ONLY
-                          (`get`/`list`/`watch` on Pods, Deployments,
-                          ReplicaSets, Services, ConfigMaps and the other
-                          object types the Kubernetes plugin reads by
-                          default; no Secrets, no write verbs anywhere) --
-                          the SEPARATE ServiceAccount that can PATCH the
-                          `northstar-autonomy` FeatureFlag is a later task's,
-                          deliberately, so the two grants stay independently
-                          reviewable. Reached by port-forward
+                          [Backstage is deployed in `northstar-platform`
+                          (deploy/k8s/backstage.yaml), built and pushed the
+                          same way every other component's image is, on
+                          SQLite rather than PostgreSQL (this cluster is torn
+                          down and rebuilt, not operated, and the catalog is
+                          re-read from committed catalog-info.yaml files on
+                          every start regardless). Its ServiceAccount is
+                          READ-ONLY (`get`/`list`/`watch` on Pods,
+                          Deployments, ReplicaSets, Services, ConfigMaps and
+                          the other object types the Kubernetes plugin reads
+                          by default; no Secrets, no write verbs anywhere) --
+                          a SEPARATE ServiceAccount carries the one grant
+                          that can PATCH the `northstar-autonomy`
+                          FeatureFlag, deliberately, so the two grants stay
+                          independently reviewable. Reached by port-forward
                           (./scripts/start-demo.sh), never a kind host port,
                           the same convention every platform component here
                           follows. Runs on stage 3's cluster config UNCHANGED
@@ -214,29 +188,25 @@ is the reviewer-ui port reservation; stages 4 and 5 both reuse stage 3's, see
 below) -- and this script refuses rather than layering Cilium on a running
 default CNI. Note that --stage defaults to 1, so a bare
 `./scripts/setup-kind.sh` builds a stage-1 (kindnet) cluster -- pass --stage
-2, 3, 4 or 5 explicitly for the Cilium dataplane. (This paragraph said "Stage
-2 and stage 3 both" and listed only those two until M4 Task 1's fix round;
-stage 4 needs the create-time flag for exactly the same reason, because it
-runs on stage 3's config; M5 Task 2 added stage 5 to the list for the same
-reason again.)
+2, 3, 4 or 5 explicitly for the Cilium dataplane.
 
 Stage 4 is the first exception to "each stage brings its own deploy/kind/
 stageN.yaml": there is deliberately no stage4.yaml. OpenSearch Dashboards
-would have needed a fifth host port (extraPortMappings is create-time only,
-same rule as above), and the human partner declined a cluster recreate for
-it on 2026-09-12 (M4 Task 1, plan amendment A1) -- so stage 4 reuses stage
-3's cluster config unchanged and reaches Dashboards by port-forward instead.
-tests/unit/test_stage4_config.py pins that no stage4.yaml appears.
+would need a fifth host port (extraPortMappings is create-time only, same
+rule as above), and this cluster is not recreated just to add it -- so
+stage 4 reuses stage 3's cluster config unchanged and reaches Dashboards by
+port-forward instead. tests/unit/test_stage4_config.py pins that no
+stage4.yaml appears.
 
 Stage 5 is the second: there is deliberately no stage5.yaml either. Nothing
-M5 Task 2 installs (cert-manager, the Open Feature Operator, the flagd
-sidecar) needs a host port -- the sidecar answers only inside its own pod, at
+it installs (cert-manager, the Open Feature Operator, the flagd sidecar)
+needs a host port -- the sidecar answers only inside its own pod, at
 localhost:8013 -- so stage 5 reuses stage 3's cluster config unchanged too,
-the same amendment-A1 reasoning stage 4 already established. The live cluster
-this task ran against was already at that config (brought up as `--stage 4`),
-so `--stage 5` over it takes the "cluster already exists, skipping creation"
-path below and never re-evaluates KIND_CONFIG for cluster creation at all --
-the assignment below only has to be right for a cold `--stage 5` bring-up.
+the same reasoning stage 4 already established. A cluster already brought up
+as `--stage 4` and then re-run as `--stage 5` takes the "cluster already
+exists, skipping creation" path below and never re-evaluates KIND_CONFIG for
+cluster creation at all -- the assignment below only has to be right for a
+cold `--stage 5` bring-up.
 EOF
 }
 
@@ -280,15 +250,15 @@ fi
 : "${OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE:?OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE not set in .env}"
 
 echo -e "${BLUE}Step 1/9: Creating local registry '${REGISTRY_NAME}'...${NC}"
-# N12 (final-review.md): a container can exist but be stopped (e.g. after a
-# `docker system prune` or a host restart with restart policies not yet
-# applied) without `docker inspect -f '{{.State.Running}}'` ever being
-# 'true'. The old two-branch check ran `docker run --name kind-registry`
-# whenever it wasn't running, which fails on the name collision with an
-# existing-but-stopped container and kills this script under `set -e` — a
-# false "the registry is broken" failure when `docker start` would have
-# fixed it in one step. Distinguish "does not exist" from "exists but
-# stopped" and only ever `docker run` in the former case.
+# A container can exist but be stopped (e.g. after a `docker system prune`
+# or a host restart with restart policies not yet applied) without `docker
+# inspect -f '{{.State.Running}}'` ever being 'true'. Running `docker run
+# --name kind-registry` whenever it isn't running would fail on the name
+# collision with an existing-but-stopped container and kill this script
+# under `set -e` — a false "the registry is broken" failure when `docker
+# start` would fix it in one step. So "does not exist" is distinguished from
+# "exists but stopped", and `docker run` is only ever used in the former
+# case.
 if ! docker inspect "${REGISTRY_NAME}" >/dev/null 2>&1; then
   docker run \
     -d --restart=always -p "127.0.0.1:${REGISTRY_PORT}:5000" --network bridge --name "${REGISTRY_NAME}" \
@@ -308,26 +278,25 @@ echo -e "${BLUE}Step 2/9: Creating kind cluster '${CLUSTER_NAME}'...${NC}"
 # stage 2's is one extra host port reservation for reviewer-ui — see
 # deploy/kind/stage3.yaml's header.
 KIND_CONFIG="$ROOT/deploy/kind/stage${STAGE}.yaml"
-# M4 Task 1, plan amendment A1: there is no stage4.yaml, deliberately. A
-# fifth host port mapping (for OpenSearch Dashboards) can only be added at
-# cluster CREATION -- same create-time rule as disableDefaultCNI above -- and
-# the human partner declined a cluster recreate on 2026-09-12. So --stage 4
-# reuses stage 3's cluster config unchanged; Dashboards is reached by
-# port-forward (./scripts/start-demo.sh) instead of a host port.
+# There is no stage4.yaml, deliberately. A fifth host port mapping (for
+# OpenSearch Dashboards) can only be added at cluster CREATION -- same
+# create-time rule as disableDefaultCNI above -- and this cluster is not
+# recreated just to add it. So --stage 4 reuses stage 3's cluster config
+# unchanged; Dashboards is reached by port-forward (./scripts/start-demo.sh)
+# instead of a host port.
 #
-# M5 Task 2: there is no stage5.yaml either, for the same amendment-A1
-# reasoning -- nothing this stage installs (cert-manager, the Open Feature
-# Operator, the flagd sidecar) needs a host port, so it reuses stage 3's
-# config too.
+# There is no stage5.yaml either, for the same reasoning -- nothing this
+# stage installs (cert-manager, the Open Feature Operator, the flagd
+# sidecar) needs a host port, so it reuses stage 3's config too.
 #
-# M6 Task 1: there is no stage6.yaml either, measured rather than assumed.
-# Backstage is reached by port-forward (./scripts/start-demo.sh), the same
-# convention every platform component in this cluster already follows, so it
-# needs no `extraPortMappings` entry of its own -- and that entry is the only
-# thing a create-time kind config buys here (same as stages 4 and 5). Written
-# as `-eq 4 || -eq 5 || -eq 6` rather than `-ge 4`, still: whether a stage
-# past 6 needs a new host port is not something this task measured, so this
-# does not silently decide it either.
+# There is no stage6.yaml either, measured rather than assumed. Backstage is
+# reached by port-forward (./scripts/start-demo.sh), the same convention
+# every platform component in this cluster already follows, so it needs no
+# `extraPortMappings` entry of its own -- and that entry is the only thing a
+# create-time kind config buys here (same as stages 4 and 5). Written as
+# `-eq 4 || -eq 5 || -eq 6` rather than `-ge 4`, still: whether a stage past
+# 6 needs a new host port has not been measured, so this does not silently
+# decide it either.
 if [[ "${STAGE}" -eq 4 || "${STAGE}" -eq 5 || "${STAGE}" -eq 6 ]]; then
   KIND_CONFIG="$ROOT/deploy/kind/stage3.yaml"
 fi
@@ -416,12 +385,11 @@ echo -e "${BLUE}Step 6/9: Creating namespaces...${NC}"
 kubectl apply -f "$ROOT/deploy/k8s/namespaces.yaml"
 
 if [[ "${STAGE}" -ge 2 ]]; then
-  # Checked deploy/ first, as the plan asks: deploy/k8s/namespaces.yaml creates
-  # four namespaces — observability, northstar-agents, northstar-tools,
-  # northstar-systems — and no `northstar-platform`. It is NOT added to that
-  # shared file, because that file is stage 1's and stage 1 has nothing to put
-  # in this namespace; creating it here keeps stage 1 unchanged. M2.1 Tasks 2
-  # and 4 both need it.
+  # deploy/k8s/namespaces.yaml creates four namespaces — observability,
+  # northstar-agents, northstar-tools, northstar-systems — and no
+  # `northstar-platform`. It is NOT added to that shared file, because that
+  # file is stage 1's and stage 1 has nothing to put in this namespace;
+  # creating it here keeps stage 1 unchanged.
   kubectl apply -f - <<'EOF'
 apiVersion: v1
 kind: Namespace
@@ -429,7 +397,7 @@ metadata:
   name: northstar-platform
 EOF
 
-  # M2.2: the network policy that makes the choke point real rather than
+  # The network policy that makes the choke point real rather than
   # conventional -- only agentgateway may reach payments-mcp on 8000. See
   # deploy/platform/cilium-policies.yaml for the measurement that motivated it
   # (claims-agent reached the tool directly and got HTTP 200).
@@ -445,7 +413,7 @@ EOF
     -f "$ROOT/deploy/platform/cilium-policies.yaml"
 fi
 
-# M1.2: settlement-agent's decision is a real model call, so it needs a model
+# settlement-agent's decision is a real model call, so it needs a model
 # credential in-cluster. Same idempotent shape as the dash0-secrets block
 # below (`--dry-run=client -o yaml | kubectl apply -f -`), so re-running this
 # script updates the secret in place rather than failing on "already exists".
@@ -484,30 +452,30 @@ else
   echo -e "${YELLOW}DASH0_AUTH_TOKEN not set: exporting to Jaeger only (vendor-neutral default).${NC}"
 fi
 
-# M4 Task 1, fix round 1 (review finding F10, ruling M4-R8): below stage 4 the
-# collector must not name a backend this cluster does not have.
+# Below stage 4 the collector must not name a backend this cluster does not
+# have.
 #
 # OpenSearch is installed only at `-ge 4` (Step 8c below), but the collector
-# config is chosen on DASH0_AUTH_TOKEN and never on stage -- so as shipped,
-# `--stage 1|2|3` deployed a collector whose traces pipeline named
-# `opensearch/trace`. Jaeger still received everything (the fanout is
-# per-exporter), so it degraded to permanent export failures logged into a file
-# nobody reads, which is precisely the silently-broken shape this repo exists
-# to avoid.
+# config is chosen on DASH0_AUTH_TOKEN and never on stage -- so without a
+# strip, `--stage 1|2|3` would deploy a collector whose traces pipeline names
+# `opensearch/trace`. Jaeger would still receive everything (the fanout is
+# per-exporter), so this would degrade to permanent export failures logged
+# into a file nobody reads, which is precisely the silently-broken shape this
+# repo exists to avoid.
 #
 # The rule is one line of sed and one marker convention, not a YAML rewriter:
 # every region of both collector configs that is stage-4-only is bracketed by
-# `# BEGIN stage-4-only` / `# END stage-4-only`. That is now TWO backends, not
-# one, and the convention is named after the stage rather than after OpenSearch
+# `# BEGIN stage-4-only` / `# END stage-4-only`. Two backends share the
+# convention, and it is named after the stage rather than after either one
 # for exactly that reason:
-#   * M4 Task 1, traces -- the `opensearch/trace` exporter, the
+#   * traces -- the `opensearch/trace` exporter, the
 #     `attributes/opensearch-compat` processor, the `forward/opensearch`
 #     connector, the `traces/opensearch` branch pipeline, and the single
 #     `- forward/opensearch` entry in the traces pipeline's exporter list;
-#   * M4 Task 2, metrics -- the `otlp_http/prometheus` exporter and its entry
-#     in the metrics pipeline's exporter list.
+#   * metrics -- the `otlp_http/prometheus` exporter and its entry in the
+#     metrics pipeline's exporter list.
 # Both entries are why those exporter lists are written one-per-line. Deleting
-# the bracketed regions yields the exact pre-M4 config -- verified by
+# the bracketed regions yields the exact below-stage-4 config -- verified by
 # round-tripping both files through PyYAML.
 #
 # tests/unit/test_stage4_config.py runs this same sed program (it reads the
@@ -521,14 +489,13 @@ fi
 STAGE4_ONLY_STRIP='/^[[:space:]]*# BEGIN stage-4-only$/,/^[[:space:]]*# END stage-4-only$/d'
 COLLECTOR_CONFIG_APPLIED="$COLLECTOR_CONFIG"
 if [[ "${STAGE}" -lt 4 ]]; then
-  # `.XXXXXX`, not a bare prefix (re-review finding N5). BSD/macOS `mktemp -t`
-  # appends its own random suffix to whatever prefix it is given, so a bare
-  # `collector-config` works here -- but GNU coreutils `mktemp -t` requires
-  # the template to end in at least three X and exits `too few X's in
-  # template`, which under `set -e` would kill every `--stage 1|2|3` run at
-  # this line on Linux. The explicit template works on both. This repo is
-  # macOS-only today (it documents bash 3.2 and no `declare -A`), so this was
-  # latent rather than live; it is one character class and not worth leaving.
+  # `.XXXXXX`, not a bare prefix. BSD/macOS `mktemp -t` appends its own
+  # random suffix to whatever prefix it is given, so a bare `collector-config`
+  # works here -- but GNU coreutils `mktemp -t` requires the template to end
+  # in at least three X and exits `too few X's in template`, which under
+  # `set -e` would kill every `--stage 1|2|3` run at this line on Linux. The
+  # explicit template works on both, at no cost even though this repo is
+  # macOS-only today (it documents bash 3.2 and no `declare -A`).
   COLLECTOR_CONFIG_APPLIED="$(mktemp -t collector-config.XXXXXX)"
   trap 'rm -f "$COLLECTOR_CONFIG_APPLIED"' EXIT
   sed "$STAGE4_ONLY_STRIP" "$COLLECTOR_CONFIG" > "$COLLECTOR_CONFIG_APPLIED"
@@ -593,25 +560,23 @@ if [[ "${STAGE}" -ge 2 ]]; then
 fi
 
 if [[ "${STAGE}" -ge 4 ]]; then
-  # M4 Task 1: OpenSearch is the destination
+  # OpenSearch is the destination
   # deploy/observability/collector-config.yaml's `opensearch/trace` exporter
-  # was measured against (Task 1 report has the full command transcript);
-  # Dashboards is the UI a human reads it through, reached by port-forward
-  # (./scripts/start-demo.sh) rather than a kind host port -- see the
-  # KIND_CONFIG note above (plan amendment A1).
+  # writes to; Dashboards is the UI a human reads it through, reached by
+  # port-forward (./scripts/start-demo.sh) rather than a kind host port --
+  # see the KIND_CONFIG note above.
   #
   # `--wait` on both installs, and then a SECOND collector restart below, and
-  # the ordering between them is a real requirement rather than tidiness.
-  # Fix round 1 corrected the claim that used to stand here -- "a collector
-  # restart before OpenSearch's Service exists would just mean the first
-  # export retries until it does". Nothing measured that, and the collector's
-  # own message in this cluster is `Exporting failed. Rejecting data. Try
-  # enabling sending_queue to survive temporary failures.`, i.e. this exporter
-  # has no sending queue to survive anything with. Step 8 above has already
+  # the ordering between them is a real requirement rather than tidiness. A
+  # collector restart before OpenSearch's Service exists would NOT just mean
+  # the first export retries until it does: the collector's own message in
+  # this cluster is `Exporting failed. Rejecting data. Try enabling
+  # sending_queue to survive temporary failures.`, i.e. this exporter has no
+  # sending queue to survive anything with. Step 8 above has already
   # restarted the collector by the time this runs, so at stage 4 the restart
   # here is what guarantees the collector's first export attempt happens after
-  # OpenSearch is serving, instead of guessing about retry behaviour nobody
-  # has measured.
+  # OpenSearch is serving, instead of relying on retry behaviour this exporter
+  # does not have.
   echo -e "${BLUE}Step 8c/9 (stage 4): Installing OpenSearch ${OPENSEARCH_CHART_VERSION}...${NC}"
   helm repo add opensearch "${OPENSEARCH_HELM_REPO}" --force-update >/dev/null
   helm repo update opensearch >/dev/null
@@ -628,24 +593,22 @@ if [[ "${STAGE}" -ge 4 ]]; then
     --values "$ROOT/deploy/observability/opensearch/dashboards-values.yaml" \
     --wait --timeout 5m
 
-  # M4 Task 3: the evidence view, imported rather than hand-made.
+  # The evidence view, imported rather than hand-made.
   #
-  # This milestone's claim is that the audit trail already exists and M4 only
-  # makes it queryable -- so the view that reads it has to be reproducible too.
-  # A dashboard that lives only in the Dashboards pod's volume is gone at the
-  # next `kind delete cluster`, and "we had one, you had to be there" is not
-  # evidence of anything.
+  # The audit trail already exists in OpenSearch; this is what makes it
+  # queryable through a saved view -- so the view that reads it has to be
+  # reproducible too. A dashboard that lives only in the Dashboards pod's
+  # volume is gone at the next `kind delete cluster`, and "we had one, you had
+  # to be there" is not evidence of anything.
   #
   # Done by `kubectl exec` into the Dashboards pod rather than through a
-  # port-forward: the image ships curl (`command -v curl` -> /usr/bin/curl,
-  # checked 2026-09-13), the API is on localhost:5601 inside the pod, and this
-  # repo's standing rule is that `scripts/start-demo.sh` owns the demo's
-  # forwards. A forward opened and closed inside this block would be a fifth
-  # thing that can leave a socket behind for no gain.
+  # port-forward: the image ships curl, the API is on localhost:5601 inside
+  # the pod, and this repo's standing rule is that `scripts/start-demo.sh`
+  # owns the demo's forwards. A forward opened and closed inside this block
+  # would be a fifth thing that can leave a socket behind for no gain.
   #
-  # **`--wait` is NOT enough on its own, and fix round 1 corrected the claim
-  # that used to stand here.** That claim was "the chart's readiness probe is
-  # Dashboards' own status endpoint". Measured on the deployed object
+  # **`--wait` is NOT enough on its own.** The chart's readiness probe is not
+  # Dashboards' own status endpoint: measured on the deployed object
   # (`kubectl get deploy opensearch-dashboards -o jsonpath=
   # '{.spec.template.spec.containers[0].readinessProbe}'`), it is
   # `{"tcpSocket":{"port":5601},"initialDelaySeconds":10,"periodSeconds":20,
@@ -654,17 +617,14 @@ if [[ "${STAGE}" -ge 4 ]]; then
   # the saved-objects API serving: OSD answers
   # `503 {"statusCode":503,"error":"Service Unavailable",
   # "message":"OpenSearch Dashboards server is not ready yet"}` for a window
-  # after the bind, and this cluster's own log shows the bind
-  # ("http server running at http://0.0.0.0:5601") 23s after container start.
+  # after the bind.
   #
   # So the readiness this block needs is polled for directly, against the API
   # that actually receives the import. `/api/status` is what the OSD UI itself
   # polls and it returns 200 only once the server is past "not ready yet".
-  # Without this the import ran once and `exit 1`ed on a 503, aborting
+  # Without this the import would run once and `exit 1` on a 503, aborting
   # `--stage 4` at step 8c2 -- before Prometheus is installed and before the
-  # collector restart below -- leaving a half-built cluster on the exact
-  # bring-up path this task's "reproducible rather than hand-made" headline
-  # depends on.
+  # collector restart below -- leaving a half-built cluster.
   echo -e "${BLUE}Step 8c2/9 (stage 4): Importing the evidence view into OpenSearch Dashboards...${NC}"
   DASHBOARDS_READY=""
   for _ in $(seq 1 60); do
@@ -698,7 +658,7 @@ if [[ "${STAGE}" -ge 4 ]]; then
   fi
   echo -e "${GREEN}Evidence view imported. Open it with ./scripts/start-demo.sh and browse to http://localhost:5601/app/dashboards#/view/northstar-evidence${NC}"
 
-  # M4 Task 2: Prometheus, installed in the SAME stage-4 block and BEFORE the
+  # Prometheus, installed in the SAME stage-4 block and BEFORE the
   # collector restart below, for exactly the reason the OpenSearch install is.
   # `otlp_http/prometheus` is a plain otlphttp exporter with no sending queue
   # configured, so its first export attempt after a restart either lands or is
@@ -722,8 +682,8 @@ if [[ "${STAGE}" -ge 4 ]]; then
   kubectl -n observability rollout status deployment/otel-collector --timeout=180s
   echo -e "${GREEN}OpenSearch ${OPENSEARCH_CHART_VERSION} is up (single node, security plugin off, heap and resources set in deploy/observability/opensearch/values.yaml); Dashboards is up, reached by port-forward, with the evidence view imported into it from deploy/observability/dashboards/evidence.ndjson; Prometheus ${PROMETHEUS_CHART_VERSION} is up on OTLP ingest alone; the collector has been restarted against both.${NC}"
 
-  # M4 Task 4: eval-scorer, the component that scores a settlement's
-  # trajectory against the five policy-adherence properties spec §5 names.
+  # eval-scorer, the component that scores a settlement's
+  # trajectory against the five policy-adherence properties.
   #
   # Deployed HERE, at the end of the stage-4 block, rather than after Step 9
   # with the other workloads. Both of the things it needs were made ready in
@@ -739,33 +699,31 @@ if [[ "${STAGE}" -ge 4 ]]; then
   # deploy/platform/spire/registration.yaml, applied by the stage-2 block
   # above and so already in place by the time this runs.
   #
-  # **Not** from the SPIRE chart's catch-all `default` CR, which is what this
-  # comment claimed until someone measured it. That CR's namespaceSelector
-  # excludes `northstar-platform` by name, which makes reviewer-ui and
-  # senior-settlement-agent (both in `northstar-agents`) the wrong precedent
-  # for anything deployed here: a platform workload with no CR of its own gets
-  # no identity at all and nothing says so. eval-scorer ran in exactly that
-  # state until `spire-server entry show` was read rather than assumed.
+  # **Not** from the SPIRE chart's catch-all `default` CR. That CR's
+  # namespaceSelector excludes `northstar-platform` by name, which makes
+  # reviewer-ui and senior-settlement-agent (both in `northstar-agents`) the
+  # wrong precedent for anything deployed here: a platform workload with no CR
+  # of its own gets no identity at all and nothing says so -- verified against
+  # the live cluster with `spire-server entry show` rather than assumed.
   #
   # deploy/platform/cilium-policies.yaml, on the other hand, names no
   # rule selecting it, so -- in Cilium, where policy is per-endpoint and an
   # endpoint no rule selects is unrestricted -- it reaches OpenSearch and the
-  # collector without one. That is a posture gap recorded in this task's
-  # report rather than an oversight: writing an egress allow-list makes the
-  # endpoint default-deny, which is the hazard that file's own header names
-  # twice, and it is the kind of change this milestone cannot safely verify
-  # without recreating the cluster.
+  # collector without one. That is a known posture gap, not an oversight:
+  # writing an egress allow-list makes the endpoint default-deny, which is the
+  # hazard that file's own header names twice, and it is the kind of change
+  # that cannot be safely verified without recreating the cluster.
   echo -e "${BLUE}Step 8e/9 (stage 4): Building and deploying eval-scorer...${NC}"
   "$ROOT/scripts/rebuild-and-deploy.sh" eval-scorer
   echo -e "${GREEN}eval-scorer is up on 8300, reading ss4o_traces-default-namespace.${NC}"
 fi
 
 if [[ "${STAGE}" -ge 5 ]]; then
-  # M5 Task 2: the machinery that turns the autonomy level from a constant
+  # The machinery that turns the autonomy level from a constant
   # compiled into the Policy Decision Service into a contract living in a
   # Kubernetes resource. This block installs the machinery only -- cert-manager,
-  # the Open Feature Operator (OFO), and the two CRs -- and writes no
-  # application code; Task 3 is what makes the PDS read the flag.
+  # the Open Feature Operator (OFO), and the two CRs; making the PDS read the
+  # flag is application code, not installation.
   #
   # Ordered, and deliberately run here rather than folded into the `-ge 2`
   # block above: it must finish before Step 9b below builds and deploys the
@@ -811,9 +769,9 @@ if [[ "${STAGE}" -ge 5 ]]; then
 fi
 
 if [[ "${STAGE}" -ge 6 ]]; then
-  # M6 Task 1: Backstage, the view over the platform API this milestone puts
-  # a UI on (design §3). Built and deployed through rebuild-and-deploy.sh
-  # rather than a bare `kubectl apply`, so this component's image is rebuilt
+  # Backstage, the view over the platform API. Built and deployed through
+  # rebuild-and-deploy.sh rather than a bare `kubectl apply`, so this
+  # component's image is rebuilt
   # from source like every other one (it is registered in that script's
   # COMPONENTS list) -- deploy/k8s/backstage.yaml is a single manifest
   # carrying its ServiceAccount, its read-only ClusterRole/ClusterRoleBinding,
@@ -823,7 +781,7 @@ if [[ "${STAGE}" -ge 6 ]]; then
   # Deployed here, in its own stage-6 block, rather than folded into Step 9
   # below: Step 9 is stage-1's own block (it names its five components by
   # hand, unconditionally), and every later stage's addition -- the PDS at
-  # `-ge 2`, the M3 workloads at `-ge 3`, eval-scorer inside the `-ge 4`
+  # `-ge 2`, the stage-3 workloads at `-ge 3`, eval-scorer inside the `-ge 4`
   # block above -- gets its own guarded block for the same reason. Nothing
   # here needs anything Step 9 provides that is not already true by
   # `-ge 6` (`northstar-platform` has existed since `-ge 2`), so there is no
@@ -832,18 +790,16 @@ if [[ "${STAGE}" -ge 6 ]]; then
   echo -e "${BLUE}Step 8i/9 (stage 6): Building and deploying Backstage...${NC}"
   "$ROOT/scripts/rebuild-and-deploy.sh" backstage
 
-  # Whole-branch review M6: `rollout status` above only proves the pod is
-  # READY -- the readiness probe hits Backstage's own health endpoint, not
-  # this plugin. The writer-token Secret's `token` key is populated
-  # ASYNCHRONOUSLY by the token controller, and until the M6 fix-wave retry
-  # (index.ts) exhausts its bounded backoff, a cold bring-up that mounts
-  # before the key lands still degrades the autonomy-contract plugin to a
-  # permanent 503 on every route -- silently: `rollout status` succeeds,
-  # `set -e` is satisfied, and this script would otherwise print a GREEN
-  # banner claiming a card that can never actually write. This is M6-R7's own
-  # lesson ("a backend health signal is not a delivery check") applied to
-  # the installer, which until now had only backend health signals for
-  # Backstage.
+  # `rollout status` above only proves the pod is READY -- the readiness
+  # probe hits Backstage's own health endpoint, not this plugin. The
+  # writer-token Secret's `token` key is populated ASYNCHRONOUSLY by the
+  # token controller, and its retry (index.ts) has a bounded backoff, so a
+  # cold bring-up that mounts before the key lands still degrades the
+  # autonomy-contract plugin to a permanent 503 on every route -- silently:
+  # `rollout status` succeeds, `set -e` is satisfied, and this script would
+  # otherwise print a GREEN banner claiming a card that can never actually
+  # write. A backend health signal is not a delivery check, so this checks
+  # delivery directly rather than trusting pod readiness for it.
   #
   # Checked with `kubectl exec` + node's own `http` module, not curl: the
   # final image stage installs no curl (unlike the OpenSearch Dashboards
@@ -851,9 +807,8 @@ if [[ "${STAGE}" -ge 6 ]]; then
   # not a persistent forward -- `scripts/start-demo.sh` still owns the
   # demo's own port-forwards. A guest token is required first
   # (`/api/autonomy-contract/status` answers 401 unauthenticated either way,
-  # by design -- §10 -- so an unauthenticated probe could not tell a healthy
-  # router from a degraded one); only the authenticated response can be 200
-  # or 503.
+  # by design, so an unauthenticated probe could not tell a healthy router
+  # from a degraded one); only the authenticated response can be 200 or 503.
   BACKSTAGE_DELIVERY_CHECK=""
   for _ in $(seq 1 20); do
     if kubectl --context "kind-${CLUSTER_NAME}" -n northstar-platform \
@@ -906,20 +861,19 @@ echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then startin
   payments-api payments-mcp settlement-agent claims-agent customer-ui
 
 if [[ "${STAGE}" -ge 2 ]]; then
-  # M2.1 Task 2 deployed agentgateway permitting everything but out of the
-  # path; Task 3 put it IN the path -- settlement-agent's PAYMENTS_MCP_URL
-  # now names it (deploy/k8s/settlement-agent.yaml). It still carries no
-  # policy: M2.2 adds the decision.
+  # agentgateway sits IN the MCP path -- settlement-agent's PAYMENTS_MCP_URL
+  # names it (deploy/k8s/settlement-agent.yaml) -- and enforces the policy
+  # decision below; on its own it carries no policy.
   #
   # Still applied after the workloads it fronts, so `payments-mcp` already
-  # exists when the gateway starts proxying to it. Task 3 checked whether this
-  # now needs to move *above* Step 9 (settlement-agent is deployed pointing at
-  # a gateway that does not exist yet) and deliberately left it: the pod's
-  # readinessProbe is its agent card, not an MCP call, and nothing between here
-  # and the `rollout status` wait below drives a settlement -- so the gateway is
-  # up before any request can reach it. If a future step ever drives traffic
-  # between those two points, this block has to move.
-  # M2.2 Task 4: the Policy Decision Service, deployed BEFORE the gateway that
+  # exists when the gateway starts proxying to it. This does not need to move
+  # *above* Step 9 (settlement-agent is deployed pointing at a gateway that
+  # does not exist yet), deliberately: the pod's readinessProbe is its agent
+  # card, not an MCP call, and nothing between here and the `rollout status`
+  # wait below drives a settlement -- so the gateway is up before any request
+  # can reach it. If a future step ever drives traffic between those two
+  # points, this block has to move.
+  # The Policy Decision Service, deployed BEFORE the gateway that
   # calls it. The ordering is not cosmetic. The gateway's guardrail is
   # `failureMode: failClosed`, so between the gateway coming up and the PDS
   # becoming Ready every `tools/call` is refused -- and refused with the
@@ -947,23 +901,22 @@ if [[ "${STAGE}" -ge 2 ]]; then
   # A ConfigMap change is invisible to a running pod here: this config is
   # mounted as a volume, and agentgateway reads it once at startup with `-f`.
   # Without a restart, `kubectl apply` reports the ConfigMap updated and the
-  # gateway goes on running M2.1's policy-free config -- which, since the
-  # milestone's whole claim is a refusal, would present as the €6,200 being
-  # paid out with the committed config and the live ConfigMap in perfect
-  # agreement. Restart, then wait.
+  # gateway goes on running its previous config -- which would present as a
+  # payment being paid out with the committed config and the live ConfigMap
+  # in perfect agreement, while the running pod enforces neither. Restart,
+  # then wait.
   kubectl -n northstar-platform rollout restart deployment/agentgateway
   kubectl -n northstar-platform rollout status deployment/agentgateway --timeout=120s
   echo -e "${GREEN}agentgateway is up, calling the PDS on every tools/call (fail-closed).${NC}"
 fi
 
 if [[ "${STAGE}" -ge 3 ]]; then
-  # M3 Task 5B. Until this block existed, `--stage 3` installed exactly what
-  # `--stage 2` installed plus one host-port reservation -- which was true and
-  # documented while M3 had no workload, and false from Task 4 onward. The
-  # consequence was not cosmetic: README tells a reader to run this script and
-  # then run the gate, and the gate checks port 8081 (reviewer-ui) as one of
-  # its five prerequisites, so a cold reader following the documented path got
-  # a gate that failed on a workload the setup script had never deployed.
+  # Without this block, `--stage 3` would install exactly what `--stage 2`
+  # installs plus one host-port reservation, with no actual workload behind
+  # it -- and the consequence is not cosmetic: the gate checks port 8081
+  # (reviewer-ui) as one of its five prerequisites, so a reader following
+  # README's documented path would get a gate that fails on a workload the
+  # setup script never deployed.
   #
   # Two components, and they are deployed differently for a reason that is
   # already recorded in scripts/rebuild-and-deploy.sh's COMPONENTS list:
@@ -980,22 +933,20 @@ if [[ "${STAGE}" -ge 3 ]]; then
   #     is spelled out here rather than inherited.
   #
   # Order: the identity first, the UI second. reviewer-ui's
-  # SENIOR_SETTLEMENT_AGENT_URL -- this line named `SENIOR_AGENT_URL` until
-  # the M3 final-review fix round, and no such variable exists; the real name
-  # is in deploy/k8s/reviewer-ui.yaml and in apps/reviewer-ui/main.py's own
-  # `os.environ.get` default --
-  # points at senior-settlement-agent's Service, and although nothing between
-  # here and the end of this script drives an approval (so neither order would
-  # leave a real request failing), this order means the window does not exist
-  # if a future step ever does.
+  # SENIOR_SETTLEMENT_AGENT_URL -- the real name is in
+  # deploy/k8s/reviewer-ui.yaml and in apps/reviewer-ui/main.py's own
+  # `os.environ.get` default -- points at senior-settlement-agent's Service,
+  # and although nothing between here and the end of this script drives an
+  # approval (so neither order would leave a real request failing), this
+  # order means the window does not exist if a future step ever does.
   #
   # Nothing else is needed for either: deploy/platform/cilium-policies.yaml,
-  # applied at Step 6 above, already carries both workloads' policies (M3 Task
-  # 3 added them), and neither needs a ClusterSPIFFEID of its own -- both take
-  # their ID from the SPIRE chart's catch-all `default` CR (fallback: true),
-  # which derives it from namespace + ServiceAccount. That is why
+  # applied at Step 6 above, already carries both workloads' policies, and
+  # neither needs a ClusterSPIFFEID of its own -- both take their ID from the
+  # SPIRE chart's catch-all `default` CR (fallback: true), which derives it
+  # from namespace + ServiceAccount. That is why
   # deploy/platform/spire/registration.yaml is unchanged by this stage.
-  echo -e "${BLUE}Step 9d/9 (stage 3): Deploying the M3 supervised workloads...${NC}"
+  echo -e "${BLUE}Step 9d/9 (stage 3): Deploying the supervised workloads...${NC}"
   kubectl --context "kind-${CLUSTER_NAME}" apply \
     -f "$ROOT/deploy/k8s/senior-settlement-agent.yaml"
   # `rollout restart` for the same reason rebuild-and-deploy.sh does it, not by
@@ -1015,30 +966,20 @@ if [[ "${STAGE}" -ge 3 ]]; then
   echo -e "${GREEN}reviewer-ui is up on 8081 (NodePort, mapped by deploy/kind/stage3.yaml); senior-settlement-agent is up on 9002 in its own Deployment.${NC}"
 fi
 
-# A9: a stray port-forward from another cluster on this machine (e.g.
-# `capybara`) has silently shadowed a host port before, twice. This only ever
-# kills forwards matching this repo's own pattern, never blanket-kills
-# another cluster's forwards — see scripts/teardown.sh for the same rule.
+# A stray port-forward from another cluster on this machine (e.g.
+# `capybara`) can silently shadow a host port. This only ever kills forwards
+# matching this repo's own pattern, never blanket-kills another cluster's
+# forwards — see scripts/teardown.sh for the same rule.
 #
-# S1 (final-review.md, first round): the pattern used to be
-# "port-forward.*northstar", which cannot match anything this script itself
-# launches — every command below reads "kubectl -n northstar-<ns>
-# port-forward ...", i.e. "northstar" precedes "port-forward", not the
-# other way round. The old pattern's only practical effect was a silent
-# no-op here. Fixed to "northstar.*port-forward" — verified directly
-# against a live forward.
-#
-# Second round (final-review.md, nit 4): that single-order fix is itself
-# order-sensitive, so a hand-typed "kubectl port-forward -n
-# northstar-agents ..." — the form the plan document itself uses, and so
-# the form a reader is likely to type — still escapes cleanup, since there
-# "port-forward" precedes "northstar". Two calls instead of one regex, one
-# per order, cover both without needing alternation support in pkill's
-# regex engine (unavailable/unreliable across BSD and GNU pkill).
-# Re-verified after this change, live: both call orders correctly kill this
-# repo's forwards regardless of which way they were typed, and neither
-# ever matches a `capybara`-cluster forward (which contains no "northstar"
-# substring in either position).
+# Two patterns, not one: this repo's own commands read "kubectl -n
+# northstar-<ns> port-forward ..." ("northstar" before "port-forward"), while
+# a hand-typed "kubectl port-forward -n northstar-agents ..." puts the two
+# words in the other order. Two calls, one per order, cover both without
+# needing alternation support in pkill's regex engine (unavailable/unreliable
+# across BSD and GNU pkill). Verified directly against a live forward: both
+# call orders correctly kill this repo's forwards regardless of which way
+# they were typed, and neither ever matches a `capybara`-cluster forward
+# (which contains no "northstar" substring in either position).
 pkill -f "northstar.*port-forward" 2>/dev/null || true
 pkill -f "port-forward.*northstar" 2>/dev/null || true
 kubectl -n northstar-agents port-forward svc/claims-agent 19001:9001 >/dev/null 2>&1 &
@@ -1051,24 +992,21 @@ kubectl -n northstar-systems port-forward svc/payments-api 18080:8080 >/dev/null
 API_PF_PID=$!
 sleep 4
 
-# A9 again: don't just launch the forwards and declare success — a stray
-# forward from another cluster silently shadowing one of these host ports is
-# exactly the failure mode A9 exists to catch, and this project has hit it
-# twice already (see apps/customer-ui/NOTES.md §8). Verify each port is
-# actually bound by the PID we just started, not merely that something is
-# listening there.
+# Don't just launch the forwards and declare success — a stray forward from
+# another cluster can silently shadow one of these host ports (see
+# apps/customer-ui/NOTES.md §8). Verify each port is actually bound by the
+# PID we just started, not merely that something is listening there.
 verify_port_forward() {
   local port="$1" pid="$2" name="$3"
   # `grep -x ... >/dev/null`, not `grep -qx` -- see the identical note in
   # scripts/start-demo.sh::verify_owned_forward. Under `pipefail`, `grep -q`
   # can SIGPIPE the upstream `awk`, making the pipeline exit 141 on a
-  # successful match and reporting a healthy forward as "never bound". This
-  # instance predates M4; it is fixed here in the same change that fixed the
-  # copy in start-demo.sh, because leaving one of two identical constructs
-  # broken is how it comes back.
+  # successful match and reporting a healthy forward as "never bound". Fixed
+  # here in the same shape as the copy in start-demo.sh, since leaving one of
+  # two identical constructs broken is how it comes back.
   if ! lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $2}' | grep -x "${pid}" >/dev/null; then
     echo -e "${RED}Error: the port-forward for ${name} (expected PID ${pid} listening on ${port}) never bound.${NC}" >&2
-    echo "Another process may already hold that port — check: lsof -nP -iTCP:${port} -sTCP:LISTEN (amendment A9)." >&2
+    echo "Another process may already hold that port — check: lsof -nP -iTCP:${port} -sTCP:LISTEN" >&2
     exit 1
   fi
 }
@@ -1080,11 +1018,11 @@ echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payment
 
 echo ""
 if [[ "${STAGE}" -eq 6 ]]; then
-  echo -e "${GREEN}Stage 6 (Golden path) is up: stage 5's workloads and backends, unchanged (amendment A1, no cluster recreate), plus Backstage in northstar-platform on SQLite. Its read-only ServiceAccount is wired to the Kubernetes plugin (get/list/watch on Pods, Deployments, ReplicaSets, Services, ConfigMaps and the other default object types; no Secrets, no write verbs) and its own, separate ServiceAccount carries the one narrow write grant (get/list/patch, resourceNames: [northstar-autonomy], no delete -- deploy/k8s/backstage.yaml). The catalog covers this repo's own eight components (agent cards linked, not restated) plus Backstage itself, each showing its live workload; the autonomy card reads northstar-autonomy live, per identity, and can change it -- the same one-word flip M5 proved from kubectl, from a UI instead. Run ./scripts/start-demo.sh to reach it, unauthenticated (design §10) at http://localhost:7007 once forwarded.${NC}"
+  echo -e "${GREEN}Stage 6 (Golden path) is up: stage 5's workloads and backends, unchanged, plus Backstage in northstar-platform on SQLite. Its read-only ServiceAccount is wired to the Kubernetes plugin (get/list/watch on Pods, Deployments, ReplicaSets, Services, ConfigMaps and the other default object types; no Secrets, no write verbs) and its own, separate ServiceAccount carries the one narrow write grant (get/list/patch, resourceNames: [northstar-autonomy], no delete -- deploy/k8s/backstage.yaml). The catalog covers this repo's own eight components (agent cards linked, not restated) plus Backstage itself, each showing its live workload; the autonomy card reads northstar-autonomy live, per identity, and can change it from a UI instead of kubectl. Run ./scripts/start-demo.sh to reach it, unauthenticated at http://localhost:7007 once forwarded.${NC}"
 elif [[ "${STAGE}" -eq 5 ]]; then
-  echo -e "${GREEN}Stage 5 (Progressive autonomy) is up: stage 4's workloads and backends, unchanged (amendment A1, no cluster recreate), plus cert-manager ${CERT_MANAGER_VERSION}, the Open Feature Operator ${OPENFEATURE_CHART_VERSION}, and the northstar-autonomy FeatureFlag/FeatureFlagSource pair. The PDS pod carries a flagd sidecar answering on localhost:8013 inside it, serving flag 'autonomy-level' (variants assisted/autonomous, targeted on evaluation-context key spiffeId) -- still resolved nowhere yet, since Task 2 stands up the machinery only.${NC}"
+  echo -e "${GREEN}Stage 5 (Progressive autonomy) is up: stage 4's workloads and backends, unchanged, plus cert-manager ${CERT_MANAGER_VERSION}, the Open Feature Operator ${OPENFEATURE_CHART_VERSION}, and the northstar-autonomy FeatureFlag/FeatureFlagSource pair. The PDS pod carries a flagd sidecar answering on localhost:8013 inside it, serving flag 'autonomy-level' (variants assisted/autonomous, targeted on evaluation-context key spiffeId) -- still resolved nowhere yet, since this stage stands up the machinery only.${NC}"
 elif [[ "${STAGE}" -eq 4 ]]; then
-  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workloads (reviewer-ui, senior-settlement-agent) on the same Cilium ${CILIUM_CHART_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- amendment A1, no cluster recreate -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them with the evidence view already imported, prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone, and eval-scorer scoring a settlement's trajectory against the five policy-adherence properties and emitting each score back into the trace it judges. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port, and the evidence view is at http://localhost:5601/app/dashboards#/view/northstar-evidence.${NC}"
+  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workloads (reviewer-ui, senior-settlement-agent) on the same Cilium ${CILIUM_CHART_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- unchanged -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them with the evidence view already imported, prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone, and eval-scorer scoring a settlement's trajectory against the five policy-adherence properties and emitting each score back into the trace it judges. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port, and the evidence view is at http://localhost:5601/app/dashboards#/view/northstar-evidence.${NC}"
 elif [[ "${STAGE}" -eq 3 ]]; then
   echo -e "${GREEN}Stage 3 (Supervised) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity, plus reviewer-ui and senior-settlement-agent -- so a refused payment now has a human who can approve it.${NC}"
 elif [[ "${STAGE}" -ge 2 ]]; then
@@ -1095,12 +1033,10 @@ fi
 echo "  Customer UI:         http://localhost:8080"
 if [[ "${STAGE}" -ge 3 ]]; then
   # Stage 3 and above: the host port is reserved by deploy/kind/stage3.yaml,
-  # which stage 4 also runs on (amendment A1), so both stages answer here. On
-  # a stage-1 or stage-2 cluster this URL answers nothing and printing it
-  # would be the same class of false instruction this block's sibling in
-  # scripts/smoke-test.sh checks for. (This comment read "Only at stage 3"
-  # until M4 Task 1's fix round -- true while 3 was the maximum, and the
-  # branch condition was `-ge 3` even then.)
+  # which every later stage also runs on, so all of them answer here. On a
+  # stage-1 or stage-2 cluster this URL answers nothing and printing it would
+  # be the same class of false instruction this block's sibling in
+  # scripts/smoke-test.sh checks for.
   echo "  Reviewer UI:         http://localhost:8081"
 fi
 echo "  Jaeger UI:           http://localhost:16686"
@@ -1109,13 +1045,11 @@ echo "  claims-agent (A2A):  http://localhost:19001"
 echo "  Local registry:      localhost:${REGISTRY_PORT}"
 if [[ "${STAGE}" -ge 6 ]]; then
   # Not a kind host port, same reasoning as Dashboards/Prometheus at stage 4:
-  # reached by port-forward rather than printed as a bare URL. This used to
-  # send the operator to a manual `kubectl port-forward` because
-  # ./scripts/start-demo.sh did not own this forward yet ("that wiring is a
-  # later task's (M6 Task 4)" -- true when this comment was written, false
-  # the moment that task landed). It now does, the same as Dashboards and
-  # Prometheus, so this points there instead of to a hand-assembled command --
-  # rulings R10 and R20 are exactly about not making an operator remember one.
+  # reached by port-forward rather than printed as a bare URL.
+  # ./scripts/start-demo.sh owns this forward the same way it owns Dashboards'
+  # and Prometheus', so this points there instead of to a hand-assembled
+  # `kubectl port-forward` command an operator would otherwise have to
+  # remember.
   echo "  Backstage:           run ./scripts/start-demo.sh, then http://localhost:7007"
 fi
 echo ""

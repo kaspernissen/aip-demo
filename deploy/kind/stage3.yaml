@@ -13,32 +13,11 @@
 # a human reads and clicks, reached on the host port reserved below) and
 # senior-settlement-agent -- the SAME settlement-agent image in a second
 # Deployment under a second ServiceAccount, because "senior" here is an
-# identity, not a different program. `scripts/setup-kind.sh`'s Step 9d/9 is
-# what installs both. payments-api's refusal record and the PDS's senior row
-# are M3 code rather than M3 workloads, so they arrive inside stage 2's own
-# images.
-#
-# **Correction, M3 final-review fix round 2026-09-11.** This paragraph read:
-#
-#   WHAT STAGE 3 ACTUALLY DEPLOYS, RIGHT NOW: at M3 Task 1 nothing else
-#   exists yet. This file's only difference from stage2.yaml is the host port
-#   reserved below for reviewer-ui -- stage 3 currently deploys exactly what
-#   stage 2 deploys, plus that free port. Later M3 tasks (2-5) add the
-#   workloads (payments-api's refusal record, the senior-settlement-agent
-#   identity, the PDS's new row, and reviewer-ui itself) that make stage 3 a
-#   materially different cluster from stage 2. Until then, treat "stage 3" as
-#   "stage 2, with the port reserved".
-#
-# True at M3 Task 1, false from Task 4 onward -- and the same sentence, in
-# `scripts/setup-kind.sh`'s `--stage 3` help text, was corrected for exactly
-# this reason in commit 9c7b3b7 ("This paragraph read 'no M3 workload exists
-# yet' from M3 Task 1 until Task 5B; that was true when written and false
-# from Task 4 onward"). That fix missed this copy, which is why the M3 final
-# review found it: the doc pass covered README.md, docs/ and the contracts,
-# and not the manifest headers or kind-config comments. Following the old
-# text, an operator would bring up stage 3 and then expect no reviewer-ui on
-# 8081 -- the exact workload `scripts/smoke-test.sh`'s prerequisite loop
-# requires before the gate will run at all.
+# identity, not a different program. `scripts/setup-kind.sh` installs both.
+# payments-api's refusal record and the PDS's senior row are already present
+# in stage 2's own images -- only the reviewer-ui and senior-settlement-agent
+# workload manifests are new, so an operator bringing up stage 3 should
+# expect reviewer-ui reachable on 8081, the port reserved below.
 #
 # Deliberately NOT set here: same two omissions as stage2.yaml (`podSubnet`,
 # `kubeProxyMode`), for the same reasons -- see that file's header.

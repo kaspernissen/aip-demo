@@ -1,67 +1,58 @@
-"""Guards the M2.2 Task 4 wiring: the Policy Decision Service, and the gateway
-policy that calls it.
+"""Guards the Policy Decision Service wiring: the gateway policy that calls
+it, and the PDS's own deployment.
 
-**What this module exists to protect.** M2.1 shipped a gateway that
-authenticates every MCP `tools/call` and then permits it. M2.2 adds the
-refusal, and the refusal is configuration -- six keys in
-`deploy/platform/agentgateway/config.yaml` and one Deployment. Every one of
-those keys has a default. The one that matters most is `failureMode`, and the
-reason it matters is NOT the one this docstring gave through M2.2 Task 7.
+**What this module exists to protect.** The gateway authenticates every MCP
+`tools/call` and then decides whether to permit it. That decision is
+configuration -- six keys in `deploy/platform/agentgateway/config.yaml` and
+one Deployment -- and every one of those keys has a default, so an omission
+is not a syntax error, it is a silent policy change.
 
-**Correction, M2.2 Task 8.** This module used to open by claiming that
-agentgateway v1.5.0's `FailureMode` derives `Default` with `FailOpen` first,
-so that *deleting one line makes a PDS outage permit every payment*. That is
-false. Measured against the pinned image (whose `--version` reports
-git_revision fe6732474a96a0363dfb9822859af4e9bab360fa, exactly the v1.5.0
-tag), with the guardrail pointed at a dead address so every `tools/call` takes
-the failure branch: omitting `failureMode` rejects the call with
-`mcpGuardrails checkRequest failed: ... Connection refused`, `failClosed`
-returns that same error byte for byte, and only `failOpen` lets the call
-through to the tool. The source agrees --
-`crates/agentgateway/src/mcp/guardrails/mod.rs` at that revision puts
-`#[default]` on `FailClosed`. The claim was carried from the M2.2 plan through
-four tasks with nobody measuring it.
-
-**The assertion below is unchanged, because its value is unchanged.**
-`failOpen` is one word away from `failClosed`, and a fail-open gateway is
-indistinguishable from a governing one until somebody reads a trace: the demo
-keeps working, the €6,200 goes out, and nothing in the output, the pod list or
-the agent's reply says the platform stopped governing. Requiring the value to
-be present and to be `failClosed` makes that intent reviewable rather than
-inherited, and catches the one-word edit. What changed is the argument, not
-the guard.
+**Why `failureMode: failClosed` is stated explicitly.** Measured against the
+pinned agentgateway image (whose `--version` reports git_revision
+fe6732474a96a0363dfb9822859af4e9bab360fa, the v1.5.0 tag), with the guardrail
+pointed at a dead address so every `tools/call` takes the failure branch:
+omitting `failureMode` rejects the call with `mcpGuardrails checkRequest
+failed: ... Connection refused`, `failClosed` returns that same error byte
+for byte, and only `failOpen` lets the call through to the tool -- confirmed
+in the source, where `crates/agentgateway/src/mcp/guardrails/mod.rs` puts
+`#[default]` on `FailClosed`. So an *absent* key already behaves as
+`failClosed`; the risk this guards against is a deliberate one-word edit to
+`failOpen`, not an accidental deletion. `failOpen` is one word away from
+`failClosed`, and a fail-open gateway is indistinguishable from a governing
+one until somebody reads a trace: the demo keeps working, the €6,200 goes
+out, and nothing in the output, the pod list or the agent's reply says the
+platform stopped governing. Requiring the value to be present and explicit
+makes that intent reviewable in a diff rather than inherited from an
+upstream default.
 
 **Every assertion parses YAML or Bash structurally. None greps.** This repo's
 manifests carry heavy explanatory comments, and those comments contain every
 string a naive guard would search for -- `failClosed`, `policy-decision-service`,
 `9100`, `tools/call`, `agentgateway`. A `"failClosed" in text` assertion would
 stay green with the entire `mcpGuardrails` block deleted, because the comment
-above it explains at length what `failClosed` does. That is the inert-guard
-class `tests/unit/test_stage2_cilium_config.py`'s docstring documents having had
-to fix five times and `tests/unit/test_stage2_network_policy.py` is written to
-avoid; it is cheaper not to create it. So `yaml.safe_load` (which discards
-comments before anything is asserted) does the reading here, and the two
-assertions about `setup-kind.sh` go through that module's own
+above it explains at length what `failClosed` does. So `yaml.safe_load`
+(which discards comments before anything is asserted) does the reading here,
+and the two assertions about `setup-kind.sh` go through that module's own
 comment-stripping helper.
 
 **No assertion reads only the first element of a list the schema allows to be
 longer.** The gateway schema permits a list of binds, of listeners, of routes
-and of guardrail processors. M2.1's fix round found that reading
-`binds[0].listeners[0].routes[0]` let a *second* listener with no `jwtAuth`
-leave the whole suite green. The same hole is available here twice over: a
-second route with no `mcpGuardrails` is an ungoverned way in, and a second
-*processor* -- fail-open, pointed elsewhere -- would sit alongside a correct
-one and satisfy any check that stopped at index 0. So the rule below is not
-"there is a processor and it is fail-closed" but "every processor that exists
-is fail-closed", and not "a route is governed" but "every route is".
+and of guardrail processors. Reading only `binds[0].listeners[0].routes[0]`
+would let a *second* listener with no `jwtAuth` leave the whole suite green.
+The same hole is available here twice over: a second route with no
+`mcpGuardrails` is an ungoverned way in, and a second *processor* --
+fail-open, pointed elsewhere -- would sit alongside a correct one and satisfy
+any check that stopped at index 0. So the rule below is not "there is a
+processor and it is fail-closed" but "every processor that exists is
+fail-closed", and not "a route is governed" but "every route is".
 
 **What this module does NOT prove.** That a payment is actually refused. A
 config that parses, validates against the pinned image and applies cleanly can
 still permit €6,200 -- if the PDS is unreachable and the guardrail is
 fail-open, if the ConfigMap on the cluster is not this file, if the pod is not
-Ready. The live evidence for the refusal is the task report's captures and
-`tests/e2e/`. This module asserts that the configuration says what the rest of
-the repo believes it says.
+Ready. The live evidence for the refusal is in `tests/e2e/`. This module
+asserts that the configuration says what the rest of the repo believes it
+says.
 """
 
 from pathlib import Path
@@ -157,7 +148,7 @@ def _guardrail_processors() -> list[tuple[str, dict]]:
     assert processors, (
         "no mcpGuardrails processor anywhere in the gateway config -- with no "
         "processor the gateway permits every tool call it can authenticate, "
-        "which is M2.1's behaviour, and M2.2's entire claim is the refusal"
+        "and this module exists to guard the refusal"
     )
     return processors
 
@@ -190,10 +181,9 @@ def _deployment() -> dict:
 def _containers() -> list[dict]:
     """Every container in the pod spec, init containers included.
 
-    The unit is `initContainers + containers` for the reason M2.1's review
-    found the hard way: a check widened only to `containers` will accept an env
-    var or a probe that lives on an init container, i.e. somewhere unreachable
-    at request time.
+    The unit is `initContainers + containers`: a check widened only to
+    `containers` would accept an env var or a probe that lives on an init
+    container, i.e. somewhere unreachable at request time.
     """
     pod = _deployment()["spec"]["template"]["spec"]
     return list(pod.get("initContainers") or []) + list(pod.get("containers") or [])
@@ -206,22 +196,17 @@ def test_the_guardrail_is_fail_closed():
     """`failOpen` is one word away, and the difference is invisible when
     everything is healthy.
 
-    Note what this docstring no longer says. Through M2.2 Task 7 it claimed an
-    *omitted* `failureMode` permits every payment, because v1.5.0's
-    `FailureMode` derives `Default` with `FailOpen` first. Task 8 measured that
-    against the pinned image and it is false: the default is `failClosed`, and
-    omitting the key behaves exactly as `failClosed` does (see this module's
-    docstring for the three-way probe). So the risk this test guards is not an
-    accidental deletion; it is a deliberate one-word edit to `failOpen`, whose
-    effect -- a gateway that keeps working and stops governing, with nothing in
-    the pod list or the agent's reply to say so -- is strictly worse than a
-    demo that breaks.
+    The default (an absent `failureMode` key) already behaves exactly as
+    `failClosed` does (see this module's docstring for the measurement), so
+    the risk this test guards is not an accidental deletion; it is a
+    deliberate one-word edit to `failOpen`, whose effect -- a gateway that
+    keeps working and stops governing, with nothing in the pod list or the
+    agent's reply to say so -- is strictly worse than a demo that breaks.
 
     The key is still required to be *present*, not merely not-`failOpen`. An
     explicit value is what makes the intent reviewable in a diff instead of
     inherited from an upstream default that could change under us in any
-    release -- and this milestone has now had one documented instance of
-    believing the wrong thing about exactly that default.
+    release.
 
     The failure message names both accepted spellings because they are the
     validator's own: the pinned image rejects `fail_closed` with "unknown
@@ -237,9 +222,9 @@ def test_the_guardrail_is_fail_closed():
             "permits every payment -- the demo would keep working and stop "
             "governing, with nothing in the pod list or the agent's reply to "
             "say so. An absent key currently behaves as 'failClosed' (measured "
-            "against the pinned image, M2.2 Task 8), but is still rejected "
-            "here: an inherited default is not a reviewable decision. "
-            "(The pinned image accepts exactly 'failClosed' or 'failOpen'.)"
+            "against the pinned image), but is still rejected here: an "
+            "inherited default is not a reviewable decision. (The pinned "
+            "image accepts exactly 'failClosed' or 'failOpen'.)"
         )
 
 
@@ -248,11 +233,11 @@ def test_the_guardrail_runs_on_tools_call_at_the_request_phase():
 
     `request` is the phase at which a refusal is still a refusal rather than a
     regret: `response` would let the payment execute and then withhold the
-    receipt. Measured against the pinned image's validator, which rejects the
-    M2.2 plan's reconstructed `Request` with "unknown variant `Request`,
-    expected one of `off`, `request`, `response`, `full`" -- so the lowercase
-    spelling here is a measurement, not a style choice, and `off` is a live
-    way to disable the guardrail while leaving the block in place.
+    receipt. Measured against the pinned image's validator, which rejects a
+    reconstructed `Request` with "unknown variant `Request`, expected one of
+    `off`, `request`, `response`, `full`" -- so the lowercase spelling here is
+    a measurement, not a style choice, and `off` is a live way to disable the
+    guardrail while leaving the block in place.
     """
     for where, processor in _guardrail_processors():
         methods = processor.get("methods") or {}
@@ -336,14 +321,14 @@ def test_the_guardrail_forwards_trace_context_to_the_pds():
     because getting it wrong is silent and looks like success.
 
     Measured on this cluster, three ways (see the config's own comment for the
-    three runs). With the M2.2 brief's `allowed: ["authorization"]`, the policy
-    decides perfectly -- the €6,200 is refused, the reason reaches the caller,
-    the PDS logs the denial -- and `traceparent` never reaches the hook, so
+    three runs). With `allowed: ["authorization"]`, the policy decides
+    perfectly -- the €6,200 is refused, the reason reaches the caller, the PDS
+    logs the denial -- and `traceparent` never reaches the hook, so
     `pds/telemetry.context_from_headers` extracts an empty context and every
     `policy.decision` span becomes **a new root trace of its own**. Nothing
     logs an error. Jaeger lists the service. The only symptom is that the
-    milestone's observability claim -- the decision in the same trace as the
-    gateway's `tools/call` and the model's reasoning -- is false.
+    observability claim -- the decision in the same trace as the gateway's
+    `tools/call` and the model's reasoning -- is false.
 
     That is why this is a config assertion and not only an e2e one: an e2e
     trace assertion catches it, but only when someone spends a real settlement
@@ -366,23 +351,22 @@ def test_the_guardrail_forwards_trace_context_to_the_pds():
             "perfectly, which is what makes this worth a guard."
         )
         assert "authorization" not in lowered, (
-            f"{where}.requestHeaders.allowed forwards `authorization` "
-            "(ruling R14). It is inert while `preserveToken` is unset, but an "
-            "allowlist is exactly where a later `preserveToken` turns an inert "
-            "entry into a live bearer credential handed to a second service "
-            "that documents never reading it."
+            f"{where}.requestHeaders.allowed forwards `authorization`. It is "
+            "inert while `preserveToken` is unset, but an allowlist is "
+            "exactly where a later `preserveToken` turns an inert entry into "
+            "a live bearer credential handed to a second service that "
+            "documents never reading it."
         )
 
 
 def test_the_gateway_still_does_not_forward_the_bearer_token():
-    """Ruling R14, asserted rather than trusted to stay absent.
+    """Asserted rather than trusted to stay absent.
 
     `metadata: {caller: 'jwt.sub'}` above delivers an already-verified subject.
     Setting `jwtAuth.preserveToken: true` as well would forward a live bearer
     credential to a second service for no gain -- pds/identity.py would not
-    read it -- which is a security regression relative to M2.1's config. It is
-    also a plausible edit: it is the first thing anyone reaches for when a
-    downstream service seems to be missing an identity.
+    read it. It is also a plausible edit: it is the first thing anyone
+    reaches for when a downstream service seems to be missing an identity.
     """
     for where, route in _all_routes():
         jwt_auth = (route.get("policies") or {}).get("jwtAuth") or {}
@@ -390,11 +374,11 @@ def test_the_gateway_still_does_not_forward_the_bearer_token():
             f"{where}.jwtAuth.preserveToken is set. The PDS is handed a "
             "verified subject through the guardrail's `metadata` block and "
             "reads nothing from the forwarded headers, so this only widens "
-            "where a usable credential travels (ruling R14)."
+            "where a usable credential travels."
         )
 
 
-# --- M2.2 must not regress M2.1 --------------------------------------------
+# --- Governance must not regress authentication ----------------------------
 
 
 def test_the_guardrail_is_a_sibling_of_jwt_auth_on_the_same_route():
@@ -415,13 +399,12 @@ def test_the_guardrail_is_a_sibling_of_jwt_auth_on_the_same_route():
 
 
 def test_the_jwt_auth_policy_is_still_present_on_every_route():
-    """M2.2 must not regress M2.1.
+    """Governance must not regress authentication.
 
     The guardrail decides *what* a caller may do; `jwtAuth` is what
     establishes *who* they are. Losing the latter makes the former decide on a
-    claim nobody checked. Enumerated over every route for the reason M2.1's
-    review found: a second, anonymous route satisfies any check that reads
-    only the first.
+    claim nobody checked. Enumerated over every route: a second, anonymous
+    route would satisfy any check that reads only the first.
     """
     for where, route in _all_routes():
         assert (route.get("policies") or {}).get("jwtAuth"), (
@@ -457,8 +440,7 @@ def test_every_route_that_exists_is_governed_by_the_guardrail():
 def test_the_pds_has_its_own_service_account():
     """Without a dedicated ServiceAccount, SPIRE mints
     `spiffe://northstar.local/ns/northstar-platform/sa/default` -- an identity
-    that verifies perfectly and identifies nothing. Measured in M2.1, on this
-    cluster, for settlement-agent, before it was given one of its own.
+    that verifies perfectly and identifies nothing.
 
     Both halves are checked: the object must exist, and the pod must actually
     use it. A ServiceAccount nothing references is an unused object, and a
@@ -472,12 +454,12 @@ def test_the_pds_has_its_own_service_account():
 
 
 def test_the_pds_probes_are_tcp_socket_checks_on_its_grpc_port():
-    """Ruling R26: a TCP-socket probe, not a gRPC health check.
+    """A TCP-socket probe, not a gRPC health check.
 
     `grpcio-health-checking` is deliberately outside this service's pinned
-    dependency closure and ruling R4 forbids re-resolving it, so an
-    `httpGet` or a `grpc` probe here would either fail every check or require
-    a dependency that does not exist in the image.
+    dependency closure, so an `httpGet` or a `grpc` probe here would either
+    fail every check or require a dependency that does not exist in the
+    image.
 
     The probe is load-bearing under fail-closed in a way it would not be
     otherwise: a pod that never becomes Ready does not degrade this demo, it
@@ -493,9 +475,9 @@ def test_the_pds_probes_are_tcp_socket_checks_on_its_grpc_port():
                 "refuses every payment, so both probes are wanted"
             )
             assert "grpc" not in probe and "httpGet" not in probe, (
-                f"{probe_name} must be a tcpSocket check (ruling R26); a gRPC "
-                "health check needs grpcio-health-checking, which is outside "
-                "this service's pinned closure (ruling R4)"
+                f"{probe_name} must be a tcpSocket check; a gRPC health "
+                "check needs grpcio-health-checking, which is outside this "
+                "service's pinned dependency closure"
             )
             assert (probe.get("tcpSocket") or {}).get("port") == PDS_PORT, (
                 f"{probe_name} must probe TCP {PDS_PORT}; got {probe!r}"
@@ -635,7 +617,7 @@ def test_only_the_gateway_may_reach_the_pds_and_only_on_9100():
 
 
 def test_the_node_may_reach_the_pds_for_its_probes():
-    """RULING R6, and the guard whose absence would be actively misleading.
+    """The guard whose absence would be actively misleading.
 
     kubelet dials the `tcpSocket` probe from the host, not from a pod. Drop
     the `host` entity and the probe is dropped, the pod never goes Ready, and
@@ -652,10 +634,10 @@ def test_the_node_may_reach_the_pds_for_its_probes():
         for e in rule.get("fromEntities", [])
     }
     assert {"host", "remote-node"} <= entities, (
-        "the PDS ingress policy must admit `host` and `remote-node` (ruling "
-        f"R6); got {sorted(entities)}. Without `host`, kubelet's probe is "
-        "dropped, the pod never becomes Ready, and fail-closed turns that "
-        "into every payment refused."
+        "the PDS ingress policy must admit `host` and `remote-node`; got "
+        f"{sorted(entities)}. Without `host`, kubelet's probe is dropped, "
+        "the pod never becomes Ready, and fail-closed turns that into every "
+        "payment refused."
     )
 
 
@@ -746,14 +728,11 @@ def test_stage_two_deploys_the_pds_before_the_gateway_that_calls_it():
     fails in the right place, at the PDS's own rollout, rather than presenting
     later as a gateway that refuses everything.
 
-    **This assertion was inert in its first form and is written this way for
-    that reason.** It located the component by `script.find(APP)`, and the
-    block's own success `echo` names the component -- so deleting the actual
-    `rebuild-and-deploy.sh` invocation left the guard green, satisfied by a
-    line of output text that deploys nothing. Comment-stripping does not help
-    here: an `echo` is code. So the unit matched is a *line that is both the
-    deploy script and the component*, which output text does not accidentally
-    become.
+    Matched as a *line that names both the deploy script and the component*,
+    rather than any line naming the component: the block's own success
+    `echo` also names the component, and comment-stripping does not help
+    there since an `echo` is code, so a looser match would be satisfied by
+    output text that deploys nothing.
     """
     script = _effective_script()
     invocations = [
@@ -786,7 +765,7 @@ def test_stage_two_restarts_the_gateway_after_updating_its_configmap():
     This config is mounted as a volume and agentgateway reads it once at
     startup with `-f`. `kubectl create configmap --dry-run | kubectl apply`
     updates the object and reports success while the running pod goes on
-    serving M2.1's policy-free config -- so the €6,200 would be paid out with
+    serving the old, policy-free config -- so the €6,200 would be paid out with
     the committed file and the live ConfigMap in perfect agreement, and the
     obvious diagnostic (`kubectl get configmap -o yaml`) would show the new
     policy present and correct.

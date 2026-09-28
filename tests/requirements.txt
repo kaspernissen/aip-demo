@@ -1,43 +1,39 @@
-# Task 7: pytest 8.3.4 -> 9.0.3, mcp 1.9.4 -> 1.28.1, clearing PYSEC-2026-1845
-# and PYSEC-2026-1617/-1618/-3482/-3483 (pip-audit). No pytest-asyncio here:
-# this tree's async calls all go through synchronous anyio.run(), not
-# @pytest.mark.asyncio (see tests/e2e/test_payments_mcp_trace.py).
+# pytest==9.1.1 clears PYSEC-2026-1845 and PYSEC-2026-1617/-1618/-3482/-3483
+# (pip-audit). No pytest-asyncio here: this tree's async calls all go
+# through synchronous anyio.run(), not @pytest.mark.asyncio (see
+# tests/e2e/test_payments_mcp_trace.py).
 pytest==9.1.1
-# requests 2.32.3 -> 2.34.2: not one of the two pins this task's brief
-# scoped in (mcp, pytest), but pip-audit against this file (run as part of
-# this task's own Step 2 pass) surfaced it as a *third*, previously-unnoted
-# advisory pair (PYSEC-2026-1872, PYSEC-2026-2275) on a pin this task was
-# already touching. Bumped for the same "no dependency carries a known
-# advisory" global constraint Task 7 exists to restore, to the version
-# agents/settlement-agent/requirements.txt's own transitive resolution
-# already carries (clean per the same audit) — not a version chosen freshly
-# for this file.
+# requests==2.34.2 clears PYSEC-2026-1872 and PYSEC-2026-2275 (pip-audit).
+# Matches the version agents/settlement-agent/requirements.txt's own
+# transitive resolution already carries (clean per the same audit), so the
+# two trees don't resolve requests differently.
 requests==2.34.2
 PyYAML==6.0.2
-# 2026-09-11 (M3): 1.29.0 -> 1.44.0 and 0.50b0 -> 0.65b0 across all six
-# OpenTelemetry distributions in this file -- the current PyPI releases, all
-# published 2026-07-16 (checked against pypi.org's own JSON API, not a local
-# index). This harness was the last Python tree in the repo on the 1.29
-# generation; every service now agrees on 1.44.0/0.65b0. Bumped only after
-# systems/payments-api reached go.opentelemetry.io/otel v1.46.0, for the
-# reason docs/upstream-findings.md Finding 11 gives: on 1.29.0 this harness's
-# own hand-minted `traceparent` and any span it exports carry flag byte `01`
-# unconditionally, and until that bump payments-api discarded anything above
-# 0x02. Note that the e2e tests mint their traceparent strings literally
-# (tests/e2e/test_payments_mcp_trace.py builds `00-{trace}-{span}-01` by hand),
-# so this pin governs what the harness *exports*, not what it injects.
+# opentelemetry-api/-sdk/-exporter-otlp-proto-http pinned to 1.44.0, and
+# opentelemetry-semantic-conventions (below) to 0.65b0 -- the current PyPI
+# releases, checked against pypi.org's own JSON API rather than a local
+# index. Every service in this repo runs this same generation. The version
+# matters beyond a routine bump: this harness hand-mints `traceparent`
+# headers and exports spans with flag byte `01` set unconditionally, and
+# payments-api (go.opentelemetry.io/otel v1.46.0) needs the matching
+# generation to accept anything above flag byte 0x02 -- see
+# docs/upstream-findings.md Finding 11. The e2e tests mint their
+# traceparent strings literally regardless
+# (tests/e2e/test_payments_mcp_trace.py builds `00-{trace}-{span}-01` by
+# hand), so this pin governs what the harness *exports*, not what it
+# injects.
 opentelemetry-api==1.44.0
 opentelemetry-sdk==1.44.0
 opentelemetry-exporter-otlp-proto-http==1.44.0
-# 2026-09-11 (M3 remaining-bumps, step 1): 1.28.1 -> 2.2.0, the newest stable
-# `mcp` release (published 2026-09-07; read from PyPI's release history for
-# `mcp` and from the `v2.2.0` tag on
+# mcp pinned to 2.2.0, the newest stable release (published 2026-09-07;
+# read from PyPI's release history for `mcp` and from the `v2.2.0` tag on
 # github.com/modelcontextprotocol/python-sdk). The 1.x line still ships
-# releases -- 1.30.0 came out the same day -- but upstream's own v2.0.0 release
-# notes put it in "maintenance mode ... security fixes only", so 1.30.0 is the
-# maintenance branch, not the latest stable. Pinned in lock-step with the two
-# services that speak MCP (agents/settlement-agent, tools/payments-mcp) so the
-# e2e tests exercise the same wire library the deployment does.
+# releases -- 1.30.0 came out the same day -- but upstream's own v2.0.0
+# release notes put it in "maintenance mode ... security fixes only", so
+# 1.30.0 is the maintenance branch, not the latest stable. Pinned in
+# lock-step with the two services that speak MCP
+# (agents/settlement-agent, tools/payments-mcp) so the e2e tests exercise
+# the same wire library the deployment does.
 mcp==2.2.0
 # v2's split-out wire-type package, pinned exactly by `mcp` 2.2.0's own
 # metadata. `mcp.types` is a permanent alias for it.
@@ -45,15 +41,12 @@ mcp-types==2.2.0
 anyio==4.15.1
 playwright==1.49.1
 
-# Task 7: the remainder of the dependency closure, pinned exactly as resolved
-# by `uv pip install -r requirements.txt` into a clean venv (house style:
-# nothing floats). All of these were already present in this venv, unpinned,
-# before this task (the same pre-existing gap as
-# agents/settlement-agent/requirements.txt, Task 1 review Finding 2) or are
-# newly pulled in by the mcp==1.28.1 bump itself (mcp now declares
-# pyjwt[crypto] and jsonschema as direct dependencies, which mcp==1.9.4 did
-# not — verified against both versions' own PyPI metadata; that is what
-# brings in cryptography/cffi/pycparser and
+# The remainder of the dependency closure, pinned exactly as resolved by
+# `uv pip install -r requirements.txt` into a clean venv (house style:
+# nothing floats). Some of these are plain transitive dependencies with no
+# pin of their own elsewhere; others are pulled in by mcp's own dependency
+# declarations (mcp declares pyjwt[crypto] and jsonschema as direct
+# dependencies, which is what brings in cryptography/cffi/pycparser and
 # jsonschema-specifications/referencing/rpds-py/attrs).
 annotated-types==0.8.0
 attrs==26.1.0
@@ -62,36 +55,30 @@ cffi==2.1.1
 charset-normalizer==3.5.1
 click==8.5.0
 cryptography==50.0.1
-# 2026-09-11 (M3): `deprecated==1.3.1` used to be here, and `wrapt==2.4.0`,
-# `importlib-metadata==8.5.0` and `zipp==4.1.0` used to be further down. All
-# four are gone from this file because they are gone from the venv: every one
-# of them was reachable only through `opentelemetry-api` 1.29.0, and 1.44.0
-# declares none of them. Measured, not assumed -- a reachability walk from
-# this file's nine direct dependencies over every installed distribution's
-# `requires` leaves them unreachable, and `uv pip check` reports all 49
-# remaining packages compatible without them. (`cffi`, `cryptography` and
-# `pycparser` look like orphans to the same walk and are NOT: they arrive
-# through `mcp`'s `pyjwt[crypto]` extra, which the walk skips by design.)
+# `opentelemetry-api` 1.44.0 declares none of `deprecated`, `wrapt`,
+# `importlib-metadata` or `zipp` as dependencies, so none of them appear in
+# this file: a reachability walk from this file's direct dependencies over
+# every installed distribution's `requires` leaves them unreachable, and
+# `uv pip check` reports all remaining packages compatible without them.
+# (`cffi`, `cryptography` and `pycparser` look like orphans to the same walk
+# and are NOT: they arrive through `mcp`'s `pyjwt[crypto]` extra, which the
+# walk skips by design.)
 googleapis-common-protos==1.75.0
 greenlet==3.1.1
 h11==0.16.0
 httpcore==1.0.9
 # `httpx` is a DIRECT dependency of this harness, not a transitive one: six
-# e2e test files `import httpx` outright. It sat in this transitive block
-# because `mcp==1.28.1` also required it, and that cover is gone -- `mcp`
-# 2.2.0 requires `httpx2` instead (2026-09-11, M3 remaining-bumps step 1).
-# Left in place at the same version, relabelled rather than moved, so the
+# e2e test files `import httpx` outright. It sits among the transitive pins
+# below only because it visually resembles one; `mcp` requires `httpx2`,
+# not `httpx`, for its own transport. Pinned here at the same version so the
 # reachability walk this file's comments describe does not report it as an
 # orphan it is not.
 httpx==0.28.1
-# 2026-09-11 (M3 remaining-bumps, step 1): `httpx-sse==0.4.3` used to be here
-# and is gone, because it is gone from the venv. It was reachable only through
-# `mcp==1.28.1`, which declared it; `mcp` 2.2.0 does not, nothing in this tree
-# imports it (`grep -rn "httpx_sse\|httpx-sse" tests/` finds nothing), and no
-# other installed distribution requires it. The three lines below arrive the
-# other way, as `mcp` 2.2.0's own new closure: `httpx2` is what its
-# streamable-HTTP client is built on, `httpcore2` is `httpx2`'s transport and
-# `truststore` is required by both.
+# `httpx-sse` does not appear in this file: nothing in this tree imports it
+# (`grep -rn "httpx_sse\|httpx-sse" tests/` finds nothing) and no installed
+# distribution requires it. The three lines below are `mcp`'s own closure:
+# `httpx2` is what its streamable-HTTP client is built on, `httpcore2` is
+# `httpx2`'s transport, and `truststore` is required by both.
 httpcore2==2.12.0
 httpx2==2.12.0
 truststore==0.10.4

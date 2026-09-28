@@ -1,10 +1,9 @@
-# M2.1 Task 4: a dedicated ServiceAccount, purely so this workload's SPIFFE ID
+# A dedicated ServiceAccount, purely so this workload's SPIFFE ID
 # names it. SPIRE's ID template is
 # spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}
 # (deploy/platform/spire/registration.yaml), so without this the pod attests as
-# `spiffe://northstar.local/ns/northstar-agents/sa/default` -- measured, not
-# hypothetical: that is the ID SPIRE actually minted for this pod before this
-# ServiceAccount existed. An identity whose service-account component reads
+# `spiffe://northstar.local/ns/northstar-agents/sa/default`. An identity whose
+# service-account component reads
 # "default" is not something a policy can decide on. It grants no RBAC; this
 # pod makes no Kubernetes API calls.
 apiVersion: v1
@@ -25,7 +24,7 @@ metadata:
     app: settlement-agent
     northstar.io/plane: agents
     northstar.io/owner: claims-team
-    # M6 Task 2: read by @backstage/plugin-kubernetes-backend's default
+    # Read by @backstage/plugin-kubernetes-backend's default
     # label selector (`backstage.io/kubernetes-id=<entity name>`), so this
     # Component's catalog entry (agents/settlement-agent/catalog-info.yaml)
     # shows its live workload. Added to the Pod template below too -- the
@@ -63,19 +62,14 @@ spec:
             # opentelemetry-instrumentation-httpx==0.65b0 emits the legacy HTTP
             # attribute spelling (http.method, http.url, http.status_code) by
             # default; this opt-in converges the outbound calls this agent
-            # makes to payments-mcp onto the stable spelling (A13). Verified
+            # makes to payments-mcp onto the stable spelling. Verified
             # empirically — see NOTES.md.
             - name: OTEL_SEMCONV_STABILITY_OPT_IN
               value: http
-            # M2.1 Task 3: interposed. This pointed straight at
-            # payments-mcp.northstar-tools.svc.cluster.local:8000/mcp through
-            # M1.1, M1.2 and M2.1 Task 2 (which deployed the gateway but
-            # deliberately left it out of the path). It now names agentgateway
-            # in northstar-platform, which proxies to that same payments-mcp
-            # Service -- the gateway's own
-            # `deploy/platform/agentgateway/config.yaml` carries the old value
-            # verbatim as its single MCP backend target, so the wire
-            # destination is unchanged; only the number of hops is.
+            # Routed through agentgateway in northstar-platform, which proxies
+            # to payments-mcp.northstar-tools.svc.cluster.local:8000/mcp -- the
+            # gateway's own `deploy/platform/agentgateway/config.yaml` carries
+            # that value verbatim as its single MCP backend target.
             #
             # Port 3000 and path /mcp are the gateway's, not payments-mcp's:
             # read off `deploy/platform/agentgateway/deployment.yaml`'s Service
@@ -95,12 +89,12 @@ spec:
               value: /app/agent-card.json
             - name: PORT
               value: "9002"
-            # M1.2: the settlement decision is a real model call. settlement.py
+            # The settlement decision is a real model call. settlement.py
             # reads this variable (falling back to the same literal) and hands
             # it straight to PydanticAI's Agent.
             - name: NORTHSTAR_SETTLEMENT_MODEL
               value: "anthropic:claude-sonnet-5"
-            # M1.2 Task 5: prompt/completion capture is configuration, not a
+            # Prompt/completion capture is configuration, not a
             # hardcoded constant. bootstrap.capture_content_enabled() reads
             # this (defaulting to ON if unset) and hands it straight to
             # PydanticAI's InstrumentationSettings(include_content=...). See
@@ -108,7 +102,7 @@ spec:
             # the default is ON, not OFF.
             - name: NORTHSTAR_CAPTURE_CONTENT
               value: "true"
-            # M2.1 Task 4: the SPIFFE Workload API endpoint svid.py talks to.
+            # The SPIFFE Workload API endpoint svid.py talks to.
             #
             # `SPIFFE_ENDPOINT_SOCKET` is not this repo's invention -- it is the
             # variable the pinned `spiffe==0.3.1` client reads when no
@@ -164,8 +158,8 @@ spec:
           ports:
             - name: http
               containerPort: 9002
-          # S6 (final-review.md): see claims-agent.yaml for the same fix and
-          # reasoning — this endpoint is read from disk at build_app() time.
+          # See claims-agent.yaml for the same reasoning — this endpoint is
+          # read from disk at build_app() time.
           readinessProbe:
             httpGet:
               path: /.well-known/agent-card.json

@@ -1,9 +1,9 @@
-# Task 2 (M2.2), Ruling R4: this file is resolved once, here, for Task 2
-# (pds/rules.py -- no dependencies of its own) AND Task 3 together
-# (pds/server.py, pds/identity.py, pds/telemetry.py), so the two tasks share
-# one transitive closure instead of resolving two incompatible ones.
+# This file is resolved once, here, for the whole service -- pds/rules.py
+# (no dependencies of its own), pds/server.py, pds/identity.py and
+# pds/telemetry.py together -- so all of it shares one transitive closure
+# instead of resolving incompatible ones.
 
-# gRPC: the wire protocol server.py (Task 3) speaks to agentgateway, plus
+# gRPC: the wire protocol server.py speaks to agentgateway, plus
 # grpcio-tools to generate stubs from the vendored proto/ext_mcp.proto.
 # Version matched to agents/settlement-agent/requirements.txt, the only
 # other sibling service with a grpcio dependency (pulled in there via
@@ -21,7 +21,7 @@ opentelemetry-api==1.44.0
 opentelemetry-exporter-otlp-proto-http==1.44.0
 
 # Test path, matched to the pytest version already current across every
-# other requirements.txt in this repo (post the PYSEC-2026-1845 fix round).
+# other requirements.txt in this repo (fixed after PYSEC-2026-1845).
 pytest==9.1.1
 
 # The rest of this file's transitive closure, pinned exactly as resolved by
@@ -66,18 +66,17 @@ urllib3==2.7.0
 # every other requirements.txt in this repo, which all pin the same version.
 typing-extensions==4.16.0
 
-# M5 Task 3: the OpenFeature client this service resolves `autonomy-level`
-# through, its flagd provider (the gRPC evaluation client that speaks to the
-# sidecar on :8013, ruling M5-R4), and the OTel hook that puts each
-# evaluation on the currently active span as an event. Versions verified
-# against PyPI's `info.version` for all three on 2026-09-14 -- each is
-# upstream's latest release, not a stale local index.
+# The OpenFeature client this service resolves `autonomy-level` through, its
+# flagd provider (the gRPC evaluation client that speaks to the sidecar on
+# :8013), and the OTel hook that puts each evaluation on the currently active
+# span as an event. Versions verified against PyPI's `info.version` for all
+# three -- each is upstream's latest release, not a stale local index.
 openfeature-sdk==0.10.0
 openfeature-provider-flagd==0.5.2
 openfeature-hooks-opentelemetry==0.3.1
 
 # The three pins above's own transitive closure, pinned exactly as `uv pip
-# install` resolved it into this service's rebuilt `.venv` (Step 3: `rm -rf
+# install` resolved it into this service's rebuilt `.venv` (`rm -rf
 # .venv && uv venv --python 3.13 .venv && uv pip install -r
 # requirements.txt`), not chosen freely.
 #

@@ -1,34 +1,21 @@
-"""Task 7 moved `mcp` to 1.28.1 (clearing PYSEC-2026-1617/-1618/-3482/-3483),
-deliberately isolated from the model-call work in Tasks 1-4 so a propagation
-regression would have exactly one suspect.
+"""`mcp` is pinned to 2.2.0 (clearing PYSEC-2026-1617/-1618/-3482/-3483),
+isolated from the model-call pins below so a propagation regression has
+exactly one suspect.
 
 `mcp_tools.py` still propagates trace context by hand-building a request and
-calling the low-level `ClientSession.send_request`, unchanged: `mcp==1.28.1`
-gained a merged `call_tool(meta=...)` convenience method
-(docs/upstream-findings.md, Finding 4), but adopting it is explicitly left as
-recorded, available future work, not taken here — this task verifies the
-*existing* `send_request` path still propagates at the new version, rather
-than replacing it.
+calling the low-level `ClientSession.send_request`: `mcp` also ships a merged
+`call_tool(meta=...)` convenience method (docs/upstream-findings.md,
+Finding 4), but adopting it is left as available future work -- this file
+verifies the *existing* `send_request` path still propagates trace context at
+the pinned version, rather than replacing it. `test_no_fastmcp_in_this_service`
+below is what keeps `MCPToolset` unadopted, since the `mcp` version itself no
+longer makes PydanticAI's `[mcp]` extra unsatisfiable against this pin (see
+requirements.txt).
 
-**2026-09-11 (M3 remaining-bumps, step 1): `mcp` is now 2.2.0**, and one
-sentence that used to close the paragraph above is dead. It read: "`mcp`
-staying below `2.0.0` also keeps PydanticAI's `[mcp]` extra unsatisfiable
-against this pin (see requirements.txt), on purpose: bumping to pick up the
-fix and adopting `MCPToolset` are independent decisions, and only the former
-is this task's job." The two decisions are still independent and `MCPToolset`
-is still not adopted — but the version number no longer enforces that, so
-`test_no_fastmcp_in_this_service` below is the whole of the enforcement now.
-The `send_request` path is still the one `_call` takes, still hand-building
-`params._meta`, and it is still what this file exists to pin.
-
-Final-review fix round (SF-2): this file pinned `mcp` and `pydantic-ai-slim`
-via `importlib.metadata` but not `pytest`/`pytest-asyncio`, so the pytest
-advisory (PYSEC-2026-1845) that Task 7 cleared here could have silently
-drifted back to `8.3.4` — exactly the "no service has any advisory gate"
-mechanism gap the final review named — with nothing failing. The two
-assertions below close that gap for this service; they are not a general
-advisory scanner (that remains a separate, unbuilt piece of work), only a
-tripwire against this exact pair silently downgrading.
+This file also pins `pytest` and `pytest-asyncio` via `importlib.metadata`, as
+a tripwire against either silently drifting back to a version carrying a
+cleared advisory (PYSEC-2026-1845 for pytest) -- not a general advisory
+scanner, just protection against this exact pair regressing.
 """
 from __future__ import annotations
 
@@ -50,8 +37,7 @@ def test_mcp_types_is_pinned_in_lock_step_with_mcp():
 
 
 def test_pydantic_ai_is_importable_and_at_the_verified_version():
-    # 2026-09-11 (M3 remaining-bumps, step 2): 2.41.0 -> 2.42.0. "Verified"
-    # here means the `gen_ai.*` inventory `docs/telemetry-contract.md`
+    # "Verified" here means the `gen_ai.*` inventory `docs/telemetry-contract.md`
     # publishes was re-measured off a live settlement at this version, not
     # that the release notes were read.
     assert md.version("pydantic-ai-slim") == "2.42.0"
@@ -78,7 +64,7 @@ def test_pytest_asyncio_is_still_pinned_to_the_version_pytest_9_requires():
     assert md.version("pytest-asyncio") == "1.4.0"
 
 
-# M2.1 Task 4 adds the SPIFFE Workload API client. Same rationale as the pytest
+# The SPIFFE Workload API client follows the same rationale as the pytest
 # pair above: this is a tripwire against a silent drift, not a general
 # advisory scanner. `spiffe` is what makes svid.py's identity real rather than
 # mocked, and grpcio/pem arrived only as its transitives -- if `spiffe` ever

@@ -1,9 +1,8 @@
-"""Guards `docs/telemetry-contract.md`'s published test counts against the
-exact staleness the second final-review round found (finding 3): the
-document still said `49 passed, 6 skipped, 1 xfailed` / `55 passed, 1
-xfailed` after a commit had already taken the real numbers to `55/7/1` and
-`62/1` — the commit message and the task report were both updated, but the
-one artefact whose entire purpose is stating what is true was not.
+"""Guards `docs/telemetry-contract.md`'s published test counts against
+staleness: a commit can change how many tests exist while the commit
+message and any task report get updated and the document's own published
+counts do not, even though stating what is true is that document's entire
+purpose.
 
 **What the whole-tree check can and cannot verify, and why it stops there:**
 the contract publishes two numbers for the *same* fixed set of collected
@@ -22,22 +21,17 @@ it runs. A collection-count cross-check catches the specific, cheap,
 frequent failure mode (someone adds or removes a test and forgets the two
 numbers in the doc) without trying to be a second copy of the gate.
 
-**Why a second, per-service check exists (M1.2 Task 6).** The contract also
-publishes one more row -- "Per-service unit suites" -- and the whole-tree
-check above structurally cannot see it: each per-service suite lives
-*outside* `tests/`, in its own directory with its own `.venv` (or its own
-Go module, or its own Node package), so `pytest --collect-only tests/`
-never touches it. This is not a hypothetical blind spot: the
-`settlement-agent` count in that row went stale at "19" for the entirety of
-M1.2 Tasks 1-4 -- three tasks in a row that each added tests to that
-suite -- and nothing caught it until a human re-counted by hand in Task 5.
-That is the third time a published count in this document has drifted
-silently; the first two both went through the whole-tree check above, which
-is exactly why it exists, and this one didn't, which is exactly why it kept
-recurring. `test_per_service_counts_match_what_each_suites_own_runner_collects`
-below closes that blind spot the same way the whole-tree check closes its
-own: by asking each service's own test runner what it actually has, rather
-than trusting a number someone typed by hand.
+**Why a second, per-service check exists.** The contract also publishes one
+more row -- "Per-service unit suites" -- and the whole-tree check above
+structurally cannot see it: each per-service suite lives *outside* `tests/`,
+in its own directory with its own `.venv` (or its own Go module, or its own
+Node package), so `pytest --collect-only tests/` never touches it. That is a
+real blind spot: a service can grow its own suite over several commits with
+nothing catching a stale published count until someone re-counts by hand.
+`test_per_service_counts_match_what_each_suites_own_runner_collects` below
+closes that blind spot the same way the whole-tree check closes its own: by
+asking each service's own test runner what it actually has, rather than
+trusting a number someone typed by hand.
 """
 import json
 import os
@@ -49,19 +43,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = REPO_ROOT / "docs" / "telemetry-contract.md"
 
-# Module-level (M5 Task 1, V2) so it can be asserted on directly, not only
-# through the one property test that reads it. See the comment beside its use
-# in test_a_predicted_gate_row_is_labelled_as_one for why that test alone is
+# Module-level so it can be asserted on directly, not only through the one
+# property test that reads it. See the comment beside its use in
+# test_a_predicted_gate_row_is_labelled_as_one for why that test alone is
 # not enough.
 GATE_PATHS = ["agents", "apps", "contracts", "deploy", "platform", "scripts", "tests", "systems", "tools"]
 
 
 def _collected_test_count() -> int:
-    # A5: the bare `python3` on PATH is the too-old system 3.10.4, which
-    # lacks every package this suite installs into `.venv` (amendment A5
-    # forbids relying on it) -- re-exec with the *running* interpreter
-    # instead, so this always collects with the same environment pytest
-    # itself was just launched under.
+    # The bare `python3` on PATH is a too-old system Python, which lacks
+    # every package this suite installs into `.venv` -- re-exec with the
+    # *running* interpreter instead, so this always collects with the same
+    # environment pytest itself was just launched under.
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "--collect-only", "-q", "tests/"],
         cwd=REPO_ROOT,
@@ -88,19 +81,16 @@ _BLOCK_HEADING_RE = re.compile(r"^\*\*(20\d\d-\d\d-\d\d) ", re.M)
 def _current_figures_block() -> str:
     """The contract's CURRENT measured-counts block, sliced out by its heading.
 
-    M4 final review, suspected finding S1. Every check below used to take the
-    *first* match in the whole document and rely on a sentence asking authors
-    to keep the current block first. That is the document's own stated
-    convention and it has held -- but "the guard reads the right paragraph as
-    long as nobody reorders the file" is a guard on prose order, not on
-    figures, and this file's entire existence is the argument against that. A
-    block moved, or a new milestone's block appended at the bottom out of
-    habit, and these tests would silently start checking a historical figure
-    nobody had touched, and report green.
+    Taking the *first* match in the whole document and trusting a sentence
+    that asks authors to keep the current block first is a guard on prose
+    order, not on figures -- this file's entire existence is the argument
+    against that. If a block moved, or a new block got appended at the bottom
+    out of habit, these tests would silently start checking a historical
+    figure nobody had touched, and report green.
 
     So the slice is explicit: from the first `**<date> ` heading to the next
     one. It also makes the historical blocks *unreachable* to these checks,
-    which is what lets the M4 Task 5 block keep its own wrong bare row on the
+    which is what lets an old block keep its own wrong bare row on the
     record with a correction beside it, rather than be rewritten to suit a
     test.
     """
@@ -122,13 +112,12 @@ def test_contracts_published_counts_match_what_pytest_actually_collects():
 
     # `\s+` rather than a literal space between the words: the contract is
     # hard-wrapped prose, and a figure that happens to wrap *inside* its
-    # backticks is invisible to a space-only pattern -- so this check falls
-    # through to the next, historical figure and verifies that one instead,
+    # backticks is invisible to a space-only pattern -- so this check would
+    # fall through to the next, historical figure and verify that one instead,
     # reporting drift against a number the author never touched. That is the
     # same failure mode the module docstring describes for a historical figure
-    # moved above a current one, and it happened for real while M4 Task 3's fix
-    # round was updating the current row. Every historical figure sits *below*
-    # the current one, so tolerating a wrap cannot change which match is first.
+    # moved above a current one. Every historical figure sits *below* the
+    # current one, so tolerating a wrap cannot change which match is first.
     bare_match = re.search(
         r"`(\d+)\s+passed,\s+(\d+)\s+skipped,\s+(\d+)\s+xfailed`", text
     )
@@ -150,8 +139,7 @@ def test_contracts_published_counts_match_what_pytest_actually_collects():
         f"the contract's bare-suite row sums to {bare_total} tests "
         f"({bare_match.group(0)}), but `pytest --collect-only tests/` "
         f"actually collects {collected} today -- the document has drifted "
-        f"from the suite (this is exactly finding 3, second final-review "
-        f"round); update {CONTRACT_PATH.relative_to(REPO_ROOT)}"
+        f"from the suite; update {CONTRACT_PATH.relative_to(REPO_ROOT)}"
     )
     assert gate_total == collected, (
         f"the contract's gate row sums to {gate_total} tests "
@@ -161,30 +149,25 @@ def test_contracts_published_counts_match_what_pytest_actually_collects():
     )
 
 
-# --- Per-service row (M1.2 Task 6) -----------------------------------------
+# --- Per-service row --------------------------------------------------------
 #
-# The row this guards reads, verbatim, as of this writing (M3 Task 5B; it read
-# `claims-agent 14, settlement-agent 31, payments-mcp 7, payments-api (Go) 7,
-# customer-ui (vitest) 6` when this guard was written at M1.2 Task 6, and
-# `claims-agent 16, settlement-agent 79, payments-mcp 9, payments-api (Go) 20,
-# customer-ui (vitest) 6, policy-decision-service 96` at the M2.2 final-review
-# fix round -- which is the drift it exists to catch):
+# The row this guards currently reads:
 #
 #   claims-agent 16, settlement-agent 108, payments-mcp 15,
 #   payments-api (Go) 31, customer-ui (vitest) 6,
 #   policy-decision-service 105, reviewer-ui 50 -- all passing.
 #
 # Each service is checked with the *same command* `scripts/smoke-test.sh`
-# uses for it (Step 1/2), just in collect/list mode instead of run mode, so
-# this never actually executes a service's tests: no cluster, no tokens, no
-# side effects, and -- as of this fix round -- no network access either.
-# Each counter asserts its own toolchain is present first (venv python,
-# vitest binary) and fails loudly if it isn't, rather than falling back to
-# something that could reach out over the network (`npx vitest`) or resolve
-# unpredictably (a global npx cache); `_go_test_count` additionally runs
-# with `GOPROXY=off` so a cold Go module cache fails loudly instead of
-# fetching. A missing toolchain is a hard failure here, never a skip -- a
-# guard that skips silently is a guard that stops guarding.
+# uses for it, just in collect/list mode instead of run mode, so this never
+# actually executes a service's tests: no cluster, no tokens, no side
+# effects, and no network access either. Each counter asserts its own
+# toolchain is present first (venv python, vitest binary) and fails loudly
+# if it isn't, rather than falling back to something that could reach out
+# over the network (`npx vitest`) or resolve unpredictably (a global npx
+# cache); `_go_test_count` additionally runs with `GOPROXY=off` so a cold Go
+# module cache fails loudly instead of fetching. A missing toolchain is a
+# hard failure here, never a skip -- a guard that skips silently is a guard
+# that stops guarding.
 
 PER_SERVICE_ROW_RE = re.compile(
     r"Per-service unit suites[^\n]*:\s*\n(.*?)\N{EM DASH} all passing",
@@ -222,15 +205,13 @@ def _go_test_count(service_dir: Path) -> int:
     # `go test -list '.*'` prints one matching test name per line and never
     # runs a single one of them -- the Go analogue of `--collect-only`,
     # confirmed by timing (sub-second here vs. the real run) and by reading
-    # `go help testflag`. Mirrors smoke-test.sh's own `GOTOOLCHAIN=auto`.
-    # 2026-09-11 (M3): that was `GOTOOLCHAIN=local` on both sides until
-    # payments-api moved to otel-go v1.46.0, which declares `go 1.25.0`;
-    # `go.mod` now pins `toolchain go1.27.1`, so `auto` is still exactly one
-    # reproducible release and not a floating one. `GOPROXY=off` is kept and
-    # still does its job: it forbids the Go toolchain from reaching the module
-    # proxy network for anything not already in the local module cache -- a
-    # missing/incomplete cache (the pinned toolchain included) must fail
-    # loudly here, not silently fetch.
+    # `go help testflag`. Mirrors smoke-test.sh's own `GOTOOLCHAIN=auto`: with
+    # payments-api on otel-go v1.46.0 (which declares `go 1.25.0`), `go.mod`
+    # pins `toolchain go1.27.1`, so `auto` resolves to exactly one
+    # reproducible release rather than a floating one. `GOPROXY=off` forbids
+    # the Go toolchain from reaching the module proxy network for anything not
+    # already in the local module cache -- a missing/incomplete cache (the
+    # pinned toolchain included) must fail loudly here, not silently fetch.
     env = dict(os.environ)
     env["GOTOOLCHAIN"] = "auto"
     env["GOPROXY"] = "off"
@@ -304,23 +285,21 @@ def _vitest_test_count(service_dir: Path) -> int:
 
 
 def _jest_test_count(service_dir: Path) -> int:
-    # Whole-branch review C1: every Backstage jest suite (six plugin files
-    # under packages/backend and packages/app, plus the two scaffold-default
-    # suites those workspaces already carried) was executed by nothing --
-    # `grep -ci backstage scripts/smoke-test.sh` was 0 and this row did not
-    # exist. Unlike pytest/go/vitest above, `backstage-cli repo test` (a
-    # thin wrapper over jest) has no pure enumerate-without-running mode:
-    # jest's own `--listTests` only lists matching FILES, not the individual
-    # `it(...)` cases the published count is over. The suite is hermetic
-    # (no cluster, no network, no model -- confirmed below by timing: low
-    # single-digit seconds) and sub-second-per-file, so running it for real
-    # to get an exact count costs nothing this repo's other per-service
-    # counters weren't already paying in `scripts/smoke-test.sh` itself.
+    # Every Backstage jest suite (six plugin files under packages/backend
+    # and packages/app, plus the two scaffold-default suites those
+    # workspaces already carried) needs its own counter here because
+    # `scripts/smoke-test.sh` does not run them directly. Unlike
+    # pytest/go/vitest above, `backstage-cli repo test` (a thin wrapper over
+    # jest) has no pure enumerate-without-running mode: jest's own
+    # `--listTests` only lists matching FILES, not the individual `it(...)`
+    # cases the published count is over. The suite is hermetic (no cluster,
+    # no network, no model -- confirmed below by timing: low single-digit
+    # seconds) and sub-second-per-file, so running it for real to get an
+    # exact count costs nothing this repo's other per-service counters
+    # aren't already paying.
     #
     # **`CI=true` is mandatory.** Without it, `backstage-cli repo test`
-    # (jest) defaults to watch mode and the subprocess hangs forever --
-    # found the hard way in the M6 Task 3 fix round (see progress.md) and
-    # confirmed again while writing this counter.
+    # (jest) defaults to watch mode and the subprocess hangs forever.
     cli_bin = service_dir / "node_modules" / ".bin" / "backstage-cli"
     assert cli_bin.exists(), (
         f"{cli_bin} does not exist -- this check needs the workspace's own "
@@ -356,17 +335,14 @@ _PER_SERVICE_SUITES = [
     ("payments-mcp", REPO_ROOT / "tools" / "payments-mcp", _pytest_collected_count),
     ("payments-api", REPO_ROOT / "systems" / "payments-api", _go_test_count),
     ("customer-ui", REPO_ROOT / "apps" / "customer-ui", _vitest_test_count),
-    # The sixth row, added in the M2.2 final-review fix round (finding 1,
-    # ruling R42). It was left out on the stated reasoning that the PDS suite
-    # needs a generation step (`gen-stubs.sh`) that a hermetic `tests/unit`
-    # should not take on -- but the review demonstrated that reasoning false in
-    # its premise: `tests/unit` ALREADY requires the generated stubs, because
-    # `agents/settlement-agent`'s own suite imports `pds.server` and the row
-    # three lines above collects that suite. Removing the stubs reddens this
-    # very test today. The cost was already being paid; only the tests were
-    # missing. `scripts/smoke-test.sh` now runs `gen-stubs.sh` ahead of every
-    # suite, which is what makes this row collectible in the gate as well as
-    # here.
+    # `tests/unit` already depends on the PDS's generated stubs --
+    # `agents/settlement-agent`'s own suite imports `pds.server`, and the row
+    # three lines above collects that suite -- so the PDS's own suite is
+    # counted here too rather than left out on the theory that a generation
+    # step (`gen-stubs.sh`) doesn't belong in a hermetic `tests/unit`: that
+    # cost is already being paid. `scripts/smoke-test.sh` runs `gen-stubs.sh`
+    # ahead of every suite, which is what makes this row collectible in the
+    # gate as well as here.
     #
     # `_pytest_collected_count` needs no special case: the PDS suite runs with
     # its own `.venv/bin/python` from its own directory, exactly like the three
@@ -381,28 +357,19 @@ _PER_SERVICE_SUITES = [
         REPO_ROOT / "platform" / "policy-decision-service",
         _pytest_collected_count,
     ),
-    # The seventh row, added in M3 Task 5B (ruling R32's sibling finding). It
-    # is the sixth row's defect recurring one milestone later, and the
-    # recurrence is worth naming because the two are not identical: the PDS was
-    # left out while `tests/unit` already *depended* on it, so removing its
-    # stubs reddened this very test. `apps/reviewer-ui` was left out with no
-    # such backstop at all -- M3 Task 4 shipped 50 tests for the component that
-    # carries this milestone's human decision, and nothing anywhere ran them,
-    # so `scripts/smoke-test.sh` could go green with that suite entirely
-    # broken. Adding a service to `deploy/k8s/` means adding it here, in the
-    # same task.
+    # `apps/reviewer-ui` carries this system's human-review decision and its
+    # suite must be counted the same way: a service that ships in
+    # `deploy/k8s/` needs its unit suite collected here too, or
+    # `scripts/smoke-test.sh` can go green with that suite entirely unrun.
     #
     # `_pytest_collected_count` needs no special case: like the four Python
     # services above it has its own `.venv`, its own `requirements.txt` and its
     # own `pytest.ini`, and its suite is hermetic -- no cluster, no network, no
     # model, 0.3s.
     ("reviewer-ui", REPO_ROOT / "apps" / "reviewer-ui", _pytest_collected_count),
-    # The eighth row, added in M4 Task 4 -- in the same task that added the
-    # service, which is what the sixth and seventh rows' comments above both say
-    # should happen and what neither of them did. `platform/eval-scorer` ships
-    # in `deploy/k8s/eval-scorer.yaml`, so the rule quoted two comments up
-    # ("Adding a service to `deploy/k8s/` means adding it here, in the same
-    # task") is the one that applies.
+    # `platform/eval-scorer` ships in `deploy/k8s/eval-scorer.yaml`, so the
+    # same rule applies: a service shipped there needs its suite collected
+    # here.
     #
     # `_pytest_collected_count` needs no special case: like the five Python
     # services above it has its own `.venv`, its own pinned `requirements.txt`
@@ -411,23 +378,17 @@ _PER_SERVICE_SUITES = [
     # and `scorer/scores.py` import nothing outside the standard library, so
     # collection touches no cluster, no network and no model.
     ("eval-scorer", REPO_ROOT / "platform" / "eval-scorer", _pytest_collected_count),
-    # The ninth row -- whole-branch review C1, not M6 Task 3 (which added the
-    # service and the suites but never this row, the exact recurrence this
-    # file's own comment two rows up predicted: "Adding a service to
-    # `deploy/k8s/` means adding it here, in the same task"). `backstage`
-    # ships in `deploy/k8s/backstage.yaml` (M6 Task 1). Six plugin test files
-    # under `platform/backstage/packages/{backend,app}` -- carrying, among
-    # other things, the jest guards for all four of Task 3's review-round
-    # correctness fixes -- were executed by NOTHING: not this row, not
-    # `scripts/smoke-test.sh` (`grep -ci backstage scripts/smoke-test.sh` was
-    # 0). `_jest_test_count` runs the whole workspace's `backstage-cli repo
-    # test`, which also picks up the two untouched scaffold-default suites
-    # (`packages/app/src/App.test.tsx`, and the backend's own) -- that is
-    # correct, not a fudge: this row's job is "does the number published here
-    # match what this workspace's own test runner reports", the same
-    # contract every row above keeps, and narrowing to only the six
-    # autonomy-contract files would silently exempt the scaffold defaults
-    # from ever being asked to run again.
+    # `backstage` ships in `deploy/k8s/backstage.yaml`. Six plugin test files
+    # under `platform/backstage/packages/{backend,app}` carry its jest guards,
+    # and `scripts/smoke-test.sh` does not run them, so this row is what
+    # actually exercises them. `_jest_test_count` runs the whole workspace's
+    # `backstage-cli repo test`, which also picks up the two untouched
+    # scaffold-default suites (`packages/app/src/App.test.tsx`, and the
+    # backend's own) -- that is correct, not a fudge: this row's job is "does
+    # the number published here match what this workspace's own test runner
+    # reports", the same contract every row above keeps, and narrowing to
+    # only the plugin files would silently exempt the scaffold defaults from
+    # ever being asked to run again.
     ("backstage", REPO_ROOT / "platform" / "backstage", _jest_test_count),
 ]
 
@@ -473,12 +434,12 @@ def test_per_service_counts_match_what_each_suites_own_runner_collects():
     assert not mismatches, (
         "docs/telemetry-contract.md's 'Per-service unit suites' row has "
         "drifted from what each service's own suite actually collects "
-        "(this is the third recurrence of exactly this defect -- see the "
-        "module docstring):\n" + "\n".join(mismatches)
+        "(see the module docstring for why this needs its own check):\n"
+        + "\n".join(mismatches)
     )
 
 
-# --- M4 Task 5: the gated figure, which was published and unguarded ----------
+# --- The gated figure, published and otherwise unguarded --------------------
 
 
 def _gated_test_count() -> tuple[int, dict[str, int]]:
@@ -526,22 +487,20 @@ def _gated_test_count() -> tuple[int, dict[str, int]]:
 
 
 def test_the_contracts_gated_figure_is_what_pytest_would_actually_skip():
-    """The gated count was published in three documents and re-measured by
-    nobody.
+    """The gated count is published in documents and must be re-derived, not
+    hand-counted once and trusted forever.
 
     `docs/telemetry-contract.md` and `README.md` both state how many tests sit
     behind `RUN_BROWSER_TESTS=1`, and the contract's own prose says the figure
     "is measured ... a `--collect-only` run with a plugin that counts items
-    carrying a `skipif` whose reason names `RUN_BROWSER_TESTS`". It was --
-    once, by hand, per milestone. Nothing re-ran it, so **deleting a
-    `pytestmark` from a settlement-driving e2e file changed no published number
-    and reddened no test**: the bare and gate rows above both sum to the
-    *collected* total, which a removed gate does not move. A repo whose whole
-    cost model is "one flag gates every model call" had no guard on the flag.
-
-    M4 Task 5 moved that figure from 41 to 71 by gating three files and two
-    parametrised controls, which is exactly the kind of change that should not
-    be checkable only by re-reading prose.
+    carrying a `skipif` whose reason names `RUN_BROWSER_TESTS`". Without a
+    guard, **deleting a `pytestmark` from a settlement-driving e2e file
+    changes no published number and reddens no test**: the bare and gate rows
+    above both sum to the *collected* total, which a removed gate does not
+    move. A repo whose whole cost model is "one flag gates every model call"
+    would then have no guard on the flag -- so gating or ungating any file is
+    exactly the kind of change that should not be checkable only by re-reading
+    prose.
     """
     gated, per_file = _gated_test_count()
     text = _current_figures_block()
@@ -582,13 +541,11 @@ def test_the_contracts_gated_figure_is_what_pytest_would_actually_skip():
 
 
 def test_the_full_per_module_gated_spread_matches_what_pytest_reports():
-    """J7 (whole-branch review): the twelve per-module gated counts are
-    published in BOTH `docs/telemetry-contract.md`'s "Full spread" sentence
-    and README.md's own "The spread:" paragraph -- the same twelve integers,
-    summing to the same guarded total (74) -- and neither was ever compared to
-    `_gated_test_count()`'s own `per_file` dict, which already computes this
-    exact spread and until now was used only to build assertion messages. The
-    cheapest finding in the review, because the data was already in hand.
+    """The per-module gated counts are published in BOTH
+    `docs/telemetry-contract.md`'s "Full spread" sentence and README.md's own
+    "The spread:" paragraph -- the same integers, summing to the same
+    guarded total -- and both must be compared to `_gated_test_count()`'s own
+    `per_file` dict, which already computes this exact spread.
     """
     _, per_file = _gated_test_count()
 
@@ -611,10 +568,10 @@ def test_the_full_per_module_gated_spread_matches_what_pytest_reports():
 
     readme = (REPO_ROOT / "README.md").read_text()
     # `The <number> partly-gated ones` -- the number word is matched rather
-    # than spelled, because it moves whenever a partly-gated module is added.
-    # It was `four` until the page-banner pass made it `five`, and an anchor
-    # that names the count turns "the prose was updated correctly" into "the
-    # guard cannot find the prose at all", which reports as the wrong defect.
+    # than spelled, because it moves whenever a partly-gated module is added
+    # or removed, and an anchor that names the count would turn "the prose
+    # was updated correctly" into "the guard cannot find the prose at all",
+    # which reports as the wrong defect.
     readme_match = re.search(
         r"The\s+spread:(.*?)The\s+\w+ partly-gated ones", readme, re.S
     )
@@ -645,20 +602,16 @@ def test_the_full_per_module_gated_spread_matches_what_pytest_reports():
 
 
 def test_the_published_browser_split_is_what_the_source_says():
-    """M4's final review, finding M1: the one gated figure with no guard.
+    """The one gated figure that had no guard at all: how few of the gated
+    modules actually start a browser.
 
     `RUN_BROWSER_TESTS=1` is a **cost** gate, and the two documents say so by
-    stating how few of the gated modules actually start a browser. That number
-    has now been wrong twice in three tasks: "six of the ten" (M4 Task 4's, left
-    behind when Task 5 added four gated modules), then "only one of the eleven"
-    — published in three places at once *by the stale-prose pass*, which moved
-    the denominator and the numerator and re-derived neither. The truth is
-    three. The pre-M4 text it replaced had it right.
-
-    Every other count in these documents is checked against pytest. This one
-    was checked against a reader, which is why it is the one that broke. It is
-    trivially derivable, so it is derived: `chromium.launch(` in `tests/e2e`,
-    intersected with the gated module list pytest itself reports.
+    stating this split. Every other count in these documents is checked
+    against pytest; a figure checked only against a reader is a figure that
+    can silently go wrong when the gated module list changes and nobody
+    re-derives it by hand. It is trivially derivable, so it is derived:
+    `chromium.launch(` in `tests/e2e`, intersected with the gated module list
+    pytest itself reports.
     """
     _, per_file = _gated_test_count()
     gated_modules = set(per_file)
@@ -686,18 +639,14 @@ def test_the_published_browser_split_is_what_the_source_says():
     without_browser = len(gated_modules) - with_browser
     total = len(gated_modules)
 
-    # Whole-branch review D2: this used to read `path.read_text()` for BOTH
-    # documents -- the entire file, historical blocks included. README.md has
-    # no append-only history of sealed-but-superseded blocks (its rows are
-    # overwritten in place), so scanning it whole is fine.
-    # `docs/telemetry-contract.md` does have that history --
-    # `_current_figures_block()` exists precisely to keep other checks off
-    # it -- and this was the one check in the file that had not been narrowed
-    # to it. The unnarrowed scan is what forced M6's own commit to rewrite six
-    # sealed historical blocks: the only way to make an unqualified "N of the
-    # 13" true everywhere in the document was to retype it into every prior
-    # block that used to say something else, which is the "derive figures,
-    # never retype them" rule broken by the guard that exists to enforce it.
+    # README.md has no append-only history of sealed-but-superseded blocks
+    # (its rows are overwritten in place), so `path.read_text()` -- the whole
+    # file -- is fine for it. `docs/telemetry-contract.md` does have that
+    # history, so it must go through `_current_figures_block()` instead: an
+    # unnarrowed scan of the whole file would match a claim inside a sealed
+    # historical block too, and require that block to keep restating today's
+    # figure forever -- the "derive figures, never retype them" rule broken
+    # by the very guard meant to enforce it.
     for path, text in (
         (CONTRACT_PATH, _current_figures_block()),
         (REPO_ROOT / "README.md", (REPO_ROOT / "README.md").read_text()),
@@ -724,17 +673,17 @@ def test_the_published_browser_split_is_what_the_source_says():
 
 
 def test_the_bare_rows_xfail_term_accounts_for_gating():
-    """M4's final review, finding M3: a premise changed and the conclusion was
-    re-applied.
+    """The bare-suite row's `xfailed` term must track which xfail-carrying
+    modules are actually ungated, not restate a fixed count.
 
     The bare-suite row is derived as `collected - gated - xfailed`. That
-    subtraction was correct for three milestones, because the tree's only
-    `pytest.xfail` lived in an **ungated** module and therefore really did
-    xfail on a bare run. M4 Task 5 gated that module -- and re-derived the row
-    in the same commit, keeping the `- 1 xfailed` term. On a bare run that test
-    now *skips*: it is already inside the 71, and subtracting it again counts
-    one test twice. The row summed to the collected total only because of the
-    double count.
+    subtraction is only correct while every `pytest.xfail` in the tree lives
+    in an **ungated** module, because only an ungated module's xfail actually
+    xfails on a bare run. If a module holding an xfail gets gated, that test
+    now *skips* on a bare run instead -- it is already inside the gated
+    count, and subtracting it again as `xfailed` would count it twice while
+    still summing to the right total, which is exactly the kind of error
+    that hides behind a row whose arithmetic happens to check out.
 
     So the term is derived here rather than trusted. A test can only xfail on a
     bare run if the module holding it runs on a bare run.
@@ -777,25 +726,26 @@ def test_the_bare_rows_xfail_term_accounts_for_gating():
 
 
 def test_gate_paths_widened_list_actually_sees_systems_and_tools():
-    """M5 Task 1 (V2), the mutation round's own finding.
+    """`GATE_PATHS` naming `systems` and `tools` must actually change what
+    `test_a_predicted_gate_row_is_labelled_as_one` detects, not just look
+    complete.
 
     Mutating `"systems", "tools"` out of the list this file uses to decide
-    gate-row staleness left `test_a_predicted_gate_row_is_labelled_as_one`
-    GREEN -- because a task branch's own working tree, while this task is in
-    progress, always has plenty of OTHER `gate_paths` files changed too
-    (`scripts/`, `tests/`, ...), so "did anything change" stays true either
-    way and that test cannot tell `systems`/`tools` apart from the rest. A
-    guard that only asks "did anything change" is not the same guard as one
-    that asks "did the right thing get looked at", and V2 was supposed to be
-    the second.
+    gate-row staleness can leave `test_a_predicted_gate_row_is_labelled_as_one`
+    GREEN, because a working tree in progress typically has plenty of OTHER
+    `gate_paths` files changed too (`scripts/`, `tests/`, ...), so "did
+    anything change" stays true either way and that test alone cannot tell
+    `systems`/`tools` apart from the rest. A guard that only asks "did
+    anything change" is not the same guard as one that asks "did the right
+    thing get looked at".
 
-    So this checks the two things the mutation proved neither of the other
-    tests here actually cover: that `GATE_PATHS` names both directories, and
-    that doing so is not decorative -- against the real commit `716d70c`,
-    which changed exactly one file, `tools/payments-mcp/bootstrap.py`, and
-    nothing under any of the other seven `GATE_PATHS` entries. Step 4's manual
-    verification (narrow list: 0, widened list: 1), encoded so it is not
-    manual the next time someone touches this list.
+    So this checks the two things that test alone does not cover: that
+    `GATE_PATHS` names both directories, and that doing so is not decorative
+    -- against the real commit `716d70c`, which changed exactly one file,
+    `tools/payments-mcp/bootstrap.py`, and nothing under any of the other
+    seven `GATE_PATHS` entries (narrow list: 0 changes seen, widened list: 1),
+    encoded so it is not a manual check the next time someone touches this
+    list.
     """
     assert "systems" in GATE_PATHS and "tools" in GATE_PATHS, (
         "GATE_PATHS must include both 'systems' and 'tools': "
@@ -839,12 +789,12 @@ def test_gate_paths_widened_list_actually_sees_systems_and_tools():
 
 
 def test_a_predicted_gate_row_is_labelled_as_one():
-    """M4's final review asked whether the fix wave warrants a new gate run.
+    """A gate row measured before later changes must say so, and stop saying
+    so once it is current again.
 
-    It does, and this is that answer written where it cannot rot. The contract
-    publishes two rows for the same collection: the bare row, which is
-    *derived* and says so, and the gate row, which until now was **measured**
-    and said so. Every check above compares those rows to today's collection --
+    The contract publishes two rows for the same collection: the bare row, which is
+    *derived* and says so, and the gate row, which is **measured**
+    and says so. Every check above compares those rows to today's collection --
     so the moment a commit adds a test, the only way to keep them green is to
     edit the gate row, and editing a measured row turns a record of a run into
     arithmetic wearing a measurement's clothes. Nothing in the repo could tell
@@ -852,7 +802,7 @@ def test_a_predicted_gate_row_is_labelled_as_one():
 
     So the row carries the commit it was measured at, and this test compares
     that to the **working tree** (see the comment on `gate_paths` below for
-    why `HEAD` would have been satisfied by the fix wave itself):
+    why `HEAD` alone would miss uncommitted changes still sitting in the tree):
 
     * they differ  -> the row must be labelled `PREDICTED, NOT MEASURED`;
     * they match   -> the label must be **gone**, so a stale label cannot sit
@@ -867,20 +817,18 @@ def test_a_predicted_gate_row_is_labelled_as_one():
     assert named, (
         "the contract's current block does not say which commit its gate row "
         "was measured at. Write it as \"gate run was at commit `<sha>`\": a "
-        "gate row with no commit cannot be shown to be stale, and this "
-        "milestone's review found exactly that -- a measured row that five "
-        "later tests had quietly turned into a prediction."
+        "gate row with no commit cannot be shown to be stale, which is "
+        "exactly how a measured row quietly turns into an unmarked prediction."
     )
 
     measured_sha = named.group(1)
 
     # The comparison is the WORKING TREE against that commit, not HEAD against
-    # it. Comparing shas would have been satisfied by this very fix wave: at
-    # the moment it was written HEAD still *was* the gate's commit, with five
-    # new tests and a changed `eval-scorer` sitting uncommitted beside it --
-    # the guard would have said "measured" about a tree the gate had never
-    # seen. What makes a gate row stale is a changed file, and a file is
-    # changed whether or not it has been committed yet.
+    # it. Comparing shas alone can be satisfied by an in-progress fix: if HEAD
+    # still *is* the gate's commit while new tests and a changed service sit
+    # uncommitted beside it, the guard would say "measured" about a tree the
+    # gate had never seen. What makes a gate row stale is a changed file, and
+    # a file is changed whether or not it has been committed yet.
     #
     # Scoped to what the gate runs and deploys. `docs/` is deliberately absent:
     # this very document is edited by every task that touches the figures, and
@@ -888,14 +836,13 @@ def test_a_predicted_gate_row_is_labelled_as_one():
     # delete. `systems/` and `tools/` ARE executed by the gate --
     # scripts/smoke-test.sh runs `(cd "$ROOT/systems/payments-api" && go test
     # ./...)` and `(cd "$ROOT/tools/payments-mcp" && pytest tests -q)`, so a
-    # change under either one moves what the gate actually proves and this
-    # guard was silent about it (M5 Task 1). The list is module-level
-    # (`GATE_PATHS`) so `test_gate_paths_widened_list_actually_sees_systems_and_tools`
-    # below can check its membership directly -- mutating "systems", "tools"
-    # out of it left every test in THIS function green, because this task's
-    # own working tree always has other gate_paths files changed too, and
-    # this function only asks "did anything change", never "did the right
-    # thing get looked at". That was a real gap, found by mutating.
+    # change under either one moves what the gate actually proves. The list is
+    # module-level (`GATE_PATHS`) so
+    # `test_gate_paths_widened_list_actually_sees_systems_and_tools` below can
+    # check its membership directly: mutating "systems", "tools" out of it can
+    # leave every test in THIS function green, because a working tree usually
+    # has other gate_paths files changed too, and this function only asks "did
+    # anything change", never "did the right thing get looked at".
     gate_paths = GATE_PATHS
 
     diff = subprocess.run(

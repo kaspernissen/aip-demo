@@ -1,15 +1,13 @@
 """Asserts the single-trace property survives putting agentgateway in the path.
 
-Chain under test, as of M2.1 Task 3: A2A client -> settlement-agent (model
-decides) -> **agentgateway** -> payments-mcp -> payments-api.
+Chain under test: A2A client -> settlement-agent (model decides) ->
+**agentgateway** -> payments-mcp -> payments-api.
 
-M1.2 proved one trace spans that chain with settlement-agent talking straight
-to payments-mcp. This file exists to answer one question about the interposed
-proxy: is agentgateway a real node *inside* that one trace, or a fracture in
-it? The M2 spike measured the answer with a hand-built client before anything
-was deployed (`.superpowers/spikes/2026-09-09-agentgateway-spike.md`, a
-git-ignored workspace report cited as provenance, not as a file you can open);
-this file is the in-tree, runnable confirmation of it against the real agent.
+One trace already spans this chain when settlement-agent talks straight to
+payments-mcp, with no gateway in the path. This file exists to answer one
+question about the interposed proxy: is agentgateway a real node *inside*
+that one trace, or a fracture in it? This file is the in-tree, runnable
+confirmation of the answer, measured against the real agent.
 
 **Why it survives, stated precisely, because two different mechanisms are easy
 to conflate here:**
@@ -26,8 +24,8 @@ to conflate here:**
 * It survives anyway because `bootstrap.py` runs
   `HTTPXClientInstrumentor().instrument()` and the MCP streamable-HTTP
   transport is httpx-based, so every outbound MCP request *also* carries an
-  auto-injected `traceparent` HTTP header — measured against an echo server in
-  the spike, e.g. `00-df60a027741941a16675b35edbcf0a32-5675a787e51b87e6-03`.
+  auto-injected `traceparent` HTTP header — measured against an echo server,
+  e.g. `00-df60a027741941a16675b35edbcf0a32-5675a787e51b87e6-03`.
   The gateway reads that header, and the `_meta` injection rides along
   untouched for payments-mcp's own FastMCP extraction to use.
 
@@ -44,8 +42,8 @@ and the whole file is gated behind `RUN_BROWSER_TESTS=1` — the same convention
 only skip convention this suite has. `scripts/smoke-test.sh` sets that flag
 unconditionally, so the gate always pays for this run.
 
-**Ruling 3 (this task's own): the fixture below is defined here, not
-imported.** `test_settlement_llm_trace.py`'s `llm_settlement` fixture is
+**The fixture below is defined here, not imported.**
+`test_settlement_llm_trace.py`'s `llm_settlement` fixture is
 module-local to that file and not importable across modules; this file defines
 its own in the same style (module-scoped, one live run, minted traceparent,
 `wait_for_trace_id` never `find_trace`, 180s timeout for the reason that file
@@ -65,7 +63,7 @@ from tests.harness.jaeger import JaegerClient
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 SETTLEMENT_URL = os.environ.get("SETTLEMENT_AGENT_URL", "http://localhost:19002")
 
-ENTRY_SPAN = "POST /"  # StarletteInstrumentor's ASGI server span (A18)
+ENTRY_SPAN = "POST /"  # StarletteInstrumentor's ASGI server span
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
@@ -76,16 +74,15 @@ pytestmark = pytest.mark.skipif(
     ),
 )
 
-# M2.2 re-point, 6200 -> 5800. This file is about trace *shape* through the
-# interposed proxy — is agentgateway a node in the one trace, or a fracture in
-# it — and the amount was always incidental to that question. It stopped being
-# incidental when M2.2 made €6,200 a refused execution: the PDS denies
+# This file is about trace *shape* through the interposed proxy — is
+# agentgateway a node in the one trace, or a fracture in it — and the amount
+# is incidental to that question, except that the PDS denies
 # `execute_payment` above the €6,000 allowance for this caller
-# (`platform/policy-decision-service/pds/rules.py`), the gateway then never
-# emits its `tools/call payments-mcp_execute_payment` CLIENT forward span and
-# payments-mcp never emits `tools/call execute_payment` at all, so half of the
-# propagation this file exists to prove would simply not be in the trace to
-# assert on. €5,800 is under the allowance, so both tools traverse the full
+# (`platform/policy-decision-service/pds/rules.py`): at €6,200 the gateway
+# never emits its `tools/call payments-mcp_execute_payment` CLIENT forward
+# span and payments-mcp never emits `tools/call execute_payment` at all, so
+# half of the propagation this file exists to prove would simply not be in
+# the trace to assert on. €5,800 is under the allowance, so both tools traverse the full
 # hop and every claim below is exercised end to end — which is the *stronger*
 # choice, not the convenient one: the refusal path's own trace shape is owned
 # by `tests/e2e/test_policy_denial.py` (criteria 1 and 3), at a level of
@@ -119,10 +116,10 @@ def _send(text: str, traceparent: str) -> dict:
 def gateway_settlement():
     """One live, LLM-driven settlement through the gateway, shared by this file.
 
-    A14: this fixture originates the request, so it mints its own trace and
+    This fixture originates the request, so it mints its own trace and
     span id, sends them as a `traceparent` header, and looks the trace up by
-    that exact id — never `find_trace`/`wait_for_trace`, which silently
-    returned a stale trace twice during M1.1.
+    that exact id — never `find_trace`/`wait_for_trace`, which can silently
+    return a stale trace.
 
     **`services=` deliberately omits `agentgateway`.** Naming it here would
     make the trace-completeness wait itself fail when the gateway is not in the
@@ -136,8 +133,8 @@ def gateway_settlement():
     every exporter's batch delay in this system) and, if it ever were not,
     fails loudly rather than passing wrongly.
 
-    **M2.2: `policy-decision-service` is omitted for the same reason**, now
-    that `test_gateway_span_names_kinds_and_parentage_are_as_measured` asserts
+    **`policy-decision-service` is omitted for the same reason**, since
+    `test_gateway_span_names_kinds_and_parentage_are_as_measured` asserts
     the PDS's `policy.decision` span as a child of the gateway's `tools/call`
     SERVER span. Naming the PDS here would turn a missing decision span into a
     fixture `ERROR` shared by all six tests; leaving it out means that one
@@ -180,7 +177,7 @@ def gateway_settlement():
 def test_mcp_calls_traverse_the_gateway_within_one_trace(gateway_settlement):
     """The gateway is a real node in the trace, not a fracture.
 
-    Measured in the M2 spike before this was built: caller -> agentgateway
+    Measured directly: caller -> agentgateway
     "tools/call" -> agentgateway "tools/call payments-mcp_<tool>" ->
     payments-mcp "tools/call <tool>" -> payments-mcp "POST" -> payments-api.
     """
@@ -246,10 +243,9 @@ def test_the_gateway_is_the_only_route_into_payments_mcp(gateway_settlement):
 
 # --- The gateway's own telemetry, exactly as measured -----------------------
 #
-# Every name below was read off a live span in Jaeger (post-reroute trace
-# `a227b3e224e6407e9846e014476456e2`, recorded in this task's report as
-# provenance) and dumped in full before being written here. None was predicted
-# from agentgateway's source or documentation, and none was invented:
+# Every name below was read off a live span in Jaeger, dumped in full before
+# being written here. None was predicted from agentgateway's source or
+# documentation, and none was invented:
 # agentgateway is not our component, so the no-invented-telemetry rule applies
 # to it without exception. These sets exist so that a version bump silently
 # changing the gateway's span vocabulary fails loudly here instead of quietly
@@ -281,7 +277,7 @@ GATEWAY_TOOLS_CALL_SERVER_ATTRS = {
     "http.path",
     "http.status",
     "http.version",
-    # M2.1 Task 4. agentgateway's own attribute, not ours and not Jaeger's: it
+    # agentgateway's own attribute, not ours and not Jaeger's: it
     # appears once the route carries a `jwtAuth` policy, and it carries the
     # verified token's `sub` claim -- which for a SPIRE-minted JWT-SVID is the
     # caller's SPIFFE ID. Measured on live SERVER spans; measured *absent* from
@@ -305,7 +301,7 @@ GATEWAY_TOOLS_CALL_SERVER_ATTRS = {
     "url.scheme",
 }
 
-# M2.1 Task 4. The caller's attested identity, as SPIRE mints it from
+# The caller's attested identity, as SPIRE mints it from
 # `deploy/platform/spire/registration.yaml`'s ID template: trust domain,
 # namespace, service account. `tests/unit/test_stage2_spire_config.py` pins
 # that the configuration renders this; this file pins that the gateway
@@ -345,11 +341,11 @@ def test_gateway_span_names_kinds_and_parentage_are_as_measured(gateway_settleme
     `tools/call` spans per settlement and has to read an attribute to tell
     them apart.
 
-    **M2.2 changed this shape, independently of the amount.** That forward
-    span is no longer the SERVER span's only child: the `mcpGuardrails` policy
-    interposes an `agentgateway` `Guardrail` CLIENT span and the PDS's own
-    `policy.decision` SERVER span as its siblings. The full measured child set
-    is asserted below, with the reasoning inline.
+    **The forward span is not the SERVER span's only child.** The
+    `mcpGuardrails` policy interposes an `agentgateway` `Guardrail` CLIENT
+    span and the PDS's own `policy.decision` SERVER span as its siblings.
+    The full measured child set is asserted below, with the reasoning
+    inline.
 
     `otel.scope.name` is asserted across every gateway span because it is the
     only scope identifier the gateway sets — measured: it emits
@@ -387,13 +383,11 @@ def test_gateway_span_names_kinds_and_parentage_are_as_measured(gateway_settleme
             f"agentgateway's 'tools/call' SERVER span carries "
             f"gen_ai.tool.name={tool!r}"
         )
-        # M2.2 structural update, and the one break in this file that a
-        # re-pointed amount does not fix. Until M2.2 this SERVER span had
-        # exactly one child; the `mcpGuardrails` policy in
-        # `deploy/platform/agentgateway/config.yaml` now makes it three, on
-        # *every* tools/call, propose and execute alike, permit or deny. The
-        # measured shape (all four of Task 6's browser-driven traces, and both
-        # of Task 5's reference traces):
+        # The `mcpGuardrails` policy in
+        # `deploy/platform/agentgateway/config.yaml` makes this SERVER
+        # span's child set three deep, on *every* tools/call, propose and
+        # execute alike, permit or deny -- not a single forward child. The
+        # measured shape:
         #
         #   agentgateway `tools/call` (SERVER)
         #     |- agentgateway `Guardrail` (CLIENT)          -- the hook call
@@ -531,10 +525,10 @@ def test_gateway_span_attributes_are_exactly_what_was_measured(gateway_settlemen
 def test_the_gateway_carries_no_northstar_claim_id(gateway_settlement):
     """The enrichment boundary, asserted rather than only asserted-in-prose.
 
-    `docs/telemetry-contract.md`'s "Enrichment boundary" section has said
-    since M1.1 that "in M2 that means agentgateway's own spans are correlated
-    by trace ID, not enriched" — a prediction, until M2.1 Task 3 put the
-    gateway in the path. Measured: it holds. `ClaimIdSpanProcessor` runs only
+    `docs/telemetry-contract.md`'s "Enrichment boundary" section states that
+    agentgateway's own spans are correlated by trace ID, not enriched.
+    Measured, now that the gateway is in the path: it holds.
+    `ClaimIdSpanProcessor` runs only
     inside this project's own Python processes and nothing reaches into
     agentgateway's telemetry to add anything, so all 20 of its spans in the
     measured trace carry no `northstar.claim.id`.
@@ -570,7 +564,7 @@ def test_the_gateway_carries_no_northstar_claim_id(gateway_settlement):
 def test_the_gateway_records_the_callers_attested_spiffe_id_on_its_server_spans(
     gateway_settlement,
 ):
-    """M2.1 Task 4: the identity is *in the trace*, not only in a 401.
+    """The identity is *in the trace*, not only in a 401.
 
     This is the assertion that makes workload identity observable rather than
     merely enforced. The gateway verifies a SPIRE-minted JWT-SVID and records
@@ -583,8 +577,8 @@ def test_the_gateway_records_the_callers_attested_spiffe_id_on_its_server_spans(
     Three things are pinned, and the third is the one that matters:
 
     1. `jwt.sub` is present on every gateway SERVER span. Its presence at all
-       depends on the route carrying a `jwtAuth` policy — before Task 4 there
-       was no such attribute on any span in this trace.
+       depends on the route carrying a `jwtAuth` policy — without that
+       policy, no span in this trace would carry this attribute at all.
     2. It is absent from the CLIENT spans. Measured, and consistent with the
        gateway's own behaviour on the outbound leg: it does not forward the
        credential (`if !self.preserve_token { self.location.remove(req)?; }` in
@@ -592,7 +586,7 @@ def test_the_gateway_records_the_callers_attested_spiffe_id_on_its_server_spans(
        that side to attribute anything to. Recorded here so the day the
        gateway starts propagating identity onward, this project finds out.
     3. The value is the *caller's* SPIFFE ID, not the audience and not
-       `.../sa/default`. That distinction is the whole task: a token whose
+       `.../sa/default`. That distinction is the whole point: a token whose
        subject were the gateway's own ID, or an identity minted for the
        `default` service account because the pod never got its own, would both
        verify successfully and prove nothing about who called. `.../sa/default`
@@ -629,7 +623,7 @@ def test_the_gateway_records_the_callers_attested_spiffe_id_on_its_server_spans(
     leaked = [(s.operation, s.attrs["jwt.sub"]) for s in clients if "jwt.sub" in s.attrs]
     assert not leaked, (
         f"agentgateway CLIENT spans now carry jwt.sub: {leaked}. Measured "
-        "absent in M2.1 Task 4, consistent with the gateway stripping the "
+        "absent, consistent with the gateway stripping the "
         "credential on the outbound leg; if it now forwards identity upstream, "
         "GATEWAY_TOOLS_CALL_CLIENT_ATTRS and docs/telemetry-contract.md are "
         "both stale and payments-mcp can start checking who called it."

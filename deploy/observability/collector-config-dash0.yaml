@@ -11,15 +11,14 @@ receivers:
           allowed_headers:
             - "*"
 
-  # M2.1 Task 4: SPIRE's own telemetry.
+  # SPIRE's own telemetry.
   #
   # SPIRE 1.15.3 has no OpenTelemetry support at all -- no OTLP exporter and no
   # tracing (its telemetry block offers Prometheus, DogStatsD, Statsd, M3 and
   # an in-memory sink and nothing else; see deploy/platform/spire/values.yaml).
   # Prometheus metrics are therefore the only real telemetry it emits, and
-  # without this receiver they would be exposed on :9988 and thrown away --
-  # exactly the "component with no telemetry configured is invisible" hole
-  # M2.1 Task 3 found in agentgateway.
+  # without this receiver they would be exposed on :9988 and thrown away: a
+  # component with no telemetry configured is invisible.
   #
   # Two jobs rather than one with two targets, so the receiver stamps a
   # distinguishable `service.name` (it derives it from job_name) on each side
@@ -48,20 +47,18 @@ processors:
     override: false
 
   # BEGIN stage-4-only
-  # M4 Task 1, fix round 1 (finding F1): see collector-config.yaml's own
-  # comment on this processor for the full measurement and for why exactly one
-  # attribute key is rewritten. This file must carry the identical block --
-  # tests/unit/test_collector_configs_in_sync.py requires the two files'
-  # `processors` sections to be equal.
+  # See collector-config.yaml's own comment on this processor for the full
+  # explanation and for why exactly one attribute key is rewritten. This file
+  # must carry the identical block -- tests/unit/test_collector_configs_in_sync.py
+  # requires the two files' `processors` sections to be equal.
   #
-  # Ruling M4-R5 is why this is a *processor in the OpenSearch branch* rather
-  # than a change to what the services emit: in THIS file, `otlp_grpc/dash0`
-  # exports from the main `traces` pipeline, upstream of the
-  # `forward/opensearch` tee, so Dash0 receives the canonical
-  # `policy.decision.retryable` exactly as Jaeger does. The
-  # `traces/opensearch` pipeline below deliberately does NOT list
-  # `otlp_grpc/dash0`, which is the one documented exception to this repo's
-  # "every pipeline gets the Dash0 exporter too" rule.
+  # This is a *processor in the OpenSearch branch* rather than a change to
+  # what the services emit: in THIS file, `otlp_grpc/dash0` exports from the
+  # main `traces` pipeline, upstream of the `forward/opensearch` tee, so
+  # Dash0 receives the canonical `policy.decision.retryable` exactly as
+  # Jaeger does. The `traces/opensearch` pipeline below deliberately does NOT
+  # list `otlp_grpc/dash0`, which is the one documented exception to this
+  # repo's "every pipeline gets the Dash0 exporter too" rule.
   attributes/opensearch-compat:
     actions:
       - key: policy.decision_retryable
@@ -85,8 +82,8 @@ exporters:
     verbosity: normal
 
   # BEGIN stage-4-only
-  # M4 Task 1: see collector-config.yaml's own comment on this exporter for
-  # the full measurement -- this file must carry the identical block
+  # See collector-config.yaml's own comment on this exporter for the full
+  # reasoning -- this file must carry the identical block
   # (tests/unit/test_collector_configs_in_sync.py enforces agreement on every
   # exporter except otlp_grpc/dash0).
   opensearch/trace:
@@ -95,8 +92,8 @@ exporters:
   # END stage-4-only
 
   # BEGIN stage-4-only
-  # M5 Task 4: see collector-config.yaml's own comment on this exporter for
-  # the full reasoning -- this file must carry the identical block
+  # See collector-config.yaml's own comment on this exporter for the full
+  # reasoning -- this file must carry the identical block
   # (tests/unit/test_collector_configs_in_sync.py enforces agreement on every
   # exporter except otlp_grpc/dash0).
   opensearch/logs:
@@ -105,18 +102,17 @@ exporters:
   # END stage-4-only
 
   # BEGIN stage-4-only
-  # M4 Task 2: Prometheus, fed by the collector rather than scraping anything.
-  # M4 exit criterion 5 is "Prometheus receives metrics over OTLP with no
-  # application change to the routing and no scrape configuration", and this
-  # exporter is that whole routing change -- the services below it set no
-  # `OTEL_METRICS_*` variable and know nothing about Prometheus; they export
-  # OTLP to this collector exactly as they already did for traces.
+  # Prometheus, fed by the collector rather than scraping anything: the
+  # services below set no `OTEL_METRICS_*` variable and know nothing about
+  # Prometheus, they export OTLP to this collector exactly as they already do
+  # for traces, and this exporter is the whole routing change that gets those
+  # metrics to Prometheus with no application change and no scrape
+  # configuration.
   #
-  # The endpoint's shape is copied from the user's own otel-platform-demo,
-  # which reaches Prometheus at `/api/v1/otlp`. It is a BASE path: the
-  # otlp_http exporter appends the signal's own suffix, so what is actually
-  # POSTed is `/api/v1/otlp/v1/metrics`, which is the path Prometheus v3.14.0
-  # serves once `--web.enable-otlp-receiver` is passed (see
+  # The endpoint path is a BASE path: the otlp_http exporter appends the
+  # signal's own suffix, so what is actually POSTed is
+  # `/api/v1/otlp/v1/metrics`, which is the path Prometheus v3.14.0 serves
+  # once `--web.enable-otlp-receiver` is passed (see
   # deploy/observability/prometheus/values.yaml, which reads that flag's
   # spelling out of v3.14.0's own cmd/prometheus/main.go:475 rather than from
   # memory).
@@ -127,24 +123,22 @@ exporters:
   # check `server.fullnameOverride` and `server.service.servicePort` there
   # first.
   #
-  # `tls.insecure: true` is carried over verbatim from the reference config
-  # and is INERT for this endpoint: the scheme in `endpoint` decides, and
-  # `http://` never negotiates TLS for the setting to relax. It is kept rather
-  # than trimmed so this block matches the prior art it came from, and named as
-  # inert here so nobody later reads it as evidence that a TLS listener exists.
-  # `otlp_http/`, not the reference config's `otlphttp/`. The pinned collector
-  # image (otel/opentelemetry-collector-contrib:0.160.0, see .env) accepts both
-  # and says so on startup, verbatim from
+  # `tls.insecure: true` is INERT for this endpoint: the scheme in `endpoint`
+  # decides, and `http://` never negotiates TLS for the setting to relax. It
+  # is named here as inert so nobody later reads it as evidence that a TLS
+  # listener exists.
+  #
+  # `otlp_http/`, not `otlphttp/`: the pinned collector image
+  # (otel/opentelemetry-collector-contrib:0.160.0, see .env) accepts both and
+  # says so on startup, verbatim from
   # `kubectl -n observability logs deploy/otel-collector`:
   #
   #   warn  builders/builders.go:40  "otlphttp" alias is deprecated; use
   #   "otlp_http" instead  {... "otelcol.component.id": "otlp_http/prometheus",
   #   "otelcol.component.kind": "exporter", "otelcol.signal": "metrics"}
   #
-  # The deprecated spelling was what shipped first here and produced exactly
-  # that line. It is renamed rather than left to warn, which also puts it in
-  # step with the two exporters above it -- this file has said `otlp_grpc/` and
-  # not `otlpgrpc/` since M1.
+  # `otlp_http/` is used consistently, matching the two exporters above it --
+  # this file spells the grpc one `otlp_grpc/`, not `otlpgrpc/`.
   otlp_http/prometheus:
     endpoint: http://prometheus.observability.svc.cluster.local:9090/api/v1/otlp
     tls:
@@ -152,7 +146,7 @@ exporters:
   # END stage-4-only
 
 # BEGIN stage-4-only
-# The spec's `forward/` tee (§3). Identical to collector-config.yaml's; see
+# The `forward/` connector tee. Identical to collector-config.yaml's; see
 # that file for why.
 connectors:
   forward/opensearch: {}
@@ -176,9 +170,9 @@ service:
     # BEGIN stage-4-only
     # No `otlp_grpc/dash0` here, deliberately, and it is the one pipeline in
     # either file without it: this branch carries the OpenSearch-compat
-    # rewrite, and ruling M4-R5 says Dash0 must receive the canonical
-    # attribute names. Adding Dash0 here would both duplicate every span in
-    # Dash0 and duplicate it under a renamed attribute.
+    # rewrite, and Dash0 must receive the canonical attribute names. Adding
+    # Dash0 here would both duplicate every span in Dash0 and duplicate it
+    # under a renamed attribute.
     # tests/unit/test_collector_configs_in_sync.py encodes that exception.
     traces/opensearch:
       receivers: [forward/opensearch]
@@ -192,8 +186,7 @@ service:
       # written that way: scripts/setup-kind.sh strips the stage-4-only entry
       # below stage 4 with a line-range sed, and it cannot edit inside a flow
       # sequence. Below stage 4 this list is `otlp_grpc/dash0` and `debug`
-      # only -- exactly what it was before M4 Task 2 (ruling M4-R8: the
-      # collector must not name a backend the cluster does not have).
+      # only: the collector must not name a backend the cluster does not have.
       exporters:
         # BEGIN stage-4-only
         - otlp_http/prometheus

@@ -5,14 +5,12 @@ automatically: A2A carries it in W3C baggage headers, MCP carries it in the
 JSON-RPC params._meta bag. No function downstream takes a claim id parameter
 purely for telemetry.
 
-N1 (final-review.md): `ClaimIdSpanProcessor` moved here from bootstrap.py.
-It is the thing that actually implements this file's own correlation rule
-(copying the id from baggage onto a span) and that docs/telemetry-contract.md's
-coverage table explains — a reader told "correlation.py is the shared
-correlation file" (A18) should find that mechanism here, not have to know to
-look in bootstrap.py instead. This class is still triplicated per A6 (one
-copy per service, byte-identical, same as CLAIM_ID_KEY/set_claim_id above) —
-only its *location* moved, not its sharing model.
+`ClaimIdSpanProcessor` lives here, alongside `CLAIM_ID_KEY` and
+`set_claim_id`, because it is the mechanism that implements this file's own
+correlation rule (copying the id from baggage onto a span), and this is the
+one file each service's correlation code points to. The class is
+byte-identical across services, one copy per service rather than a shared
+dependency, matching `CLAIM_ID_KEY`/`set_claim_id` above.
 """
 from __future__ import annotations
 

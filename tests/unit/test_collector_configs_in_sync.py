@@ -1,16 +1,14 @@
-"""S7 guard (final-review.md): pins that
-`deploy/observability/collector-config.yaml` and
+"""Pins that `deploy/observability/collector-config.yaml` and
 `collector-config-dash0.yaml` never diverge except in the one place they are
 allowed to -- the Dash0 exporter and its place in each pipeline's exporter
 list.
 
-The two files are near-identical by construction (A3 mandated the Dash0
-exporter *shape*, not the duplication): setup-kind.sh picks whichever one
-applies wholesale, so a receiver, processor or CORS change made in only one
-of them silently applies to just one of the two collector configurations
-this project ships, and nothing caught that before this test. A guard test
-that diffs the two files is a better fix than a one-time correction, since a
-static fix cannot stop the next edit from drifting again the same way.
+The two files are near-identical by construction: setup-kind.sh picks
+whichever one applies wholesale, so a receiver, processor or CORS change made
+in only one of them would silently apply to just one of the two collector
+configurations this project ships. A guard test that diffs the two files
+catches that at the point of edit, rather than relying on a one-time
+correction that can't stop the next edit from drifting the same way.
 """
 import copy
 from pathlib import Path
@@ -42,10 +40,10 @@ def test_receivers_and_processors_are_identical():
         "sections have drifted -- a processor change must be made in both "
         "files identically"
     )
-    # M4 Task 1, fix round 1: `connectors` is a third section that is neither
-    # a receiver nor an exporter, and nothing covered it before the
-    # forward/opensearch tee existed. It is on the receiving side of the
-    # export split, so like receivers and processors it must be identical.
+    # `connectors` is a third section that is neither a receiver nor an
+    # exporter: it feeds the forward/opensearch tee. It is on the receiving
+    # side of the export split, so like receivers and processors it must be
+    # identical.
     assert base.get("connectors") == dash0.get("connectors"), (
         "collector-config.yaml and collector-config-dash0.yaml's connectors "
         "sections have drifted -- the forward/opensearch tee must be declared "
@@ -78,17 +76,17 @@ def test_dash0_config_exporters_are_the_base_exporters_plus_dash0_only():
     )
 
 
-# M4 Task 1, fix round 1: the one pipeline that must NOT gain the Dash0
-# exporter, and the only exception to the rule the test below enforces.
+# The one pipeline that must NOT gain the Dash0 exporter, and the only
+# exception to the rule the test below enforces.
 #
 # `traces/opensearch` is the OpenSearch-only branch the `forward/opensearch`
 # connector tees off the main traces pipeline. It runs
 # `attributes/opensearch-compat`, which rewrites `policy.decision.retryable`
 # to a non-colliding key so OpenSearch can index the decision span at all.
-# Ruling M4-R5 says Dash0 and Jaeger receive the canonical names, and they do
-# -- they export from the main `traces` pipeline, upstream of the tee. Adding
-# `otlp_grpc/dash0` here would send Dash0 a second, renamed copy of every
-# span. So this is a real exception, named and asserted rather than skipped.
+# Dash0 and Jaeger receive the canonical names instead -- they export from
+# the main `traces` pipeline, upstream of the tee. Adding `otlp_grpc/dash0`
+# here would send Dash0 a second, renamed copy of every span. So this is a
+# real exception, named and asserted rather than skipped.
 OPENSEARCH_BRANCH = "traces/opensearch"
 
 
@@ -97,8 +95,8 @@ def test_dash0_pipelines_are_the_base_pipelines_plus_dash0_exporter():
     same receivers and processors as the base file, and an exporters list
     that is exactly the base file's list with `otlp_grpc/dash0` inserted --
     not a pipeline that silently forgot debug, or forgot to add dash0 to a
-    pipeline the base file has (A3 requires all three signal types get the
-    same treatment, not just traces).
+    pipeline the base file has -- all three signal types get the same
+    treatment, not just traces.
 
     `traces/opensearch` is exempt from the `+ otlp_grpc/dash0` half and from
     that half only: its exporter list must still be *identical* between the
@@ -137,7 +135,7 @@ def test_dash0_pipelines_are_the_base_pipelines_plus_dash0_exporter():
                 f"pipeline {name!r} has gained otlp_grpc/dash0. It carries the "
                 "OpenSearch-compat attribute rewrite, so exporting it to Dash0 "
                 "would both duplicate every span there and duplicate it under "
-                "a renamed attribute -- ruling M4-R5 says Dash0 receives the "
+                "a renamed attribute -- Dash0 must keep receiving the "
                 "canonical names, which it does from the main `traces` "
                 "pipeline upstream of the forward/opensearch tee"
             )

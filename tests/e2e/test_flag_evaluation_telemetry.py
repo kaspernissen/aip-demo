@@ -1,62 +1,59 @@
-"""M5 Task 4, Step 5/6: the logs pipeline's parity guard, measured live.
+"""The logs pipeline's parity guard for feature-flag evaluation, measured live.
 
-**Why this file exists.** M4-R6 already taught this repo the shape of the
-mistake once, for traces: a real backend can reject records permanently while
-every unit test stays green and the only evidence sits in a collector log
-nobody reads with `--tail`. Task 4 stands up a genuinely new signal -- nothing
-in this repo emitted an OTel log record before this task -- so the same class
-of loss is possible here on the very first day the pipeline exists, and
-"no errors" is not the measurement; parity against a second count is.
+**Why this file exists.** A real backend can reject records permanently
+while every unit test stays green and the only evidence sits in a collector
+log nobody reads with `--tail` -- this repo has seen that shape before, for
+traces. Logs are a newer signal here than traces or metrics, so the same
+class of loss is possible on the first day any given signal's pipeline
+exists, and "no errors" is not the measurement; parity against a second
+count is.
 
-**What this task actually ships, in two records per evaluation.** `pds/
-autonomy.py`'s `resolve_autonomy` already carries the `openfeature-hooks-
-opentelemetry` `TracingHook` (installed on `pds.server`'s module-scope client),
-which puts a `feature_flag.evaluation` SPAN EVENT on the active
-`policy.decision` span -- verified independently in the task-3 review (finding
-M2) and by `tests/test_autonomy.py::
+**Two records are emitted per evaluation.** `pds/autonomy.py`'s
+`resolve_autonomy` already carries the `openfeature-hooks-opentelemetry`
+`TracingHook` (installed on `pds.server`'s module-scope client), which puts a
+`feature_flag.evaluation` SPAN EVENT on the active `policy.decision` span --
+verified independently by `tests/test_autonomy.py::
 test_the_tracing_hook_puts_a_feature_flag_evaluation_event_on_the_active_span`.
-That is signal #1 and this file does not re-prove it. Signal #2 is what this
-task adds: `pds/autonomy.py`'s `emit_evaluation_event`, called from
-`server.py` right after `resolve_autonomy`, sends a genuine LOG RECORD of the
-same name through a `LoggerProvider` `pds/telemetry.py` now wires -- the third
-signal this service exports, after traces and metrics. This file is the live
-proof that record survives the collector and lands in OpenSearch.
+That is signal #1 and this file does not re-prove it. Signal #2 is
+`pds/autonomy.py`'s `emit_evaluation_event`, called from `server.py` right
+after `resolve_autonomy`, which sends a genuine LOG RECORD of the same name
+through a `LoggerProvider` `pds/telemetry.py` wires -- the third signal this
+service exports, after traces and metrics. This file is the live proof that
+record survives the collector and lands in OpenSearch.
 
-**The plan's Step 2 sketch does not compile against the installed SDK.**
+**The standalone OTel Events API does not exist in the installed SDK.**
 `opentelemetry-api`/`-sdk` 1.44.0 has no `opentelemetry._events` or
 `opentelemetry.sdk._events` module (measured: both raise
-`ModuleNotFoundError`) -- the standalone Events API the sketch's `Event(...)`
-class came from was folded into the Logs API. What is actually emitted is an
-`opentelemetry._logs.Logger.emit(event_name=..., attributes=...)` call, which
-is what `_collector_accepted_log_records` and `_opensearch_log_documents`
-below are both measuring the delivery of.
+`ModuleNotFoundError`) -- that API was folded into the Logs API. What is
+actually emitted is an `opentelemetry._logs.Logger.emit(event_name=...,
+attributes=...)` call, which is what `_collector_accepted_log_records` and
+`_opensearch_log_documents` below are both measuring the delivery of.
 
-**The tension this task does not paper over.** `resolution.version` (and
+**The tension this file does not paper over.** `resolution.version` (and
 `.set_id`) measure `None` for every real evaluation against this deployment --
-`featureflag.yaml`'s `autonomy-level` flag defines no `flag_metadata` (Task 3
-measured this; verified again here in `test_the_live_event_carries_no_
+`featureflag.yaml`'s `autonomy-level` flag defines no `flag_metadata`
+(measured directly here too, in `test_the_live_event_carries_no_
 fabricated_version_or_set_id`). Per this repo's standing rule that a missing
 value is absent, never zero or invented, `emit_evaluation_event` OMITS both
 attributes entirely rather than writing `null` or `""` -- matching the
 `policy.decision` span's own convention for the same field
 (`server.py`: `if resolution.version is not None: span.set_attribute(...)`).
-Ruling M5-R6 already routed Task 5's audit around this: the eval-scorer reads
-`feature_flag.version` off the `policy.decision` SPAN (also absent, same
-reason) and resolves the *current* contract version from flagd directly, so
-its correctness does not depend on this brand-new logs pipeline. This log
-event stays the human-readable record and the parity target here, not a
-dependency of any score.
+The eval-scorer routes around this: it reads `feature_flag.version` off the
+`policy.decision` SPAN (also absent, same reason) and resolves the *current*
+contract version from flagd directly, so its correctness does not depend on
+this logs pipeline. This log event stays the human-readable record and the
+parity target here, not a dependency of any score.
 
-**A defect this file's own first live run found, and this task fixed.**
-Emitting a log record with no explicit `timestamp=` measured `"@timestamp":
-"1970-01-01T00:00:00Z"` in `ss4o_logs-default-namespace` -- the installed
-`LogRecord.__init__` only defaults `observed_timestamp` to `time_ns()` when
-unset, and stores `timestamp` verbatim, `None` included, which the OTLP
-exporter serialises as the epoch. A Dashboards time-range query defaults to
-`@timestamp` and would never surface a record stamped at the epoch: a real
-loss dressed as a successful export, one field over from the loss this file's
-parity test exists to catch. `emit_evaluation_event` now passes
-`timestamp=time_ns()` explicitly; `test_the_live_events_carry_a_real_
+**Emitting a log record with no explicit `timestamp=` is a live trap.** It
+measured `"@timestamp": "1970-01-01T00:00:00Z"` in
+`ss4o_logs-default-namespace` -- the installed `LogRecord.__init__` only
+defaults `observed_timestamp` to `time_ns()` when unset, and stores
+`timestamp` verbatim, `None` included, which the OTLP exporter serialises as
+the epoch. A Dashboards time-range query defaults to `@timestamp` and would
+never surface a record stamped at the epoch: a real loss dressed as a
+successful export, one field over from the loss this file's parity test
+exists to catch. `emit_evaluation_event` passes `timestamp=time_ns()`
+explicitly for this reason; `test_the_live_events_carry_a_real_
 timestamp_not_the_epoch` is the live guard for it, alongside the hermetic one
 in `platform/policy-decision-service/tests/test_autonomy.py`.
 
@@ -68,13 +65,13 @@ exact trace id the driven call produced, the same technique `tests/e2e/
 test_opensearch_trace_ingest.py` uses for spans.
 
 **Stage gate.** OpenSearch is a stage-4 component and this logs pipeline is
-wired stage-4-only in both collector configs (reusing the existing marker and
-strip machinery rather than inventing a `stage-5-only` one -- see the task's
-own report for why). This file skips only when the OpenSearch Service is
-absent *and* no `logs` pipeline in the deployed collector ConfigMap exports to
-`opensearch/logs`; a collector naming a backend the cluster does not have
-fails here rather than skipping, the same discipline
-`test_opensearch_trace_ingest.py` established for ruling M4-R8.
+wired stage-4-only in both collector configs (reusing the existing marker
+and strip machinery rather than inventing a `stage-5-only` one). This file
+skips only when the OpenSearch Service is absent *and* no `logs` pipeline in
+the deployed collector ConfigMap exports to `opensearch/logs`; a collector
+naming a backend the cluster does not have fails here rather than skipping,
+the same discipline `test_opensearch_trace_ingest.py` applies to its own
+signal.
 """
 from __future__ import annotations
 
@@ -113,7 +110,7 @@ LOGS_EXPORTER_ID = "opensearch/logs"
 # records to: `ss4o_logs-<dataset>-<namespace>`, both defaulting to "default"
 # and "namespace" since neither is set in the exporter config -- the same
 # shape `ss4o_traces-default-namespace` uses for traces. Measured in
-# `_cat/indices` on this cluster, 2026-09-14.
+# `_cat/indices` on this cluster.
 LOGS_INDEX = "ss4o_logs-default-namespace"
 
 EVENT_NAME = "feature_flag.evaluation"
@@ -180,13 +177,13 @@ def _deployed_collector_config() -> str:
 @pytest.fixture(scope="module", autouse=True)
 def stage_4_or_a_reason():
     """Skip below stage 4; fail on a collector naming a backend that is not
-    there (ruling M4-R8's discipline, applied to this signal).
+    there -- the same discipline applied to this signal as to traces.
 
     Unlike the traces pipeline, `logs` needs no `forward`/tee connector --
     `emit_evaluation_event`'s attributes have no colliding key pair, so the
-    exporter is wired directly into the one `logs` pipeline (see the task
-    report). The discriminator here is therefore just the exporter id's
-    presence in the deployed `logs` pipeline, plus the OpenSearch Service.
+    exporter is wired directly into the one `logs` pipeline. The
+    discriminator here is therefore just the exporter id's presence in the
+    deployed `logs` pipeline, plus the OpenSearch Service.
     """
     installed = _opensearch_is_installed()
     exporters = pipeline_exporters(_deployed_collector_config(), "logs")
@@ -202,7 +199,7 @@ def stage_4_or_a_reason():
         f"the deployed collector ConfigMap's logs pipeline exports to "
         f"{LOGS_EXPORTER_ID!r} but svc/{OPENSEARCH_SERVICE} does not exist in "
         f"the {OBSERVABILITY_NAMESPACE} namespace -- a collector naming a "
-        "backend the cluster does not have, ruling M4-R8's exact shape. "
+        "backend the cluster does not have. "
         "scripts/setup-kind.sh strips the stage-4-only regions of the "
         "collector config below stage 4 -- check that it did."
     )
@@ -350,8 +347,8 @@ def driven_claim(gateway_url, svid):
 # "normal" prints one summary line per export call, of the form:
 #   {"otelcol.component.id": "debug", ..., "otelcol.signal": "logs",
 #    "resource logs": 1, "log records": 1}
-# Measured directly against this cluster, 2026-09-14 (driving one call and
-# reading `kubectl logs` immediately after); not assumed from the exporter's
+# Measured directly against this cluster (driving one call and reading
+# `kubectl logs` immediately after); not assumed from the exporter's
 # documentation.
 _DEBUG_LOGS_SUMMARY_RE = re.compile(
     r'"otelcol\.component\.id":\s*"debug".*?"otelcol\.signal":\s*"logs".*?'
@@ -363,9 +360,10 @@ def _collector_accepted_log_records(since_seconds: int) -> int:
     """How many log records the collector's `debug` exporter reports having
     received, summed across every export in the window.
 
-    Read over the WHOLE window (`--since=<n>s`), never a `--tail` of it -- M4
-    lost every `policy.decision` span exactly this way, reading a 200-line
-    tail of a 17,173-line log and reporting 'no errors'. `--since` is sized
+    Read over the WHOLE window (`--since=<n>s`), never a `--tail` of it --
+    this repo has lost every `policy.decision` span exactly this way before,
+    reading a 200-line tail of a much longer log and reporting 'no errors'.
+    `--since` is sized
     from the instant this file's driven call began, with generous padding.
     """
     result = _kubectl(
@@ -431,9 +429,9 @@ def _opensearch_log_documents(trace_id: str, expected: int) -> list[dict]:
 
 
 def test_flag_evaluation_events_reach_opensearch_without_loss(driven_claim):
-    """M5-R6/Step 5's parity assertion. 'No errors' is not the measurement;
-    parity against an independent count taken from the same pipeline's other
-    exporter is.
+    """The parity assertion this file exists for. 'No errors' is not the
+    measurement; parity against an independent count taken from the same
+    pipeline's other exporter is.
 
     First, confirm THIS call's own record specifically arrived (also settles
     the whole pipeline generally: by the time it does, the batch upstream of
@@ -444,8 +442,8 @@ def test_flag_evaluation_events_reach_opensearch_without_loss(driven_claim):
     "everything since this call began", taken on both sides from the same
     `since_epoch`. The window comparison is retried for a few seconds, not
     read once: OpenSearch indexing and the collector's own stdout can each
-    lag the other by a beat, and a single-shot read raced the PDS's 1s
-    `BatchLogRecordProcessor` in this file's first measured run.
+    lag the other by a beat, and a single-shot read can race the PDS's 1s
+    `BatchLogRecordProcessor`.
     """
     documents = _opensearch_log_documents(driven_claim.trace_id, expected=1)
     assert documents, (
@@ -526,13 +524,13 @@ def test_the_live_event_is_the_semconv_event_with_the_hooks_two_gaps_filled(
 
 
 def test_the_live_event_carries_no_fabricated_version_or_set_id(driven_claim):
-    """The tension this task names explicitly, checked live rather than only
-    in the hermetic suite: `featureflag.yaml`'s `autonomy-level` flag defines
+    """The tension named explicitly above, checked live rather than only in
+    the hermetic suite: `featureflag.yaml`'s `autonomy-level` flag defines
     no `flag_metadata`, so `feature_flag.set.id`/`feature_flag.version` must
     be ABSENT from the real record -- not `null`, not `""`. If this ever
     reddens because the contract grew `flag_metadata`, that is good news for
-    Task 5's audit and this assertion should be updated to match, not
-    silently deleted."""
+    the eval-scorer's audit and this assertion should be updated to match,
+    not silently deleted."""
     documents = _opensearch_log_documents(driven_claim.trace_id, expected=1)
     attributes = documents[0]["attributes"]
     for key in ("feature_flag.set.id", "feature_flag.version"):
@@ -545,26 +543,26 @@ def test_the_live_event_carries_no_fabricated_version_or_set_id(driven_claim):
 
 
 def test_the_live_events_carry_a_real_timestamp_not_the_epoch(driven_claim):
-    """The defect this task's own first live run found: emitting without an
-    explicit `timestamp=` landed with `@timestamp` at the Unix epoch, which a
-    Dashboards time-range query would never surface. Checked live, alongside
-    the hermetic guard in `platform/policy-decision-service/tests/
+    """Emitting without an explicit `timestamp=` lands with `@timestamp` at
+    the Unix epoch, which a Dashboards time-range query would never surface.
+    Checked live, alongside the hermetic guard in
+    `platform/policy-decision-service/tests/
     test_autonomy.py::test_emit_evaluation_event_stamps_a_real_timestamp`."""
     documents = _opensearch_log_documents(driven_claim.trace_id, expected=1)
     stamp = documents[0]["@timestamp"]
     assert not stamp.startswith("1970-01-01"), (
         f"the live record's @timestamp is {stamp!r} -- the epoch, which is "
-        "what this task's own first live run measured before "
-        "emit_evaluation_event passed timestamp=time_ns() explicitly"
+        "what an unset timestamp= produces without "
+        "emit_evaluation_event passing timestamp=time_ns() explicitly"
     )
 
 
 def test_the_collector_rejected_no_logs_during_the_run(driven_claim):
     """Read the WHOLE window, never a `--tail` of it -- the exact discipline
-    `test_opensearch_trace_ingest.py`'s equivalent guard states in full; see
-    that file for the finding this repeats. Scoped to `Exporting failed`
-    specifically, from any component, not narrowed to `opensearch/logs` alone
-    -- the same reasoning that file's re-review finding N7 gives."""
+    `test_opensearch_trace_ingest.py`'s equivalent guard states in full.
+    Scoped to `Exporting failed` specifically, from any component, not
+    narrowed to `opensearch/logs` alone, for the same reason that file
+    scopes its own equivalent guard the same way."""
     age_seconds = max(int(time.time() - driven_claim.started_at) + 30, 60)
     result = _kubectl(
         "-n", OBSERVABILITY_NAMESPACE, "logs", COLLECTOR_DEPLOYMENT,

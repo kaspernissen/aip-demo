@@ -12,8 +12,7 @@ The cheap way reads `policy.limit.amount` off the very same
 whenever the Policy Decision Service was internally consistent -- including
 when the PDS permits EUR 50,000 under a rule it labels "the EUR 6,000 limit",
 because the span would then carry `limit: 50000` and the check would agree
-with it. A score that cannot disagree with the thing it scores is decoration,
-which is exactly what spec §5's anti-vacuity criterion forbids.
+with it. A score that cannot disagree with the thing it scores is decoration.
 
 The other way holds the *published* allowance independently and checks the
 decision against that. Then a PDS that widens a limit without anyone

@@ -1,33 +1,18 @@
-"""A19 guard: pins the two real plan defects found and fixed in Task 8's
-`scripts/smoke-test.sh` against exactly the brief's superseded version being
-restored.
+"""Guards two ways `scripts/smoke-test.sh` could silently under-test:
 
-The brief's own sketch was:
+1. Scoping the trace-assertion run to `tests/e2e` alone would silently drop
+   the `tests/unit/` harness-correctness tests from the gate (see
+   docs/telemetry-contract.md for the published per-suite counts).
+2. Making the browser hop opt-in via an environment variable the gate's own
+   caller controls, rather than something the gate forces unconditionally,
+   would let a caller who forgets to set it get a green run that silently
+   skipped it.
 
-    python -m pytest tests/e2e -v -k "not browser"
-
-    if [[ "${RUN_BROWSER_TESTS:-}" == "1" ]]; then
-      python -m pytest tests/e2e/test_browser_root_span.py -v
-    else
-      echo "Skipping browser tests. Set RUN_BROWSER_TESTS=1 to include them."
-    fi
-
-That version has two defects a review found real and measured:
-
-1. It scopes the trace-assertion run to `tests/e2e`, silently dropping the 12
-   `tests/unit/` harness-correctness tests (measured: 35 passed instead of the
-   documented 53 -- see docs/telemetry-contract.md and task-8-report.md).
-2. It makes the browser hop -- the milestone's own headline claim -- opt-in
-   via an environment variable the gate's own caller controls, rather than
-   something the gate forces unconditionally (A22).
-
-Task 8's `smoke-test.sh` fixes both with one line:
+The gate closes both with one line:
 `RUN_BROWSER_TESTS=1 "$ROOT/.venv/bin/python" -m pytest "$ROOT/tests" -v`.
 This module asserts on the *substance* of that line -- not merely that the
-script exists or is executable -- so that reverting it back to the brief's
-shape (something a well-meaning maintainer reconciling script to prose might
-do, since a stale contract paragraph used to argue for exactly that -- see
-the B1 finding in task-8-review.md) fails here rather than shipping silently.
+script exists or is executable -- so that either regression fails here
+rather than shipping silently.
 """
 import re
 import shlex
@@ -59,18 +44,17 @@ def _effective_script() -> str:
 
 
 def test_gate_forces_run_browser_tests_unconditionally_not_via_a_conditional():
-    """The brief's version gated the browser file behind an `if
-    [[ "${RUN_BROWSER_TESTS:-}" == "1" ]]` check -- i.e. a caller who does not
-    set the env var gets a green run that skipped the browser hop entirely.
-    The committed gate must set RUN_BROWSER_TESTS=1 itself, unconditionally,
+    """Gating the browser file behind an `if
+    [[ "${RUN_BROWSER_TESTS:-}" == "1" ]]` check would let a caller who does
+    not set the env var get a green run that skipped the browser hop
+    entirely. The gate must set RUN_BROWSER_TESTS=1 itself, unconditionally,
     with no branch that lets the caller's environment decide."""
     text = _script_text()
 
     assert not re.search(r"if\s*\[\[[^\n]*RUN_BROWSER_TESTS", text), (
         "scripts/smoke-test.sh must never branch on RUN_BROWSER_TESTS "
-        "conditionally -- that is exactly the brief's superseded shape, "
-        "which lets a caller who forgets to set the env var get a green "
-        "run that silently skipped the browser hop (A22)"
+        "conditionally -- that lets a caller who forgets to set the env "
+        "var get a green run that silently skipped the browser hop"
     )
     assert re.search(r"^RUN_BROWSER_TESTS=1\s", text, re.MULTILINE), (
         "scripts/smoke-test.sh must set RUN_BROWSER_TESTS=1 itself, as an "
@@ -80,14 +64,13 @@ def test_gate_forces_run_browser_tests_unconditionally_not_via_a_conditional():
 
 
 def test_gate_pytest_target_is_the_whole_tests_tree_not_tests_e2e():
-    """The brief's version targeted `tests/e2e -k "not browser"`, which
-    silently drops every test under tests/unit/ (12 tests, including the
-    A20a quiet-window timing-simulation tests the multi-service
-    trace-completeness wait depends on). The committed gate must target the
-    repo-root `tests` directory as a whole, with no `-k` filter that could
-    exclude the browser tests even when RUN_BROWSER_TESTS=1 is set (a bare
-    `-k "not browser"` filters by test *name* and deselects them regardless
-    of the env var -- measured directly, see task-8-report.md)."""
+    """Targeting `tests/e2e -k "not browser"` would silently drop every test
+    under tests/unit/, including the quiet-window timing-simulation tests the
+    multi-service trace-completeness wait depends on. The gate must target
+    the repo-root `tests` directory as a whole, with no `-k` filter that
+    could exclude the browser tests even when RUN_BROWSER_TESTS=1 is set (a
+    bare `-k "not browser"` filters by test *name* and deselects them
+    regardless of the env var)."""
     text = _script_text()
 
     match = re.search(
@@ -103,9 +86,9 @@ def test_gate_pytest_target_is_the_whole_tests_tree_not_tests_e2e():
 
     normalized = target.rstrip("/")
     assert not normalized.endswith("tests/e2e"), (
-        f"gate's pytest target regressed to {target!r} -- this is the "
-        "brief's superseded tests/e2e-only scope, which silently drops "
-        "tests/unit/ (12 harness-correctness tests) from the gate"
+        f"gate's pytest target regressed to {target!r} -- a tests/e2e-only "
+        "scope silently drops the tests/unit/ harness-correctness tests "
+        "from the gate"
     )
     assert normalized.endswith("tests"), (
         f"gate's pytest target is {target!r}; expected the whole "
@@ -120,22 +103,18 @@ def test_gate_pytest_target_is_the_whole_tests_tree_not_tests_e2e():
 
 
 def test_gate_refuses_to_run_below_stage_4():
-    """Ruling M4-R9 (re-review finding N3): a skip must not be how the gate
-    passes.
+    """A skip must not be how the gate passes.
 
-    `tests/e2e/test_opensearch_trace_ingest.py` is M4 Task 1's deliverable --
-    the guard that catches spans silently failing to reach OpenSearch, which
-    is the defect that shipped at `955dd18` past 119 green unit tests. It
-    skips on a coherently stage-3 cluster, correctly: OpenSearch is a stage-4
-    component and failing for its absence would cry wolf on every lower stage.
+    `tests/e2e/test_opensearch_trace_ingest.py` is the guard that catches
+    spans silently failing to reach OpenSearch. It skips on a coherently
+    stage-3 cluster, correctly: OpenSearch is a stage-4 component and failing
+    for its absence would cry wolf on every lower stage.
 
-    That leaves the gate able to report exit 0 with that whole file skipped
-    and every one of its assertions unexecuted. `test_telemetry_contract_counts.py`
-    compares the published rows against `pytest --collect-only`, never against
-    an actual run, so nothing anywhere reddens. This is the same shape as the
-    defect class A22 exists for -- the gate passing because something did not
-    run -- one milestone later, which is why it belongs in this file rather
-    than in the M4 one.
+    Left unchecked, that lets the gate report exit 0 with that whole file
+    skipped and every one of its assertions unexecuted --
+    `test_telemetry_contract_counts.py` compares the published rows against
+    `pytest --collect-only`, never against an actual run, so nothing anywhere
+    reddens.
 
     So the gate asks the cluster whether OpenSearch is there, and refuses if
     it is not. Asserted against the comment-stripped script: the check must be
@@ -154,8 +133,8 @@ def test_gate_refuses_to_run_below_stage_4():
         "exists, unconditionally and at top level, before it runs the suite "
         "-- otherwise every assertion in "
         "tests/e2e/test_opensearch_trace_ingest.py skips on a stage-3 cluster "
-        "and the gate goes green having proved nothing about M4's "
-        "trace-ingest path (ruling M4-R9)."
+        "and the gate goes green having proved nothing about the trace-ingest "
+        "path."
     )
     check_line = match.group(0)
     assert "-n observability" in check_line, (
@@ -174,8 +153,8 @@ def test_gate_refuses_to_run_below_stage_4():
         "the time it fires"
     )
 
-    # And it must be unconditional -- wrapping it in a stage/env-var branch is
-    # how A22's browser gap was originally introduced.
+    # And it must be unconditional -- wrapping it in a stage/env-var branch
+    # would let a caller's environment switch it off.
     preceding = script[: match.start()].rstrip().splitlines()
     assert not preceding or not preceding[-1].strip().endswith("then"), (
         "the stage-4 prerequisite check is inside a conditional. It must be "
@@ -185,43 +164,27 @@ def test_gate_refuses_to_run_below_stage_4():
 
 
 def test_the_gate_runs_every_per_service_suite_the_contract_publishes():
-    """A suite nothing runs, caught here instead of a milestone later.
+    """A suite nothing runs is a defect the *count* guard cannot catch --
+    that guard asserts the published figure matches what the suite collects,
+    which stays true whether or not anything ever runs it.
 
-    This repo has shipped that defect three times.
-    `platform/policy-decision-service` went a milestone with 105 tests and no
-    runner (M2.2 finding 1, ruling R42); `apps/reviewer-ui` went a milestone
-    with 50 and no runner (M3 Task 5B), and its own note in
-    `tests/unit/test_telemetry_contract_counts.py` says in as many words that
-    "adding a service to `deploy/k8s/` means adding it here, in the same
-    task". Both times the *count* guard was satisfied -- it asserts the
-    published figure matches what the suite collects, which stays true whether
-    or not anything ever runs it -- and both times the gap was found by a human
-    re-reading the script.
+    So this checks it directly, and derives its expectations from
+    `_PER_SERVICE_SUITES` rather than restating them: that list is what the
+    contract's per-service row is measured against, so the two cannot
+    describe different sets of services. Asserted against the
+    comment-stripped script, because this file's whole subject is checks
+    that a comment could satisfy.
 
-    M4 Task 4 added an eighth service and mutation-tested its own work:
-    deleting `(cd "$ROOT/platform/eval-scorer" && ... pytest tests -q)` from
-    the gate left `tests/unit` completely green. That is the third recurrence
-    of this class and the first one caught by mutating rather than by reading,
-    so the check goes in here rather than being reported as a residual.
+    Checked in three places, not two: the gate's per-service run loop, the
+    gate's **prerequisite** loop (which `exit 1`s on a missing `.venv`), and
+    the README block an operator copies to create those venvs. All three
+    have to agree, since a service present in the run loop but missing from
+    the prerequisite loop or the README leaves a fresh clone unable to set
+    up for it.
 
-    Derived from `_PER_SERVICE_SUITES`, not restated: that list is what the
-    contract's per-service row is measured against, so the two cannot describe
-    different sets of services. Asserted against the comment-stripped script,
-    because this file's whole subject is checks that a comment could satisfy.
-
-    **Three places, not two (fix round 1).** The first version derived
-    `_PER_SERVICE_SUITES` -> `smoke-test.sh` and stopped there, and a review
-    found what that leaves open *in the very commit that wrote it*:
-    `platform/eval-scorer` went into the gate's **prerequisite** loop -- which
-    `exit 1`s on a missing `.venv` -- and not into the README block an operator
-    copies to create those venvs, so a fresh clone could no longer run the
-    gate. Fourth instance of the same defect. The set now has to agree across
-    all three: the published row, the gate (venv loop and suite invocation),
-    and README's setup loop.
-
-    The loops are matched by *directory*, not by the service's published name:
-    two services could share a display name, and it is the directory that
-    decides which venv is created and which tests run.
+    The loops are matched by *directory*, not by the service's published
+    name: two services could share a display name, and it is the directory
+    that decides which venv is created and which tests run.
     """
     from test_telemetry_contract_counts import _PER_SERVICE_SUITES
 
@@ -285,9 +248,7 @@ def test_the_gate_runs_every_per_service_suite_the_contract_publishes():
         + ", ".join(not_run)
         + ". docs/telemetry-contract.md publishes a test count for each of "
         "them and tests/unit/test_telemetry_contract_counts.py re-measures "
-        "it, so the count is gating while the assertions are not -- which is "
-        "the exact state policy-decision-service and reviewer-ui were each "
-        "found in, one milestone after they shipped."
+        "it, so the count would be gating while the assertions are not."
     )
     assert not not_in_readme, (
         "scripts/smoke-test.sh's prerequisite loop requires a .venv for "
@@ -305,20 +266,16 @@ def test_the_gate_runs_every_per_service_suite_the_contract_publishes():
     )
 
 
-# --- M4 final review, L2: zero skips as a property of the gate ---------------
+# --- Zero skips as a property of the gate ------------------------------------
 
 
 def test_the_gate_fails_when_the_suite_skips_anything():
-    """A skip is invisible in a green gate, and the gate acted on that for
-    exactly one object.
+    """A skip is invisible in a green gate unless the gate itself checks for it.
 
     `smoke-test.sh` refuses to run below stage 4 by asking the cluster for
-    `svc/opensearch-cluster-master` -- ruling M4-R9, real enforcement. The
-    pytest run itself then carried nothing that fails on a skip, while at
-    least six modules inside it hold reachable `pytest.skip` calls on
-    conditions that refusal does not cover. "Zero skips" for the 2026-09-14 run
-    was true and was verified by grepping the captured output afterwards; it
-    was a property of that run, not of the gate.
+    `svc/opensearch-cluster-master`. The pytest run itself needs its own
+    check that fails on a skip, since several modules inside it hold
+    reachable `pytest.skip` calls on conditions that refusal does not cover.
 
     Asserted structurally rather than by running the gate, for the obvious
     reason -- the gate spends model tokens -- so this checks the three things
@@ -326,22 +283,19 @@ def test_the_gate_fails_when_the_suite_skips_anything():
     pytest's own exit status survives the pipe, and a non-zero skip count
     exits non-zero.
 
-    **M5 Task 1 (V5) folded a fourth check in here, of the *property* rather
-    than of a literal regex.** This test used to also pin the exact string
-    `grep -cE "^[^ ]+::[^ ]+ SKIPPED"` -- the per-test verdict form. That form
-    has a real gap: a collection-time module skip prints no `path::test` line
-    at all (the largest possible instance of what this check exists for), and
-    neither does a parametrised id containing a space, which this tree
-    already has
+    It also checks the *property* the skip count computes rather than a
+    literal regex. Pinning the per-test verdict form
+    `grep -cE "^[^ ]+::[^ ]+ SKIPPED"` has a real gap: a collection-time
+    module skip prints no `path::test` line at all (the largest possible
+    instance of what this check exists for), and neither does a
+    parametrised id containing a space, which this tree already has
     (`test_no_stray_core_networkpolicy_shadows_the_cilium_one[kind: NetworkPolicy]`).
-    Pinning that literal string would have kept this test green while the
+    Pinning that literal string would keep this test green while the
     gate it guards silently undercounted skips. So instead this extracts
     whatever expression the script actually uses to compute `SKIPPED` and
     evaluates it against two synthetic pytest-shaped logs: one whose only
     skip is a collection-time module skip, and one whose only skip carries a
-    space in its parametrised id. Both must be counted as 1 -- the same shape
-    as Step 6's scratch-file check, enforced here on every future edit rather
-    than once by hand.
+    space in its parametrised id. Both must be counted as 1.
     """
     text = _effective_script()
 
@@ -354,8 +308,7 @@ def test_the_gate_fails_when_the_suite_skips_anything():
         "capture was added to fix."
     )
     assert re.search(r"SKIPPED\b", text), (
-        "nothing in the gate looks for skipped tests any more (M4 final "
-        "review, finding L2)"
+        "nothing in the gate looks for skipped tests"
     )
     assert re.search(r'\$SKIPPED"?\]?\]?\s*-ne\s*0|"\$SKIPPED"\s*-ne\s*0', text), (
         "the gate must exit non-zero when the skip count is not zero"

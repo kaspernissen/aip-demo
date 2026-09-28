@@ -30,8 +30,8 @@ def test_a_prefix_lookalike_trust_domain_is_rejected():
     `spiffe://northstar.local.evil.example/...`. The trailing slash in
     TRUST_DOMAIN is what stops it, so assert on the thing the slash buys.
 
-    Measured provenance: the real value Task 1 observed in `metadata_context`
-    was `spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent`, so
+    Measured provenance: the real value observed in `metadata_context` is
+    `spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent`, so
     the legitimate form always has that separator.
     """
     assert caller_spiffe_id(

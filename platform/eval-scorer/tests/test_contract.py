@@ -6,8 +6,8 @@
    `scorer/contract.py`'s module docstring: a version present on only one
    side, or present and different on both, is a refusal; absent on both
    sides is agreement. `test_*_is_refused` / `test_*_is_agreement` below
-   exercise all four quadrants, not just the two the plan's sketch
-   considered.
+   exercise all four quadrants, not just the two a naive temporal guard
+   would distinguish.
 2. `current_level` (and the `CURRENT_LEVEL` constant it returns) must not
    silently fall behind `deploy/platform/openfeature/featureflag.yaml` the
    way `scorer/authority.py`'s table must not fall behind `pds/rules.py` --
@@ -36,17 +36,18 @@ OTHER_CALLER = "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui"
 
 
 def test_current_level_is_assisted_for_the_targeted_caller_today():
-    """M5-R8: the demo ships in its refusing state. Both targeting branches
+    """The demo ships in its refusing state. Both targeting branches
     are "assisted", so the targeted caller (`settlement-agent`) resolves
     "assisted" today, not "autonomous"."""
     assert current_level(TARGETED_CALLER) == "assisted"
 
 
 def test_current_level_is_the_same_for_a_caller_the_flag_never_names():
-    """M5-R8's no-op: EVERY caller resolves the default branch's value today,
-    because both branches carry the same string. This is expected to change
-    the day Task 6 flips the targeted branch -- see the module docstring's
-    "what this means for Task 6"."""
+    """The targeting block's no-op: EVERY caller resolves the default
+    branch's value today, because both branches carry the same string.
+    This is expected to change the day the targeted branch is flipped --
+    see the module docstring's "what a future targeting flip must carry
+    with it"."""
     assert current_level(OTHER_CALLER) == CURRENT_LEVEL
 
 
@@ -58,14 +59,14 @@ def test_current_level_matches_the_feature_flags_targeting_branches():
     """The build-time check `authority.py`'s docstring argues for, applied to
     the level instead of the limit table. Parsed from
     `featureflag.yaml`, not retyped -- if a human flips one branch without
-    updating `CURRENT_LEVEL` (Task 6's job, per the module docstring), this
-    reddens rather than silently scoring against a stale copy.
+    updating `CURRENT_LEVEL`, this reddens rather than silently scoring
+    against a stale copy.
     """
     branches = fixtures.featureflag_targeting_branch_values()
     assert set(branches) == {CURRENT_LEVEL}, (
         f"featureflag.yaml's targeting branches are {branches}, but "
         f"scorer/contract.py's CURRENT_LEVEL is {CURRENT_LEVEL!r}. If "
-        "M5-R8's no-op has been flipped (Task 6), update CURRENT_LEVEL (and "
+        "the no-op has been flipped, update CURRENT_LEVEL (and "
         "make current_level() caller-dependent, since the branches now "
         "disagree) in the same commit -- do not leave this test to catch it "
         "after the fact."
@@ -114,7 +115,7 @@ def test_differing_versions_are_refused():
 
 
 def test_one_sided_version_is_refused_not_waved_through():
-    """The quadrant the plan's sketch did not distinguish from "both
+    """The quadrant a naive temporal guard would not distinguish from "both
     absent": a version on only one side is itself a real change (something
     started, or stopped, publishing one) and must not be forgiven the way
     "both absent" is."""
@@ -134,7 +135,7 @@ def test_the_refusal_names_both_versions_and_the_caller():
 
 
 def test_no_flag_declares_metadata_while_the_contract_has_no_version():
-    """I2 (fix round 1): route 2's dormancy was hoped for, not enforced.
+    """Route 2's dormancy is hoped for, not enforced, without this guard.
 
     `pds/server.py` writes `feature_flag.version` onto every decision span
     whenever flagd resolves ANY version, with no check that
@@ -143,14 +144,12 @@ def test_no_flag_declares_metadata_while_the_contract_has_no_version():
     names as a future possibility, and the only thing that would make flagd
     resolve a version at all -- every decision starts carrying one while
     this module still resolves `None`, and `contract_level_at` refuses
-    EVERY trajectory (`decision_version != None` for all of them). Measured
-    by the task-5 review: adding such a block left all 152 tests GREEN
-    before this guard existed, and the review's mutation K showed the
-    blast radius if the two ever go out of step for real -- 21 tests
-    failing, all of `test_server.py` among them. This is the build-time
-    half that keeps it from shipping silently: the two edits (the metadata
-    block, and `CURRENT_CONTRACT_VERSION`) must land in the same commit, the
-    same discipline `test_current_level_matches_the_feature_flags_targeting_branches`
+    EVERY trajectory (`decision_version != None` for all of them), taking
+    the whole audit dark rather than merely missing something. This is the
+    build-time half that keeps it from shipping silently: the two edits
+    (the metadata block, and `CURRENT_CONTRACT_VERSION`) must land in the
+    same commit, the same discipline
+    `test_current_level_matches_the_feature_flags_targeting_branches`
     already holds `CURRENT_LEVEL` to.
     """
     if CURRENT_CONTRACT_VERSION is not None:
@@ -174,6 +173,5 @@ def test_the_currently_published_contract_version_is_none():
     """Pinned so a future change to `CURRENT_CONTRACT_VERSION` is a
     deliberate edit, not a silent one: if this ever stops being `None`, route
     1 has been taken (a real `metadata` block exists) and the module
-    docstring's STOP section needs a dated correction, not just a new value
-    here."""
+    docstring needs updating to match, not just a new value here."""
     assert CURRENT_CONTRACT_VERSION is None

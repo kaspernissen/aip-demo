@@ -68,8 +68,8 @@ describe('AutonomyContractClient', () => {
     // mutation to the constant moves both sides together and this test
     // would stay green). This pins the actual JSON Pointer string, which
     // must also match tests/harness/contract.py::TARGETING_THEN_PATH byte
-    // for byte -- the whole point of patching this path is that the M5
-    // harness already reads it.
+    // for byte -- the whole point of patching this path is that the test
+    // harness reads it too.
     expect(call.body[0].path).toBe(
       '/spec/flagSpec/flags/autonomy-level/targeting/if/1',
     );

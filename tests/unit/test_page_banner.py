@@ -29,9 +29,9 @@ is a page that looks exactly like it did before:
 This module is the cheap tripwire for all four. It is not the proof: the proof
 is `tests/e2e/test_backstage_page_bands.py`, which opens the running portal and
 reads the computed `background-image` off the element a human is looking at.
-The division is deliberate and is this repo's most expensive lesson -- five
-stage-6 defects were invisible to a Ready pod and a green suite, and every one
-was found by fetching the running thing.
+The division is deliberate: a build that succeeds, a pod that goes Ready and a
+green suite can all be true while the band is silently missing, and only
+fetching the running page can catch that.
 """
 from __future__ import annotations
 
@@ -81,12 +81,13 @@ def _code(path) -> str:
     selectors -- because the whole point of those comments is to say which
     exact strings are load-bearing and why.
 
-    A mutation round caught what that does to a guard reading the raw text:
-    changing `pluginId: 'app'` to `pluginId: 'app-banner'` in the CODE left the
-    same string sitting in the COMMENT four lines above, and every assertion
-    below stayed green against a module that had stopped attaching to anything.
-    The guard was reading a different string than Backstage was. That is the
-    same defect shape as the mermaid pass's `<br/>`, and it is why nothing here
+    A guard reading the raw text cannot tell code from a comment quoting it:
+    changing `pluginId: 'app'` to `pluginId: 'app-banner'` in the CODE would
+    leave the same string sitting in the COMMENT four lines above, so every
+    assertion below would stay green against a module that had stopped
+    attaching to anything -- the guard reading a different string than
+    Backstage does. That is the same defect shape a diagram-matching guard
+    has for an HTML `<br/>` inside a comment, and it is why nothing here
     matches against a file's raw text.
     """
     text = path.read_text()
@@ -121,11 +122,10 @@ def test_the_walk_is_not_vacuous():
 def test_the_app_registers_the_page_banner():
     """Link 1: a module that is written, imported and never listed.
 
-    The `features: [...]` array specifically, and with comments stripped first
-    -- both of which a mutation round on the sibling mermaid guard proved
-    necessary. Deleting the entry leaves the `import` line above it untouched,
+    The `features: [...]` array specifically, and with comments stripped
+    first: deleting the entry leaves the `import` line above it untouched,
     and `// pageBannerModule,` / `/* pageBannerModule, */` both sit inside the
-    array and satisfy a plain membership test while registering nothing.
+    array and would satisfy a plain membership test while registering nothing.
     """
     app_tsx = (APP_SRC / "App.tsx").read_text()
 
@@ -171,12 +171,12 @@ def test_the_override_claims_the_id_backstage_actually_renders():
         ),
         (
             r"id:\s*'app/root'",
-            "the extension no longer attaches to `app/root`, so it is not in "
+            "the extension does not attach to `app/root`, so it is not in "
             "the tree Backstage renders",
         ),
         (
             r"input:\s*'children'",
-            "the extension no longer attaches to `app/root`'s `children` "
+            "the extension does not attach to `app/root`'s `children` "
             "input, which is the one the layout occupies",
         ),
     ]:
@@ -189,9 +189,9 @@ def test_the_override_claims_the_id_backstage_actually_renders():
     # the sidebar; dropping `content` would lose every page.
     for needed in ("inputs.nav.get", "inputs.content.get", "SidebarPage"):
         assert needed in layout, (
-            f"modules/pageBanner/layout.tsx no longer renders `{needed}`. This "
-            "extension REPLACES Backstage's own layout, so anything it stops "
-            "rendering is simply gone from the app."
+            f"modules/pageBanner/layout.tsx does not render `{needed}`. This "
+            "extension REPLACES Backstage's own layout, so anything it does not "
+            "render is simply gone from the app."
         )
 
 
@@ -207,11 +207,11 @@ def test_every_band_selector_keeps_its_trailing_underscores():
     gradient restarts inside each one and the band comes out as a row of
     repeated smears. It still looks deliberate enough to ship.
 
-    EVERY selector, not "at least one of them". A mutation round trimmed the
-    `__` off the first of the module's three and watched this test stay green:
-    a membership check is satisfied by any surviving occurrence, so the one
-    selector that actually paints the band was broken while two siblings held
-    the assertion up. The check is now a property of the whole set.
+    EVERY selector, not "at least one of them": a membership check is
+    satisfied by any surviving occurrence, so trimming the `__` off just one
+    of the module's three selectors -- breaking the one that actually paints
+    the band -- would still pass while the other two held the assertion up.
+    The check is a property of the whole set instead.
     """
     banner = _code(MODULE / "PageBanner.tsx")
 
@@ -231,19 +231,19 @@ def test_every_band_selector_keeps_its_trailing_underscores():
     )
 
     assert 'bui-PluginHeader__' in selectors, (
-        'modules/pageBanner/PageBanner.tsx no longer selects '
+        'modules/pageBanner/PageBanner.tsx does not select '
         '`bui-PluginHeader__`, which is the one element every routed page '
         "draws and therefore the only thing the band can ride on. Either "
         "Backstage UI renamed the class, or the band is gone from every page."
     )
 
-    # And it has to be the rule that PAINTS. A mutation round renamed just the
-    # painting selector to `bui-PageHeader__`; the check above stayed green
-    # because the sibling rule that only sets a text colour still named
-    # `bui-PluginHeader__`. The band was drawn on nothing at all, which is the
-    # single worst outcome this module has, and the membership test could not
-    # see it -- for the same reason the `__` check above could not, one
-    # mutation earlier.
+    # And it has to be the rule that PAINTS, not merely one that mentions the
+    # selector: if only the painting rule were renamed to `bui-PageHeader__`
+    # while a sibling rule that just sets a text colour still named
+    # `bui-PluginHeader__`, a plain membership test would stay green while the
+    # band was drawn on nothing at all -- the single worst outcome this module
+    # has, for the same reason the `__` check above needs the whole set rather
+    # than any one occurrence.
     paints = [
         banner[at : at + 400]
         for at in _offsets_of(banner, '[class*="bui-PluginHeader__"]\'')
@@ -258,7 +258,7 @@ def test_every_band_selector_keeps_its_trailing_underscores():
     )
 
     assert 'getPageTheme(' in banner, (
-        "modules/pageBanner/PageBanner.tsx no longer asks the theme for its "
+        "modules/pageBanner/PageBanner.tsx does not ask the theme for its "
         "gradient. That call is the only thing keeping the band in step with "
         "the light/dark toggle and with any future Backstage restyle."
     )
@@ -337,7 +337,7 @@ def test_the_copied_list_of_page_themes_still_matches_upstream():
     source = UPSTREAM_PAGE_THEMES.read_text()
     record = re.search(r"const pageTheme = \{(.*?)\n\};", source, re.DOTALL)
     assert record, (
-        f"{UPSTREAM_PAGE_THEMES.relative_to(REPO_ROOT)} no longer contains a "
+        f"{UPSTREAM_PAGE_THEMES.relative_to(REPO_ROOT)} does not contain a "
         "`const pageTheme = {…}` record; @backstage/theme has been "
         "restructured and this cross-check needs rewriting."
     )

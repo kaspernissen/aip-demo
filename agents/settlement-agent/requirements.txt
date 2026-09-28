@@ -1,59 +1,52 @@
 a2a-sdk[telemetry]==0.3.7
-# **Held at 0.3.7 deliberately, 2026-09-11 (M3 remaining-bumps, step 3).** The
-# newest installable release is 1.1.2 (2026-07-22 on PyPI; the project's GitHub
-# releases go to v1.1.4 but v1.1.3 and v1.1.4 were never published to PyPI --
-# both /pypi/a2a-sdk/<v>/json return 404 -- so 1.1.2 is "latest" for anything
-# that can be pinned). It was evaluated and NOT taken. Two reasons, both
-# measured against the installed 1.1.2 rather than read off a changelog:
+# **Held at 0.3.7 deliberately.** The newest installable release is 1.1.2
+# (2026-07-22 on PyPI; the project's GitHub releases go to v1.1.4 but v1.1.3
+# and v1.1.4 were never published to PyPI -- both /pypi/a2a-sdk/<v>/json
+# return 404 -- so 1.1.2 is "latest" for anything that can be pinned). It was
+# evaluated and NOT taken. Two reasons, both measured against the installed
+# 1.1.2 rather than read off a changelog:
 #
 #   * The thing that would have justified the risk is not there.
-#     docs/upstream-findings.md Finding 1 is precisely about this library
-#     not extracting inbound trace context and its spans carrying no
-#     attributes. At 1.1.2, `propagate`/`traceparent`/`TextMapPropagator` are
-#     still 0 hits across the package, and all 17 instrumented modules still
-#     carry a bare `@trace_class(kind=...)` with no `attributes=`. The
-#     StarletteInstrumentor workaround (amendment A18) is still required.
+#     docs/upstream-findings.md is precisely about this library not
+#     extracting inbound trace context and its spans carrying no attributes.
+#     At 1.1.2, `propagate`/`traceparent`/`TextMapPropagator` are still 0 hits
+#     across the package, and all 17 instrumented modules still carry a bare
+#     `@trace_class(kind=...)` with no `attributes=`. The StarletteInstrumentor
+#     workaround is still required.
 #   * 1.x is a protocol migration, not a bump. It implements A2A v1.0 with
 #     v0.3 behind an opt-in compat layer: the JSON-RPC method is `SendMessage`
 #     rather than `message/send` (this repo sends `message/send` from 13 files
 #     in three languages), `a2a.types.AgentCard` is a protobuf message that
 #     cannot parse this repo's own committed agent card, and
 #     `a2a.server.apps.A2AStarletteApplication` -- what main.py builds and what
-#     A18 attaches to -- no longer exists.
+#     StarletteInstrumentor attaches to -- does not exist there.
 #
-# Recorded in full in docs/upstream-findings.md Finding 1 and
-# docs/telemetry-contract.md Gap 1. Taking it is its own milestone.
 # a2a.server.apps.A2AStarletteApplication requires starlette/sse-starlette to
 # be importable, but a2a-sdk's telemetry extra doesn't declare them — only
 # the separate http-server extra does. This service's venv has always had
 # them, but only because mcp declares both as its own unconditional
 # dependencies; that made this dependency accidental rather than declared
-# (found while implementing Task 5's claims-agent, which has no mcp
-# dependency to mask the same gap — see agents/claims-agent/NOTES.md §2/§12).
-# Pinned explicitly here, at the exact versions already resolved via mcp, so
-# this is a determinism fix, not a version bump.
+# (found while implementing claims-agent, which has no mcp dependency to mask
+# the same gap — see agents/claims-agent/NOTES.md). Pinned explicitly here,
+# at the exact versions already resolved via mcp, so this is a determinism
+# fix, not a version bump.
 starlette==1.6.0
 sse-starlette==3.4.11
-# M3 remaining-bumps, step 1 (2026-09-11): mcp 1.28.1 -> 2.2.0, the newest
-# stable release of the MCP Python SDK (published 2026-09-07, read from PyPI's
-# release history for `mcp` and from the `v2.2.0` tag on
+# The newest stable release of the MCP Python SDK (published 2026-09-07,
+# read from PyPI's release history for `mcp` and from the `v2.2.0` tag on
 # github.com/modelcontextprotocol/python-sdk). The 1.x line still receives
-# releases (1.30.0, same day) but upstream's own v2.0.0 release notes put it in
-# "maintenance mode ... security fixes only", so 1.30.0 is not the latest
+# releases (1.30.0, same day) but upstream's own v2.0.0 release notes put it
+# in "maintenance mode ... security fixes only", so 1.30.0 is not the latest
 # stable, it is the maintenance branch.
 #
-# **Superseded claim, recorded rather than deleted.** This block used to read
-# "Still a client-side pin, well below the mcp<3.0.0,>=2.0.0 that
-# pydantic-ai-slim[anthropic]'s [mcp] extra would require — that extra remains
-# unsatisfiable against this pin, on purpose". That is now false in its
-# premise: this pin satisfies `mcp<3.0.0,>=2.0.0`. What has NOT changed is the
-# decision: the `[mcp]` extra is still not taken, and `MCPToolset` is still not
-# adopted. `test_no_fastmcp_in_this_service` is what keeps that honest now,
-# because the version number no longer can.
+# This pin satisfies `mcp<3.0.0,>=2.0.0`, but the `[mcp]` extra on
+# pydantic-ai-slim[anthropic] is still not taken, and `MCPToolset` is still
+# not adopted: `test_no_fastmcp_in_this_service` enforces that directly,
+# since the version number alone does not.
 #
-# This bump is not a version change alone — v2 renamed the three client symbols
-# `mcp_tools.py` uses. See that file's `_call` for the four renames, each
-# checked against the installed 2.2.0 source, not against the changelog.
+# v2 renamed the client symbols `mcp_tools.py` uses. See that file's `_call`
+# for the renames, each checked against the installed 2.2.0 source, not
+# against the changelog.
 mcp==2.2.0
 # `mcp-types` (imported as `mcp_types`) is v2's split-out wire-type package,
 # published in lock-step with `mcp` and pinned by it exactly (`mcp-types==2.2.0`
@@ -64,18 +57,17 @@ opentelemetry-sdk==1.44.0
 opentelemetry-exporter-otlp-proto-http==1.44.0
 opentelemetry-instrumentation-httpx==0.65b0
 opentelemetry-instrumentation-starlette==0.65b0
-# Task 7: pytest 8.3.4 -> 9.0.3, clearing PYSEC-2026-1845 (pip-audit).
-# pytest-asyncio 0.25.0 -> 1.4.0 alongside it: 0.25.0 only supports
-# pytest<8.4 (its own metadata), so it was already the ceiling on the pytest
-# bump; 1.4.0 is pytest-asyncio's own current release and declares
-# pytest<10,>=8.4, satisfied by 9.0.3.
+# pytest==9.1.1 clears PYSEC-2026-1845 (pip-audit). pytest-asyncio==1.4.0 is
+# paired with it: pytest-asyncio 0.25.0 only supports pytest<8.4 (its own
+# metadata), so pytest-asyncio needs a matching bump; 1.4.0 is its current
+# release and declares pytest<10,>=8.4, satisfied by 9.1.1.
 pytest==9.1.1
 pytest-asyncio==1.4.0
 
-# M2.1 Task 4: workload identity. `svid.py` needs this to fetch a JWT-SVID
-# from the SPIFFE Workload API socket the spiffe-csi-driver mounts into this
-# pod (deploy/k8s/settlement-agent.yaml). It is the SPIFFE project's own
-# Python Workload API client; 0.3.1 is its latest release (upstream tag
+# Workload identity: `svid.py` needs this to fetch a JWT-SVID from the
+# SPIFFE Workload API socket the spiffe-csi-driver mounts into this pod
+# (deploy/k8s/settlement-agent.yaml). It is the SPIFFE project's own Python
+# Workload API client; 0.3.1 is its latest release (upstream tag
 # `spiffe-v0.3.1`, published 2026-08-08 — verified against
 # github.com/HewlettPackard/py-spiffe's releases API, which is where the
 # `spiffe` distribution is actually developed; github.com/spiffe/py-spiffe
@@ -86,9 +78,8 @@ pytest-asyncio==1.4.0
 # pyjwt[crypto]<2.14,>=2, pyasn1<0.7.0,>=0.6.0, pyasn1-modules<0.5.0,>=0.4.0,
 # pem<24,>=23 and protobuf<8,>=6.31.1, and the cryptography==50.0.1,
 # pyjwt==2.13.0, pyasn1==0.6.4, pyasn1-modules==0.4.2 and protobuf==7.36.1
-# already pinned below all satisfy them. Nothing already pinned had to move,
-# and in particular the mcp==1.28.1 / pydantic-ai-slim==2.41.0 pair is
-# untouched. The only new transitives are the two pinned immediately below.
+# already pinned below all satisfy them. The only new transitives are the
+# two pinned immediately below.
 spiffe==0.3.1
 # New transitives brought in by spiffe==0.3.1 and nothing else, pinned exactly
 # as resolved by `uv pip install -r requirements.txt spiffe==0.3.1` into a
@@ -98,30 +89,24 @@ spiffe==0.3.1
 grpcio==1.83.1
 pem==23.1.0
 
-# M1.2: the settlement decision becomes a real model call.
+# The settlement decision is a real model call, via
 # `pydantic-ai-slim[anthropic]`, NOT `pydantic-ai` and NOT the [mcp] extra.
 #
-# **Corrected 2026-09-11 (M3 remaining-bumps, step 1).** This read: "the [mcp]
-# extra requires fastmcp-slim[client]<5,>=3.3.0 -> mcp<3.0.0,>=2.0.0, which is
-# directly unsatisfiable against the mcp==1.28.1 pin above that mcp_tools.py's
-# low-level send_request propagation is verified against." The version
-# arithmetic in that sentence is dead: `mcp==2.2.0` above satisfies
-# `mcp<3.0.0,>=2.0.0`. The extra is still not taken, and the reason is the one
-# that was always the real one: adopting `MCPToolset` would replace
+# The `[mcp]` extra is not taken: adopting `MCPToolset` would replace
 # `mcp_tools.py`'s hand-built `send_request` call — the one code path in this
 # repo that sets `params._meta` — with a convenience wrapper whose propagation
 # behaviour nothing here has measured. `tests/test_pins.py`'s
-# `test_no_fastmcp_in_this_service` is now the only thing enforcing it.
+# `test_no_fastmcp_in_this_service` enforces that directly.
 #
-# **M3 remaining-bumps, step 2 (2026-09-11): 2.41.0 -> 2.42.0.** The newest
-# stable release, published 2026-09-09 (PyPI release history for
-# `pydantic-ai-slim`; the `v2.42.0` tag on github.com/pydantic/pydantic-ai is
-# dated the same). This library emits settlement-agent's whole `gen_ai.*` span
-# inventory, which `docs/telemetry-contract.md` publishes attribute by
-# attribute, so the bump was followed by re-measuring that inventory off a live
-# settlement rather than by reading the release notes: 28 names at
-# `NORTHSTAR_CAPTURE_CONTENT` ON, unchanged, and the four span shapes unchanged
-# — only `otel.scope.version` moved, 2.41.0 -> 2.42.0.
+# 2.42.0 is the newest stable release, published 2026-09-09 (PyPI release
+# history for `pydantic-ai-slim`; the `v2.42.0` tag on
+# github.com/pydantic/pydantic-ai is dated the same). This library emits
+# settlement-agent's whole `gen_ai.*` span inventory, which
+# `docs/telemetry-contract.md` publishes attribute by attribute, so a version
+# bump is followed by re-measuring that inventory off a live settlement
+# rather than by reading the release notes: 28 names at
+# `NORTHSTAR_CAPTURE_CONTENT` ON, and four span shapes, checked directly
+# against the installed version rather than assumed unchanged.
 pydantic-ai-slim[anthropic]==2.42.0
 # Transitive pins pulled in by pydantic-ai-slim[anthropic], recorded
 # exactly as resolved by `uv pip install` (house style: nothing floats).
@@ -139,23 +124,17 @@ pydantic-graph==2.42.0
 sniffio==1.3.1
 truststore==0.10.4
 
-# Task 7: the remainder of the dependency closure, pinned exactly as resolved
-# by `uv pip install -r requirements.txt` into a clean venv (house style:
-# nothing floats). Two origins, listed together rather than re-split by
-# origin, since both are the same fix under this task's charter:
-# - Task 1 review Finding 2: anyio, httpx, pydantic and the rest of this list
-#   were already present in the venv before this task, unpinned, predating
-#   M1.2 entirely.
-# - New with the mcp==1.28.1 bump itself: mcp now declares pyjwt[crypto] and
-#   jsonschema as direct dependencies (mcp==1.9.4 declared neither — verified
-#   against both versions' own PyPI metadata), which is what pulls in
-#   cryptography/cffi/pycparser and jsonschema-specifications/referencing/
-#   rpds-py/attrs. a2a-sdk==0.3.7's own unconditional dependency on
-#   google-api-core (unrelated to this bump, unchanged from before it) is
-#   what pulls in google-auth/googleapis-common-protos/proto-plus/protobuf/
-#   pyasn1/pyasn1-modules; those were already an unpinned part of this venv's
-#   closure before this task and are included here for the same reason as
-#   the rest of this block.
+# The remainder of the dependency closure, pinned exactly as resolved by
+# `uv pip install -r requirements.txt` into a clean venv (house style:
+# nothing floats). Two origins, listed together rather than split apart:
+# - anyio, httpx, pydantic and most of the rest of this list are transitives
+#   already present in the venv, unpinned until now.
+# - mcp declares pyjwt[crypto] and jsonschema as direct dependencies, which
+#   is what pulls in cryptography/cffi/pycparser and
+#   jsonschema-specifications/referencing/rpds-py/attrs. a2a-sdk==0.3.7's own
+#   unconditional dependency on google-api-core is what pulls in
+#   google-auth/googleapis-common-protos/proto-plus/protobuf/pyasn1/
+#   pyasn1-modules.
 annotated-types==0.8.0
 anyio==4.15.1
 asgiref==3.12.1

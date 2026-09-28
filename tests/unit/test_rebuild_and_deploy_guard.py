@@ -1,53 +1,40 @@
-"""A15a guard: pins `scripts/rebuild-and-deploy.sh`'s missing-build-context
-handling by RUNNING the script against a hermetic sandbox, not by parsing
-its source text.
+"""Guards `scripts/rebuild-and-deploy.sh`'s missing-build-context handling by
+RUNNING the script against a hermetic sandbox, not by parsing its source text.
 
-A15 (superseded by amendment A15a) let a default no-argument run silently
-skip a component whose build context directory did not exist yet, printing
-a yellow warning and continuing. That was correct while most of M1.1's five
-build contexts genuinely did not exist (before Task 6 landed) and a bare
-`./scripts/rebuild-and-deploy.sh` still had to be usable. The final
-whole-branch review found that condition is gone — all five contexts have
-existed since Task 6 — so the skip branch is unreachable in a healthy tree
-today, and the day M1.2/M1.3 adds a sixth component to COMPONENTS, a
-mistyped or half-created build context on a bare run would be silently
-skipped rather than failing. A15a's ruling: a missing build context is a
-hard error in every case, default run or an explicitly named component
-alike.
+A missing build context must be a hard error in every case, default run or an
+explicitly named component alike -- a bare `./scripts/rebuild-and-deploy.sh`
+run must not silently skip a component whose build context does not exist and
+continue on to the rest.
 
-**Second final-review round, finding 1:** the first version of this guard
-asserted on the script's source text instead of its behaviour — a regex
-`if \\[\\[ ! -d "\\$ROOT/\\$context" \\]\\]; then\\n(.*?)\\nfi` intended to
-capture just the missing-context branch's body, but `.*?` is non-greedy
-only in *how much* it matches, not in *which* `fi` it stops at when the
-first candidate isn't reachable in `DOTALL` mode the way the author
-expected — it actually ran all the way to the script's LAST column-0 `fi`
-(38 lines later, past the `docker build` failure branch), and the
-`exit 1` assertion was satisfied incidentally by that unrelated branch's
-own `exit 1`. The reviewer proved this by replacing the hard error with a
-bare silent `continue` — the single most dangerous reintroduction possible,
-since it is byte-for-byte A15's retired shape — and got `2 passed in
-0.00s`. A guard that cannot be broken by the exact defect it exists to
-catch is not a guard.
+Behavioural rather than textual, because a source-text check is easy to
+satisfy without the underlying behaviour holding. A regex meant to capture
+just the missing-context branch's body
+(`if \\[\\[ ! -d "\\$ROOT/\\$context" \\]\\]; then\\n(.*?)\\nfi`) looks
+precise, but `.*?` is non-greedy only in *how much* it matches, not in *which*
+`fi` it stops at -- in `DOTALL` mode it can run past the intended branch all
+the way to the script's last column-0 `fi`, and an `exit 1` assertion can then
+be satisfied incidentally by a wholly unrelated branch's own `exit 1`.
+Replacing the hard error with a bare silent `continue` -- the most dangerous
+possible regression -- would leave a check shaped like that green. A guard
+that cannot be broken by the exact defect it exists to catch is not a guard.
 
-This version instead runs the real script (or a temporarily corrupted copy
-of it, in a RED demonstration) in an isolated sandbox with every build
-context absent, and asserts on its actual exit code and diagnostic output —
-for both calling conventions A15a covers.
+This version instead runs the real script (or a temporarily corrupted copy of
+it, in a RED demonstration) in an isolated sandbox with every build context
+absent, and asserts on its actual exit code and diagnostic output -- for both
+calling conventions.
 
-**M3 final-review fix round — the companion-deployment half.** The tests
-above all run against a sandbox where every build context is *missing*, so
-the script hard-errors before it ever reaches a `kubectl rollout`. That left
-the whole deploy half of this script unguarded, and the whole-branch review
-found a real defect in it: `deploy/k8s/settlement-agent.yaml` and
+**The companion-deployment half.** The tests above all run against a sandbox
+where every build context is *missing*, so the script hard-errors before it
+ever reaches a `kubectl rollout`. That leaves the whole deploy half of this
+script unguarded: `deploy/k8s/settlement-agent.yaml` and
 `deploy/k8s/senior-settlement-agent.yaml` name the same mutable image tag
-(`localhost:5001/northstar/settlement-agent:dev`), and this script restarted
-only the first of them — so the senior identity went on serving the previous
-build of the image the demo's whole argument says is byte-identical. The
+(`localhost:5001/northstar/settlement-agent:dev`), and restarting only the
+first of them leaves the senior identity serving the previous build of an
+image the demo's whole argument treats as byte-identical across both. The
 second group of tests below gives the *present*-build-context path a sandbox
 of its own (fake `docker`/`kubectl` that succeed and record what they were
-called with) and pins the restart, plus a RED demonstration that emptying
-`COMPANION_DEPLOYMENTS` really does redden it.
+called with) and pins the restart of both deployments, plus a RED
+demonstration that emptying `COMPANION_DEPLOYMENTS` really does redden it.
 """
 import os
 import re
@@ -60,10 +47,10 @@ SCRIPT_RELATIVE_PATH = Path("scripts") / "rebuild-and-deploy.sh"
 
 # Hermetic stand-ins for docker/kubectl. The script's prerequisite checks
 # only need `docker ps ...` to report the local registry as running; every
-# other invocation in these tests is unreachable if A15a's guard holds
-# (build context is absent, so the script must exit before any real
-# docker build/push or kubectl apply/rollout), so both fakes fail loudly if
-# ever called with anything else -- that would mean the guard did NOT hold.
+# other invocation in these tests is unreachable if the missing-build-context
+# guard holds (build context is absent, so the script must exit before any
+# real docker build/push or kubectl apply/rollout), so both fakes fail loudly
+# if ever called with anything else -- that would mean the guard did NOT hold.
 _FAKE_DOCKER = """#!/usr/bin/env bash
 if [[ "$1" == "ps" ]]; then
   echo "kind-registry"
@@ -88,7 +75,7 @@ def _make_executable(path: Path, contents: str) -> None:
 def _sandbox(tmp_path: Path, script_text: str | None = None) -> tuple[Path, dict]:
     """Builds an isolated ROOT containing only: a copy of the script (real,
     unless `script_text` overrides it for a RED demonstration), a `.env`
-    (A2 requires one to exist), and a fake docker/kubectl on PATH. It
+    (the script requires one to exist), and a fake docker/kubectl on PATH. It
     deliberately contains NONE of COMPONENTS' real build-context
     directories (`systems/payments-api`, etc.) -- since the script's own
     `ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"` line makes ROOT track wherever
@@ -126,8 +113,8 @@ def _run(script_copy: Path, env: dict, args: list[str]) -> subprocess.CompletedP
 
 
 def test_missing_build_context_is_a_hard_error_on_a_default_run(tmp_path):
-    """A15a: 'a missing build context is a hard error in every case, default
-    run or explicitly named component'. No arguments -> the script walks
+    """A missing build context is a hard error in every case, default run or
+    explicitly named component alike. No arguments -> the script walks
     COMPONENTS in order (payments-api first) and must fail hard on the
     first one, naming both the component and its absent path, rather than
     skipping it and continuing to the rest."""
@@ -136,7 +123,7 @@ def test_missing_build_context_is_a_hard_error_on_a_default_run(tmp_path):
 
     assert result.returncode != 0, (
         "a default run against a sandbox where every build context is "
-        "missing must exit non-zero (A15a); got exit 0.\n"
+        "missing must exit non-zero; got exit 0.\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
     assert "payments-api" in result.stderr, (
@@ -155,7 +142,7 @@ def test_missing_build_context_is_a_hard_error_on_a_default_run(tmp_path):
 
 
 def test_missing_build_context_is_a_hard_error_for_an_explicitly_named_component(tmp_path):
-    """Same ruling, the other calling convention: naming a component
+    """Same rule, the other calling convention: naming a component
     explicitly must carry no different -- let alone more forgiving --
     behaviour than the default run. Uses a different component
     (claims-agent) than the default-run test, so the two tests cannot pass
@@ -176,8 +163,8 @@ def test_missing_build_context_is_a_hard_error_for_an_explicitly_named_component
 
 
 def test_guard_goes_red_against_a15s_retired_silent_continue(tmp_path):
-    """Proves this guard actually guards: reintroducing A15's retired
-    shape -- replace the hard `exit 1` with a bare, silent `continue` --
+    """Proves this guard actually guards: replacing the hard `exit 1` with a
+    bare, silent `continue` -- the shape this guard exists to catch --
     must make the *behavioural* assertions above fail, not merely change
     unrelated output. This test corrupts an in-sandbox COPY of the script
     (never the real file on disk) and asserts on the corrupted copy
@@ -208,21 +195,21 @@ def test_guard_goes_red_against_a15s_retired_silent_continue(tmp_path):
     result = _run(script_copy, env, [])
 
     assert result.returncode == 0, (
-        "sanity check on the corruption itself: A15's retired silent "
-        "`continue` shape should let the script run to completion (exit "
-        f"0) rather than error -- got exit {result.returncode}, meaning "
-        "this test's corruption doesn't reproduce the reviewer's finding.\n"
+        "sanity check on the corruption itself: a silent `continue` should "
+        "let the script run to completion (exit 0) rather than error -- got "
+        f"exit {result.returncode}, meaning this test's corruption doesn't "
+        "reproduce the defect being guarded against.\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
     assert "payments-api" not in result.stderr, (
-        "the corrupted (A15-shaped) script printed no diagnostic naming "
-        "the missing component, confirming the two behavioural tests above "
-        "would correctly go RED against this exact reintroduction:\n"
+        "the corrupted (silently-skipping) script printed no diagnostic "
+        "naming the missing component, confirming the two behavioural tests "
+        "above would correctly go RED against this exact reintroduction:\n"
         f"stderr:\n{result.stderr}"
     )
 
 
-# --- The deploy half: companion deployments (M3 final-review fix round) ------
+# --- The deploy half: companion deployments ---------------------------------
 #
 # A second sandbox shape. The one above deliberately has NO build contexts, so
 # the script exits before deploying anything; this one has the requested
@@ -235,13 +222,13 @@ echo "docker $*" >> "$FAKE_CMD_LOG"
 if [[ "$1" == "ps" ]]; then
   echo "kind-registry"
 fi
-# Whole-branch review M7: `docker build` is faked here, so nothing ever reads
-# the build context's `.catalog-stage/` directory the way a real `COPY
-# ./catalog-stage ...` in platform/backstage/Dockerfile would -- and the real
-# script `rm -rf`s it right after this call returns, so by the time a test
-# could inspect the sandbox on disk, the directory is already gone (the same
-# "copy in, always clean up" cleanup agent-card.json gets). Snapshotting it
-# HERE, at the moment a real `docker build` would have read it, is the only
+# `docker build` is faked here, so nothing ever reads the build context's
+# `.catalog-stage/` directory the way a real `COPY ./catalog-stage ...` in
+# platform/backstage/Dockerfile would -- and the real script `rm -rf`s it
+# right after this call returns, so by the time a test could inspect the
+# sandbox on disk, the directory is already gone (the same "copy in, always
+# clean up" cleanup agent-card.json gets). Snapshotting it HERE, at the
+# moment a real `docker build` would have read it, is the only
 # point in this fake's lifecycle where the directory is guaranteed to still
 # exist. Only runs when a test opts in via $CATALOG_STAGE_SNAPSHOT, so every
 # other sandbox using this same fake is unaffected.
@@ -313,9 +300,8 @@ def _component_contexts() -> list[str]:
     absent = [c for c in contexts if not (REPO_ROOT / c).is_dir()]
     assert not absent, (
         f"{SCRIPT_RELATIVE_PATH} names build context(s) that do not exist: "
-        f"{absent}. A bare run of that script would hard-error on them "
-        "(amendment A15a), so this is a real defect in the script rather "
-        "than in this parse."
+        f"{absent}. A bare run of that script would hard-error on them, so "
+        "this is a real defect in the script rather than in this parse."
     )
     return contexts
 
@@ -340,8 +326,8 @@ def _deploying_sandbox(
     """A sandbox the script can run to completion in.
 
     `build_contexts` are paths relative to ROOT that must exist (the script's
-    A15a check is `-d "$ROOT/$context"`, so an empty directory is enough --
-    `docker build` never really runs). Returns the script copy, the env, and
+    check is `-d "$ROOT/$context"`, so an empty directory is enough -- `docker
+    build` never really runs). Returns the script copy, the env, and
     the path of the log both fakes append their full argv to.
     """
     scripts_dir = tmp_path / "scripts"
@@ -357,33 +343,30 @@ def _deploying_sandbox(
     (tmp_path / "deploy" / "k8s").mkdir(parents=True)
     for context in build_contexts:
         (tmp_path / context).mkdir(parents=True)
-        # M6 Task 2: when "backstage" is among the targets, the script's own
-        # staging step `cp`s every OTHER component's `catalog-info.yaml` (plus
-        # the repo-root one) into platform/backstage/.catalog-stage/ before
+        # When "backstage" is among the targets, the script's own staging step
+        # `cp`s every OTHER component's `catalog-info.yaml` (plus the
+        # repo-root one) into platform/backstage/.catalog-stage/ before
         # building. The files must exist or that `cp` fails and `set -e`
         # kills the run before it ever reaches this test's actual assertions.
         #
-        # Whole-branch review M7: every one of these ten stubs (nine
-        # components plus the repo root) used to be the byte-identical
-        # `"# stub\n"`. Nothing distinguished a correctly-staged
-        # `.catalog-stage/` (each file copied from its own real source) from
-        # one where `cp "$ROOT/$ccontext/catalog-info.yaml" ...` had been
-        # typo'd into `cp "$ROOT/catalog-info.yaml" ..." (the ROOT
-        # System stub, seven lines above the real per-component cp in the
-        # script) for every entry -- both produce ten identical files here.
-        # Distinct, source-derived content closes that: a test can now assert
-        # each staged file's content traces back to the ONE source it should
-        # have been copied from.
+        # Each stub carries content derived from its own context rather than a
+        # byte-identical placeholder, so that a correctly-staged
+        # `.catalog-stage/` (each file copied from its own real source) can be
+        # told apart from one where a `cp` source argument names the wrong
+        # path (e.g. the ROOT System stub instead of the per-component one) --
+        # both would otherwise produce identical files here. Distinct,
+        # source-derived content lets a test assert each staged file's content
+        # traces back to the ONE source it should have been copied from.
         (tmp_path / context / "catalog-info.yaml").write_text(f"# {context}\n")
     (tmp_path / "catalog-info.yaml").write_text("# root system\n")
     # The System's own TechDocs source. The real repo has mkdocs.yml and docs/
     # at its root and the script stages both beside system-catalog-info.yaml,
     # unconditionally -- a System entity that carries
     # `backstage.io/techdocs-ref: dir:.` and finds no mkdocs.yml there renders
-    # an empty Docs tab, which is the silent-failure shape this milestone kept
-    # producing. Unconditional means a sandbox without these files makes the
-    # script fail loudly, so they belong here, with source-derived content for
-    # the same reason the per-component stubs above have it.
+    # an empty Docs tab, which is a silent failure with nothing else to catch
+    # it. Unconditional means a sandbox without these files makes the script
+    # fail loudly, so they belong here, with source-derived content for the
+    # same reason the per-component stubs above have it.
     (tmp_path / "mkdocs.yml").write_text("# root mkdocs\n")
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "index.md").write_text("# root docs index\n")
@@ -405,12 +388,11 @@ def _deploying_sandbox(
 def test_rebuilding_settlement_agent_also_restarts_its_companion_senior_deployment(
     tmp_path,
 ):
-    """The defect the whole-branch review found: both settlement Deployments
-    name the mutable tag `localhost:5001/northstar/settlement-agent:dev`, so a
-    push under that tag that restarts only one of them leaves the other
-    serving the previous build -- two pods of "the same image" disagreeing,
-    which is the exact premise M3's "the approval changes the caller, not the
-    code" argument rests on.
+    """Both settlement Deployments name the mutable tag
+    `localhost:5001/northstar/settlement-agent:dev`, so a push under that tag
+    that restarts only one of them leaves the other serving the previous
+    build -- two pods of "the same image" disagreeing, which undermines the
+    premise that the approval changes the caller, not the code.
 
     Behavioural, not a source grep: the script is really run and the real
     `kubectl` argv is asserted.
@@ -457,15 +439,14 @@ def test_a_bare_full_run_also_restarts_the_companion(tmp_path):
     script walks the whole COMPONENTS list.
 
     The context list is **read out of the script** rather than restated here.
-    It was restated, as seven hard-coded paths, until M4 Task 4 appended an
-    eighth component -- at which point this test failed with
-    "eval-scorer's build context platform/eval-scorer does not exist", which is
-    the sandbox being stale rather than anything being wrong with the script.
-    A stale sandbox that fails loudly is the benign version; the malign one is
-    a sandbox that stops covering a component and says nothing, which is what
-    would have happened had the loop been over whatever happened to exist.
-    `_components()` asserts it parsed something, so a rewritten COMPONENTS
-    block reddens here instead of emptying this test.
+    A hard-coded list of paths goes stale the moment a component is added: the
+    sandbox would stop covering it and this test would say nothing, since the
+    loop would only ever run over whatever happened to be listed. A stale
+    sandbox that fails loudly (a build context that does not exist) is the
+    benign version of that failure; a sandbox that silently stops covering a
+    component is the malign one. `_component_contexts()` asserts it parsed
+    something, so a rewritten COMPONENTS block reddens here instead of
+    emptying this test.
     """
     script_copy, env, log = _deploying_sandbox(tmp_path, _component_contexts())
     result = _run(script_copy, env, [])
@@ -482,18 +463,15 @@ def test_a_bare_full_run_also_restarts_the_companion(tmp_path):
 def test_the_catalog_stage_holds_exactly_the_real_sources_it_should_have_copied(
     tmp_path,
 ):
-    """Whole-branch review M7: `_deploying_sandbox` used to write the same
-    `"# stub\\n"` into all ten `catalog-info.yaml` sources (nine components
-    plus the repo root), so a `.catalog-stage/` built by correctly copying
-    each source was byte-identical to one built by a typo'd `cp` that copied
-    the WRONG source into every destination -- e.g. `cp
-    "$ROOT/catalog-info.yaml"` (the root System stub, seven lines above the
-    real per-component `cp` in the script) substituted in for
-    `cp "$ROOT/$ccontext/catalog-info.yaml"`. That bug ships a catalog with
-    zero real components and nothing here could tell.
+    """A `.catalog-stage/` built by correctly copying each source must be
+    distinguishable from one built by a `cp` that copied the WRONG source into
+    every destination -- e.g. the root System stub substituted in for every
+    per-component source. If every stub carried the same content, that bug
+    would ship a catalog with zero real components and nothing here could
+    tell.
 
-    Now that every source is distinct (`f"# {context}\\n"`, the root gets
-    `"# root system\\n"`), this asserts `.catalog-stage/` -- snapshotted by
+    Each source is distinct (`f"# {context}\\n"`, the root gets
+    `"# root system\\n"`), so this asserts `.catalog-stage/` -- snapshotted by
     the fake `docker build` at the one moment it still exists, since the real
     script `rm -rf`s it right after -- holds exactly one file per
     NON-backstage component, each matching that component's own source, plus
@@ -581,10 +559,9 @@ def test_the_catalog_stage_holds_exactly_the_real_sources_it_should_have_copied(
 
 def test_the_companion_guard_goes_red_when_the_mapping_is_emptied(tmp_path):
     """Proves the two tests above actually guard, the same way
-    `test_guard_goes_red_against_a15s_retired_silent_continue` does for A15a:
-    empty `COMPANION_DEPLOYMENTS` -- byte-for-byte the shape this script had
-    before the M3 fix round -- and the companion restart must disappear while
-    everything else still succeeds."""
+    `test_guard_goes_red_against_a15s_retired_silent_continue` does for the
+    missing-build-context check: empty `COMPANION_DEPLOYMENTS` and the
+    companion restart must disappear while everything else still succeeds."""
     real_text = (REPO_ROOT / SCRIPT_RELATIVE_PATH).read_text()
     marker = (
         "COMPANION_DEPLOYMENTS=(\n"
@@ -621,26 +598,23 @@ def test_the_companion_guard_goes_red_when_the_mapping_is_emptied(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# M5-R27: the cold-bring-up ordering, and the silent-skip shape it must not
-# be fixed with.
+# The cold-bring-up ordering, and the silent-skip shape it must not be fixed
+# with.
 #
-# Found by actually running `setup-kind.sh --stage 5` cold on 2026-09-14,
-# after the northstar cluster was destroyed by another demo's cleanup. Step
-# 9/9 runs rebuild-and-deploy.sh for the five stage-1 components; the manifest
-# that CREATES senior-settlement-agent is not applied until Step 9d, later in
-# that same script. So `rollout restart deployment/senior-settlement-agent`
-# hit a Deployment that did not exist and `set -e` killed the run at the first
-# of five components. Warm -- which is the only way stages 4 and 5 had ever
-# been brought up, per amendment A1 -- the Deployment was always already
-# there, so the ordering was never exercised.
+# On a cold cluster, Step 9/9 runs rebuild-and-deploy.sh for the five stage-1
+# components before the manifest that CREATES senior-settlement-agent is
+# applied (Step 9d, later in the same script). So `rollout restart
+# deployment/senior-settlement-agent` can hit a Deployment that does not exist
+# yet, and `set -e` kills the run at the first of five components. Warm, the
+# Deployment is always already there, so this ordering only shows up on a
+# genuinely cold bring-up.
 #
 # The fix tolerates a genuine NotFound and nothing else. The tempting version
-# (`kubectl get ... >/dev/null 2>&1 || continue`) is the shape this repo has
-# been bitten by four times in M2.2 alone: a skip where a failure belongs.
-# It would also swallow an unreachable API server or an RBAC denial and leave
-# the companion serving a stale image -- the exact hazard COMPANION_DEPLOYMENTS
-# was added to prevent. The third test below is the RED demonstration that
-# these guards actually catch that shape.
+# (`kubectl get ... >/dev/null 2>&1 || continue`) is a skip where a failure
+# belongs: it would also swallow an unreachable API server or an RBAC denial
+# and leave the companion serving a stale image -- the exact hazard
+# COMPANION_DEPLOYMENTS was added to prevent. The third test below is the RED
+# demonstration that these guards actually catch that shape.
 
 _CONFIGURABLE_KUBECTL = """#!/usr/bin/env bash
 echo "kubectl $*" >> "$FAKE_CMD_LOG"
@@ -672,9 +646,9 @@ def _cold_sandbox(tmp_path: Path, script_text: str | None = None):
 
 
 def test_a_companion_that_does_not_exist_yet_is_skipped_rather_than_fatal(tmp_path):
-    """The cold-bring-up case (M5-R27). A NotFound on the companion must not
-    kill the run: whatever creates that Deployment later pulls the image this
-    step just pushed, by definition, so no restart is owed.
+    """The cold-bring-up case. A NotFound on the companion must not kill the
+    run: whatever creates that Deployment later pulls the image this step
+    just pushed, by definition, so no restart is owed.
 
     This repo has no git remote, so a cold rebuild is the only recovery path
     that exists -- which is why this is guarded rather than left to the next
@@ -685,8 +659,8 @@ def test_a_companion_that_does_not_exist_yet_is_skipped_rather_than_fatal(tmp_pa
 
     result = _run(script_copy, env, ["settlement-agent"])
     assert result.returncode == 0, (
-        "a companion that does not exist yet must not fail the run -- this is "
-        "exactly what took down the cold --stage 5 bring-up on 2026-09-14.\n"
+        "a companion that does not exist yet must not fail the run -- a cold "
+        "`--stage 5` bring-up depends on this.\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
 
@@ -711,7 +685,8 @@ def test_a_companion_probe_failure_that_is_not_notfound_aborts_loudly(tmp_path):
     """The half that makes the skip above safe. An unreachable API server is
     NOT 'not created yet': treating it as such would skip the restart and
     leave senior-settlement-agent serving the previous build of an image whose
-    byte-identity is the premise M3's whole argument rests on.
+    byte-identity across both deployments is the premise the whole approval
+    argument rests on.
     """
     script_copy, env, log = _cold_sandbox(tmp_path)
     env["KUBECTL_GET_UNREACHABLE"] = "senior-settlement-agent"
@@ -734,7 +709,8 @@ def test_a_companion_probe_failure_that_is_not_notfound_aborts_loudly(tmp_path):
 
 
 def test_these_guards_go_red_against_the_naive_silent_skip(tmp_path):
-    """RED demonstration, in the shape this file already uses for A15a.
+    """RED demonstration, in the shape this file already uses for the
+    missing-build-context guard above.
 
     The tempting one-liner -- `kubectl get ... || continue` -- passes the
     cold-bring-up test above and silently swallows every other failure with
@@ -753,10 +729,8 @@ def test_these_guards_go_red_against_the_naive_silent_skip(tmp_path):
     # Anchored on the leading newline so it lands on the OUTER `fi` (4 spaces),
     # not the inner one (6 spaces): "    fi\n" is a substring of "      fi\n",
     # and matching that leaves a dangling `fi` and a bash syntax error instead
-    # of the silent-skip shape this demonstration is meant to build. The first
-    # draft of this test did exactly that and "went red" for a syntax error --
-    # a RED for the wrong reason, which is the thing this file's own A15a
-    # history warns about.
+    # of the silent-skip shape this demonstration is meant to build -- a RED
+    # for the wrong reason, which teaches nothing about the guard.
     closing = "\n    fi\n"
     end = real_text.index(closing, start) + len(closing)
     corrupted_text = real_text[:start] + (

@@ -1,13 +1,8 @@
 """`pds.autonomy.resolve_autonomy`: turning a flagd lookup into a policy
 input, and nothing else.
 
-Step 1 of Task 3 (TDD-ordered) was
-`test_an_unreachable_provider_resolves_to_the_restrictive_level`, written
-before `pds/autonomy.py` existed so its first run failed on
-`ModuleNotFoundError: No module named 'pds.autonomy'`, not on an assertion.
-Everything below it is the rest of the module's coverage, including the two
-behavioural proofs ruling M5-R4 requires: that the port this file's client
-would be built with cannot drift from
+Includes two behavioural proofs: that the port this file's client would be
+built with cannot drift from
 `deploy/platform/openfeature/featureflagsource.yaml`, and that the resolver
 `FlagdProvider(host="localhost", port=8013)` actually constructs is the RPC
 one -- an explicitly passed host and port are silently ignored if the
@@ -110,9 +105,9 @@ def test_an_unreachable_provider_resolves_to_the_restrictive_level():
 
 
 def test_the_unreachable_path_is_honest_about_what_it_could_not_learn():
-    """M5-R5: the four fields an outage genuinely cannot establish
-    (`variant`, `version`, `provider_name`, `set_id`) stay `None` rather than
-    being invented -- the double here has no `.provider` at all, so
+    """The four fields an outage genuinely cannot establish (`variant`,
+    `version`, `provider_name`, `set_id`) stay `None` rather than being
+    invented -- the double here has no `.provider` at all, so
     `provider_name` exercises the same honesty as the other three."""
     resolution = resolve_autonomy(
         SETTLEMENT_AGENT,
@@ -130,8 +125,8 @@ def test_the_unreachable_path_is_honest_about_what_it_could_not_learn():
 
 
 def test_a_successful_resolution_reports_every_field_it_can():
-    """M5-R5's positive case: all seven fields populated from a response that
-    -- unlike the live sidecar today (see the bottom of this file) -- carries
+    """The positive case: all seven fields populated from a response that --
+    unlike the live sidecar today (see the bottom of this file) -- carries
     a `flag_metadata`, proving the extraction itself is correct independent
     of what this deployment's flagd happens to send back."""
     details = _FakeDetails(
@@ -160,15 +155,13 @@ def test_an_error_code_without_an_exception_still_reports_an_error_type():
     its own startup window). `error_type` must still carry that, not stay
     `None` just because nothing was thrown.
 
-    I2 (task-3 review, fix round 1): this test used to feed
-    `value=RESTRICTIVE_LEVEL` in and assert `RESTRICTIVE_LEVEL` came back --
-    tautological, since it passes whether or not `resolve_autonomy` forces
-    anything down; the fail-closed guarantee on this path lived entirely in
-    a library, not in this function. The fixture now hands back
-    `value="autonomous"` -- a provider-chosen or contract-chosen value that
-    has not been overwritten to the default -- *alongside* an `error_code`.
-    Today's SDK always overwrites the value before this can happen (traced
-    in the module docstring), but this function must not depend on that: if
+    The fixture hands back `value="autonomous"` -- a provider-chosen or
+    contract-chosen value that has not been overwritten to the default --
+    *alongside* an `error_code`, rather than `value=RESTRICTIVE_LEVEL`, which
+    would pass whether or not `resolve_autonomy` forces anything down and so
+    prove nothing about this function's own fail-closed guarantee. Today's
+    SDK always overwrites the value before this can happen (traced in the
+    module docstring), but this function must not depend on that: if
     `error_code` is present, `resolve_autonomy` must force the level to
     `RESTRICTIVE_LEVEL` regardless of what `details.value` says.
     """
@@ -217,16 +210,15 @@ def test_the_flag_key_is_the_one_the_contract_defines():
     assert FLAG_KEY in spec["spec"]["flagSpec"]["flags"]
 
 
-# --- M2 (task-3 review, fix round 1): the `feature_flag.evaluation` event ---
+# --- the `feature_flag.evaluation` span event -------------------------------
 
 
 def test_the_tracing_hook_puts_a_feature_flag_evaluation_event_on_the_active_span():
     """`server.py`'s comment claims `TracingHook` "puts a `feature_flag.
-    evaluation` event on whatever span is active" -- the task-3 review
-    verified this independently against a real `OpenFeatureClient` and an
-    in-memory exporter, but the claim was asserted before it was measured
-    (this repo's standing rule forbids that), and nothing in this repo's own
-    suite proved it. `test_servicer.py`'s `_FailClosedFlagClient` cannot
+    evaluation` event on whatever span is active" -- this guard verifies it
+    independently against a real `OpenFeatureClient` and an in-memory
+    exporter, since this repo's standing rule forbids asserting a claim that
+    was never measured. `test_servicer.py`'s `_FailClosedFlagClient` cannot
     stand in for this guard: it implements `get_string_details` itself and
     never runs a hook at all, by design (its own docstring says so).
 
@@ -279,7 +271,7 @@ def test_the_tracing_hook_puts_a_feature_flag_evaluation_event_on_the_active_spa
     assert "feature_flag.provider.name" in attrs
 
 
-# --- M5 Task 4: the log-record event (signal #2) ---------------------------
+# --- the log-record event (signal #2) ---------------------------------------
 
 
 def _emitted_log_record(resolution: AutonomyResolution, caller: str | None):
@@ -321,7 +313,7 @@ def test_emit_evaluation_event_sends_a_log_record_carrying_every_available_field
     """The positive case: every one of the seven `AutonomyResolution` fields
     that CAN populate an attribute does, including `feature_flag.set.id` and
     `feature_flag.version` -- the two `TracingHook` declares constants for
-    and never emits (Finding 14). `error_type` is also asserted, even though
+    and never emits. `error_type` is also asserted, even though
     a resolution with a populated `version`/`set_id` is never simultaneously
     an error path in practice -- this only proves the field maps to
     `error.type` when present, independent of what a real resolution shape
@@ -353,7 +345,7 @@ def test_emit_evaluation_event_sends_a_log_record_carrying_every_available_field
 
 
 def test_emit_evaluation_event_stamps_a_real_timestamp():
-    """Measured against the live cluster (2026-09-14): emitting without an
+    """Measured against the live cluster: emitting without an
     explicit `timestamp=` landed in `ss4o_logs-default-namespace` with
     `"@timestamp": "1970-01-01T00:00:00Z"` -- the installed SDK's
     `LogRecord.__init__` (1.44.0) only defaults `observed_timestamp` to
@@ -420,7 +412,7 @@ def test_emit_evaluation_event_omits_none_fields_rather_than_inventing_them():
         )
 
 
-# --- Ruling M5-R4 ------------------------------------------------------------
+# --- the flagd client's host and port match the deployed sidecar ------------
 
 
 def test_the_configured_port_matches_the_featureflagsource_resource():

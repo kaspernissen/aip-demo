@@ -1,23 +1,18 @@
-"""M5-R33: the root `.venv` (`tests/requirements.txt`) had no pin guard.
-
-Every per-service venv has one -- `agents/settlement-agent/tests/test_pins.py`
-(M1.2's final-review fix round, SF-2, closing PYSEC-2026-1845), then
-`agents/claims-agent` and `tools/payments-mcp` (M2.1 Task 6, spec §11),
-`apps/reviewer-ui` (from its own creation) and
-`platform/policy-decision-service` (M3 Task 1, Part A). The root venv --
+"""Pins package versions for the root `.venv` (`tests/requirements.txt`),
 the one `scripts/smoke-test.sh` and this repo's own CI-shaped runs invoke as
-`.venv/bin/python -m pytest tests` -- was the seventh Python environment in
-this repo and the only one with no tripwire of its own: `grep -rln
-"tests/requirements.txt" --include="*.py" tests/ scripts/` finds nothing
-that asserts against it.
+`.venv/bin/python -m pytest tests`.
+
+Every per-service venv in this repo carries an equivalent tripwire --
+`agents/settlement-agent/tests/test_pins.py`, `agents/claims-agent`,
+`tools/payments-mcp`, `apps/reviewer-ui` and
+`platform/policy-decision-service` all have one -- so the root venv is not
+left as the only Python environment with nothing asserting against a
+package silently drifting: `grep -rln "tests/requirements.txt"
+--include="*.py" tests/ scripts/` would otherwise find nothing.
 
 This venv runs `tests/unit` AND `tests/e2e`, including the anti-vacuity e2e
-(`tests/e2e/test_progressive_autonomy.py`) M5's headline claim rests on --
-an unpinned drift here would move the evidence base for that claim without
-anything noticing. Whole-branch review: found by a gate attempt failing,
-the most expensive way to find it; all seven venvs happened to already agree
-on `pytest 9.1.1` at the time this was written, which is exactly when a gap
-like this is cheapest to close and hardest to notice on its own.
+`tests/e2e/test_progressive_autonomy.py` -- an unpinned drift here would move
+the evidence base under that test without anything noticing.
 
 Asserted from the installed tree via `importlib.metadata`, never by parsing
 `requirements.txt` -- a pin file is not an installed tree (same discipline

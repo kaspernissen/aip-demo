@@ -16,7 +16,7 @@
 //
 // This is agentgateway's ExtMCP wire protocol: the gRPC contract the gateway
 // speaks to an external MCP-aware policy server (`mcpGuardrails` /
-// `kind: Remote` in the gateway config). M2.2's policy-decision-service
+// `kind: Remote` in the gateway config). policy-decision-service
 // implements the `ExtMcp` service defined here.
 
 syntax = "proto3";

@@ -1,21 +1,19 @@
-"""M4 Task 3: the evidence view, asserted by its queries rather than its pixels.
+"""The evidence view, asserted by its queries rather than its pixels.
 
-The line this milestone earns on stage is *"Can we prove why €5,800 was
-paid?"*, and §4 of
-`docs/superpowers/specs/2026-09-11-northstar-m4-observable-design.md` answers
-it with one saved dashboard showing two claims side by side: €5,800 permitted
-straight through under a rule, €6,200 denied under **the same rule**, escalated
-to a human, and executed by a different identity. This file asserts the
-**queries** that dashboard is built from --
+The claim this demo needs to support on stage is *"Can we prove why €5,800
+was paid?"*, and `docs/architecture.md`'s own section on the evidence view
+answers it with one saved dashboard showing two claims side by side: €5,800
+permitted straight through under a rule, €6,200 denied under **the same
+rule**, escalated to a human, and executed by a different identity. This
+file asserts the **queries** that dashboard is built from --
 `deploy/observability/dashboards/evidence.ndjson` -- against live OpenSearch.
 
-**Why the queries and not the dashboard.** The spec is explicit (§4, "How it is
-tested"): screenshot and layout assertions are out of scope. A dashboard that
-renders beautifully and silently goes blank when instrumentation regresses is
-worse than no dashboard, because it is trusted. So every field the saved
-dashboard puts on screen is read here, out of the same index, by the same
-two-step join -- and a regression reddens this file instead of being noticed on
-stage.
+**Why the queries and not the dashboard.** Screenshot and layout assertions
+are out of scope. A dashboard that renders beautifully and silently goes
+blank when instrumentation regresses is worse than no dashboard, because it
+is trusted. So every field the saved dashboard puts on screen is read here,
+out of the same index, by the same two-step join -- and a regression
+reddens this file instead of being noticed on stage.
 
 **This file drives the runs it asserts on.** Same rule
 `test_policy_denial.py` states and `test_opensearch_trace_ingest.py` repeats:
@@ -28,54 +26,48 @@ form POST because reviewer-ui renders server-side with no JavaScript at all
 
 **Gated behind `RUN_BROWSER_TESTS=1` even though it starts no browser** --
 `test_settlement_llm_trace.py`'s precedent, whose own `pytestmark` says the
-same thing: the flag is this repo's single cost gate and `scripts/smoke-test.sh`
-sets it unconditionally, so Task 5's gate run loses nothing. It was ungated when
-this file shipped, which made a bare `pytest tests/` drive **four** settlements
-instead of two and -- new in kind, not only in degree -- execute a real €6,200
-payment under `senior-settlement-agent`'s identity, because this is the first
-ungated file to drive the whole supervised path. `test_supervised.py` gates 6 of
-its 7 tests for exactly that reason. **The wider question is settled**: it was a
-repo-level policy call this file did not make, and M4 Task 5 made it (ruling
-M4-R15 amended). The three chain files that had spent tokens on every bare run
-since M1.2 -- `test_claim_correlation.py`, `test_claims_chain_trace.py`,
-`test_settlement_agent_trace.py` -- now carry the same gate, so a bare
+same thing: the flag is this repo's single cost gate and
+`scripts/smoke-test.sh` sets it unconditionally, so a gated run loses
+nothing. Left ungated, a bare `pytest tests/` would drive **four**
+settlements instead of two and -- new in kind, not only in degree -- execute
+a real €6,200 payment under `senior-settlement-agent`'s identity, because
+this is the only file that drives the whole supervised path outside
+`test_supervised.py` (which gates 6 of its 7 tests for exactly that reason).
+The three chain files that would otherwise spend tokens on every bare run --
+`test_claim_correlation.py`, `test_claims_chain_trace.py`,
+`test_settlement_agent_trace.py` -- carry the same gate, so a bare
 `pytest tests/` spends nothing at all. See docs/telemetry-contract.md's own
 section on it for the measurement and for what the bare run gives up in
 exchange.
 
 **The time window is load-bearing, not hygiene.** `CLM-1842` is a fixed
 constant, so the index accumulates one set of traces per run of it forever;
-measured on this cluster 2026-09-13, a claim-id lookup for `CLM-1842` returned
-three traces spanning seven hours, one of them from before M4 Task 1's ingest
-fix and therefore carrying no `policy.decision` span at all. By the end of the
-fix round that had grown to **20 traces / 2,372 documents**, which is past the
-1,000-document page `_spans_in_traces` reads and trips its own truncation
-guard — so the bound is what keeps these queries answerable at all, not only
-what keeps them correct. Every query below
-is bounded to the window this module opened, and the saved dashboard is bounded
-by OpenSearch Dashboards' own time picker, which is the same bound by a
-different name. Without it both would answer with whichever run happened to
-sort first.
+a long-running cluster's history for `CLM-1842` can span many traces across
+hours, some from before OpenSearch trace ingest existed at all and
+therefore carrying no `policy.decision` span, and the total can grow past
+the 1,000-document page `_spans_in_traces` reads and trip its own
+truncation guard — so the bound is what keeps these queries answerable at
+all, not only what keeps them correct. Every query below is bounded to the
+window this module opened, and the saved dashboard is bounded by OpenSearch
+Dashboards' own time picker, which is the same bound by a different name.
+Without it both would answer with whichever run happened to sort first.
 
 **Gap 4 is why the join is two steps.** See `_trace_ids_for_claim` and
 `_spans_in_traces` below, and the header of
 `deploy/observability/dashboards/evidence.ndjson`.
 
 **Stage gate, and why it is not a way to hide.** OpenSearch is a stage-4
-component. There is now exactly one skip shape in this repo --
-`tests/harness/kube.py`'s `absent_or_fail`, which this file imports rather than
-re-implements. It was the stricter of the two this milestone carried, and M4
-Task 5 retired the looser one against it (ruling M4-R14): "absent" means the API
-server said `NotFound`, and every other way `kubectl` can exit non-zero is a
-hard failure, because "I could not look" must never be recorded as "there was
-nothing to check". The
-discriminator is deliberately a **different object** than the one under test:
-whether this is a stage-4 cluster is decided by the OpenSearch Service and the
-deployed collector's traces pipeline; the index
-`ss4o_traces-default-namespace` and its documents are the target, so a missing
-index is a **failure**, never a skip. Mutation-verified -- see this task's
-report for the run that pointed `TRACE_INDEX` at a missing index and got red,
-not skipped.
+component. There is exactly one skip shape in this repo --
+`tests/harness/kube.py`'s `absent_or_fail`, which this file imports rather
+than re-implements: "absent" means the API server said `NotFound`, and
+every other way `kubectl` can exit non-zero is a hard failure, because "I
+could not look" must never be recorded as "there was nothing to check". The
+discriminator is deliberately a **different object** than the one under
+test: whether this is a stage-4 cluster is decided by the OpenSearch
+Service and the deployed collector's traces pipeline; the index
+`ss4o_traces-default-namespace` and its documents are the target, so a
+missing index is a **failure**, never a skip. Mutation-verified: pointing
+`TRACE_INDEX` at a missing index reddens this file rather than skipping it.
 """
 from __future__ import annotations
 
@@ -91,7 +83,7 @@ import requests
 
 # Reuse, not re-implementation -- the same convention test_supervised.py states
 # for its own imports. These are the claim, the amounts and the route fixtures
-# M2.2 and M3 already established for exactly these two runs.
+# already established elsewhere for exactly these two runs.
 from tests.e2e.test_policy_denial import (  # noqa: F401 -- fixture used by name
     ATTR_AUTONOMY,
     ATTR_DECISION,
@@ -124,17 +116,13 @@ from tests.e2e.test_opensearch_trace_ingest import (
     _opensearch,
 )
 from tests.e2e.test_caller_identity import KUBE_CONTEXT
-# Ruling M4-R14, discharged in M4 Task 5: this was
-# `from tests.e2e.test_prometheus_metrics_ingest import _absent_or_fail`. The
-# helper moved out of that file into the shared harness so that neither of the
-# two e2e modules that need it owns it, and so the loose shape
-# `test_opensearch_trace_ingest.py` carried could be retired against the same
-# one definition rather than against a copy.
+# `absent_or_fail` lives in the shared harness so that neither of the two
+# e2e modules that need it owns it, and so both check "does this object
+# exist?" against the same one definition rather than against a copy.
 from tests.harness.kube import absent_or_fail
-# Same move, same reason, one milestone's mutation later: the parsed reading of
-# the deployed pipelines used to live here as a private function while the
-# oldest of the three callers still grepped the config text. See
-# tests/harness/collector.py.
+# Same reasoning: the parsed reading of the deployed pipelines lives in the
+# shared harness rather than as a private function duplicated per caller.
+# See tests/harness/collector.py.
 from tests.harness.collector import pipeline_exporters
 
 COLLECTOR_CONFIGMAP = "otel-collector-config"
@@ -157,10 +145,10 @@ ATTR_CLAIM_ID = "northstar.claim.id"
 ATTR_REVIEW_REVIEWER = "review.reviewer.id"
 ATTR_REVIEW_DECISION = "review.decision"
 
-# The rule the whole milestone turns on: it fires for both claims, and decides
-# them differently. Not a constant this file chose -- read off the live
-# decision spans of both runs (this task's report has the transcript) and
-# already published in docs/telemetry-contract.md's decision table.
+# The rule this demo's evidence story turns on: it fires for both claims,
+# and decides them differently. Not a constant this file chose -- read off
+# the live decision spans of both runs and already published in
+# docs/telemetry-contract.md's decision table.
 EXECUTE_LIMIT_RULE = "settlement-agent.assisted.execute_limit"
 
 PAYMENTS_API = "payments-api"
@@ -192,11 +180,10 @@ EVIDENCE_SETTLE_TIMEOUT_S = 120.0
 WINDOW_SKEW_S = 30.0
 
 # One page is enough for a claim's whole story and the assertion below proves it
-# rather than assuming it. Measured 2026-09-13 over this cluster's four most
-# recent `CLM-1842` runs: a supervised pair (refusal trace + approval trace) is
-# **214-218 documents**, split 141-145 and 73. An earlier draft of this comment
-# said ~153, which was wrong; the count was re-measured per run rather than
-# carried forward, and the headroom is 4.6x rather than 6.5x.
+# rather than assuming it. A supervised pair (refusal trace + approval trace)
+# is **214-218 documents** on this cluster, split roughly 141-145 and 73
+# between the two traces -- comfortable headroom below the 1,000-document
+# page `_spans_in_traces` reads.
 SPAN_PAGE_SIZE = 1000
 
 _WINDOW_START_MS: int | None = None
@@ -261,19 +248,18 @@ def _trace_ids_for_claim(claim_id: str) -> list[str]:
     `params._meta`, Gap 4 in docs/telemetry-contract.md -- so payments-mcp and
     payments-api spans never carry it; and the Policy Decision Service is
     reached over the gateway's guardrail hop, which carries no baggage either,
-    so `policy.decision` spans never carry it. Measured on this cluster
-    2026-09-13, and re-measured across the four most recent supervised runs in
-    the fix round rather than carried forward from one: a `CLM-1842` filter
+    so `policy.decision` spans never carry it. Measured across several
+    supervised runs rather than assumed from one: a `CLM-1842` filter
     returns **73-75 documents** per run (settlement-agent and claims-agent
     only), while the two traces those runs actually span hold **214-218**.
     **Zero** of the filtered documents are from payments-api or the PDS in any
     of the four -- the filter drops all 5 payments-api and all 5
     policy-decision-service documents every time, i.e. every span that records
     the decision and every span where money moved.
-    **The trace id is the join.** M4 does not close Gap 4 (spec §4: closing it
-    means changing baggage propagation in the money path, a milestone's worth
-    of risk for a milestone whose headline is elsewhere); it is built around
-    the constraint, here and in the saved dashboard's own two-step layout.
+    **The trace id is the join.** This file does not close Gap 4 (closing it
+    means changing baggage propagation in the money path, more risk than this
+    file's own scope justifies); it is built around the constraint, here and
+    in the saved dashboard's own two-step layout.
 
     Returns more than one trace id for a supervised claim, and that is the
     point rather than an accident: the refusal is one trace (rooted at
@@ -322,13 +308,13 @@ def _spans_in_traces(trace_ids: list[str]) -> list[dict]:
         }
     )["hits"]
     hits = result["hits"]
-    # Fix round 1, S1: a silent truncation here would present as a missing money
-    # hop -- a red, but one pointing at instrumentation instead of at this page
-    # size. Measured 2026-09-13: a supervised pair is 214-218 documents against
-    # a 1,000-document page (see SPAN_PAGE_SIZE), so this has headroom and is a
-    # tripwire rather than a live risk -- but it is not idle, either: run
-    # unbounded over this index's 20 accumulated `CLM-1842` traces it fires,
-    # 1,000 of 2,372, which is what the time window exists to prevent.
+    # A silent truncation here would present as a missing money hop -- a red,
+    # but one pointing at instrumentation instead of at this page size. A
+    # supervised pair is 214-218 documents against a 1,000-document page (see
+    # SPAN_PAGE_SIZE), so this has headroom and is a tripwire rather than a
+    # live risk -- but it is not idle, either: run unbounded over an
+    # unbounded accumulation of `CLM-1842` traces, this fires, which is what
+    # the time window exists to prevent.
     # `track_total_hits` is set because OpenSearch caps the
     # reported total at 10,000 by default, which would make the comparison
     # itself lie exactly when it matters.
@@ -359,12 +345,12 @@ def evidence_for(claim_id: str) -> dict:
       `reviewer`/`review_decision` panel 3, "Was a human in the loop?"
       `money_hops`                 panel 4, the ledger hops
 
-    **M5 Task 6.** `autonomy_level` and `contract_version` are the contract's
-    own two signals on the first decision span -- `ATTR_AUTONOMY` (always
-    present, `pds/server.py`) and `ATTR_FLAG_VERSION` (present only when
-    flagd's response carries a version, which measurably never happens
-    against this deployment; see `scorer/contract.py`'s module docstring and
-    ruling M5-R29). `contract_version` is expected to read `None` for both of
+    `autonomy_level` and `contract_version` are the contract's own two
+    signals on the first decision span -- `ATTR_AUTONOMY` (always present,
+    `pds/server.py`) and `ATTR_FLAG_VERSION` (present only when flagd's
+    response carries a version, which measurably never happens against
+    this deployment; see `scorer/contract.py`'s module docstring).
+    `contract_version` is expected to read `None` for both of
     this file's live claims today -- that is the honest value, not a gap in
     this function -- and the panel's own `missingBucket` surfaces it as
     "(no version published)" rather than an empty row.
@@ -473,15 +459,14 @@ def _traces_pipeline_tees_to_opensearch() -> bool:
     """Whether the DEPLOYED collector actually routes traces to OpenSearch.
 
     **Both halves of the tee are read, because either one missing means no span
-    reaches the index** -- and fix round 1 finding F2 is that the first version
-    of this function said exactly that sentence while reading only one half.
-    Measured on the deployed ConfigMap: the string `opensearch/trace` occurs in
-    exactly one pipeline's exporter list, `traces/opensearch`; the main `traces`
-    pipeline's exporters are
+    reaches the index.** Checking only one half can satisfy that sentence
+    while the other half is broken. Measured on the deployed ConfigMap: the
+    string `opensearch/trace` occurs in exactly one pipeline's exporter
+    list, `traces/opensearch`; the main `traces` pipeline's exporters are
     `['otlp_grpc/jaeger', 'forward/opensearch', 'otlp_grpc/dash0', 'debug']`.
-    So deleting `forward/opensearch` from the main pipeline -- which is what
-    actually feeds the branch, and is the Task 1 inheritance item a reader is
-    told is guarded here -- left the old version returning True.
+    Deleting `forward/opensearch` from the main pipeline -- the tee that
+    actually feeds the branch -- would leave a single-half check returning
+    True while nothing reaches the index.
 
     Both are now required:
 
@@ -508,7 +493,7 @@ def _traces_pipeline_tees_to_opensearch() -> bool:
 
 @pytest.fixture(scope="module", autouse=True)
 def stage_4_or_a_reason():
-    """Skip below stage 4; fail on the incoherent middle state (finding F10).
+    """Skip below stage 4; fail on the incoherent middle state.
 
     The discriminator is the OpenSearch Service and the deployed collector's
     traces pipeline -- **not** the index or the documents, which are what this
@@ -540,9 +525,9 @@ def stage_4_or_a_reason():
         f"the deployed collector ConfigMap tees traces to "
         f"{OPENSEARCH_TEE_ID!r} and on to {OPENSEARCH_EXPORTER_ID!r} "
         f"but svc/{OPENSEARCH_SERVICE} does not "
-        f"exist in the {OBSERVABILITY_NAMESPACE} namespace. That is review "
-        "finding F10: a pipeline exporting to a backend this cluster does not "
-        "have, which fails permanently and logs into a file nobody reads."
+        f"exist in the {OBSERVABILITY_NAMESPACE} namespace: a pipeline "
+        "exporting to a backend this cluster does not have, which fails "
+        "permanently and logs into a file nobody reads."
     )
     assert exports, (
         f"svc/{OPENSEARCH_SERVICE} is installed but the deployed collector "
@@ -578,7 +563,7 @@ def _submit_claim(claim_id: str, amount: float) -> dict:
 
     `test_claim_correlation.py`'s shape: this test originates the request, so
     it mints its own trace id and sends it as a `traceparent` rather than
-    searching for a plausible trace afterwards (A14). Nothing below reads this
+    searching for a plausible trace afterwards. Nothing below reads this
     trace id: the evidence query starts from the claim id, because that is what
     an operator reading the dashboard actually has. It is minted anyway so that
     a failure in this fixture can be traced by hand without guessing which of
@@ -631,15 +616,14 @@ def denied_claim(claims_agent_route, reviewer_ui_route):
     own table names, not a new one invented for the dashboard.
 
     The reviewer id is unique per run (`REVIEWER_NAME_PREFIX` plus a uuid),
-    which is M3's own precedent, taken for the reason `test_supervised.py`
-    records rather than a paraphrase of it: payments-api's payment ids are
-    sequential only within one process lifetime (ruling 32), so
-    `review.payment.id` alone was
-    not the unique key that file assumed, and its first live run read a stale
-    `review.decision` trace from an unrelated earlier test. A per-run reviewer
-    name is what made the key safe. Nothing here searches by that key -- the
-    claim-id join finds the approval trace -- but a shared reviewer name across
-    concurrent runs would still make `reviewer` ambiguous in the row below.
+    matching the same precedent `test_supervised.py` sets, for the same
+    reason: payments-api's payment ids are sequential only within one
+    process lifetime, so `review.payment.id` alone is not a unique key -- a
+    shared reviewer name across concurrent runs can read a stale
+    `review.decision` trace from an unrelated earlier test. Nothing here
+    searches by that key -- the claim-id join finds the approval trace --
+    but a shared reviewer name across concurrent runs would still make
+    `reviewer` ambiguous in the row below.
     """
     run = _submit_claim(DENIED_CLAIM_ID, DENIED_AMOUNT)
     reply = run["reply"]
@@ -663,14 +647,14 @@ def denied_claim(claims_agent_route, reviewer_ui_route):
     )
 
     # The settle check below is a *timing* precondition, and it has a
-    # consequence worth naming (fix round 1, F6): because it polls until these
-    # five are truthy, a regression that empties one of them reddens as an
-    # ERROR raised here after the 120s timeout -- naming the empty field and
-    # printing the whole row -- rather than as a FAILED at the assertion that
-    # reads it. The assertions' *values* still discriminate (`== "deny"`,
-    # `== EXECUTE_LIMIT_RULE`, `.endswith("/sa/senior-settlement-agent")`;
-    # mutation M8 demonstrates the last one). Both go red; only the label
-    # differs, and the message here is the more useful of the two.
+    # consequence worth naming: because it polls until these five are
+    # truthy, a regression that empties one of them reddens as an ERROR
+    # raised here after the 120s timeout -- naming the empty field and
+    # printing the whole row -- rather than as a FAILED at the assertion
+    # that reads it. The assertions' *values* still discriminate (`==
+    # "deny"`, `== EXECUTE_LIMIT_RULE`, `.endswith("/sa/senior-settlement-agent")`).
+    # Both go red; only the label differs, and the message here is the more
+    # useful of the two.
     row = _settled_evidence(
         DENIED_CLAIM_ID,
         ("policy_decision", "rule", "reviewer", "executing_identity", "money_hops"),
@@ -709,7 +693,7 @@ def permitted_claim_id(claims_agent_route) -> str:
 
 
 def test_the_evidence_query_returns_both_stories(denied_claim, permitted_claim_id):
-    """Spec §4: one query, two claims, two different audit trails.
+    """One query, two claims, two different audit trails.
 
     Asserts the fields the dashboard renders, straight from OpenSearch. If
     instrumentation regresses, this reddens instead of the dashboard quietly
@@ -724,7 +708,7 @@ def test_the_evidence_query_returns_both_stories(denied_claim, permitted_claim_i
     permitted = evidence_for(permitted_claim_id)
     assert permitted["policy_decision"] == "permit", permitted
     assert permitted["rule"] == denied["rule"], (
-        "both claims must be decided by the SAME rule -- that is the milestone's "
+        "both claims must be decided by the SAME rule -- that is the whole "
         f"point: {permitted['rule']!r} vs {denied['rule']!r}"
     )
     assert permitted["reviewer"] is None, (
@@ -734,16 +718,16 @@ def test_the_evidence_query_returns_both_stories(denied_claim, permitted_claim_i
 
 
 def test_the_contract_signals_reach_the_decision_panel(denied_claim, permitted_claim_id):
-    """M5 Task 6: the decision panel also carries the contract's own two
-    signals -- the autonomy level a decision actually ran under, and the
-    ruleset version it saw, if any -- read off the same first decision span
+    """The decision panel also carries the contract's own two signals -- the
+    autonomy level a decision actually ran under, and the ruleset version it
+    saw, if any -- read off the same first decision span
     `rule`/`limit`/`requested` already come from, not a second query.
 
-    Both claims in this file run under the shipped, refusing contract
-    (M5-R8), so both must show `autonomy_level == "assisted"`.
-    `contract_version` is asserted `None` for both, which is the *honest*
-    value today (ruling M5-R29): `featureflag.yaml` publishes no flag
-    `metadata`, so flagd never returns one. If this assertion ever reddens
+    Both claims in this file run under the shipped, refusing contract, so
+    both must show `autonomy_level == "assisted"`. `contract_version` is
+    asserted `None` for both, which is the *honest* value today:
+    `featureflag.yaml` publishes no flag `metadata`, so flagd never returns
+    one. If this assertion ever reddens
     because a real version appeared, that means route 1 has been taken for
     real -- update it and `platform/eval-scorer/scorer/contract.py`'s
     `CURRENT_CONTRACT_VERSION` together, the same discipline that module's
@@ -811,7 +795,7 @@ def test_the_trace_id_join_is_what_reaches_the_money_hops(
 def test_the_denied_claim_and_the_permitted_one_are_decided_by_one_rule(
     denied_claim, permitted_claim_id
 ):
-    """The milestone's own sentence, as an assertion.
+    """The demo's own claim about the evidence view, as an assertion.
 
     Same rule, opposite outcomes, and the limit each was measured against --
     the row the dashboard puts side by side. `executing_rule` is asserted too:

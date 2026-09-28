@@ -10,13 +10,12 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	// 2026-09-11 (M3): was `semconv/v1.39.0`, which matched the SDK this
-	// service used to pin. It must track whatever `resource.Default()` was
-	// built against, because `resource.Merge` below refuses two different
-	// schema URLs. otel/sdk v1.46.0's `resource/builtin.go:16` imports
-	// `semconv/v1.43.0` (read in the module cache), so leaving this at 1.39.0
-	// made `initTracing` return "conflicting Schema URL:
-	// https://opentelemetry.io/schemas/1.43.0 and .../1.39.0" and crash-looped
+	// This must track whatever `resource.Default()` was built against,
+	// because `resource.Merge` below refuses two different schema URLs.
+	// otel/sdk v1.46.0's `resource/builtin.go:16` imports `semconv/v1.43.0`
+	// (read in the module cache); pinning this package to an older semconv
+	// makes `initTracing` return "conflicting Schema URL:
+	// https://opentelemetry.io/schemas/1.43.0 and .../1.39.0" and crash-loop
 	// the pod on first rollout. Measured, not predicted: that is the literal
 	// log line from payments-api-57cbb84945-x65n4.
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
@@ -53,8 +52,7 @@ func initTracing(ctx context.Context) (func(context.Context) error, error) {
 	)
 	otel.SetTracerProvider(provider)
 
-	// W3C trace context and baggage. Baggage matters from Task 7 onward:
-	// northstar.claim.id rides in it.
+	// W3C trace context and baggage: northstar.claim.id rides in baggage.
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},

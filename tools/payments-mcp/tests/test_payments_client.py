@@ -98,8 +98,8 @@ def test_http_errors_are_raised():
 
 
 # ---------------------------------------------------------------------------
-# M3 Task 3: recording a refusal, through the same client that already talks
-# to payments-api -- not a new HTTP path, the plan's own words for it.
+# Recording a refusal goes through the same client that already talks to
+# payments-api -- not a new HTTP path.
 # ---------------------------------------------------------------------------
 
 

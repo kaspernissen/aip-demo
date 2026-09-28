@@ -1,28 +1,28 @@
 """The live gateway ConfigMap against the committed file — parsed, not bytes.
 
-**The gap this closes** (M2.2 final review, adjudication 1). Every other guard
-in this repository catches a *consequence* of the deployed gateway config being
-wrong: `tests/unit/test_stage2_pds_config.py` reads the committed file,
+**The gap this closes.** Every other guard in this repository catches a
+*consequence* of the deployed gateway config being wrong:
+`tests/unit/test_stage2_pds_config.py` reads the committed file,
 `test_policy_denial.py::test_criterion_5_...` drives two SPIRE SVIDs at the
 deployed gateway and reddens if the live config dropped `mcpGuardrails`,
 flipped to `failOpen`, dropped `metadata.caller` or set `methods` to `off`, and
 criterion 3 catches a live `requestHeaders.allowed` regression through span
-parentage. Nothing asserted live-vs-committed identity in either direction. So
-a live config that is *stricter* than the committed one, or that differs only
-in `frontendPolicies.tracing`, was invisible: the committed file would be
-reviewed, the cluster would be running something else, and every existing
-assertion would pass.
+parentage. None of that asserts live-vs-committed identity in either
+direction. So a live config that is *stricter* than the committed one, or that
+differs only in `frontendPolicies.tracing`, is invisible: the committed file
+gets reviewed, the cluster runs something else, and every existing assertion
+still passes.
 
-**Why parsed and not bytes, which is the whole point of this test.** The
-review measured the real drift on this cluster: two hunks, both inside a single
-comment block, with `yaml.safe_load` of the two sides comparing **equal**. That
-is not a defect — `scripts/setup-kind.sh` recreates the ConfigMap from the
-committed file *and* restarts the deployment (a mounted ConfigMap change is
-invisible to a running gateway, which reads its config once at startup with
-`-f`), so convergence is guaranteed at the next `--stage 2`, and bouncing the
-choke point mid-milestone to publish a comment would be the worse trade. A
-byte comparison would have called that state a failure, wrongly, and the
-predictable response to a guard that cries wolf is to delete it.
+**Why parsed and not bytes, which is the whole point of this test.** Comment
+drift inside the config -- a hunk that only touches text inside a comment
+block -- leaves `yaml.safe_load` of both sides comparing **equal**. That is not
+a defect: `scripts/setup-kind.sh` recreates the ConfigMap from the committed
+file *and* restarts the deployment (a mounted ConfigMap change is invisible to
+a running gateway, which reads its config once at startup with `-f`), so
+convergence is guaranteed at the next `--stage 2`, and bouncing the choke point
+to publish a comment would be the worse trade. A byte comparison would call
+that state a failure, wrongly, and the predictable response to a guard that
+cries wolf is to delete it.
 
 agentgateway parses this file as YAML. So the assertion that matches what the
 gateway actually consumes is equality of the *parsed* documents: comment drift
@@ -38,16 +38,11 @@ ConfigMap and its `config.yaml` key are the target, so their absence is a
 **failure**, never a skip. A missing or empty ConfigMap on a cluster that is
 running the gateway is itself a live/committed divergence — the gateway is
 serving a configuration this repository cannot see — which is precisely what
-this file exists to catch.
-
-The first version of this test got that wrong: it skipped when the ConfigMap or
-its key was missing, and the M2.2 fix-round re-review killed it by pointing the
-test at a key the live ConfigMap does not carry, which produced `1 skipped` and
-a skip reason that positively asserted a falsehood ("not a stage-2 cluster")
-about a cluster that was plainly stage 2. `policy_present` records the same
-defect in its own history, and `platform/policy-decision-service/tests/
-conftest.py` cites the same incident as its reason to raise rather than skip. A
-skip does not fail a run.
+this file exists to catch. A skip on the ConfigMap itself would let a genuinely
+broken cluster report `1 skipped` with a reason that falsely claims "not a
+stage-2 cluster"; `policy_present` and
+`platform/policy-decision-service/tests/conftest.py` apply the same rule for
+the same reason -- a skip does not fail a run.
 
 **Why this is not behind `RUN_BROWSER_TESTS=1`.** Like the two files above, it
 spends no model tokens and starts no browser: two `kubectl get` calls and a

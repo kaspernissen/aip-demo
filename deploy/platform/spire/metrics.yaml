@@ -8,7 +8,8 @@
 # `spire-server` Service publishes only grpc/443, and the spire-agent
 # DaemonSet has no Service at all. Without something addressable, the
 # collector has nothing to scrape and SPIRE stays invisible -- the same
-# "component with no telemetry configured" hole Task 3 found in agentgateway.
+# "component with no telemetry configured" gap agentgateway has by default
+# (deploy/platform/agentgateway/deployment.yaml).
 #
 # Both Services are metrics-only and deliberately separate from the chart's
 # own Services, so a chart upgrade cannot silently drop the scrape target or

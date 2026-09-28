@@ -1,29 +1,24 @@
-"""M4 Task 2: what Prometheus actually holds, asserted against the live cluster.
+"""What Prometheus actually holds, asserted against the live cluster.
 
-This file is the executable half of `docs/telemetry-contract.md`'s "Metrics, as
-measured (M4 Task 2)" section and of `docs/upstream-findings.md` Finding 12. §6
-of the M4 spec asks one question -- *once a MeterProvider exists, which GenAI
-agent metrics does anything actually emit?* -- and the answer published there is
-"one of six". A published negative is only worth anything if something re-checks
-it, and M4's exit criterion 6 says Task 5 re-verifies the inventory; this is
-what it re-verifies with.
+This file is the executable half of `docs/telemetry-contract.md`'s "Metrics,
+as measured" section and of `docs/upstream-findings.md` Finding 12, which ask
+one question -- *once a MeterProvider exists, which GenAI agent metrics does
+anything actually emit?* -- and publish the answer "one of six". A published
+negative is only worth anything if something re-checks it; this file is what
+re-verifies that inventory against the live cluster.
 
 **Every assertion here is paired with a positive control, deliberately.** The
-expensive failure mode for this milestone is a FALSE negative: concluding "the
-framework emits nothing" from a query that would have returned empty whatever
-the framework did. So no test below asserts an absence without, in the same
-test, asserting a presence that could only be there if the path the absent
-metric would have travelled is working end to end.
-
-That sentence was aspirational rather than true when this file shipped, and
-review finding F3 demonstrated it: three tests -- the five-absence
-parametrisation, the unpredicted-name backstop and the invented-metric check --
-read only the cached `metric_names` set and passed against a completely empty
-Prometheus. The file as a whole still went red in that situation, because the
-control tests below do not, but the claim was per-test and those three did not
-have it. They now call `_assert_the_genai_path_is_live()` as their own first
-assertion, so the sentence above is now literal for all fourteen. The controls,
-in the order the data crosses them:
+expensive failure mode here is a FALSE negative: concluding "the framework
+emits nothing" from a query that would have returned empty whatever the
+framework did. So no test below asserts an absence without, in the same test,
+asserting a presence that could only be there if the path the absent metric
+would have travelled is working end to end. Reading only a cached
+`metric_names` set would let an absence pass against a completely empty
+Prometheus, so the five-metric absence parametrisation, the unpredicted-name
+backstop and the invented-metric check all call
+`_assert_the_genai_path_is_live()` as their own first assertion, rather than
+relying on the module-level control tests alone. The controls, in the order
+the data crosses them:
 
   1. **Collector -> Prometheus.** `deploy/observability/prometheus/values.yaml`
      disables all ten of the chart's default scrape jobs, so this Prometheus
@@ -35,24 +30,20 @@ in the order the data crosses them:
      `gen_ai.*` metric must be shown emitting *some* metric, under its own
      `job` label, in the same window. A service with no series at all proves
      nothing about any framework -- it only proves that process had nowhere to
-     put a measurement, which is the pre-M4 state the whole section exists to
-     move past.
+     put a measurement.
 
 **Stage gate, and why it is not a way to hide.** Same rule
-`test_opensearch_trace_ingest.py` established: skip only when the cluster is
+`test_opensearch_trace_ingest.py` uses: skip only when the cluster is
 *coherently* below stage 4 -- Prometheus absent AND the deployed collector
 config not naming the exporter. The incoherent middle (an exporter pointed at a
-Service that does not exist) fails here rather than skipping, because that is
-exactly review finding F10's shape. Fix round 1 closed the third case (finding
-F7): "absent" now means the API server said `NotFound`, and every other way
-`kubectl` can exit non-zero -- unreachable server, wrong context, expired
-credential, timeout -- is a hard failure. "I could not look" must never be
-recorded as "there was nothing to check", least of all in the single gate run
-that re-verifies this milestone's published negative. M4 Task 5 moved that
-discriminator out of this file into `tests/harness/kube.py` and retired the
-looser shape `test_opensearch_trace_ingest.py` still carried against it (ruling
-M4-R14): the behaviour here is unchanged, and there is now one definition
-rather than one per caller.
+Service that does not exist) fails here rather than skipping. "Absent" means
+the API server said `NotFound`, and every other way `kubectl` can exit
+non-zero -- unreachable server, wrong context, expired credential, timeout --
+is a hard failure, because "I could not look" must never be recorded as
+"there was nothing to check", least of all in a run that re-verifies a
+published negative. That discriminator lives in `tests/harness/kube.py`,
+shared with every other caller rather than repeated per-file; see its module
+docstring for why.
 
 **This file drives no traffic of its own**, and that is a deliberate choice
 rather than laziness: a file that drove its own settlement would spend model
@@ -70,63 +61,35 @@ deliberately left unbounded, where a longer window only makes the negative
 stronger. On an idle cluster the controls fail and say to drive traffic; they
 never pass on two-week-old data.
 
-**M4 Task 5: nine of this file's fourteen items now declare the traffic they
-need, and the count got there in two measured steps.** Every control that turns
-on `gen_ai.client.token.usage` has the same real precondition -- *a settlement
-was driven minutes ago* -- because that histogram exists only when a model call
-happened. It was being supplied by accident: three ungated e2e files drove
-settlements earlier in the alphabet than this one. Ruling M4-R15 (amended)
-gated all three, and the accident became failures here.
+**Nine of this file's fourteen items declare the traffic they need.** Every
+control that turns on `gen_ai.client.token.usage` has the same real
+precondition -- *a settlement was driven minutes ago* -- because that
+histogram exists only when a model call happened, so each of those nine
+carries `_MODEL_TRAFFIC_REQUIRED` or `_REVIEWER_UI_TRAFFIC_REQUIRED` (see
+those markers' own comments) rather than relying on some other file's traffic
+to have supplied it by accident.
 
-The first pass gated the two items the failure list showed at the time: the
-`settlement-agent` row of the per-service control, and
-`test_the_one_genai_metric_any_framework_emits_is_present`. That was
-**incomplete, and the run that proved it is the reason this paragraph is
-longer**. `pytest tests/e2e/test_opensearch_trace_ingest.py
-tests/e2e/test_prometheus_metrics_ingest.py` on a bare run, 2026-09-14,
-finished `7 failed, 10 passed, 2 skipped in 3178.17s` -- the two gated items
-skipped as intended and **seven more failed**, all with the same message:
-`_assert_the_genai_path_is_live` could not find
-`gen_ai_client_token_usage_{bucket,count,sum}` in the last 15 minutes. Those
-seven are the three tests fix round 1 attached that control to (finding F3) --
-the five-metric absence parametrisation, the unpredicted-name backstop and the
-invented-metric check. Their control is the same histogram; gating two of its
-consumers and not the other three was an inconsistency that only a real bare
-run could show, and the lesson is the standing one here: **the second-order
-effect of a gate is measured, not reasoned about.**
+All nine carry the same `RUN_BROWSER_TESTS=1` flag `scripts/smoke-test.sh`
+sets unconditionally, so a full gated run -- in which `test_policy_scores.py`
+drives settlements immediately before this file -- is unaffected. This is not
+a guard skipping on the object it guards: the object is the metrics path, and
+the flag gates the *traffic* the control needs, not the Prometheus state it
+reads. An absence assertion whose positive control cannot be satisfied is not
+a cheaper version of itself -- by this file's own design it is **unproven**,
+which is what its failure message says. The five items that need no model
+call -- SPIRE's series, the no-scrape proof and the claims-agent and
+payments-mcp rows of the per-service control -- read HTTP metrics the
+remaining ungated traffic still produces, and still run on a bare `pytest
+tests/`.
 
-All nine now carry `_MODEL_TRAFFIC_REQUIRED`, the same `RUN_BROWSER_TESTS=1`
-flag `scripts/smoke-test.sh` sets unconditionally -- so the gate, which is the
-run M4 exit criterion 6 is proven by and in which `test_policy_scores.py`
-drives settlements immediately before this file, is unchanged. This is not a
-guard skipping on the object it guards: the object is the metrics path, and the
-flag gates the *traffic* the control needs, not the Prometheus state it reads.
-An absence assertion whose positive control cannot be satisfied is not a
-cheaper version of itself -- by this file's own design it is **unproven**, which
-is what its failure message says. The five items that need no model call --
-SPIRE's series, the no-scrape proof and the claims-agent, payments-mcp and
-reviewer-ui rows of the per-service control, which read HTTP metrics the
-remaining ungated traffic still produces -- still run on a bare `pytest
-tests/`, and all five passed on that same run.
-
-**Correction, 2026-09-14 (found unclaimed during M5, not introduced by it).**
-The paragraph above is wrong about the reviewer-ui row: it does not "read HTTP
-metrics the remaining ungated traffic still produces", because there is no
+The reviewer-ui row of the per-service control is the exception: there is no
 ungated traffic to reviewer-ui at all. Every e2e file that reaches
 reviewer-ui's `GET /` or `POST /review/{id}` (`test_evidence_view.py`,
 `test_policy_scores.py`, `test_supervised.py` criteria 1-6) is itself gated
 behind `RUN_BROWSER_TESTS=1`, and reviewer-ui's readiness probe deliberately
-makes no ledger call, so the row failed a bare run every time -- not staleness,
-an absent series (`assert []`). `git diff 0ae64f9^..HEAD` touches none of this
-file, `apps/reviewer-ui/`, `test_evidence_view.py`, `test_policy_scores.py` or
-`test_supervised.py`, matching the M5 Task 4 reviewer's own finding that this
-failure predates Task 4. The row now carries
-`_REVIEWER_UI_TRAFFIC_REQUIRED`, its own gate rather than settlement-agent's;
-see that marker's comment for the full reasoning. "All five passed on that
-same run" was true only because a preceding `RUN_BROWSER_TESTS=1` run in the
-same session had left a still-fresh series behind it -- the false-GREEN class
-this file's own module docstring warns about, reached by session ordering
-rather than by a broken control.
+makes no ledger call, so this row needs its own gate,
+`_REVIEWER_UI_TRAFFIC_REQUIRED`, rather than settlement-agent's; see that
+marker's comment for the full reasoning.
 """
 from __future__ import annotations
 
@@ -138,17 +101,15 @@ import time
 
 import pytest
 
-# Ruling M4-R14: the one definition of this repo's skip-or-fail
-# discriminator, moved out of this file so that neither of its two callers
-# owns it. The shape is unchanged -- it is this file's, and it is the strict
-# one; see tests/harness/kube.py's module docstring for why it moved.
+# The one definition of this repo's skip-or-fail discriminator, shared so
+# that no caller holds its own, weaker copy. This file's shape is the strict
+# one; see tests/harness/kube.py's module docstring for why.
 from tests.harness.kube import absent_or_fail
 
 # The parsed form of "what does the deployed collector route?", argued for in
-# _metrics_pipeline_exports_to_prometheus's docstring below on the strength of
-# this file's own mutation run. M4 Task 5 moved it out for the same reason as
-# absent_or_fail: the third caller was still holding the substring version the
-# mutation disproved. See tests/harness/collector.py.
+# _metrics_pipeline_exports_to_prometheus's docstring below. Shared for the
+# same reason as absent_or_fail: a substring check on the raw config text is
+# unreliable. See tests/harness/collector.py.
 from tests.harness.collector import pipeline_exporters
 
 KUBE_CONTEXT = "kind-northstar"
@@ -157,10 +118,10 @@ PROMETHEUS_SERVICE = "prometheus"
 COLLECTOR_CONFIGMAP = "otel-collector-config"
 PROMETHEUS_EXPORTER_ID = "otlp_http/prometheus"
 
-# M4 spec §6's table, verbatim. Read 2026-09-13 from
+# The six GenAI agent metric names, read from
 # `open-telemetry/semantic-conventions-genai`'s own
 # `docs/gen-ai/gen-ai-metrics.md` on `main` -- NOT from the main
-# `semantic-conventions` repository, which no longer carries them. Every one is
+# `semantic-conventions` repository, which does not carry them. Every one is
 # Development stability; that qualifier is part of the published inventory
 # (docs/telemetry-contract.md) rather than an optional extra, because a
 # Development metric can be renamed upstream and a claim written without it
@@ -222,16 +183,14 @@ def _deployed_collector_config() -> str:
 def _metrics_pipeline_exports_to_prometheus() -> bool:
     """Whether the DEPLOYED collector actually routes metrics to Prometheus.
 
-    **Parsed, not grepped, and this is not a style preference -- the grep
-    version of this check was written first and demonstrated inert.** Mutation
-    run 2026-09-13: `- otlp_http/prometheus` was deleted from the `metrics`
-    pipeline's exporter list and the ConfigMap re-applied, which is precisely
-    the edit that stops every metric in this system from reaching Prometheus.
-    `PROMETHEUS_EXPORTER_ID in _deployed_collector_config()` stayed TRUE and all
-    fourteen tests in this file stayed green, because the string still occurs
-    twice more in the file: once as the exporter's own declaration under
-    `exporters:`, and once inside the comment above it. A declared-but-unused
-    exporter is exactly the silently-broken shape this repo exists to catch.
+    **Parsed, not grepped, and this is not a style preference.** A substring
+    check (`PROMETHEUS_EXPORTER_ID in _deployed_collector_config()`) stays
+    TRUE even after the exporter is deleted from the `metrics` pipeline's
+    exporter list, because the string still occurs twice more in the file:
+    once as the exporter's own declaration under `exporters:`, and once
+    inside the comment above it. A declared-but-unused exporter is exactly
+    the silently-broken shape this repo exists to catch, so the pipeline
+    structure has to be read, not the raw text.
 
     Reading the pipeline means a comment cannot satisfy it and neither can a
     dangling declaration.
@@ -243,7 +202,7 @@ def _metrics_pipeline_exports_to_prometheus() -> bool:
 
 @pytest.fixture(scope="module", autouse=True)
 def stage_4_or_a_reason():
-    """Skip below stage 4; fail on finding F10's incoherent middle state."""
+    """Skip below stage 4; fail on the incoherent middle state."""
     installed = _prometheus_is_installed()
     exports = _metrics_pipeline_exports_to_prometheus()
     if not installed and not exports:
@@ -256,9 +215,8 @@ def stage_4_or_a_reason():
     assert installed, (
         f"the deployed collector ConfigMap names the {PROMETHEUS_EXPORTER_ID!r} "
         f"exporter but svc/{PROMETHEUS_SERVICE} does not exist in the "
-        f"{OBSERVABILITY_NAMESPACE} namespace. That is review finding F10's "
-        "shape applied to metrics: a pipeline exporting to a backend this "
-        "cluster does not have. scripts/setup-kind.sh strips the "
+        f"{OBSERVABILITY_NAMESPACE} namespace: a pipeline exporting to a "
+        "backend this cluster does not have. scripts/setup-kind.sh strips the "
         "stage-4-only regions of the collector config below stage 4 -- check "
         "that it did."
     )
@@ -267,10 +225,10 @@ def stage_4_or_a_reason():
         f"ConfigMap's `metrics` pipeline does not export to "
         f"{PROMETHEUS_EXPORTER_ID!r}, so no metric can possibly reach it. "
         "Note this reads the PIPELINE, not the file: an exporter that is "
-        "declared but listed in no pipeline is inert, and is what the "
-        "mutation described on _metrics_pipeline_exports_to_prometheus "
-        "produced. Re-run ./scripts/setup-kind.sh --stage 5, which applies "
-        "the ConfigMap and restarts the collector."
+        "declared but listed in no pipeline is inert (see "
+        "_metrics_pipeline_exports_to_prometheus's docstring). Re-run "
+        "./scripts/setup-kind.sh --stage 5, which applies the ConfigMap and "
+        "restarts the collector."
     )
 
 
@@ -281,8 +239,8 @@ def prometheus_url():
     `:9090` with no local port makes kubectl choose a free one and print it, so
     this cannot shadow `scripts/start-demo.sh`'s own 9090 forward even when
     both are up -- the same shape `test_opensearch_trace_ingest.py::gateway_url`
-    uses, and for the same reason (ruling A9: a stray forward silently
-    shadowing a host port has cost this project a measurement before).
+    uses, and for the same reason: a stray forward silently shadowing a host
+    port has cost this project a measurement before.
     """
     proc = subprocess.Popen(
         [
@@ -402,7 +360,7 @@ def _recent_series(prometheus_url: str, selector: str) -> list[dict]:
 def test_prometheus_holds_series_that_can_only_have_arrived_over_otlp(
     prometheus_url, metric_names, jobs
 ):
-    """Exit criterion 5, and the first positive control.
+    """The first positive control.
 
     This Prometheus scrapes nothing -- every one of the chart's ten default
     jobs is `enabled: false` in `deploy/observability/prometheus/values.yaml`,
@@ -458,9 +416,9 @@ def test_prometheus_itself_scrapes_nothing(prometheus_url):
         "Prometheus has active scrape targets: "
         f"{[t.get('scrapePool') for t in active]}. "
         "deploy/observability/prometheus/values.yaml disables all ten default "
-        "jobs so that OTLP is the only ingestion path, which is what makes M4 "
-        "exit criterion 5 demonstrable and what makes every absence this file "
-        "measures attributable to the framework rather than to a scrape."
+        "jobs so that OTLP is the only ingestion path, which is what makes "
+        "every absence this file measures attributable to the framework "
+        "rather than to a scrape."
     )
 
 
@@ -477,33 +435,29 @@ def test_prometheus_itself_scrapes_nothing(prometheus_url):
 # that the code is byte-identical and the platform tells the two apart by
 # identity), so it has no `job` of its own by design.
 #
-# **The settlement-agent row carries the cost gate, and only that row was
-# gated by M4 Task 5.** Its known metric is the one that exists only because a
-# *model call* happened -- PydanticAI records it per turn -- and
-# `_recent_series` deliberately refuses a stale sample, so this row's real
-# precondition is "a settlement has been driven in the last few minutes".
-# Until M4 Task 5 that precondition was supplied by accident: three ungated
-# e2e files drove settlements earlier in the alphabet than this one. Ruling
-# M4-R15 (amended) gated those three, so the accident is gone, and this row
-# now states its own precondition instead of inheriting it. In the gate --
-# the run that proves M4 exit criterion 6 -- `RUN_BROWSER_TESTS=1` is set,
+# **The settlement-agent row carries the cost gate.** Its known metric is the
+# one that exists only because a *model call* happened -- PydanticAI records
+# it per turn -- and `_recent_series` deliberately refuses a stale sample, so
+# this row's real precondition is "a settlement has been driven in the last
+# few minutes". Other ungated e2e files that sort earlier in the alphabet
+# happen to drive settlements too, but this row does not rely on that
+# accident: it states its own precondition instead of inheriting one from
+# file ordering. In a full run with `RUN_BROWSER_TESTS=1` set,
 # `test_policy_scores.py` and `test_policy_denial.py` drive settlements
-# immediately before this file, and the row runs exactly as it did. The
-# claims-agent and payments-mcp rows stay ungated: their metrics come from
-# ordinary HTTP traffic that the ungated e2e files still generate.
+# immediately before this file, so the precondition holds. The claims-agent
+# and payments-mcp rows stay ungated: their metrics come from ordinary HTTP
+# traffic that the ungated e2e files still generate.
 _MODEL_TRAFFIC_REQUIRED = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
     reason=(
         "needs a model call within the freshness window, which only a "
         "settlement produces; gated behind the same RUN_BROWSER_TESTS=1 flag "
-        "scripts/smoke-test.sh sets unconditionally (ruling M4-R15 amended, "
-        "discharged in M4 Task 5)"
+        "scripts/smoke-test.sh sets unconditionally"
     ),
 )
 
-# **The reviewer-ui row was never actually ungated -- M4 Task 5 measured the
-# other three and left this one on the same footing as claims-agent and
-# payments-mcp, but its own precondition does not hold for reviewer-ui.**
+# **The reviewer-ui row cannot be ungated like claims-agent and payments-mcp
+# are, because its own precondition does not hold for reviewer-ui.**
 # `http_client_duration_milliseconds_count{job="reviewer-ui"}` is recorded by
 # `HTTPXClientInstrumentor` only when reviewer-ui's own process makes an
 # outbound call to payments-api -- `apps/reviewer-ui/ledger.py`'s
@@ -519,9 +473,8 @@ _MODEL_TRAFFIC_REQUIRED = pytest.mark.skipif(
 # `RUN_BROWSER_TESTS=1` (grepped: no other file references
 # `reviewer_ui_route`'s HTTP paths). So unlike claims-agent and payments-mcp,
 # there is no ungated traffic source for this row at all, and it fails a bare
-# `pytest tests/` every time regardless of freshness -- confirmed failing
-# identically before and after M5 Task 4 (both touch no file this row or its
-# traffic sources depend on). Gated on the same flag, for its own reason.
+# `pytest tests/` every time regardless of freshness. Gated on the same flag,
+# for its own reason.
 _REVIEWER_UI_TRAFFIC_REQUIRED = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
     reason=(
@@ -559,30 +512,30 @@ SERVICES_WITH_A_KNOWN_METRIC = (
         "http_client_duration_milliseconds_count",
         "HTTPXClientInstrumentor records it on every ledger read -- note the "
         "LEGACY name: reviewer-ui is the one service whose manifest sets no "
-        "OTEL_SEMCONV_STABILITY_OPT_IN, measured 2026-09-13 and recorded in "
-        "docs/telemetry-contract.md",
+        "OTEL_SEMCONV_STABILITY_OPT_IN, recorded in docs/telemetry-contract.md",
         marks=_REVIEWER_UI_TRAFFIC_REQUIRED,
         id="reviewer-ui",
     ),
 )
 
 
-# No `ids=` derived from the rows: each row carries its own `id=` instead. The
-# derived form was `ids=[row[0] for row in SERVICES_WITH_A_KNOWN_METRIC]`, which
-# restated the job name a second time and broke outright the moment a row became
-# a `pytest.param` (M4 Task 5, adding the cost gate to the settlement-agent row):
-# `row[0]` is then the whole value tuple, and pytest refuses it at collection.
+# No `ids=` derived from the rows: each row carries its own `id=` instead.
+# Deriving it from `row[0]` (`ids=[row[0] for row in
+# SERVICES_WITH_A_KNOWN_METRIC]`) would restate the job name a second time,
+# and breaks outright once a row is a `pytest.param` (the settlement-agent
+# row already is one, for its cost gate) -- `row[0]` is then the whole value
+# tuple, and pytest refuses it at collection.
 @pytest.mark.parametrize("job,known_metric,why", SERVICES_WITH_A_KNOWN_METRIC)
 def test_each_service_demonstrably_gets_a_metric_all_the_way_to_prometheus(
     prometheus_url, job, known_metric, why
 ):
     """The per-service positive control, one test each.
 
-    Before M4 Task 2 every one of these services had no `MeterProvider` at all,
-    so `metrics.get_meter_provider()` returned the API's `_ProxyMeterProvider`
-    and every measurement was discarded inside the process. This asserts the
-    opposite is now true *per service*, against live data -- which is the
-    precondition for reading anything into the absences below.
+    Without a `MeterProvider` installed, `metrics.get_meter_provider()`
+    returns the API's `_ProxyMeterProvider` and every measurement is
+    discarded inside the process. This asserts the opposite is true *per
+    service*, against live data -- which is the precondition for reading
+    anything into the absences below.
     """
     series = _recent_series(
         prometheus_url, f'{{__name__="{known_metric}",job="{job}"}}'
@@ -594,7 +547,7 @@ def test_each_service_demonstrably_gets_a_metric_all_the_way_to_prometheus(
         "about any framework -- only that nothing from this process is "
         "arriving at all. Check, in order: the MeterProvider is installed "
         "(its own suite's test_telemetry.py), the service has been redeployed "
-        "since M4 Task 2, and the collector logs no export failure over the "
+        "recently, and the collector logs no export failure over the "
         "WHOLE window (`kubectl -n observability logs deploy/otel-collector "
         "--since=<pod age>`, never a --tail of it). If the cluster has simply "
         "been idle, drive traffic first -- this file deliberately does not "
@@ -605,16 +558,15 @@ def test_each_service_demonstrably_gets_a_metric_all_the_way_to_prometheus(
 def _assert_the_genai_path_is_live(prometheus_url: str, absence: str) -> None:
     """The in-test positive control every absence below is paired with.
 
-    **Fix round 1, review finding F3.** This module's docstring claims that no
-    test asserts an absence "without, in the same test, asserting a presence".
-    That was false for three of the fourteen: they read only the cached
-    `metric_names` set and passed against a completely empty Prometheus. The
-    file as a whole still went red in that situation -- the control tests above
-    see to that -- but the claim was made per-test and the three did not have
-    it, and a docstring is exactly where a reader goes to decide whether a
-    published negative is trustworthy. Making the three honest is the better of
-    the two available fixes, because an absence assertion that passes against
-    an empty backend is the defect class this repo keeps re-finding.
+    **Why this exists.** An absence assertion that would still pass against a
+    completely empty Prometheus -- reading only a cached `metric_names` set,
+    say -- is the false-negative failure mode this whole file is built to
+    avoid. "The file as a whole would still go red" (the module-level control
+    tests see to that) is not the same claim as "this test proved the path is
+    live", and a docstring is exactly where a reader goes to decide whether a
+    published negative is trustworthy. Every absence test below calls this
+    first so each one carries its own proof, rather than borrowing the file's
+    overall paranoia.
 
     The control is `gen_ai.client.token.usage`, not SPIRE, and deliberately so:
     it is the single strongest one available for a `gen_ai.*` absence, because
@@ -646,9 +598,9 @@ def _assert_the_genai_path_is_live(prometheus_url: str, absence: str) -> None:
 def test_the_one_genai_metric_any_framework_emits_is_present(
     prometheus_url, metric_names
 ):
-    """`gen_ai.client.token.usage`, the single row of §6's table that is not a
-    gap. Published in docs/telemetry-contract.md with its Development stability
-    qualifier.
+    """`gen_ai.client.token.usage`, the single GenAI agent metric that is not
+    a gap. Published in docs/telemetry-contract.md with its Development
+    stability qualifier.
 
     This is also what makes the five absences below readable: the same
     MeterProvider, the same PeriodicExportingMetricReader, the same
@@ -683,11 +635,11 @@ def test_the_other_five_genai_metrics_are_emitted_by_nothing(
 ):
     """The finding, asserted so it cannot rot into a stale sentence.
 
-    Five of the six metrics §6 asks about reach Prometheus from no service in
-    this system, and the reason is not this project's wiring: measured
-    2026-09-13 by reading the installed packages, **not one of these names
-    appears anywhere in pydantic_ai 2.42.0, a2a-sdk 0.3.7, fastmcp 4.0.3 or
-    mcp 2.2.0** -- and the last three contain no `get_meter(` call at all, so
+    Five of the six GenAI agent metrics reach Prometheus from no service in
+    this system, and the reason is not this project's wiring: reading the
+    installed packages, **not one of these names appears anywhere in
+    pydantic_ai 2.42.0, a2a-sdk 0.3.7, fastmcp 4.0.3 or mcp 2.2.0** -- and the
+    last three contain no `get_meter(` call at all, so
     they create no instrument of any kind. They are dropped at the SDK, before
     any reader, exporter, collector or Prometheus could be blamed.
     docs/upstream-findings.md Finding 12 is the write-up.
@@ -745,7 +697,7 @@ def test_no_genai_metric_arrived_under_a_name_this_file_did_not_predict(
 def test_no_metric_was_invented_to_fill_a_framework_gap(
     prometheus_url, metric_names
 ):
-    """§6's standing prohibition: "No metric is hand-rolled to fill a hole in a
+    """The standing prohibition: "No metric is hand-rolled to fill a hole in a
     framework's coverage."
 
     The tempting shape is a `gen_ai.*`-named instrument authored in this repo's
@@ -755,14 +707,13 @@ def test_no_metric_was_invented_to_fill_a_framework_gap(
     same argument Gap 5 makes for not hand-setting
     `gen_ai.operation.name` on FastMCP's spans.
 
-    **What this test can and cannot see, stated precisely -- review finding
-    F5.** It reads Prometheus, so it can only say *which `gen_ai.*` names are
-    in the store*, never *who authored them*. A hand-rolled instrument in this
-    repo's own source under a name PydanticAI also emits would pass here, and
-    two committed documents used to cite this test as proving origin. That
-    citation was wrong and is corrected; the source-side half of §6's
-    prohibition -- no `gen_ai.`-prefixed instrument created anywhere under
-    `agents/`, `apps/`, `platform/`, `tools/` or `systems/` -- is enforced by
+    **What this test can and cannot see, stated precisely.** It reads
+    Prometheus, so it can only say *which `gen_ai.*` names are in the store*,
+    never *who authored them*. A hand-rolled instrument in this repo's own
+    source under a name PydanticAI also emits would pass here. The
+    source-side half of the prohibition -- no `gen_ai.`-prefixed instrument
+    created anywhere under `agents/`, `apps/`, `platform/`, `tools/` or
+    `systems/` -- is enforced by
     `tests/unit/test_metrics_wiring.py::test_no_service_authors_a_metric_under_a_convention_namespace`,
     which needs no cluster. The two together are the guard; neither is alone.
 
@@ -780,5 +731,5 @@ def test_no_metric_was_invented_to_fill_a_framework_gap(
         f"{invented}. If one of this repo's own services is authoring a "
         "gen_ai.* instrument, remove it: our components may author metrics, "
         "but under our own `northstar.*`/`policy.*` prefixes, never under a "
-        "convention namespace a framework owns (M4 spec §6)."
+        "convention namespace a framework owns."
     )

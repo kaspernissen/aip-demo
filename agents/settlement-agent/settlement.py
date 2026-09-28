@@ -1,25 +1,22 @@
-"""Settlement decision — a real model call as of M1.2.
+"""Settlement decision — a real model call.
 
-In M1.1 this was a hardcoded function. The model now decides whether and how
-to pay, by calling the MCP payment tools itself.
+The model decides whether and how to pay, by calling the MCP payment tools
+itself.
 
 Two deliberate properties:
 
-  * The MCP call path is unchanged. `mcp_tools.PaymentsTools` still makes
-    every call, so the verified `params._meta` trace-context propagation and
-    error handling are exactly what M1.1 proved. The model chooses; our code
-    calls.
+  * `mcp_tools.PaymentsTools` makes every MCP call, so the verified
+    `params._meta` trace-context propagation and error handling apply here
+    too. The model chooses; our code calls.
   * The model narrates; `payments-api` states the amounts. The reply's
-    amount/currency/status/paymentId come from what the ledger recorded, never
-    from model output. See the plan's "the rule that makes this demo honest".
+    amount/currency/status/paymentId come from what the ledger recorded,
+    never from model output.
 
-There was no €5,000 check here in M1, and that was the point: M1 is ungoverned
-on purpose. The model could propose any amount and nothing stopped it. That
-hole is what M2's Policy Decision Service fills — and note where it is filled:
-still not here. There is no limit in this file in M2.2 either. The refusal
-comes from the platform, at a choke point the agent cannot reach around, and
-this file's only job on that path is to let the model *see* the refusal so it
-can explain it (M2.2 Task 5).
+There is no spending limit in this file, deliberately: the model can propose
+any amount and nothing here stops it. That check lives entirely at the
+platform's Policy Decision Service, a choke point the agent cannot reach
+around. The refusal comes from the platform, and this file's only job on
+that path is to let the model *see* the refusal so it can explain it.
 """
 from __future__ import annotations
 
@@ -65,8 +62,7 @@ settlement_agent = Agent(
     deps_type=SettlementDeps,
     # output_type is deliberately the default `str`, not a structured
     # BaseModel. Agent.__init__'s output_type defaults to `str` (verified via
-    # inspect.signature against the installed 2.42.0 -- 2.41.0 until
-    # 2026-09-11, re-checked rather than assumed at the bump). A structured
+    # inspect.signature against the installed 2.42.0). A structured
     # output_type forces the model's final reply to be JSON matching that
     # schema; this agent's final turn is free-form prose for the claimant,
     # so plain text is the correct output type, not an accidental omission.
@@ -75,8 +71,8 @@ settlement_agent = Agent(
     # Agent at import time can require ANTHROPIC_API_KEY to be present, which
     # would break the token-free unit suite (it imports this module but always
     # runs under `settlement_agent.override(model=...)` and never resolves the
-    # real model). Verified parameter on Agent.__init__ at 2.42.0 (2.41.0
-    # until 2026-09-11; re-checked at the bump, default still False).
+    # real model). Verified parameter on Agent.__init__ at 2.42.0, default
+    # False.
     defer_model_check=True,
     instructions=(
         "You settle motor insurance claims for Northstar Insurance.\n"
@@ -168,7 +164,7 @@ async def execute_payment(
 
 
 def _validate(claim: dict[str, Any]) -> tuple[str, float, str]:
-    """Validate before spending tokens. Contract preserved from M1.1."""
+    """Validate before spending tokens."""
     claim_id = claim.get("claimId")
     if not claim_id:
         raise ValueError("claimId is required")
@@ -202,8 +198,8 @@ def _current_trace_and_span_ids() -> tuple[str, str]:
 async def _record_refusal(
     payments: Any, payment_id: str, refused: PolicyDenial, *, narrative: str,
 ) -> None:
-    """Call Task 2's `POST /payments/{id}/refuse`, through the existing
-    payments client -- not a new HTTP path. A failure here must not turn a
+    """Call `POST /payments/{id}/refuse`, through the existing payments client
+    -- not a new HTTP path. A failure here must not turn a
     refusal into an error the claimant sees: it is logged loudly and
     swallowed, because the ledger already shows the payment unexecuted, which
     is the safe state regardless of whether this record was written.
@@ -234,10 +230,10 @@ def _refusal_link(refused_trace_id: str, refused_span_id: str) -> list[Link]:
     open across that gap would misstate both the duration and what was
     executing.
 
-    **Measured, not assumed** (M3 Task 3): the plan's original sketch built
-    this link from a `SpanContext` carrying the refusal's trace id and an
-    explicit `span_id=0`, reasoning that Jaeger would render an invalid span
-    id as a trace-level link. Checked directly against the installed
+    **Measured, not assumed**: building this link from a `SpanContext`
+    carrying only the refusal's trace id and an explicit `span_id=0` --
+    reasoning that Jaeger would render an invalid span id as a trace-level
+    link -- does not work. Checked directly against the installed
     opentelemetry-sdk (1.44.0): `Span._new_links` filters every link through
     `_is_valid_link(context, attributes)`, which is
     `bool(context and (context.is_valid or (attributes or context.trace_state)))`.
@@ -246,11 +242,10 @@ def _refusal_link(refused_trace_id: str, refused_span_id: str) -> list[Link]:
     link is dropped by the SDK, before a span processor or an exporter ever
     sees it. Confirmed by constructing exactly that span in-process and
     reading `span.links` back: it comes back empty.
-    ('opentelemetry.sdk.trace' source, and a live TracerProvider probe --
-    see this task's report.)
+    ('opentelemetry.sdk.trace' source, and a live TracerProvider probe.)
 
-    So this carries the refusal's *span* id too (Task 2's `refusal` record
-    grew a `refusedSpanId` field for exactly this in M3 Task 3), and builds a
+    So this carries the refusal's *span* id too (the ledger's `refusal`
+    record carries a `refusedSpanId` field for exactly this), and builds a
     genuinely valid remote `SpanContext` -- both ids non-zero, so
     `context.is_valid` is `True` and the link survives `_new_links` on its
     own, no attribute workaround needed. Empty ids (no refusal to link to, or
@@ -275,16 +270,14 @@ class UnverifiedApproval(RuntimeError):
     """`execute_approved` refuses to execute: the ledger carries no evidence
     that a human ever reviewed this payment.
 
-    M3 Task 3 review, finding 1 (R11), the milestone's own anti-bypass
-    criterion failing inside the milestone: `execute_approved` read no
-    ledger state at all, and neither settlement Deployment had a Cilium
-    ingress policy (`Allow Ingress ANY`, measured). Anything that could reach
-    a settlement agent's A2A port could execute any proposed payment up to
-    that identity's limit, on an unverified `reviewerId` string, with no
-    model call, no proposal step and no review. This exception is what
-    replaces "anything reaching the port" with "a real refusal record, for
-    this exact amount, exists first" -- raised before any call to
-    `payments.execute`, never after.
+    Without this check -- and without a Cilium ingress policy scoping who can
+    reach a settlement Deployment's A2A port (`Allow Ingress ANY`, measured)
+    -- anything able to reach that port could execute any proposed payment up
+    to that identity's limit, on an unverified `reviewerId` string, with no
+    model call, no proposal step and no review. This exception replaces
+    "anything reaching the port" with "a real refusal record, for this exact
+    amount, exists first" -- raised before any call to `payments.execute`,
+    never after.
     """
 
 
@@ -347,17 +340,16 @@ async def execute_approved(
     (`senior-settlement-agent`'s own SPIFFE ID, via SPIRE), the same way it
     always has for `execute_payment`.
 
-    M3 Task 3 review fix round (R11): before any of that, this reads the
-    ledger back and refuses unless it shows a real refusal record for this
-    exact amount (`_verify_refusal`). `approval["reviewerId"]` is read first
-    and still fails loudly with `KeyError` on a malformed payload, exactly as
-    before this fix, and before any payment-system call at all -- the ledger
-    check is an additional gate, not a replacement for that one.
+    Before any of that, this reads the ledger back and refuses unless it
+    shows a real refusal record for this exact amount (`_verify_refusal`).
+    `approval["reviewerId"]` is read first and fails loudly with `KeyError`
+    on a malformed payload, before any payment-system call at all -- the
+    ledger check is an additional gate, not a replacement for that one.
 
-    M3 Task 3 review, the question (R16): the approval payload carries no
-    claim id -- unlike a claim submission, which arrives with `northstar.claim.id`
-    already in inbound A2A baggage (set at claims-agent's intake) -- so this
-    is the flow's own point of "intake" for that fact. The ledger record
+    The approval payload carries no claim id -- unlike a claim submission,
+    which arrives with `northstar.claim.id` already in inbound A2A baggage
+    (set at claims-agent's intake) -- so this is the flow's own point of
+    "intake" for that fact. The ledger record
     `_verify_refusal` already had to read carries `claimId`, so this sets it
     as baggage on the context the span and `payments.execute` run under, and
     detaches it again before returning, so it never bleeds into whatever
@@ -423,11 +415,11 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
     refused = deps.record.refused
     if executed is None and refused is not None:
         # The demo's moment: the platform refused, and the agent explains
-        # rather than erroring. Before M2.2 the PolicyDenial (then a bare
-        # McpError) propagated past this point and the A2A caller got a
-        # JSON-RPC -32603 with no `result` at all -- the reason was legible but
-        # nothing narrated it (Task 4 §11.4). The reply is a *reply*, and it
-        # says refused.
+        # rather than erroring. Without this, PolicyDenial (or a bare
+        # MCPError) would propagate past this point and the A2A caller would
+        # get a JSON-RPC -32603 with no `result` at all -- the reason legible
+        # but nothing narrating it. The reply is a *reply*, and it says
+        # refused.
         #
         # The honesty rule is unchanged: nothing here comes from model output.
         # `amount`, `currency` and `paymentId` are what the ledger recorded for
@@ -443,10 +435,10 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
             refused.requested,
         )
 
-        # M3 Task 3 Step 5: record the refusal in the ledger, so a human
-        # reviewer has something to read (Task 2's `POST
-        # /payments/{id}/refuse`, reached through the same governed MCP path
-        # this file already uses for propose/execute -- not a new HTTP path).
+        # Record the refusal in the ledger, so a human reviewer has
+        # something to read (`POST /payments/{id}/refuse`, reached through
+        # the same governed MCP path this file already uses for
+        # propose/execute -- not a new HTTP path).
         #
         # Nothing writes this record until here, and there is nothing to
         # attach it to if propose_payment itself was what got refused: no

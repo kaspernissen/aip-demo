@@ -1,33 +1,33 @@
 /**
- * M6 Task 3: a narrow, honest reading of the `northstar-autonomy` FeatureFlag's
+ * A narrow, honest reading of the `northstar-autonomy` FeatureFlag's
  * targeting rule -- NOT a JsonLogic engine.
  *
- * Design §4/§5.3: "the card shows, per agent identity, the level the contract
- * currently resolves ... read live from the FeatureFlag, not from a cached
- * copy." That requires evaluating the targeting rule, because the rule is
- * what decides the resolved level per caller. flagd itself resolves this with
- * a real JsonLogic engine; this module does NOT reimplement one. It supports
- * exactly the one shape `deploy/platform/openfeature/featureflag.yaml` has
- * ever used (ruling M5-R8's own targeting block) --
+ * The card shows, per agent identity, the level the contract currently
+ * resolves to, read live from the FeatureFlag, not from a cached copy. That
+ * requires evaluating the targeting rule, because the rule is what decides
+ * the resolved level per caller. flagd itself resolves this with a real
+ * JsonLogic engine; this module does NOT reimplement one. It supports
+ * exactly the one shape `deploy/platform/openfeature/featureflag.yaml`
+ * uses --
  *
  *   { if: [ { in: [ {var: "spiffeId"}, [..ids..] ] }, thenVariant, elseVariant ] }
  *
  * -- and refuses, loudly, to guess at anything else. The alternative -- a
  * general evaluator -- would make this module a SECOND decision engine next
- * to flagd's, and the one thing design §4 will not tolerate is Backstage
+ * to flagd's, and the one thing this design will not tolerate is Backstage
  * acquiring a path to a decision that isn't "edit the resource the PDS
- * already reads" (§4's own words). A narrow reader that refuses unknown shapes
- * cannot drift from the PDS's real answer without saying so; a permissive one
- * could silently show a level flagd would not actually resolve.
+ * already reads". A narrow reader that refuses unknown shapes cannot drift
+ * from the PDS's real answer without saying so; a permissive one could
+ * silently show a level flagd would not actually resolve.
  *
  * Fails CLOSED on anything it cannot parse: an absent targeting block
  * resolves to `defaultVariant` (there is no rule to consult, so this is what
  * flagd itself would resolve too). A DISABLED flag does NOT fall back to
- * `defaultVariant` -- see RESTRICTIVE_LEVEL below, and the M6 task-3 review's
- * M4(a) finding, which is why that used to be wrong. A targeting block that
- * is present but not in the one shape above throws rather than returning a
- * guess, and so does a targeting branch naming a variant `variants` does not
- * declare (M4(b)).
+ * `defaultVariant` -- see RESTRICTIVE_LEVEL below: flagd treats a DISABLED
+ * flag as an error, not as a reason to fall back to `defaultVariant`. A
+ * targeting block that is present but not in the one shape above throws
+ * rather than returning a guess, and so does a targeting branch naming a
+ * variant `variants` does not declare.
  */
 
 /**
@@ -38,14 +38,13 @@
  * runtime (Python vs this Node plugin), same reason the SPIFFE literals in
  * `router.ts` are reproduced rather than imported.
  *
- * M6 task-3 review, M4(a): flagd treats a DISABLED flag as `FLAG_NOT_FOUND`
- * -- an error, not `defaultVariant`. The OpenFeature SDK then falls back to
- * the CALLER's own default, which for the PDS is this constant, not
- * whatever `defaultVariant` happens to say on the flag. A card that echoed
- * `defaultVariant` for a DISABLED flag could show `autonomous` while the PDS
- * enforces `assisted` -- a lying UI in the permissive direction. So this
- * reader shows the PDS's real fallback here, not the flag's own
- * `defaultVariant`.
+ * flagd treats a DISABLED flag as `FLAG_NOT_FOUND` -- an error, not
+ * `defaultVariant`. The OpenFeature SDK then falls back to the CALLER's own
+ * default, which for the PDS is this constant, not whatever `defaultVariant`
+ * happens to say on the flag. A card that echoed `defaultVariant` for a
+ * DISABLED flag could show `autonomous` while the PDS enforces `assisted` --
+ * a lying UI in the permissive direction. So this reader shows the PDS's
+ * real fallback here, not the flag's own `defaultVariant`.
  */
 export const RESTRICTIVE_LEVEL = 'assisted';
 
@@ -160,24 +159,23 @@ export function resolveAutonomyLevel(
   }
 
   if (flagSpec.state !== 'ENABLED') {
-    // M4(a): flagd errors (FLAG_NOT_FOUND) on a DISABLED flag; it does NOT
-    // resolve to defaultVariant. The PDS's OpenFeature client then falls
-    // back to ITS OWN caller-supplied default (RESTRICTIVE_LEVEL), never
-    // this flag's defaultVariant -- so reporting defaultVariant here could
-    // show a level the PDS would never actually enforce. Report the
-    // restrictive constant under a branch label that says exactly that.
+    // flagd errors (FLAG_NOT_FOUND) on a DISABLED flag; it does NOT resolve
+    // to defaultVariant. The PDS's OpenFeature client then falls back to
+    // ITS OWN caller-supplied default (RESTRICTIVE_LEVEL), never this flag's
+    // defaultVariant -- so reporting defaultVariant here could show a level
+    // the PDS would never actually enforce. Report the restrictive constant
+    // under a branch label that says exactly that.
     return { level: RESTRICTIVE_LEVEL, branch: 'flag-disabled' };
   }
 
-  // Whole-branch review M2: this check used to sit AFTER the targeting
-  // branch was parsed, which meant the no-targeting path below returned
-  // `defaultVariant` -- a variant NAME -- verbatim, never validated against
-  // `variants` at all. flagd's `getStringValue` always returns the
-  // variant's VALUE, so an undeclared/typo'd `defaultVariant` would show a
-  // level flagd would refuse to resolve (and the PDS would then deny),
-  // exactly the lying-UI shape M4(b) already fixed on the targeting path.
-  // Checking `variants` once, here, before either path reads it, closes
-  // both at once.
+  // This check must run BEFORE the targeting branch is parsed: if it ran
+  // after, the no-targeting path below would return `defaultVariant` -- a
+  // variant NAME -- verbatim, never validated against `variants` at all.
+  // flagd's `getStringValue` always returns the variant's VALUE, so an
+  // undeclared/typo'd `defaultVariant` would show a level flagd would
+  // refuse to resolve (and the PDS would then deny) -- the same lying-UI
+  // shape guarded against on the targeting path below. Checking `variants`
+  // once, here, before either path reads it, closes both at once.
   const variants = flagSpec.variants;
   if (!isPlainObject(variants)) {
     throw new UnsupportedTargetingShapeError(
@@ -210,11 +208,11 @@ export function resolveAutonomyLevel(
     ? 'targeting-then'
     : 'targeting-else';
 
-  // M4(b): this reader used to return the targeting branch's variant NAME
-  // verbatim, never checking it against `variants`. flagd looks that name
-  // up and errors (and the PDS then denies) if it is not a declared
-  // variant -- a renamed/typo'd branch would make flagd/the PDS refuse
-  // while this card displayed the bogus name as if it were a real level.
+  // The targeting branch's variant NAME is checked against `variants`
+  // before being returned: flagd looks that name up and errors (and the
+  // PDS then denies) if it is not a declared variant -- a renamed/typo'd
+  // branch would make flagd/the PDS refuse while this card displayed the
+  // bogus name as if it were a real level.
   const resolved = variants[level];
   if (typeof resolved !== 'string') {
     throw new UnsupportedTargetingShapeError(

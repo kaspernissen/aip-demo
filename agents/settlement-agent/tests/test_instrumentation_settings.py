@@ -1,8 +1,7 @@
 """Content capture is configuration, and its default is ON.
 
-See the plan's "Why this reverses an earlier decision". The point of testing
-this is that a silent flip to redaction would cost diagnostic capability
-without anyone noticing.
+The point of testing this is that a silent flip to redaction would cost
+diagnostic capability without anyone noticing.
 """
 from __future__ import annotations
 

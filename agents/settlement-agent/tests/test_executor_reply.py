@@ -52,7 +52,7 @@ async def test_exactly_one_message_is_enqueued_and_it_carries_the_full_reply(mon
 
 
 # ---------------------------------------------------------------------------
-# M3 Task 3 Step 6: routing an approval payload to `execute_approved`.
+# Routing an approval payload to `execute_approved`.
 #
 # senior-settlement-agent runs this exact image and this exact executor, so
 # the dispatch has to live here: the same process handles a claim submission

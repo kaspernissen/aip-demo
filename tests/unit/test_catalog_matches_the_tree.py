@@ -1,24 +1,22 @@
-"""M6 Task 2's named deliverable (docs/superpowers/plans/2026-09-15-m6-golden-
-path.md, Task 2 step 4): "A guard that the catalog matches the tree. The
-eight entries must be derived from a directory walk, not a hand-maintained
-list -- this repo's standing rule, and a catalog is exactly the kind of list
-that silently rots."
+"""A guard that the catalog matches the tree: the list of components it
+covers must be derived from a directory walk, not a hand-maintained list --
+this repo's standing rule, since a catalog is exactly the kind of list that
+silently rots.
 
-So this module does not hold a list of eight component names anywhere. It
-walks the five directories every real component lives under (`agents/`,
-`apps/`, `platform/`, `systems/`, `tools/`) and requires every immediate
-subdirectory it finds -- whatever is there today, whatever gets added
-tomorrow -- to carry its own `catalog-info.yaml`. A ninth component added to
-the tree with no catalog entry of its own reddens here without this file
-changing at all; a name-based hand list would need editing to catch the same
-thing, which is the failure mode this guard exists to remove.
+So this module does not hold a list of component names anywhere. It walks
+the five directories every real component lives under (`agents/`, `apps/`,
+`platform/`, `systems/`, `tools/`) and requires every immediate subdirectory
+it finds -- whatever is there today, whatever gets added tomorrow -- to
+carry its own `catalog-info.yaml`. A new component added to the tree with no
+catalog entry of its own reddens here without this file changing at all; a
+name-based hand list would need editing to catch the same thing, which is
+the failure mode this guard exists to remove.
 
-Verified live, not merely reasoned about: a real ninth directory
+Verified live, not merely reasoned about: a real extra directory
 (`tools/temp-ninth-component/`, no catalog-info.yaml) was created under the
 real repo root, `pytest tests/unit/test_catalog_matches_the_tree.py -q` was
 run against it, and the failure named that exact path before the directory
-was removed again. See this milestone's commit message / progress ledger for
-the quoted RED.
+was removed again.
 """
 from __future__ import annotations
 
@@ -84,19 +82,18 @@ def test_every_component_directory_has_its_own_catalog_info_yaml():
     catalog-info.yaml -- no exceptions list, because there is nothing this
     test knows to make an exception for. `platform/backstage` is not
     special-cased: it has its own catalog-info.yaml (the scaffold's, lightly
-    edited for M6 Task 2) precisely so it does not need to be."""
+    edited) precisely so it does not need to be."""
     dirs = _component_dirs(REPO_ROOT)
     missing = [d for d in dirs if not (d / "catalog-info.yaml").is_file()]
     assert not missing, (
         "these component directories have no catalog-info.yaml of their "
         f"own: {[str(d.relative_to(REPO_ROOT)) for d in missing]}. Every "
         "directory under agents/, apps/, platform/, systems/ or tools/ is a "
-        "component this milestone's catalog must cover (docs/superpowers/"
-        "plans/2026-09-15-m6-golden-path.md, Task 2) -- add a "
-        "catalog-info.yaml there, following the existing eight as a "
-        "template, and register it in platform/backstage/app-config."
-        "production.yaml's catalog.locations and scripts/rebuild-and-"
-        "deploy.sh's COMPONENTS array the same way they already are."
+        "component the catalog must cover -- add a catalog-info.yaml there, "
+        "following the existing directories as a template, and register it "
+        "in platform/backstage/app-config.production.yaml's "
+        "catalog.locations and scripts/rebuild-and-deploy.sh's COMPONENTS "
+        "array the same way they already are."
     )
 
 

@@ -1,19 +1,15 @@
 """Tests the tool functions directly, and the advertised tool schema.
 
 The schema test is the important one: destructiveHint on execute_payment is
-what the Policy Decision Service reads in M2.
+what the Policy Decision Service reads.
 
-Adapted for fastmcp==4.0.3 (amendment A16): `FastMCP.get_tools()` from the
-original brief was renamed `list_tools()` and returns a `list[FunctionTool]`
+On `fastmcp==4.0.3`, `FastMCP.list_tools()` returns a `list[FunctionTool]`
 rather than a `dict[str, FunctionTool]`, and `FunctionTool.annotations` is a
 `ToolAnnotations` pydantic model whose Python attributes are snake_case
 (`destructive_hint`) with camelCase aliases for the wire format. We read the
 annotation via `model_dump(by_alias=True)` so the assertion checks exactly
-what is advertised to clients over MCP (`destructiveHint`), matching the
-brief's own instruction that the requirement is the wire-format spelling, not
-a particular Python attribute name. The assertion itself is unchanged from
-the brief; only the lookup mechanics are adapted, per the brief's own
-contingency clause.
+what is advertised to clients over MCP (`destructiveHint`), not a particular
+Python attribute name.
 """
 import asyncio
 
@@ -126,8 +122,8 @@ def _tool_annotations(server_module, name: str) -> dict:
 def test_execute_payment_is_advertised_as_destructive(server_module):
     annotations = _tool_annotations(server_module, "execute_payment")
     assert annotations.get("destructiveHint") is True, (
-        "execute_payment must advertise destructiveHint=true; the M2 policy "
-        "service reads this annotation instead of matching tool names"
+        "execute_payment must advertise destructiveHint=true; the policy "
+        "decision service reads this annotation instead of matching tool names"
     )
 
 
@@ -137,10 +133,9 @@ def test_propose_payment_is_not_advertised_as_destructive(server_module):
 
 
 # ---------------------------------------------------------------------------
-# M3 Task 3: refuse_payment records a decision the PDS already made; it moves
-# no money and reverses nothing, so it is advertised exactly like
-# propose_payment -- not destructive, and (asserted in test_rules.py on the
-# PDS side) unlimited.
+# refuse_payment records a decision the PDS already made; it moves no money
+# and reverses nothing, so it is advertised exactly like propose_payment --
+# not destructive, and (asserted in test_rules.py on the PDS side) unlimited.
 # ---------------------------------------------------------------------------
 
 
@@ -171,11 +166,10 @@ def test_refuse_payment_is_not_advertised_as_destructive(server_module):
 
 
 # ---------------------------------------------------------------------------
-# M3 Task 3 review fix round (finding 1, R11): `execute_approved` needs a way
-# to read the ledger back before executing an approval. `get_payment` reads
-# and moves nothing -- readOnlyHint=true, unlike every other tool here -- and
-# is advertised unlimited on the PDS side (test_rules.py) for the same reason
-# propose_payment is.
+# `execute_approved` needs a way to read the ledger back before executing an
+# approval. `get_payment` reads and moves nothing -- readOnlyHint=true,
+# unlike every other tool here -- and is advertised unlimited on the PDS side
+# (test_rules.py) for the same reason propose_payment is.
 # ---------------------------------------------------------------------------
 
 

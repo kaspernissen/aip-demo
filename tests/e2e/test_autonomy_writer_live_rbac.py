@@ -1,11 +1,11 @@
-"""M6 Task 3, design §4: the live half of the write-grant proof.
+"""The live half of the write-grant proof for Backstage's autonomy-writer
+ServiceAccount.
 
 `tests/unit/test_autonomy_writer_rbac.py` parses `deploy/k8s/backstage.yaml`
 and pins the Role/RoleBinding/ServiceAccount/Secret objects it declares. That
-is necessary but not sufficient -- "a Role that is too broad and a Role that
-is correct look identical until something tries the extra verb" (this task's
-own brief). Two live-cluster questions the parsed manifest cannot answer by
-itself:
+is necessary but not sufficient -- a Role that is too broad and a Role that
+is correct look identical until something tries the extra verb. Two
+live-cluster questions the parsed manifest cannot answer by itself:
 
 1. `resourceNames` scoping is enforced by the API server's authorizer, not by
    anything visible in the YAML alone -- a `resourceNames: [northstar-autonomy]`
@@ -17,10 +17,9 @@ itself:
    reading narrow while `backstage-autonomy-writer` could do more than it
    claims.
 
-`kubectl auth can-i --as=` is the standard the design and this task's own
-brief both name for closing that gap: "Prove with `kubectl auth can-i
---as=<the card's SA>` that patching a different FeatureFlag is denied, that
-`delete` is denied, and that Secrets are unreadable."
+`kubectl auth can-i --as=` closes that gap: it proves against the live
+authorizer that patching a different FeatureFlag is denied, that `delete` is
+denied, and that Secrets are unreadable.
 
 Not gated behind `RUN_BROWSER_TESTS=1`: like `test_egress_policy.py` and
 `test_gateway_config_drift.py`, this spends no model tokens and drives no
@@ -96,19 +95,18 @@ def stage_6_with_the_write_grant_applied_or_a_reason():
     discipline `test_egress_policy.py::policy_present` and its own docstring
     name.
 
-    Whole-branch review M4: this used to go straight from the reachability
-    probe to asserting the Role exists, which made ANY live stage-1..5
-    cluster hard-fail all 15 tests here with a message claiming a regression
-    where there was only an absence of stage 6 -- the exact inversion of the
-    "skip where you should fail" family this repo otherwise guards against.
-    `test_backstage_image_matches_head.py:59-77` and
-    `test_golden_path.py:150-166` both already get this right (check
-    `deployment/backstage` first, skip if absent; fail on a missing Role only
-    once Backstage itself is confirmed present) -- copied verbatim here.
+    Checks `deployment/backstage` first and skips if it is absent, then
+    checks the Role only once Backstage itself is confirmed present,
+    matching `test_backstage_image_matches_head.py:59-77` and
+    `test_golden_path.py:150-166`: collapsing this into a single reachability
+    check would hard-fail every cluster below stage 6 with a message
+    claiming a regression where there is only an absence of stage 6 -- the
+    exact inversion of the "skip where you should fail" family this repo
+    otherwise guards against.
 
     Three separate questions, deliberately not collapsed into one raw
-    exit-code check (ruling M4-R14; `tests/unit/test_kube_helper.py` walks
-    this file for exactly that collapse): "can I talk to this cluster at
+    exit-code check (`tests/unit/test_kube_helper.py` walks this file for
+    exactly that collapse): "can I talk to this cluster at
     all" has no `NotFound` shape to read (`cluster-info` names no object),
     so it stays a raw-returncode reachability probe -- the same shape
     `test_progressive_autonomy.py::stage_5_or_a_reason` uses and is
@@ -162,12 +160,12 @@ def test_writer_can_patch_the_named_flag():
     )
 
 
-# --- The negative half: everything design §4 says must be denied -----------
+# --- The negative half: everything not granted must be denied --------------
 
 
 def test_writer_cannot_delete_the_named_flag():
     assert not _can_i("delete", FLAG), (
-        f"{WRITER_SA} CAN delete {FLAG} -- design §4: 'No delete.'"
+        f"{WRITER_SA} CAN delete {FLAG} -- the Role declares get/list/patch only"
     )
 
 
@@ -180,8 +178,8 @@ def test_writer_cannot_create_featureflags():
 
 def test_writer_cannot_update_the_named_flag():
     """`update` (whole-object replace) is a different verb from `patch`, and
-    design §4 asks for patch only -- this pins that the Role's own verb list
-    was never written as (or silently widened to) `["get","list","patch",
+    only `patch` is declared -- this pins that the Role's own verb list was
+    never written as (or silently widened to) `["get","list","patch",
     "update"]`."""
     assert not _can_i("update", FLAG), (
         f"{WRITER_SA} can `update` {FLAG} -- only `patch` is declared"
@@ -189,8 +187,8 @@ def test_writer_cannot_update_the_named_flag():
 
 
 def test_writer_cannot_patch_a_different_featureflag_name():
-    """The exact scenario the task brief names: resourceNames scoping,
-    proven against the live authorizer rather than assumed from the YAML."""
+    """Proves resourceNames scoping against the live authorizer rather than
+    assuming it from the YAML."""
     assert not _can_i("patch", OTHER_FLAG), (
         f"{WRITER_SA} can patch {OTHER_FLAG} -- resourceNames is not scoping "
         "this Role to northstar-autonomy alone"
@@ -247,25 +245,26 @@ def test_writer_has_no_cluster_wide_access():
     )
 
 
-# --- Controls: M6-R5 must still hold -- the read-only SA is untouched ------
+# --- Controls: the read-only SA must stay untouched -------------------------
 
 
 def test_the_read_only_serviceaccount_still_cannot_touch_featureflags_at_all():
-    """M6-R5: the read-only ClusterRole must never grow a `get` on
-    featureflags just because the write grant now exists on a sibling
-    ServiceAccount. Re-asserts Task 1's own verified matrix so a future edit
-    to `backstage-read-only` that "fixes" its read by widening it reddens
-    here, not only in a task-1-era report nobody re-runs."""
+    """The read-only ClusterRole must never grow a `get` on featureflags
+    just because the write grant now exists on a sibling ServiceAccount.
+    Re-asserts the read-only Role's verified matrix so a future edit to
+    `backstage-read-only` that "fixes" its read by widening it reddens
+    here."""
     for verb in ("get", "list", "patch", "delete"):
         assert not _can_i(verb, FLAG, as_user=READ_ONLY_SA), (
             f"the READ-ONLY ServiceAccount {READ_ONLY_SA} can {verb} {FLAG} -- "
-            "M6-R5 says this must stay 'no': the card's own separate "
-            "ServiceAccount is the only one that touches this resource"
+            "this must stay 'no': the write-grant ServiceAccount is the "
+            "only one that touches this resource"
         )
 
 
 def test_the_two_serviceaccounts_are_actually_different_principals():
     assert WRITER_SA != READ_ONLY_SA, (
         "the writer and read-only ServiceAccount names collapsed to the "
-        "same principal -- design §4's whole point is that these are two"
+        "same principal -- the whole point of separate ServiceAccounts is "
+        "that these are two distinct identities"
     )

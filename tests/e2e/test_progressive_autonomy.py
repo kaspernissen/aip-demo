@@ -1,26 +1,26 @@
-"""M5's anti-vacuity control: the same claim, refused then settled, live,
-with only the contract changed.
+"""Anti-vacuity control: the same claim, refused then settled, live, with
+only the contract changed.
 
-**What this file is for, stated as sharply as the milestone's own claim.**
-Every other file in this suite proves a *fixed* policy holds. This one proves
-the policy is not fixed at all -- that flipping one live value changes a real
-outcome for a real identity, with nothing else touched. If both halves below
-could pass while the flag were silently ignored (the PDS hardcoding
-`"assisted"`, say, the way it did before M5 Task 3's fix), this file would
-still print PASS and the milestone would have demonstrated nothing -- exactly
-the shape M4's policy-adherence scores taught this repo to distrust (spec
-§5's anti-vacuity criterion, restated for a feature flag instead of a score).
-**"One word in the contract. Not one word in the repo"** (ruling M5-R8's own
-phrase): the flip below is a live `kubectl patch` of the deployed
-`FeatureFlag` object, through `tests/harness/contract.py`. It never reads or
-writes `deploy/platform/openfeature/featureflag.yaml`, so the tree this file
-leaves behind is byte-identical to the one it started with, and the contract
-itself is left in its shipped, refusing state (`assisted`/`assisted`,
-M5-R8) whether this file's own assertions pass or raise -- the flip lives in
-a `try`/`finally`, not in a final line that a failure upstream could skip.
+**What this file is for.** Every other file in this suite proves a *fixed*
+policy holds. This one proves the policy is not fixed at all -- that
+flipping one live value changes a real outcome for a real identity, with
+nothing else touched. If both halves below could pass while the flag were
+silently ignored (the PDS hardcoding `"assisted"`, for instance), this file
+would still print PASS and demonstrate nothing -- the same anti-vacuity
+concern that this repo's policy-adherence scores guard against, restated
+here for a feature flag instead of a score.
+
+**One word in the contract, not one word in the repo:** the flip below is a
+live `kubectl patch` of the deployed `FeatureFlag` object, through
+`tests/harness/contract.py`. It never reads or writes `deploy/platform/
+openfeature/featureflag.yaml`, so the tree this file leaves behind is
+byte-identical to the one it started with, and the contract itself is left
+in its shipped, refusing state (`assisted`/`assisted`) whether this file's
+own assertions pass or raise -- the flip lives in a `try`/`finally`, not in
+a final line that a failure upstream could skip.
 
 **The three things this exact flip breaks, handled here rather than assumed
-away (task-6-brief.md's own list, review finding I4).**
+away.**
 
 1. `test_supervised.py`'s criteria 1 and 6, and `test_policy_denial.py`'s
    criterion 1, all hardcode `settlement-agent.assisted.execute_limit` and
@@ -37,27 +37,26 @@ away (task-6-brief.md's own list, review finding I4).**
    and immediately, naming this file by name, if the live contract is ever
    not `assisted` when a denial-shaped fixture is about to drive one.
 2. `platform/eval-scorer/scorer/contract.py`'s `CURRENT_LEVEL` is **not**
-   touched by this file, on purpose, and that is the resolution to the
-   M5-R29/M5-R31 coupling, not an oversight of it. `CURRENT_LEVEL` must move
-   in the same commit as any change to `deploy/platform/openfeature/
-   featureflag.yaml`'s *committed* targeting branches -- a live-only patch
-   through this file is not such a change, by construction (point above).
-   The honest consequence, stated rather than hidden: if anything ever
-   scored a decision made during this file's brief `AUTONOMOUS` window, the
-   audit's independent `CURRENT_LEVEL` (still `"assisted"`, since the
-   committed file never moved) would disagree with the live decision and
-   report `level-does-not-match-contract`. That is route 2's own design
-   working correctly -- the audit trusts the *published* contract, not a
-   transient live patch -- not a defect this file needs to route around.
-   Nothing in this repo's scoring path runs against this file's own traffic
-   today (`test_policy_scores.py` sorts before this file and drives its own,
-   separate claims), so the disagreement is never actually triggered, but it
-   is recorded here so a future reader who wires scoring into this flow does
-   not mistake the mismatch for a bug in either module.
+   touched by this file, on purpose, and that is a deliberate design choice,
+   not an oversight. `CURRENT_LEVEL` must move in the same commit as any
+   change to `deploy/platform/openfeature/featureflag.yaml`'s *committed*
+   targeting branches -- a live-only patch through this file is not such a
+   change, by construction (point above). The honest consequence, stated
+   rather than hidden: if anything ever scored a decision made during this
+   file's brief `AUTONOMOUS` window, the audit's independent `CURRENT_LEVEL`
+   (still `"assisted"`, since the committed file never moved) would
+   disagree with the live decision and report `level-does-not-match-contract`.
+   That is the design working correctly -- the audit trusts the *published*
+   contract, not a transient live patch -- not a defect this file needs to
+   route around. Nothing in this repo's scoring path runs against this
+   file's own traffic today (`test_policy_scores.py` sorts before this file
+   and drives its own, separate claims), so the disagreement is never
+   actually triggered, but it is recorded here so a future reader who wires
+   scoring into this flow does not mistake the mismatch for a bug in either
+   module.
 3. This file itself must not be vacuous, which is the point a docstring
-   cannot prove -- see the report for the `scripts/mutate-guard.sh` round
-   run against it, and DISBELIEVE the paragraph above until you have read
-   that evidence.
+   cannot prove -- run `scripts/mutate-guard.sh` against it, and disbelieve
+   the paragraph above until you have seen that evidence.
 
 **Cost.** Two live settlements (one refused, one executed), the same one a
 full run of `test_policy_denial.py` or `test_supervised.py` already spends
@@ -103,7 +102,7 @@ AGENTS_NAMESPACE = "northstar-agents"
 OFO_NAMESPACE = "open-feature-operator-system"
 OFO_DEPLOYMENT = "open-feature-operator-controller-manager"
 
-AMOUNT = 6200.0  # the same over-the-assisted-limit figure M2.2 fixed on
+AMOUNT = 6200.0  # the over-the-assisted-limit figure used throughout this suite
 
 
 def _kubectl(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
@@ -179,16 +178,16 @@ def _pod_uids_and_image_digests(namespace: str) -> dict[str, tuple[str, tuple[st
     return out
 
 
-# --- Step 1: the milestone's own claim, in one test -------------------------
+# --- Step 1: the whole claim, in one test ------------------------------------
 
 
 @browser_test
 def test_the_same_claim_refuses_then_settles_when_only_the_contract_changes(
     claims_agent_route,
 ):
-    """M5's whole claim in one test, per the plan: submit the identical
-    over-the-assisted-limit claim twice, under the junior identity, with
-    nothing between the two runs but a live contract flip.
+    """The whole claim in one test: submit the identical over-the-assisted-limit
+    claim twice, under the junior identity, with nothing between the two runs
+    but a live contract flip.
 
     Both halves assert against the PDS's own `policy.decision` span (not
     against `.reply`, which carries no `rule` -- `claimId`/`status`/`amount`/
@@ -253,7 +252,7 @@ def test_the_same_claim_refuses_then_settles_when_only_the_contract_changes(
         assert record.get("status") == "executed", record
         assert record.get("amount") == AMOUNT, record
     finally:
-        # Leave the contract in its refusing state (M5-R8) whether the
+        # Leave the contract in its refusing state whether the
         # assertions above passed or raised -- verified by
         # `set_targeted_branch` itself, not merely attempted.
         contract.set_targeted_branch(contract.ASSISTED)

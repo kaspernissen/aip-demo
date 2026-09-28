@@ -1,7 +1,7 @@
 """Claim intake parsing.
 
-Deliberately strict and deterministic in M1.1. In M1.2 a PydanticAI agent
-handles free-text claims; this function stays as the validated boundary.
+Deliberately strict and deterministic: this is the validated boundary for
+claim data, regardless of whatever handles free-text claims upstream.
 """
 from __future__ import annotations
 

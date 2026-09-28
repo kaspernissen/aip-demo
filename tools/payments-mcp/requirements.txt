@@ -1,58 +1,44 @@
 fastmcp==4.0.3
 httpx==0.28.1
-# 2026-09-11 (M3): 1.29.0 -> 1.44.0 and 0.50b0 -> 0.65b0, the current PyPI
-# releases (all nine OpenTelemetry distributions in this file were published
-# 2026-07-16; verified against pypi.org's own JSON API, not a local cache).
-# These are now the same pins the other four Python services in this repo
-# carry.
+# Pinned to the current PyPI releases for all nine OpenTelemetry
+# distributions in this file (verified against pypi.org's own JSON API, not a
+# local cache); the same versions the other four Python services in this
+# repo carry.
 #
-# Why this line was load-bearing until today, and is not any more —
-# docs/upstream-findings.md Finding 11. 1.44.0's
-# `sdk/trace/__init__.py:1234-1242` inherits W3C Trace Context Level 2's
-# RANDOM_TRACE_ID bit (0x02) from an extracted remote parent, where 1.29.0's
-# `:1145-1149` derived the flag byte from the sampling decision alone and so
-# emitted `…-01` unconditionally. payments-api's otel-go v1.41.0 discarded any
-# version-00 traceparent above 0x02 outright, so this pin was the only thing
-# keeping the payments-mcp -> payments-api hop in one trace whenever what
-# agentgateway hands payments-mcp carries 0x02. payments-api is now on otel-go
-# v1.46.0, whose extractor accepts it, so the hazard is gone rather than
-# merely still unfired.
+# The version matters for trace continuity (docs/upstream-findings.md
+# Finding 11): `sdk/trace/__init__.py`'s flag handling inherits the W3C Trace
+# Context Level 2 RANDOM_TRACE_ID bit (0x02) from an extracted remote parent,
+# so a traceparent carrying that bit from agentgateway is preserved rather
+# than stripped. payments-api's otel-go extractor must be new enough to
+# accept a version-00 traceparent with 0x02 set (currently v1.46.0), or the
+# payments-mcp -> payments-api hop falls out of the trace.
 opentelemetry-sdk==1.44.0
 opentelemetry-exporter-otlp-proto-http==1.44.0
 opentelemetry-instrumentation-httpx==0.65b0
-# Fix round (final-review.md SF-2): pytest 8.3.4 -> 9.0.3, clearing
-# PYSEC-2026-1845 (pip-audit). This file's runtime image installs the whole
-# requirements.txt (Dockerfile), so the advisory was shipping in the running
-# payments-mcp pod, not just a dev venv. No pytest-asyncio pin here: this
-# tree's async calls all go through synchronous anyio.run(), not
-# @pytest.mark.asyncio (verified: `grep -rn "async def test_\|pytest.mark.asyncio"
-# tools/payments-mcp/tests/` finds none), so there is no paired plugin bump to
-# make.
+# pytest is pinned at 9.1.1, clearing PYSEC-2026-1845 (pip-audit). This
+# file's runtime image installs the whole requirements.txt (Dockerfile), so
+# the advisory would otherwise ship in the running payments-mcp pod, not just
+# a dev venv. No pytest-asyncio pin here: this tree's async calls all go
+# through synchronous anyio.run(), not @pytest.mark.asyncio (verified:
+# `grep -rn "async def test_\|pytest.mark.asyncio" tools/payments-mcp/tests/`
+# finds none), so there is no paired plugin bump to make.
 pytest==9.1.1
 
-# M2.1 Task 6 (spec §11): the rest of this file's transitive closure, left
-# floating since this file was created -- this is the file the spec's §11
-# named as the worse of the two: only 5 lines pinned against ~85 installed
-# packages. Pinned here at the versions already installed and verified in
-# this service's own `.venv` (the tree its tests actually run against),
-# read via `uv pip list --python .venv/bin/python --format=freeze`, NOT a
-# fresh `uv pip install -r requirements.txt` into today's clean venv: a
-# fresh resolve today lands on newer releases published upstream since this
-# venv was built for three packages that `fastmcp==4.0.3` does not pin
-# exactly -- `mcp`/`mcp-types` 2.1.1 (fresh resolve: 2.2.0), `cyclopts`
-# 4.25.0 (fresh: 4.25.2), and `platformdirs` 4.11.7 (fresh: 4.11.8) -- and
-# adopting those under cover of "just pinning what floats" would smuggle in
-# an untested version bump this task never verified. house style is that
-# nothing floats, not that the newest available wins; the installed,
-# already-exercised tree is the one being pinned.
+# The rest of this file's transitive closure is pinned at the versions
+# already installed and verified in this service's own `.venv` (the tree its
+# tests actually run against), read via
+# `uv pip list --python .venv/bin/python --format=freeze`, NOT a fresh
+# `uv pip install -r requirements.txt` into a clean venv: a fresh resolve can
+# land on newer releases published upstream for packages that
+# `fastmcp==4.0.3` does not pin exactly -- `mcp`/`mcp-types`, `cyclopts`, and
+# `platformdirs` among them. House style is that nothing floats, not that the
+# newest available wins; the installed, already-exercised tree is the one
+# being pinned.
 #
-# **2026-09-11 (M3 remaining-bumps, step 1): one of those three has since been
-# taken, deliberately and with a proof.** `mcp`/`mcp-types` are now 2.2.0 (see
-# their lines below), bumped as their own step with the distributed trace
-# re-measured across this service's hop afterwards -- which is the "verified"
-# the paragraph above says was missing, not an exception to it. `cyclopts` and
-# `platformdirs` are deliberately still 4.25.0 and 4.11.7: neither is in that
-# step's scope, and the paragraph above still governs them.
+# `mcp`/`mcp-types` are pinned at 2.2.0 (see their lines below), taken
+# deliberately with the distributed trace re-measured across this service's
+# hop afterwards. `cyclopts` and `platformdirs` stay at the versions already
+# verified above; neither has been re-verified at a newer release.
 aiofile==3.12.3
 annotated-types==0.8.0
 anyio==4.15.1
@@ -67,13 +53,12 @@ charset-normalizer==3.5.1
 click==8.5.0
 cryptography==50.0.1
 cyclopts==4.25.0
-# 2026-09-11 (M3): `deprecated==1.3.1` used to be here. It is gone
-# from this file because it is gone from the venv: it was pulled in by
-# `opentelemetry-api` 1.29.0, and 1.44.0 does not declare it. Measured,
-# not assumed -- after the bump nothing in this venv requires it
-# (`importlib.metadata` walk over every installed distribution's
-# `requires`), and `uv pip check` reports all 88 packages compatible
-# with it removed. None of the other four Python services pin it either.
+# `deprecated==1.3.1` is not pinned here because nothing in this venv
+# requires it: `opentelemetry-api` 1.44.0 does not declare it as a dependency
+# (unlike 1.29.0). Measured, not assumed -- an `importlib.metadata` walk over
+# every installed distribution's `requires` finds nothing that needs it, and
+# `uv pip check` reports all 88 packages compatible with it removed. None of
+# the other four Python services pin it either.
 dnspython==2.8.0
 docstring-parser==0.18.0
 email-validator==2.3.0

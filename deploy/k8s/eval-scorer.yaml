@@ -1,8 +1,5 @@
-# M4 Task 4: eval-scorer, the component that turns "the audit trail exists"
-# (Tasks 1-3) into "the audit trail has been checked".
-#
-# It reads a settlement's whole trajectory back out of OpenSearch, scores the
-# five policy-adherence properties spec §5 names, and emits each score as an
+# eval-scorer: reads a settlement's whole trajectory back out of OpenSearch,
+# scores five policy-adherence properties, and emits each score as an
 # OTel span attached to the trace it judges -- so the judgment lands in the
 # same index, beside the evidence, and the optional Dash0 export receives it
 # at no extra cost.
@@ -28,8 +25,7 @@
 # spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}
 # (deploy/platform/spire/registration.yaml), so a pod running as `default`
 # attests as `spiffe://northstar.local/ns/northstar-platform/sa/default` -- an
-# identity that verifies perfectly and identifies nothing. Measured in M2.1 on
-# this cluster, for settlement-agent, before it was given one.
+# identity that verifies perfectly and identifies nothing.
 #
 # Registered, but NOT fetched -- the same relationship
 # policy-decision-service has with its own identity. This pod carries no
@@ -40,22 +36,16 @@
 # something does check one, the answer is this workload's own name.
 #
 # Its SPIFFE ID is in
-# tests/unit/test_stage2_spire_config.py::EVAL_SCORER_SPIFFE_ID -- ruling R22,
-# standing: adding a workload means adding its ID to that allow-list in the
-# same task, never substituting a placeholder to keep the guard green.
+# tests/unit/test_stage2_spire_config.py::EVAL_SCORER_SPIFFE_ID: adding a
+# workload means adding its ID to that allow-list in the same change, never
+# substituting a placeholder to keep the guard green.
 #
-# **And it needs a ClusterSPIFFEID of its own**, in
-# deploy/platform/spire/registration.yaml, which this task added as the fourth.
-# This comment said the opposite -- "none is needed: like reviewer-ui and
-# senior-settlement-agent it takes its ID from the SPIRE chart's catch-all
-# `default` CR" -- and that was inferred from the two nearest precedents rather
-# than measured. Those two are in `northstar-agents`; the catch-all CR's
-# namespaceSelector excludes `northstar-platform` by name, so this pod had a
-# ServiceAccount, an allow-listed ID string and no SPIRE entry whatsoever
-# (`spire-server entry show` listed an entry for every other workload and
-# none for it; the count that stood here grows with the cluster's stage, so
-# it is the absence that is reproducible, not the number). Namespace
-# decides, not the ServiceAccount.
+# **It needs a ClusterSPIFFEID of its own**, in
+# deploy/platform/spire/registration.yaml. Unlike reviewer-ui and
+# senior-settlement-agent, it does not take its ID from the SPIRE chart's
+# catch-all `default` CR: those two are in `northstar-agents`, and the
+# catch-all CR's namespaceSelector excludes `northstar-platform` by name.
+# Namespace decides, not the ServiceAccount.
 #
 # Grants no RBAC. This pod makes no Kubernetes API calls.
 apiVersion: v1
@@ -75,7 +65,7 @@ metadata:
   labels:
     app: eval-scorer
     northstar.io/plane: platform
-    # M6 Task 2: read by @backstage/plugin-kubernetes-backend's default
+    # Read by @backstage/plugin-kubernetes-backend's default
     # label selector (`backstage.io/kubernetes-id=<entity name>`), so this
     # Component's catalog entry (platform/eval-scorer/catalog-info.yaml)
     # shows its live workload. Added to the Pod template below too -- the
@@ -117,7 +107,7 @@ spec:
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
               value: http/protobuf
             # Where the trajectories are read from. The chart's own Service
-            # name, in the namespace M4 Task 1 installed it into; the index
+            # name, in the `observability` namespace it is installed into; the index
             # name is scorer/opensearch.py's, not this manifest's, because it
             # is a measured fact about the collector's exporter rather than a
             # deployment choice.

@@ -93,10 +93,10 @@ def refuse_payment(
 @mcp.tool(
     annotations={
         "readOnlyHint": True,
-        # M3 Task 3 fix round (finding 1, R11): execute_approved reads the
-        # ledger back through this tool before executing an approval, so it
-        # has to be reachable through the same governed MCP path as every
-        # other payments call. It moves nothing and reverses nothing -- the
+        # execute_approved reads the ledger back through this tool before
+        # executing an approval, so it has to be reachable through the same
+        # governed MCP path as every other payments call. It moves nothing
+        # and reverses nothing -- the
         # Policy Decision Service reads this tool as unlimited for exactly
         # that reason (platform/policy-decision-service/pds/rules.py,
         # UNLIMITED_TOOLS).

@@ -51,8 +51,8 @@ backend.add(import('@backstage/plugin-search-backend'));
 // search engine: no plugin-search-backend-module-pg here, deliberately. That
 // module's PgSearchEngine throws at startup against anything but a real
 // Postgres connection (its own DatabaseDocumentStore.ts: "The PgSearchEngine
-// is only supported when using a postgres database") -- and design §3 pins
-// this deployment to SQLite, not Postgres, so registering it would trade a
+// is only supported when using a postgres database"), and this deployment
+// is pinned to SQLite, not Postgres, so registering it would trade a
 // working demo for a search index nobody asked for. With no search-engine
 // module registered, @backstage/plugin-search-backend falls back to its
 // built-in Lunr in-memory engine, which needs no external database at all.
@@ -64,7 +64,7 @@ backend.add(import('@backstage/plugin-search-backend-module-techdocs'));
 // kubernetes plugin
 backend.add(import('@backstage/plugin-kubernetes-backend'));
 
-// M6 Task 3: the autonomy-contract card's backend -- reads and writes the
+// The autonomy-contract card's backend -- reads and writes the
 // `northstar-autonomy` FeatureFlag through its OWN ServiceAccount
 // (backstage-autonomy-writer, deploy/k8s/backstage.yaml), never through the
 // kubernetes-backend plugin above. See

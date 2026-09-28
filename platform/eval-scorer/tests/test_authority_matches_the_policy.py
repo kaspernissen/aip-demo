@@ -4,8 +4,7 @@
 `platform/policy-decision-service/pds/rules.py::EXECUTE_LIMITS`. Read that
 module's header for why: a scorer that checks a decision against the limit
 that same decision reports cannot disagree with it, and a score that cannot
-disagree is decoration -- exactly what spec §5's anti-vacuity criterion
-forbids.
+disagree is decoration.
 
 Independence at runtime, agreement at build time. This file supplies the
 second half.
@@ -86,9 +85,9 @@ def test_the_published_allowances_are_the_policys_own_execute_limits():
 
 
 def test_the_guard_reads_a_table_with_something_in_it():
-    """A guard that compares two empty dicts passes forever. `rules.py` has
-    held three rows since M3; fewer than two would mean the parse silently
-    returned nothing useful."""
+    """A guard that compares two empty dicts passes forever. `rules.py` holds
+    three rows; fewer than two would mean the parse silently returned
+    nothing useful."""
     policy = _execute_limits_from_rules()
     assert len(policy) >= 2, policy
     assert all(len(key) == 2 for key in policy), (
@@ -98,7 +97,7 @@ def test_the_guard_reads_a_table_with_something_in_it():
     )
 
 
-# --- M5 Task 5, Step 5: the flag source joins the check -------------------
+# --- The flag source joins the check ---------------------------------------
 #
 # `scorer/contract.py` now resolves the LEVEL `score_identity_had_authority`
 # looks the allowance up under, independent of the span. That table lookup

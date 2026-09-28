@@ -5,10 +5,10 @@ and expiry before it calls us -- that is what `jwtAuth` does, and re-verifying
 here would duplicate it. What this module does is decide whether the value the
 gateway passed us is an identity we recognise at all.
 
-Where the value comes from is measured, not assumed. Task 1 dumped the whole
-`McpRequest` on this cluster against agentgateway v1.5.0: the SPIFFE ID arrives
-in `metadata_context` under the key `caller`, populated by the gateway config
-`metadata: {caller: 'jwt.sub'}`, and it is *never* in a forwarded
+Where the value comes from is measured, not assumed: the whole `McpRequest`
+was dumped on this cluster against agentgateway v1.5.0, and the SPIFFE ID
+arrives in `metadata_context` under the key `caller`, populated by the
+gateway config `metadata: {caller: 'jwt.sub'}`, and it is *never* in a forwarded
 `authorization` header -- `jwtAuth` strips the credential from its location
 unless `preserveToken: true`, which we deliberately do not set. So `headers` is
 accepted below and not read: it is the second half of the request shape, it is

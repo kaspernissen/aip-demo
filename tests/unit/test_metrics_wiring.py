@@ -1,9 +1,8 @@
-"""M4 Task 2: guards for the metrics wiring, from source rather than a cluster.
+"""Guards for the metrics wiring, from source rather than a cluster.
 
 The live half is `tests/e2e/test_prometheus_metrics_ingest.py`. This is what
-runs without a cluster, and it exists because the live file structurally cannot
-see five things -- three from the start, and two more that review finding F5
-and F6 showed it could not see either:
+runs without a cluster, and it exists because the live file structurally
+cannot see five things:
 
   * A service whose `_configure_metrics` was deleted, or never called, is
     indistinguishable in Prometheus from a service that simply recorded nothing
@@ -16,21 +15,20 @@ and F6 showed it could not see either:
   * The version pins, which are claims about the world rather than about this
     cluster.
   * **Who authored a series.** Prometheus records what a metric is called,
-    never which source created it, so the live file cannot enforce §6's
-    prohibition on hand-rolling a `gen_ai.*` instrument -- two documents cited
-    it as though it could (finding F5).
+    never which source created it, so the live file cannot enforce the
+    conventions' prohibition on hand-rolling a `gen_ai.*` instrument.
   * **A Deployment manifest that changes the SDK from outside the source.**
     `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` and
     `OTEL_METRIC_EXPORT_INTERVAL` falsify measured properties the contract
-    publishes without touching a line of Python (finding F6).
+    publishes without touching a line of Python.
 
-**Everything here is parsed, never grepped.** The one substring check this file
-originally used -- for the Prometheus exporter in the deployed collector
-config -- was demonstrated inert by mutation on 2026-09-13 (the string survives
-in the exporter's declaration and in a comment), and the e2e file's
-`_metrics_pipeline_exports_to_prometheus` carries that story. The same rule is
-applied here from the start: `ast` for Python, `yaml` for config, and where a
-shell script has to be read, a comment-stripped copy.
+**Everything here is parsed, never grepped.** A substring check for the
+Prometheus exporter in the deployed collector config stays green even after
+the exporter is removed from the pipeline, since the string still appears in
+the exporter's declaration and in a comment -- the e2e file's
+`_metrics_pipeline_exports_to_prometheus` carries that lesson. The same rule
+is applied here from the start: `ast` for Python, `yaml` for config, and
+where a shell script has to be read, a comment-stripped copy.
 """
 from __future__ import annotations
 
@@ -50,12 +48,12 @@ COLLECTOR_CONFIGS = [
 ]
 
 # Every Python service that gets a MeterProvider, and the module that installs
-# it. Five, not four: M4 Task 2's brief named settlement-agent, claims-agent,
-# policy-decision-service and reviewer-ui, and `tools/payments-mcp` is added
-# because it is the process in which `gen_ai.execute_tool.duration` would be
-# recorded if FastMCP recorded it. Without a provider there, "FastMCP emits no
-# execute_tool metric" would have been a claim about our wiring rather than
-# about FastMCP -- see docs/upstream-findings.md Finding 12.
+# it. `tools/payments-mcp` is included alongside settlement-agent,
+# claims-agent, policy-decision-service and reviewer-ui because it is the
+# process in which `gen_ai.execute_tool.duration` would be recorded if
+# FastMCP recorded it. Without a provider there, "FastMCP emits no
+# execute_tool metric" would be a claim about our wiring rather than about
+# FastMCP -- see docs/upstream-findings.md Finding 12.
 #
 # `apps/customer-ui` is deliberately NOT here: it is a Next.js app with no
 # Python and no OpenTelemetry dependency of its own (there is no
@@ -63,9 +61,9 @@ COLLECTOR_CONFIGS = [
 # is Go and is covered by the scope note in docs/telemetry-contract.md's metrics
 # section, not by this list.
 #
-# `platform/eval-scorer` (M4 Task 4) is Python and is also deliberately NOT
-# here: `scorer/emit.py::configure` installs a TracerProvider and no
-# MeterProvider, argued in that function. It is still walked by
+# `platform/eval-scorer` is Python and is also deliberately NOT here:
+# `scorer/emit.py::configure` installs a TracerProvider and no MeterProvider,
+# argued in that function. It is still walked by
 # `test_no_service_authors_a_metric_under_a_convention_namespace` below, which
 # reads every `.py` under `_SOURCE_ROOTS` -- so the prohibition covers it even
 # though the wiring requirement does not. That split is the point: a service
@@ -121,10 +119,9 @@ def _normalised_body(func: ast.FunctionDef) -> str:
 
 @pytest.mark.parametrize("service", sorted(METRICS_BOOTSTRAPS))
 def test_every_python_service_installs_a_meter_provider(service):
-    """Before M4 Task 2, `metrics.get_meter_provider()` in each of these
-    processes returned the API's `_ProxyMeterProvider` and every measurement was
-    discarded inside the process. M4 §6 measured exactly that, system-wide,
-    during design.
+    """Without this wiring, `metrics.get_meter_provider()` in each of these
+    processes returns the API's `_ProxyMeterProvider` and every measurement is
+    discarded inside the process.
 
     This binds to the *call*, not to the definition: a `_configure_metrics`
     that exists and is never called installs nothing, and is the shape that
@@ -258,11 +255,11 @@ def test_nothing_configures_a_view_or_a_temporality_that_would_drop_data(service
 
 # Every environment variable that lets a Deployment manifest change what the
 # SDK records or how often, without touching a line of the Python this file
-# otherwise guards. Review finding F6: `agents/settlement-agent/bootstrap.py`
-# publishes CUMULATIVE temporality and a 60 000 ms export interval as measured
-# properties of this system, and both are settable from outside the source that
-# was measured -- so the guard protecting those sentences cannot live only in
-# the AST of the five bootstraps.
+# otherwise guards. `agents/settlement-agent/bootstrap.py` publishes
+# CUMULATIVE temporality and a 60 000 ms export interval as measured
+# properties of this system, and both are settable from outside the source
+# that was measured -- so the guard protecting those sentences cannot live
+# only in the AST of the five bootstraps.
 #
 #   * `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` -- `delta` or
 #     `lowmemory` replaces CUMULATIVE, handing Prometheus increments it must
@@ -339,8 +336,8 @@ _INSTRUMENT_FACTORIES = frozenset({
     "create_observable_gauge",
 })
 
-# Namespaces an instrumentation library owns. M4 spec §6: "No metric is
-# hand-rolled to fill a hole in a framework's coverage" -- a locally-invented
+# Namespaces an instrumentation library owns. No metric here is hand-rolled
+# to fill a hole in a framework's coverage: a locally-invented
 # `gen_ai.invoke_agent.duration` would disagree with whatever a future, fixed
 # PydanticAI emits natively, and every dashboard built on it would have to be
 # rewritten twice. `northstar.*`, `policy.*`, `review.*` and `settlement.*` are
@@ -366,17 +363,15 @@ def _repo_python_sources() -> list[Path]:
 
 
 def test_no_service_authors_a_metric_under_a_convention_namespace():
-    """§6's standing prohibition, enforced at the only layer that can see it.
+    """The standing prohibition on hand-rolling a convention-namespaced
+    metric, enforced at the only layer that can see it.
 
-    **Review finding F5.** `docs/upstream-findings.md` Finding 12 and
-    `docs/telemetry-contract.md` Gap 8 both used to cite
-    `tests/e2e/test_prometheus_metrics_ingest.py::test_no_metric_was_invented_to_fill_a_framework_gap`
-    as proving that no `gen_ai.*` series "originates here". It cannot: it reads
-    Prometheus, and Prometheus records what a series is called, never who
-    authored it. A hand-rolled instrument under a name PydanticAI also emits
-    would have passed it, so the prohibition both documents leaned on was
-    enforced by nothing. This is the half that can see origin, and it needs no
-    cluster.
+    `tests/e2e/test_prometheus_metrics_ingest.py`'s
+    `test_no_metric_was_invented_to_fill_a_framework_gap` cannot prove that
+    no `gen_ai.*` series "originates here": it reads Prometheus, and
+    Prometheus records what a series is called, never who authored it. A
+    hand-rolled instrument under a name PydanticAI also emits would pass it.
+    This is the half that can see origin, and it needs no cluster.
 
     Bound to the instrument-creating CALL with a literal name, never to the
     string anywhere in the file: this repo's own tests and documents name
@@ -386,12 +381,9 @@ def test_no_service_authors_a_metric_under_a_convention_namespace():
 
     `systems/payments-api` is Go and has no Python to walk. It is also one of
     the **two** services with no MeterProvider at all -- `platform/eval-scorer`
-    (M4 Task 4) is the other, by the argument in its own
-    `scorer/emit.py::configure` -- so neither can author a metric of any kind
-    today. (This said "the one service" until M4 Task 4's fix round; the
-    commit that made it two carried a source comment saying so and did not
-    correct this docstring.) docs/telemetry-contract.md's metrics section
-    scopes both out.
+    is the other, by the argument in its own `scorer/emit.py::configure` --
+    so neither can author a metric of any kind today.
+    docs/telemetry-contract.md's metrics section scopes both out.
 
     Note that eval-scorer IS walked by this particular guard -- it reads
     every `.py` under `_SOURCE_ROOTS`, `platform/` included -- and that is
@@ -426,8 +418,8 @@ def test_no_service_authors_a_metric_under_a_convention_namespace():
 
     assert not offenders, (
         "these services author a metric under a namespace an instrumentation "
-        f"library owns: {offenders}. M4 spec §6 forbids hand-rolling a metric "
-        "to fill a hole in a framework's coverage -- an invented `gen_ai.*` "
+        f"library owns: {offenders}. Hand-rolling a metric to fill a hole in "
+        "a framework's coverage is forbidden -- an invented `gen_ai.*` "
         "instrument makes this project's telemetry disagree with whatever the "
         "framework emits once it implements the metric, which is the same "
         "argument docs/telemetry-contract.md's Gap 5 makes for not "
@@ -443,10 +435,9 @@ def test_the_collector_metrics_pipeline_filters_nothing():
     after the SDK already sent them; `transform` can too, by dropping metrics
     in an OTTL statement.
 
-    Three more were added in fix round 1 (review finding F6), because they
-    change or discard what Prometheus ends up storing just as effectively and
-    the first version of this set did not name them: `cumulativetodelta` and
-    `deltatocumulative` rewrite temporality *after* the SDK chose it, which
+    `cumulativetodelta` and `deltatocumulative` are also forbidden, because
+    they change or discard what Prometheus ends up storing just as
+    effectively: they rewrite temporality *after* the SDK chose it, which
     would falsify the measured CUMULATIVE property the contract publishes, and
     `metricstransform` can drop or aggregate series outright. None belongs in
     this pipeline.
@@ -476,9 +467,8 @@ def test_the_collector_metrics_pipeline_filters_nothing():
 
 @pytest.mark.parametrize("config", COLLECTOR_CONFIGS, ids=lambda p: p.name)
 def test_the_metrics_pipeline_exports_to_prometheus(config):
-    """Exit criterion 5's static half, asserted on the PIPELINE rather than on
-    the file's text -- see this module's docstring for the mutation that showed
-    why a substring check here is inert.
+    """Asserted on the PIPELINE rather than on the file's text -- see this
+    module's docstring for why a substring check here is inert.
     """
     parsed = yaml.safe_load(config.read_text())
     pipeline = parsed["service"]["pipelines"]["metrics"]
@@ -552,7 +542,7 @@ def test_the_prometheus_values_enable_the_otlp_receiver():
 
 
 def test_prometheus_scrapes_nothing_so_otlp_is_the_only_ingestion_path():
-    """M4 exit criterion 5 says "no scrape configuration", and this file's
+    """This Prometheus must run no scrape configuration, and this file's
     sibling in tests/e2e depends on it for something stronger: with every job
     disabled, any series in Prometheus can only have arrived over OTLP, which
     is what makes "no `gen_ai.execute_tool.duration` anywhere" attributable to
@@ -623,11 +613,9 @@ def test_the_deprecated_otlphttp_alias_is_not_used():
 
         "otlphttp" alias is deprecated; use "otlp_http" instead
 
-    That warning was produced by this repo on 2026-09-13 -- the exporter
-    shipped first under the deprecated spelling, which is also the spelling the
-    reference config this block was copied from uses. It is renamed rather than
-    left to warn, and this keeps it renamed, in step with the `otlp_grpc/`
-    exporters that have been spelled that way since M1.
+    -- the spelling in the reference config this block was copied from. It
+    is renamed rather than left to warn, and this keeps it renamed, in step
+    with the `otlp_grpc/` exporters spelled that way throughout.
     """
     for config in COLLECTOR_CONFIGS:
         parsed = yaml.safe_load(config.read_text())

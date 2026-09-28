@@ -1,13 +1,13 @@
-# M6 Task 2: this component's software-catalog entry. Staging/build-context
-# note lives in the top-level catalog-info.yaml -- read that once, not once
-# per component.
+# This component's software-catalog entry. Staging/build-context note lives
+# in the top-level catalog-info.yaml -- read that once, not once per
+# component.
 #
 # No entry in contracts/agent-cards/ -- the PDS is platform machinery, not an
-# A2A agent, so there is nothing here to link (design's own rule: "where one
-# exists"). It is still the one thing this milestone's whole design insists
-# on: "the PDS is still the only decision point" (design §4) -- Backstage's
-# Task 3 card can edit the `northstar-autonomy` FeatureFlag the PDS reads,
-# but never bypasses the PDS itself.
+# A2A agent, so there is nothing here to link. It is still the one thing this
+# system's whole design insists on: "the PDS is still the only decision
+# point" -- Backstage's autonomy-contract card can edit the
+# `northstar-autonomy` FeatureFlag the PDS reads, but never bypasses the PDS
+# itself.
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:

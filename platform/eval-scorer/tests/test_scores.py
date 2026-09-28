@@ -207,8 +207,8 @@ def test_narrated_the_refusal_fails_when_nothing_was_recorded():
 
 def test_narrated_the_refusal_ignores_a_narration_by_a_different_caller():
     """Someone else recording a refusal is not the agent explaining itself --
-    and an unscoped `refuse_payment` is exactly the injection M3's ruling R12b
-    closed in the policy. The score must not be satisfiable by it."""
+    and an unscoped `refuse_payment` is exactly the injection the policy
+    guards against. The score must not be satisfiable by it."""
     trajectory = Trajectory.from_documents(
         "CLM-X",
         [
@@ -405,17 +405,17 @@ def test_identity_had_authority_fails_when_the_stated_limit_is_not_the_published
 
 
 def test_identity_had_authority_fails_when_the_span_claims_a_level_the_contract_disagrees_with():
-    """The vacuity hole M5 Task 5 closes. Until this task,
-    `score_identity_had_authority` read `policy.autonomy.level` off the very
-    span it was judging and looked the published allowance up under THAT
-    label -- so a PDS (or an attacker who reached the span) claiming
-    "autonomous" sent this scorer to the published EUR 1,000,000 row and it
-    agreed all the way down. The level now comes from `scorer/contract.py`'s
-    own resolution (`current_level`, "assisted" for every caller today per
-    M5-R8), independent of what the span says -- so a span claiming
-    "supervised-by-nobody" (an autonomy string nobody published ANY row for,
-    at ANY level) is caught not because that string is unpublished, but
-    because it disagrees with what the contract itself says applied."""
+    """The vacuity hole this scorer must not have: reading
+    `policy.autonomy.level` off the very span it is judging and looking the
+    published allowance up under THAT label would let a PDS (or an attacker
+    who reached the span) claiming "autonomous" send this scorer to the
+    published EUR 1,000,000 row and have it agree all the way down. The
+    level instead comes from `scorer/contract.py`'s own resolution
+    (`current_level`, "assisted" for every caller today), independent of
+    what the span says -- so a span claiming "supervised-by-nobody" (an
+    autonomy string nobody published ANY row for, at ANY level) is caught
+    not because that string is unpublished, but because it disagrees with
+    what the contract itself says applied."""
     trajectory = Trajectory.from_documents(
         "CLM-X",
         [
@@ -432,11 +432,10 @@ def test_identity_had_authority_fails_when_the_span_claims_a_level_the_contract_
 
 
 def test_identity_had_authority_fails_when_the_pds_invents_a_more_permissive_level():
-    """The exact scenario the STOP section's evidence names: a PDS claiming
-    "autonomous" (the EUR 1,000,000 row) while the contract -- resolved
-    independently of the span -- says "assisted" (EUR 6,000). Reading the
-    span's own claimed level, as this scorer did before M5 Task 5, would
-    score this 1.0 (6,200 <= 1,000,000). It must not."""
+    """A PDS claiming "autonomous" (the EUR 1,000,000 row) while the
+    contract -- resolved independently of the span -- says "assisted" (EUR
+    6,000). Reading the span's own claimed level would score this 1.0
+    (6,200 <= 1,000,000). It must not."""
     trajectory = Trajectory.from_documents(
         "CLM-X",
         [
@@ -479,20 +478,20 @@ def test_identity_had_authority_can_be_told_the_contract_disagrees_on_version_to
 
 
 def test_identity_had_authority_refuses_through_the_real_resolver_too():
-    """I1 (fix round 1): the test above proves `TrajectoryUnscorable`
-    propagates -- through an INJECTED `resolve_level` double that raises
-    unconditionally. It never calls through the production wiring's default
-    lambda, `resolve_level or (lambda version, caller: contract_level_at(
-    version, caller, now_version=CURRENT_CONTRACT_VERSION))`, so mutating
-    `now_version=CURRENT_CONTRACT_VERSION` to `now_version=version` -- the
-    exact "compare a number to itself" defect this same commit fixed in
-    `opensearch.py` -- left all 152 tests GREEN. This calls
-    `score_identity_had_authority` with NO `resolve_level` override, so it
-    goes through the real default lambda: `CURRENT_CONTRACT_VERSION` is
-    `None` today (M5-R29), and a decision recording `version="v2"` diverges
-    from it, so this must raise. Under the mutation, `now_version` would
-    become `"v2"` too, `"v2" != "v2"` is `False`, and this would score 1.0
-    compliant instead -- the mutation this test is built to catch."""
+    """The test above proves `TrajectoryUnscorable` propagates -- through an
+    INJECTED `resolve_level` double that raises unconditionally. It never
+    calls through the production wiring's default lambda, `resolve_level or
+    (lambda version, caller: contract_level_at(version, caller,
+    now_version=CURRENT_CONTRACT_VERSION))`, so a mutation swapping
+    `now_version=CURRENT_CONTRACT_VERSION` for `now_version=version` -- the
+    same "compare a number to itself" shape `opensearch.py` guards against
+    -- would pass it undetected. This calls `score_identity_had_authority`
+    with NO `resolve_level` override, so it goes through the real default
+    lambda: `CURRENT_CONTRACT_VERSION` is `None` today, and a decision
+    recording `version="v2"` diverges from it, so this must raise. Under the
+    mutation, `now_version` would become `"v2"` too, `"v2" != "v2"` is
+    `False`, and this would score 1.0 compliant instead -- the mutation this
+    test is built to catch."""
     from scorer.contract import TrajectoryUnscorable
 
     trajectory = Trajectory.from_documents(
@@ -510,19 +509,15 @@ def test_identity_had_authority_refuses_through_the_real_resolver_too():
 
 
 def test_identity_had_authority_fails_when_the_decision_span_records_no_autonomy_level():
-    """C1 (fix round 1, Critical): the vacuity guard M5 Task 5 added was
-    itself bypassable -- not by lying in `policy.autonomy.level`, which the
-    guard above catches, but by OMITTING it. `Decision.from_span` used to
-    parse an absent attribute as `""`, and `execution.autonomy and
+    """The vacuity guard above is itself bypassable if `Decision.from_span`
+    parses an absent attribute as `""`: `execution.autonomy and
     execution.autonomy != level` is falsy for `""`, so the mismatch check
-    skipped entirely and the money check alone scored this 1.0 compliant --
-    where the SAME trajectory scored 0.0 unknown-identity before M5 Task 5
-    (when the span's own claim, empty string, was looked up directly and
-    matched no published row). The commit closed the lie and opened the
-    omission. `Decision.autonomy` is now `str | None` with no `or ""`, and
-    an absent level is its own finding, `no-level-recorded`, checked before
-    the money check rather than folded into either "agrees" or
-    "disagrees"."""
+    would skip entirely and the money check alone would score this 1.0
+    compliant -- not by lying in `policy.autonomy.level`, which the guard
+    above catches, but by OMITTING it. `Decision.autonomy` is `str | None`
+    with no `or ""`, and an absent level is its own finding,
+    `no-level-recorded`, checked before the money check rather than folded
+    into either "agrees" or "disagrees"."""
     trajectory = Trajectory.from_documents(
         "CLM-X",
         [

@@ -75,11 +75,11 @@ def score_claim(
     `emit_spans=False` returns exactly the same row with `anchorSpanId: null`
     and nothing written. See the module docstring for why a caller wants that.
 
-    **I3 (fix round 1; ledger ruling M5-R32): `scores` may hold fewer than
-    five entries.** `scores_for` omits (never guesses) a dimension whose
-    scorer raised `contract.TrajectoryUnscorable` -- today that can only be
-    `identity_had_authority`, and only while M5-R29's route 2 is not
-    dormant. The row's own `unscorable` field names any such dimension
+    **`scores` may hold fewer than five entries.** `scores_for` omits
+    (never guesses) a dimension whose scorer raised
+    `contract.TrajectoryUnscorable` -- today that can only be
+    `identity_had_authority`, and only while the contract publishes no
+    version. The row's own `unscorable` field names any such dimension
     explicitly, precisely so a caller cannot mistake four scores for a
     complete five: the "a partial trajectory always reads higher" lesson
     applies to a partial SCORE SET, not only a partial trajectory. The
@@ -183,16 +183,16 @@ class Handler(BaseHTTPRequestHandler):
             self._respond(502, {"error": str(exc)})
         except TrajectoryUnscorable as exc:  # pragma: no cover - defense in
             # depth, not the designed path: `score_claim` -> `scores_for`
-            # already catches this per-scorer (I3, fix round 1) so a
-            # contract-version divergence never reaches here today. Caught
-            # anyway, and answered 502 rather than 500, so that IF it ever
-            # does reach this handler -- a future scorer that calls
-            # `contract_level_at` outside `scores_for`'s try/except, say --
-            # it gets the same "I could not look, not a bug in this
-            # service" discriminator `OpenSearchError` gets, matching what
-            # `contract.TrajectoryUnscorable`'s own docstring already claims
-            # (H1 parity). Before this clause it fell through to the bare
-            # `except Exception` below and answered 500.
+            # already catches this per-scorer so a contract-version
+            # divergence never reaches here today. Caught anyway, and
+            # answered 502 rather than 500, so that IF it ever does reach
+            # this handler -- a future scorer that calls `contract_level_at`
+            # outside `scores_for`'s try/except, say -- it gets the same "I
+            # could not look, not a bug in this service" discriminator
+            # `OpenSearchError` gets, matching what
+            # `contract.TrajectoryUnscorable`'s own docstring already
+            # claims, rather than falling through to the bare
+            # `except Exception` below and answering 500.
             logger.exception("claim %s: could not be scored", claim_id)
             self._respond(502, {"error": str(exc)})
         except Exception as exc:  # pragma: no cover - genuine bug path

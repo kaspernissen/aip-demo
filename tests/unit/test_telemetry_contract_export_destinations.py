@@ -1,14 +1,9 @@
-"""C1 (whole-branch review): `docs/telemetry-contract.md`'s export-destinations
-table was falsified by a change to the very file it claims to be read from --
-for the THIRD time. The first two recurrences are narrated in the document's
-own prose, immediately below the table (`review finding F4`, then M4 Task 2's
-metrics-row falsification); this is the third, M5 Task 4 adding
-`opensearch/logs` to the `logs` pipeline of both collector configs while the
-table went on publishing "logs go to Dash0 only" for the rest of the
-milestone.
+"""`docs/telemetry-contract.md`'s export-destinations table can drift from
+the very file it claims to be read from: a collector config change (adding
+`opensearch/logs` to the `logs` pipeline, say) has no way to force the
+hand-written table to update alongside it.
 
-Per this repo's standing rule, correcting the row a third time is not enough:
-a table whose own header says "read directly from
+Per this repo's standing rule, a table whose own header says "read directly from
 `deploy/observability/collector-config-dash0.yaml`'s own pipeline
 definitions" and which nothing actually reads from that file is a retyped
 figure wearing a provenance claim. This test makes the claim true by deriving
@@ -89,8 +84,8 @@ def test_the_export_destinations_table_matches_the_dash0_collector_config():
     """Every row the table publishes must equal that pipeline's actual
     exporter list in `collector-config-dash0.yaml` -- the file the table's own
     header claims to read from. Mutate a pipeline's exporter list in that file
-    (`scripts/mutate-guard.sh`) and this must go RED; that is the guard C1
-    asked for, not merely the correction."""
+    (`scripts/mutate-guard.sh`) and this must go RED -- proof the guard
+    catches drift, not merely a one-time correction of the table."""
     published = _published_table()
     configured = _configured_pipelines()
 
@@ -111,19 +106,20 @@ def test_the_export_destinations_table_matches_the_dash0_collector_config():
             )
     assert not mismatches, (
         "docs/telemetry-contract.md's export-destinations table has drifted "
-        "from deploy/observability/collector-config-dash0.yaml (this is the "
-        "third recurrence of exactly this defect -- see the note in the "
+        "from deploy/observability/collector-config-dash0.yaml (this table "
+        "has drifted from its source config before -- see the note in the "
         "document immediately below the table):\n" + "\n".join(mismatches)
     )
 
 
 def test_the_logs_summary_sentence_names_opensearch():
-    """The narrower, human-readable claim the table backs: M5 Task 4 added
-    `opensearch/logs` to the logs pipeline and the summary sentence said "logs
-    go to Dash0 only" for the rest of the milestone regardless. Checked
-    directly against the config rather than trusting the table-vs-prose
-    consistency to hold on its own, since the table and the sentence are two
-    separate hand-written artefacts describing the same fact."""
+    """The narrower, human-readable claim the table backs: when the logs
+    pipeline routes to OpenSearch as well as Dash0, the summary sentence has
+    to say so rather than continuing to claim "logs go to Dash0 only".
+    Checked directly against the config rather than trusting the
+    table-vs-prose consistency to hold on its own, since the table and the
+    sentence are two separate hand-written artefacts describing the same
+    fact."""
     logs_exporters = _configured_pipelines()["logs"]
 
     text = CONTRACT_PATH.read_text()

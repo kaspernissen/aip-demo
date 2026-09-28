@@ -1,19 +1,20 @@
-"""Guards the M2.2 network policy that makes the choke point enforceable.
+"""Guards the network policy that makes the choke point enforceable.
 
-**What this exists to prevent.** M2.1 shipped a gateway that authenticates
-every MCP `tools/call`, and a test named
-`test_the_gateway_is_the_only_route_into_payments_mcp`. That name is stronger
-than what the test asserts, and its own docstring says so honestly: it checks
-that every `payments-mcp` span *in an observed trace* is parented to an
-agentgateway span. That is a claim about traffic that happened, not traffic
-that is possible.
+**What this exists to prevent.** The gateway authenticates every MCP
+`tools/call`, and a test named
+`test_the_gateway_is_the_only_route_into_payments_mcp` checks it -- but that
+name is stronger than what the test asserts, and its own docstring says so
+honestly: it checks that every `payments-mcp` span *in an observed trace* is
+parented to an agentgateway span. That is a claim about traffic that
+happened, not traffic that is possible.
 
-The difference was measured, not theorised. Before
-`deploy/platform/cilium-policies.yaml` existed, `claims-agent` -- which holds
-no SVID and has no reason to touch payments -- opened an MCP `initialize`
+The difference was measured, not theorised. Without
+`deploy/platform/cilium-policies.yaml` in place, `claims-agent` -- which holds
+no SVID and has no reason to touch payments -- can open an MCP `initialize`
 directly against `payments-mcp.northstar-tools.svc.cluster.local:8000/mcp` and
-received **HTTP 200**. So "the platform decides if it becomes an effect" was
-true only for a caller that chose to cooperate.
+receive **HTTP 200**. So "the platform decides if it becomes an effect" holds
+only once this policy also constrains who can call at all, not merely for a
+caller that chooses to cooperate.
 
 **Why these assertions parse YAML instead of grepping it.** The policy file is
 heavily commented, and those comments contain every string a naive guard would

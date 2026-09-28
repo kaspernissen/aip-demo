@@ -1,12 +1,11 @@
 """The servicer's two observable outputs: the `McpRequestResult` and the span.
 
-Not in the brief. They earn their place because three of Task 3's requirements
-are invisible to `build_result`/`parse_call` unit tests and would otherwise
-first be exercised on stage:
+Three properties here are invisible to `build_result`/`parse_call` unit tests
+and would otherwise first be exercised on stage:
 
-- exit criterion 3, that `policy.decision` is *in the caller's trace* -- which
-  is a claim about `span.parent`, and the only way to be sure the span is a
-  child rather than a root that happens to look like one;
+- that `policy.decision` is *in the caller's trace* -- which is a claim about
+  `span.parent`, and the only way to be sure the span is a child rather than
+  a root that happens to look like one;
 - "`CheckRequest` must never raise", which is a claim about the servicer, not
   about the pure functions it calls;
 - that the servicer is actually reachable as
@@ -36,19 +35,19 @@ import ext_mcp_pb2_grpc as pb_grpc
 
 import pds.server as _pds_server_module
 
-# M2 (task-3 review, fix round 1): captured at module-import time, before
-# `_fake_flag_client` below (module-scoped, autouse) ever runs and replaces
-# `pds.server._flag_client` with `_FailClosedFlagClient` for every test in
-# this file. This is the actual object `api.set_provider`/`_flag_client.
-# add_hooks([TracingHook()])` built at `pds.server` import -- the real
-# module-scope client, not a test double.
+# Captured at module-import time, before `_fake_flag_client` below
+# (module-scoped, autouse) ever runs and replaces `pds.server._flag_client`
+# with `_FailClosedFlagClient` for every test in this file. This is the
+# actual object `api.set_provider`/`_flag_client.add_hooks([TracingHook()])`
+# built at `pds.server` import -- the real module-scope client, not a test
+# double.
 _REAL_FLAG_CLIENT = _pds_server_module._flag_client
 
 AGENT = "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
 
-# Task 1 measured this exact `mcp_request` payload on the wire for a
-# `propose_payment` call. Reused verbatim so these tests are exercised against
-# the real shape, including the float amount.
+# The exact `mcp_request` payload measured on the wire for a `propose_payment`
+# call. Reused verbatim so these tests are exercised against the real shape,
+# including the float amount.
 MEASURED_PROPOSE = (b'{"name":"propose_payment","arguments":'
                     b'{"claim_id":"CLM-1842","amount":6200.0,"currency":"EUR"}}')
 
@@ -87,19 +86,17 @@ class _FailClosedFlagClient:
     `feature_flag.evaluation` span event is added here) -- correct for this
     suite, since that event's presence is `test_autonomy.py`'s concern too.
 
-    Fix round 1 (M3): the default construction (`value=None`) reproduces the
-    real not-ready path measured in `test_autonomy.py` and in
+    The default construction (`value=None`) reproduces the real not-ready
+    path measured in `test_autonomy.py` and in
     `test_the_deny_span_carries_the_decision_and_both_numbers`'s own
     docstring -- `error_code=PROVIDER_NOT_READY`, no exception -- rather than
-    the `error_code=None` state this double previously returned, which the
-    real SDK never produces on any error path (every one of the four traced
-    in the task-3 review sets an `error_code`). `value`/`reason` are
-    overridable per instance so a single test can install a second double
-    that returns a genuine `autonomous` resolution (reason
-    `TARGETING_MATCH`, the reason flagd's own targeting engine reports, not
-    this class's fail-closed default) -- see
+    an `error_code=None` state, which the real SDK never produces on any
+    error path. `value`/`reason` are overridable per instance so a single
+    test can install a second double that returns a genuine `autonomous`
+    resolution (reason `TARGETING_MATCH`, the reason flagd's own targeting
+    engine reports, not this class's fail-closed default) -- see
     `test_the_autonomous_resolution_reaches_policyinput_and_changes_the_outcome`
-    below, which is C1's guard.
+    below.
     """
 
     class _Provider:
@@ -204,7 +201,7 @@ def _execute(amount, currency="EUR"):
 
 
 def test_the_demo_refusal_end_to_end(spans):
-    """The M2.2 headline: 6200 EUR on `execute_payment` is refused, and the
+    """The headline case: 6200 EUR on `execute_payment` is refused, and the
     refusal text the model narrates is on `AuthorizationError.reason`."""
     result = PolicyServicer().CheckRequest(
         _request(params=_execute(6200.0)), None)
@@ -217,12 +214,12 @@ def test_the_demo_refusal_end_to_end(spans):
 
 
 def test_a_payment_within_the_limit_is_permitted(spans):
-    """Exit criterion 6: the platform must permit as well as refuse."""
+    """The platform must permit as well as refuse."""
     result = PolicyServicer().CheckRequest(_request(params=_execute(5800.0)), None)
     assert result.WhichOneof("result") == "pass"
 
 
-# --- F5, at the boundary ----------------------------------------------------
+# --- amounts at the boundary of what is payable ------------------------------
 
 
 @pytest.mark.parametrize("literal,expected_rule", [
@@ -239,11 +236,10 @@ def test_a_payment_within_the_limit_is_permitted(spans):
 ])
 def test_f5_an_unpayable_amount_is_refused_end_to_end(spans, literal,
                                                       expected_rule):
-    """The reviewer drove `NaN`, `-Infinity` and `-1e309` through
-    `CheckRequest` and all three came back PERMIT -- stamped with the limit
-    rule's own name, so the audit record claimed the EUR 6,000 rule had
-    considered them and said yes. Both layers refuse now, and the rule name
-    says which one did it.
+    """`NaN`, `-Infinity` and `-1e309` driven through `CheckRequest` must not
+    come back PERMIT stamped with the limit rule's own name -- that would
+    make the audit record claim the EUR 6,000 rule had considered them and
+    said yes. Both layers refuse, and the rule name says which one did it.
     """
     result = PolicyServicer().CheckRequest(
         _request(params=(b'{"name":"execute_payment","arguments":{"amount":'
@@ -257,8 +253,8 @@ def test_f5_an_unpayable_amount_is_refused_end_to_end(spans, literal,
 @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity", "1e309"])
 def test_the_deny_body_stays_strictly_valid_json(spans, literal):
     """Python's `json.loads` accepts `NaN`; the gateway's
-    `serde_json::from_slice` does not, and Task 1 measured that an unparseable
-    `mcp_error` is dropped with a `warn!` while the deny is still returned. So
+    `serde_json::from_slice` does not, and an unparseable `mcp_error` is
+    dropped with a `warn!` while the deny is still returned. So
     a non-finite amount echoed into `data.requested` would silently cost the
     whole structured refusal. `parse_constant` is what makes this strict --
     without it `json.loads` would accept the very `NaN` being guarded against
@@ -287,8 +283,9 @@ def test_the_span_never_carries_a_non_finite_amount(spans):
 
 
 def test_the_measured_propose_payload_is_permitted(spans):
-    """The bytes Task 1 actually observed. Proposing 6200 must still work --
-    the demo depends on the model proposing it and then being refused."""
+    """The bytes actually observed on the wire. Proposing 6200 must still
+    work -- the demo depends on the model proposing it and then being
+    refused."""
     result = PolicyServicer().CheckRequest(_request(), None)
     assert result.WhichOneof("result") == "pass"
 
@@ -346,7 +343,7 @@ def test_check_request_denies_when_the_policy_itself_blows_up(spans, monkeypatch
 
 
 def test_check_response_passes_unmodified(spans):
-    """The response side is unused in M2.2; mutating it would put the PDS in
+    """The response side is unused; mutating it would put the PDS in
     the data path of every successful call for no gain."""
     result = PolicyServicer().CheckResponse(
         pb.McpResponse(method="tools/call", mcp_response=b'{"content":[]}'), None)
@@ -358,11 +355,11 @@ def test_check_response_passes_unmodified(spans):
 
 
 def test_the_decision_span_is_a_child_of_the_incoming_trace(spans):
-    """Exit criterion 3, asserted the only way that distinguishes a child from
-    a root: `span.parent` must carry the *caller's* ids.
+    """Asserted the only way that distinguishes a child from a root:
+    `span.parent` must carry the *caller's* ids.
 
-    Task 1 measured `traceparent` being forwarded to the guardrail hook (run C),
-    which is what makes this achievable rather than aspirational.
+    `traceparent` is forwarded to the guardrail hook (measured), which is
+    what makes this achievable rather than aspirational.
     """
     PolicyServicer().CheckRequest(_request(params=_execute(6200.0)), None)
     span, = spans.get_finished_spans()
@@ -406,11 +403,11 @@ def test_an_unusable_traceparent_costs_the_parent_and_nothing_else(spans,
 def test_the_deny_span_carries_the_decision_and_both_numbers(spans):
     """No flagd sidecar is reachable from this suite (it runs outside the
     cluster), so `resolve_autonomy` takes its fail-closed path and the level
-    used is `RESTRICTIVE_LEVEL` -- which is also, not coincidentally, M2's
-    old constant. `ATTR_AUTONOMY_REASON` is `ERROR` because the OpenFeature
-    SDK's own not-ready path (measured against the live sidecar mid-startup:
-    `error_code=PROVIDER_NOT_READY`, no exception) reports it that way, not
-    because `resolve_autonomy`'s own `except` fired."""
+    used is `RESTRICTIVE_LEVEL`. `ATTR_AUTONOMY_REASON` is `ERROR` because
+    the OpenFeature SDK's own not-ready path (measured against the live
+    sidecar mid-startup: `error_code=PROVIDER_NOT_READY`, no exception)
+    reports it that way, not because `resolve_autonomy`'s own `except`
+    fired."""
     PolicyServicer().CheckRequest(_request(params=_execute(6200.0)), None)
     span, = spans.get_finished_spans()
     assert span.attributes[telemetry.ATTR_DECISION] == "deny"
@@ -431,26 +428,24 @@ def test_the_deny_span_carries_the_decision_and_both_numbers(spans):
 
 def test_the_autonomous_resolution_reaches_policyinput_and_changes_the_outcome(
         spans, monkeypatch):
-    """C1 (task-3 review, fix round 1): the servicer-level guard that was
-    missing. Every other test in this module drives `_FailClosedFlagClient`'s
-    default, which returns `RESTRICTIVE_LEVEL` ("assisted") -- the same
-    string `server.py`'s deleted M2 constant held -- so none of them can
-    distinguish `autonomy_level=resolution.level` from a revert to the old
-    literal `autonomy_level="assisted"`. The review measured that revert
-    (`server.py:303`) leaving 119/119 PDS and 217/217 root tests GREEN.
+    """The servicer-level guard that a hard-coded autonomy level would slip
+    past unnoticed. Every other test in this module drives
+    `_FailClosedFlagClient`'s default, which returns `RESTRICTIVE_LEVEL`
+    ("assisted") -- so none of them can distinguish
+    `autonomy_level=resolution.level` from a regression back to a literal
+    `autonomy_level="assisted"`.
 
     This test installs a second double that returns a genuine `autonomous`
     resolution with `reason="TARGETING_MATCH"` and `error_code=None` -- the
     reason flagd's own targeting engine reports on a real contract match,
     carrying no error the way a real match never does (this class's own
-    default `error_code=PROVIDER_NOT_READY` is I2's fail-closed fixture, and
-    would force the level back down per that fix if left in place here) --
-    and drives the exact €6,200 `execute_payment` scenario M2's headline
-    denial uses. At `autonomous`,
+    default `error_code=PROVIDER_NOT_READY` would force the level back down
+    if left in place here) -- and drives the same €6,200 `execute_payment`
+    scenario the headline denial uses. At `autonomous`,
     `EXECUTE_LIMITS[(settlement-agent, "autonomous")]` is €1,000,000, so the
     same payment that every other test in this module sees denied must now
-    be permitted, under the honest rule name Step 8 composed. All four
-    assertions the review specified: level, rule, limit, and decision.
+    be permitted, under the rule name that names the level actually used.
+    Asserted on all four: level, rule, limit, and decision.
     """
     import pds.server as server
 
@@ -471,13 +466,12 @@ def test_the_autonomous_resolution_reaches_policyinput_and_changes_the_outcome(
 
 def test_the_flag_version_lands_on_the_span_when_the_contract_carries_one(
         spans, monkeypatch):
-    """M1 (task-3 review, fix round 1): `server.py`'s `if resolution.version
-    is not None: span.set_attribute(...)` branch (`:322-323`) was dead and
-    unguarded -- deleting it left 119/119 green, because neither the live
-    sidecar's `autonomy-level` flag nor this suite's double ever populated a
-    version. `test_autonomy.py` already proves `resolve_autonomy` extracts
-    `version` off `flag_metadata`; this proves the extracted value also
-    reaches the span, closing the only gap the finding named.
+    """`server.py`'s `if resolution.version is not None:
+    span.set_attribute(...)` branch needs a test that actually populates a
+    version, since neither the live sidecar's `autonomy-level` flag nor this
+    suite's other doubles ever do. `test_autonomy.py` already proves
+    `resolve_autonomy` extracts `version` off `flag_metadata`; this proves
+    the extracted value also reaches the span.
     """
     import pds.server as server
 
@@ -493,8 +487,9 @@ def test_the_flag_version_lands_on_the_span_when_the_contract_carries_one(
 
 def test_a_permit_span_says_permit_and_is_not_an_error(spans):
     """A refusal is this service working. A trace must not show a red span for
-    the one thing M2.2 exists to do, and must not show a green one for a deny
-    either -- the attribute is what carries the decision, not the status."""
+    the one thing this service exists to do, and must not show a green one
+    for a deny either -- the attribute is what carries the decision, not the
+    status."""
     PolicyServicer().CheckRequest(_request(params=_execute(5800.0)), None)
     span, = spans.get_finished_spans()
     assert span.attributes[telemetry.ATTR_DECISION] == "permit"
@@ -507,16 +502,16 @@ def test_a_permit_span_says_permit_and_is_not_an_error(spans):
 
 
 def test_every_attribute_we_emit_is_declared_and_visibly_ours(spans):
-    """Gap 3's guard. `telemetry.ATTRIBUTES` is the one list Task 7's contract
-    documents, so an attribute set on the span but missing from it would be
-    undocumented telemetry -- and the `policy.`/`northstar.` prefixes are how a
-    reader tells our invented keys from the `gen_ai.*`/`mcp.*` ones the
-    frameworks emit.
+    """Gap 3's guard. `telemetry.ATTRIBUTES` is the one list the telemetry
+    contract documents, so an attribute set on the span but missing from it
+    would be undocumented telemetry -- and the `policy.`/`northstar.`
+    prefixes are how a reader tells our invented keys from the
+    `gen_ai.*`/`mcp.*` ones the frameworks emit.
 
-    M5-R6 adds one attribute this service did not invent (`feature_flag.
-    version`, an existing OTel semantic convention) alongside the ones it
-    did; `telemetry.INVENTED_ATTRIBUTES` is the subset the prefix check
-    still applies to. It is not exercised by the four calls below (no flagd
+    One attribute in that list (`feature_flag.version`, an existing OTel
+    semantic convention) is not one this service invented;
+    `telemetry.INVENTED_ATTRIBUTES` is the subset the prefix check still
+    applies to. It is not exercised by the four calls below (no flagd
     sidecar is reachable from this suite, so `resolve_autonomy` never gets a
     version to attach) -- `tests/test_autonomy.py` covers its extraction,
     and this guard's job is only to keep the *set* honest.
@@ -542,7 +537,7 @@ def test_a_missing_value_is_absent_from_the_span_not_zero(spans):
 
 
 def test_the_real_module_scope_client_has_the_tracing_hook_registered():
-    """M2 (task-3 review, fix round 1), the other half of the guard.
+    """The other half of the tracing-hook guard.
 
     `test_autonomy.py::test_the_tracing_hook_puts_a_feature_flag_evaluation_
     event_on_the_active_span` proves `TracingHook`, once registered, does

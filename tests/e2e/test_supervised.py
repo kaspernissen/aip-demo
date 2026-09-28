@@ -1,9 +1,8 @@
-"""M3 "Supervised"'s exit criteria 1-7, one test each, named for the criterion
-it discharges (`docs/superpowers/specs/2026-09-10-northstar-m3-supervised-design.md`
-§7).
+"""The supervised-execution flow's guarantees, one test per criterion, named
+for the criterion it checks.
 
 **What each criterion costs, and why.** One browser-driven denial
-(`denial_run`, CLM-1842 @ EUR 6,200 -- the same claim and amount M2.2's
+(`denial_run`, CLM-1842 @ EUR 6,200 -- the same claim and amount
 `test_policy_denial.py` uses, because criterion 1 is explicitly a regression
 test on that exact promise) and one browser-driven approval click on
 reviewer-ui (`approval_run`, no model call: `execute_approved` makes none).
@@ -16,46 +15,42 @@ exactly one settlement's worth of Anthropic tokens, never more, matching this
 suite's own convention.
 
 **Machinery reused, not reimplemented.** `_drive_browser`, `claims_agent_route`
-and the trace-shape/attribute constants come from `test_policy_denial.py` --
-M2.2's own one-test-per-criterion file, and the closest analogue to this one.
-`gateway_url`, `mint_svid`, `valid_svid`, `call_tool_directly`,
-`CALLER_SPIFFE_ID` and `GATEWAY_AUDIENCE` come from `test_caller_identity.py`,
-the same way `test_policy_denial.py` itself imports them. Re-implementing any
-of this would mean a second, drifting copy of the SPIRE-minting/streamable-HTTP
-dance or the browser-driving dance; importing it is this project's own
-established convention for exactly this situation.
+and the trace-shape/attribute constants come from `test_policy_denial.py`,
+the closest analogue to this one. `gateway_url`, `mint_svid`, `valid_svid`,
+`call_tool_directly`, `CALLER_SPIFFE_ID` and `GATEWAY_AUDIENCE` come from
+`test_caller_identity.py`, the same way `test_policy_denial.py` itself
+imports them. Re-implementing any of this would mean a second, drifting copy
+of the SPIRE-minting/streamable-HTTP dance or the browser-driving dance;
+importing it is this project's own established convention for exactly this
+situation.
 
-**The anti-bypass pair (criteria 6 and 7) were written first**, per the plan's
-own instruction, and verified capable of going red by mutation before this
-file was finalised -- see this task's report for the mutations run (both
-temporary edits to `platform/policy-decision-service/pds/rules.py`, redeployed
-live, reverted after) and their measured RED/GREEN evidence. Neither
-criterion's *fix* is new: Task 3's fix round already shipped the caller-scoped
-`EXECUTE_LIMITS` table this milestone's whole anti-bypass claim rests on. What
-this file adds is the proof.
+**The anti-bypass pair (criteria 6 and 7) is the load-bearing part of this
+file.** Both are mutation-tested against the caller-scoped `EXECUTE_LIMITS`
+table in `platform/policy-decision-service/pds/rules.py`: a temporary edit
+that widens the junior identity's own limit reddens both tests, which is what
+demonstrates they actually detect a policy that stops distinguishing callers
+rather than passing by construction.
 
-**Criterion 5's span link, exactly as measured (ruling R8) rather than as
-originally sketched.** The plan's own sketch built a link from a
-`SpanContext` with `span_id=0`; measured against the installed
-`opentelemetry-sdk==1.44.0`, `Span._new_links()` drops such a link before any
-exporter sees it (`settlement.py::_refusal_link`'s own docstring has the full
-measurement). What shipped instead, and what this file asserts, is a real
+**Criterion 5's span link, exactly as measured.** A link built from a
+`SpanContext` with `span_id=0` does not survive export: measured against the
+installed `opentelemetry-sdk==1.44.0`, `Span._new_links()` drops such a link
+before any exporter sees it (`settlement.py::_refusal_link`'s own docstring
+has the full measurement). What this file asserts instead is a real
 `refusedSpanId` on the ledger's refusal record -- **settlement-agent's own A2A
 server span**, active when the refusal was recorded, not the PDS's
-`policy.decision` span (ruling R13; `settlement.py`, `store.go`'s own
-`RefusedSpanID` doc comment). Precisely *which* of settlement-agent's several
-`SpanKind.SERVER` spans that is (a2a-sdk 0.3.7 marks nearly all of its own
-internal spans SERVER, not just the ASGI entry point) is itself a measured
-fact, not an assumption -- see `SETTLEMENT_AGENT_REFUSAL_SPAN`'s own comment
-below for what this file's first live run found and why an earlier draft's
-guess (`test_settlement_agent_trace.py`'s own "POST /", built for a different
-purpose) was wrong. `tests/harness/jaeger.py`'s `Span`/`Trace`
-classes only track `CHILD_OF` references (all `assert_no_orphans`/
-`assert_single_root` need) and drop every other reference type, including an
-OTel span *link* -- so this file reads the raw Jaeger span dict directly for
-that one assertion (`_raw_span_for`/`_span_links` below) rather than widening
-that shared harness for one criterion's sake, keeping this file's footprint to
-exactly what Task 5A was asked to touch.
+`policy.decision` span (`settlement.py`, `store.go`'s own `RefusedSpanID` doc
+comment). Precisely *which* of settlement-agent's several `SpanKind.SERVER`
+spans that is (a2a-sdk 0.3.7 marks nearly all of its own internal spans
+SERVER, not just the ASGI entry point) is a measured fact, not an assumption
+-- see `SETTLEMENT_AGENT_REFUSAL_SPAN`'s own comment below for what this
+file's first live run found and why `test_settlement_agent_trace.py`'s own
+"POST /" -- built for a different purpose -- names the wrong span for this
+one. `tests/harness/jaeger.py`'s `Span`/`Trace` classes only track `CHILD_OF`
+references (all `assert_no_orphans`/`assert_single_root` need) and drop every
+other reference type, including an OTel span *link* -- so this file reads the
+raw Jaeger span dict directly for that one assertion (`_raw_span_for`/
+`_span_links` below) rather than widening that shared harness for one
+criterion's sake.
 
 **Reviewer-ui's own port (the fifth), and its skip/fail discriminator.**
 Unlike the four ports `scripts/smoke-test.sh` already manages
@@ -69,11 +64,11 @@ tear-down-only-what-it-started shape for the case where that mapping is
 somehow gone (a fresh kind cluster on a laptop that predates stage 3, say),
 with the same two-tier skip/fail split
 `test_gateway_is_the_only_route.py::policy_present` and
-`test_gateway_config_drift.py`'s own fixture use: "not a stage-3 cluster at
-all" (no `senior-settlement-agent` Deployment -- a genuinely different object
-than reviewer-ui itself) is a legitimate SKIP; reviewer-ui being unreachable
+`test_gateway_config_drift.py`'s own fixture use: no stage-3 workloads at all
+(no `senior-settlement-agent` Deployment -- a genuinely different object than
+reviewer-ui itself) is a legitimate SKIP; reviewer-ui being unreachable
 *despite* that discriminator being present is this file's own regression and
-FAILS, never skips. Verified by mutation -- see the report.
+FAILS, never skips.
 
 **Reference traces are cited, not asserted against**, same rule
 `test_policy_denial.py` states: every assertion below runs against a trace
@@ -132,7 +127,7 @@ from tests.e2e.test_policy_denial import (  # noqa: F401 -- fixtures used by nam
 KUBE_CONTEXT = "kind-northstar"
 AGENTS_NAMESPACE = "northstar-agents"
 
-# M3's second privileged identity and its would-be attacker, both real
+# The senior settlement identity and its would-be attacker, both real
 # workloads (deploy/k8s/senior-settlement-agent.yaml, deploy/k8s/reviewer-ui.yaml)
 # whose SPIFFE ID is `spiffe://{trust domain}/ns/{namespace}/sa/{service account}`
 # -- read here as a literal, the same way test_caller_identity.py's own
@@ -156,7 +151,7 @@ APPROVAL_SERVICES = {
 
 # The span active in settlement-agent's own process at the moment a refusal
 # is recorded, and therefore what `refusedSpanId` actually carries -- MEASURED
-# on this file's own first live run, not assumed from
+# directly against a live run, not assumed from
 # `test_settlement_agent_trace.py::ENTRY_SPAN` ("POST /"), which names a
 # *different* span for a *different* purpose (proving inbound `traceparent`
 # propagation into the ASGI layer, not identifying what is current deep
@@ -164,16 +159,15 @@ APPROVAL_SERVICES = {
 # after `settlement_agent.run()` returns, inside `AgentExecutor.execute()`,
 # which a2a-sdk 0.3.7 runs as a background task under its OWN span --
 # `DefaultRequestHandler._run_event_stream` -- a sibling of "POST /", not its
-# child and not the same span. `agents/settlement-agent/NOTES.md` §3
-# documents this whole family as `SpanKind.SERVER` (a2a-sdk decorates
+# child and not the same span. `agents/settlement-agent/NOTES.md` documents
+# this whole family as `SpanKind.SERVER` (a2a-sdk decorates
 # `DefaultRequestHandler`/`JSONRPCHandler` with `@trace_class(kind=
 # SpanKind.SERVER)` on every method, not just the ASGI entry point), so "POST
 # /" and `_run_event_stream` are both legitimately "settlement-agent's own A2A
 # server span" in isolation -- but only one of them is the span
-# `trace.get_current_span()` actually returns when the refusal is recorded,
-# and the first run of this file measured that it is this one: the ledger's
-# own `refusedSpanId` matched `_run_event_stream`'s id exactly, and did not
-# match "POST /"'s.
+# `trace.get_current_span()` actually returns when the refusal is recorded:
+# the ledger's own `refusedSpanId` matches `_run_event_stream`'s id exactly,
+# and does not match "POST /"'s.
 SETTLEMENT_AGENT_REFUSAL_SPAN = (
     "a2a.server.request_handlers.default_request_handler."
     "DefaultRequestHandler._run_event_stream"
@@ -187,8 +181,8 @@ EXECUTE_APPROVED_SPAN = "settlement.execute_approved"
 # docs/telemetry-contract.md's own attribute table, for continuity with the
 # document a reader might have open beside this file -- with a per-run unique
 # suffix. **Measured, not assumed:** payments-api's store is in-memory and its
-# payment ids are sequential *within one process lifetime* (ruling 32), so a
-# redeploy resets the counter -- this file's own first live run collided with
+# payment ids are sequential *within one process lifetime*, so a redeploy
+# resets the counter -- this file's own first live run collided with
 # a stale `review.decision` trace from an unrelated, much earlier manual test
 # that happened to be tagged `review.payment.id=PAY-000004` too, because both
 # runs were the fourth payment proposed since their respective pod's last
@@ -291,12 +285,11 @@ def _norm_span_id(value: str) -> str:
 
 REVIEWER_UI_URL = os.environ.get("REVIEWER_UI_URL", "http://localhost:8081")
 REVIEWER_UI_SERVICE = "reviewer-ui"
-# The stage-3 discriminator: a DIFFERENT object than reviewer-ui itself
-# (Step 2's own mandate, and test_gateway_config_drift.py's pattern one
-# milestone earlier). "no senior-settlement-agent Deployment" means this
-# cluster genuinely predates M3 and there is nothing to say -- SKIP. Once that
-# Deployment is confirmed present, reviewer-ui being unreachable is this
-# file's own regression -- FAIL, never skip.
+# The stage-3 discriminator: a DIFFERENT object than reviewer-ui itself,
+# following test_gateway_config_drift.py's pattern. "no senior-settlement-agent
+# Deployment" means this cluster has no stage-3 workloads and there is nothing
+# to say -- SKIP. Once that Deployment is confirmed present, reviewer-ui being
+# unreachable is this file's own regression -- FAIL, never skip.
 STAGE3_DISCRIMINATOR_DEPLOYMENT = "senior-settlement-agent"
 
 
@@ -312,12 +305,12 @@ def _stage3_workload_present() -> bool:
     """Whether this is a stage-3 cluster, or a hard failure if that is
     unanswerable.
 
-    M4 final review, finding L4: this read `proc.returncode == 0` and treated
-    every other exit as "not a stage-3 cluster", so an unreachable API server
-    skipped this file's whole supervised story. Ruling M4-R14 retired that
-    shape and `tests/harness/kube.py` holds the one definition; this function
-    predates the ruling under a name the ruling's repo walk did not match,
-    which is why the walk now matches on shape as well as on name.
+    Distinguishes a genuinely absent Deployment from an unreachable API
+    server, a wrong context, or a missing `kubectl` binary: treating every
+    non-zero `kubectl get deployment` exit as "not a stage-3 cluster" would
+    let an unreachable cluster silently skip this file's whole supervised
+    story instead of failing loudly. `tests/harness/kube.py::absent_or_fail`
+    holds the one definition of that distinction.
     """
     proc = _kubectl(
         "-n", AGENTS_NAMESPACE, "get", "deployment",
@@ -362,7 +355,7 @@ def reviewer_ui_route():
             f"no {STAGE3_DISCRIMINATOR_DEPLOYMENT} Deployment in "
             f"{AGENTS_NAMESPACE}, so this is not a stage-3 cluster and "
             "reviewer-ui was never deployed; run ./scripts/setup-kind.sh "
-            "--stage 5 and deploy the M3 workloads"
+            "--stage 5 and deploy the supervised-execution workloads"
         )
 
     if _reviewer_ui_alive():
@@ -408,23 +401,22 @@ def reviewer_ui_route():
 
 @pytest.fixture(scope="module")
 def denial_run(claims_agent_route):
-    """CLM-1842 at the page's own pre-filled EUR 6,200, refused -- M3's own
-    instance of the same run `test_policy_denial.py::denial_run` drives, kept
-    as its own fixture rather than imported as an instance: pytest scopes a
-    module-scoped fixture per requesting module regardless, so there is no
-    cost shared by importing that name specifically, and criterion 1 is this
-    milestone's own regression claim on the same promise.
+    """CLM-1842 at the page's own pre-filled EUR 6,200, refused -- the same
+    run `test_policy_denial.py::denial_run` drives, kept as its own fixture
+    rather than imported as an instance: pytest scopes a module-scoped
+    fixture per requesting module regardless, so there is no cost shared by
+    importing that name specifically, and criterion 1 is this file's own
+    regression claim on the same promise.
 
     Feeds criteria 1 and 2 directly, and criteria 3-6 via its payment id and
     its settlement-agent entry span.
 
-    **M5 Task 6 (review finding I4):** criteria 1 and 6 both hardcode
-    `settlement-agent.assisted.execute_limit` and require the junior identity
-    to be *denied*. `test_progressive_autonomy.py` sorts alphabetically
-    before this file and its own flip test restores the contract in a
-    `finally`, but this checks flagd's actual resolved answer rather than
-    trust the ordering -- the same guard, same reason,
-    `test_policy_denial.py::denial_run` now carries.
+    Criteria 1 and 6 both hardcode `settlement-agent.assisted.execute_limit`
+    and require the junior identity to be *denied*. `test_progressive_autonomy.py`
+    sorts alphabetically before this file and its own flip test restores the
+    contract in a `finally`, but this checks flagd's actual resolved answer
+    rather than trust the ordering -- the same guard, same reason,
+    `test_policy_denial.py::denial_run` carries.
     """
     contract.assert_assisted("test_supervised.py::denial_run")
     return _drive_browser(DENIED_CLAIM_ID, None)
@@ -438,8 +430,8 @@ def approval_run(denial_run, reviewer_ui_route):
     docs/telemetry-contract.md's "reviewer-ui's own instrumentation" section --
     to land completely in Jaeger.
 
-    **Finding the new trace is necessarily by tag search (A14's own carve-out:
-    "if the id genuinely cannot be known").** Unlike customer-ui, reviewer-ui
+    **Finding the new trace is necessarily by tag search**, since the trace id
+    genuinely cannot be known ahead of time. Unlike customer-ui, reviewer-ui
     injects no client-side `traceparent` capture -- there is no JavaScript
     here at all (bootstrap.py's own docstring: no FastAPI/Starlette
     auto-instrumentation, no client-side SDK), so this is a plain server-
@@ -450,12 +442,12 @@ def approval_run(denial_run, reviewer_ui_route):
     `review.payment.id` alone -- measured, not assumed.** This file's own
     first live run collided with a stale `review.decision` trace from an
     unrelated, much earlier manual test tagged `review.payment.id=PAY-000004`:
-    payments-api's ids are sequential only *within one process lifetime*
-    (ruling 32), so a redeploy resets the counter, and two different pod
-    generations can both propose their own fourth payment. A genuinely unique
-    reviewer name (`REVIEWER_NAME_PREFIX` plus a fresh uuid, generated once per
-    invocation of this fixture) makes the compound key safe regardless of how
-    many times the ledger has been reset.
+    payments-api's ids are sequential only *within one process lifetime*, so a
+    redeploy resets the counter, and two different pod generations can both
+    propose their own fourth payment. A genuinely unique reviewer name
+    (`REVIEWER_NAME_PREFIX` plus a fresh uuid, generated once per invocation
+    of this fixture) makes the compound key safe regardless of how many times
+    the ledger has been reset.
     """
     from playwright.sync_api import sync_playwright
 
@@ -482,8 +474,7 @@ def approval_run(denial_run, reviewer_ui_route):
         browser.close()
 
     client = JaegerClient(JAEGER_URL)
-    # First contact: find the trace by its own unique compound tag (A14's
-    # carve-out).
+    # First contact: find the trace by its own unique compound tag.
     review_trace = client.wait_for_trace(
         service="reviewer-ui",
         operation=REVIEW_DECISION_SPAN,
@@ -491,9 +482,9 @@ def approval_run(denial_run, reviewer_ui_route):
         timeout=60,
     )
     # Then wait for the WHOLE chain -- reviewer-ui down through payments-api --
-    # to land and hold steady (A20/A20a), reading the completed trace back by
-    # the id this just gave us rather than trusting that first, possibly
-    # partial, fetch.
+    # to land and hold steady, reading the completed trace back by the id
+    # this just gave us rather than trusting that first, possibly partial,
+    # fetch.
     trace = client.wait_for_trace_id(
         review_trace.trace_id,
         operation=EXECUTE_APPROVED_SPAN,
@@ -501,10 +492,9 @@ def approval_run(denial_run, reviewer_ui_route):
         services=APPROVAL_SERVICES,
     )
 
-    # Sanity on the shape the spec itself claims (§6): review.decision really
-    # is this trace's own root, and the trace is otherwise as intact as the
-    # refusing one's (same definition test_policy_denial.py's criteria 3 and 6
-    # use).
+    # Sanity on the trace shape: review.decision really is this trace's own
+    # root, and the trace is otherwise as intact as the refusing one's (same
+    # definition test_policy_denial.py's criteria 3 and 6 use).
     assert_single_root(trace)
     assert_no_orphans(trace)
     root = trace.roots()[0]
@@ -531,38 +521,28 @@ def approval_run(denial_run, reviewer_ui_route):
 def test_criterion_1_clm_1842_is_refused_and_the_ledger_never_shows_it_executed(
     denial_run,
 ):
-    """§7.1: "CLM-1842 submitted in the browser is refused exactly as in
-    M2.2 -- no payment executed, ledger still unexecuted. A regression test
-    on M2's promise."
+    """CLM-1842 submitted in the browser is refused: no payment executed,
+    ledger still unexecuted.
 
     **Why this asserts `status != "executed"` rather than `status ==
-    "proposed"`.** M2.2's own `test_policy_denial.py` asserts the latter,
-    because in M2.2 a denial left the ledger record exactly where propose put
-    it. M3 changed that: `settlement.py::decide_settlement` now calls
-    `_record_refusal` on every policy denial, which POSTs
-    `/payments/{id}/refuse` and moves the record to `status: "refused"` --
-    still a fact the criterion's own words cover ("ledger still unexecuted"),
-    but a different literal string than M2.2's own assertion checks for. This
-    test asserts what the criterion actually says, not what M2.2 happened to
-    observe before this milestone added a third status; asserting `==
-    "proposed"` here would be testing a fact this milestone deliberately
-    changed.
+    "proposed"`.** `settlement.py::decide_settlement` calls `_record_refusal`
+    on every policy denial, which POSTs `/payments/{id}/refuse` and moves the
+    record to `status: "refused"`. This test asserts the weaker property this
+    criterion's own words claim ("ledger still unexecuted") rather than pin
+    the exact status string, so a future change that legitimately renames or
+    re-routes the terminal status for a denial does not falsify this
+    regression test on the underlying promise.
 
-    **`test_policy_denial.py`'s parallel assertion has since been repaired**
-    (M3 Task 5B, ruling R28) and now reads `== "refused"`, so the sentence
-    above describes M2.2's version of that file rather than today's. The two
-    assertions are deliberately different and both are kept: that one pins the
-    exact status M3 produces, which is the stronger statement and the one that
-    also catches `_record_refusal` silently failing; this one pins the weaker
-    property the criterion's own words claim ("ledger still unexecuted"), so a
-    future milestone that legitimately renames or re-routes the terminal
-    status for a denial does not falsify this regression test on M2's promise.
+    `test_policy_denial.py`'s own parallel assertion pins the exact status
+    (`== "refused"`) instead, which is the stronger statement and also
+    catches `_record_refusal` silently failing; the two assertions are
+    deliberately kept separate for that reason.
     """
     reply = denial_run.reply
     trace = denial_run.trace
 
-    # The whole governed chain is present -- this milestone changes the
-    # ledger's terminal status for a denial, not the chain that produces it.
+    # The whole governed chain is present -- refusing a payment changes its
+    # terminal ledger status, not the chain that produces it.
     assert ALL_SERVICES <= trace.services(), (
         f"missing services: {sorted(ALL_SERVICES - trace.services())}"
     )
@@ -606,8 +586,8 @@ def test_criterion_1_clm_1842_is_refused_and_the_ledger_never_shows_it_executed(
 def test_criterion_2_the_refusal_appears_in_reviewer_ui_with_rule_limit_requested_and_narrative(
     denial_run, reviewer_ui_route,
 ):
-    """§7.2: "The refusal appears in reviewer-ui showing rule, limit,
-    requested amount and the agent's narrative -- all read from the ledger."
+    """The refusal appears in reviewer-ui showing rule, limit, requested
+    amount and the agent's narrative -- all read from the ledger.
 
     The ledger record is the expected value, fetched fresh (not derived from
     `denial_run.reply`, which carries none of `rule`/`limit`/`requested` --
@@ -619,10 +599,9 @@ def test_criterion_2_the_refusal_appears_in_reviewer_ui_with_rule_limit_requeste
 
     The specific card for this payment is located rather than the whole page
     grepped, because the ledger is a long-running, in-memory store shared
-    across every task that has ever driven a settlement against this cluster
-    (ruling R23: `PAY-000053` and its Jaeger traces are exactly that kind of
-    stale leftover) -- a bare substring match on `rule`/`limit`/`requested`
-    could be satisfied by a stranger's card on the same page.
+    across every run that has ever driven a settlement against this cluster
+    -- a bare substring match on `rule`/`limit`/`requested` could be
+    satisfied by a stranger's card on the same page.
 
     **Ordering dependency, stated rather than enforced:** this test requires
     the payment to still be `refused`, and `approval_run` (which criteria 3-6
@@ -712,8 +691,8 @@ def test_criterion_2_the_refusal_appears_in_reviewer_ui_with_rule_limit_requeste
 def test_criterion_3_a_human_approves_in_the_browser_and_the_payment_executes(
     approval_run,
 ):
-    """§7.3: "A human approves in the browser; the payment executes; the
-    ledger reads `executed` at the same amount, with the same payment id."
+    """A human approves in the browser; the payment executes; the ledger
+    reads `executed` at the same amount, with the same payment id.
 
     The ledger read-back is the primary evidence, exactly as criterion 1's
     ledger check is for the denial -- the honesty rule this whole flow
@@ -765,16 +744,16 @@ def test_criterion_3_a_human_approves_in_the_browser_and_the_payment_executes(
 def test_criterion_4_the_pds_permits_under_the_same_rule_for_a_different_caller(
     approval_run,
 ):
-    """§7.4: "The PDS permitted it under the same rule (`execute_limit`) with
-    a different `policy.caller.spiffe_id` -- asserted from the spans, not
-    narrated."
+    """The PDS permits it under the same rule (`execute_limit`) with a
+    different `policy.caller.spiffe_id` -- asserted from the spans, not
+    narrated.
 
     The decisive comparison is against criterion 1's own denial decision:
     same rule name (`settlement-agent.assisted.execute_limit`), same
     requested amount (EUR 6,200), opposite `policy.decision`, and a
     `policy.caller.spiffe_id` that is senior-settlement-agent's own identity
-    and explicitly *not* the junior's -- the spec's own "one span attribute"
-    claim (§2), read here off the PDS's own span rather than taken on faith.
+    and explicitly *not* the junior's, read here off the PDS's own span
+    rather than taken on faith.
     """
     decisions = _decisions(approval_run.trace, EXECUTE_TOOL)
     assert len(decisions) == 1, (
@@ -808,23 +787,22 @@ def test_criterion_4_the_pds_permits_under_the_same_rule_for_a_different_caller(
 def test_criterion_5_the_approved_trace_links_to_the_refusal_and_review_decision_records_reviewer_and_elapsed(
     denial_run, approval_run,
 ):
-    """§7.5: "The approved-execution trace carries a span link to the
-    refusal trace, and `review.decision` records the reviewer and the
-    elapsed time."
+    """The approved-execution trace carries a span link to the refusal
+    trace, and `review.decision` records the reviewer and the elapsed time.
 
-    **The link's target, exactly as measured (rulings R8/R13).** Not a
-    `SpanContext(span_id=0)` (dropped by the SDK before export -- see the
-    module docstring), and not the PDS's `policy.decision` span. It is
-    `SETTLEMENT_AGENT_REFUSAL_SPAN` (`DefaultRequestHandler._run_event_stream`)
-    from the *denial* trace -- the a2a-sdk span whose context is current when
-    `AgentExecutor.execute()` actually runs, measured directly on this file's
-    own first live run (see that constant's own comment) rather than assumed
-    to be "POST /", the ASGI entry span a *different* test uses for a
-    *different* purpose. Read here two ways and cross-checked against each
-    other: once off the ledger's own `refusedSpanId` field, and once off the
-    raw span link on `settlement.execute_approved` in the *approval* trace.
-    Both must agree with the span Jaeger actually recorded for the denial
-    run, or the "link" is decorative.
+    **The link's target, exactly as measured.** Not a `SpanContext(span_id=0)`
+    (dropped by the SDK before export -- see the module docstring), and not
+    the PDS's `policy.decision` span. It is `SETTLEMENT_AGENT_REFUSAL_SPAN`
+    (`DefaultRequestHandler._run_event_stream`) from the *denial* trace -- the
+    a2a-sdk span whose context is current when `AgentExecutor.execute()`
+    actually runs, measured directly against a live run (see that constant's
+    own comment) rather than assumed to be "POST /", the ASGI entry span a
+    *different* test uses for a *different* purpose. Read here two ways and
+    cross-checked against each other: once off the ledger's own
+    `refusedSpanId` field, and once off the raw span link on
+    `settlement.execute_approved` in the *approval* trace. Both must agree
+    with the span Jaeger actually recorded for the denial run, or the "link"
+    is decorative.
     """
     entry_span = denial_run.trace.span(
         SETTLEMENT_AGENT_REFUSAL_SPAN, service="settlement-agent"
@@ -847,8 +825,8 @@ def test_criterion_5_the_approved_trace_links_to_the_refusal_and_review_decision
     assert _norm_span_id(refusal["refusedSpanId"]) == _norm_span_id(entry_span.span_id), (
         "the ledger's refusedSpanId does not name settlement-agent's own "
         f"_run_event_stream span from the denial run: "
-        f"{refusal['refusedSpanId']!r} vs {entry_span.span_id!r} (ruling R13: "
-        "it must be the span active when the refusal was recorded, not "
+        f"{refusal['refusedSpanId']!r} vs {entry_span.span_id!r} (it must be "
+        "the span active when the refusal was recorded, not "
         "policy.decision)"
     )
 
@@ -903,16 +881,15 @@ def test_criterion_5_the_approved_trace_links_to_the_refusal_and_review_decision
         f"review.elapsed_ms is not a real, positive measured duration: {elapsed!r}"
     )
 
-    # --- The ledger read the criterion's "all read from the ledger" rests on,
-    # asserted as a hop of THIS trace (M3 final-review fix round, R36).
+    # --- The ledger read the criterion's "all read from the ledger" rests on
+    # is asserted as a hop of THIS trace, not merely present somewhere in
+    # Jaeger.
     #
-    # Nothing in this suite guarded it before. Criteria 3 and 5 only require
-    # `payments-api` to be among `trace.services()`, and the execute leg
-    # (payments-mcp -> payments-api) satisfies that on its own -- so the
-    # reviewer's own read of the ledger could be, and measured before this fix
-    # WAS, in a completely separate single-span trace: 30 reviewer-ui `GET`
-    # spans and 30 payments-api `GET /payments` spans over 48h, zero shared
-    # trace ids.
+    # `payments-api` being among `trace.services()` is not enough on its own:
+    # criteria 3 and 5 only require that, and the execute leg (payments-mcp ->
+    # payments-api) satisfies it regardless of whether reviewer-ui's own
+    # ledger read shares a trace with it -- the two could land in completely
+    # separate single-span traces with zero shared trace ids.
     #
     # Identified by parentage, not by name: this trace contains a SECOND
     # payments-api `GET /payments/{paymentId}` span, from the `get_payment`
@@ -968,9 +945,9 @@ def test_criterion_5_the_approved_trace_links_to_the_refusal_and_review_decision
 def test_criterion_6_the_junior_identity_still_cannot_execute_6200_after_the_approval(
     gateway_url, valid_svid, denial_run, approval_run,
 ):
-    """§7.6, the anti-bypass criterion: "The junior identity still cannot
-    execute EUR 6,200 after an approval exists. The approval must not have
-    widened the policy for the original caller."
+    """The anti-bypass criterion: the junior identity still cannot execute
+    EUR 6,200 after an approval exists. The approval must not have widened
+    the policy for the original caller.
 
     Directly re-plays the exact call the denial made -- same payment id
     (now `status: executed`, approved and paid under the SENIOR identity),
@@ -985,11 +962,10 @@ def test_criterion_6_the_junior_identity_still_cannot_execute_6200_after_the_app
     This is the same PDS guard criterion 1 depends on, restated after an
     approval exists rather than before one -- deliberately, since there is no
     separate "has this been approved" branch anywhere in the policy for it to
-    consult (the spec's own point, §1: "there is no approval flag ... no
-    'permitted because a human said so' input to the policy engine"). A
-    mutation that widens the junior's own limit therefore reddens this test
-    and criterion 1 together, which this task's report records as the
-    measured mutation evidence for this criterion.
+    consult: there is no approval flag, no "permitted because a human said
+    so" input to the policy engine. A mutation that widens the junior's own
+    limit reddens this test and criterion 1 together, which is the measured
+    mutation evidence for this criterion.
     """
     payment_id = denial_run.reply["paymentId"]
     assert payment_id == approval_run.payment_id, (
@@ -1042,8 +1018,8 @@ def reviewer_ui_svid(mint_svid):
 def test_criterion_7_reviewer_uis_own_spiffe_id_cannot_execute_a_payment(
     gateway_url, reviewer_ui_svid,
 ):
-    """§7.7: "`reviewer-ui`'s own SPIFFE ID cannot execute a payment
-    (`unknown_caller`)."
+    """`reviewer-ui`'s own SPIFFE ID cannot execute a payment
+    (`unknown_caller`).
 
     Not behind `RUN_BROWSER_TESTS=1`: like `test_policy_denial.py`'s own
     criterion 5, this needs no model call and drives no browser -- it speaks

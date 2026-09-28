@@ -118,8 +118,8 @@ def stage_6_backstage_deployed_or_a_reason():
             f"({reachable.stderr.strip() or 'no output'})"
         )
 
-    # `absent_or_fail`, not a raw `returncode`: ruling M4-R14's one definition
-    # of "does this object exist?". A non-zero exit is a different question --
+    # `absent_or_fail`, not a raw `returncode`: this repo's one definition of
+    # "does this object exist?". A non-zero exit is a different question --
     # an unreachable API server, a wrong context and an expired credential all
     # land there, and reading the code alone turns each of them into a silent
     # "stage 6 is not installed" skip.

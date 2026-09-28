@@ -3,28 +3,24 @@ info:
   title: Northstar Payments API
   version: 1.1.0
   description: >
-    System of record for claim payments. Deliberately tiny. In M1 it has no
-    authorization of any kind: anything that can reach it can move money. That
-    is still true in M3 -- the decision about whether a payout may happen is
-    made upstream, at the gateway's policy hook, and this service records
-    facts rather than deciding them.
+    System of record for claim payments. Deliberately tiny: it has no
+    authorization of any kind, so anything that can reach it can move money.
+    The decision about whether a payout may happen is made upstream, at the
+    gateway's policy hook -- this service records facts rather than deciding
+    them.
 
 
-    M3 (Supervised) adds the ledger half of putting a human in the loop: a
-    third status, `refused`, a `refusal` record beside the payment saying what
-    the platform decided and what the claimant was told, and a status-filtered
+    It also carries the ledger half of putting a human in the loop: a third
+    status, `refused`, a `refusal` record beside the payment saying what the
+    platform decided and what the claimant was told, and a status-filtered
     list so a reviewer UI can find the refusals. Nothing here approves
     anything: `refused` is terminal-until-approved, and `executed` stays
     reachable only through the execute route below.
 
 
-    NOTHING ENFORCES THIS FILE AGAINST THE IMPLEMENTATION, and that is why it
-    drifted: it went a whole milestone without `refused`, without either of
-    M3's two new routes, and without M3's new 409 causes. It was brought back
-    into agreement with `systems/payments-api/handlers.go` and `store.go` by
-    reading both, route by route, in M3 Task 5B (rulings R7/R20). Treat any
-    future disagreement between this file and those two as a defect in this
-    file.
+    NOTHING ENFORCES THIS FILE AGAINST THE IMPLEMENTATION. Treat any
+    disagreement between this file and `systems/payments-api/handlers.go` /
+    `store.go` as a defect in this file, not in the implementation.
 servers:
   - url: http://payments-api.northstar-systems.svc.cluster.local:8080
 paths:
@@ -130,7 +126,7 @@ paths:
       operationId: refusePayment
       description: >
         Records WHY a payout was refused, beside the payout, so a human
-        reviewer has something to read (M3 Task 2). This service did not make
+        reviewer has something to read. This service did not make
         the decision -- the Policy Decision Service did, upstream, before the
         execute call ever reached payments-mcp -- so this route only carries
         what the settlement agent reports about it.
@@ -151,7 +147,7 @@ paths:
         half-cent tolerance the execute route uses, and a disagreement is a
         409: any caller with a valid SVID can reach this route, and a refusal
         record authored against a figure the ledger never proposed would
-        mislead the reviewer who releases the money (M3 Task 3 review, R12).
+        mislead the reviewer who releases the money.
         Currency is deliberately not confirmed here -- this request carries no
         currency field to confirm against.
       parameters:
@@ -218,7 +214,7 @@ paths:
             `{"error":"payment already refused"}` (the record a reviewer reads
             is not silently replaceable; a second refuse call would let a
             caller repoint `refusedTraceId`/`refusedSpanId` at a trace of its
-            own choosing -- M3 Task 3 review, R12).
+            own choosing).
 
 
             Unlike the execute route's two 409s, none of these sets
@@ -229,7 +225,7 @@ paths:
     get:
       operationId: listPayments
       description: >
-        Every payment, or only those in one status (M3 Task 2). This is what
+        Every payment, or only those in one status. This is what
         `reviewer-ui` calls as `GET /payments?status=refused` to find the
         refusals awaiting a human. The response is sorted by `paymentId`,
         which is sequential and fixed-width, so the order is deterministic
@@ -294,12 +290,11 @@ components:
           type: string
         status:
           type: string
-          # M3 Task 2 added the third value. `refused` is reached only from
-          # `proposed`, only through POST /payments/{paymentId}/refuse, and it
-          # is terminal-until-approved rather than a new state machine:
-          # `executed` stays reachable only through the execute route, which
-          # accepts a refused payment exactly as it always accepted a proposed
-          # one (`store.go`'s own comment, and
+          # `refused` is reached only from `proposed`, only through
+          # POST /payments/{paymentId}/refuse, and it is terminal-until-approved
+          # rather than a new state machine: `executed` stays reachable only
+          # through the execute route, which accepts a refused payment exactly
+          # as it accepts a proposed one (`store.go`'s own comment, and
           # TestARefusedPaymentCanStillBeExecutedAfterwards).
           enum: [proposed, executed, refused]
         refusal:
@@ -309,12 +304,9 @@ components:
             difference is the audit trail the whole human-in-the-loop step
             exists to leave behind. Approval does not clear it: a payment that
             was refused and then executed reads `status: executed` WITH this
-            object still attached. Omitted entirely on a payment that was never
-            refused (`omitempty`). Measured against the live ledger in M3 Task
-            5B rather than read off the struct tags: `GET /payments` returns
-            records with `"status":"executed"` and a populated `refusal`, and
-            an earlier draft of this very description claimed "present only on
-            a `refused` payment" and contradicted its own next sentence.
+            object still attached (`GET /payments` will return exactly such a
+            record). Omitted entirely on a payment that was never refused
+            (`omitempty`).
           type: object
           required:
             [rule, limit, requested, narrative, refusedTraceId, refusedSpanId, refusedAt]

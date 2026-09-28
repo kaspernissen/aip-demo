@@ -56,11 +56,11 @@ class Trace:
     def span(self, operation: str, service: str | None = None) -> Span:
         """Look up the single span named `operation`.
 
-        A20: once two services each have a same-named span (e.g. both
-        claims-agent and settlement-agent have their own "POST /" entry span,
-        A18), `operation` alone is ambiguous across the whole trace. The
-        optional `service` filter disambiguates *across* services; ambiguity
-        *within* one service still raises, unchanged from before.
+        Two services can each have a same-named span (e.g. both
+        claims-agent and settlement-agent have their own "POST /" entry
+        span), which makes `operation` alone ambiguous across the whole
+        trace. The optional `service` filter disambiguates *across*
+        services; ambiguity *within* one service still raises.
         """
         matches = self.spans_named(operation, service=service)
         if not matches:
@@ -163,7 +163,7 @@ class JaegerClient:
             f"tags={tags!r} within {timeout}s{detail}"
         )
 
-    # A20a: independent processes' BatchSpanProcessors export on their own
+    # Independent processes' BatchSpanProcessors export on their own
     # timers, and every service in this repo — Python (bootstrap.py),
     # Go (payments-api), and the browser (customer-ui's telemetry.ts) alike —
     # uses the OTel SDK's default 5s schedule_delay_millis, unmodified. A
@@ -171,13 +171,12 @@ class JaegerClient:
     # seconds later as a straggling batch lands. QUIET_WINDOW_S is the
     # minimum span-count-unchanged window `wait_for_trace_id` requires before
     # trusting a `services`-complete trace as actually complete. It must stay
-    # comfortably longer than that 5s export delay: a timing simulation built
-    # while pinning this constant showed a 2s window (Task 5's original
-    # local loop) and even a 6s window both miss a batch landing just past
-    # the window edge once real network/collector latency stacks on top of
-    # the timer itself; 10s held in that simulation and in repeated live
-    # captures. If any service's BatchSpanProcessor is ever retuned away from
-    # the SDK default, this constant must move with it.
+    # comfortably longer than that 5s export delay: a 2s window and even a 6s
+    # window both miss a batch landing just past the window edge once real
+    # network/collector latency stacks on top of the timer itself; 10s holds
+    # in timing simulation and in repeated live captures. If any service's
+    # BatchSpanProcessor is ever retuned away from the SDK default, this
+    # constant must move with it.
     QUIET_WINDOW_S = 10.0
 
     def wait_for_trace_id(
@@ -194,7 +193,7 @@ class JaegerClient:
         origin: it removes any dependence on Jaeger's positional ordering or on
         attribute values staying unique across pod restarts.
 
-        A20: `services`, if given, additionally waits for the trace to look
+        `services`, if given, additionally waits for the trace to look
         *complete*, not merely present — every named service must be
         represented, and the trace's total span count must then hold steady
         for `QUIET_WINDOW_S` (see above) before it is returned. This must

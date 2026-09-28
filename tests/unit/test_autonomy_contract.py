@@ -1,11 +1,10 @@
-"""M5 Task 2: the contract resource, guarded hermetically -- no cluster needed.
+"""The contract resource, guarded hermetically -- no cluster needed.
 
-`deploy/platform/openfeature/featureflag.yaml` is what Task 3's Policy
-Decision Service will resolve the `autonomy-level` flag against, through the
-flagd sidecar the Open Feature Operator injects. These guards parse the YAML
-directly; they say nothing about whether OFO, cert-manager or the sidecar are
-actually running, which is what Step 6's cluster verification (this task's
-report) covers instead.
+`deploy/platform/openfeature/featureflag.yaml` is what the Policy Decision
+Service resolves the `autonomy-level` flag against, through the flagd
+sidecar the Open Feature Operator injects. These guards parse the YAML
+directly; they say nothing about whether OFO, cert-manager or the sidecar
+are actually running, which is a cluster-level concern this file cannot see.
 
 Two properties, both about what happens when this resource is wrong rather
 than right -- the interesting case for a contract that gates money:
@@ -20,14 +19,13 @@ than right -- the interesting case for a contract that gates money:
    decision anyone reading the audit trail would recognise as a deliberate
    refusal.
 
-M5 Task 4 adds a third property, unrelated to the contract resource: that
-`pds/autonomy.py` never emits a deprecated `feature_flag.*` attribute
-spelling. `DEPRECATED_SPELLINGS` below is DERIVED from the installed
+A third property, unrelated to the contract resource: that `pds/autonomy.py`
+never emits a deprecated `feature_flag.*` attribute spelling.
+`DEPRECATED_SPELLINGS` below is DERIVED from the installed
 `opentelemetry-semantic-conventions` package (0.65b0, measured), not
-hand-copied -- the task brief's correction 4, because a hand-copied list is
-exactly what M4 and M5 keep finding stale. See that constant's own docstring
-for where each of the four spellings comes from and why two different
-derivation techniques were needed to get all four honestly.
+hand-copied, because a hand-copied list is exactly what goes stale. See that
+constant's own docstring for where each of the four spellings comes from and
+why two different derivation techniques were needed to get all four honestly.
 """
 from __future__ import annotations
 
@@ -51,8 +49,8 @@ AUTONOMY = (
 
 def _load_featureflag() -> dict:
     assert FEATUREFLAG.exists(), (
-        f"{FEATUREFLAG} does not exist -- M5 Task 2 creates it; this guard "
-        "has nothing to check without it"
+        f"{FEATUREFLAG} does not exist; this guard has nothing to check "
+        "without it"
     )
     return yaml.safe_load(FEATUREFLAG.read_text())
 
@@ -125,7 +123,7 @@ def _targeting_branches() -> tuple[str, str]:
 
 
 def test_the_targeted_branch_is_the_restrictive_variant_today():
-    """Whole-branch review, J3. `platform/eval-scorer/scorer/contract.py`'s
+    """`platform/eval-scorer/scorer/contract.py`'s
     `set(branches) == {CURRENT_LEVEL}` is the only thing that currently
     guards this branch, and it is scheduled to be rewritten the day a real
     flip ships (see that constant's own failure message) -- taking this
@@ -133,29 +131,27 @@ def test_the_targeted_branch_is_the_restrictive_variant_today():
     `defaultVariant` and does not need the audit's coupling constant to keep
     guarding the targeted branch too.
 
-    Ruling M5-R8: this resource ships with BOTH branches "assisted" on
-    purpose -- Task 6's flip is a one-word diff on this branch alone. Review
-    mutation A20 (THEN branch flipped) already reddens the eval-scorer suite;
-    this pins the same fact at the tests/unit layer, independent of that
-    coupling."""
+    This resource ships with BOTH branches "assisted" on purpose -- a real
+    flip is a one-word diff on this branch alone, and this pins the current,
+    fail-closed fact at the tests/unit layer, independent of any coupling
+    elsewhere."""
     then_branch, _else_branch = _targeting_branches()
     assert then_branch == "assisted", (
         f"the targeted (settlement-agent) branch reads {then_branch!r}, not "
-        "the shipped no-op 'assisted' -- if this is a deliberate flip "
-        "(Task 6), the demo state has genuinely changed; if it is not, this "
-        "is the permissive half of ruling M5-R8's no-op silently breaking"
+        "the shipped no-op 'assisted' -- if this is a deliberate flip, the "
+        "demo state has genuinely changed; if it is not, this is the "
+        "permissive half of a no-op silently breaking"
     )
 
 
 def test_the_untargeted_branch_is_still_the_restrictive_variant():
-    """Whole-branch review, J3 (the actual gap): review mutation A19 flipped
-    this exact branch -- every caller the contract does NOT name -- to
-    'autonomous' and `test_every_variant_has_a_row_in_the_policy_table` and
-    `test_the_contract_defaults_to_the_restrictive_variant` both stayed green,
-    because neither reads the targeting branches themselves. Only
+    """The untargeted branch -- every caller the contract does NOT name --
+    is not covered by `test_every_variant_has_a_row_in_the_policy_table` or
+    `test_the_contract_defaults_to_the_restrictive_variant`, since neither
+    reads the targeting branches themselves. Only
     `platform/eval-scorer/scorer/contract.py`'s `CURRENT_LEVEL` coupling
-    caught it (A19b), and that guard's own failure message says it is
-    scheduled to be rewritten the day Task 6's flip becomes real, at which
+    would catch a flip here, and that guard's own failure message says it is
+    scheduled to be rewritten the day a real flip becomes real, at which
     point it would stop coupling the two branches together and this would be
     the only thing standing between a typo and every unnamed caller silently
     gaining autonomous execution.
@@ -164,12 +160,12 @@ def test_the_untargeted_branch_is_still_the_restrictive_variant():
     assert else_branch == "assisted", (
         f"the untargeted (else) branch reads {else_branch!r}, not the "
         "fail-closed 'assisted' -- every caller this contract does not name "
-        "would resolve to that variant, which is the exact failure mode "
-        "review mutation A19 found no tests/unit guard against"
+        "would resolve to that variant, and nothing else in tests/unit "
+        "guards against it"
     )
 
 
-# --- M5 Task 4: the deprecated-spelling guard, derived not retyped ---------
+# --- The deprecated-spelling guard, derived not retyped ---------------------
 
 
 def _current_feature_flag_spellings() -> frozenset[str]:
@@ -214,8 +210,8 @@ def _current_feature_flag_spellings() -> frozenset[str]:
 def _deprecated_feature_flag_spellings() -> frozenset[str]:
     """Every `feature_flag.*` spelling this installed SDK marks deprecated,
     from the TWO machine-readable sources that between them cover all four
-    the plan's original (retyped) list named -- measured, not assumed, that
-    both were necessary:
+    known deprecated spellings -- measured, not assumed, that both were
+    necessary:
 
     1. `feature_flag_attributes` itself (see `_current_feature_flag_spellings`
        for why this needs `ast` rather than `__doc__`): three of the four --
@@ -299,12 +295,12 @@ def _string_literals(path: Path) -> set[str]:
 
 
 def test_no_deprecated_feature_flag_spelling_is_emitted():
-    """`pds/autonomy.py` emits the `feature_flag.evaluation` log record
-    (M5 Task 4). Four spellings were renamed by the OTel feature-flag
-    semantic conventions and are what most published examples still use
-    (Finding 13/14 material) -- `feature_flag.variant`,
-    `feature_flag.evaluation.reason`, `feature_flag.evaluation.error.message`,
-    `feature_flag.provider_name`. Semconv 0.65b0, measured.
+    """`pds/autonomy.py` emits the `feature_flag.evaluation` log record.
+    Four spellings were renamed by the OTel feature-flag semantic
+    conventions and are what most published examples still use --
+    `feature_flag.variant`, `feature_flag.evaluation.reason`,
+    `feature_flag.evaluation.error.message`, `feature_flag.provider_name`.
+    Semconv 0.65b0, measured.
     """
     assert AUTONOMY.exists(), f"{AUTONOMY} does not exist"
     emitted = _string_literals(AUTONOMY)
@@ -313,12 +309,12 @@ def test_no_deprecated_feature_flag_spelling_is_emitted():
 
 
 def test_the_derived_deprecated_spellings_match_what_the_plan_named():
-    """A cross-check, not a second source of truth: the plan's Step 3 sketch
-    named four spellings by hand before this guard existed to derive them.
-    If the installed semconv package ever adds a fifth deprecated
-    `feature_flag.*` name, or drops one of these four, this reddens with the
-    actual derived set in the message -- which is the point of deriving
-    rather than retyping in the first place, made visible instead of silent."""
+    """A cross-check, not a second source of truth: four spellings are known
+    deprecated today. If the installed semconv package ever adds a fifth
+    deprecated `feature_flag.*` name, or drops one of these four, this
+    reddens with the actual derived set in the message -- which is the point
+    of deriving rather than retyping in the first place, made visible
+    instead of silent."""
     assert DEPRECATED_SPELLINGS == frozenset({
         "feature_flag.provider_name",
         "feature_flag.variant",

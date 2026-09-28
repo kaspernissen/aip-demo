@@ -32,8 +32,8 @@ command_exists docker || { echo -e "${RED}docker is required${NC}" >&2; exit 1; 
 command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1; }
 
 if ! docker ps --format '{{.Names}}' | grep -qx kind-registry; then
-  # M4 Task 1 fix round 1 (ruling M4-R7): stage 4 is the current stage, so
-  # this points there. It said `--stage 3` until stage 4 became real.
+  # Points at the current stage, so an operator who lost the registry rebuilds
+  # a cluster with everything this repo now needs, rather than an older one.
   echo -e "${RED}kind-registry is not running. Run scripts/setup-kind.sh --stage 5 first.${NC}" >&2
   exit 1
 fi
@@ -43,10 +43,10 @@ fi
 # this repo has no bash 4+ available, so the map is an indexed array of
 # "name:context:namespace" triples instead. Append new components here.
 #
-# M2.2 Task 4 appended policy-decision-service. It is registered here rather
-# than applied by hand so it is rebuilt exactly like the others: a component
-# outside this list is a component that silently keeps running last week's
-# image after someone edits its source, and this one's source is the policy.
+# policy-decision-service is registered here rather than applied by hand so
+# it is rebuilt exactly like the others: a component outside this list is a
+# component that silently keeps running last week's image after someone
+# edits its source, and this one's source is the policy.
 #
 # It is a STAGE 2 component (northstar-platform does not exist at stage 1),
 # which is why scripts/setup-kind.sh names it inside a `STAGE -ge 2` block
@@ -62,10 +62,10 @@ COMPONENTS=(
   "claims-agent:agents/claims-agent:northstar-agents"
   "customer-ui:apps/customer-ui:northstar-agents"
   "policy-decision-service:platform/policy-decision-service:northstar-platform"
-  # M3 Task 4: reviewer-ui. Note what is deliberately NOT here:
-  # senior-settlement-agent -- it is the settlement-agent image, unmodified,
-  # in a second Deployment (deploy/k8s/senior-settlement-agent.yaml's own
-  # header), so it has no build context of its own and is applied by hand
+  # reviewer-ui. Note what is deliberately NOT here: senior-settlement-agent
+  # -- it is the settlement-agent image, unmodified, in a second Deployment
+  # (deploy/k8s/senior-settlement-agent.yaml's own header), so it has no
+  # build context of its own and is applied by hand
   # (`kubectl apply -f deploy/k8s/senior-settlement-agent.yaml`) rather than
   # rebuilt here. reviewer-ui is a genuinely new image, built from its own
   # apps/reviewer-ui context, so it belongs in this list the same way
@@ -73,10 +73,12 @@ COMPONENTS=(
   # outside this list keeps running whatever image happened to be pushed
   # last, silently.
   #
-  # M3 final-review fix round: "applied by hand" was only half the story, and
-  # the missing half was a real hazard -- see COMPANION_DEPLOYMENTS below.
+  # "Applied by hand" is only half the story for senior-settlement-agent: it
+  # still needs restarting whenever this script pushes a new
+  # settlement-agent image, since both Deployments name the same mutable tag
+  # -- see COMPANION_DEPLOYMENTS below.
   "reviewer-ui:apps/reviewer-ui:northstar-agents"
-  # M4 Task 4: eval-scorer. Registered here for the same reason
+  # eval-scorer. Registered here for the same reason
   # policy-decision-service's own addition comment argues -- a component
   # outside this list keeps running whatever image happened to be pushed last,
   # silently, and this one's source is the audit.
@@ -89,12 +91,12 @@ COMPONENTS=(
   # script has no notion of stages and never has, and against a stage-1
   # cluster this component's apply would fail on the missing namespace.
   "eval-scorer:platform/eval-scorer:northstar-platform"
-  # M6 Task 1: Backstage. Registered here for the same reason eval-scorer's
+  # Backstage. Registered here for the same reason eval-scorer's
   # own addition comment argues -- a component outside this list keeps running
   # whatever image happened to be pushed last, silently, and this one's source
-  # is the platform-API view the whole milestone is about.
+  # is the platform-API view over the rest of this system.
   #
-  # It is a STAGE 6 component (the catalog it serves, added in Task 2, reads
+  # It is a STAGE 6 component (the catalog it serves reads
   # `contracts/agent-cards/` and the eight component directories baked into
   # its own image, none of which exist below stage 6 in any meaningful sense),
   # which is why scripts/setup-kind.sh names it inside a `STAGE -ge 6` block
@@ -106,7 +108,7 @@ COMPONENTS=(
   # -- except `northstar-platform` exists from stage 2 on, so in practice it
   # would simply come up two stages before the catalog it is meant to serve
   # has anything real in it. That is a cosmetic gap, not a functional one:
-  # nothing here reads catalog-info.yaml files that Task 2 has not written yet.
+  # nothing here reads a catalog-info.yaml file that does not yet exist.
   "backstage:platform/backstage:northstar-platform"
 )
 
@@ -118,20 +120,17 @@ COMPONENTS=(
 # Deployments name the same MUTABLE tag and `kubectl apply` over an unchanged
 # manifest is a no-op.
 #
-# M3 final-review fix round. `deploy/k8s/settlement-agent.yaml` and
+# `deploy/k8s/settlement-agent.yaml` and
 # `deploy/k8s/senior-settlement-agent.yaml` both name
 # `localhost:5001/northstar/settlement-agent:dev` -- read out of both
-# manifests, not assumed. Until now, running this script for
-# `settlement-agent` (or a bare full run) pushed a new image under that tag
-# and restarted `deployment/settlement-agent` alone, leaving
+# manifests, not assumed. Without this list, running this script for
+# `settlement-agent` (or a bare full run) pushes a new image under that tag
+# and restarts `deployment/settlement-agent` alone, leaving
 # `deployment/senior-settlement-agent` serving the previous build.
 # scripts/setup-kind.sh's Step 9d already states this hazard in full -- "Two
 # pods of 'the same image' silently disagreeing is the worst version of this
-# to debug" -- and fixed it only on the full-cluster path, which is not the
-# path an operator takes between demos. The two digests happened to agree when
-# the whole-branch review found this; the first edit to `settlement.py`
-# followed by a redeploy is what would have broken the byte-identical-image
-# premise this entire milestone's argument rests on.
+# to debug" -- so this list is what closes it on the per-component rebuild
+# path too, not just the full-cluster one.
 COMPANION_DEPLOYMENTS=(
   "settlement-agent:senior-settlement-agent:northstar-agents"
 )
@@ -186,14 +185,12 @@ for component in "${targets[@]}"; do
   namespace="${spec##*:}"
   image="localhost:${REGISTRY_PORT}/northstar/${component}:dev"
 
-  # A15a: A15's original skip branch is retired. All five build contexts have
-  # existed since Task 6 landed, so the skip branch was unreachable in a
-  # healthy tree and would have silently swallowed a missing build context
-  # the moment a later milestone adds a new component to COMPONENTS — the
-  # opposite of what A15 set out to achieve. A missing build context is now a
-  # hard error in every case, default run or explicitly named component
-  # alike; unlike a resolvable "unknown component" typo (checked above), this
-  # error can only mean a real, broken build context, so it always exits.
+  # A missing build context is a hard error in every case, default run or
+  # explicitly named component alike -- there is no skip branch for it,
+  # because a skip here would silently swallow a missing build context the
+  # moment a new component is added to COMPONENTS without one. Unlike a
+  # resolvable "unknown component" typo (checked above), this error can only
+  # mean a real, broken build context, so it always exits.
   if [[ ! -d "$ROOT/$context" ]]; then
     echo -e "${RED}Error: ${component}'s build context ${context} does not exist${NC}" >&2
     exit 1
@@ -211,23 +208,22 @@ for component in "${targets[@]}"; do
     cp "$card" "$ROOT/$context/agent-card.json"
   fi
 
-  # M6 Task 2: backstage's build context (platform/backstage/) cannot reach
-  # the catalog-info.yaml files its catalog serves — they live outside that
-  # build context, and design §3 rules out a git-based catalog (this repo
-  # has no remote). Stage a mirror of their real repo-relative paths into
+  # backstage's build context (platform/backstage/) cannot reach the
+  # catalog-info.yaml files its catalog serves — they live outside that build
+  # context, and this repo's catalog is static rather than git-discovered (it
+  # has no git remote). Stage a mirror of their real repo-relative paths into
   # .catalog-stage/ before the build, on the same "copy in, always clean up"
   # terms as agent-card.json above, so platform/backstage/Dockerfile can
   # COPY it into the image at ./catalog.
   #
-  # contracts/agent-cards/*.json is deliberately NOT staged here. It was,
-  # until this task's own verification found that Backstage's default
-  # UrlReaders register no reader for a local `file:` scheme — see
+  # contracts/agent-cards/*.json is deliberately NOT staged here: Backstage's
+  # default UrlReaders register no reader for a local `file:` scheme — see
   # agents/claims-agent/catalog-info.yaml's header comment for the measured
   # error and the trace. Nothing baked into the image would ever read a
-  # staged copy, so staging one was dead weight kept only for a mechanism
-  # that does not work; the agent cards stay linked by repo path in prose,
-  # read from the committed tree the normal way, same as any other doc
-  # reference in this repo.
+  # staged copy, so staging one would be dead weight for a mechanism that
+  # does not work; the agent cards stay linked by repo path in prose, read
+  # from the committed tree the normal way, same as any other doc reference
+  # in this repo.
   catalog_stage=""
   if [[ "$component" == "backstage" ]]; then
     catalog_stage="$ROOT/$context/.catalog-stage"
@@ -273,16 +269,15 @@ for component in "${targets[@]}"; do
     done
   fi
 
-  # M6-R9: the Task 3 review found the running Backstage image had been
-  # built an hour before the commit under review -- nothing checked that
-  # the image contained the committed code, so an RBAC matrix and a healthy
-  # pod both "verified" a security boundary that was not running. Stamping
-  # the current commit into the image (platform/backstage/Dockerfile's own
-  # `GIT_SHA` build-arg / `org.opencontainers.image.revision` label) is what
+  # A running image that predates the commit under review means an RBAC
+  # matrix and a healthy pod can both "verify" a security boundary that
+  # isn't actually running. Stamping the current commit into the image
+  # (platform/backstage/Dockerfile's own `GIT_SHA` build-arg /
+  # `org.opencontainers.image.revision` label) is what
   # tests/e2e/test_backstage_image_matches_head.py compares against
   # `git rev-parse HEAD`. Backstage only, for now: it is the one image this
-  # milestone's security review turned out to need this for, and adding the
-  # build-arg to a Dockerfile that does not declare it would just be a
+  # repo's security posture depends on being provably current, and adding
+  # the build-arg to a Dockerfile that does not declare it would just be a
   # docker warning about an unused arg, not a false sense of coverage.
   build_cmd=(docker build -t "$image" "$ROOT/$context")
   if [[ "$component" == "backstage" ]]; then
@@ -297,17 +292,14 @@ for component in "${targets[@]}"; do
     # that as a hard failure rather than a pass, so this fallback cannot mask
     # a stale build from a real checkout.
     git_sha="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
-    # Whole-branch review M3(b): the label used to bind the image to HEAD,
-    # not to the tree -- a commit's SHA does not move for uncommitted edits,
-    # so a mutated working tree stamped and passed the label check anyway.
-    # Demonstrated live in the review: `router.ts` neutered in the working
-    # tree, rebuilt, and both image-identity tests in
-    # tests/e2e/test_backstage_image_matches_head.py PASSED while the
-    # anti-vacuity tests were RED against that same image. `git status
-    # --porcelain` catches both halves of "uncommitted" -- modified/staged
-    # tracked files and untracked new ones -- so a dirty tree now stamps
-    # `<sha>-dirty`, which that guard's `label == head` comparison fails on
-    # rather than silently matching.
+    # The label must bind the image to the TREE, not just to HEAD: a commit's
+    # SHA does not move for uncommitted edits, so a mutated working tree could
+    # stamp and pass the label check while running code the commit does not
+    # contain -- silently defeating tests/e2e/test_backstage_image_matches_head.py's
+    # anti-vacuity guarantee. `git status --porcelain` catches both halves of
+    # "uncommitted" -- modified/staged tracked files and untracked new ones --
+    # so a dirty tree stamps `<sha>-dirty`, which that guard's
+    # `label == head` comparison fails on rather than silently matching.
     if [[ "$git_sha" != "unknown" ]] && [[ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]]; then
       git_sha="${git_sha}-dirty"
     fi
@@ -339,29 +331,24 @@ for component in "${targets[@]}"; do
     [[ -n "$companion" ]] || continue
     companion_ns="${companion##*:}"
     companion_name="${companion%%:*}"
-    # M5-R27. A companion that does not exist YET is not an error, and until
-    # 2026-09-14 it killed every cold bring-up. setup-kind.sh's Step 9/9 runs
-    # this script for the five stage-1 components; the manifest that CREATES
-    # senior-settlement-agent is not applied until Step 9d, later in that same
-    # script. Warm, the Deployment was always already there, so the ordering
-    # was never exercised -- stages 4 and 5 were only ever applied over an
-    # existing cluster (amendment A1). Cold, `rollout restart` hit a
-    # non-existent Deployment and `set -e` took the run down at the first of
-    # five components. That mattered more than it looked: this repo has no git
-    # remote, so rebuilding from scratch is the only recovery path there is,
-    # and it did not work.
+    # A companion that does not exist YET is not an error: setup-kind.sh's
+    # Step 9/9 runs this script for the five stage-1 components before the
+    # manifest that creates senior-settlement-agent is applied, later in that
+    # same script (Step 9d). On a cold bring-up, `rollout restart` against a
+    # non-existent Deployment under `set -e` would take the whole run down at
+    # the first of five components -- and since this repo has no git remote,
+    # rebuilding from scratch is the only recovery path there is, so that
+    # failure has to be avoided rather than merely diagnosed.
     #
     # Skipping is correct here and costs nothing: a Deployment created AFTER
     # this push pulls the image this step just pushed, by definition, so no
     # restart is owed. Step 9d creates it moments later.
     #
-    # What this must NOT become is a silent skip -- "skips instead of failing
-    # on the object it guards" is this repo's most-repeated defect (M2.2, four
-    # times). So only a genuine NotFound is tolerated: an unreachable API
-    # server, an RBAC denial, or any other kubectl failure still aborts loudly
-    # rather than being mistaken for "not created yet", which would quietly
-    # leave a companion serving a stale image -- the exact hazard
-    # COMPANION_DEPLOYMENTS exists to prevent.
+    # What this must NOT become is a silent skip -- treating any kubectl
+    # failure as "not created yet" would quietly leave a companion serving a
+    # stale image, the exact hazard COMPANION_DEPLOYMENTS exists to prevent.
+    # So only a genuine NotFound is tolerated: an unreachable API server, an
+    # RBAC denial, or any other kubectl failure still aborts loudly instead.
     if ! companion_probe_err="$(kubectl -n "$companion_ns" get "deployment/${companion_name}" 2>&1 >/dev/null)"; then
       if [[ "$companion_probe_err" == *NotFound* || "$companion_probe_err" == *"not found"* ]]; then
         echo -e "${YELLOW}Step ${step}/${total}: companion deployment/${companion_name} does not exist yet -- skipping its restart; whatever creates it will already be running this image.${NC}"

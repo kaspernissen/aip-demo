@@ -1,20 +1,16 @@
 """The MeterProvider, which is the premise of the whole agent-health section.
 
-M4 §6 measured, during design, that **no service in this system emits a single
-metric**: no `MeterProvider` in any Python or Go source, no `OTEL_METRICS_*` in
-any manifest, and a collector `metrics` pipeline exporting to `debug` alone.
-PydanticAI can only emit a `gen_ai.*` metric into a provider that exists, so
-until one does, "which GenAI metrics does the framework emit?" is an
-unanswerable question -- every answer is "none", for a reason that says nothing
-about the framework.
+No service in this system emits a single metric without one: no
+`MeterProvider` in any Python or Go source, no `OTEL_METRICS_*` in any
+manifest, and a collector `metrics` pipeline exporting to `debug` alone would
+leave every measurement stranded. PydanticAI can only emit a `gen_ai.*` metric
+into a provider that exists, so until one does, "which GenAI metrics does the
+framework emit?" is an unanswerable question -- every answer is "none", for a
+reason that says nothing about the framework.
 
-**The assertion M4 Task 2's brief proposed is inert, and this file does not use
-it.** The brief's test read:
-
-    assert not isinstance(provider, metrics.NoOpMeterProvider)
-
-Measured against the installed `opentelemetry-api==1.44.0` before any of this
-task's changes existed:
+**`assert not isinstance(provider, metrics.NoOpMeterProvider)` is inert, and
+this file does not use it.** Measured against the installed
+`opentelemetry-api==1.44.0` on an unconfigured process:
 
     $ .venv/bin/python -c "from opentelemetry import metrics; \
         print(metrics.get_meter_provider())"
@@ -29,11 +25,10 @@ task's changes existed:
         if OTEL_PYTHON_METER_PROVIDER not in environ:
             return _PROXY_METER_PROVIDER
 
-So that assertion was green on the unconfigured process it was written to
-fail against. Binding to the SDK `MeterProvider` type is what actually
-distinguishes "installed" from "nothing installed": the proxy is an API object
-that forwards to a real provider *if one is ever set* and silently discards
-every measurement if one is not.
+So that assertion is green on an unconfigured process too. Binding to the SDK
+`MeterProvider` type is what actually distinguishes "installed" from "nothing
+installed": the proxy is an API object that forwards to a real provider *if
+one is ever set* and silently discards every measurement if one is not.
 """
 from __future__ import annotations
 
@@ -81,7 +76,7 @@ def test_the_installed_provider_exports_over_otlp_on_a_periodic_reader():
     """The layer below the provider. A MeterProvider with no reader, or with a
     reader nothing collects from, records measurements into memory and drops
     them -- which looks identical, from outside, to a framework that emits
-    nothing. M4 §6's finding depends on being able to tell those apart."""
+    nothing. This test is what tells those two cases apart."""
     provider = _installed_provider()
     readers = list(provider._metric_readers)
     assert readers, (
@@ -103,7 +98,7 @@ def test_the_installed_provider_exports_over_otlp_on_a_periodic_reader():
 
 
 def test_the_metrics_endpoint_comes_from_the_standard_otel_env_var():
-    """Brief step 3, asserted rather than trusted: endpoint and protocol come
+    """Asserted rather than trusted: endpoint and protocol come
     from the standard `OTEL_EXPORTER_OTLP_*` variables, exactly as the
     TracerProvider's do, so `deploy/k8s/*.yaml` stays the only place an
     endpoint is named.
@@ -133,7 +128,7 @@ def test_the_metrics_endpoint_comes_from_the_standard_otel_env_var():
 
 
 def test_no_view_drops_an_instrument():
-    """This demo never samples, and as of M4 that includes metrics.
+    """This demo never samples, metrics included.
 
     A `View(instrument_name=..., aggregation=DropAggregation())` on the
     provider is the metrics-side equivalent of a tail sampler: the instrument

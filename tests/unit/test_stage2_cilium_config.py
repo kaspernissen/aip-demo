@@ -1,33 +1,18 @@
-"""Guards the M2.1 Task 1 stage-2 configuration: the create-time CNI flag, the
-Cilium values, and the ordering `setup-kind.sh --stage 2` must preserve.
+"""Guards the stage-2 configuration: the create-time CNI flag, the Cilium
+values, and the ordering `setup-kind.sh --stage 2` must preserve.
 
 Every assertion here exists because getting it wrong costs a cluster recreate
-to find out, and a recreate is the one operation this milestone budgets exactly
-once.
+to find out.
 
-**Fix round 1 -- the inert-guard class.** The first version of this module
-grepped `scripts/setup-kind.sh`'s raw text. Mutation testing showed that three
-of those guards stayed green while the behaviour they name was removed, because
-the string each searched for also appears in a *comment* or in an error message:
-
-- `KIND_CONFIG` reverted to `stage1.yaml` -- the guard passed on `"stage2.yaml"
-  in text`, satisfied by the prose comment above the assignment.
-- the kindnet reuse check replaced with `if false; then` -- the guard passed on
-  `"kindnet" in text`, satisfied by the comment *and* the refusal message.
-- the `northstar-platform` namespace apply deleted -- the guard passed on
-  `"northstar-platform" in text`, satisfied by the comment that explains why it
-  is created here. (This third one the review's own mutation set missed; it was
-  found by auditing the whole class rather than only the two reported
-  instances.)
-
-A fourth was latent rather than live: the readiness-ordering guard used
-`str.find` on raw text, so an ordinary explanatory comment naming
-`rollout status daemonset/cilium` early in the file would satisfy the ordering
-while the real waits sat after the deploy. A fifth was weak rather than inert:
-the version-pin guard asked only whether `1.20.1` appeared *somewhere* in the
-values file, and the header mentions it twice, so editing one mention and
-forgetting the other -- precisely what a half-done version bump does -- left it
-green.
+Guards over raw script text are easy to make inert: a guard that greps for
+`"stage2.yaml" in text`, `"kindnet" in text`, or `"northstar-platform" in
+text` can pass on a nearby comment alone even after the real assignment,
+check, or `kubectl apply` behind it is gone. The same risk holds for
+`str.find` ordering checks -- an explanatory comment naming a step can
+satisfy the ordering before the real step actually runs -- and for
+version-pin checks that only ask whether a version string appears
+*somewhere* in a file that mentions it more than once, so a half-done
+version bump can leave one mention unedited and still pass.
 
 Two defences, applied together:
 
@@ -43,28 +28,26 @@ Two defences, applied together:
    it, and asserts on *what it actually invoked*. Those tests cannot be
    satisfied by any text anywhere, comment or not.
 
-**Why the values assertions are phrased as they are.** The plan's own sketch of
-`deploy/platform/cilium-values.yaml` was checked against `helm show values
-cilium/cilium --version 1.20.1` before the cluster was touched, and was wrong in
-two ways that a `helm install` would only have surfaced *after* the old cluster
-was already gone:
+**Why the values assertions are phrased as they are.** `deploy/platform/
+cilium-values.yaml` is checked against `helm show values cilium/cilium
+--version 1.20.1`:
 
-1. It set `dnsPolicy: {enabled: true}`. In this chart `dnsPolicy` is a **string**
-   (`dnsPolicy: ""`, line 291 of the rendered default values, documented as "DNS
-   policy for Cilium agent pods" with a ref to the Kubernetes pod-DNS-policy
-   docs) -- the Kubernetes pod DNS policy for the cilium-agent pods, nothing to
-   do with Cilium's DNS proxy. A map there is a type error.
-2. It justified that block as "required for toFQDNs egress policy in M2.2". The
-   DNS proxy toFQDNs depends on is gated by `l7Proxy`, which is already `true`
-   by default (line 2449). The chart's `dnsProxy` block (line 4315) has **no
-   `enabled` key** at all -- only tuning knobs (`socketLingerTimeout`,
+1. `dnsPolicy` is a **string** in this chart (`dnsPolicy: ""`, line 291 of the
+   rendered default values, documented as "DNS policy for Cilium agent pods"
+   with a ref to the Kubernetes pod-DNS-policy docs) -- the Kubernetes pod DNS
+   policy for the cilium-agent pods, nothing to do with Cilium's DNS proxy. A
+   map there is a type error.
+2. The DNS proxy toFQDNs depends on is gated by `l7Proxy`, which is already
+   `true` by default (line 2449). The chart's `dnsProxy` block (line 4315) has
+   **no `enabled` key** at all -- only tuning knobs (`socketLingerTimeout`,
    `dnsRejectResponseCode`, `enableDnsCompression`, `endpointMaxIpPerHostname`,
-   `minTtl`, `preAllocateIdentities`, ...). So M2.2 needs no values change here,
-   and `test_values_do_not_carry_the_briefs_dnspolicy_type_error` pins the
-   absence rather than letting a later reader "restore" the block from the plan.
+   `minTtl`, `preAllocateIdentities`, ...). So
+   `test_values_do_not_carry_the_briefs_dnspolicy_type_error` pins the absence
+   of both, rather than letting a later reader "restore" either block.
 
-The values-file guards were never part of the inert class: they all parse the
-YAML with `yaml.safe_load`, which discards comments before any assertion runs.
+The values-file guards all parse the YAML with `yaml.safe_load`, which
+discards comments before any assertion runs, so they carry none of the risk
+described above.
 """
 import ast
 import os
@@ -97,9 +80,8 @@ def _yaml(path: Path) -> dict:
 def _effective_script() -> str:
     """`setup-kind.sh` with the shebang and every whole-line comment removed.
 
-    This is what makes the text assertions below non-inert: a comment can no
-    longer satisfy any of them. See the module docstring for the three guards
-    that were green against broken input before this existed.
+    This is what makes the text assertions below non-inert: a comment cannot
+    satisfy any of them, since it is stripped out before the regex runs.
     """
     return "\n".join(
         line
@@ -124,9 +106,7 @@ def test_stage2_disables_the_default_cni():
 
 def test_stage1_keeps_its_default_cni():
     """Stage 1 must stay bring-up-able without Cilium, so it must not acquire
-    the flag. This is the direction the plan's own wording invited getting
-    wrong: it described adding the flag "under `networking`" in a file that has
-    no `networking` block at all.
+    the flag.
 
     Asserts against `yaml.dump` of the *parsed* document, so a comment
     mentioning the flag cannot trip it either way.
@@ -168,10 +148,9 @@ def test_stage2_is_stage1_plus_exactly_the_networking_block():
 
 
 def test_kube_proxy_replacement_stays_off():
-    """The spec is explicit that Cilium's kube-proxy replacement is not
-    required — M2.2's DNS-aware egress denial is ordinary CiliumNetworkPolicy
-    and works with kube-proxy present — and enabling it on kind invites
-    cgroup-v2 and kernel-version problems."""
+    """Cilium's kube-proxy replacement is not required here — DNS-aware egress
+    denial is ordinary CiliumNetworkPolicy and works with kube-proxy present —
+    and enabling it on kind invites cgroup-v2 and kernel-version problems."""
     values = _yaml(CILIUM_VALUES)
     assert values["kubeProxyReplacement"] in (False, "false"), (
         "kubeProxyReplacement must stay off; got "
@@ -200,7 +179,7 @@ def test_values_do_not_carry_the_briefs_dnspolicy_type_error():
     )
     assert "dnsProxy" not in values, (
         "the chart's `dnsProxy` block has no `enabled` key — its children are "
-        "tuning knobs only — so there is nothing to enable here for M2.2"
+        "tuning knobs only — so there is nothing to enable here"
     )
 
 
@@ -214,12 +193,10 @@ def test_the_pinned_chart_version_is_recorded_in_the_values_header():
     """Nothing floats: the version the script installs must be stated in the
     values file too, so the two cannot drift apart silently.
 
-    Fix round 1: this used to ask only whether `1.20.1` appeared *somewhere* in
-    the file. The header mentions the version twice ("pinned to 1.20.1" and
-    "appVersion 1.20.1"), so editing one and forgetting the other left the
-    guard green. It now requires the pin sentence specifically, and requires
-    *every* version-shaped string in the file to agree with it, so a half-done
-    bump fails.
+    The header mentions the version twice ("pinned to 1.20.1" and "appVersion
+    1.20.1"), so this requires the pin sentence specifically, and requires
+    *every* version-shaped string in the file to agree with it, so a
+    half-done bump fails.
     """
     text = CILIUM_VALUES.read_text()
     assert re.search(rf"pinned to {re.escape(PINNED_CILIUM_CHART_VERSION)}\b", text), (
@@ -260,16 +237,13 @@ def test_setup_kind_pins_the_cilium_chart_version_exactly():
 
 
 def test_stage2_uses_the_stage2_kind_config():
-    """The task's single most load-bearing behaviour: stage 2 must create the
+    """The single most load-bearing behaviour here: stage 2 must create the
     cluster from the config that carries `disableDefaultCNI`.
 
-    Fix round 1 (review Finding 1, HIGH): this guard used to read
-    `"deploy/kind/stage${STAGE}.yaml" in text or "stage2.yaml" in text`, and
-    the `or` disjunct was satisfied by a prose comment — so reverting
-    `KIND_CONFIG` to `stage1.yaml` left it green. It now asserts on the
-    assignment itself in comment-stripped code, with no disjunct, and
-    `test_stage_two_creates_the_cluster_from_stage2_yaml_when_run` below proves
-    the same thing behaviourally.
+    Asserts on the assignment itself in comment-stripped code, with no
+    disjunct a stray comment could satisfy, and
+    `test_stage_two_creates_the_cluster_from_stage2_yaml_when_run` below
+    proves the same thing behaviourally.
     """
     text = _effective_script()
     assert re.search(
@@ -290,9 +264,9 @@ def test_stage2_uses_the_stage2_kind_config():
 
 def test_stage2_is_no_longer_the_not_implemented_stub():
     """A prose-staleness guard, and deliberately nothing more: it pins that the
-    M1.x refusal message no longer claims stage 2 is unimplemented. The
-    *behaviour* — that stage 2 dispatches and stages above 2 do not — is proven
-    by `test_stages_above_two_still_refuse_to_run` and
+    refusal message does not claim stage 2 is unimplemented. The *behaviour*
+    — that stage 2 dispatches and stages above it do not — is proven by
+    `test_stages_above_the_implemented_one_still_refuse_to_run` and
     `test_an_unimplemented_stage_actually_exits_nonzero` below, not here."""
     text = SETUP_KIND.read_text()
     assert "implement stage 1 only" not in text, (
@@ -308,15 +282,10 @@ def test_stages_above_the_implemented_one_still_refuse_to_run():
     implemented cluster shape. Comment-stripped, so the threshold cannot be
     supplied by prose.
 
-    The threshold moves with the milestones, and this test moves with it: M2.1
-    set it at 2, M3 Task 1 raised it to 3, M4 Task 1 raised it to 4 when
-    `--stage 4` became real, M5 Task 2 raised it to 5, and M6 Task 1 raises it
-    to 6 (Backstage). Raising the gate in `setup-kind.sh` without raising it
-    here reddens this test, which is the intent -- the gate's threshold is a
-    claim about what exists, and it should not be possible to change one
-    without the other. (M3 ruling R5: this exact omission left the branch red
-    across two commits before, which is why Task 1's own brief calls this
-    test out by name.)
+    The threshold here must track the stage gate in `setup-kind.sh` exactly:
+    raising the gate without raising this test's expected value reddens this
+    test, which is the intent -- the gate's threshold is a claim about what
+    exists, and it should not be possible to change one without the other.
     """
     text = _effective_script()
     assert re.search(r'"\$\{STAGE\}" -gt 6', text), (
@@ -324,8 +293,7 @@ def test_stages_above_the_implemented_one_still_refuse_to_run():
         '`"${STAGE}" -gt 6` test'
     )
     assert not re.search(r'"\$\{?STAGE\}?" -gt 5', text), (
-        "the stage gate must no longer refuse stage 6, which M6 Task 1 "
-        "implemented"
+        "the stage gate must not refuse stage 6, which is implemented"
     )
 
 
@@ -334,11 +302,9 @@ def test_cilium_is_ready_before_any_workload_is_deployed():
     networking. That failure presents as a mysteriously broken demo, not as a
     failed install, so the ordering is asserted rather than assumed.
 
-    Fix round 1: the ordering used to be computed over raw text, which made it
-    latently inert — an ordinary explanatory comment naming
-    `rollout status daemonset/cilium` early in the file would satisfy the
-    ordering while the real waits sat after the deploy. Demonstrated with a
-    mutation; now computed over comment-stripped code.
+    Computed over comment-stripped code, so an explanatory comment naming
+    `rollout status daemonset/cilium` cannot satisfy the ordering while the
+    real waits sit after the deploy.
     """
     text = _effective_script()
     ds_wait = text.find("rollout status daemonset/cilium")
@@ -361,15 +327,11 @@ def test_cilium_is_ready_before_any_workload_is_deployed():
 def test_stage2_creates_the_northstar_platform_namespace():
     """`deploy/k8s/namespaces.yaml` creates four namespaces (observability,
     northstar-agents, northstar-tools, northstar-systems) and no
-    `northstar-platform`; M2.1 Tasks 2 and 4 both need it, so stage 2 creates
-    it.
+    `northstar-platform`, so stage 2 creates it here instead.
 
-    Fix round 1: this used to be `"northstar-platform" in _setup_kind_text()`,
-    which the comment explaining *why* the namespace is created here satisfied
-    all by itself — so deleting the `kubectl apply` left the guard green. This
-    instance was not in the review's mutation set; it was found by auditing the
-    whole class. It now requires the manifest's own `name:` line in
-    comment-stripped code, and that it be applied.
+    Requires the manifest's own `name:` line in comment-stripped code, and
+    that it be applied — a comment explaining why the namespace is created
+    here must not be able to satisfy this on its own.
     """
     text = _effective_script()
     assert re.search(r"^\s*name: northstar-platform\s*$", text, re.MULTILINE), (
@@ -409,13 +371,9 @@ def test_an_existing_cluster_is_not_silently_reused_for_stage_2():
     would happily install Cilium on top of kindnet and report success — the
     single worst outcome available here, because it looks like it worked.
 
-    Fix round 1 (review Finding 2, MEDIUM): this used to be
-    `assert "kindnet" in _setup_kind_text()`, which stayed green when the
-    check's condition was replaced with `if false; then` — the word survives in
-    both the comment and the refusal message, and the refusal message is
-    effective code, so comment-stripping alone would not have fixed it. It now
-    asserts on the `kubectl ... get daemonset kindnet` probe and on the `exit 1`
-    that must follow it, and
+    Asserts on the `kubectl ... get daemonset kindnet` probe and on the
+    `exit 1` that must follow it, in comment-stripped code so neither a
+    comment nor the refusal message alone can satisfy it, and
     `test_stage_two_refuses_an_existing_kindnet_cluster_when_run` below proves
     the behaviour directly.
     """
@@ -496,7 +454,7 @@ def _run_setup_kind(stage, cluster_exists, kindnet_present, tmp_path):
     shutil.copy2(SETUP_KIND, tree / "scripts" / "setup-kind.sh")
     shutil.copy2(STAGE1, tree / "deploy" / "kind" / "stage1.yaml")
     shutil.copy2(STAGE2, tree / "deploy" / "kind" / "stage2.yaml")
-    # M6 Task 1: stage3.yaml too, for the stage-6 cold-path test below. Copied
+    # stage3.yaml too, for the stage-6 cold-path test below. Copied
     # unconditionally rather than only when a stage-6 test runs -- it is a
     # static committed file, and copying it for stages that never read it
     # costs nothing.
@@ -571,23 +529,19 @@ def test_stage_one_creates_the_cluster_from_stage1_yaml_when_run(tmp_path):
 
 @pytestmark_bash
 def test_stage_six_creates_the_cluster_from_stage3_yaml_when_cold(tmp_path):
-    """M6 Task 1's cold-path proof for the one part of `--stage 6` this task
-    could not exercise against the real laptop cluster: the create-time
-    KIND_CONFIG selection.
+    """Cold-path proof for the one part of `--stage 6` that a warm,
+    already-running cluster cannot exercise: the create-time KIND_CONFIG
+    selection. A warm cluster takes the "cluster already exists, skipping
+    creation" branch, which never re-evaluates KIND_CONFIG at all (the same
+    caveat stage 5's own header in `scripts/setup-kind.sh` states about
+    itself), and with no git remote a cold rebuild is this repo's only
+    recovery path if the real cluster is ever lost.
 
-    M5-R27 is the standing warning this test answers: M5 shipped a broken
-    cold `--stage 5` because nobody ran it cold, and with no git remote a cold
-    rebuild is this repo's only recovery path. The real cluster this task ran
-    against was already at stage 5 -- warm, `kind get clusters` finds
-    `northstar`, and every `--stage 6` run this task performed took the
-    "cluster already exists, skipping creation" branch, which never
-    re-evaluates KIND_CONFIG for cluster creation at all (the same caveat
-    stage 5's own header in `scripts/setup-kind.sh` states about itself).
-    Recreating the real cluster to exercise this branch live needs Kasper's
-    explicit permission, each time, per this repo's standing constraint --
-    so this hermetic harness is the substitute: no real cluster, registry, or
-    network is touched, and the assertion is on the literal `kind create
-    cluster --config ...` invocation a genuinely cold `--stage 6` would issue.
+    Recreating the real cluster to exercise this branch live needs explicit
+    operator permission each time, so this hermetic harness is the
+    substitute: no real cluster, registry, or network is touched, and the
+    assertion is on the literal `kind create cluster --config ...` invocation
+    a genuinely cold `--stage 6` would issue.
     """
     _, out, calls = _run_setup_kind("6", False, False, tmp_path)
     creates = [c for c in calls if c.startswith("kind create cluster")]
@@ -596,9 +550,9 @@ def test_stage_six_creates_the_cluster_from_stage3_yaml_when_cold(tmp_path):
     config = creates[0].split("--config", 1)[1].strip()
     assert Path(config).name == "stage3.yaml", (
         f"`--stage 6` created the cluster from {Path(config).name!r}, not "
-        "stage3.yaml. There is deliberately no stage6.yaml (amendment A1: "
-        "Backstage needs no new host port, same reasoning stages 4 and 5 "
-        "already established) -- if this reads anything else, a cold "
+        "stage3.yaml. There is deliberately no stage6.yaml (Backstage needs "
+        "no new host port, same reasoning stages 4 and 5 already established) "
+        "-- if this reads anything else, a cold "
         "`--stage 6` either builds the wrong cluster shape or dies at the "
         "`[[ -f \"$KIND_CONFIG\" ]]` check on a file that does not exist."
     )
@@ -646,100 +600,39 @@ def test_stage_two_proceeds_when_the_existing_cluster_has_no_kindnet(tmp_path):
 
 
 def test_no_operator_facing_instruction_still_points_at_an_older_stage():
-    """Fix round 1 (review Findings 3, 4 and 7, treated as one class): the
-    current stage is the current cluster, so nothing a reader is told to run may
-    name an older one.
+    """The current stage is the current cluster, so nothing a reader is told
+    to run may name an older one. `scripts/smoke-test.sh` telling an operator
+    whose cluster is unreachable to run an older `--stage N` would rebuild on
+    a stale cluster shape -- reverting the CNI at worst, or omitting
+    workloads a later check assumes are present -- so this asserts over a
+    *set* of files rather than any one line.
 
-    This had teeth. `scripts/smoke-test.sh` told an operator whose cluster was
-    unreachable to run `--stage 1`; following that after a cluster loss rebuilds
-    on kindnet, silently reverting the CNI this milestone's whole trace
-    verification is about — and the new kindnet guard would then refuse, but
-    only after a second delete. Four sites carried the same instruction
-    (`smoke-test.sh` twice, `rebuild-and-deploy.sh`, `README.md`), which is why
-    this asserts over a *set* of files rather than the one line the review
-    cited.
-
-    **M3 Task 5B widened it from `--stage 1` to every stage below the current
-    one, because the defect recurred exactly as the name of the original
-    version invited it to.** Once `--stage 3` became the current cluster, six
-    sites still said `--stage 2` — `smoke-test.sh` three times,
-    `rebuild-and-deploy.sh`, `README.md`, and one historical line in
-    `docs/telemetry-contract.md` — and the guard was green through all of it,
-    because it only ever knew the number 1. The stage-2 version of the failure
-    is worse than the stage-1 one it was written for: `smoke-test.sh`'s port
-    loop requires reviewer-ui on 8081, a workload no stage-2 cluster has, so
-    following the instruction guaranteed a failure on the very next check.
-
-    `CURRENT_STAGE` below is the single number each milestone that adds a
-    stage has to change. It is also the reason this test is parameter-free
-    rather than parameterised: adding a stage must not change how many tests
-    this module collects, since `docs/telemetry-contract.md` publishes that
-    count.
-
-    **M4 Task 1: it recurred a third time, and the number was not raised.**
-    Stage 4 shipped at `955dd18` with `CURRENT_STAGE` still at 3, so this
-    guard checked only stages 1 and 2 and stayed green over four live
-    `--stage 3` instructions: `README.md`'s quick start, `smoke-test.sh`
-    twice (one of them written by the very commit that made stage 4 real),
-    and `rebuild-and-deploy.sh`. Task 1's review found it; ruling M4-R7
-    assigned the correction to Task 1's fix round rather than to M4's closing
-    doc pass, because this docstring names M4 as the owner of the number and
-    because the commit that made stage 4 current is the commit that authored
-    a fresh offender. Raising it to 4 turned all four red, which is the point
-    -- they were found by a test rather than by a reader. (The review
-    predicted three of the four; `rebuild-and-deploy.sh` is the one this
-    guard added on its own once the number moved.)
+    `CURRENT_STAGE` below is the single number each new stage has to raise.
+    It is also the reason this test is parameter-free rather than
+    parameterised: adding a stage must not change how many tests this module
+    collects, since `docs/telemetry-contract.md` publishes that count.
 
     Two deliberate exclusions:
 
-    * `docs/superpowers/` — those are the M1.1/M1.2/M2.x plan and spec
-      documents, and the older `--stage N` is the correct, historical
-      instruction for the milestone each of them describes. Rewriting them would
-      falsify a record rather than fix a pointer.
+    * `docs/superpowers/` holds historical plan and spec documents, and the
+      older `--stage N` in them is the correct, historical instruction for
+      the milestone each one describes. Rewriting them would falsify a
+      record rather than fix a pointer.
     * `docs/telemetry-contract.md` is checked for `--stage 1` but NOT for the
       later stages. That file's job is to state the command each published
-      number was actually measured with, and the M2.1 rows were genuinely
-      measured on a freshly created stage-2 cluster (line ~102). Naming the
-      stage actually run is *required* there; "fixing" it to `--stage 3` would
-      attach provenance to those numbers that they do not have, which is this
-      repo's most-repeated defect class. The `--stage 1` check is kept on it
-      because no number in it was ever measured at stage 1 — the file's own
-      preamble records a review catching precisely that false claim.
+      number was actually measured with, so naming the stage actually run is
+      *required* there; "fixing" it to a later stage would attach provenance
+      to numbers that do not have it.
 
-    **M3 final-review fix round: `deploy/kind/*.yaml` joins the file set.**
-    The whole-branch review found two more instances of this class, and both
-    were in files no version of this guard had ever opened — `deploy/kind/
-    stage3.yaml` (which still said stage 3 deploys "exactly what stage 2
-    deploys, plus that free port", the *identical* sentence `9c7b3b7`
-    corrected in `setup-kind.sh`'s help text and missed here) and
-    `deploy/platform/cilium-policies.yaml`. Neither carried a `setup-kind.sh
-    --stage N` string, so neither is something this particular needle could
-    ever have caught — what it does catch is the next kind config that grows
-    a `# create this with ./scripts/setup-kind.sh --stage 2`-style operator
-    instruction, which is a real and cheap thing to close now that the class
-    has recurred twice. It is added as coverage for the future, not as a
-    claim that it would have found the two misses. The glob is deliberate:
-    `stage4.yaml` is covered the day it is written, with no edit here.
-
-    **M4 Task 1 fix round 2 (re-review finding N1): the script list became a
-    glob too, for exactly the reason the kind one already was.** Raising
-    `CURRENT_STAGE` to 4 did not turn `scripts/start-demo.sh:213` red -- a
-    `./scripts/setup-kind.sh --stage 3` instruction written by the fix round
-    itself -- because the file list named three scripts by hand and
-    `start-demo.sh` was not one of them. It is the newest script in the repo,
-    created by this same milestone, and it is now the universal remedy both of
-    `smoke-test.sh`'s port-forward branches send an operator to; a stale stage
-    pointer in it is the most consequential place one can sit. Hand-listing
-    the files was the hole, so `scripts/*.sh` replaces it, with an explicit
-    assertion below that the glob still matches the scripts it is meant to.
-    That is the fourth recurrence of this class and the second time the fix
-    was "widen what the guard opens" rather than "correct the line".
+    `deploy/kind/*.yaml` and `scripts/*.sh` are globs rather than hand-written
+    lists, so a new kind config or script is covered the day it is written
+    rather than depending on someone remembering to add it here.
     """
     CURRENT_STAGE = 5
     scripts_and_readme = [
-        # A glob, not a hand-written list, for the same reason deploy/kind/ is
-        # one: see the N1 paragraph in the docstring. Every script this repo
-        # ships is covered the day it is written.
+        # A glob, not a hand-written list: every script this repo ships is
+        # covered the day it is written, rather than depending on someone
+        # remembering to add it here.
         *sorted((REPO_ROOT / "scripts").glob("*.sh")),
         REPO_ROOT / "README.md",
         *sorted((REPO_ROOT / "deploy" / "kind").glob("*.yaml")),
@@ -751,9 +644,8 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
         "less than its docstring claims -- has the directory moved?"
     )
     # An empty or shrunken glob is how a guard silently stops guarding, so name
-    # the scripts that must be in it. These four are the ones that carried the
-    # needle at the time the glob replaced the hand-written list; a rename is
-    # fine, but it has to be a deliberate edit here rather than a silent drop.
+    # the scripts that must be in it. A rename is fine, but it has to be a
+    # deliberate edit here rather than a silent drop.
     script_names = {path.name for path in scripts_and_readme if path.suffix == ".sh"}
     assert {
         "smoke-test.sh",
@@ -761,11 +653,10 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
         "setup-kind.sh",
         "start-demo.sh",
     } <= script_names, (
-        "scripts/*.sh no longer matches every script this guard is meant to "
+        "scripts/*.sh does not match every script this guard is meant to "
         f"cover; it matched {sorted(script_names)}. A renamed or moved script "
-        "drops out of this guard silently, which is exactly how "
-        "scripts/start-demo.sh came to carry a fresh `--stage 3` instruction "
-        "through the fix round that raised CURRENT_STAGE to 4."
+        "drops out of this guard silently, so a stale operator instruction in "
+        "it could go unnoticed."
     )
     checked: list[tuple[Path, int]] = [
         (path, stage)
@@ -774,53 +665,31 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
     ]
     checked.append((REPO_ROOT / "docs" / "telemetry-contract.md", 1))
 
-    # **M4 final review, suspected finding S2: `tests/` was outside this guard,
-    # and it was the largest remaining operator-facing surface.** A skip or
-    # failure message is read by an operator at the exact moment something is
-    # wrong, and six of them told that operator to run `--stage 2` or
-    # `--stage 3` on what is, by this constant, a stage-4 cluster. That is not
-    # a harmless under-build: `scripts/setup-kind.sh` line "STAGE -lt 4" drops
-    # every stage-4-only region from the collector config -- the OpenSearch
-    # trace branch and the Prometheus metrics exporter -- so following the
-    # remedy printed by a *test* would silently disable the telemetry the
-    # milestone is named for. All six now say `--stage 4`.
+    # `tests/` is included too: a skip or failure message is read by an
+    # operator at the exact moment something is wrong, and a stale `--stage N`
+    # in one is as dangerous as one in a script -- following a remedy printed
+    # by a test that names an older stage can silently disable telemetry a
+    # later stage depends on.
     #
-    # The needle is narrower here than for scripts and README, and the
-    # narrowing is the ruling rather than a convenience. Those files are read
-    # top to bottom, so any `--stage N` in them is an instruction. A test
-    # module is mostly prose *about* the stages -- "the ordering
+    # The needle is narrower here than for scripts and README. Those files
+    # are read top to bottom, so any `--stage N` in them is an instruction. A
+    # test module is mostly prose *about* the stages -- "the ordering
     # `setup-kind.sh --stage 2` must preserve" is a correct sentence that must
-    # stay correct forever -- and a guard that reddened on it would be a guard
-    # people satisfy by rewriting true sentences (ruling R22). So only a fixed
-    # set of instruction lead-ins is checked, immediately before the command --
+    # stay correct forever -- and a guard that reddened on it would be a
+    # guard people satisfy by rewriting true sentences. So only a fixed set
+    # of instruction lead-ins is checked, immediately before the command --
     # what an operator is actually told to type or read as "the fix".
     #
-    # **Ruling M5-R17.** Six such instructions survived a `CURRENT_STAGE` raise
-    # uncaught, because this loop used to read *physical* source lines
-    # (`path.read_text().splitlines()`) and match `(?:[Rr]e-?)?run\s+...` on a
-    # single line. Python does not require an instruction to stay on one
-    # source line: `"Re-run "` `"./scripts/setup-kind.sh --stage 4 to ..."` is
-    # two adjacent string literals the interpreter concatenates into one
-    # string, and other sites used a lead-in this pattern never covered at
-    # all ("Bring it up with", "the fix is") -- both defeats are the same
-    # "stale prose survives because the guard's needle doesn't see the whole
-    # sentence" class this project has hit eight times before (M4 alone), just
-    # arrived at by two different routes.
-    #
-    # The fix parses each file with `ast` rather than reading physical lines,
-    # and searches `ast.Constant` string values instead. This is not a
-    # heuristic join: CPython's tokenizer concatenates adjacent string
-    # literals -- plain-to-plain, and plain-to-f-string via `ast.JoinedStr`'s
-    # own `Constant` children -- before the parser ever produces a node, so
-    # `node.value` already reads as one sentence regardless of how many source
-    # lines or literal fragments it was written across, and a `#` comment can
-    # never appear in it at all (comments are not AST nodes), which is a
-    # correctness property no per-line text scan had. Confirmed directly
-    # against this file's own six offenders plus a seventh
-    # (`test_supervised.py` wraps the *digit* onto its own line instead of the
-    # lead-in -- "run ./scripts/setup-kind.sh " / "--stage 3 ...` -- a
-    # different wrap point the same fix closes for the same reason) before
-    # this docstring was written.
+    # Each file is parsed with `ast` rather than read as physical lines, and
+    # searched over `ast.Constant` string values. CPython's tokenizer
+    # concatenates adjacent string literals -- plain-to-plain, and
+    # plain-to-f-string via `ast.JoinedStr`'s own `Constant` children --
+    # before the parser ever produces a node, so `node.value` already reads
+    # as one sentence regardless of how many source lines or literal
+    # fragments an instruction was written across (e.g. "Re-run " /
+    # "./scripts/setup-kind.sh --stage 4 to ..." as two adjacent literals),
+    # and a `#` comment can never appear in it at all, since comments are not
+    # AST nodes -- a correctness property no per-line text scan has.
     _INSTRUCTION_LEADINS = r"(?:(?:[Rr]e-?)?run|[Bb]ring it up with|[Tt]he fix is)"
     _STAGE_INSTRUCTION_RE = re.compile(
         _INSTRUCTION_LEADINS
@@ -873,8 +742,8 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
     assert not offenders, (
         f"these lines still instruct a reader to build a cluster older than "
         f"stage {CURRENT_STAGE}, which is the current one. `--stage 1` "
-        "silently reverts the CNI; `--stage 2` omits the M3 workloads the "
-        "gate's own prerequisite check then requires:\n" + "\n".join(offenders)
+        "silently reverts the CNI; `--stage 2` omits workloads a later "
+        "stage's prerequisite check then requires:\n" + "\n".join(offenders)
     )
 
 

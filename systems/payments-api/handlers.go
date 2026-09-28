@@ -36,18 +36,18 @@ type executeRequest struct {
 	Currency string   `json:"currency"`
 }
 
-// refuseRequest is what Task 3's settlement agent reports about a refusal it
-// did not decide -- the Policy Decision Service decided it, upstream -- so
-// that a human reviewer has something to read. Amount, currency and payment
-// id already live on the ledger record this refusal attaches to; this
-// request supplies only the PDS's own rule and limit, the amount that was
-// requested, the model's narrative, and the ids of the trace and span that
-// recorded the decision. RefusedAt is not part of this request: the ledger
-// stamps it itself, at the moment it records the refusal (see store.refuse).
+// refuseRequest is what the settlement agent reports about a refusal it did
+// not decide -- the Policy Decision Service decided it, upstream -- so that a
+// human reviewer has something to read. Amount, currency and payment id
+// already live on the ledger record this refusal attaches to; this request
+// supplies only the PDS's own rule and limit, the amount that was requested,
+// the model's narrative, and the ids of the trace and span that recorded the
+// decision. RefusedAt is not part of this request: the ledger stamps it
+// itself, at the moment it records the refusal (see store.refuse).
 //
-// RefusedSpanID (M3 Task 3): added alongside RefusedTraceID once Task 3
-// measured that a span link needs a real span id to survive export -- see
-// store.go's refusal.RefusedSpanID doc comment for the measurement.
+// RefusedSpanID travels alongside RefusedTraceID because a span link needs a
+// real span id to survive export -- see store.go's refusal.RefusedSpanID doc
+// comment for why.
 type refuseRequest struct {
 	Rule           string  `json:"rule"`
 	Limit          float64 `json:"limit"`
@@ -77,9 +77,7 @@ type refuseRequest struct {
 // themselves. Both Go's and Python's encoders emit the shortest
 // round-tripping representation of a float64, so an amount survives
 // encode/decode bit-exactly in both directions -- measured over this demo's
-// own figures, including 6200.0 and 6200.01. An earlier version of this
-// comment asserted a ~1e-12 round-trip error at EUR 6,200; that was false, and
-// the tolerance does not rest on it (fix round 1, F2).
+// own figures, including 6200.0 and 6200.01.
 const amountEpsilon = 0.005
 
 // confirmsPayment reports whether a stated amount and currency match the
@@ -97,8 +95,8 @@ func confirmsPayment(payment Payment, statedAmount float64, statedCurrency strin
 
 // northstarRefusalCause names WHICH layer refused an execution.
 //
-// M2.2 rulings R23/R18. After M2.2 Task 4 there are two refusal mechanisms at
-// two different layers on the same request path:
+// There are two refusal mechanisms at two different layers on the same
+// request path:
 //
 //  1. the Policy Decision Service, which denies `execute_payment` above the
 //     agreed limit before the call ever reaches payments-mcp; and
@@ -169,9 +167,7 @@ func writeError(w http.ResponseWriter, status int, message string) {
 
 // withClaimID annotates the current span with the claim id carried in W3C
 // baggage. The Go SDK has no baggage span processor, so our own middleware
-// does the same job explicitly. (N5, final-review.md: this doc comment used
-// to name a function called claimIDFromBaggage, which this file has never
-// had -- fixed to name the function it actually documents.)
+// does the same job explicitly.
 func withClaimID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if member := baggage.FromContext(r.Context()).Member("northstar.claim.id"); member.Value() != "" {
@@ -204,13 +200,13 @@ func newRouter(s *store) http.Handler {
 		mux.Handle(pattern, otelhttp.NewHandler(h, spanName))
 	}
 
-	// N6 (final-review.md): the readiness probe added in deploy/k8s/*.yaml
-	// (S6) polls this endpoint every few seconds, and it used to be wrapped
-	// in otelhttp like every other route -- 162 GET /healthz traces against
-	// 44 POST /payments/propose traces in one measured hour, ~79% probe
-	// noise in Jaeger's own view of this service, plus every one of those
-	// spans printed in full by the debug exporter's `verbosity: normal`.
-	// This route carries no domain telemetry of its own (no claim id, no
+	// The readiness probe defined in deploy/k8s/*.yaml polls this endpoint
+	// every few seconds. Wrapping it in otelhttp like every other route
+	// floods traces with probe noise: 162 GET /healthz traces against 44
+	// POST /payments/propose traces in one measured hour, ~79% probe noise
+	// in Jaeger's own view of this service, plus every one of those spans
+	// printed in full by the debug exporter's `verbosity: normal`. This
+	// route carries no domain telemetry of its own (no claim id, no
 	// business outcome), so it is wired directly, with no otelhttp span and
 	// no withClaimID wrapper -- the fix for probe-noise pollution is not
 	// tracing the probe, not filtering it out downstream after the fact.
@@ -286,8 +282,8 @@ func newRouter(s *store) http.Handler {
 				// mutated on this path: the payment stays proposed.
 				//
 				// `refuse` also records WHICH of this service's two 409
-				// causes this is (rulings R23/R18). The status code alone
-				// cannot tell this apart from the already-executed case
+				// causes this is. The status code alone cannot tell this
+				// apart from the already-executed case
 				// below, and a 4xx leaves the span Unset, so without the
 				// attribute a trace shows a refusal with no cause.
 				refuse(r.Context(), w, refusalAmountMismatch,
@@ -329,17 +325,15 @@ func newRouter(s *store) http.Handler {
 
 			paymentID := r.PathValue("paymentId")
 
-			// M3 Task 3 review fix round (finding 2 / R12, superseding R6):
-			// confirm the requested amount against the recorded proposal
+			// Confirm the requested amount against the recorded proposal
 			// before writing anything, the same confirmation discipline the
-			// execute route already applies (confirmsPayment above). R6
-			// accepted validating only `rule`, reasoning that Task 3 was the
-			// only caller and always sent every field; the review found that
-			// reasoning insufficient once any caller with a valid SVID could
-			// reach this route and author whatever `requested` figure it
-			// liked. Currency is deliberately not checked here:
-			// refuseRequest carries no currency field, and this route's
-			// contract has never had one to confirm against.
+			// execute route already applies (confirmsPayment above): any
+			// caller with a valid SVID can reach this route, and a refusal
+			// record authored against a `requested` figure the ledger never
+			// proposed would mislead the reviewer who releases the money.
+			// Currency is deliberately not checked here: refuseRequest
+			// carries no currency field, and this route's contract has never
+			// had one to confirm against.
 			proposal, err := s.get(paymentID)
 			if errors.Is(err, ErrNotFound) {
 				writeError(w, http.StatusNotFound, "payment not found")
@@ -377,12 +371,11 @@ func newRouter(s *store) http.Handler {
 				// of the same one.
 				writeError(w, http.StatusConflict, "payment already executed")
 			case errors.Is(err, ErrAlreadyRefused):
-				// M3 Task 3 review fix round (finding 2 / R12): the record a
-				// human reviewer reads must not be silently replaceable by a
-				// second refuse call -- see store.refuse's own doc comment
-				// for the full reasoning. Same status code family as the
-				// already-executed conflict above and the same reason for
-				// not using the `refuse` helper: this is a third, distinct
+				// The record a human reviewer reads must not be silently
+				// replaceable by a second refuse call -- see store.refuse's
+				// own doc comment for the full reasoning. Same status code
+				// family as the already-executed conflict above and the same
+				// reason for not using the `refuse` helper: this is a third, distinct
 				// conflict cause, not one of the two the refusal_cause
 				// attribute is scoped to.
 				writeError(w, http.StatusConflict, "payment already refused")
@@ -403,8 +396,8 @@ func newRouter(s *store) http.Handler {
 			writeJSON(w, http.StatusOK, payment)
 		})
 
-	// GET /payments?status=refused is Task 4's reviewer UI listing what it
-	// needs to review. The query parameter is not part of the route pattern
+	// GET /payments?status=refused is what the reviewer UI calls to list what
+	// it needs to review. The query parameter is not part of the route pattern
 	// (Go's ServeMux does not match on it), so the span name below is still a
 	// template, not a raw path, exactly as it is for every other route.
 	handleNoClaimID("GET /payments", "GET /payments", func(w http.ResponseWriter, r *http.Request) {

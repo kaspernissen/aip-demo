@@ -12,19 +12,18 @@ const SETTLEMENT_AGENT =
 // TARGETED_IDENTITIES -- the same reason router.ts's own header comment
 // gives for reproducing rather than importing: if TARGETED_IDENTITIES ever
 // drifts (a typo in the senior's SPIFFE id), a test that imported the same
-// corrupted constant would still agree with itself. M6 task-3 review, M3:
-// "corrupting the senior SPIFFE id at router.ts:41-42 is GREEN 30/30" --
-// this constant, and the test below that uses it, is the fix.
+// corrupted constant would still agree with itself. This constant, and the
+// test below that uses it, catches a corrupted senior SPIFFE id in
+// router.ts that an import would have missed.
 const SENIOR_SETTLEMENT_AGENT =
   'spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent';
 
-// M6 task-3 review, M2: this helper used to hardcode the else-branch to
-// 'assisted' and every POST fixture below passed 'assisted' as the
-// then-branch too, so then and else were byte-identical in every test --
-// mutating router.ts's `if?.[1]` to `if?.[2]` (reading the ELSE branch
-// instead of the THEN branch) stayed GREEN 30/30, because nothing could
-// tell the difference. `elseBranch` is now a required argument specifically
-// so a caller cannot fall back into that tautology by omission.
+// `elseBranch` is a required argument, not hardcoded to 'assisted': if
+// then and else were ever byte-identical across every fixture, a mutation
+// swapping router.ts's `if?.[1]` for `if?.[2]` (reading the ELSE branch
+// instead of the THEN branch) would pass undetected, because nothing could
+// tell the difference. Requiring the argument keeps a caller from falling
+// back into that tautology by omission.
 function flag(thenBranch: string, elseBranch: string) {
   return flagWithCallers([SETTLEMENT_AGENT], thenBranch, elseBranch);
 }
@@ -127,14 +126,14 @@ describe('GET /status', () => {
   });
 
   it('resolves BOTH the junior and senior identity to the then-branch when both are targeted, pinning both SPIFFE literals', async () => {
-    // M6 task-3 review, M3: "corrupting the senior SPIFFE id at
-    // router.ts:41-42 is GREEN 30/30 -- every test only requires that
-    // identity to land on targeting-else, which ANY non-matching string
-    // does." Putting both ids in the targeted caller list is what pins the
-    // literal: if TARGETED_IDENTITIES['senior-settlement-agent'] drifts by
-    // so much as a character, it stops matching this fixture's callerIds
-    // and falls through to the else-branch ('assisted') instead of the
-    // then-branch ('autonomous') asserted below.
+    // Every OTHER test only requires the senior identity to land on
+    // targeting-else, which ANY non-matching string does, so a corrupted
+    // senior SPIFFE id in router.ts would go unnoticed there. Putting both
+    // ids in the targeted caller list is what pins the literal here: if
+    // TARGETED_IDENTITIES['senior-settlement-agent'] drifts by so much as a
+    // character, it stops matching this fixture's callerIds and falls
+    // through to the else-branch ('assisted') instead of the then-branch
+    // ('autonomous') asserted below.
     const getFlag = jest.fn(async () =>
       flagWithCallers(
         [SETTLEMENT_AGENT, SENIOR_SETTLEMENT_AGENT],

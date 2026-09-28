@@ -1,12 +1,8 @@
-# M6 Task 2: the System the repo's eight catalog components belong to. This
-# is "a top-level catalog-info.yaml declaring the System"
-# (docs/superpowers/plans/2026-09-15-m6-golden-path.md, Task 2 step 1) --
-# repo root, since a System is not owned by any one component.
-#
-# Design: docs/superpowers/specs/2026-09-15-northstar-m6-golden-path-design.md
-# §3 (static catalog, no git discovery). This file is never read straight out
-# of its real path by the running Backstage instance -- the Docker build
-# context for platform/backstage/ is that directory alone, so
+# The System the repo's eight catalog components belong to -- declared at the
+# repo root since a System is not owned by any one component. The catalog is
+# static (no git discovery): this file is never read straight out of its real
+# path by the running Backstage instance -- the Docker build context for
+# platform/backstage/ is that directory alone, so
 # scripts/rebuild-and-deploy.sh stages a copy of this file (and the eight
 # components' own catalog-info.yaml files) into
 # platform/backstage/.catalog-stage/ before `docker build`. See that script's
@@ -23,9 +19,9 @@ metadata:
     The Northstar claims-settlement demo: two agents (claims-agent,
     settlement-agent), two UIs (customer-ui, reviewer-ui), the policy
     decision service, the eval scorer, the payments API and the payments MCP
-    tool. Eight components, measured from the tree 2026-09-15 (M6 Task 2) --
-    kept honest by tests/unit/test_catalog_matches_the_tree.py, which reddens
-    if a ninth is added with no catalog-info.yaml of its own.
+    tool. Eight components, kept honest by
+    tests/unit/test_catalog_matches_the_tree.py, which reddens if a ninth is
+    added with no catalog-info.yaml of its own.
   annotations:
     # The solution documentation -- ../mkdocs.yml and ../docs/ at the repo
     # root, staged beside this file. The nine components each document
@@ -54,15 +50,13 @@ spec:
   owner: guests
 
 ---
-# The platform infrastructure, as catalog entities.
-#
-# Added 2026-09-16. These six run in the cluster and carry the demo's whole
-# security and telemetry story, and none of them was in the catalog -- so the
-# portal could tell you what `settlement-agent` does but not what stood
-# between it and a payment. `kind: Resource` rather than Component for all of
-# them: they are not built from a directory in this tree (which is also why
-# the component guards in tests/unit, which walk component directories, do not
-# demand an mkdocs.yml beside each).
+# The platform infrastructure, as catalog entities. These six run in the
+# cluster and carry the demo's whole security and telemetry story, so the
+# portal can tell you what stood between `settlement-agent` and a payment, not
+# just what `settlement-agent` does. `kind: Resource` rather than Component
+# for all of them: they are not built from a directory in this tree (which is
+# also why the component guards in tests/unit, which walk component
+# directories, do not demand an mkdocs.yml beside each).
 #
 # The `dependsOn` edges declared here and on the components are what make
 # Catalog Graph show the real call chain rather than nine unrelated boxes.

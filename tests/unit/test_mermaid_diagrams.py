@@ -1,8 +1,7 @@
 """Every diagram in this repo is mermaid, and every one of them parses.
 
-The diagrams used to be ASCII art in ```text fences. That is readable in a
-terminal and in `git diff`, which is a real virtue, and it cost three things
-that were paid over and over:
+ASCII art in ```text fences is readable in a terminal and in `git diff`,
+which is a real virtue, but it costs three things, paid over and over:
 
 * **Layout by hand.** Columns were aligned with the space bar, so adding a node
   meant re-aligning every row under it.
@@ -131,11 +130,11 @@ def _published_markdown():
 def _fenced_blocks(text: str):
     """Yield `(fence_info, start_line, body)` for every fenced block.
 
-    A block left open at end of file is yielded too. That is not tidiness: a
-    mutation round replaced one diagram's opening `<pre class="mermaid">` with
-    a ```mermaid fence and left the `</pre>` behind, producing a fence that
-    never closes -- and an earlier version of this walk, which yielded only on
-    the closing fence, silently dropped it and reported the file clean.
+    A block left open at end of file is yielded too. That is not tidiness: if
+    a diagram's opening `<pre class="mermaid">` were replaced with a
+    ```mermaid fence while its `</pre>` was left behind, the fence would never
+    close -- and a walk that yields only on the closing fence would silently
+    drop it and report the file clean.
     """
     lines = text.splitlines()
     inside = False
@@ -194,9 +193,9 @@ def test_the_walk_is_not_vacuous():
     nothing passes on every tree, including an empty one."""
     diagrams = _diagram_sources()
     assert len(diagrams) >= 10, (
-        f"only {len(diagrams)} mermaid diagrams were found, and there were 12 "
-        "when this guard was written. Either the walk no longer reaches them "
-        "or they have been removed -- in both cases the assertions below are "
+        f"only {len(diagrams)} mermaid diagrams were found, fewer than the "
+        "floor this guard expects. Either the walk does not reach them or "
+        "they have been removed -- in both cases the assertions below are "
         f"weaker than they look. Found: {[w for w, _ in diagrams]}"
     )
     assert _mkdocs_configs(), "no mkdocs.yml files found; has the tree moved?"
@@ -403,20 +402,20 @@ def test_the_app_registers_the_mermaid_renderer():
     app_root = REPO_ROOT / "platform" / "backstage" / "packages" / "app" / "src"
 
     app_tsx = (app_root / "App.tsx").read_text()
-    # The `features: [...]` array specifically, not the file. A mutation round
-    # found the difference: deleting `mermaidModule` from the array leaves the
-    # `import { mermaidModule }` line above it untouched, so a check for the
-    # name anywhere in the file stays green while the addon is not registered
-    # and no diagram is drawn. `createApp` ignores an imported-but-unlisted
-    # feature silently, which is the whole problem.
+    # The `features: [...]` array specifically, not the file: deleting
+    # `mermaidModule` from the array leaves the `import { mermaidModule }`
+    # line above it untouched, so a check for the name anywhere in the file
+    # would stay green while the addon is not registered and no diagram is
+    # drawn. `createApp` ignores an imported-but-unlisted feature silently,
+    # which is the whole problem.
     features = re.search(r"features:\s*\[(.*?)\]", app_tsx, re.DOTALL)
     assert features, (
         "packages/app/src/App.tsx has no `features: [...]` array; has the app "
         "entry point been restructured?"
     )
-    # Comments stripped first, both forms: further mutation rounds found that
-    # `// mermaidModule,` and `/* mermaidModule, */` both sit inside the array
-    # and satisfy a plain membership test while registering nothing.
+    # Comments stripped first, both forms: `// mermaidModule,` and
+    # `/* mermaidModule, */` both sit inside the array and would satisfy a
+    # plain membership test while registering nothing.
     listed = re.sub(r"/\*.*?\*/", "", features.group(1), flags=re.DOTALL)
     listed = re.sub(r"//[^\n]*", "", listed)
     assert "mermaidModule" in listed, (
@@ -429,7 +428,7 @@ def test_the_app_registers_the_mermaid_renderer():
     for needle, why in [
         (
             "'pre.mermaid'",
-            "the addon no longer selects `pre.mermaid`, which is the element "
+            "the addon does not select `pre.mermaid`, which is the element "
             "the superfences custom fence emits -- it will find nothing",
         ),
         (
@@ -439,14 +438,14 @@ def test_the_app_registers_the_mermaid_renderer():
         ),
         (
             "AddonBlueprint",
-            "the addon is no longer declared as a TechDocs addon at all",
+            "the addon is not declared as a TechDocs addon at all",
         ),
     ]:
         assert needle in addon, f"modules/mermaid/MermaidAddon.tsx: {why}"
 
     home = (app_root / "modules" / "home" / "homeModule.tsx").read_text()
     assert "<Mermaid" in home, (
-        "the home page card no longer renders `<Mermaid>`. That card goes "
+        "the home page card does not render `<Mermaid>`. That card goes "
         "through `MarkdownContent`, which has no fence handling, so the "
         "component is the only way its diagram is drawn."
     )

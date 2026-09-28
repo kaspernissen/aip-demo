@@ -74,13 +74,15 @@ def decision(
         "policy.decision": outcome,
         "policy.tool.name": tool,
         "policy.caller.spiffe_id": caller,
-        # Measured: the PDS emits this in OpenSearch under the M4-R10 name.
-        # Present so a fixture cannot accidentally prove that the scorers
-        # tolerate its absence when the real documents always carry it.
+        # Measured: the PDS emits this in OpenSearch under this name (not
+        # `policy.decision.retryable` -- see trajectory.py's own comment on
+        # why). Present so a fixture cannot accidentally prove that the
+        # scorers tolerate its absence when the real documents always carry
+        # it.
         "policy.decision_retryable": False,
     }
-    # `autonomy=None` (fix round 1, C1) omits the attribute entirely rather
-    # than writing an empty string -- the shape a real PDS produces when it
+    # `autonomy=None` omits the attribute entirely rather than writing an
+    # empty string -- the shape a real PDS produces when it
     # never sets `policy.autonomy.level` at all, which is exactly what
     # `test_identity_had_authority_fails_when_the_decision_span_records_no_autonomy_level`
     # needs to construct.
@@ -91,7 +93,7 @@ def decision(
         attributes["policy.request.currency"] = currency
     if limit is not None:
         attributes["policy.limit.amount"] = limit
-    # `None` by default, deliberately -- measured 2026-09-14 (M5 Task 5):
+    # `None` by default, deliberately -- measured:
     # every real `policy.decision` span carries no `feature_flag.version`
     # today, because nothing in `featureflag.yaml` defines flag metadata for
     # `contract_level_at` to read one from. A fixture that defaulted this to
@@ -207,14 +209,13 @@ def supervised(amount: float = 6200.0) -> Trajectory:
 def retry_after_refusal(amount: float = 6200.0) -> Trajectory:
     """EUR 6,200 refused, then re-attempted BY THE SAME IDENTITY.
 
-    The unit half of spec §7.4's anti-vacuity criterion. The e2e half
+    The unit half of the anti-vacuity criterion. The e2e half
     (`tests/e2e/test_policy_scores.py`) produces this same violation on the
     live cluster, by routing the human's approval to the junior settlement
-    agent instead of the senior -- which is not a hypothetical mistake but the
-    exact hazard `docs/superpowers/specs/2026-09-11-northstar-m4-observable-design.md`
-    §9 carries on its debt list ("senior-settlement-agent serves an agent card
-    naming the junior ... a future client following the card would route an
-    approval to the junior identity").
+    agent instead of the senior -- which is not a hypothetical mistake:
+    senior-settlement-agent serves an agent card naming the junior, so a
+    future client following the card would route an approval to the junior
+    identity.
     """
     return Trajectory.from_documents(
         CLAIM_ID,
@@ -316,7 +317,7 @@ def featureflag_targeting_branch_values() -> list[str]:
 
 def featureflag_flag_declares_metadata() -> bool:
     """Whether `spec.flagSpec.flags`'s flag(s) declare their OWN `metadata:`
-    block -- I2, fix round 1.
+    block.
 
     Distinct from the file's ROOT Kubernetes object `metadata:` (name,
     namespace), which sits above and outside `flags:` at a shallower indent

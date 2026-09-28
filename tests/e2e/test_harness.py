@@ -29,22 +29,20 @@ OTLP_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:
 def synthetic_trace():
     """Emit a two-span trace through the real collector, then read it back.
 
-    Review finding N7 (final-review.md): an earlier version of this fixture
-    minted a fresh `harness-probe-<uuid>` service name every run, so Jaeger's
-    service list accumulated one new entry per test run forever, polluting
-    the same on-stage service dropdown N6 complains about for a different
-    reason. Fixed with a fixed service name -- but that alone would have
-    reintroduced exactly the unsoundness A14 exists to prevent: a fixed
-    `service_name` looked up by `wait_for_trace(service=..., operation=...)`
-    (a positional/lookback search, `find_trace`'s `data[0]`) could return a
-    *previous* run's stale trace instead of this run's, on any sufficiently
-    fast rerun within the 1h default lookback -- silently testing nothing
-    about this run's actual spans. This fixture creates the spans itself, so
-    it already knows its own real trace ID the instant the `with` block
-    exits (the SDK's own random ID, not one this test injects); reading it
-    off `span.get_span_context().trace_id` and looking it up with
-    `wait_for_trace_id` (A14's own rule: "if your test originates the
-    request... assert with wait_for_trace_id") gets both fixes for free."""
+    Uses a fixed service name ("harness-probe") rather than minting a fresh
+    `harness-probe-<uuid>` per run, so Jaeger's service list does not
+    accumulate a new entry every time this test runs. A fixed service name
+    alone would open a different hole: a positional/lookback search
+    (`wait_for_trace(service=..., operation=...)`, `find_trace`'s `data[0]`)
+    could return a *previous* run's stale trace instead of this run's, on
+    any sufficiently fast rerun within the default lookback window --
+    silently testing nothing about this run's actual spans. This fixture
+    creates the spans itself, so it already knows its own real trace ID
+    (the SDK's own random ID) the instant the `with` block exits; reading
+    it off `span.get_span_context().trace_id` and looking it up with
+    `wait_for_trace_id` avoids both problems: any test that originates its
+    own request should assert with `wait_for_trace_id`, not a positional
+    search."""
     service_name = "harness-probe"
 
     provider = TracerProvider(resource=Resource.create({"service.name": service_name}))

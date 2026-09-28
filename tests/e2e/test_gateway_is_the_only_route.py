@@ -4,14 +4,14 @@
 `test_the_gateway_is_the_only_route_into_payments_mcp`, and its docstring is
 scrupulous about what it actually asserts: every `payments-mcp` span *in an
 observed trace* is parented to an agentgateway span. That is a property of the
-traffic that happened. It says nothing about whether other traffic is possible,
-and it passes perfectly on a cluster where any pod can reach the tool directly
--- which is exactly the cluster M2.1 shipped.
+traffic that happened. It says nothing about whether other traffic is
+possible, and it passes perfectly on a cluster where any pod can reach the
+tool directly.
 
 Measured before `deploy/platform/cilium-policies.yaml` existed: `claims-agent`,
 holding no SVID and with no reason to touch payments, POSTed an MCP
 `initialize` straight at `payments-mcp:8000/mcp` and got **HTTP 200**. The
-milestone's headline claim -- "the platform decides if it becomes an effect" --
+claim this demo rests on -- "the platform decides if it becomes an effect" --
 therefore held only for a caller that chose to cooperate. A choke point a
 workload can walk around is a convention, not a control.
 
@@ -45,16 +45,14 @@ PROTECTED_PORT = 8000
 # Reachable from the same pod and deliberately NOT covered by the policy, so a
 # blocked result here would mean the cluster is broken rather than protected.
 #
-# This was `payments-api.northstar-systems.svc.cluster.local:8080` until M2.2
-# Task 7, which added egress allowlists to `northstar-agents`. That is not a
-# weakening of this control -- it is the control catching up with a cluster
-# where the prober no longer has unrestricted egress. `claims-agent` never had
-# any business calling `payments-api` (it holds no MCP client and no payments
-# URL; `deploy/k8s/claims-agent.yaml` configures exactly one peer), so that
-# destination is absent from `claims-agent-egress-allowlist` by design and now
-# times out. Keeping it here would have meant either a permanently red control
-# or -- much worse -- widening a security policy so a test's control could stay
-# green.
+# Not `payments-api.northstar-systems.svc.cluster.local:8080`: `claims-agent`
+# never had any business calling `payments-api` (it holds no MCP client and
+# no payments URL; `deploy/k8s/claims-agent.yaml` configures exactly one
+# peer), so that destination is absent from `claims-agent-egress-allowlist`
+# by design and times out once egress allowlists exist on
+# `northstar-agents`. Using it as the control would have meant either a
+# permanently red control or -- much worse -- widening a security policy so
+# a test's control could stay green.
 #
 # `settlement-agent:9002` is the replacement because it is what this pod is
 # *for*: `NORTHSTAR_ALLOWED_AGENTS` names it as claims-agent's single
@@ -110,8 +108,8 @@ def _probe(namespace: str, app: str, container: str, host: str, port: int) -> di
 
     A TCP connect is deliberately the whole probe. The question is reachability
     at the dataplane, and answering it with an HTTP request would conflate a
-    Cilium drop with an application-level refusal -- the two failures this
-    milestone spent effort keeping distinct.
+    Cilium drop with an application-level refusal -- two failures this file
+    deliberately keeps distinct.
     """
     pod = _pod(namespace, app)
     proc = _kubectl(
@@ -211,12 +209,12 @@ def policy_present():
         "-n", "kube-system", "get", "pod", "-l", "k8s-app=cilium",
         "-o", "jsonpath={.items[*].metadata.name}",
     )
-    # M4 final review, finding L4: `cilium.returncode != 0` used to be half of
-    # this skip condition, so an unreachable API server -- or a wrong context,
-    # or an expired credential -- read as "not a stage-2 cluster" and skipped
-    # every assertion in this file. That is ruling M4-R14's defect exactly, in
-    # a file the ruling's own repo walk could not see because the helper is
-    # inline and unnamed. A label selector does not 404: on a reachable cluster
+    # `cilium.returncode != 0` must not be folded into this skip condition:
+    # an unreachable API server -- or a wrong context, or an expired
+    # credential -- would otherwise read as "not a stage-2 cluster" and skip
+    # every assertion in this file, exactly the "skip where you should fail"
+    # defect this repo guards against elsewhere. A label selector does not
+    # 404: on a reachable cluster
     # with no Cilium the query succeeds and returns nothing, so EMPTINESS is
     # the honest discriminator and a non-zero exit is a failure.
     assert cilium.returncode == 0, (
@@ -249,27 +247,24 @@ def policy_present():
 def test_an_unprivileged_workload_cannot_reach_the_tool_directly(policy_present):
     """The bypass that worked before the policy existed must now fail.
 
-    This is the assertion the milestone's claim rests on. It is written against
+    This is the assertion this demo's claim rests on. It is written against
     `claims-agent` rather than a purpose-built prober pod so that it exercises
     the policy exactly as a real neighbouring workload would.
 
-    **Which layer this actually exercises, as of M2.2 Task 7.** It was written
-    for `d17309c`'s *ingress* policy on `payments-mcp` -- "only the gateway may
-    connect to this pod". Task 7 then gave `claims-agent` an egress allowlist
-    (`claims-agent-egress-allowlist`) that does not include `payments-mcp` at
-    all, so this connection is now dropped at **egress**, on the client side,
-    before the ingress policy it was written for is ever consulted. The
-    assertion is deliberately unchanged: it still fails loudly if *either*
-    layer breaks, which is what defence in depth looks like from the outside.
-    What it no longer does on its own is attribute the block to the ingress
-    half. `test_the_datapath_allowlist_admits_the_gateway_and_no_other_workload`
-    below is what pins that half specifically, by reading the enforced
-    allowlist out of `payments-mcp`'s BPF policy map rather than probing it --
-    and Task 7's own mutation 4 is the evidence that the split matters: adding
-    a `payments-mcp:8000` egress allowance left this behavioural probe green,
-    because the ingress policy was still dropping the packet, and only the
-    BPF-map assertion caught it. Hence a corrected docstring rather than a
-    rewritten test.
+    **Which layer this actually exercises.** `payments-mcp`'s *ingress* policy
+    says "only the gateway may connect to this pod". `claims-agent`'s own
+    egress allowlist (`claims-agent-egress-allowlist`) does not include
+    `payments-mcp` at all, so this connection is dropped at **egress**, on
+    the client side, before the ingress policy is ever consulted. The
+    assertion still fails loudly if *either* layer breaks, which is what
+    defence in depth looks like from the outside. What it does not do on its
+    own is attribute the block to the ingress half.
+    `test_the_datapath_allowlist_admits_the_gateway_and_no_other_workload`
+    below pins that half specifically, by reading the enforced allowlist out
+    of `payments-mcp`'s BPF policy map rather than probing it: adding a
+    `payments-mcp:8000` egress allowance alone would leave this behavioural
+    probe green, because the ingress policy would still be dropping the
+    packet, and only the BPF-map assertion catches that.
     """
     result = _probe(
         "northstar-agents", "claims-agent", "claims-agent",

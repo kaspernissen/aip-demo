@@ -3,15 +3,14 @@ the class of defect that `test_telemetry_contract_counts.py` structurally
 cannot see.
 
 **Why this file exists, precisely.** That sibling module guards published
-*test* counts, and it exists because a published number drifted three times.
-Attribute counts had no guard at all, and the consequence was measured in M2.1
-Task 3's review: the instrumentation-table row for settlement-agent's model
-spans said "**25 distinct `gen_ai.*` attribute names measured**" for the whole
-of M1.2 and M2.1 while the inventory 165 lines below it said 28. 25 is the
-**OFF**-mode figure; the row's own next clause states the shipped default is
-**ON**. M1.2's SF-3 fix round corrected the inventory and never touched the
-summary — the fifth time in this project that fixing one instance missed a
-sibling, and the first time the sibling was in the same file.
+*test* counts. Attribute counts had no guard at all: the instrumentation-table
+row for settlement-agent's model spans said "**25 distinct `gen_ai.*`
+attribute names measured**" while the inventory 165 lines below it said 28.
+25 is the **OFF**-mode figure; the row's own next clause states the shipped
+default is **ON**. A prior correction fixed the inventory and never touched
+the summary — fixing one instance while a sibling claim stays wrong is a
+recurring failure shape in this repo, and this was the first time the
+sibling was in the same file.
 
 **What this guard asserts, and why each check is shaped the way it is.**
 
@@ -31,19 +30,18 @@ sibling, and the first time the sibling was in the same file.
    wrong number were 40 words apart in the same cell. Scoping to the sentence is
    what makes "25 distinct names" with no adjacent mode read as unqualified.
 
-   **Pairs, not a set of numbers — this was a real gap, found in review.** The
-   first version of this check tested only that a both-modes sentence *contained*
-   the set `{28, 25}` somewhere in scope. Rewriting `28 at ON, 25 at OFF` as
-   `25 at ON, 28 at OFF` left that set unchanged, so the swap stayed green: a
-   set-membership check wearing an assignment check's name. It caught an
-   unqualified number and a number wrong for a single-mode sentence — the
-   original defect — and not the interchange, which is the other half of what
-   this file promises. `_governing_mode()` and `_assignments()` below exist to
-   close that, and the mutation set that proves this guard is now derived from
-   *these functions' branches* rather than from edits a human might plausibly
-   make to the document (see the task report's fix-round-2 branch table). The
-   lesson worth keeping: mutation-testing a guard catches guards that **do not
-   run**; it does not catch a guard that runs, asserts, and asserts the wrong
+   **Pairs, not a set of numbers.** Testing only that a both-modes sentence
+   *contains* the set `{28, 25}` somewhere in scope would be satisfied by
+   `28 at ON, 25 at OFF` rewritten as `25 at ON, 28 at OFF` — a
+   set-membership check wearing an assignment check's name, since the set is
+   unchanged by the swap. That catches an unqualified number and a number
+   wrong for a single-mode sentence, but not the interchange, which is the
+   other half of what this file promises. `_governing_mode()` and
+   `_assignments()` below exist to close that, and the mutation set that
+   proves this guard is derived from *these functions' branches* rather than
+   from edits a human might plausibly make to the document. The lesson worth
+   keeping: mutation-testing a guard catches guards that **do not run**; it
+   does not catch a guard that runs, asserts, and asserts the wrong
    proposition. Only branch coverage of the checker finds those.
 
 2. `test_the_content_gated_delta_table_agrees_with_the_inventory` — the two
@@ -57,9 +55,9 @@ sibling, and the first time the sibling was in the same file.
    `test_no_published_attribute_block_has_gone_missing` and
    `test_every_attribute_shaped_block_sits_in_a_section_this_guard_checks` —
    generalise the guard past `gen_ai.*` to the other attribute sets this
-   document publishes (agentgateway's two `tools/call` span attribute lists
-   from M2.1 Task 3, and the refused-call span from Task 5). Same failure
-   mode, different vocabulary. These three replace a single earlier check
+   document publishes (agentgateway's two `tools/call` span attribute lists,
+   and the refused-call span). Same failure mode, different vocabulary.
+   These three replace a single earlier check
    whose two defects — a claim locatable only on the line adjacent to its
    fence, and a `>= 2` floor that could not see a block deleted — are
    documented in full at their definition below, because both were
@@ -68,14 +66,14 @@ sibling, and the first time the sibling was in the same file.
 
 4. `test_the_documents_own_count_of_its_attribute_count_sites_is_right` — the
    meta-count. The document states how many attribute-count sites it has, and
-   that sentence was wrong ("nine"; measured six) and unguarded for two
-   milestones, from where it propagated into four task briefs. Guarding a
+   that sentence was wrong ("nine"; measured six) and unguarded, so the wrong
+   number could spread wherever the document was cited from. Guarding a
    count *of* claims is different from guarding the claims, and the absence of
    the former is exactly how this one drifted while every count it described
    stayed correct.
 
-**On guard inertness, which this repo has been bitten by five times in one
-task.** Nothing here greps for a magic string and passes if it finds it. Every
+**On guard inertness, which this repo has been bitten by more than once.**
+Nothing here greps for a magic string and passes if it finds it. Every
 check parses structure — fenced code blocks, markdown table rows, sentences —
 and **asserts it found the thing it is about to check** before checking it, so
 a document that stops containing an inventory fails loudly instead of passing
@@ -83,8 +81,8 @@ vacuously. There is no live cluster, no trace, no model call and no network
 access involved: this reads one file.
 
 This guard cannot verify that 28 is the number a *live trace* would produce —
-that is what `tests/e2e/test_settlement_llm_trace.py` and the task reports do,
-at the cost of a live model run. What it verifies is that the document does not
+that is what `tests/e2e/test_settlement_llm_trace.py` does, at the cost of a
+live model run. What it verifies is that the document does not
 contradict itself, which is the failure that actually happened.
 """
 import re
@@ -126,14 +124,12 @@ COUNT_PATTERNS = (
 )
 
 # English number words are a *closed* class, so this parses them rather than
-# looking them up in a hand-maintained subset. That distinction is the M2.1
-# fix-round-2 finding F-5: the previous `_WORD_NUMBERS` dict held an arbitrary
-# 15 forms, and a claim written with any other word form was **silently
-# dropped** from the claim list -- so the guard reported success on a claim it
-# had never examined, which is the same shape as every other guard defect in
-# this milestone. A parser over the whole class cannot have that gap, and
-# `_read_number_word` below distinguishes the three cases the old lookup
-# collapsed into one.
+# looking them up in a hand-maintained subset. A hand-maintained dict holding
+# an arbitrary set of forms would silently drop any claim written with a word
+# form outside it -- so the guard would report success on a claim it never
+# examined. A parser over the whole class cannot have that gap, and
+# `_read_number_word` below distinguishes the three cases a lookup table
+# collapses into one.
 _NUMBER_UNITS = {
     "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
@@ -401,7 +397,6 @@ def test_every_published_attribute_count_names_its_mode_and_matches_the_inventor
                     f"UNQUALIFIED: {quoted!r} names no capture mode in its own "
                     f"sentence, so a reader cannot tell whether {number} is the "
                     f"ON figure ({on_count}) or the OFF figure ({off_count}). "
-                    f"This is the exact defect M2.1 Task 3's review found. "
                     f"In: {excerpt!r}"
                 )
             elif number != expected[mode]:
@@ -483,30 +478,20 @@ def test_the_content_gated_delta_table_agrees_with_the_inventory():
 
 # --- Attribute blocks: located by section, never by line adjacency ----------
 #
-# **Why this was rewritten (M2.1 Task 5 fix round 1, review Finding 1).** The
-# first version of this check found a block's key count with one regex that
-# required the claim to sit on the line *immediately* before the fence:
-#
-#     ([^\n]*\b(\d+|[A-Za-z-]+)\s+keys\b[^\n]*)\n+^```...
-#
-# Two defects followed from that, and both were demonstrated rather than
-# argued. (a) This document hard-wraps prose, so a claim that wrapped onto an
-# earlier line was simply *not matched* -- the pattern found no pair, the block
-# went unchecked, and the guard stayed green. Task 5 hit this while adding the
-# refused-call block and caught it by mutation; the instance was fixed by
-# rewording, and the class survived, which is why the reviewer could then make
-# the guard green with a published 19 against a measured 20. (b) The old
-# `len(matches) >= 2` floor could not notice a block being *deleted* -- a guard
+# Locating a block's key-count claim by line adjacency to its fence has two
+# failure modes. (a) This document hard-wraps prose, so a claim that wraps
+# onto an earlier line is simply *not matched* -- the pattern finds no pair,
+# and the block goes unchecked while the guard stays green. (b) A
+# `len(matches) >= 2` floor cannot notice a block being *deleted* -- a guard
 # that cannot see something missing is not guarding presence.
 #
-# Both are fixed by changing the unit of enumeration. The old unit was
-# "(claim, fence) pairs that happen to be adjacent". The new unit is **the
-# section**: every `### Attributes on ...` heading owns exactly one
-# attribute-shaped fenced block, and its claim may sit anywhere in that
-# section's prose before the fence, hard-wrapped or not, because the prose is
-# whitespace-normalised before being searched. That matches the class of claim
-# being guarded -- "this published block holds N keys" is a property of a
-# section, not of a line.
+# Both are avoided by changing the unit of enumeration to **the section**:
+# every `### Attributes on ...` heading owns exactly one attribute-shaped
+# fenced block, and its claim may sit anywhere in that section's prose before
+# the fence, hard-wrapped or not, because the prose is whitespace-normalised
+# before being searched. That matches the class of claim being guarded --
+# "this published block holds N keys" is a property of a section, not of a
+# line.
 
 ATTRIBUTE_SECTION_RE = re.compile(r"^(#{2,})\s+(Attributes on .+?)\s*$", re.M)
 ANY_HEADING_RE = re.compile(r"^#{1,6}\s+\S", re.M)
@@ -522,34 +507,22 @@ _KEY_VALUE_LINE_RE = re.compile(r"^[a-z][a-z0-9_.]*\s+\S")
 # distinguishing substring of their headings. This list is what makes a
 # *deleted* block detectable: dropping a block, or dropping its whole section,
 # removes the heading that matches one of these. Adding a new attribute block
-# is deliberately fine -- it must simply carry a correct claim like the rest.
-# M2.2 widened this from three to six, and two of the original markers had to
-# be made more specific in the same edit -- which is this constant's own
-# failure message working as intended ("make the markers in
-# REQUIRED_ATTRIBUTE_SECTIONS distinguishing again"). M2.2 publishes a
-# *policy-denied* `tools/call` SERVER span alongside the accepted one, so the
-# bare substring "`tools/call` SERVER span" stopped identifying a single
-# section; "on the `tools/call` SERVER span" does. Adding a section is
-# deliberately allowed by the guard below -- it is simply held to the same
-# claim rule -- but a *published* block must stay published, which is what
-# listing all eight here buys.
+# is deliberately fine -- it must simply carry a correct claim like the rest
+# -- but each marker here must stay a substring of exactly one heading: two
+# span kinds sharing a generic label (e.g. an accepted and a policy-denied
+# `tools/call` SERVER span) need markers specific enough to tell them apart
+# ("on the `tools/call` SERVER span" vs. "policy-denied").
 #
-# M3 Task 5B widened it from six to eight. M3 Tasks 3 and 4 published the two
-# new sections and, because adding a section is allowed, nothing required them
-# to be pinned -- so for the whole of M3 the milestone's own two owned spans
-# were the only published attribute blocks in this document that could have
-# been deleted without a test noticing. That is the "green through a real
-# regression" shape this module's own header warns about, one milestone later.
-# The lesson is in the constant's design rather than only in its contents: a
-# list that must be extended by hand for every new section will be forgotten
-# again, so the failure message names it explicitly and this comment records
-# that M4 has to do the same.
+# This is a hand-maintained list, so a newly published attribute section that
+# is never added here is one this guard cannot see deleted -- every new
+# attribute-shaped section needs a marker added in the same change that
+# publishes it, not in a later sweep.
 #
-# Both new markers were checked for ambiguity against every current heading
-# before being added, which is what the len(matched) > 1 branch below demands:
-# neither "`settlement.execute_approved`" nor "`review.decision`" is a
-# substring of any other heading, and in particular "`review.decision`" does
-# not collide with the existing "`policy.decision`" marker.
+# Each marker is checked for ambiguity against every current heading before
+# being added, which is what the len(matched) > 1 branch below demands: none
+# of the markers below is a substring of any other, and in particular
+# "`review.decision`" does not collide with the existing "`policy.decision`"
+# marker.
 REQUIRED_ATTRIBUTE_SECTIONS = (
     "on the `tools/call` SERVER span",
     "CLIENT span",
@@ -557,21 +530,18 @@ REQUIRED_ATTRIBUTE_SECTIONS = (
     "`Guardrail`",
     "policy-denied",
     "`policy.decision`",
-    # M3 Task 3 -- the approved execution, and the span carrying the link back
-    # to the refusal.
+    # The approved execution, and the span carrying the link back to the
+    # refusal.
     "`settlement.execute_approved`",
-    # M3 Task 4 -- the human's click. Between them these two are what closes
-    # Gap 2, so a deletion here would un-close a gap this document declares
-    # closed.
+    # The human's click. Between them these two are what closes Gap 2 (see
+    # docs/telemetry-contract.md), so a deletion here would un-close a gap
+    # this document declares closed.
     "`review.decision`",
-    # M4 Task 4 -- the policy-adherence score span, and the ninth marker. The
-    # comment above records that M3's own two sections went a whole milestone
-    # unpinned and says in as many words that M4 has to do the same; this is
-    # that, done in the task that published the section rather than in a later
-    # sweep. Checked for ambiguity against every current heading before being
-    # added, which is what the len(matched) > 1 branch below demands: "score
-    # span" is a substring of no other `Attributes on ...` heading, and none of
-    # the eight markers above is a substring of this one.
+    # The policy-adherence score span. Checked for ambiguity against every
+    # current heading before being added, which is what the len(matched) > 1
+    # branch below demands: "score span" is a substring of no other
+    # `Attributes on ...` heading, and none of the markers above is a
+    # substring of this one.
     "score span",
 )
 
@@ -652,8 +622,7 @@ def test_every_attribute_block_agrees_with_its_own_stated_key_count():
     `tests/e2e/test_gateway_trace.py` asserts the same two agentgateway sets by
     exact bidirectional equality against live spans but cannot see this
     document at all; this is the join between them. The refused-call block
-    (M2.1 Task 5) has no e2e counterpart at all, so this is the only guard on
-    it.
+    has no e2e counterpart at all, so this is the only guard on it.
 
     **Every claim in the section's prose is checked, not just the nearest
     one.** A section that states one number and then restates a different one
@@ -798,13 +767,9 @@ def test_every_attribute_shaped_block_sits_in_a_section_this_guard_checks():
 
 # --- The document's own count of how many attribute counts it publishes -----
 #
-# Review Finding 2. `docs/telemetry-contract.md` claimed "there are nine of
-# them", and the measured figure is six mode-carrying sites (eight
-# assignments). The number was wrong, unguarded, and -- because it is the
-# sentence that tells a reader how much of the document this guard covers -- it
-# propagated into four separate task briefs before anyone measured it. The
-# counts it describes were all correct the whole time; only the count *of* them
-# drifted, precisely because nothing checked it.
+# A meta-count needs its own guard: the sentence that tells a reader how much
+# of the document this guard covers can be wrong even when every count it
+# describes is correct, precisely because nothing checks the count *of* them.
 
 
 def test_the_documents_own_count_of_its_attribute_count_sites_is_right():
@@ -864,10 +829,9 @@ def test_the_documents_own_count_of_its_attribute_count_sites_is_right():
     assert claim, (
         "expected docs/telemetry-contract.md to state its own attribute-count "
         "site total as 'there are <N> mode-carrying such sites ... (<M> "
-        "assignments in total)'. Review Finding 2 replaced an unguarded, and "
-        "wrong, 'there are nine of them' with that phrasing precisely so this "
-        "guard could check it; if the wording must change, change it here too "
-        "rather than dropping the check."
+        "assignments in total)', worded exactly so this guard can check it; "
+        "if the wording must change, change it here too rather than dropping "
+        "the check."
     )
 
     def _as_number(token: str) -> int:
@@ -883,8 +847,7 @@ def test_the_documents_own_count_of_its_attribute_count_sites_is_right():
     assert published_sites == sites, (
         f"docs/telemetry-contract.md says there are {published_sites} "
         f"mode-carrying attribute-count sites, but this guard finds {sites}. "
-        "This is the number that was wrong at 'nine' and unguarded for two "
-        "milestones -- re-measure rather than re-typing it."
+        "Re-measure rather than re-typing it."
     )
     assert published_assignments == assignments, (
         f"docs/telemetry-contract.md says {published_assignments} "
@@ -893,8 +856,8 @@ def test_the_documents_own_count_of_its_attribute_count_sites_is_right():
 
 
 # ---------------------------------------------------------------------------
-# M2.1 fix-round-2 finding F-6: every claim that agentgateway's HTTP attribute
-# vocabulary diverges from semconv must name the pinned version.
+# Every claim that agentgateway's HTTP attribute vocabulary diverges from
+# semconv must name the pinned version.
 #
 # Why this needs a guard at all, rather than a careful edit. Upstream PR #3182
 # is *already merged* and moves the access log -- and these span attributes
@@ -905,11 +868,8 @@ def test_the_documents_own_count_of_its_attribute_count_sites_is_right():
 # `test_gateway_trace.py`'s set equality fails on the *attribute names* while
 # saying nothing about the prose describing them.
 #
-# Enumerated rather than spot-fixed: the round-1 attempt qualified three sites
-# and missed the rest, which is the same one-instance-not-the-class mistake
-# this file's header documents twice. The check is whitespace-normalised per
-# paragraph so a hard-wrapped claim is found, which is how the missed site
-# escaped a grep in the first place.
+# Enumerated over every site rather than spot-fixed, and checked
+# whitespace-normalised per paragraph so a hard-wrapped claim is found.
 
 VOCABULARY_CLAIM_DOCS = (
     REPO_ROOT / "docs" / "architecture.md",
@@ -920,11 +880,11 @@ VOCABULARY_CLAIM_DOCS = (
 
 PINNED_GATEWAY_VERSION = "1.5.0"
 
-# A genuine version qualifier, not a bare digit-substring. Final review
-# finding 10: `PINNED_GATEWAY_VERSION in prose` is satisfied by *any*
-# occurrence of "1.5.0" in the paragraph, including one that has nothing to
-# do with the gateway (mutation-proved: "the customer-ui form library is at
-# 1.5.0" made a version-free claim read as scoped). Every genuine citation in
+# A genuine version qualifier, not a bare digit-substring:
+# `PINNED_GATEWAY_VERSION in prose` would be satisfied by *any* occurrence of
+# "1.5.0" in the paragraph, including one that has nothing to do with the
+# gateway (mutation-proved: "the customer-ui form library is at 1.5.0" made a
+# version-free claim read as scoped). Every genuine citation in
 # this project writes the tag with its leading `v` -- `architecture.md:234`
 # even states why: "the tag `1.5.0` does not exist on that registry" for
 # agentgateway's own image, only `v1.5.0` does. Requiring `v1.5.0` as a
@@ -1034,17 +994,16 @@ def test_every_agentgateway_vocabulary_claim_names_the_pinned_version():
     )
 
 
-# Final review finding 1 (HIGH): `docs/telemetry-contract.md:653-656` published
-# "5 services" as the *current* trace shape eleven lines below the same
-# document saying "agentgateway added as a **sixth service**" -- a
-# self-contradiction the existing e2e guard structurally cannot see.
+# This guard catches a self-contradiction the existing e2e guard structurally
+# cannot see: `docs/telemetry-contract.md:653-656` can publish "5 services"
+# as the *current* trace shape eleven lines below the same document saying
+# "agentgateway added as a **sixth service**".
 # `test_all_five_services_are_in_one_trace`
 # (tests/e2e/test_browser_root_span.py:239) asserts a *subset*
 # (`expected <= services`), which stays green whether the trace has five
-# services or six, so it can never catch a stale total. And no `tests/unit`
-# guard read this document's non-attribute counts at all -- every guard in
-# this file until now was built in response to a *telemetry-attribute*
-# defect.
+# services or six, so it can never catch a stale total. No other `tests/unit`
+# guard reads this document's non-attribute counts at all -- the rest of this
+# file checks *telemetry-attribute* claims, not service counts.
 #
 # This guard cross-checks the document against itself rather than against a
 # live cluster, on purpose: a hermetic `tests/unit` test cannot depend on a
@@ -1074,8 +1033,8 @@ _SERVICE_TOTAL_RE = re.compile(r"\b(\d+)\s+services\b")
 # describing a past state rather than the current system -- the same
 # labelling `docs/architecture.md:983-997` uses to keep its superseded "62
 # spans" figures ("Treat the counts as an M1.2-era illustration ... not as a
-# measurement of the deployed system today"), and the shape this document's
-# own M2.1 correction now uses for its kept M1.2-era "5 services" figure.
+# measurement of the deployed system today"), and the shape this document
+# uses to keep its own historical "5 services" figure.
 _HISTORICAL_MARKERS = (
     "m1.1",
     "m1.2",
@@ -1098,11 +1057,10 @@ def test_no_unqualified_service_count_undercuts_the_documents_own_ordinal_claim(
     qualified, and is exempt, only if its own paragraph names itself
     historical (see `_HISTORICAL_MARKERS`).
 
-    Mutation-proved (see the task/final-fix report for the RED run): reverting
-    `docs/telemetry-contract.md`'s M2.1 correction back to its original,
-    unlabelled "5 services" sentence -- the exact finding-1 defect -- makes
-    this guard fail, because that sentence carries no historical marker and 5
-    is below the floor of 6 set by "sixth service" eleven lines above it.
+    Mutation-proved: reverting an unlabelled, stale "5 services" sentence
+    back into the document makes this guard fail, because that sentence
+    carries no historical marker and 5 is below the floor of 6 set by "sixth
+    service" eleven lines above it.
     """
     text = CONTRACT_PATH.read_text()
     paragraphs = _prose_paragraphs(text)

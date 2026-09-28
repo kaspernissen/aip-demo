@@ -6,11 +6,11 @@ metadata:
   labels:
     app: payments-mcp
     northstar.io/plane: tools
-    # M6 Task 2: read by @backstage/plugin-kubernetes-backend's default
-    # label selector (`backstage.io/kubernetes-id=<entity name>`), so this
-    # Component's catalog entry (tools/payments-mcp/catalog-info.yaml) shows
-    # its live workload. Added to the Pod template below too -- the plugin
-    # queries Pods, not just Deployments.
+    # Read by @backstage/plugin-kubernetes-backend's default label selector
+    # (`backstage.io/kubernetes-id=<entity name>`), so this Component's
+    # catalog entry (tools/payments-mcp/catalog-info.yaml) shows its live
+    # workload. Set on the Pod template below too -- the plugin queries
+    # Pods, not just Deployments.
     backstage.io/kubernetes-id: payments-mcp
 spec:
   replicas: 1
@@ -37,13 +37,13 @@ spec:
               value: http/protobuf
             # Default is 'native'. Set explicitly so a future upstream default
             # change cannot silently suppress MCP spans. Verified against the
-            # installed fastmcp==4.0.3 (A16) — see NOTES.md.
+            # installed fastmcp==4.0.3 — see NOTES.md.
             - name: FASTMCP_TELEMETRY_MODE
               value: native
             # opentelemetry-instrumentation-httpx==0.50b0 emits the legacy HTTP
             # attribute spelling (http.method, http.url, http.status_code) by
             # default; this opt-in converges outbound calls to payments-api on
-            # the stable spelling payments-api itself emits (A13). Verified
+            # the stable spelling payments-api itself emits. Verified
             # empirically — see NOTES.md.
             - name: OTEL_SEMCONV_STABILITY_OPT_IN
               value: http
@@ -52,13 +52,13 @@ spec:
           ports:
             - name: http
               containerPort: 8000
-          # S6 (final-review.md): see claims-agent.yaml for the general fix.
-          # FastMCP's streamable-HTTP endpoint expects MCP protocol framing
-          # on every request (a bare GET/HEAD is not a meaningful health
-          # check), so this uses a TCP-connect probe rather than httpGet —
-          # good enough to confirm the process is actually listening, which
-          # is what rollout status/the sleep 4 in setup-kind.sh assume today
-          # with no check at all.
+          # See claims-agent.yaml for why every component here carries a
+          # readiness probe. FastMCP's streamable-HTTP endpoint expects MCP
+          # protocol framing on every request (a bare GET/HEAD is not a
+          # meaningful health check), so this uses a TCP-connect probe
+          # rather than httpGet — good enough to confirm the process is
+          # actually listening, which is what rollout status and the sleep
+          # 4 in setup-kind.sh assume with no check at all.
           readinessProbe:
             tcpSocket:
               port: 8000

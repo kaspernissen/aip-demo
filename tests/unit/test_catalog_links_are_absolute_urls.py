@@ -86,18 +86,16 @@ _NoDuplicateKeys.add_constructor(
 def test_no_catalog_file_repeats_a_mapping_key():
     """A duplicate key deletes entities, and Python cannot see it.
 
-    Shipped 2026-09-16 while wiring up the dependency graph: a second
-    `providesApis:` was added to two files that already had one. Every local
-    check passed -- `yaml.safe_load_all` parsed both files without complaint,
-    because PyYAML resolves a duplicate by keeping the last value -- and the
-    running catalog lost **four** entities: `claims-agent`,
-    `settlement-agent`, and both agent-card APIs, since each rejected file
-    holds a Component and an API.
+    Adding a second `providesApis:` to a file that already has one is exactly
+    this shape: every local check passes -- `yaml.safe_load_all` parses the
+    file without complaint, because PyYAML resolves a duplicate by keeping
+    the last value -- while the running catalog silently loses the Component
+    and the API each such file was meant to hold.
 
-    So the validation this repo was doing was weaker than the validation the
-    consumer does, which is the worst shape for a check to have: it reports
-    success for input that the thing downstream refuses. This test parses the
-    way Backstage parses.
+    So validating with plain `yaml.safe_load_all` is weaker than the
+    validation the consumer does, which is the worst shape for a check to
+    have: it reports success for input that the thing downstream refuses.
+    This test parses the way Backstage parses.
     """
     offending: list[str] = []
     for path in _catalog_files():
@@ -148,5 +146,5 @@ def test_every_catalog_link_is_an_absolute_url():
     assert checked, (
         "no `metadata.links` entries were found in any catalog file, so the "
         "assertion above proved nothing. Either every link was removed from "
-        "the tree, or this walk no longer reaches them."
+        "the tree, or this walk does not reach them."
     )

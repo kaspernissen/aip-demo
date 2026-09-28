@@ -7,11 +7,11 @@ metadata:
     app: claims-agent
     northstar.io/plane: agents
     northstar.io/owner: claims-team
-    # M6 Task 2: read by @backstage/plugin-kubernetes-backend's default
-    # label selector (`backstage.io/kubernetes-id=<entity name>`), so this
-    # Component's catalog entry (agents/claims-agent/catalog-info.yaml) shows
-    # its live workload. Added to the Pod template below too -- the plugin
-    # queries Pods, not just Deployments.
+    # Read by @backstage/plugin-kubernetes-backend's default label selector
+    # (`backstage.io/kubernetes-id=<entity name>`), so this Component's
+    # catalog entry (agents/claims-agent/catalog-info.yaml) shows its live
+    # workload. Set on the Pod template below too -- the plugin queries
+    # Pods, not just Deployments.
     backstage.io/kubernetes-id: claims-agent
 spec:
   replicas: 1
@@ -41,12 +41,12 @@ spec:
             # attribute spelling (http.method, http.url, http.status_code) by
             # default; this opt-in converges the outbound A2A call this agent
             # makes to settlement-agent, and the inbound StarletteInstrumentor
-            # entry span, onto the stable spelling (A13). Verified empirically
+            # entry span, onto the stable spelling. Verified empirically
             # against this agent's own deployed pod — see NOTES.md.
             - name: OTEL_SEMCONV_STABILITY_OPT_IN
               value: http
-            # Delegation is configured, never discovered. M2 replaces these with
-            # agentgateway routes; M6 generates them from the Agent CRD.
+            # Delegation is configured explicitly here, never discovered at
+            # runtime.
             - name: NORTHSTAR_ALLOWED_AGENTS
               value: settlement-agent=http://settlement-agent.northstar-agents.svc.cluster.local:9002
             - name: CORS_ALLOWED_ORIGINS
@@ -58,14 +58,13 @@ spec:
           ports:
             - name: http
               containerPort: 9001
-          # S6 (final-review.md): only payments-api had a readiness probe.
-          # rollout status (rebuild-and-deploy.sh) and the sleep 4 before
-          # port-forwards start (setup-kind.sh) both treat "container process
-          # started" as "ready to serve" for the other four components,
-          # which can produce an unreproducible early-request failure on a
-          # slow container start. The agent card is read from disk and
-          # parsed at build_app() time (main.py) before the app can serve
-          # anything, so a 200 here means startup genuinely finished.
+          # Without this, rollout status (rebuild-and-deploy.sh) and the
+          # sleep 4 before port-forwards start (setup-kind.sh) both treat
+          # "container process started" as "ready to serve", which can
+          # produce an unreproducible early-request failure on a slow
+          # container start. The agent card is read from disk and parsed at
+          # build_app() time (main.py) before the app can serve anything, so
+          # a 200 here means startup genuinely finished.
           readinessProbe:
             httpGet:
               path: /.well-known/agent-card.json

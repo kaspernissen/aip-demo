@@ -5,24 +5,24 @@
 # only way IN to a protected service (payments-mcp, the policy-decision
 # service). The last three are *egress* allowlists on the agent plane, which
 # make the gateway the only way OUT of an agent to a tool, and the model
-# provider reachable from exactly one workload. Task 7's section header, below
-# the second document, explains the egress half.
+# provider reachable from exactly one workload. The section header below the
+# second document explains the egress half.
 #
 # WHY THIS FILE EXISTS
 #
-# M2.1 put agentgateway in the MCP path and made it verify a SPIRE-issued
-# JWT-SVID on every `tools/call`. That established the choke point *by
-# convention*: `settlement-agent`'s PAYMENTS_MCP_URL names the gateway, so the
-# agent's calls go through it. It did NOT establish the choke point *by
-# enforcement* -- nothing stopped a workload from ignoring the gateway and
+# agentgateway sits in the MCP path and verifies a SPIRE-issued JWT-SVID on
+# every `tools/call`. That establishes the choke point *by convention*:
+# `settlement-agent`'s PAYMENTS_MCP_URL names the gateway, so the agent's
+# calls go through it. It does NOT establish the choke point *by
+# enforcement* -- nothing stops a workload from ignoring the gateway and
 # talking to `payments-mcp` directly.
 #
 # That gap was measured, not assumed. With no policy applied, `claims-agent` --
 # which holds no SVID and has no business touching payments -- POSTed an MCP
 # `initialize` straight at
 # `payments-mcp.northstar-tools.svc.cluster.local:8000/mcp` and got **HTTP
-# 200**. The milestone's own claim, "the platform decides if it becomes an
-# effect", was therefore true only for a cooperating caller.
+# 200**. The platform's claim that it decides whether a call becomes an
+# effect was therefore true only for a cooperating caller.
 #
 # `tests/e2e/test_gateway_trace.py::test_the_gateway_is_the_only_route_into_payments_mcp`
 # does not catch this, and its docstring is careful about why: it asserts that
@@ -30,15 +30,13 @@
 # agentgateway span. That is a statement about the traffic that happened, not
 # about the traffic that is possible. Reachability needs the dataplane.
 #
-# This is also a gap in the M2 spec rather than merely in its implementation.
-# The spec's Cilium section (§7) and its acceptance criterion 7 are both about
-# **egress to the model provider** ("Direct egress from `northstar-agents` to
-# the model provider is denied by Cilium"). Neither says anything about ingress
-# to the tool. The architecture diagram's note "the gateway is the only path"
-# is attached to the `api.anthropic.com` arrow, not to `payments-mcp`.
+# Egress to the model provider is not the same requirement as ingress to the
+# tool: "Direct egress from `northstar-agents` to the model provider is
+# denied by Cilium" says nothing about ingress to the tool. The architecture
+# diagram's note "the gateway is the only path" is attached to the
+# `api.anthropic.com` arrow, not to `payments-mcp`.
 #
-# Cilium was installed in M2.1 precisely so there would be a dataplane to put
-# this on, and until now it carried no policy at all.
+# Cilium is installed precisely so there is a dataplane to put this on.
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -86,7 +84,7 @@ spec:
         - host
         - remote-node
 ---
-# M2.2 Task 4: the same argument, applied to the Policy Decision Service.
+# The same argument, applied to the Policy Decision Service.
 #
 # A policy service anything can call is a policy service anything can
 # impersonate answers from. The PDS is not a tool and not an agent's
@@ -99,15 +97,14 @@ spec:
 # worth being precise about rather than asserting the same sentence twice.
 # Reaching payments-mcp directly skips the decision and moves money. Reaching
 # the PDS directly moves nothing -- but the ExtMCP contract is unauthenticated
-# on the wire (`add_insecure_port`; no mTLS in M2.2) and the caller identity the
+# on the wire (`add_insecure_port`; no mTLS) and the caller identity the
 # policy decides on arrives as a *field in the request*,
 # `metadata_context.caller`, which the gateway fills from an already-verified
 # `jwt.sub`. So anything that can call this service can claim to be
 # settlement-agent and be told, truthfully, what the policy would answer. That
 # is an oracle, not an authorisation: a confidentiality problem rather than an
 # integrity one. It is closed here, on the dataplane, rather than by adding
-# mTLS that this service's pinned dependency closure does not carry (ruling
-# R4).
+# mTLS that this service's pinned dependency closure does not carry.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -143,27 +140,25 @@ spec:
             - port: "9100"
               protocol: TCP
 
-    # 2. The node itself, for the probes. RULING R6 -- and the one rule in this
-    # file whose absence would be actively misleading rather than merely
-    # broken.
+    # 2. The node itself, for the probes -- the one rule in this file whose
+    # absence would be actively misleading rather than merely broken.
     #
-    # deploy/k8s/policy-decision-service.yaml probes 9100 with `tcpSocket`
-    # (ruling R26), and kubelet dials that from the host, not from a pod.
-    # Without this the probe is dropped, the pod never goes Ready -- and
-    # because the gateway's guardrail is `failureMode: failClosed`, a PDS the
-    # gateway cannot reach REFUSES EVERY PAYMENT. The demo would then show the
-    # €6,200 refused, which is exactly the outcome M2.2 exists to produce, for
-    # entirely the wrong reason, with the €5,800 control refused alongside it
-    # and nothing in the output mentioning networking. `remote-node` is
-    # included on the same single-node reasoning as the payments-mcp rule.
+    # deploy/k8s/policy-decision-service.yaml probes 9100 with `tcpSocket`,
+    # and kubelet dials that from the host, not from a pod. Without this the
+    # probe is dropped, the pod never goes Ready -- and because the gateway's
+    # guardrail is `failureMode: failClosed`, a PDS the gateway cannot reach
+    # REFUSES EVERY PAYMENT. The demo would then show every payment refused
+    # for entirely the wrong reason, with nothing in the output mentioning
+    # networking. `remote-node` is included on the same single-node reasoning
+    # as the payments-mcp rule.
     - fromEntities:
         - host
         - remote-node
 ---
 # =============================================================================
-# M2.2 TASK 7 -- THE EGRESS HALF. Exit criterion 7, verbatim: "Direct egress
-# from `northstar-agents` to the model provider is **denied** by Cilium, with
-# the gateway as the only path."
+# THE EGRESS HALF. The requirement, verbatim: "Direct egress from
+# `northstar-agents` to the model provider is **denied** by Cilium, with the
+# gateway as the only path."
 # =============================================================================
 #
 # WHAT WAS MEASURED BEFORE THIS EXISTED
@@ -178,13 +173,12 @@ spec:
 #   claims-agent     -> example.com:443         reached
 #   customer-ui      -> api.anthropic.com:443   reached   (nc -z, no python)
 #
-# So the criterion was false in three places, not one. The task brief scoped
-# this to `settlement-agent`, and a policy on that workload alone would have
-# left `claims-agent` and `customer-ui` -- neither of which has any business
-# near a model provider, and neither of which holds an API key -- with wholly
-# unrestricted outbound reachability. The criterion names the *namespace*, so
-# all three are policied here, one document each. See the task-7 report for
-# that decision recorded as a deviation from the brief's stated file scope.
+# So the requirement was false in three places, not one. A policy on
+# `settlement-agent` alone would have left `claims-agent` and `customer-ui` --
+# neither of which has any business near a model provider, and neither of
+# which holds an API key -- with wholly unrestricted outbound reachability.
+# The requirement names the *namespace*, so all three are policied here, one
+# document each.
 #
 # WHY ONE DOCUMENT PER WORKLOAD, RATHER THAN ONE FOR THE PLANE
 #
@@ -244,8 +238,9 @@ spec:
 # below appears in a trace, and no span is invented for it. The evidence for
 # these policies is the BPF policy map and probes from inside the pods.
 ---
-# Task 7, document 1 of 3: settlement-agent. The only workload in the cluster
-# permitted to reach the model provider, and the reason this criterion exists.
+# Document 1 of 3: settlement-agent. The only workload in the cluster
+# permitted to reach the model provider, and the reason this requirement
+# exists.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -390,9 +385,9 @@ spec:
             - port: "443"
               protocol: TCP
 ---
-# Task 7, document 2 of 3: claims-agent.
+# Document 2 of 3: claims-agent.
 #
-# This is the workload that makes the criterion's own sentence true. Measured
+# This is the workload that makes the requirement's own sentence true. Measured
 # above: it reached `api.anthropic.com:443`. It holds no API key
 # (deploy/k8s/claims-agent.yaml sets no ANTHROPIC_API_KEY and no model
 # variable), makes no model call, and its only reason to talk to anything is
@@ -470,7 +465,7 @@ spec:
             - port: "4318"
               protocol: TCP
 ---
-# Task 7, document 3 of 3: customer-ui.
+# Document 3 of 3: customer-ui.
 #
 # The smallest document here and the one most likely to be questioned, so the
 # reasoning is explicit. `customer-ui` is nginx serving a static Next.js
@@ -516,9 +511,9 @@ spec:
               protocol: TCP
 ---
 # =============================================================================
-# M3 Task 3 -- senior-settlement-agent's egress. Same image as
-# settlement-agent, same outbound inventory, because "senior-settlement-agent
-# needs exactly what settlement-agent has" is the design point (deploy/k8s/
+# senior-settlement-agent's egress. Same image as settlement-agent, same
+# outbound inventory, because "senior-settlement-agent needs exactly what
+# settlement-agent has" is the design point (deploy/k8s/
 # senior-settlement-agent.yaml's own header): a second Deployment of the
 # identical container, not a variant with a different set of calls to make.
 #
@@ -535,17 +530,16 @@ spec:
 # `northstar.io/plane: agents`-wide document. A shared document would grant
 # settlement-agent's and claims-agent's endpoints reachability neither one
 # asked for, purely as a side effect of sharing a selector (the same
-# objection M2.2 Task 7's header already recorded against one document per
-# plane, applied again here).
+# objection this file's egress header already records against one document
+# per plane, applied again here).
 #
 # Behavioural probes are insufficient to prove this is right, only to prove
-# it is not obviously wrong: M2.2 measured that stripping the DNS proxy's
-# `rules.dns` block, and separately widening egress to payments-mcp directly,
-# both left every behavioural check green while the datapath had actually
-# changed. The datapath assertion for this document is
+# it is not obviously wrong: stripping the DNS proxy's `rules.dns` block, and
+# separately widening egress to payments-mcp directly, both left every
+# behavioural check green while the datapath had actually changed. The
+# datapath assertion for this document is
 # `cilium-dbg bpf policy get <senior-settlement-agent endpoint id>`, run
-# against the live cluster and recorded in this task's report -- not reasoned
-# about from the YAML alone.
+# against the live cluster -- not reasoned about from the YAML alone.
 # =============================================================================
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -621,17 +615,17 @@ spec:
               protocol: TCP
 ---
 # =============================================================================
-# M3 Task 3 review fix round -- finding 1 (R11), the ingress half.
+# The ingress half, for both settlement identities.
 #
 # Measured, not assumed: `cilium-dbg bpf policy get` on both settlement
 # endpoints (177 = settlement-agent, 421 = senior-settlement-agent) showed
 # `Allow Ingress ANY` -- neither Deployment had ever gained an ingress policy,
-# despite the egress documents above existing since M2.2/M3. Combined with
-# `execute_approved` not verifying the ledger (the code half of this same
-# finding, closed in agents/settlement-agent/settlement.py), anything in the
-# cluster that could reach port 9002 could execute any proposed payment up to
-# that identity's limit, with no model call and no human. The code fix closes
-# "no review happened"; this closes "anything can even ask".
+# despite the egress documents above. Combined with `execute_approved` not
+# verifying the ledger (the code half of this same finding, closed in
+# agents/settlement-agent/settlement.py), anything in the cluster that could
+# reach port 9002 could execute any proposed payment up to that identity's
+# limit, with no model call and no human. The code fix closes "no review
+# happened"; this closes "anything can even ask".
 #
 # THE MEASURED HAZARD, restated for ingress: exactly as on the egress side,
 # ANY rule that selects an endpoint makes that endpoint default-deny in the
@@ -646,35 +640,16 @@ spec:
 # claims-agent-egress-allowlist's rule 2 already permits the egress half of
 # this exact connection. This document is that allowance's other half.
 #
-# senior-settlement-agent: reviewer-ui is its one legitimate caller, and the
-# senior-settlement-agent-ingress-allowlist document below grants exactly
-# that -- one endpoint, one port (9002) -- plus the readiness probe. (A
-# `kubectl port-forward` also reaches it for manual verification, the same
-# way the readiness probe does: kubelet dials the pod directly from the node,
-# which Cilium classifies as `reserved:host`, not as mesh traffic from
-# another endpoint.)
-#
-# **Correction, M3 final-review fix round 2026-09-11 -- this paragraph is an
-# instance of the stale-prose class the whole-branch review found.** It read:
-#
-#   senior-settlement-agent: it has NO legitimate caller in this repo yet.
-#   Task 4 has not run on this branch -- reviewer-ui, the workload that will
-#   call execute_approved for real, does not exist. Granting it reachability
-#   now would be exactly the "reachability nothing measured asked for" this
-#   file's own egress header argues against. So this document permits nothing
-#   but the readiness probe: senior-settlement-agent's A2A port is reachable
-#   from precisely nowhere in the mesh until Task 4 adds reviewer-ui and
-#   widens this document explicitly.
-#
-# Every word of that was true when M3 Task 3's review fix round wrote it.
-# Task 4 then ran, reviewer-ui shipped, and it widened the very policy this
-# shared header heads -- the senior-settlement-agent-ingress-allowlist
-# document roughly fifty lines below grants reviewer-ui ingress on 9002 and
-# says so in its own rule comment -- so from that moment the header
-# contradicted the policy underneath it. The *reasoning* is not retracted:
-# "grant the least that is still recognisably a policy" is exactly what the
-# widened document does, one caller and one port, which is what the old
-# paragraph asked Task 4 to do. Only its claim about what exists went stale.
+# senior-settlement-agent: reviewer-ui is its one legitimate caller --
+# it exists (deploy/k8s/reviewer-ui.yaml), and its POST /review/{payment_id}
+# handler is the one and only caller of execute_approved over A2A in this
+# repo. The senior-settlement-agent-ingress-allowlist document below grants
+# exactly that -- one endpoint, one port (9002) -- plus the readiness probe,
+# "grant the least that is still recognisably a policy" applied to a real
+# caller rather than a hypothetical one. (A `kubectl port-forward` also
+# reaches it for manual verification, the same way the readiness probe does:
+# kubelet dials the pod directly from the node, which Cilium classifies as
+# `reserved:host`, not as mesh traffic from another endpoint.)
 #
 # Both readinessProbes are `httpGet` on 9002 (deploy/k8s/settlement-agent.yaml,
 # deploy/k8s/senior-settlement-agent.yaml), dialled by kubelet from the node --
@@ -682,9 +657,9 @@ spec:
 # policy-decision-service ingress documents above already state in full.
 #
 # Asserted at the datapath, not just read off this YAML: `cilium-dbg bpf
-# policy get` on both endpoints, before and after, recorded in this task's
-# report -- the same discipline this file's egress header prescribes
-# ("behavioural probes have twice gone green against real regressions").
+# policy get` on both endpoints -- the same discipline this file's egress
+# header prescribes ("behavioural probes have twice gone green against real
+# regressions").
 # =============================================================================
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -725,16 +700,13 @@ spec:
     matchLabels:
       app: senior-settlement-agent
   ingress:
-    # 1. reviewer-ui, M3 Task 4's own addition -- and the ONLY application
-    # caller this document grants. R18 (M3 Task 3 review) named this as a
-    # blocking requirement: this endpoint permitted no application caller at
-    # all when it was written, deliberately, because reviewer-ui did not yet
-    # exist -- widening it before the workload that needs it existed would
-    # have been exactly the "reachability nothing measured asked for" this
-    # file's own egress header argues against. It exists now
-    # (deploy/k8s/reviewer-ui.yaml), and its POST /review/{payment_id} handler
-    # is the one and only caller of execute_approved over A2A in this repo, so
-    # it is the one and only rule added here.
+    # 1. reviewer-ui -- and the ONLY application caller this document grants.
+    # reviewer-ui (deploy/k8s/reviewer-ui.yaml) exists, and its
+    # POST /review/{payment_id} handler is the one and only caller of
+    # execute_approved over A2A in this repo, so it is the one and only rule
+    # added here: granting reachability beyond a real, measured caller would
+    # be exactly the "reachability nothing measured asked for" this file's own
+    # egress header argues against.
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: northstar-agents
@@ -744,15 +716,15 @@ spec:
             - port: "9002"
               protocol: TCP
 
-    # 2. The node itself, for the readiness probe. Unchanged from before this
-    # task -- see ruling R6 (policy-decision-service, above) for why this
-    # matters even once rule 1 exists.
+    # 2. The node itself, for the readiness probe -- see the
+    # policy-decision-service ingress document above for why this matters
+    # even once rule 1 exists.
     - fromEntities:
         - host
         - remote-node
 ---
 # =============================================================================
-# M3 Task 4 -- reviewer-ui's own egress.
+# reviewer-ui's own egress.
 #
 # THE MEASURED HAZARD, restated once more for this endpoint: in Cilium, ANY
 # egress rule that selects an endpoint makes that endpoint default-deny for
@@ -782,15 +754,14 @@ spec:
 # Deliberately absent: agentgateway:3000, payments-mcp:8000,
 # policy-decision-service:9100, and api.anthropic.com:443. reviewer-ui calls
 # none of them -- it holds no `EXECUTE_LIMITS` row and must never be able to
-# reach a place that would grant one (spec §5). identity.py's SPIFFE Workload
-# API call is a Unix domain socket, exactly like every other workload's own
-# SVID fetch in this file's header note ("UDS IPC never enters the pod's
-# network namespace, so Cilium policy does not govern it") -- there is
-# nothing to allow here for it.
+# reach a place that would grant one. identity.py's SPIFFE Workload API call
+# is a Unix domain socket, exactly like every other workload's own SVID fetch
+# in this file's header note ("UDS IPC never enters the pod's network
+# namespace, so Cilium policy does not govern it") -- there is nothing to
+# allow here for it.
 #
 # Datapath assertion, not just this YAML: `cilium-dbg bpf policy get
-# <reviewer-ui endpoint id>`, run against the live cluster and recorded in
-# this task's report.
+# <reviewer-ui endpoint id>`, run against the live cluster.
 # =============================================================================
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

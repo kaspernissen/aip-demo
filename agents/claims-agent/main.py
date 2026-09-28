@@ -30,17 +30,16 @@ def build_app():
         agent_card=load_agent_card(), http_handler=handler
     ).build()
 
-    # A18: a2a-sdk 0.3.7 never extracts inbound W3C trace context itself
-    # (verified in settlement-agent's NOTES.md, Task 4) — StarletteInstrumentor
-    # is the OTel project's own ASGI-level instrumentation, applied per-app
-    # since the Starlette instance doesn't exist until `.build()` returns. It
-    # extracts the incoming traceparent/baggage (via the global propagator
-    # set in bootstrap.py) and starts a real server span from it, which
-    # a2a-sdk's own spans then nest under via the ordinary ambient-context
-    # mechanism.
+    # a2a-sdk 0.3.7 never extracts inbound W3C trace context itself (see
+    # settlement-agent's NOTES.md) — StarletteInstrumentor is the OTel
+    # project's own ASGI-level instrumentation, applied per-app since the
+    # Starlette instance doesn't exist until `.build()` returns. It extracts
+    # the incoming traceparent/baggage (via the global propagator set in
+    # bootstrap.py) and starts a real server span from it, which a2a-sdk's
+    # own spans then nest under via the ordinary ambient-context mechanism.
     StarletteInstrumentor().instrument_app(app)
 
-    # The browser is a first-class A2A client (Task 6). Without traceparent and
+    # The browser is a first-class A2A client. Without traceparent and
     # baggage in allow_headers the browser's root span detaches and the demo
     # produces two traces instead of one.
     origins = [

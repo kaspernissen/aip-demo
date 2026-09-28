@@ -2,8 +2,8 @@
  *
  * One institutional identity shared with apps/reviewer-ui (whose own styles
  * mirror these tokens by hand, since that service deliberately ships no
- * frontend toolchain -- see apps/reviewer-ui/render.py's header and the M3
- * design spec §3). If a token changes here, change it there too.
+ * frontend toolchain -- see apps/reviewer-ui/render.py's header). If a
+ * token changes here, change it there too.
  *
  * ON THE DETERMINATION COLOURS. A refusal is rendered in OCHRE, never red.
  * This is the demo's central sentence made visual: a refused payment is the

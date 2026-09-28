@@ -37,9 +37,9 @@ from scorer.trajectory import ATTR_CLAIM_ID, Trajectory
 
 logger = logging.getLogger(__name__)
 
-# The index M4 Task 1 measured this system's traces into. `ss4o` is the
-# collector's OpenSearch exporter's own naming scheme
-# (<dataset>-<namespace>); it is not a name this repo chose.
+# The index this system's traces land in. `ss4o` is the collector's
+# OpenSearch exporter's own naming scheme (<dataset>-<namespace>); it is not
+# a name this repo chose.
 TRACE_INDEX = "ss4o_traces-default-namespace"
 
 # In-cluster address of the chart's Service. Overridable so the suite can
@@ -48,8 +48,8 @@ DEFAULT_OPENSEARCH_URL = (
     "http://opensearch-cluster-master.observability.svc.cluster.local:9200"
 )
 
-# Measured on this cluster 2026-09-13: a supervised pair (refusal trace +
-# approval trace) is 214-218 documents, split roughly 141-145 and 73. A
+# Measured on this cluster: a supervised pair (refusal trace + approval
+# trace) is 214-218 documents, split roughly 141-145 and 73. A
 # 1,000-document page is ~4.6x headroom, the same size and the same reasoning
 # as `tests/e2e/test_evidence_view.py::SPAN_PAGE_SIZE`. The guard below is a
 # tripwire rather than a live risk -- but it is not idle either: run unbounded
@@ -62,10 +62,10 @@ SPAN_PAGE_SIZE = 1000
 # collect two runs.
 DEFAULT_WINDOW_S = 900
 
-# The terms-aggregation cap for step 1, and — unlike every other constant in
-# this file until the M4 final review — a measured one.
+# The terms-aggregation cap for step 1 -- a measured constant, not a round
+# number.
 #
-# **Measured 2026-09-14 against the live index**, not estimated: a single
+# **Measured against the live index**, not estimated: a single
 # `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` (417s end to end) contributes
 # **8** distinct traces carrying `CLM-1842` — the whole gated suite drives more
 # than one supervised pair. So `DEFAULT_WINDOW_S`'s 15 minutes holds about
@@ -107,9 +107,9 @@ def _numeric_aggregation_field(
 ) -> float:
     """`aggregation[key]`, refusing both an ABSENT key and a non-numeric one.
 
-    Shared by `trace_ids_for_claim`'s two truncation guards (S-b, I4/M1 --
-    fix round 1) so both hold the same standard: `.get(key) or 0` reads a
-    missing key and an honest zero identically, and a presence check alone
+    Shared by `trace_ids_for_claim`'s two truncation guards so both hold the
+    same standard: `.get(key) or 0` reads a missing key and an honest zero
+    identically, and a presence check alone
     (`key not in aggregation`) still reads a PRESENT `None` the same as an
     honest zero, because `if value:` is falsy for both. Either shape is "I
     could not look", not "there was nothing to find", and this guard must
@@ -176,10 +176,11 @@ class OpenSearchClient:
         """Step 1 of the join. Ordered by when each trace started.
 
         **Refuses a truncated read, symmetrically with `spans_in_traces`.**
-        Until the M4 final review this method capped the terms aggregation at
-        `MAX_TRACES_PER_CLAIM` and inspected nothing, thirty lines above a
-        method that refuses to score a truncated page and says why. Step 2 of
-        the join would not score an incomplete read; step 1 truncated silently.
+        This method caps the terms aggregation at `MAX_TRACES_PER_CLAIM` and
+        must inspect what came back rather than trust it silently: step 2 of
+        the join refuses to score an incomplete read and says why, so step 1
+        has to hold to the same standard or its own truncation goes
+        unnoticed.
 
         **And it truncates in the direction that reads as compliant.** A terms
         aggregation orders buckets by `doc_count` descending before the `size`
@@ -187,10 +188,10 @@ class OpenSearchClient:
         supervised pair is the approval trace (73 documents against the
         refusal trace's 141–145, recorded above). That trace is where the
         second `execute_payment` decision lives, and its absence is exactly
-        what inverted `stopped_when_refused` from `0.0 retry-after-refusal` to
-        `1.0 compliant` during M4 Task 4's fix round. The milestone found that
-        failure mode, named it "a partial trajectory always reads higher",
-        hardened the *test* against it, and left this hole open one layer down.
+        what would invert `stopped_when_refused` from `0.0 retry-after-refusal`
+        to `1.0 compliant` -- "a partial trajectory always reads higher" is
+        the general shape of that failure, and this guard is what keeps this
+        step from reproducing it.
 
         **What this does not rely on.** In today's measured shape step 2 would
         often catch it anyway — 20 traces at ~70 documents each is 1,400
@@ -233,22 +234,21 @@ class OpenSearchClient:
         # means this list is not the claim's trajectory, it is the busiest part
         # of it.
         #
-        # Ruling S-b (M4 debt list, closed here): `.get(...) or 0` reads a
-        # genuinely ABSENT key the same as a present, honest zero -- "I could
-        # not look" recorded as "there was nothing to find", the exact rule
-        # `search()`'s own `"error" in payload` check enforces ten lines
-        # above. Defensive rather than live: OpenSearch always sends this key
-        # on a real terms aggregation. But a field this guard's correctness
-        # depends on must raise on absence, not silently assume the value
-        # that happens to make the guard pass.
+        # `.get(...) or 0` would read a genuinely ABSENT key the same as a
+        # present, honest zero -- "I could not look" recorded as "there was
+        # nothing to find", the exact rule `search()`'s own
+        # `"error" in payload` check enforces ten lines above. Defensive
+        # rather than live: OpenSearch always sends this key on a real terms
+        # aggregation. But a field this guard's correctness depends on must
+        # raise on absence, not silently assume the value that happens to
+        # make the guard pass.
         #
-        # M1 (task-5 review, folded in here and into `doc_count_error_upper_
-        # bound` below, fix round 1): a presence check alone still lets a
-        # PRESENT-BUT-NULL value through -- `if "key" not in aggregation`
-        # passes for `{"key": None}`, after which `if dropped:` is falsy for
-        # `None` exactly as it is for an absent key defaulted to 0. Checked
-        # via `_numeric_aggregation_field` so both guards in this method hold
-        # the same standard: present, AND a real number.
+        # A presence check alone would still let a PRESENT-BUT-NULL value
+        # through -- `if "key" not in aggregation` passes for
+        # `{"key": None}`, after which `if dropped:` is falsy for `None`
+        # exactly as it is for an absent key defaulted to 0. Checked via
+        # `_numeric_aggregation_field` so both guards in this method hold the
+        # same standard: present, AND a real number.
         dropped = _numeric_aggregation_field(
             aggregation, "sum_other_doc_count", claim_id,
             "OpenSearch had to drop any bucket to honour `size`",
@@ -273,11 +273,9 @@ class OpenSearchClient:
         # cut keeps is then itself approximate, so "nothing was dropped" stops
         # being something this read can assert. Measured 0 on this
         # single-shard index; checked anyway, because the value that makes it
-        # non-zero is a chart setting nobody would connect to a score.
-        #
-        # I4 (task-5 review, closed here): the third S-b instance,
-        # `.get(...) or 0`, eight lines below `sum_other_doc_count`'s own fix
-        # -- same defect, same method, not named or noticed at the time.
+        # non-zero is a chart setting nobody would connect to a score. Same
+        # `.get(...) or 0` risk as `sum_other_doc_count` above, checked with
+        # the same guard.
         error_bound = _numeric_aggregation_field(
             aggregation, "doc_count_error_upper_bound", claim_id,
             "bucket counts are exact",
@@ -322,13 +320,12 @@ class OpenSearchClient:
         # at 10,000 by default, which would make this comparison itself lie
         # exactly when it matters.
         #
-        # Ruling S-b (M4 debt list, closed here): the previous read,
-        # `(result.get("total") or {}).get("value", len(hits))`, defaulted a
-        # missing `total` (or a missing `total.value`) to `len(hits)` itself
-        # -- comparing that number to itself always passes, which makes the
-        # very next line's truncation check vacuously false exactly when the
-        # response is too malformed to trust. Absence must raise, not stand
-        # in for "definitely not truncated".
+        # `(result.get("total") or {}).get("value", len(hits))` would default
+        # a missing `total` (or a missing `total.value`) to `len(hits)`
+        # itself -- comparing that number to itself always passes, which
+        # makes the very next line's truncation check vacuously false exactly
+        # when the response is too malformed to trust. Absence must raise,
+        # not stand in for "definitely not truncated".
         total_block = result.get("total")
         if not isinstance(total_block, dict) or "value" not in total_block:
             raise TrajectoryTruncated(

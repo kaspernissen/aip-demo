@@ -9,7 +9,7 @@ a reader must be able to tell at a glance which attributes we invented.
 Everything else here is the real OTel SDK doing the real work. We define
 attribute *names*; we do not hand-roll span plumbing, and we invent nothing for
 agentgateway, which emits its own `Guardrail` CLIENT span for the call that
-reaches us (Task 1, question 6).
+reaches us.
 """
 from __future__ import annotations
 
@@ -46,15 +46,15 @@ ATTR_TOOL = "policy.tool.name"              # the MCP tool requested
 ATTR_AMOUNT = "policy.request.amount"       # what was asked for
 ATTR_CURRENCY = "policy.request.currency"
 ATTR_LIMIT = "policy.limit.amount"          # what the rule allows
-ATTR_AUTONOMY = "policy.autonomy.level"     # M5: resolved from flagd, not a constant
-# M5: the OpenFeature `reason` the level came back with (`TARGETING_MATCH`,
+ATTR_AUTONOMY = "policy.autonomy.level"     # resolved from flagd, not a constant
+# The OpenFeature `reason` the level came back with (`TARGETING_MATCH`,
 # `STATIC`, `DEFAULT`, `ERROR`, ...) -- alongside ATTR_AUTONOMY so a reader
 # can tell "autonomous because the contract says so" from "assisted because
 # we could not ask" without cross-referencing a second signal.
 ATTR_AUTONOMY_REASON = "policy.autonomy.reason"
 ATTR_RETRYABLE = "policy.decision.retryable"
 
-# M5-R6: the one attribute on this span that is NOT ours to name. Unlike
+# The one attribute on this span that is NOT ours to name. Unlike
 # ATTR_AUTONOMY and its `policy.`/`northstar.`-prefixed siblings -- which
 # Gap 3 (module docstring) documents as invented because no convention exists
 # for a policy decision itself -- a feature flag's ruleset version already
@@ -63,10 +63,10 @@ ATTR_RETRYABLE = "policy.decision.retryable"
 # (still incubating as of opentelemetry-semantic-conventions==0.65b0, not yet
 # in the stable `opentelemetry.semconv.attributes` namespace -- checked by
 # import, not assumed) rather than retyped as a string literal. Placed here,
-# on `policy.decision`, rather than only on Task 4's log record: Task 5's
-# eval-scorer audit already reads this span to establish `policy.rule`, and
-# must not have that same determination for *ruleset version* start
-# depending on the logs pipeline M5 stands up for the first time.
+# on `policy.decision`, and not only on the `feature_flag.evaluation` log
+# record: the eval-scorer audit already reads this span to establish
+# `policy.rule`, and must not have that same determination for *ruleset
+# version* depend on the logs pipeline as well.
 ATTR_FLAG_VERSION = FEATURE_FLAG_VERSION
 
 # Every attribute this service sets, so a guard test can assert the set rather
@@ -97,17 +97,16 @@ def configure() -> None:
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
 
-    # M4 Task 2. This service installs no instrumentation library, so nothing
-    # here resolves a meter before this line the way the httpx-instrumented
+    # This service installs no instrumentation library, so nothing here
+    # resolves a meter before this line the way the httpx-instrumented
     # services do -- it is placed beside the TracerProvider anyway so all five
     # Python services read the same top to bottom.
     _configure_metrics(resource)
 
-    # M5 Task 4: the third signal. Before this, `pds/telemetry.py` wired two
-    # (traces, metrics) and nothing else -- the plan's Step 2 sketch assumed a
-    # standalone `_event_logger` built from an `Event`/EventLogger API that
-    # does not exist in this venv's installed SDK (measured against
-    # opentelemetry-api/-sdk 1.44.0: `opentelemetry._events` and
+    # The third signal, logs, alongside traces and metrics above. Wired as a
+    # `LoggerProvider` rather than a standalone `Event`/`EventLogger` API,
+    # because that API does not exist in this venv's installed SDK (measured
+    # against opentelemetry-api/-sdk 1.44.0: `opentelemetry._events` and
     # `opentelemetry.sdk._events` both raise `ModuleNotFoundError`). The
     # standalone Events API was folded into the Logs API upstream, so what
     # gets wired here is a `LoggerProvider`, shaped exactly like the
@@ -138,7 +137,7 @@ def _metric_reader() -> PeriodicExportingMetricReader:
 
 
 def _configure_metrics(resource: Resource) -> None:
-    """Install a MeterProvider (M4 Task 2). Endpoint and protocol come from the
+    """Install a MeterProvider. Endpoint and protocol come from the
     standard `OTEL_EXPORTER_OTLP_*` variables, as for traces.
 
     Identical in shape to every other Python service here.
@@ -153,8 +152,8 @@ def _configure_metrics(resource: Resource) -> None:
     provider exists so that stays a statement about this service rather than
     about its wiring -- and because §6 explicitly leaves the door open for our
     own components to author metrics "on the same terms their spans are
-    authored under", which needs a provider to author them into. None was
-    authored in M4 Task 2: a decision counter would be derivable from the
+    authored under", which needs a provider to author them into. None is
+    authored here: a decision counter would be derivable from the
     `policy.decision` spans the evidence view already reads, and inventing one
     to make a dashboard look fuller is exactly what §6 forbids.
     """
@@ -164,7 +163,7 @@ def _configure_metrics(resource: Resource) -> None:
 
 
 def _configure_logs(resource: Resource) -> None:
-    """Install a LoggerProvider (M5 Task 4). Split out for the same reason
+    """Install a LoggerProvider. Split out for the same reason
     `_configure_metrics` is: a test can build one under a controlled
     environment, and `configure()` stays a short list of "install signal N"
     calls rather than growing the wiring inline.
@@ -188,22 +187,22 @@ def tracer() -> trace.Tracer:
 
 def event_logger():
     """Resolved per call, not bound at import -- same reasoning as `tracer()`
-    above. Returns an `opentelemetry._logs.Logger`, not the `EventLogger`
-    the plan's Step 2 sketch named: that class does not exist in this SDK
-    (1.44.0). A `Logger.emit(event_name=..., attributes=...)` call is this
-    version's equivalent -- `event_name` is what makes the log record a
-    semconv *event* rather than a plain log line (measured on the installed
-    `Logger.emit` signature, which accepts it as a keyword)."""
+    above. Returns an `opentelemetry._logs.Logger`, not an `EventLogger`:
+    that class does not exist in this SDK (1.44.0). A
+    `Logger.emit(event_name=..., attributes=...)` call is this version's
+    equivalent -- `event_name` is what makes the log record a semconv *event*
+    rather than a plain log line (measured on the installed `Logger.emit`
+    signature, which accepts it as a keyword)."""
     return get_logger(_LOGGER_NAME)
 
 
 def context_from_headers(headers) -> Context:
     """The caller's trace context, extracted from the ExtMCP `headers`.
 
-    Task 1 measured that `traceparent` *is* forwarded to the guardrail hook
-    (run C: ten headers, `traceparent` among them), so the decision span can be
-    a genuine child of the gateway's `tools/call` SERVER span rather than the
-    root of an orphan trace. Exit criterion 3 depends on that.
+    `traceparent` is forwarded to the guardrail hook (measured: ten headers,
+    `traceparent` among them), so the decision span can be a genuine child of
+    the gateway's `tools/call` SERVER span rather than the root of an orphan
+    trace.
 
     `McpHeader.value` is `bytes` because HTTP header values are not guaranteed
     to be UTF-8. `traceparent` is ASCII, so a value that will not decode cannot

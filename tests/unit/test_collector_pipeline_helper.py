@@ -4,11 +4,10 @@
 form of the same question was *measured* inert, twice, in this repo: deleting
 the pipeline entry that routes a signal leaves the exporter id in the file
 under `exporters:` and in the comment above it, so `id in config_text` stays
-true while nothing is routed. Two of the three e2e callers were fixed from that
-finding; the third still grepped until M4 Task 5.
+true while nothing is routed.
 
 Every case below is built from the shape of the collector config actually
-deployed to `kind-northstar`, read 2026-09-14:
+deployed to `kind-northstar`:
 
     traces:            [otlp_grpc/jaeger, forward/opensearch, otlp_grpc/dash0, debug]
     traces/opensearch: [opensearch/trace]
@@ -102,8 +101,7 @@ def test_deleting_the_tee_from_the_main_pipeline_is_visible():
     `forward/opensearch` feeds the branch. With it gone from the main pipeline
     the branch still exists and still lists `opensearch/trace`, so a check that
     only looked for the exporter stays green while no span reaches the index --
-    this is fix round 1's finding F2 against `test_evidence_view.py`, which is
-    why both callers require both ids.
+    which is why both callers require both ids.
     """
     mutated = DEPLOYED.replace(
         "exporters: [otlp_grpc/jaeger, forward/opensearch, otlp_grpc/dash0, debug]",

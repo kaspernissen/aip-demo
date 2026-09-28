@@ -1,10 +1,9 @@
 # SPIRE registration entries for the workloads this repo names explicitly.
 #
-# It said "the two workloads M2.1 gives an identity" through M2.2's third CR
-# and up to M4 Task 4's fourth. No count is written here now, for the same
-# reason `tests/unit/test_stage2_spire_config.py`'s allow-list docstring gives
-# for carrying none: the CRs below are the answer, and prose restating how many
-# of them there are only goes stale again.
+# No count of "how many workloads get an identity" is written here, for the
+# same reason `tests/unit/test_stage2_spire_config.py`'s allow-list docstring
+# gives for carrying none: the CRs below are the answer, and prose restating
+# how many of them there are only goes stale as more are added.
 #
 # These are `ClusterSPIFFEID` custom resources, reconciled into real SPIRE
 # registration entries by the spire-controller-manager that ships inside the
@@ -29,11 +28,11 @@
 # is what makes that true rather than intended -- it walks every
 # ClusterSPIFFEID in this file and fails on a missing className.
 #
-# (This line read "Both CRs below set it explicitly" through the third CR
-# and the fourth. Worse than a stale count, because the claim is about a
-# SILENT failure -- a classless CR is never reconciled and the only symptom
-# is a workload that cannot fetch an SVID -- so a reader adding a fifth CR
-# had been told by this file that they were covered.)
+# A comment claiming "every CR below sets it" is itself a stale-count risk,
+# since the claim is about a SILENT failure -- a classless CR is never
+# reconciled and the only symptom is a workload that cannot fetch an SVID --
+# so a reader adding a new CR could be told by this file that they were
+# covered when they were not. Hence the test above, not a hand-kept count.
 # ---------------------------------------------------------------------------
 #
 # Why these and not every workload: the chart's own `default` ClusterSPIFFEID
@@ -98,7 +97,7 @@ spec:
     - "k8s:sa:{{ .PodSpec.ServiceAccountName }}"
   fallback: false
 ---
-# M2.2 Task 4: the Policy Decision Service. Same template, same two attestation
+# The Policy Decision Service. Same template, same two attestation
 # selectors, same non-fallback, for the same reasons as the two above; the
 # rendered ID is
 #   spiffe://northstar.local/ns/northstar-platform/sa/policy-decision-service
@@ -120,21 +119,18 @@ spec:
     - "k8s:sa:{{ .PodSpec.ServiceAccountName }}"
   fallback: false
 ---
-# M4 Task 4: eval-scorer. Same template, same two attestation selectors, same
+# eval-scorer. Same template, same two attestation selectors, same
 # non-fallback; the rendered ID is
 #   spiffe://northstar.local/ns/northstar-platform/sa/eval-scorer
 #
-# This one is here because of a MEASURED absence rather than a rule. Ruling R22
-# says a new workload's SPIFFE ID goes into
-# `tests/unit/test_stage2_spire_config.py`'s allow-list in the same task, and
-# doing only that would have been inert twice over: the allow-list checks IDs
-# the *documents* publish, and nothing published this one -- and, more to the
-# point, the identity did not exist. `spire-server entry show` on this cluster,
-# after eval-scorer had been running for hours, listed an entry for every
-# other workload and none for it. (The count that stood here -- twelve --
-# was true when taken and is not reproducible: the list grows with the
-# cluster's stage. What matters is the absence, which is reproducible by
-# grepping that output for `eval-scorer`.)
+# This one is here because of a MEASURED absence rather than a rule: adding a
+# new workload's SPIFFE ID to `tests/unit/test_stage2_spire_config.py`'s
+# allow-list is not enough on its own, because the allow-list checks IDs the
+# *documents* publish, and nothing published this one -- and, more to the
+# point, the identity did not exist. `spire-server entry show` on this
+# cluster, with eval-scorer running for hours, listed an entry for every
+# other workload and none for it. What matters is the absence, which stays
+# reproducible by grepping that output for `eval-scorer`.
 #
 # The reason is in this file's own header, one namespace further than it went:
 # the chart's catch-all `default` CR excludes `northstar-platform`
@@ -172,15 +168,15 @@ spec:
     - "k8s:sa:{{ .PodSpec.ServiceAccountName }}"
   fallback: false
 # NOTE on the gateway entry specifically: agentgateway does NOT fetch this
-# SVID in M2.1 and its pod deliberately carries no Workload API mount. It
-# verifies JWT-SVIDs by fetching a JWKS over HTTP; it never presents one.
-# The entry exists because the gateway's SPIFFE ID is the *audience*
+# SVID, and its pod deliberately carries no Workload API mount. It verifies
+# JWT-SVIDs by fetching a JWKS over HTTP; it never presents one. The entry
+# exists because the gateway's SPIFFE ID is the *audience*
 # settlement-agent's token is minted for
 # (deploy/platform/agentgateway/config.yaml `audiences`), so the string has to
 # be a real registered identity rather than an invented label -- and because
-# M2.2's Policy Decision Service is expected to need the gateway's own
-# identity when it starts making decisions on this hop. Recorded here rather
-# than left as an unexplained resource.
+# the Policy Decision Service may need the gateway's own identity once it
+# starts making decisions on this hop. Recorded here rather than left as an
+# unexplained resource.
 #
 # THE SAME NOTE APPLIES, VERBATIM, TO THE PDS ENTRY ADDED ABOVE, and it is
 # worth stating rather than leaving a reader to infer it from the missing

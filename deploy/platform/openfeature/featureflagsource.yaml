@@ -1,12 +1,12 @@
-# M5 Task 2: tells the Open Feature Operator which FeatureFlag(s) to render
-# into a flagd sidecar's configuration, and which port that sidecar answers
-# on. `northstar-autonomy` (featureflag.yaml, same directory) is the only
-# source named.
+# Tells the Open Feature Operator which FeatureFlag(s) to render into a
+# flagd sidecar's configuration, and which port that sidecar answers on.
+# `northstar-autonomy` (featureflag.yaml, same directory) is the only source
+# named.
 #
 # Port 8013 is contractual: the Policy Decision Service's pod template
 # (deploy/k8s/policy-decision-service.yaml) carries the
 # `openfeature.dev/enabled` / `openfeature.dev/featureflagsource` annotations
-# that name this resource, and Task 3's PDS code resolves flags against
+# that name this resource, and the PDS code resolves flags against
 # localhost:8013 inside that pod.
 apiVersion: core.openfeature.dev/v1beta1
 kind: FeatureFlagSource

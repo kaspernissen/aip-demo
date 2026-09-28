@@ -67,14 +67,14 @@ def test_the_response_carries_all_five_scores_with_value_label_and_explanation()
 
 
 def test_an_unscorable_dimension_does_not_take_the_other_four_down_with_it():
-    """I3 (fix round 1; ledger ruling M5-R32): before this, `scores_for`'s
-    dict comprehension had no isolation between scorers, so ONE dimension
-    raising `contract.TrajectoryUnscorable` -- a contract-version divergence
-    that only `identity_had_authority` reads -- erased all five. This
-    constructs exactly that divergence (a decision recording `version="v2"`
-    while `CURRENT_CONTRACT_VERSION` is `None`, M5-R29) and asserts the
-    other four score normally, with `identity_had_authority` named in
-    `unscorable` rather than silently missing or scored 1.0."""
+    """`scores_for`'s dict comprehension must isolate scorers from each
+    other: ONE dimension raising `contract.TrajectoryUnscorable` -- a
+    contract-version divergence that only `identity_had_authority` reads --
+    must not erase all five. This constructs exactly that divergence (a
+    decision recording `version="v2"` while `CURRENT_CONTRACT_VERSION` is
+    `None`) and asserts the other four score normally, with
+    `identity_had_authority` named in `unscorable` rather than silently
+    missing or scored 1.0."""
     documents = [
         fixtures.root(0.0),
         fixtures.decision(2.0, "propose_payment", "permit", amount=5800.0),

@@ -1,10 +1,7 @@
 """The stage surface's HTML. Server-rendered strings, no templating engine
 and no frontend toolchain -- following apps/customer-ui's layout in spirit
 (one page, one form, legible from the back of a room) while using this
-service's own stack, per
-docs/superpowers/specs/2026-09-10-northstar-m3-supervised-design.md §3:
-"`reviewer-ui` follows customer-ui's existing pattern rather than
-introducing a frontend toolchain."
+service's own stack.
 
 Every figure this module prints is read out of the dict it was handed --
 `payment["amount"]`, `payment["refusal"]["rule"]`, and so on -- never summed,
@@ -30,7 +27,7 @@ from typing import Any
 # wears -- navy and white, Spectral for display, IBM Plex Sans and Mono for
 # everything else. The tokens are mirrored by hand from
 # apps/customer-ui/src/app/globals.css because this service deliberately ships
-# no frontend toolchain (M3 design spec §3); if one moves, move the other.
+# no frontend toolchain; if one moves, move the other.
 #
 # TWO STRINGS THIS STYLESHEET MAY NOT CONTAIN, both asserted by
 # tests/test_render.py against pages this CSS is inlined into:
@@ -214,11 +211,9 @@ def list_page(payments: list[dict[str, Any]]) -> str:
 
 
 def error_page(message: str) -> str:
-    # Shipped with a keyword-only `status_hint` parameter that no caller ever
-    # passed: main.py's six call sites all pass the message alone, and the
-    # HTTP status each of them chooses is already on the response. Dropped in
-    # the M3 final-review fix round rather than left standing as a second,
-    # unexercised way to say the same thing.
+    # Takes the message alone, not a separate status hint: main.py's six call
+    # sites all pass just the message, and the HTTP status each of them
+    # chooses is already on the response.
     return _page("Reviewer UI", f'<p class="error">{escape(message)}</p>')
 
 

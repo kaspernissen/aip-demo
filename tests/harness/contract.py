@@ -2,33 +2,30 @@
 else -- no trace assertions, no browser, no policy knowledge.
 
 **Why this lives here rather than inside `tests/e2e/test_progressive_autonomy.py`
-itself.** Task 6's own file is not the only one with an opinion about the
-contract's live state: `test_supervised.py::denial_run` and
+itself.** That file is not the only one with an opinion about the contract's
+live state: `test_supervised.py::denial_run` and
 `test_policy_denial.py::denial_run` both drive a real settlement expecting the
-junior identity to be *denied* under `settlement-agent.assisted.execute_limit`
-(review finding I4, M5 ledger). That assumption held for free while the
-targeting block was a permanent no-op (M5-R8); it stops holding for free the
-moment anything in this suite can flip it, even transiently. Both fixtures
+junior identity to be *denied* under `settlement-agent.assisted.execute_limit`.
+That assumption holds only as long as nothing in this suite has flipped the
+targeting block away from its shipped no-op, even transiently. Both fixtures
 import `assert_assisted` from here and call it before driving, so a leaked
 flip from a previous, crashed run of `test_progressive_autonomy.py` fails
 loudly and immediately at the one place it would otherwise silently
 invalidate a denial regression test, rather than producing a confusing
 "the junior executed?!" failure three assertions later.
 
-**The flip is live-only, on purpose (the module docstring's own words:
-"one word in the *contract*. It is not one word in the repo").**
-`deploy/platform/openfeature/featureflag.yaml` is never read or written here.
-`set_targeted_branch` issues a `kubectl patch --type=json` against the live
-`FeatureFlag` object only, so `tests/test_contract.py`'s
+**The flip is live-only, on purpose: one word in the *contract*, not one word
+in the repo.** `deploy/platform/openfeature/featureflag.yaml` is never read
+or written here. `set_targeted_branch` issues a `kubectl patch --type=json`
+against the live `FeatureFlag` object only, so `tests/test_contract.py`'s
 `test_current_level_matches_the_feature_flags_targeting_branches` (which
 parses the checked-in YAML, never the cluster) cannot be affected by
 anything this module does, and `scorer/contract.py`'s `CURRENT_LEVEL`
-constant never needs to move for this file's flip to be real (ruling
-M5-R29/M5-R31 -- see that module's own docstring for why route 2 means the
-audit trusts the *published* contract and not a live-only patch: a
-transient flip through here, if it were ever scored, would legitimately
-read `level-does-not-match-contract`, which is the audit doing its job, not
-a defect in this harness).
+constant never needs to move for this file's flip to be real (see that
+module's own docstring for why the audit trusts the *published* contract
+and not a live-only patch: a transient flip through here, if it were ever
+scored, would legitimately read `level-does-not-match-contract`, which is
+the audit doing its job, not a defect in this harness).
 
 **Propagation is verified, not assumed.** flagd's `FeatureFlagSource` names
 `provider: kubernetes` (`deploy/platform/openfeature/featureflagsource.yaml`),
@@ -56,7 +53,7 @@ PDS_LABEL_SELECTOR = "app=policy-decision-service"
 OFREP_PORT = 8016
 
 # Index 1 of the targeting `if` array: `[condition, then, else]`. This is the
-# ONE branch M5-R8 ships as a no-op ("assisted") and the only one this module
+# one branch that ships as a no-op ("assisted") and the only one this module
 # ever writes. Index 2 (the else branch, every caller the flag does not name)
 # and `defaultVariant` (the fail-closed path) are never touched -- both must
 # stay "assisted" always, flip or no flip.

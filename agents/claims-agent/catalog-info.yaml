@@ -1,6 +1,6 @@
-# M6 Task 2: this component's software-catalog entry. Staging/build-context
-# note lives in the top-level catalog-info.yaml -- read that once, not once
-# per component.
+# This component's software-catalog entry. Staging/build-context note lives
+# in the top-level catalog-info.yaml -- read that once, not once per
+# component.
 #
 # The agent card is LINKED via the API entity below, not restated: the
 # Component -> providesApis -> API relationship points a reader at
@@ -32,9 +32,8 @@
 # `file:` scheme at all. Placeholder inclusion of a local, git-less file is
 # not supported by this version's default reader set; a custom
 # `coreServices.urlReader` backend module could add one, but that is real
-# new backend code this milestone did not scope in, not a config change --
-# the Component -> API graph edge below is the honest version of "point at
-# it" that actually works today.
+# new backend code, not a config change -- the Component -> API graph edge
+# below is the honest version of "point at it" that actually works today.
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:

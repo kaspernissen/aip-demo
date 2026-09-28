@@ -1,5 +1,4 @@
-# reviewer-ui: Python (FastAPI + server-rendered HTML), per
-# docs/superpowers/specs/2026-09-10-northstar-m3-supervised-design.md §3.
+# reviewer-ui: Python (FastAPI + server-rendered HTML).
 # No frontend toolchain: FastAPI renders HTML strings directly (see render.py),
 # the same "no build step" property apps/customer-ui deliberately does NOT
 # have (it is Next.js) but this stage surface does.

@@ -1,24 +1,23 @@
-# M3 Task 3: the colleague with higher approval authority settlement-agent's
-# own refusal narrates. This is settlement-agent.yaml with exactly four
-# strings changed -- the ServiceAccount name, the `app` label (everywhere it
-# appears), the Deployment name, and the Service name -- with the original
-# file's explanatory commentary elided rather than duplicated verbatim (this
-# file carries its own comments, scoped to what differs; see
-# settlement-agent.yaml for the reasoning behind each shared env var and
-# setting). The manifest *content* is genuinely identical to
-# settlement-agent.yaml under those four substitutions -- verified by a
-# normalised diff (M3 Task 3 review) -- so nothing here changes what gets
-# deployed; only the comments explaining it are shorter.
+# This is the colleague with higher approval authority that settlement-agent's
+# own refusal narrates. It is settlement-agent.yaml with exactly four strings
+# changed -- the ServiceAccount name, the `app` label (everywhere it appears),
+# the Deployment name, and the Service name -- with the original file's
+# explanatory commentary elided rather than duplicated verbatim (this file
+# carries its own comments, scoped to what differs; see settlement-agent.yaml
+# for the reasoning behind each shared env var and setting). The manifest
+# *content* is genuinely identical to settlement-agent.yaml under those four
+# substitutions, so nothing here changes what gets deployed; only the
+# comments explaining it are shorter.
 #
 # Same image (`localhost:5001/northstar/settlement-agent:dev` -- there is no
 # separate senior-settlement-agent image to build). That tag is MUTABLE, and
 # keeping the two pods on one build is therefore an operational requirement,
 # not something the manifest can state and be done with:
 # `scripts/rebuild-and-deploy.sh` carries a COMPANION_DEPLOYMENTS entry that
-# restarts this Deployment whenever settlement-agent's image is rebuilt (added
-# in the M3 final-review fix round; setup-kind.sh's Step 9d had the same
-# restart on the full-cluster path only). Without it this pod goes on serving
-# the previous build and the byte-identical premise above stops being true.
+# restarts this Deployment whenever settlement-agent's image is rebuilt
+# (setup-kind.sh's full-cluster path restarts it the same way). Without it
+# this pod goes on serving the previous build and the byte-identical premise
+# above stops being true.
 # Same agent-card, same
 # prompt, same env vars, same tools, same MCP path, same gateway,
 # NORTHSTAR_GATEWAY_AUDIENCE unchanged. SPIRE needs no new registration: the

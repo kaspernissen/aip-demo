@@ -1,9 +1,8 @@
 /**
- * M6 task-3 review, M5: `index.ts`'s `init` used to call
- * `buildInClusterWriterKubeConfig()` unguarded, so a missing writer token
- * (any local `yarn start`, or a cold `--stage 6` racing the token
- * controller -- M6-R6) threw out of `init` and
- * `@backstage/backend-app-api`'s `BackendInitializer` turned that into a
+ * `index.ts`'s `init` must not call `buildInClusterWriterKubeConfig()`
+ * unguarded: a missing writer token (any local `yarn start`, or a cold
+ * bring-up racing the token controller) would throw out of `init`, and
+ * `@backstage/backend-app-api`'s `BackendInitializer` turns that into a
  * fatal `BackendStartupError` -- the whole backend process exits.
  *
  * These tests exercise `initAutonomyContract` directly, with the k8s client
@@ -69,8 +68,8 @@ describe('initAutonomyContract', () => {
 
     // retryDelayMs: 0 keeps this hermetic and sub-second -- the property
     // under test is "degrades after exhausting retries", not "waits 1s
-    // between attempts", which the whole-branch-review M6 fix's production
-    // default (retryDelayMs unset) covers instead.
+    // between attempts", which the production default (retryDelayMs unset)
+    // covers instead.
     await expect(
       initAutonomyContract(
         { httpRouter, logger, auditor: fakeAuditor() },
@@ -119,15 +118,15 @@ describe('initAutonomyContract', () => {
     expect(res.status).not.toBe(503);
   });
 
-  it('whole-branch review M6: mounts the real router when the credential is late but arrives within the retry window, instead of degrading permanently', async () => {
-    // The exact cold-`--stage 6` race: the writer-token Secret's key is not
+  it('mounts the real router when the credential is late but arrives within the retry window, instead of degrading permanently', async () => {
+    // The exact cold-bring-up race: the writer-token Secret's key is not
     // there yet on the first attempt (ENOENT-shaped failure), and lands
-    // before the retries are exhausted. Before this fix, credential
-    // acquisition ran ONCE in registerInit, so this scenario always
-    // degraded -- silently, since the pod's readiness probe does not touch
-    // this plugin (M6-R6/M6). Mutating this away (e.g. reverting to a single
-    // attempt) makes this test RED: `buildInClusterWriterKubeConfig` would
-    // be called once, throw, and the degraded router would mount instead.
+    // before the retries are exhausted. Running credential acquisition ONCE
+    // in registerInit would always degrade this scenario -- silently, since
+    // the pod's readiness probe does not touch this plugin. Mutating this
+    // away (e.g. reverting to a single attempt) makes this test RED:
+    // `buildInClusterWriterKubeConfig` would be called once, throw, and the
+    // degraded router would mount instead.
     let calls = 0;
     (k8sClient.buildInClusterWriterKubeConfig as jest.Mock).mockImplementation(
       () => {

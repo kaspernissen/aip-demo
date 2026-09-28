@@ -42,11 +42,11 @@ class FakeLedger:
         self._listing = listing if listing is not None else [REFUSED_PAYMENT]
         self._record = record if record is not None else dict(REFUSED_PAYMENT)
         self._get_error = get_error
-        # The span that was current at the moment each read was made. This is
-        # the property R36 is about: in production it is what
-        # `HTTPXClientInstrumentor` hangs its CLIENT span (and the injected
-        # `traceparent`) off, so a read made with no current span puts itself
-        # and payments-api's own server span in a trace of their own.
+        # The span that was current at the moment each read was made. In
+        # production this is what `HTTPXClientInstrumentor` hangs its CLIENT
+        # span (and the injected `traceparent`) off, so a read made with no
+        # current span puts itself and payments-api's own server span in a
+        # trace of their own.
         self.span_context_at_list: object | None = None
         self.span_context_at_get: object | None = None
 
@@ -130,10 +130,9 @@ async def test_index_reports_a_ledger_outage_honestly(monkeypatch):
 async def test_index_makes_its_ledger_read_inside_an_owned_review_queue_span(
     monkeypatch, traced
 ):
-    """R36: the listing read must have a parent span, or its CLIENT span roots
-    a trace of its own and payments-api's server span for the read lands in a
-    second, unrelated one -- measured as zero shared trace ids across the 30
-    most recent traces of each shape before this was fixed.
+    """The listing read must have a parent span, or its CLIENT span roots a
+    trace of its own and payments-api's server span for the read lands in a
+    second, unrelated one.
 
     The span context captured *inside* `list_refused` is the assertion that
     matters: it is exactly what `HTTPXClientInstrumentor` reads to parent its
@@ -185,9 +184,8 @@ async def test_a_ledger_outage_ends_the_review_queue_span_error(monkeypatch, tra
 
 
 async def test_healthz_produces_no_span_at_all(traced):
-    """bootstrap.py's own claim, and the half of it that survived R36: the
-    probe endpoint makes no outbound call and owns no domain event, so it is
-    not telemetry this service invents."""
+    """bootstrap.py's own claim: the probe endpoint makes no outbound call
+    and owns no domain event, so it is not telemetry this service invents."""
     transport = httpx.ASGITransport(app=main.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         response = await c.get("/healthz")

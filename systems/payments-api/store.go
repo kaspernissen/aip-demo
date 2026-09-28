@@ -12,7 +12,7 @@ import (
 //
 // StatusRefused is terminal-until-approved, not a new state machine: it is
 // reached only from StatusProposed (see store.refuse), and StatusExecuted
-// stays reachable only through store.execute -- the same execute path M2's
+// stays reachable only through store.execute -- the same execute path the
 // policy engine already guards. Recording a refusal never touches that path;
 // it only adds a fact beside the payment for a human reviewer to read. See
 // TestARefusedPaymentCanStillBeExecutedAfterwards in handlers_test.go, which
@@ -26,10 +26,10 @@ const (
 var (
 	ErrNotFound = errors.New("payment not found")
 	ErrExecuted = errors.New("payment already executed")
-	// ErrAlreadyRefused (M3 Task 3 review fix round, R12): a payment already
-	// in StatusRefused may not be refused a second time. See store.refuse's
-	// own doc comment for why this replaced the earlier "refusing an
-	// already-refused payment simply replaces the record" behaviour.
+	// ErrAlreadyRefused: a payment already in StatusRefused may not be
+	// refused a second time -- replacing the record on a second refuse call
+	// would let a caller repoint the audit trail. See store.refuse's own doc
+	// comment for the full reasoning.
 	ErrAlreadyRefused = errors.New("payment already refused")
 )
 
@@ -47,30 +47,25 @@ type Payment struct {
 //
 // Rule, Limit, Requested and RefusedTraceID are ledger facts: the Policy
 // Decision Service's own denial, and the trace that recorded it -- this
-// service never invents or recomputes any of them, it only carries what
-// Task 3's settlement agent reports. RefusedAt is this ledger's own fact too,
-// stamped by store.refuse at the moment it records the refusal, not supplied
-// by the caller.
+// service never invents or recomputes any of them, it only carries what the
+// settlement agent reports. RefusedAt is this ledger's own fact too, stamped
+// by store.refuse at the moment it records the refusal, not supplied by the
+// caller.
 //
-// RefusedSpanID (M3 Task 3): the refusal's own span, not just its trace.
-// Added after Task 2 shipped `refusedTraceId` alone, once M3 Task 3 measured
-// that a span link needs a real span id to survive -- the OpenTelemetry SDK
-// silently drops a Link built from an invalid SpanContext (span_id=0, no
-// attributes) before it ever reaches an exporter. The trace id alone cannot
-// carry the approved-execution trace's link back to a specific span, only
-// to the trace as a whole. This field is what makes that link real rather
-// than assumed.
+// RefusedSpanID names the refusal's own span, not just its trace: a span
+// link needs a real span id to survive -- the OpenTelemetry SDK silently
+// drops a Link built from an invalid SpanContext (span_id=0, no attributes)
+// before it ever reaches an exporter. The trace id alone cannot carry the
+// approved-execution trace's link back to a specific span, only to the
+// trace as a whole. This field is what makes that link real rather than
+// assumed.
 //
-// M3 Task 3 review (finding 3 / R13): what this field actually carries is
-// the settlement-agent span active in `decide_settlement` when the refusal
-// was recorded -- settlement-agent's own A2A server span, by the time
-// `settlement_agent.run()` has returned -- not the Policy Decision
-// Service's `policy.decision` span, and not the denied `execute_payment`
-// client span. It is still the right span for `execute_approved` to link
-// from (see settlement.py's `_refusal_link`); this comment previously
-// overstated it as "the exact span that recorded the refusal", which reads
-// as the PDS's own decision span. The value this field carries is
-// unchanged -- only this description was wrong.
+// What this field actually carries is the settlement-agent span active in
+// `decide_settlement` when the refusal was recorded -- settlement-agent's
+// own A2A server span, by the time `settlement_agent.run()` has returned --
+// not the Policy Decision Service's `policy.decision` span, and not the
+// denied `execute_payment` client span. It is still the right span for
+// `execute_approved` to link from (see settlement.py's `_refusal_link`).
 //
 // Narrative is the one field on this whole struct that is model output, not
 // a ledger fact. It is stored verbatim as *what the model said* when it
@@ -152,16 +147,13 @@ func (s *store) get(paymentID string) (Payment, error) {
 // gives it the same 409 shape -- because the money has already moved once,
 // and a refusal record after that would misstate the ledger.
 //
-// M3 Task 3 review fix round (finding 2 / R12, superseding the comment this
-// replaced): it also rejects an already-refused payment with
-// ErrAlreadyRefused. The earlier behaviour -- "refusing an already-refused
-// payment simply replaces the record" -- was the hole the reviewer named:
-// propose CREATES a record; refuse MUTATES the one a human reviewer reads
-// before releasing money, and an unconditional second refuse let any caller
-// overwrite refusedTraceId/refusedSpanId, repointing the audit link at a
-// trace of their own choosing. There is exactly one legitimate path to
-// StatusRefused (a payment that is merely `proposed`), so a second refuse
-// call is never the ordinary case; it is now refused rather than accepted.
+// It also rejects an already-refused payment with ErrAlreadyRefused: propose
+// CREATES a record; refuse MUTATES the one a human reviewer reads before
+// releasing money, so allowing an unconditional second refuse call would let
+// any caller overwrite refusedTraceId/refusedSpanId, repointing the audit
+// link at a trace of their own choosing. There is exactly one legitimate
+// path to StatusRefused (a payment that is merely `proposed`), so a second
+// refuse call is never the ordinary case.
 func (s *store) refuse(paymentID string, r refusal) (Payment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
