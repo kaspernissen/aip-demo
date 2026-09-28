@@ -490,8 +490,8 @@ def test_the_contracts_gated_figure_is_what_pytest_would_actually_skip():
     """The gated count is published in documents and must be re-derived, not
     hand-counted once and trusted forever.
 
-    `docs/telemetry-contract.md` and `README.md` both state how many tests sit
-    behind `RUN_BROWSER_TESTS=1`, and the contract's own prose says the figure
+    `docs/telemetry-contract.md` states how many tests sit behind
+    `RUN_BROWSER_TESTS=1`, and its own prose says the figure
     "is measured ... a `--collect-only` run with a plugin that counts items
     carrying a `skipif` whose reason names `RUN_BROWSER_TESTS`". Without a
     guard, **deleting a `pytestmark` from a settlement-driving e2e file
@@ -526,26 +526,14 @@ def test_the_contracts_gated_figure_is_what_pytest_would_actually_skip():
         f"pytest collects {_collected_test_count()}"
     )
 
-    readme = (REPO_ROOT / "README.md").read_text()
-    readme_figure = re.search(
-        r"modules sit behind `RUN_BROWSER_TESTS=1`, \*\*(\d+)\*\* tests in all", readme
-    )
-    assert readme_figure, (
-        "expected README.md to state '<word> modules sit behind "
-        "`RUN_BROWSER_TESTS=1`, **<N>** tests in all'"
-    )
-    assert int(readme_figure.group(1)) == gated, (
-        f"README.md publishes {readme_figure.group(1)} gated tests and pytest "
-        f"finds {gated}. Per file: {per_file}"
-    )
 
 
 def test_the_full_per_module_gated_spread_matches_what_pytest_reports():
-    """The per-module gated counts are published in BOTH
-    `docs/telemetry-contract.md`'s "Full spread" sentence and README.md's own
-    "The spread:" paragraph -- the same integers, summing to the same
-    guarded total -- and both must be compared to `_gated_test_count()`'s own
-    `per_file` dict, which already computes this exact spread.
+    """The per-module gated counts are published in
+    `docs/telemetry-contract.md`'s "Full spread" sentence, and must match
+    `_gated_test_count()`'s own `per_file` dict, which computes this exact
+    spread. The contract is the one place they are published; README.md
+    points at it rather than restating them.
     """
     _, per_file = _gated_test_count()
 
@@ -566,47 +554,14 @@ def test_the_full_per_module_gated_spread_matches_what_pytest_reports():
         f"Measured: {per_file}"
     )
 
-    readme = (REPO_ROOT / "README.md").read_text()
-    # `The <number> partly-gated ones` -- the number word is matched rather
-    # than spelled, because it moves whenever a partly-gated module is added
-    # or removed, and an anchor that names the count would turn "the prose
-    # was updated correctly" into "the guard cannot find the prose at all",
-    # which reports as the wrong defect.
-    readme_match = re.search(
-        r"The\s+spread:(.*?)The\s+\w+ partly-gated ones", readme, re.S
-    )
-    assert readme_match, (
-        "expected README.md to state the per-module spread as 'The spread: "
-        "...' ending before 'The <number> partly-gated ones'"
-    )
-    section = readme_match.group(1)
-    # Two forms coexist in the prose: "`file.py` (N)" for a fully-gated
-    # module, and "N of the M in `file.py`" for one that is only partly
-    # gated -- both spellings are pulled out and merged into one dict, since
-    # either one publishes the same fact this test checks: how many of that
-    # module's tests are gated.
-    readme_spread = {
-        name: int(count)
-        for name, count in re.findall(
-            r"`(?:tests/e2e/)?(test_\w+\.py)`\s*\((\d+)", section
-        )
-    }
-    for count, name in re.findall(
-        r"(\d+) of the \d+\s+in\s*`(?:tests/e2e/)?(test_\w+\.py)`", section
-    ):
-        readme_spread[name] = int(count)
-    assert readme_spread == per_file, (
-        "README.md's 'The spread:' paragraph has drifted from what pytest "
-        f"actually reports. Published: {readme_spread}. Measured: {per_file}"
-    )
 
 
 def test_the_published_browser_split_is_what_the_source_says():
     """The one gated figure that had no guard at all: how few of the gated
     modules actually start a browser.
 
-    `RUN_BROWSER_TESTS=1` is a **cost** gate, and the two documents say so by
-    stating this split. Every other count in these documents is checked
+    `RUN_BROWSER_TESTS=1` is a **cost** gate, and the contract says so by
+    stating this split. Every other count in that document is checked
     against pytest; a figure checked only against a reader is a figure that
     can silently go wrong when the gated module list changes and nobody
     re-derives it by hand. It is trivially derivable, so it is derived:
@@ -639,18 +594,12 @@ def test_the_published_browser_split_is_what_the_source_says():
     without_browser = len(gated_modules) - with_browser
     total = len(gated_modules)
 
-    # README.md has no append-only history of sealed-but-superseded blocks
-    # (its rows are overwritten in place), so `path.read_text()` -- the whole
-    # file -- is fine for it. `docs/telemetry-contract.md` does have that
-    # history, so it must go through `_current_figures_block()` instead: an
+    # `docs/telemetry-contract.md` keeps an append-only history of sealed,
+    # superseded blocks, so it goes through `_current_figures_block()`: an
     # unnarrowed scan of the whole file would match a claim inside a sealed
     # historical block too, and require that block to keep restating today's
-    # figure forever -- the "derive figures, never retype them" rule broken
-    # by the very guard meant to enforce it.
-    for path, text in (
-        (CONTRACT_PATH, _current_figures_block()),
-        (REPO_ROOT / "README.md", (REPO_ROOT / "README.md").read_text()),
-    ):
+    # figure forever.
+    for path, text in ((CONTRACT_PATH, _current_figures_block()),):
         claims = re.findall(
             r"\*\*(\d+) of the (\d+) (?:gated modules )?(launch a browser|start no browser)\*\*",
             text,
