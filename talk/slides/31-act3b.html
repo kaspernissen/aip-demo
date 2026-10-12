@@ -1,3 +1,96 @@
+<!-- 32 · NEW · deep dive after step 1: five 401s, and the caller as half of the lookup key (Ch 7, Figures 7.3 and 7.4) -->
+<section class="slide content" data-label="Identity is an input">
+  <p class="ring">Core &middot; Identity</p>
+  <h2 class="slide-title">Identity is an input, not a label</h2>
+  <div class="x31-id rise">
+    <div>
+      <p class="x31-lab"><span class="x31-n">1</span>Five bad credentials, five HTTP 401s</p>
+      <div class="x31-401">
+        <span>No token</span><span class="e">no bearer token found</span>
+        <span>Garbage token</span><span class="e">token header is malformed</span>
+        <span>Untrusted issuer</span><span class="e">token uses the unknown key</span>
+        <span>Forged key id</span><span class="e">InvalidSignature</span>
+        <span class="hi">Genuine SVID, wrong audience</span><span class="e hi">InvalidAudience</span>
+      </div>
+    </div>
+    <div>
+      <p class="x31-lab"><span class="x31-n">2</span>Same code, same rule, different caller</p>
+      <div class="x31-rows">
+        <div><div class="who">…/sa/<b>settlement-agent</b></div><div class="amt">€6,000</div></div>
+        <div><div class="who">…/sa/<b>senior-settlement-agent</b></div><div class="amt sen">€25,000</div></div>
+        <div><div class="who">anyone else</div><div class="amt none">no row: unknown_caller</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 32r · BOUNDED · optional: reach has two layers, after William's Linkerd reach beat, backed by the Linkerd spike's measured results (scratchpad linkerd-spike-report.md, 2026-10-12: criteria 1, 3, 4, 6, release channels). The demo runs Cilium only. -->
+<section class="slide content" data-label="Reach has two layers">
+  <p class="ring">Ring 1 &middot; Reach</p>
+  <h2 class="slide-title">Reach has two layers</h2>
+  <p class="x31-opt rise">Optional &middot; after William&rsquo;s Linkerd beat &middot; measured in a spike, not part of this demo</p>
+  <div class="x31-tw x31-tw-r rise">
+    <div>
+      <p class="x31-tw-k">Linkerd</p>
+      <p class="x31-tw-s">identity, at the destination</p>
+      <p class="x31-tw-l">Every bypass of payments-mcp and the PDS: <span class="code m">HTTP 403</span></p>
+      <p class="x31-tw-l">Pods with no proxy, or skipping it: <span class="code m">403</span> too</p>
+      <p class="x31-tw-l">Meshed, the claim stayed <b>one trace</b>: 149 &rarr; 293 spans</p>
+    </div>
+    <div>
+      <p class="x31-tw-k">Cilium</p>
+      <p class="x31-tw-s">in the kernel, by name</p>
+      <p class="x31-tw-l">Only the settlement agents reach <span class="code">api.anthropic.com</span></p>
+      <p class="x31-tw-l">Linkerd&rsquo;s egress rule can&rsquo;t say that: namespace-wide, and it matches the SNI only</p>
+    </div>
+  </div>
+  <p class="x31-line">This demo runs Cilium only. <em>Open-source Linkerd ships edge releases only.</em></p>
+</section>
+
+<!-- 25 · NEW · deep dive after step 2: the full deny trace from the customer UI, after Ch 5 Figure 5.5 and Ch 6 Figure 6.13 (trace a4007e49…) -->
+<section class="slide content" data-label="One trace, and the absence">
+  <p class="ring">Ring 2 &middot; Capability</p>
+  <h2 class="slide-title">One trace, and the absence that proves it</h2>
+  <div class="stree rise" style="margin-top:calc(1.5 * var(--baseline))">
+    <div class="r"><span class="svc sys">customer-ui</span><span class="op">claim.submit</span><span class="v">root &middot; <span class="code c">northstar.claim.id=CLM-1842</span></span></div>
+    <div class="r i1"><span class="svc agent">settlement-agent</span><span class="op">invoke_agent settlement_agent</span></div>
+    <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">execute_tool propose_payment</span><span class="flag ok">permit</span></div>
+    <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">execute_tool execute_payment</span><span class="v">ERROR</span></div>
+    <div class="r i3"><span class="svc gw">agentgateway</span><span class="op">tools/call</span><span class="v"><span class="code m">jwt.sub=…/sa/settlement-agent</span> <span class="code m">http.status=200</span></span></div>
+    <div class="r i4"><span class="svc gw">agentgateway</span><span class="op">Guardrail</span><span class="v"><span class="code">grpc.status=0</span></span></div>
+    <div class="r i4 hl"><span class="svc pds">policy-decision-service</span><span class="op">policy.decision</span><span class="flag deny">deny</span><span class="v">&euro;6,200 &gt; &euro;6,000</span></div>
+    <div class="r i4 absent"><span class="svc">agentgateway</span><span class="op">tools/call payments-mcp_execute_payment</span><span class="x31-never">never attempted</span></div>
+    <div class="r i5 absent"><span class="svc">payments-mcp</span><span class="op">tools/call execute_payment</span></div>
+    <div class="r i5 absent"><span class="svc">payments-api</span><span class="op">POST /payments/{paymentId}/execute</span></div>
+    <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">chat claude-sonnet-5</span><span class="v">narrates the refusal, no retry</span></div>
+    <div class="r i1"><span class="svc agent">settlement-agent</span><span class="op">MCP send tools/call refuse_payment</span><span class="flag ok">permit</span></div>
+  </div>
+  <p class="x31-tread"><b>Read it like this:</b> indented means called by the line above · struck through means it never happened</p>
+</section>
+
+<!-- 27 · NEW · the gateway's spans per governed call: Ch 6 Figure 6.7 tree with the measured key counts, plus Figure 6.15's four added keys -->
+<section class="slide content" data-label="What agentgateway says about one governed call">
+  <h2 class="slide-title">What agentgateway says about one governed call</h2>
+  <div class="stree rise" style="margin-top:calc(1.5 * var(--baseline))">
+    <div class="r"><span class="svc agent">settlement-agent</span><span class="op">POST</span><span class="v">carries the JWT-SVID</span></div>
+    <div class="r i1 hl"><span class="x31-sn">1</span><span class="svc gw">agentgateway</span><span class="op">tools/call</span><span class="v"><b>22 keys</b> &middot; <span class="code m">jwt.sub=spiffe://…/sa/settlement-agent</span> <span class="code m">gen_ai.tool.name=execute_payment</span></span></div>
+    <div class="r i2"><span class="x31-sn">2</span><span class="svc gw">agentgateway</span><span class="op">Guardrail</span><span class="v"><b>9 keys</b> &middot; <span class="code">grpc.status=0</span> the call, not the verdict</span></div>
+    <div class="r i2"><span class="x31-sn">3</span><span class="svc pds">policy-decision-service</span><span class="op">policy.decision</span><span class="v"><b>10 policy.* keys</b> &middot; the why: rule, limit, amount</span></div>
+    <div class="r i2"><span class="x31-sn">4</span><span class="svc gw">agentgateway</span><span class="op">tools/call payments-mcp_execute_payment</span><span class="v"><b>6 keys</b> &middot; no jwt.sub</span></div>
+    <div class="r i3"><span class="svc tool">payments-mcp</span><span class="op">tools/call execute_payment</span></div>
+    <div class="r i4"><span class="svc sys">payments-api</span><span class="op">POST /payments/{paymentId}/execute</span></div>
+  </div>
+  <div class="x31-adds rise"><span class="k">A refusal adds four keys:</span>
+    <span class="code m">error=true</span><span class="code m">otel.status_code=ERROR</span><span class="code m">reason=MCP</span><span class="code m">otel.status_description=&ldquo;mcp: mcpGuardrails rejected: requested 6200 EUR exceeds the 6000 EUR limit&hellip;&rdquo;</span></div>
+</section>
+
+<!-- 28 · NEW · HTTP 200 means no (Ch 6: Figure 6.15, the metrics Figure 6.24, Finding 7) -->
+<section class="slide hero" data-label="HTTP 200 means no">
+  <div class="hero-num cmyk-num rise"><span class="paper">200</span><span class="plate plate-c" aria-hidden="true">200</span><span class="plate plate-m" aria-hidden="true">200</span><span class="plate plate-y" aria-hidden="true">200</span></div>
+  <p class="hero-caption"><b>HTTP 200 means no.</b> The status on a refused call. No metric counts permit versus deny, and zero agentgateway series reach Prometheus.</p>
+  <p class="x31-names">v1.5.0 still writes <span class="code">http.status</span>, not <span class="code">http.response.status_code</span></p>
+</section>
+
 <!-- 28b · NEW · concept before the eight layers: defence in depth, as airport security -->
 <section class="slide content" data-label="Defence in depth">
   <h2 class="slide-title">Defence in depth</h2>
@@ -154,7 +247,7 @@
   </div>
 </section>
 
-<!-- 30a · BOUNDED · two ways to say no, as two layers: HIDE, a static CEL allowlist (William's OSFF demo: mcp.tool.name in [...], the tool never in tools/list, HTTP 400 Unknown tool) beside REFUSE AND RECORD, Northstar's decision service (the €6,200 call depends on its arguments). Credits William; not a disagreement (bounded-ai/README.md; M7 design spec §1) -->
+<!-- 30a · BOUNDED · two ways to say no, as two layers: HIDE, a static CEL allowlist (William's OSFF demo: mcp.tool.name in [...], the tool never in tools/list, HTTP 400 Unknown tool) beside REFUSE AND RECORD, Northstar's decision service (all four tools listed to settlement-agent's SVID, measured 2026-10-12; the €6,200 call depends on its arguments). Credits William; not a disagreement (bounded-ai/README.md; M7 design spec §1) -->
 <section class="slide content" data-label="Two ways to say no">
   <h2 class="slide-title">Two ways to say no</h2>
   <div class="x31-tw rise">
@@ -169,10 +262,10 @@
     <div>
       <p class="x31-tw-k">Refuse and record</p>
       <p class="x31-tw-s">a decision service &middot; Northstar</p>
-      <p class="x31-tw-c"><span class="code">execute_payment</span> is visible. <b>&euro;6,200</b> depends on its arguments.</p>
+      <p class="x31-tw-c"><span class="code">tools/list</span> shows all four tools, <span class="code">execute_payment</span> too. <b>&euro;6,200</b> depends on its arguments.</p>
       <p class="x31-tw-flow"><span>proposed</span><i></i><span class="m">refused</span><i></i><span class="c">recorded</span><i></i><span class="c">explained</span></p>
       <p class="x31-tw-l"><span class="code c">policy.decision</span> deny &middot; rule, limit, amount, caller</p>
-      <p class="x31-tw-f">For a call that is fine until the numbers aren&rsquo;t</p>
+      <p class="x31-tw-f">Listed is not permitted: every call is decided</p>
     </div>
   </div>
   <p class="x31-line">Two layers, not two camps. <em>Hide what it must never touch. Refuse, and record, the rest.</em></p>
@@ -214,32 +307,7 @@
   </div>
 </section>
 
-<!-- 32 · NEW · beat 3 as a slide: five 401s, and the caller as half of the lookup key (Ch 7, Figures 7.3 and 7.4) -->
-<section class="slide content" data-label="Identity is an input">
-  <h2 class="slide-title">Identity is an input, not a label</h2>
-  <div class="x31-id rise">
-    <div>
-      <p class="x31-lab"><span class="x31-n">1</span>Five bad credentials, five HTTP 401s</p>
-      <div class="x31-401">
-        <span>No token</span><span class="e">no bearer token found</span>
-        <span>Garbage token</span><span class="e">token header is malformed</span>
-        <span>Untrusted issuer</span><span class="e">token uses the unknown key</span>
-        <span>Forged key id</span><span class="e">InvalidSignature</span>
-        <span class="hi">Genuine SVID, wrong audience</span><span class="e hi">InvalidAudience</span>
-      </div>
-    </div>
-    <div>
-      <p class="x31-lab"><span class="x31-n">2</span>Same code, same rule, different caller</p>
-      <div class="x31-rows">
-        <div><div class="who">…/sa/<b>settlement-agent</b></div><div class="amt">€6,000</div></div>
-        <div><div class="who">…/sa/<b>senior-settlement-agent</b></div><div class="amt sen">€25,000</div></div>
-        <div><div class="who">anyone else</div><div class="amt none">no row: unknown_caller</div></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- 32b · NEW · concept before beat 4: a span link vs a parent edge -->
+<!-- 32b · NEW · concept before the human approval: a span link vs a parent edge -->
 <section class="slide content" data-label="A span link vs a parent edge">
   <h2 class="slide-title">A span link vs a parent edge</h2>
   <div class="x31-links rise">
@@ -266,54 +334,10 @@
   <p class="x31-q">How does an approval, minutes later, join its refusal?</p>
 </section>
 
-<!-- 33 · NEW · Beat 4 live: the approval as a second governed caller, joined by a span link (Ch 8, Figure 8.4, lifted) -->
-<section class="slide content" data-label="Beat 4: a human overturns it">
-  <div class="beat"><span class="dot"></span>Live &middot; Beat 4</div>
-  <h2 class="slide-title">A human overturns it, through the same door</h2>
-  <figure class="bfig rise x31-fig" style="--fig-h:560px"><svg viewBox="0 0 860 262" role="img" aria-label="Two traces separated by minutes of human time, joined by a span link from the approval trace back to the refused trace">
-<defs><marker id="x31k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9078F3"/></marker></defs>
-<g font-family="Inter, sans-serif">
-<text x="20" y="26" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1.4" fill="#595959">TWO TRACES, ONE LINK</text>
-<text x="20" y="58" font-size="12" font-weight="700" fill="#111111">Trace A · refused</text>
-<rect x="20" y="68" width="300" height="26" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
-<text x="30" y="86" font-size="11" fill="#123E7A">claim.submit → claims-agent → A2A</text>
-<rect x="60" y="100" width="260" height="26" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
-<text x="70" y="118" font-size="11" fill="#123E7A">settlement-agent A2A server span</text>
-<rect x="100" y="132" width="220" height="26" rx="4" fill="#DBD4F8" stroke="#9078F3"/>
-<text x="110" y="150" font-size="11" fill="#111111">policy.decision · deny</text>
-<rect x="100" y="164" width="220" height="26" rx="4" fill="#FFE1D6" stroke="#FD6F40"/>
-<text x="110" y="182" font-size="11" fill="#111111">refuse_payment → ledger</text>
-<rect x="345" y="68" width="150" height="122" rx="6" fill="#F7F7F7" stroke="#9E9E9E" stroke-dasharray="4 4"/>
-<text x="420" y="110" font-size="12" font-weight="700" fill="#595959" text-anchor="middle">minutes</text>
-<text x="420" y="130" font-size="11" fill="#595959" text-anchor="middle">a human reads</text>
-<text x="420" y="146" font-size="11" fill="#595959" text-anchor="middle">the ledger;</text>
-<text x="420" y="162" font-size="11" fill="#595959" text-anchor="middle">process A is gone</text>
-<text x="520" y="58" font-size="12" font-weight="700" fill="#111111">Trace B · approved</text>
-<rect x="520" y="68" width="320" height="26" rx="4" fill="#FEF1F1" stroke="#F8494D"/>
-<text x="530" y="86" font-size="11" fill="#F8494D">review.decision (root) · approve</text>
-<rect x="560" y="100" width="280" height="26" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
-<text x="570" y="118" font-size="11" fill="#123E7A">senior pod A2A server span</text>
-<rect x="600" y="132" width="240" height="26" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
-<text x="610" y="150" font-size="11" fill="#123E7A">settlement.execute_approved</text>
-<rect x="640" y="164" width="200" height="26" rx="4" fill="#DBD4F8" stroke="#9078F3"/>
-<text x="650" y="182" font-size="11" fill="#111111">policy.decision · permit</text>
-<path d="M600,150 C520,240 380,240 322,118" fill="none" stroke="#9078F3" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#x31k)"/>
-<text x="440" y="252" font-size="11" fill="#9078F3" text-anchor="middle">span link (refusedTraceId + refusedSpanId)</text>
-<g font-size="11" font-weight="700" text-anchor="middle">
-<circle cx="146" cy="54" r="9" fill="#FFFFFF" stroke="#111111"/><text x="146" y="58" fill="#111111">1</text>
-<circle cx="420" cy="86" r="9" fill="#FFFFFF" stroke="#111111"/><text x="420" y="90" fill="#111111">2</text>
-<circle cx="654" cy="54" r="9" fill="#FFFFFF" stroke="#111111"/><text x="654" y="58" fill="#111111">3</text>
-<circle cx="302" cy="248" r="9" fill="#FFFFFF" stroke="#111111"/><text x="302" y="252" fill="#111111">4</text>
-<circle cx="826" cy="177" r="9" fill="#FFFFFF" stroke="#111111"/><text x="826" y="181" fill="#111111">5</text>
-</g>
-</g></svg></figure>
-  <p class="x31-line">Nothing was overridden. <em>A different caller was asked about.</em></p>
-</section>
-
-<!-- 34 · NEW · Beat 4 fallback: reviewer-ui.png + jaeger-approval-link.png -->
-<section class="slide content" data-label="Fallback — Beat 4">
-  <div class="beat fallback"><span class="dot"></span>Fallback &middot; Beat 4</div>
-  <h2 class="slide-title">A human overturns it, through the same door</h2>
+<!-- 33 · NEW · a human can overturn it, not in the five-minute cut: reviewer-ui.png + jaeger-approval-link.png (Ch 8; runbook §5 Beat 4, the longer version) -->
+<section class="slide content" data-label="A human can overturn it">
+  <h2 class="slide-title">A human can overturn it, through the same door</h2>
+  <p class="x31-opt rise">Not in the five-minute cut &middot; the longer demo runs it live</p>
   <div class="x31-fb rise" style="grid-template-columns:740px 1fr;align-items:start">
     <div>
       <figure class="shot x31-crop" style="width:740px;height:460px">
@@ -330,35 +354,11 @@
   </div>
 </section>
 
-<!-- 35 · NEW · Beat 7 live: the one-word diff on the FeatureFlag's targeting (deploy/platform/openfeature/featureflag.yaml) -->
-<section class="slide content" data-label="Beat 7: one value changes it">
-  <div class="beat"><span class="dot"></span>Live &middot; Beat 7</div>
-  <h2 class="slide-title">One value changes what the platform may do</h2>
-  <div class="x31-b7 rise">
-    <div>
-      <p class="x31-lab">FeatureFlag northstar-autonomy &middot; targeting</p>
-      <div class="x31-yaml x31-diff">
-        <div class="d">if:</div>
-        <div class="i1"><span class="d">- in:</span> spiffeId, [&hellip;/sa/settlement-agent]</div>
-        <div class="i1 del">- "assisted"</div>
-        <div class="i1 add"><span class="code m">- "autonomous"</span><span class="d note">then</span></div>
-        <div class="i1">- "assisted"<span class="d note">else</span></div>
-      </div>
-    </div>
-    <div class="x31-amt">
-      <div class="eur">&euro;6,200</div>
-      <div class="r"><span class="k">assisted</span><span class="v no">refused</span></div>
-      <div class="r"><span class="k">autonomous</span><span class="v yes">executed</span></div>
-    </div>
-  </div>
-  <p class="x31-line">Same &euro;6,200: executed. <em>No restart, no rebuild, no rollout.</em></p>
-</section>
-
-<!-- 36 · NEW · Beat 7 fallback: backstage-autonomy-assisted/flipped + customer-ui-autonomous-executed + jaeger-autonomy-change -->
-<section class="slide content" data-label="Fallback — Beat 7">
-  <div class="beat fallback"><span class="dot"></span>Fallback &middot; Beat 7</div>
-  <h2 class="slide-title">One value changes what the platform may do</h2>
-  <div class="x31-fb rise" style="grid-template-columns:780px 780px;gap:14px 72px;margin-top:calc(1.2 * var(--baseline))">
+<!-- 36 · NEW · optional: the same flip, with a UI: backstage-autonomy-assisted/flipped + customer-ui-autonomous-executed + jaeger-autonomy-change (runbook §5 Beat 7, the longer version) -->
+<section class="slide content" data-label="The same flip, with a UI">
+  <h2 class="slide-title">The same flip, with a UI</h2>
+  <p class="x31-opt rise">Optional &middot; Backstage writes the same value step 3 wrote, and records the change</p>
+  <div class="x31-fb rise" style="grid-template-columns:780px 780px;gap:14px 72px;margin-top:calc(0.75 * var(--baseline))">
     <div>
       <figure class="shot x31-crop" style="width:780px;height:278px">
         <img src="assets/shots/backstage-autonomy-assisted.png" alt="Backstage autonomy contract card: settlement-agent assisted, senior-settlement-agent assisted" style="width:1733px;left:-303px;top:-485px">
@@ -386,46 +386,6 @@
   </div>
 </section>
 
-<!-- 36a · BOUNDED · Beat K live: the keystone, after William's mic-drop beat. As settlement-agent, patch northstar-autonomy: RBAC Forbidden; a mistaken over-grant; the same patch: Kyverno ValidatingPolicy agents-cannot-edit-their-own-authority denies; over-grant removed; flag still assisted (scripts/beat-keystone.sh; deploy/platform/kyverno/keystone-policy.yaml; deploy/demo/keystone-overgrant.yaml; M7 design spec §2.1 to §2.3) -->
-<section class="slide content" data-label="Beat K — the keystone">
-  <div class="beat"><span class="dot"></span>Live &middot; Beat K</div>
-  <p class="ring">Keystone</p>
-  <h2 class="slide-title">The agent can never edit what constrains it</h2>
-  <p class="x31-cmd rise"><span class="code">./scripts/beat-keystone.sh</span><span class="s">as settlement-agent: <span class="code">patch featureflag northstar-autonomy</span> &rarr; autonomous</span></p>
-  <ol class="x31-ks rise">
-    <li><span class="no">1</span><p class="a">The agent patches its own flag</p><p class="r m">Forbidden</p><p class="w">RBAC: cannot get resource &ldquo;featureflags&rdquo;</p></li>
-    <li class="oops"><span class="no">2</span><p class="a">Someone over-grants it, by mistake</p><p class="r">allowed</p><p class="w">get + patch on one flag &middot; <span class="code">auth can-i</span>: yes</p></li>
-    <li><span class="no">3</span><p class="a">The same patch</p><p class="r m">DENIED</p><p class="w">Kyverno webhook<br><span class="code m">agents-cannot-edit-<wbr>their-own-authority</span></p></li>
-    <li><span class="no">4</span><p class="a">The script removes the over-grant</p><p class="r">deleted</p><p class="w">on every exit path, Ctrl-C too</p></li>
-    <li><span class="no">5</span><p class="a">What the flag resolves to</p><p class="r c">assisted</p><p class="w">unchanged</p></li>
-  </ol>
-  <p class="x31-line">We scripted the attempt. <em>The platform scripts the response.</em></p>
-</section>
-
-<!-- 36af · BOUNDED · Beat K fallback: the real beat-keystone.sh transcript from the stage-7 run, 2026-10-12 (docs/demo-runbook.md Beat K), typeset verbatim, elided with … only -->
-<section class="slide content" data-label="Fallback — Beat K">
-  <div class="beat fallback"><span class="dot"></span>Fallback &middot; Beat K</div>
-  <h2 class="slide-title">The agent can never edit what constrains it</h2>
-  <pre class="term x31-term rise"><span class="h">1. The agent tries to flip its own autonomy flag to 'autonomous'</span>
-<span class="p">$ kubectl --as=system:serviceaccount:northstar-agents:settlement-agent -n northstar-platform patch featureflag/northstar-autonomy …</span>
-  Error from server (<span class="m">Forbidden</span>): … User "system:serviceaccount:northstar-agents:settlement-agent" <span class="m">cannot get resource "featureflags"</span> in API group "core.openfeature.dev" …
-
-<span class="h">2. Someone makes a mistake: the agent is over-granted 'patch' on that one flag</span>
-<span class="p">$ kubectl apply -f deploy/demo/keystone-overgrant.yaml</span>
-  role.rbac.authorization.k8s.io/keystone-demo-overgrant created
-  rolebinding.rbac.authorization.k8s.io/keystone-demo-overgrant created
-<span class="p">$ kubectl --as=system:serviceaccount:northstar-agents:settlement-agent auth can-i patch featureflag/northstar-autonomy</span>
-  yes
-
-<span class="h">3. The same patch again. RBAC now allows it. Kyverno does not.</span>
-<span class="p">$ kubectl --as=…:settlement-agent -n northstar-platform patch featureflag/northstar-autonomy …</span>
-  Error from server: admission webhook "vpol.validate.kyverno.svc-fail-finegrained-agents-cannot-edit-their-own-authority" denied the request:
-  Policy <span class="mm">agents-cannot-edit-their-own-authority</span> failed: <span class="m">DENIED</span>: agent identity 'system:serviceaccount:northstar-agents:settlement-agent' may not change the objects that define its own authority (FeatureFlag/northstar-autonomy). Authority changes go through a reviewed commit, never a runtime decision by the agent.
-
-<span class="h">4. Take the mistake back</span>  …  rolebinding.rbac.authorization.k8s.io "keystone-demo-overgrant" deleted
-<span class="h">5. What does the flag resolve to now?</span>  …  settlement-agent resolves: <span class="c">assisted</span></pre>
-</section>
-
 <!-- 37 · NEW · The platform API is the resource. Handover point (William Rizzo) -->
 <section class="slide content" data-label="The platform API is the resource">
   <h2 class="slide-title">The platform API is the resource</h2>
@@ -436,11 +396,11 @@
     </div>
     <div>
       <h3>The view</h3>
-      <p class="t"><span class="d">Backstage card</span><br>one write, one branch</p>
+      <p class="t"><span class="d">kubectl, or the Backstage card</span><br>the same write</p>
     </div>
     <div>
       <h3>The record</h3>
-      <p class="t"><span class="d">one span per flip</span><br><span class="code c">autonomy_contract.change</span></p>
+      <p class="t"><span class="d">one span per Backstage flip</span><br><span class="code c">autonomy_contract.change</span></p>
     </div>
   </div>
   <div class="x31-keep rise">

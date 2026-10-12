@@ -297,46 +297,6 @@
   </div>
 </section>
 
-<!-- 22c1 · BOUNDED · Beat R live: Ring 1 · Reach, after William's Linkerd reach beat. claims-agent (no SVID) tries payments-mcp directly, past the gateway: Cilium drops it; the control, settlement-agent:9002, is reached (scripts/beat-reach.sh; tests/e2e/test_gateway_is_the_only_route.py; M7 design spec §2.3) -->
-<section class="slide content" data-label="Beat R — the only way in">
-  <div class="beat"><span class="dot"></span>Live &middot; Beat R</div>
-  <p class="ring">Ring 1 &middot; Reach</p>
-  <h2 class="slide-title">The only way in</h2>
-  <p class="x30-cmd rise"><span class="code">./scripts/beat-reach.sh</span><span class="s">no model, no tokens</span></p>
-  <div class="x30-rr rise">
-    <p class="from">claims-agent<span>a real pod, no SVID</span></p>
-    <i class="ln ok"></i>
-    <p class="to">GET settlement-agent<span class="code">:9002/.well-known/agent-card.json</span></p>
-    <p class="res c">REACHED 200<span>the control</span></p>
-    <i class="ln cut"><b>Cilium</b></i>
-    <p class="to">POST payments-mcp<span class="code">:8000/mcp</span></p>
-    <p class="res m">DROPPED timeout<span>8 s, and nothing answered</span></p>
-  </div>
-  <p class="x30-foot">Only agentgateway may connect to payments-mcp. <b>A drop leaves no span.</b></p>
-</section>
-
-<!-- 22c1f · BOUNDED · Beat R fallback: the real beat-reach.sh transcript from the stage-7 run, 2026-10-12 (docs/demo-runbook.md Beat R), typeset verbatim -->
-<section class="slide content" data-label="Fallback — Beat R">
-  <div class="beat fallback"><span class="dot"></span>Fallback &middot; Beat R</div>
-  <h2 class="slide-title">The only way in</h2>
-  <pre class="term x30-term rise"><span class="p">$ ./scripts/beat-reach.sh</span>
-<span class="h">=== Beat R: the only way in ===</span>
-Probing from inside claims-agent-57fcb4b7f9-d7q47 (claims-agent: no SVID, no MCP client, no business at the tool).
-
-<span class="h">1. Control: claims-agent calls settlement-agent, the one peer it exists to call</span>
-<span class="p">$ GET http://settlement-agent.northstar-agents.svc.cluster.local:9002/.well-known/agent-card.json</span>
-  -&gt; <span class="c">REACHED 200</span>
-  reachable, as it should be.
-
-<span class="h">2. Around the gateway: claims-agent sends an MCP initialize straight to payments-mcp</span>
-<span class="p">$ POST http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp   (initialize, 8s connect timeout)</span>
-  -&gt; <span class="m">DROPPED timeout</span>
-  DROPPED. Nothing answered: not a 401, not a refusal. The packet never arrived.
-
-Beat R holds: the gateway is the only route to payments-mcp.
-(Cilium drops are not in the trace; Hubble is not installed.)</pre>
-</section>
-
 <!-- 22c2 · NEW · concept before the gateway config: what an agent gateway is, and why an API gateway is not one (deploy/platform/agentgateway/config.yaml: one mcp backend; tools/payments-mcp/server.py execute_payment) -->
 <section class="slide content" data-label="What agentgateway is">
   <p class="ring">Ring 2 &middot; Capability</p>
@@ -431,138 +391,16 @@ Beat R holds: the gateway is the only route to payments-mcp.
   </div>
 </section>
 
-<!-- 22f · NEW · the demo set-up: docs/demo-runbook.md §1 (story), §2 (the two claims, three ways to succeed), §6 (surfaces and ports); plus the two model-free refusals, Beat R and Beat K (M7 design spec §2.3) -->
+<!-- 22f · NEW · the demo: five commands, about five minutes, one terminal (M7 design spec §7.1; docs/demo-runbook.md §5 "The five-minute flow"; measured timings 2026-10-12) -->
 <section class="slide content" data-label="The demo">
-  <h2 class="slide-title">The demo</h2>
-  <p class="x30-story rise">A customer files a vehicle-damage claim. Agents settle it. <b>The platform decides.</b></p>
-  <div class="x30-demo rise">
-    <div class="claims">
-      <p class="lab">Claim CLM-1842, twice · junior limit €6,000</p>
-      <div class="cl"><span class="ab">A</span><span class="amt m">€6,200</span><span class="res m">refused</span></div>
-      <div class="cl"><span class="ab">B</span><span class="amt c">€5,800</span><span class="res c">executed</span></div>
-    </div>
-    <div class="ways">
-      <p class="lab">Then €6,200 succeeds three ways</p>
-      <p class="w"><span class="no">1</span>a human approves it<span class="how">reviewer UI · live</span></p>
-      <p class="w"><span class="no">2</span>the contract flips, by <span class="code">kubectl</span><span class="how">same identity</span></p>
-      <p class="w"><span class="no">3</span>the same flip, in Backstage<span class="how">Backstage · live</span></p>
-    </div>
+  <h2 class="slide-title">The demo: five commands, one terminal</h2>
+  <div class="x30-dm rise">
+    <p class="h"></p><p class="h">Command</p><p class="h">What you&rsquo;ll see</p><p class="h">Ring</p>
+    <p class="no">1</p><p class="cmd"><span class="code">demo guard</span></p><p class="see">no identity: 401 &middot; around the gateway: dropped &middot; its own identity: the tools</p><p class="rg">Core &middot; Identity<br>Ring 1 &middot; Reach</p>
+    <p class="no">2</p><p class="cmd"><span class="code">demo claim 6200</span></p><p class="see">the model asks to pay &euro;6,200; the platform <b class="m">refuses</b>, and the trace shows it</p><p class="rg">Ring 2 &middot; Capability</p>
+    <p class="no">3</p><p class="cmd"><span class="code">demo autonomy autonomous</span><span class="code">demo claim 6200</span><span class="code">demo autonomy assisted</span></p><p class="see">one live value: the same claim <b class="c">executes</b>, nothing restarts</p><p class="rg">the platform API is the resource</p>
+    <p class="no">4</p><p class="cmd"><span class="code">demo keystone</span></p><p class="see">the agent edits its own limit: RBAC, then Kyverno, <b class="m">deny</b></p><p class="rg">Keystone</p>
+    <p class="no">5</p><p class="cmd"><span class="code">demo evidence</span></p><p class="see">both claims, read back: who decided, rule, limit, caller</p><p class="rg">Prove</p>
   </div>
-  <div class="x30-rk rise">
-    <p class="lab">And two refusals with no model in them, in a terminal</p>
-    <p class="w"><span class="no">R</span>claims-agent goes around the gateway<span class="how">dropped &middot; Cilium</span></p>
-    <p class="w"><span class="no">K</span>the agent edits its own limit<span class="how">denied &middot; RBAC, then Kyverno</span></p>
-  </div>
-  <div class="x30-surf rise">
-    <p><i class="ph-duotone ph-browser"></i>Customer UI<span class="code">:8080</span></p>
-    <p><i class="ph-duotone ph-user-check"></i>Reviewer UI<span class="code">:8081</span></p>
-    <p><i class="ph-duotone ph-tree-structure"></i>Jaeger<span class="code">:16686</span></p>
-    <p><i class="ph-duotone ph-magnifying-glass"></i>OpenSearch<span class="code">:5601</span></p>
-    <p><i class="ph-duotone ph-squares-four"></i>Backstage<span class="code">:7007</span></p>
-  </div>
-</section>
-
-<!-- 23 · NEW · Beat 1 live: Ch 4 Figure 4.1 -->
-<section class="slide content" data-label="Beat 1 — the refusal is the success">
-  <div class="beat"><span class="dot"></span>Live &middot; Beat 1</div>
-  <h2 class="slide-title">The refusal is the success</h2>
-  <figure class="bfig rise" style="--fig-h:400px"><svg viewBox="40 44 820 172" role="img" aria-label="A number line from 5,000 to 6,500 euros showing the 6,000 euro limit between the permitted 5,800 claim and the refused 6,200 claim">
-<g font-family="Inter, sans-serif">
-<rect x="60" y="112" width="493" height="16" fill="#A8FBBE"/>
-<rect x="553" y="112" width="247" height="16" fill="#FCB6B8"/>
-<line x1="60" y1="128" x2="800" y2="128" stroke="#111111" stroke-width="1.5"/>
-<line x1="60" y1="128" x2="60" y2="136" stroke="#111111"/>
-<line x1="307" y1="128" x2="307" y2="136" stroke="#111111"/>
-<line x1="800" y1="128" x2="800" y2="136" stroke="#111111"/>
-<text x="307" y="150" font-size="11" fill="#595959" text-anchor="middle">€5,500</text>
-<text x="800" y="150" font-size="11" fill="#595959" text-anchor="end">€6,500</text>
-<text x="60" y="150" font-size="11" fill="#595959">€5,000</text>
-<line x1="553" y1="96" x2="553" y2="176" stroke="#F8494D" stroke-width="2" stroke-dasharray="5 4"/>
-<text x="553" y="192" font-size="12" font-weight="600" fill="#111111" text-anchor="middle">€6,000 execute limit</text>
-<text x="553" y="208" font-size="10.5" fill="#595959" text-anchor="middle">policy.rule = settlement-agent.assisted.execute_limit</text>
-<circle cx="455" cy="120" r="9" fill="#6AD186" stroke="#18632F" stroke-width="1.5"/>
-<line x1="455" y1="110" x2="455" y2="86" stroke="#18632F"/>
-<text x="445" y="62" font-size="12.5" font-weight="600" fill="#18632F" text-anchor="end">€5,800 · permit</text>
-<text x="445" y="78" font-size="11" fill="#212121" text-anchor="end">executed at once, no human asked</text>
-<circle cx="652" cy="120" r="9" fill="#F8494D" stroke="#111111" stroke-width="1.5"/>
-<line x1="652" y1="110" x2="652" y2="86" stroke="#F8494D"/>
-<text x="662" y="62" font-size="12.5" font-weight="600" fill="#F8494D">€6,200 · deny</text>
-<text x="662" y="78" font-size="11" fill="#212121">refused; a human may approve it</text>
-<text x="800" y="104" font-size="11" fill="#595959" text-anchor="end">senior identity: €25,000 →</text>
-</g></svg></figure>
-  <p class="x30-foot">Same claim <b>CLM-1842</b>. Same agents. Four hundred euros apart.</p>
-</section>
-
-<!-- 24 · NEW · Beat 1 fallback: customer-ui-refused.png + customer-ui-executed.png, cropped to the outcome -->
-<section class="slide content" data-label="Fallback — Beat 1 (refused, then executed)">
-  <div class="beat fallback"><span class="dot"></span>Fallback &middot; Beat 1</div>
-  <h2 class="slide-title">The refusal is the success</h2>
-  <div class="x30-fb1 rise x30-tight" style="margin-top:calc(1.5 * var(--baseline))">
-    <div class="lbl"><b class="spot-2">&euro;6,200</b><span>refused</span></div>
-    <figure class="shot x30-crop" style="width:1240px;height:262px"><img src="assets/shots/customer-ui-refused.png" alt="Customer UI: Settled: refused. Not settled automatically. Amount assessed 6200 EUR." style="width:1325px;left:-43px;top:-1158px"></figure>
-    <div class="lbl"><b class="spot">&euro;5,800</b><span>executed</span></div>
-    <figure class="shot x30-crop" style="width:1240px;height:292px"><img src="assets/shots/customer-ui-executed.png" alt="Customer UI: Settled: executed. Amount assessed 5800 EUR." style="width:1325px;left:-43px;top:-1154px"></figure>
-  </div>
-</section>
-
-<!-- 25 · NEW · Beat 2 live: the deny tree after Ch 5 Figure 5.5 and Ch 6 Figure 6.13 (trace a4007e49…) -->
-<section class="slide content" data-label="Beat 2 — one trace, and the absence">
-  <div class="beat"><span class="dot"></span>Live &middot; Beat 2</div>
-  <h2 class="slide-title">One trace, and the absence that proves it</h2>
-  <div class="stree rise" style="margin-top:calc(1.5 * var(--baseline))">
-    <div class="r"><span class="svc sys">customer-ui</span><span class="op">claim.submit</span><span class="v">root &middot; <span class="code c">northstar.claim.id=CLM-1842</span></span></div>
-    <div class="r i1"><span class="svc agent">settlement-agent</span><span class="op">invoke_agent settlement_agent</span></div>
-    <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">execute_tool propose_payment</span><span class="flag ok">permit</span></div>
-    <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">execute_tool execute_payment</span><span class="v">ERROR</span></div>
-    <div class="r i3"><span class="svc gw">agentgateway</span><span class="op">tools/call</span><span class="v"><span class="code m">jwt.sub=…/sa/settlement-agent</span> <span class="code m">http.status=200</span></span></div>
-    <div class="r i4"><span class="svc gw">agentgateway</span><span class="op">Guardrail</span><span class="v"><span class="code">grpc.status=0</span></span></div>
-    <div class="r i4 hl"><span class="svc pds">policy-decision-service</span><span class="op">policy.decision</span><span class="flag deny">deny</span><span class="v">&euro;6,200 &gt; &euro;6,000</span></div>
-    <div class="r i4 absent"><span class="svc">agentgateway</span><span class="op">tools/call payments-mcp_execute_payment</span><span class="x30-never">never attempted</span></div>
-    <div class="r i5 absent"><span class="svc">payments-mcp</span><span class="op">tools/call execute_payment</span></div>
-    <div class="r i5 absent"><span class="svc">payments-api</span><span class="op">POST /payments/{paymentId}/execute</span></div>
-    <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">chat claude-sonnet-5</span><span class="v">narrates the refusal, no retry</span></div>
-    <div class="r i1"><span class="svc agent">settlement-agent</span><span class="op">MCP send tools/call refuse_payment</span><span class="flag ok">permit</span></div>
-  </div>
-  <p class="x30-read"><b>Read it like this:</b> indented means called by the line above · struck through means it never happened</p>
-</section>
-
-<!-- 26 · NEW · Beat 2 fallback: jaeger-deny-trace.png, jaeger-policy-decision.png, jaeger-guardrail-span.png, cropped -->
-<section class="slide content" data-label="Fallback — Beat 2 (deny trace in Jaeger)">
-  <div class="beat fallback"><span class="dot"></span>Fallback &middot; Beat 2</div>
-  <h2 class="slide-title">One trace, and the absence that proves it</h2>
-  <div class="x30-fb2 rise x30-tight" style="margin-top:calc(1.25 * var(--baseline))">
-    <div class="col">
-      <p class="x30-cap">Jaeger &middot; trace a4007e49&hellip;</p>
-      <figure class="shot x30-crop" style="width:760px;height:591px"><img src="assets/shots/jaeger-deny-trace.png" alt="Jaeger: execute_tool execute_payment with an error marker; under the gateway tools/call only Guardrail and policy.decision, no payments-mcp span" style="width:2702px;left:-272px;top:-2003px"></figure>
-    </div>
-    <div class="col">
-      <p class="x30-cap">policy.decision &middot; <span class="spot-2">deny</span></p>
-      <figure class="shot x30-crop" style="width:760px;height:291px"><img src="assets/shots/jaeger-policy-decision.png" alt="policy.decision tags: caller SPIFFE ID, decision deny, retryable false, limit 6000, requested 6200, EUR, rule settlement-agent.assisted.execute_limit" style="width:2146px;left:-849px;top:-481px"></figure>
-      <p class="x30-cap" style="margin-top:calc(0.75 * var(--baseline))">Guardrail &middot; the call worked</p>
-      <figure class="shot x30-crop" style="width:760px;height:127px"><img src="assets/shots/jaeger-guardrail-span.png" alt="Guardrail tags: outbound kind Policy, subtype Guardrail, grpc.status 0" style="width:2146px;left:-849px;top:-354px"></figure>
-    </div>
-  </div>
-</section>
-
-<!-- 27 · NEW · the gateway's spans per governed call: Ch 6 Figure 6.7 tree with the measured key counts, plus Figure 6.15's four added keys -->
-<section class="slide content" data-label="What agentgateway says about one governed call">
-  <h2 class="slide-title">What agentgateway says about one governed call</h2>
-  <div class="stree rise" style="margin-top:calc(1.5 * var(--baseline))">
-    <div class="r"><span class="svc agent">settlement-agent</span><span class="op">POST</span><span class="v">carries the JWT-SVID</span></div>
-    <div class="r i1 hl"><span class="x30-n">1</span><span class="svc gw">agentgateway</span><span class="op">tools/call</span><span class="v"><b>22 keys</b> &middot; <span class="code m">jwt.sub=spiffe://…/sa/settlement-agent</span> <span class="code m">gen_ai.tool.name=execute_payment</span></span></div>
-    <div class="r i2"><span class="x30-n">2</span><span class="svc gw">agentgateway</span><span class="op">Guardrail</span><span class="v"><b>9 keys</b> &middot; <span class="code">grpc.status=0</span> the call, not the verdict</span></div>
-    <div class="r i2"><span class="x30-n">3</span><span class="svc pds">policy-decision-service</span><span class="op">policy.decision</span><span class="v"><b>10 policy.* keys</b> &middot; the why: rule, limit, amount</span></div>
-    <div class="r i2"><span class="x30-n">4</span><span class="svc gw">agentgateway</span><span class="op">tools/call payments-mcp_execute_payment</span><span class="v"><b>6 keys</b> &middot; no jwt.sub</span></div>
-    <div class="r i3"><span class="svc tool">payments-mcp</span><span class="op">tools/call execute_payment</span></div>
-    <div class="r i4"><span class="svc sys">payments-api</span><span class="op">POST /payments/{paymentId}/execute</span></div>
-  </div>
-  <div class="x30-adds rise"><span class="k">A refusal adds four keys:</span>
-    <span class="code m">error=true</span><span class="code m">otel.status_code=ERROR</span><span class="code m">reason=MCP</span><span class="code m">otel.status_description=&ldquo;mcp: mcpGuardrails rejected: requested 6200 EUR exceeds the 6000 EUR limit&hellip;&rdquo;</span></div>
-</section>
-
-<!-- 28 · NEW · HTTP 200 means no (Ch 6: Figure 6.15, the metrics Figure 6.24, Finding 7) -->
-<section class="slide hero" data-label="HTTP 200 means no">
-  <div class="hero-num cmyk-num rise"><span class="paper">200</span><span class="plate plate-c" aria-hidden="true">200</span><span class="plate plate-m" aria-hidden="true">200</span><span class="plate plate-y" aria-hidden="true">200</span></div>
-  <p class="hero-caption"><b>HTTP 200 means no.</b> The status on a refused call. No metric counts permit versus deny, and zero agentgateway series reach Prometheus.</p>
-  <p class="x30-names">v1.5.0 still writes <span class="code">http.status</span>, not <span class="code">http.response.status_code</span></p>
+  <p class="x30-foot">About 55 s of commands, about 5 minutes with the talking. <b>The model is called in steps 2 and 3 only.</b></p>
 </section>

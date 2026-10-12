@@ -5,9 +5,9 @@ The talk deck for KubeCon + CloudNativeCon North America 2026, Salt Lake City. I
 follower, and a folio with the speaker's handles.
 
 - Subtitle and thesis: **If you can't trace it, you can't govern it.**
-- 82 slides, 51:00 of content: the **long cut**, for a 30-minute slot (Wed 11 Nov, 11:00–11:30). Kasper cuts
-  it down himself. Six live demo beats run against Northstar at stage 7: 1, 2, 4 and 7 in the browser, each
-  with a hidden screenshot fallback, and R (reach) and K (keystone) in a terminal, each with a hidden
+- 84 slides, 49:15 of content: the **long cut**, for a 30-minute slot (Wed 11 Nov, 11:00–11:30). Kasper cuts
+  it down himself. The live demo is five commands in one terminal (`./scripts/demo`, about 5 minutes with
+  narration) against Northstar at stage 7, in its own fragment, `slides/30-live.html`. Each step has a hidden
   fallback that typesets the real transcript of a live run (2026-10-12). Three speaker-only appendix slides
   sit after "Thank you": pre-flight, reset, triage.
 - "Decide" is defined by William's *Bounded Agent Autonomy* (OSFF 2026): the platform enforces an agent's
@@ -27,8 +27,8 @@ follower, and a folio with the speaker's handles.
 ```
 
 **Keys:** `←` / `→` / `Space` to move, `Home` / `End` to jump, number keys to seek, `R` to reset.
-`index.html?slide=27` deep-links to a slide. Fallback slides sit right after each live beat and carry a
-hollow "Fallback · Beat N" marker. When the beat works live, press → to skip past its fallback slide.
+`index.html?slide=27` deep-links to a slide. Fallback slides sit right after each live step and carry a
+hollow "Fallback · Step N" marker. When the step works live, press → to skip past its fallback slide.
 
 ## Build
 
@@ -67,11 +67,12 @@ raise small labels to about 20px at stage size. Don't redraw.
 
 - Every fast-moving fact carries a `[verify: …]` line in its speaker note. They map to Appendix B of the book.
 - The demo hazards are in Ch 14 and in the beat notes:
-  - Beat 6 scores 0.0 as scripted, because of the shared claim id. A clean 1.0 needs the permit run under its
-    own claim id; otherwise keep beat 6 as the slide.
-  - Don't close the customer tab within 5 seconds of a submit.
-  - Switch Jaeger from GenAI View to Trace Timeline.
+  - Run `./scripts/demo reset` before the audience arrives and after every run: a contract left
+    `autonomous` makes step 2 execute instead of refuse.
+  - The longer demo's beat 6 scores 0.0 as scripted, because of the shared claim id; keep it as the slide.
+  - Step 2 waits about 15 s for Jaeger; its note has the line to fill it.
+  - In the browser (the longer demo): don't close the customer tab within 5 seconds of a submit, and switch Jaeger from GenAI View to Trace Timeline.
   - Leave the autonomy contract at `assisted`, and the keystone over-grant absent.
-  - Kyverno must be Ready, with its webhook registered, before Beat K. A gracefully stopped Kyverno deletes its own webhooks, which turns the keystone off silently; `start-demo.sh` checks for this. Backstage's flip is never affected by a Kyverno outage.
+  - Kyverno must be Ready, with its webhook registered, before step 4 (`demo keystone`). A gracefully stopped Kyverno deletes its own webhooks, which turns the keystone off silently; `start-demo.sh` checks for this. Backstage's flip is never affected by a Kyverno outage.
 - Slide 3's note has a placeholder line for William; he should write his own.
 - Two speakers: William Rizzo opens with the auditor's questions and Act 1, Kasper runs Acts 2–4 through the evidence, William closes from "From requirement to artifact". Every note starts with WILLIAM or KASPER; `PLAN.md` has a *Who* column.
