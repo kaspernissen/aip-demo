@@ -104,3 +104,32 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x10-g { font-size: var(--type-subtitle); font-style: italic; margin: 0;
   color: color-mix(in srgb, var(--color-text) 60%, transparent); }
 .x10-me-n .muted { display: block; }
+
+/* 03 · four sources now: tighten the lineage so it clears the folio */
+.x10-who { margin-top: calc(1.25 * var(--baseline)); }
+.x10-line { gap: 26px; }
+.x10-now-q { font-size: 48px; }
+
+/* 11a · bounded autonomy: four concentric bands beside the four questions.
+   Magenta ramp: these are governance boundaries. The keystone is the clasp around
+   the rest, so it is the outer ring, drawn as a full-strength stroke. */
+.x10-bd-lede { margin: calc(0.75 * var(--baseline)) 0 0; max-width: 60ch; font-size: var(--type-subtitle); line-height: 1.25; }
+.x10-bd { display: grid; grid-template-columns: 440px 1fr; column-gap: 110px; align-items: center;
+  margin-top: calc(1 * var(--baseline)); }
+.x10-rings { position: relative; width: 440px; height: 440px; }
+.x10-rings > div { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); border-radius: 50%;
+  display: flex; justify-content: center; box-sizing: border-box; }
+.x10-rings span { font-size: 21px; letter-spacing: 0.04em; line-height: 1; padding-top: 14px; }
+.x10-rings .rk { width: 440px; height: 440px; background: var(--color-bg); box-shadow: inset 0 0 0 6px var(--color-accent-2); }
+.x10-rings .rk span { color: var(--color-accent-2-700); font-weight: 700; padding-top: 16px; }
+.x10-rings .r2 { width: 356px; height: 356px; background: var(--color-accent-2-100); }
+.x10-rings .r1 { width: 260px; height: 260px; background: var(--color-accent-2-200); }
+.x10-rings .r0 { width: 156px; height: 156px; background: var(--color-accent-2); align-items: center; }
+.x10-rings .r2 span, .x10-rings .r1 span { color: var(--color-accent-2-800); }
+.x10-rings .r0 span { color: var(--color-bg); font-weight: 700; padding-top: 0; }
+.x10-rq { display: grid; grid-template-columns: max-content 1fr; column-gap: 48px; row-gap: 28px; align-items: baseline; margin: 0; }
+.x10-rq dt { font-size: var(--type-small); color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x10-rq dd { margin: 0; font-family: var(--font-heading); font-weight: 700; font-size: 46px; line-height: 1.12; letter-spacing: -0.01em; }
+.x10-rq .k { color: var(--color-accent-2-700); }
+.x10-bd-by { margin: 40px 0 0; font-size: var(--type-kicker);
+  color: color-mix(in srgb, var(--color-text) 55%, transparent); }

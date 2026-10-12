@@ -10,7 +10,7 @@
   </div>
 </section>
 
-<!-- 20 · NEW · the abstract's five building blocks on Ch 11's blueprint (Figure 11.1, cropped; numbered 1–5 by the abstract's five building blocks, 4 = policy (4a) + evals (4b)) -->
+<!-- 20 · NEW · the abstract's five building blocks on Ch 11's blueprint (Figure 11.1, cropped; numbered 1–5 by the abstract's five building blocks, 4 = policy (4a) + evals (4b)); under it, where William's four rings land -->
 <section class="slide content" data-label="What a governed foundation needs">
   <h2 class="slide-title">What a governed foundation needs</h2>
   <figure class="bfig rise x30-tight" style="--fig-h:540px"><svg viewBox="8 82 845 312" role="img" aria-label="Reference architecture for a governed, observable agentic platform in nine layers">
@@ -77,7 +77,7 @@
 <rect x="757" y="336" width="80" height="20" rx="4" fill="#A8FBBE"/><text x="764" y="350" font-family="Martian Mono, monospace" font-size="10.5" letter-spacing="1" fill="#18632F">SHOWN</text>
 </g></svg></figure>
   <p class="x30-ma"><b>5 · Multi-agent over shared context</b><span class="x30-chip">Not in demo</span></p>
-  <p class="x30-read"><b>Read it like this:</b> left, the path a request takes · right, the path the evidence takes · chips, how much Northstar shows</p>
+  <p class="x30-rg"><span><b>Core &middot; Identity</b> SPIRE, checked at 3</span><span><b>Ring 1 &middot; Reach</b> Cilium, under 3</span><span><b>Ring 2 &middot; Capability</b> 3 + 4a</span><span><b>Keystone</b> Kyverno, guards the rest</span></p>
 </section>
 
 <!-- 20a · NEW · we've done this before: Ch 1 Figure 1.8 (what cloud native built, extended to agents), widened to six rows with the Northstar piece of each -->
@@ -94,16 +94,17 @@
   </div>
 </section>
 
-<!-- 20b · NEW · connected is not governed: the runbook's six-stage ladder (docs/demo-runbook.md §1, §3 Option 1; Ch 4 stage table), each stage with its one proof -->
+<!-- 20b · NEW · connected is not governed: the runbook's stage ladder (docs/demo-runbook.md §1, §3 Option 1; Ch 4 stage table), now seven stages with M7's Bounded, each with its one proof and the ring it adds (M7 design spec §1) -->
 <section class="slide content" data-label="Connected is not governed">
   <h2 class="slide-title">Connected is not governed</h2>
   <div class="x30-lad rise">
-    <div class="st s1"><p class="nm"><span class="no">1</span>Connected</p><i class="bar"></i><p class="pf">one trace exists</p><p class="ad">agents, MCP, collector, Jaeger</p></div>
-    <div class="st s2"><p class="nm"><span class="no">2</span>Governed</p><i class="bar"></i><p class="pf">identity is an input to the decision</p><p class="ad">Cilium, SPIRE, agentgateway, PDS</p><p class="x30-lad-mark">the platform starts deciding</p></div>
-    <div class="st s3"><p class="nm"><span class="no">3</span>Supervised</p><i class="bar"></i><p class="pf">a human can overturn</p><p class="ad">reviewer UI, senior agent</p></div>
-    <div class="st s4"><p class="nm"><span class="no">4</span>Observable</p><i class="bar"></i><p class="pf">prove why, from telemetry alone</p><p class="ad">OpenSearch, Prometheus, eval-scorer</p></div>
-    <div class="st s5"><p class="nm"><span class="no">5</span>Progressive autonomy</p><i class="bar"></i><p class="pf">one live value, no redeploy</p><p class="ad">OpenFeature, flagd, FeatureFlag</p></div>
-    <div class="st s6"><p class="nm"><span class="no">6</span>Golden path</p><i class="bar"></i><p class="pf">Backstage is just the view</p><p class="ad">Backstage, autonomy card</p></div>
+    <div class="st s1"><p class="nm"><span class="no">1</span>Connected</p><i class="bar"></i><p class="pf">one trace exists</p><p class="ad">agents, MCP, collector, Jaeger</p><div class="rgs"></div></div>
+    <div class="st s2"><p class="nm"><span class="no">2</span>Governed</p><i class="bar"></i><p class="pf">identity is an input to the decision</p><p class="ad">Cilium, SPIRE, agentgateway, PDS</p><div class="rgs"><p class="rg">Core &middot; Identity</p><p class="rg">Ring 1 &middot; Reach</p><p class="rg">Ring 2 &middot; Capability</p></div><p class="x30-lad-mark">the platform starts deciding</p></div>
+    <div class="st s3"><p class="nm"><span class="no">3</span>Supervised</p><i class="bar"></i><p class="pf">a human can overturn</p><p class="ad">reviewer UI, senior agent</p><div class="rgs"></div></div>
+    <div class="st s4"><p class="nm"><span class="no">4</span>Observable</p><i class="bar"></i><p class="pf">prove why, from telemetry alone</p><p class="ad">OpenSearch, Prometheus, eval-scorer</p><div class="rgs"></div></div>
+    <div class="st s5"><p class="nm"><span class="no">5</span>Progressive autonomy</p><i class="bar"></i><p class="pf">one live value, no redeploy</p><p class="ad">OpenFeature, flagd, FeatureFlag</p><div class="rgs"><p class="rg">Ring 2 &middot; Capability</p></div></div>
+    <div class="st s6"><p class="nm"><span class="no">6</span>Golden path</p><i class="bar"></i><p class="pf">Backstage is just the view</p><p class="ad">Backstage, autonomy card</p><div class="rgs"></div></div>
+    <div class="st s7"><p class="nm"><span class="no">7</span>Bounded</p><i class="bar"></i><p class="pf">the agent can&rsquo;t edit what constrains it</p><p class="ad">Kyverno, keystone policy</p><div class="rgs"><p class="rg">Keystone</p></div></div>
   </div>
 </section>
 
@@ -277,6 +278,7 @@
 
 <!-- 22c · NEW · SPIFFE/SPIRE: how settlement-agent gets its JWT-SVID (deploy/platform/spire/*, architecture.md "Workload identity" and "Identity with teeth", agents/settlement-agent/svid.py) -->
 <section class="slide content" data-label="Workload identity: SPIFFE/SPIRE">
+  <p class="ring">Core &middot; Identity</p>
   <h2 class="slide-title">A passport, not a name tag</h2>
   <div class="x30-sv rise">
     <div class="step"><span class="no">1</span><p class="v">Register</p><p class="t">a <span class="code">ClusterSPIFFEID</span> names the pod’s ID</p><p class="who">spire-controller-manager</p></div>
@@ -295,8 +297,49 @@
   </div>
 </section>
 
+<!-- 22c1 · BOUNDED · Beat R live: Ring 1 · Reach, after William's Linkerd reach beat. claims-agent (no SVID) tries payments-mcp directly, past the gateway: Cilium drops it; the control, settlement-agent:9002, is reached (scripts/beat-reach.sh; tests/e2e/test_gateway_is_the_only_route.py; M7 design spec §2.3) -->
+<section class="slide content" data-label="Beat R — the only way in">
+  <div class="beat"><span class="dot"></span>Live &middot; Beat R</div>
+  <p class="ring">Ring 1 &middot; Reach</p>
+  <h2 class="slide-title">The only way in</h2>
+  <p class="x30-cmd rise"><span class="code">./scripts/beat-reach.sh</span><span class="s">no model, no tokens</span></p>
+  <div class="x30-rr rise">
+    <p class="from">claims-agent<span>a real pod, no SVID</span></p>
+    <i class="ln ok"></i>
+    <p class="to">GET settlement-agent<span class="code">:9002/.well-known/agent-card.json</span></p>
+    <p class="res c">REACHED 200<span>the control</span></p>
+    <i class="ln cut"><b>Cilium</b></i>
+    <p class="to">POST payments-mcp<span class="code">:8000/mcp</span></p>
+    <p class="res m">DROPPED timeout<span>8 s, and nothing answered</span></p>
+  </div>
+  <p class="x30-foot">Only agentgateway may connect to payments-mcp. <b>A drop leaves no span.</b></p>
+</section>
+
+<!-- 22c1f · BOUNDED · Beat R fallback: the real beat-reach.sh transcript from the stage-7 run, 2026-10-12 (docs/demo-runbook.md Beat R), typeset verbatim -->
+<section class="slide content" data-label="Fallback — Beat R">
+  <div class="beat fallback"><span class="dot"></span>Fallback &middot; Beat R</div>
+  <h2 class="slide-title">The only way in</h2>
+  <pre class="term x30-term rise"><span class="p">$ ./scripts/beat-reach.sh</span>
+<span class="h">=== Beat R: the only way in ===</span>
+Probing from inside claims-agent-57fcb4b7f9-d7q47 (claims-agent: no SVID, no MCP client, no business at the tool).
+
+<span class="h">1. Control: claims-agent calls settlement-agent, the one peer it exists to call</span>
+<span class="p">$ GET http://settlement-agent.northstar-agents.svc.cluster.local:9002/.well-known/agent-card.json</span>
+  -&gt; <span class="c">REACHED 200</span>
+  reachable, as it should be.
+
+<span class="h">2. Around the gateway: claims-agent sends an MCP initialize straight to payments-mcp</span>
+<span class="p">$ POST http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp   (initialize, 8s connect timeout)</span>
+  -&gt; <span class="m">DROPPED timeout</span>
+  DROPPED. Nothing answered: not a 401, not a refusal. The packet never arrived.
+
+Beat R holds: the gateway is the only route to payments-mcp.
+(Cilium drops are not in the trace; Hubble is not installed.)</pre>
+</section>
+
 <!-- 22c2 · NEW · concept before the gateway config: what an agent gateway is, and why an API gateway is not one (deploy/platform/agentgateway/config.yaml: one mcp backend; tools/payments-mcp/server.py execute_payment) -->
 <section class="slide content" data-label="What agentgateway is">
+  <p class="ring">Ring 2 &middot; Capability</p>
   <h2 class="slide-title">A gateway that reads the protocol</h2>
   <div class="x30-ag rise">
     <div class="col api">
@@ -325,6 +368,7 @@
 
 <!-- 22d · NEW · agentgateway: the one choke point and its checks in order (deploy/platform/agentgateway/config.yaml; architecture.md "Hop 3") -->
 <section class="slide content" data-label="agentgateway: one choke point">
+  <p class="ring">Ring 2 &middot; Capability</p>
   <h2 class="slide-title">agentgateway: one door, checks in order</h2>
   <div class="x30-gw rise">
     <p class="end in">settlement-agent<span>MCP + JWT-SVID</span></p>
@@ -340,6 +384,7 @@
 
 <!-- 22d2 · NEW · concept before the live policy: what OpenFeature is, in four layers, and why a flag carries a policy knob (pds/autonomy.py; requirements.txt openfeature-sdk, -provider-flagd, -hooks-opentelemetry; deploy/platform/openfeature/*) -->
 <section class="slide content" data-label="What OpenFeature is">
+  <p class="ring">Ring 2 &middot; Capability</p>
   <h2 class="slide-title">OpenFeature: one question, any backend</h2>
   <div class="x30-of rise">
     <div class="stack">
@@ -360,6 +405,7 @@
 
 <!-- 22e · NEW · the decision and the live policy: pds/rules.py EXECUTE_LIMITS, pds/autonomy.py (flagd on localhost:8013), deploy/platform/openfeature/featureflag.yaml -->
 <section class="slide content" data-label="The decision and the live policy">
+  <p class="ring">Ring 2 &middot; Capability</p>
   <h2 class="slide-title">The rule has two keys: who, and how free</h2>
   <div class="x30-pd rise">
     <div class="src">
@@ -385,7 +431,7 @@
   </div>
 </section>
 
-<!-- 22f · NEW · the demo set-up: docs/demo-runbook.md §1 (story), §2 (the two claims, three ways to succeed), §6 (surfaces and ports) -->
+<!-- 22f · NEW · the demo set-up: docs/demo-runbook.md §1 (story), §2 (the two claims, three ways to succeed), §6 (surfaces and ports); plus the two model-free refusals, Beat R and Beat K (M7 design spec §2.3) -->
 <section class="slide content" data-label="The demo">
   <h2 class="slide-title">The demo</h2>
   <p class="x30-story rise">A customer files a vehicle-damage claim. Agents settle it. <b>The platform decides.</b></p>
@@ -401,6 +447,11 @@
       <p class="w"><span class="no">2</span>the contract flips, by <span class="code">kubectl</span><span class="how">same identity</span></p>
       <p class="w"><span class="no">3</span>the same flip, in Backstage<span class="how">Backstage · live</span></p>
     </div>
+  </div>
+  <div class="x30-rk rise">
+    <p class="lab">And two refusals with no model in them, in a terminal</p>
+    <p class="w"><span class="no">R</span>claims-agent goes around the gateway<span class="how">dropped &middot; Cilium</span></p>
+    <p class="w"><span class="no">K</span>the agent edits its own limit<span class="how">denied &middot; RBAC, then Kyverno</span></p>
   </div>
   <div class="x30-surf rise">
     <p><i class="ph-duotone ph-browser"></i>Customer UI<span class="code">:8080</span></p>

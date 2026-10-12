@@ -259,3 +259,61 @@
 .x30-of .why .w { font-size: 29px; display: flex; align-items: center; gap: 16px; }
 .x30-of .why .w i { font-size: 44px; color: var(--color-accent-2); }
 .x30-of .why .w .code { font-size: 25px; }
+
+/* ---- 20 · where William's four rings land on the blueprint: one row of type ---- */
+.x30-rg { display: flex; flex-wrap: wrap; gap: 10px 44px; margin: calc(0.5 * var(--baseline)) 0 0; font-size: var(--type-kicker); line-height: 1.3;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x30-rg b { font-weight: 600; color: var(--color-accent-2-700); margin-right: 8px; }
+
+/* ---- 20b · seven stages: the stair steps down a little; under each step a fixed-height
+   block for the rings it adds, so every bar keeps the shared baseline ---- */
+.x30-lad { grid-template-columns: repeat(7, minmax(0, 1fr)); column-gap: 24px; margin-top: var(--baseline); }
+.x30-lad .nm { font-size: 28px; }
+.x30-lad .s1 .bar { height: 40px; } .x30-lad .s2 .bar { height: 80px; } .x30-lad .s3 .bar { height: 120px; }
+.x30-lad .s4 .bar { height: 160px; } .x30-lad .s5 .bar { height: 200px; } .x30-lad .s6 .bar { height: 240px; }
+.x30-lad .s7 .bar { height: 280px; background: var(--color-accent-2-400); }
+.x30-lad .s7 .nm { color: var(--color-accent-2-700); }
+.x30-lad .pf { font-size: 24px; min-height: 3.75em; }
+.x30-lad .ad { min-height: 3.9em; }
+.x30-lad .rgs { min-height: 78px; margin-top: 12px; }
+.x30-lad .rg { margin: 0; font-size: 20px; line-height: 1.3; color: var(--color-accent-2-700); }
+.x30-lad-mark { height: 120px; }
+
+/* ---- 22c1 · Beat R: one prober, two destinations; the second road is cut ---- */
+.x30-cmd { display: flex; align-items: baseline; gap: 22px; margin: calc(0.75 * var(--baseline)) 0 0; font-size: 30px; }
+.x30-cmd .s { font-size: var(--type-kicker); color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-rr { display: grid; grid-template-columns: 260px 1fr 500px 400px; grid-template-rows: auto auto; column-gap: 36px; row-gap: 70px;
+  align-items: center; margin-top: calc(1.5 * var(--baseline)); }
+.x30-rr p { margin: 0; }
+.x30-rr .from { grid-row: 1 / span 2; font-size: 40px; font-weight: 700; line-height: 1.1; }
+.x30-rr .from span, .x30-rr .res span { display: block; font-size: 24px; font-weight: 400; margin-top: 8px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-rr .to { font-size: 32px; font-weight: 600; line-height: 1.15; display: flex; flex-direction: column; gap: 8px; }
+.x30-rr .to .code { align-self: flex-start; font-size: 22px; font-weight: 400; }
+.x30-rr .res { font-family: var(--font-heading); font-size: 46px; font-weight: 700; line-height: 1; }
+.x30-rr .res.c { color: var(--color-accent-700); }
+.x30-rr .res.m { color: var(--color-accent-2-700); }
+.x30-rr .ln { position: relative; display: block; height: 4px; }
+.x30-rr .ln.ok { background: var(--color-accent-600); }
+.x30-rr .ln.ok::after { content: ""; position: absolute; right: -2px; top: -9px; border: 11px solid transparent;
+  border-left: 18px solid var(--color-accent-600); border-right: 0; }
+.x30-rr .ln.cut { background: linear-gradient(90deg, var(--color-accent-2-300) 0 55%, transparent 55%); }
+.x30-rr .ln.cut::after { content: ""; position: absolute; left: 55%; top: -44px; width: 10px; height: 92px; border-radius: var(--radius-sm);
+  background: var(--color-accent-2); }
+.x30-rr .ln.cut b { position: absolute; left: calc(55% + 26px); top: -16px; font-size: var(--type-kicker); font-weight: 600;
+  color: var(--color-accent-2-700); }
+.x30-rr + .x30-foot { margin-top: calc(1.5 * var(--baseline)); }
+
+/* ---- 22f · the demo: the two model-free refusals, one row ---- */
+.x30-rk { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 64px; row-gap: 14px; margin-top: calc(1 * var(--baseline)); }
+.x30-rk p { margin: 0; }
+.x30-rk .lab { flex-basis: 100%; font-size: var(--type-kicker); color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-rk .w { font-size: 30px; display: flex; align-items: baseline; gap: 16px; }
+.x30-rk .no { width: 44px; height: 44px; border-radius: 50%; flex: none; display: inline-grid; place-items: center; align-self: center;
+  font-size: 22px; font-weight: 700; background: var(--color-accent-2); color: var(--color-bg); }
+.x30-rk .how { font-size: 22px; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-rk + .x30-surf { margin-top: calc(1 * var(--baseline)); }
+.x30-rk .lab .code { font-size: 22px; }
+
+/* ---- 22c1f · Beat R fallback: the transcript under the title ---- */
+.content > .x30-term { margin-top: calc(1.25 * var(--baseline)); }

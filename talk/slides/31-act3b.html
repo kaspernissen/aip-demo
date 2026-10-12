@@ -154,6 +154,30 @@
   </div>
 </section>
 
+<!-- 30a · BOUNDED · two ways to say no, as two layers: HIDE, a static CEL allowlist (William's OSFF demo: mcp.tool.name in [...], the tool never in tools/list, HTTP 400 Unknown tool) beside REFUSE AND RECORD, Northstar's decision service (the €6,200 call depends on its arguments). Credits William; not a disagreement (bounded-ai/README.md; M7 design spec §1) -->
+<section class="slide content" data-label="Two ways to say no">
+  <h2 class="slide-title">Two ways to say no</h2>
+  <div class="x31-tw rise">
+    <div>
+      <p class="x31-tw-k">Hide</p>
+      <p class="x31-tw-s">a static allowlist &middot; William&rsquo;s OSFF demo</p>
+      <p class="x31-tw-c"><span class="code cel">mcp.tool.name in ["document_extract", "risk_scoring"]</span></p>
+      <p class="x31-tw-l">The forbidden tool never appears in <span class="code">tools/list</span></p>
+      <p class="x31-tw-l">Call it anyway: <span class="code m">HTTP 400 &middot; Unknown tool</span></p>
+      <p class="x31-tw-f">For a tool this agent must never have</p>
+    </div>
+    <div>
+      <p class="x31-tw-k">Refuse and record</p>
+      <p class="x31-tw-s">a decision service &middot; Northstar</p>
+      <p class="x31-tw-c"><span class="code">execute_payment</span> is visible. <b>&euro;6,200</b> depends on its arguments.</p>
+      <p class="x31-tw-flow"><span>proposed</span><i></i><span class="m">refused</span><i></i><span class="c">recorded</span><i></i><span class="c">explained</span></p>
+      <p class="x31-tw-l"><span class="code c">policy.decision</span> deny &middot; rule, limit, amount, caller</p>
+      <p class="x31-tw-f">For a call that is fine until the numbers aren&rsquo;t</p>
+    </div>
+  </div>
+  <p class="x31-line">Two layers, not two camps. <em>Hide what it must never touch. Refuse, and record, the rest.</em></p>
+</section>
+
 <!-- 30b · NEW · concept before fail-open: the door lock in a power cut -->
 <section class="slide content" data-label="Fail-closed vs fail-open">
   <h2 class="slide-title">Fail-closed vs fail-open</h2>
@@ -360,6 +384,46 @@
       <div class="shot-cap">4 · The audit span: assisted → autonomous</div>
     </div>
   </div>
+</section>
+
+<!-- 36a · BOUNDED · Beat K live: the keystone, after William's mic-drop beat. As settlement-agent, patch northstar-autonomy: RBAC Forbidden; a mistaken over-grant; the same patch: Kyverno ValidatingPolicy agents-cannot-edit-their-own-authority denies; over-grant removed; flag still assisted (scripts/beat-keystone.sh; deploy/platform/kyverno/keystone-policy.yaml; deploy/demo/keystone-overgrant.yaml; M7 design spec §2.1 to §2.3) -->
+<section class="slide content" data-label="Beat K — the keystone">
+  <div class="beat"><span class="dot"></span>Live &middot; Beat K</div>
+  <p class="ring">Keystone</p>
+  <h2 class="slide-title">The agent can never edit what constrains it</h2>
+  <p class="x31-cmd rise"><span class="code">./scripts/beat-keystone.sh</span><span class="s">as settlement-agent: <span class="code">patch featureflag northstar-autonomy</span> &rarr; autonomous</span></p>
+  <ol class="x31-ks rise">
+    <li><span class="no">1</span><p class="a">The agent patches its own flag</p><p class="r m">Forbidden</p><p class="w">RBAC: cannot get resource &ldquo;featureflags&rdquo;</p></li>
+    <li class="oops"><span class="no">2</span><p class="a">Someone over-grants it, by mistake</p><p class="r">allowed</p><p class="w">get + patch on one flag &middot; <span class="code">auth can-i</span>: yes</p></li>
+    <li><span class="no">3</span><p class="a">The same patch</p><p class="r m">DENIED</p><p class="w">Kyverno webhook<br><span class="code m">agents-cannot-edit-<wbr>their-own-authority</span></p></li>
+    <li><span class="no">4</span><p class="a">The script removes the over-grant</p><p class="r">deleted</p><p class="w">on every exit path, Ctrl-C too</p></li>
+    <li><span class="no">5</span><p class="a">What the flag resolves to</p><p class="r c">assisted</p><p class="w">unchanged</p></li>
+  </ol>
+  <p class="x31-line">We scripted the attempt. <em>The platform scripts the response.</em></p>
+</section>
+
+<!-- 36af · BOUNDED · Beat K fallback: the real beat-keystone.sh transcript from the stage-7 run, 2026-10-12 (docs/demo-runbook.md Beat K), typeset verbatim, elided with … only -->
+<section class="slide content" data-label="Fallback — Beat K">
+  <div class="beat fallback"><span class="dot"></span>Fallback &middot; Beat K</div>
+  <h2 class="slide-title">The agent can never edit what constrains it</h2>
+  <pre class="term x31-term rise"><span class="h">1. The agent tries to flip its own autonomy flag to 'autonomous'</span>
+<span class="p">$ kubectl --as=system:serviceaccount:northstar-agents:settlement-agent -n northstar-platform patch featureflag/northstar-autonomy …</span>
+  Error from server (<span class="m">Forbidden</span>): … User "system:serviceaccount:northstar-agents:settlement-agent" <span class="m">cannot get resource "featureflags"</span> in API group "core.openfeature.dev" …
+
+<span class="h">2. Someone makes a mistake: the agent is over-granted 'patch' on that one flag</span>
+<span class="p">$ kubectl apply -f deploy/demo/keystone-overgrant.yaml</span>
+  role.rbac.authorization.k8s.io/keystone-demo-overgrant created
+  rolebinding.rbac.authorization.k8s.io/keystone-demo-overgrant created
+<span class="p">$ kubectl --as=system:serviceaccount:northstar-agents:settlement-agent auth can-i patch featureflag/northstar-autonomy</span>
+  yes
+
+<span class="h">3. The same patch again. RBAC now allows it. Kyverno does not.</span>
+<span class="p">$ kubectl --as=…:settlement-agent -n northstar-platform patch featureflag/northstar-autonomy …</span>
+  Error from server: admission webhook "vpol.validate.kyverno.svc-fail-finegrained-agents-cannot-edit-their-own-authority" denied the request:
+  Policy <span class="mm">agents-cannot-edit-their-own-authority</span> failed: <span class="m">DENIED</span>: agent identity 'system:serviceaccount:northstar-agents:settlement-agent' may not change the objects that define its own authority (FeatureFlag/northstar-autonomy). Authority changes go through a reviewed commit, never a runtime decision by the agent.
+
+<span class="h">4. Take the mistake back</span>  …  rolebinding.rbac.authorization.k8s.io "keystone-demo-overgrant" deleted
+<span class="h">5. What does the flag resolve to now?</span>  …  settlement-agent resolves: <span class="c">assisted</span></pre>
 </section>
 
 <!-- 37 · NEW · The platform API is the resource. Handover point (William Rizzo) -->

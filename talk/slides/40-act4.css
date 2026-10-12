@@ -87,3 +87,17 @@
 
 /* 43: ragged caption, justification opened rivers at this measure */
 .hero-caption.x40-hc { text-align: left; hyphens: manual; max-width: 40ch; }
+
+/* 38b: which refusals the trace can see, one row per ring */
+.x40-rt { display: grid; grid-template-columns: 330px 340px 230px 1fr; column-gap: 0;
+  margin-top: calc(1.5 * var(--baseline)); font-size: 30px; line-height: 1.25; }
+.x40-rt p { margin: 0; padding: 22px 40px 22px 0; border-top: 1px solid color-mix(in srgb, var(--color-text) 18%, transparent); }
+.x40-rt .x40-rh { padding-top: 0; border-top: 0; font-size: var(--type-kicker);
+  color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x40-rg { font-weight: 600; }
+.x40-y, .x40-n0 { font-family: var(--font-heading); font-weight: 700; }
+.x40-y { color: var(--color-accent-700); }
+.x40-n0 { color: var(--color-neutral-900); text-decoration: underline 3px; text-underline-offset: 6px; }
+.x40-rt .x40-w { padding-top: 26px; font-size: 26px; color: color-mix(in srgb, var(--color-text) 72%, transparent); }
+.x40-w .code { font-size: 23px; }
+.x40-th { margin: calc(1.5 * var(--baseline)) 0 0; font-size: var(--type-subtitle); line-height: 1.2; }

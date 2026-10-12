@@ -15,7 +15,7 @@
 .x90-flight .w { font-size: 22px; line-height: 1.35; margin: 0; color: var(--color-accent-2-700); font-weight: 600; }
 
 /* reset: three numbered rows */
-.x90-reset { display: flex; flex-direction: column; gap: 44px; margin-top: calc(1.4 * var(--baseline)); max-width: 1500px; }
+.x90-reset { display: flex; flex-direction: column; gap: 30px; margin-top: calc(1.1 * var(--baseline)); max-width: 1500px; }
 .x90-reset > div { display: grid; grid-template-columns: 90px 1fr; column-gap: 20px; align-items: baseline; }
 .x90-reset .n { font-family: var(--font-heading); font-weight: 700; font-size: 64px; line-height: 1; color: var(--color-neutral-500); }
 .x90-reset .first .n, .x90-reset .first h3 { color: var(--color-accent-2-700); }

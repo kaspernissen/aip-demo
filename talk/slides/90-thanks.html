@@ -8,31 +8,32 @@
   <div class="color-bar" aria-hidden="true"></div>
 </section>
 
-<!-- A1 · NEW · appendix (speaker-only, 0 s): pre-flight T-60…T-5 (aip-demo docs/demo-runbook.md §4) -->
+<!-- A1 · NEW · appendix (speaker-only, 0 s): pre-flight T-60…T-5 (aip-demo docs/demo-runbook.md §4), at stage 7 with the Kyverno and over-grant checks (M7 design spec §4) -->
 <section class="slide content" data-label="Appendix — Pre-flight">
   <p class="x90-tag">Appendix &middot; speaker only</p>
   <h2 class="slide-title">Pre-flight</h2>
   <div class="x90-flight rise">
     <div><div class="t">T-60</div><p class="a"><span class="code x90-code">.env</span> with the API key; venvs; gRPC stubs</p><p class="c">once per clone</p></div>
-    <div><div class="t">T-30</div><p class="a"><span class="code x90-code">setup-kind.sh --stage 6</span></p><p class="c">ANTHROPIC_API_KEY: SET</p><p class="w">EMPTY = stop</p></div>
+    <div><div class="t">T-30</div><p class="a"><span class="code x90-code">setup-kind.sh --stage 7</span></p><p class="c">ANTHROPIC_API_KEY: SET</p><p class="w">EMPTY = stop</p></div>
     <div><div class="t">T-15</div><p class="a"><span class="code x90-code">start-demo.sh</span>, then leave that terminal alone</p><p class="c">a Backstage line, not SKIPPED</p></div>
-    <div><div class="t">T-10</div><p class="a">Check with your own eyes</p><p class="c">pods Running</p><p class="c">ENABLED default=assisted</p><p class="c">card: assisted / assisted</p><p class="c">five surfaces load</p></div>
+    <div><div class="t">T-10</div><p class="a">Check with your own eyes</p><p class="c">pods Running</p><p class="c">Kyverno Ready</p><p class="c">no over-grant</p><p class="c">ENABLED default=assisted</p><p class="c">card: assisted / assisted</p><p class="c">five surfaces load</p></div>
     <div><div class="t">T-5</div><p class="a">One &euro;6,200 claim</p><p class="c">refused</p><p class="w">then reset the ledger</p></div>
   </div>
 </section>
 
-<!-- A2 · NEW · appendix (speaker-only, 0 s): reset between runs (runbook §7) -->
+<!-- A2 · NEW · appendix (speaker-only, 0 s): reset between runs (runbook §7), plus the over-grant check (M7 design spec §2.2) -->
 <section class="slide content" data-label="Appendix — Reset between runs">
   <p class="x90-tag">Appendix &middot; speaker only</p>
   <h2 class="slide-title">Reset between runs</h2>
   <div class="x90-reset rise">
     <div class="first"><span class="n">1</span><div><h3>Contract back to assisted, on both branches</h3><p>The Backstage card, or <span class="code x90-code">kubectl apply -f deploy/platform/openfeature/featureflag.yaml</span></p><p class="d">Left autonomous, beat 1 executes and the story collapses.</p></div></div>
     <div><span class="n">2</span><div><h3>Restart payments-api to clear the ledger</h3><p>The ledger is in memory, per process.</p></div></div>
-    <div><span class="n">3</span><div><h3>Payment ids are cumulative</h3><p>Never promise a payment id on stage.</p></div></div>
+    <div><span class="n">3</span><div><h3>The over-grant is gone</h3><p><span class="code x90-code">kubectl get -f deploy/demo/keystone-overgrant.yaml</span> &rarr; NotFound</p><p class="d">Left behind, the agent holds a standing grant to patch its own flag.</p></div></div>
+    <div><span class="n">4</span><div><h3>Payment ids are cumulative</h3><p>Never promise a payment id on stage.</p></div></div>
   </div>
 </section>
 
-<!-- A3 · NEW · appendix (speaker-only, 0 s): live triage (runbook §8) -->
+<!-- A3 · NEW · appendix (speaker-only, 0 s): live triage (runbook §8), plus Kyverno down (M7 design spec §2.1) -->
 <section class="slide content" data-label="Appendix — When it breaks">
   <p class="x90-tag">Appendix &middot; speaker only</p>
   <h2 class="slide-title">When it breaks</h2>
@@ -40,10 +41,11 @@
     <span class="h">Symptom</span><span class="h">Fix</span>
     <span class="s">First claim errors</span><span class="f">API key empty: check <span class="code x90-code">.env</span>, restart the agents</span>
     <span class="s">5601 / 9090 / 7007 silent</span><span class="f">dead port-forward: Ctrl+C, re-run <span class="code x90-code">start-demo.sh</span></span>
-    <span class="s">Backstage: SKIPPED</span><span class="f">below stage 6: <span class="code x90-code">setup-kind.sh --stage 6</span></span>
+    <span class="s">Backstage: SKIPPED</span><span class="f">below stage 6: <span class="code x90-code">setup-kind.sh --stage 7</span></span>
     <span class="s hot">&euro;6,200 executed</span><span class="f">contract left flipped: reset</span>
     <span class="s">&euro;5,800 refused</span><span class="f">check the card and <span class="code x90-code">policy.caller.spiffe_id</span></span>
     <span class="s">Card shows the old value</span><span class="f">the write failed: <span class="code x90-code">kubectl get featureflag</span></span>
+    <span class="s hot">Beat K says &ldquo;patched&rdquo;</span><span class="f">Kyverno stopped and took its webhook with it: restart, re-run</span>
     <span class="s">Two disconnected traces</span><span class="f">expected only for the approval: a link, by design</span>
     <span class="s">spanCount still climbing</span><span class="f">OpenSearch lag: wait, re-ask with <span class="code x90-code">"emit": false</span></span>
     <span class="s">A pod CrashLooping</span><span class="f"><span class="code x90-code">kubectl -n &lt;ns&gt; logs &lt;pod&gt; --previous</span></span>

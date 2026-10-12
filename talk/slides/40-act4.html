@@ -34,6 +34,19 @@
   </div>
 </section>
 
+<!-- 38b · BOUNDED · which refusals the trace can see: one row per ring, measured in M7 (gateway 401 spans; Cilium drop has no span, Hubble not installed; policy.decision in the claim trace; Kyverno denial as its own trace, no traceparent from kubectl) -->
+<section class="slide content" data-label="Which refusals the trace can see">
+  <h2 class="slide-title">Which refusals the trace can see</h2>
+  <div class="x40-rt rise">
+    <p class="x40-rh">Ring</p><p class="x40-rh">The refusal</p><p class="x40-rh">In the trace?</p><p class="x40-rh">Where</p>
+    <p class="x40-rg">Core &middot; Identity</p><p>agentgateway 401</p><p class="x40-y">yes</p><p class="x40-w">gateway span &middot; <span class="code">401</span> &middot; <span class="code">reason=JwtAuth</span></p>
+    <p class="x40-rg">Ring 1 &middot; Reach</p><p>Cilium drop</p><p class="x40-n0">no</p><p class="x40-w">a drop leaves no span: Hubble is not installed</p>
+    <p class="x40-rg">Ring 2 &middot; Capability</p><p>policy deny</p><p class="x40-y">yes</p><p class="x40-w">inside the claim&rsquo;s trace &middot; <span class="code m">policy.decision</span></p>
+    <p class="x40-rg">Keystone</p><p>Kyverno denial</p><p class="x40-y">yes, alone</p><p class="x40-w">its own trace &middot; <span class="code m">allowed=false</span> &middot; no <span class="code">traceparent</span></p>
+  </div>
+  <p class="x40-th">Traced everywhere except where a packet is dropped. <span class="spot-2">The gap is named, not hidden.</span></p>
+</section>
+
 <!-- 39 · NEW · The evidence view (beat 5 as a slide): opensearch-evidence.png, cropped -->
 <section class="slide split" data-label="The evidence view">
   <div class="beat x40-asslide"><span class="dot"></span>Beat 5 &middot; shown as slide</div>

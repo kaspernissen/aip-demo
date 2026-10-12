@@ -28,6 +28,16 @@ deck-stage { --page-foot-note: "kaspernissen.xyz"; }
 .beat.fallback { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
 .beat.fallback .dot { background: transparent; border: 2px solid currentColor; }
 
+/* Ring marker — which bounded-autonomy ring a slide belongs to (William Rizzo's rings:
+   Core · Identity, Ring 1 · Reach, Ring 2 · Capability, Keystone). Margin furniture in the
+   beat marker's slot, not an eyebrow over the title; it drops under the beat marker when a
+   slide carries both. The glyph is a magenta dot inside one ring: the governed thing. */
+.ring { position: absolute; top: 58px; right: var(--pad-x); display: flex; align-items: center; gap: 16px; margin: 0;
+  font-size: var(--type-kicker); letter-spacing: 0.04em; color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.ring::before { content: ""; flex: none; width: 8px; height: 8px; margin: 0 5px; border-radius: 50%; background: var(--color-accent-2);
+  box-shadow: 0 0 0 3px var(--color-bg), 0 0 0 5px var(--color-accent-2); }
+.beat ~ .ring { top: 104px; }
+
 /* Screenshot plate — interface imagery stays legible (no separation filter), tipped in with
    the system's medium shadow and 2px radius. */
 .shot { margin: 0; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-md); background: #fff; }
@@ -116,3 +126,16 @@ deck-stage { --page-foot-note: "kaspernissen.xyz"; }
    Tune per slide with style="--fig-h:560px". Trim unneeded rows from a lifted SVG rather
    than shrinking type below ~20px at stage size. */
 .bfig svg { max-height: var(--fig-h, 640px); width: auto; max-width: 100%; }
+
+/* Terminal transcript — for fallbacks of terminal beats: the real output, typeset, never
+   paraphrased (elide with … only). A tinted plate like a screenshot, the text in the system
+   face (a theme layer may swap in its mono through `pre`). Prompts muted; the verdict words
+   carry the accent: cyan for what went through, magenta for what was refused. */
+.term { margin: 0; padding: 22px 30px; border-radius: var(--radius-md); background: var(--color-neutral-200);
+  color: var(--color-neutral-900); font-family: var(--font-body); font-size: 21px; line-height: 1.42;
+  white-space: pre-wrap; overflow-wrap: anywhere; font-feature-settings: "tnum" 1; }
+.term .p { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.term .h { font-weight: 700; }
+.term .c { color: var(--color-accent-700); font-weight: 700; }
+.term .m { color: var(--color-accent-2-700); font-weight: 700; }
+.term .mm { background: var(--color-accent-2-100); color: var(--color-accent-2-800); border-radius: var(--radius-sm); padding: 0 0.15em; }
