@@ -428,10 +428,36 @@ M7's first gate run (at `f87e950`: `483 passed, 4 failed, 1 xfailed`) found
 Kyverno's `admission.request.kind` / `admission.request.kind.*` keys colliding
 in OpenSearch; it pins the renames on the OpenSearch branch.
 
-Bare-suite row, derived from that same collection: 489 collected − 76 gated −
-**0** xfailed = `413 passed, 76 skipped, 0 xfailed`.
+**M7's five-minute demo flow (2026-10-12) takes the collected count from 489 to
+507, and moves the gated figure from 76 to 83.** Eighteen new tests.
+`tests/e2e/test_demo_flow.py` adds **seven**, and **all seven are gated**: it runs
+`scripts/demo` end to end (`guard`, `claim 6200` refused, `autonomy autonomous`,
+`claim 6200` executed, `autonomy assisted`, `keystone`, `evidence`, `reset`), and
+the two `claim` steps are real model calls, one of which executes a real
+EUR 6,200 payment with the flag flipped. It starts no browser, so the browser
+split below becomes **4 of the 15** (it was 4 of the 14), a fifteenth gated
+module that does not launch one. `tests/unit/test_demo_driver.py` adds **eleven**,
+none gated: they compare every fact the driver restates (reach URLs, the keystone
+policy's name, the over-grant's object names, the flag path) with the file that
+owns it, and exercise `evidence`'s bounded wait for OpenSearch ingest lag. No existing test was added, removed or changed in what it asserts: the
+shared helpers (`_submit_claim`, `mint_svid`, `call_tool_directly`,
+`gateway_url`, `evidence_for`, `_kubectl`, `_opensearch`) moved into
+`tests/harness/live.py` so the tests and the driver run the same code.
 
-The gated figure moves to **76** — re-measured the same way as every figure
+**The gate row below is PREDICTED, NOT MEASURED again, as expected.** It was
+MEASURED at `a9a99a5`; this change touches `scripts/` (the driver, the shared
+reach probe `scripts/reach-probe.py`, and `scripts/beat-reach.sh`, which now
+reads that probe) and `tests/`, both `GATE_PATHS` entries, so the row describes a
+tree this change has since altered. What has to happen to make it MEASURED: one
+`./scripts/smoke-test.sh` after review, with `test_demo_flow.py` joining it
+(`RUN_BROWSER_TESTS=1` is set by the gate, so it runs unskipped). The new file was
+run on its own against the live stage-7 cluster, 7 passed in 55.8s, which is not
+the gate having run.
+
+Bare-suite row, derived from that same collection: 507 collected − 83 gated −
+**0** xfailed = `424 passed, 83 skipped, 0 xfailed`.
+
+The gated figure was **76** before that change and is **83** now — re-measured the same way as every figure
 below it, a `--collect-only` run with a plugin that counts items carrying a
 `skipif` whose reason names `RUN_BROWSER_TESTS` and whose condition is true
 with the variable unset — because none of Part A's eleven new `tests/unit`
@@ -446,14 +472,14 @@ test) is `tests/unit`-only and carries no `skipif`, so it adds none, and the
 internal-platform pass's eight new `tests/unit` tests, the mermaid pass's eight
 and the page-banner pass's eight `tests/unit` tests carry none either; the
 page-banner pass's own e2e file adds exactly **one** — and
-reports 76 of 489, with the per-module spread and the browser split both
+reports 83 of 507, with the per-module spread and the browser split both
 moving for the first time this milestone. Full spread:
 `test_settlement_llm_trace.py` 9,
 `test_prometheus_metrics_ingest.py` 10, `test_browser_root_span.py` 8,
 `test_settlement_agent_trace.py` 8, `test_claims_chain_trace.py` 7,
 `test_claim_correlation.py` 6, `test_gateway_trace.py` 6,
 `test_supervised.py` 6, `test_policy_scores.py` 5,
-`test_evidence_view.py` 4, `test_policy_denial.py` 4,
+`test_demo_flow.py` 7, `test_evidence_view.py` 4, `test_policy_denial.py` 4,
 `test_backstage_page_bands.py` 1, `test_golden_path.py` 1,
 `test_progressive_autonomy.py` 1. **The browser split changes twice this
 milestone, having not moved since M4 Task 5.** First a thirteenth gated module
@@ -462,14 +488,19 @@ imports `_drive_browser` from `test_policy_denial.py` rather than calling
 `chromium.launch(` itself, the same reason `test_progressive_autonomy.py` was
 never one of the three either). Then the page-banner pass added a fourteenth
 that *does* call `chromium.launch(` — it has no page to drive, only pages to
-look at — so the split is now **4 of the 14 launch a browser** and **10 of the
-14 start no browser**.
+look at — so the split was 4 of the 14 launching a browser and 10 of the 14
+starting none, until the demo-flow file made it a fifteenth that starts none:
+**4 of the 15 launch a browser** and **11 of the 15 start no browser**.
 
-Gate row: **MEASURED** — M7's gate run was at commit `a9a99a5`,
+Gate row: **PREDICTED, NOT MEASURED** — the last gate run was at commit `a9a99a5`;
+the tree with the demo flow has not been gated. The collection predicts
+`506 passed, 1 xfailed` (507 collected, zero skips required), and the run that
+turns this row MEASURED again is the one `./scripts/smoke-test.sh` after the
+review. For the record, the run at `a9a99a5` was
 `./scripts/smoke-test.sh` (which sets `RUN_BROWSER_TESTS=1` itself), run by the
 orchestrator on 2026-10-12 against a stage-7 cluster with Backstage rebuilt from
-that clean tree, exit **0**: `488 passed, 1 xfailed`, in 597.16s (9m57s). That
-is the figure the collection predicted. Two earlier M7 runs are part of the
+that clean tree, exit **0**: 488 passed, 1 xfailed, in 597.16s (9m57s), which
+was the figure the collection predicted that day. Two earlier M7 runs are part of the
 record: at `f87e950`, `483 passed, 4 failed` (Kyverno's colliding span keys
 rejected by OpenSearch, twice; criterion 4's accounted set; a Backstage image
 from an older commit), fixed in `6419ac8`; at `6419ac8`, `486 passed, 2 failed`

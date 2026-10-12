@@ -27,3 +27,6 @@ platform/policy-decision-service/ext_mcp_pb2_grpc.py
 # talk/build/shoot.py and build.py --only; only the sources are kept.
 talk/export/
 talk/preview-*
+
+# The demo driver's run state (scripts/demo): this run's claim ids.
+.demo/

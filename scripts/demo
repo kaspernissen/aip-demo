@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# The five-minute demo driver. A shim: the implementation is scripts/demo.py and
+# it runs under the repo's own venv, the same interpreter the e2e tests use, so
+# `demo` and `pytest tests/e2e` import the same harness with the same packages.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY="$HERE/../.venv/bin/python"
+[[ -x "$PY" ]] || { echo "Error: $HERE/../.venv not found. Create it: uv venv --python 3.13 .venv && uv pip install -r tests/requirements.txt" >&2; exit 1; }
+exec "$PY" "$HERE/demo.py" "$@"
