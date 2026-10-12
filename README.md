@@ -42,6 +42,10 @@ is; the runbook is the script.
   audit trail from spans the system already emits: who decided, under which
   rule and limit, who approved, and which identity executed it. `eval-scorer`
   writes policy-adherence scores back into the trace they judge.
+- **An agent can never edit what constrains it.** Kyverno denies an agent
+  ServiceAccount any write to the autonomy flag, the gateway's config, the
+  Cilium policy, RBAC or its own policy, even when an over-broad RBAC grant
+  would allow it. It fails closed.
 - **The platform API has a face.** Backstage shows the catalog and an autonomy
   card that reads the flag live and can flip it, through a ServiceAccount that
   may patch that one object and nothing else.
@@ -105,13 +109,32 @@ flowchart LR
 Platform pieces installed from upstream: Cilium (network policy, and the only
 route to the payments tool), SPIRE (workload identity), agentgateway (the
 enforcement point), the Open Feature Operator and flagd (the autonomy flag),
+Kyverno (the keystone),
 and the OpenTelemetry Collector, Jaeger, OpenSearch with Dashboards, and
 Prometheus (the evidence). [`docs/architecture.md`](docs/architecture.md)
 walks every hop.
 
+## The rings
+
+The platform bounds an agent in layers, an organisation taken from William
+Rizzo's *Bounded Agent Autonomy* demo (OSFF 2026), which is also where the
+keystone idea comes from. Each ring answers one question:
+
+| Ring | Question | Northstar |
+|---|---|---|
+| Core · Identity | who is it | SPIRE JWT-SVIDs, verified on every call |
+| Ring 1 · Reach | what can it connect to | Cilium: the gateway is the only way into `payments-mcp` |
+| Ring 2 · Capability | what may it do | agentgateway and the Policy Decision Service, fail-closed; the autonomy flag |
+| Keystone | can it edit what constrains it | Kyverno: no |
+
+Northstar differs from that demo in two places, on purpose: SPIRE rather than
+Linkerd for identity, and a decision service rather than a static CEL
+allowlist for capability. The keystone uses Kyverno's current
+`ValidatingPolicy` type rather than the deprecated `ClusterPolicy`.
+
 ## Stages
 
-The demo builds up in six stages, so a shorter talk can stop at the idea it
+The demo builds up in seven stages, so a shorter talk can stop at the idea it
 needs. Each stage adds to the one before.
 
 | Stage | Name | Adds |
@@ -122,14 +145,16 @@ needs. Each stage adds to the one before.
 | 4 | Observable | OpenSearch, OpenSearch Dashboards with the evidence view, Prometheus, eval-scorer |
 | 5 | Progressive autonomy | Open Feature Operator, flagd and the `northstar-autonomy` flag |
 | 6 | Golden path | Backstage |
+| 7 | Bounded | Kyverno and the keystone policy |
 
-Stage 6 is the complete demo. [`docs/demo-runbook.md`](docs/demo-runbook.md)
+Stage 7 is the complete demo. [`docs/demo-runbook.md`](docs/demo-runbook.md)
 §3 says which stage suits which talk length.
 
 ## Quick start
 
 You need Docker, kind, kubectl, helm, [uv](https://docs.astral.sh/uv/) and an
-Anthropic API key. The cluster needs about 6 GB of memory at stage 6.
+Anthropic API key. The cluster needs about 6 GB of memory at stage 6, measured before Kyverno
+was added.
 
 ```bash
 cp .env.template .env
@@ -156,6 +181,11 @@ actually answers. Then open:
 Submit the pre-filled €6,200 claim, watch it come back refused, then approve
 it in the reviewer UI. Both the click and the approved payment show up in
 Jaeger, linked to the refused trace.
+
+Two short scripts show the outer rings and the keystone, with no model call:
+`./scripts/beat-reach.sh` (a workload cannot reach the payments tool around the
+gateway) and `./scripts/beat-keystone.sh` (an agent cannot change the autonomy
+flag, even when an over-broad grant lets RBAC through).
 
 Tear everything down with `./scripts/teardown.sh`.
 

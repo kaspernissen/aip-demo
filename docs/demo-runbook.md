@@ -1,6 +1,6 @@
-# Northstar — Demo Runbook (M6, Golden path)
+# Northstar — Demo Runbook (M7, Bounded)
 
-Status: M6 (Golden path). This is the **operator's** document: how the demo is
+Status: M7 (Bounded), on top of M6's Golden path. This is the **operator's** document: how the demo is
 brought up, how it is run in front of an audience, what to say at each beat,
 and what to say when something breaks.
 
@@ -47,6 +47,9 @@ flowchart TD
       the platform is allowed to do”`"]
     s6["`**6 · Golden path**
       “the resource IS the platform API”`"]
+    s7["`**7 · Bounded**
+      “the agent can never edit
+      what constrains it”`"]
 
     r1(["one trace exists"])
     r2(["identity is an INPUT to the decision"])
@@ -54,14 +57,16 @@ flowchart TD
     r4(["from telemetry alone, no new app code"])
     r5(["no redeploy, no restart, no rebuild"])
     r6(["Backstage is just the view onto it"])
+    r7(["a policy, not a permission, holds the line"])
 
-    s1 --> s2 --> s3 --> s4 --> s5 --> s6
+    s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7
     s1 -.-> r1
     s2 -.-> r2
     s3 -.-> r3
     s4 -.-> r4
     s5 -.-> r5
     s6 -.-> r6
+    s7 -.-> r7
 </pre>
 
 **The closing line the whole demo is built to earn:**
@@ -69,9 +74,25 @@ flowchart TD
 > *The platform API is the resource. Backstage is just the view a human uses
 > to read and change it.*
 
+Stage 7 adds the line that makes that safe to say out loud:
+
+> *The agent can never edit what constrains it.*
+
+The idea, and the way it is organised, come from William Rizzo's *Bounded
+Agent Autonomy* demo (OSFF 2026). He draws an agent's limits as rings, each
+answering one question, and a keystone that holds the rings in place. Northstar
+had three of the four; M7 adds the keystone and makes Reach a live beat.
+
+| Ring | Question | Northstar's answer | Where it is shown |
+|---|---|---|---|
+| Core · Identity | who is it | SPIRE JWT-SVIDs, verified by the gateway on every call | beat 3 |
+| Ring 1 · Reach | what can it connect to | Cilium: the gateway is the only way into `payments-mcp` | **Beat R** |
+| Ring 2 · Capability | what may it do | agentgateway → policy-decision-service, fail-closed; the autonomy flag | beats 1, 4, 7 |
+| **Keystone** | can it edit what constrains it | Kyverno: **no** | **Beat K** |
+
 ---
 
-## 2. The system at a glance (stage 6)
+## 2. The system at a glance (stage 7)
 
 <pre class="mermaid">
 flowchart TD
@@ -128,6 +149,15 @@ flowchart TD
       catalog, 9 Components
       + the Autonomy contract card`"]
     end
+
+    subgraph keystone["THE KEYSTONE · stage 7"]
+        kv["`Kyverno ValidatingPolicy
+      agents-cannot-edit-their-own-authority
+      failurePolicy: Fail`"]
+    end
+    kv -.->|"`denies an agent identity's write to
+      the flag, the gateway config, Cilium
+      policy, RBAC and Kyverno itself`"| ff
     bs -->|"`ServiceAccount backstage —
       get/list/watch only`"| ff
     bs -->|"`ServiceAccount backstage-autonomy-writer —
@@ -183,29 +213,32 @@ everything below it.
 | 3 | Supervised | reviewer-ui, senior-settlement-agent | human-in-the-loop |
 | 4 | Observable | OpenSearch + Dashboards, Prometheus, eval-scorer | evidence and evaluation |
 | 5 | Progressive autonomy | cert-manager, Open Feature Operator, flagd sidecar, the `FeatureFlag` | policy as a live value |
-| 6 | **Golden path** | **Backstage** | **the platform API and its UI — run this one** |
+| 6 | Golden path | Backstage | the platform API and its UI |
+| 7 | **Bounded** | **Kyverno and the keystone policy** | **that an agent cannot edit its own limits — run this one** |
 
-> **Default: `--stage 6`.** It is the complete demo. Lower stages exist for
+> **Default: `--stage 7`.** It is the complete demo. Lower stages exist for
 > shorter talks and for isolating one idea.
 
 **Two things about stages that will bite you:**
 
-1. Stages **2–6 all need `networking.disableDefaultCNI`**, which is a
+1. Stages **2–7 all need `networking.disableDefaultCNI`**, which is a
    *create-time* kind flag. You cannot layer Cilium onto a running default
    CNI. Going from stage 1 → stage 2 therefore needs the cluster recreated;
    the script refuses rather than doing something broken.
-2. Stages **4, 5 and 6 all reuse stage 3's cluster config unchanged** —
-   there is deliberately no `stage4.yaml`, `stage5.yaml` or `stage6.yaml`.
-   So **3 → 4 → 5 → 6 needs no recreate.** You can climb the ladder live.
+2. Stages **4, 5, 6 and 7 all reuse stage 3's cluster config unchanged** —
+   there is deliberately no `stage4.yaml`, `stage5.yaml`, `stage6.yaml` or
+   `stage7.yaml`. So **3 → 4 → 5 → 6 → 7 needs no recreate.** You can climb the
+   ladder live. (Stage 7 on top of a running stage 4 cluster was how this one
+   was brought up the first time, and is the supported path.)
 
 ### Option 2: how long you have
 
 | Length | Stage | Beats to run | Cut |
 |---|:---:|---|---|
 | **5 min** | 6 | §5 beats 1, 2, 7 | everything else — refuse, then flip in Backstage |
-| **20 min** | 6 | beats 1–3, 6, 7 | the evidence view and the scorer |
-| **45 min** | 6 | all of §5 | nothing |
-| deep-dive | 6 | all of §5 + architecture.md's "See it yourself" | — |
+| **20 min** | 7 | beats 1–3, R, 6, 7, K | the evidence view and the scorer; Beat R and K are a minute each |
+| **45 min** | 7 | all of §5 | nothing |
+| deep-dive | 7 | all of §5 + architecture.md's "See it yourself" | — |
 
 ### Option 3: environment switches
 
@@ -262,7 +295,7 @@ done
 ### T-30 — bring the cluster up
 
 ```bash
-./scripts/setup-kind.sh --stage 6
+./scripts/setup-kind.sh --stage 7
 ```
 
 Watch for, at the end of the run:
@@ -270,6 +303,8 @@ Watch for, at the end of the run:
 - [ ] `ANTHROPIC_API_KEY: SET` — **if this says EMPTY, stop.** Every pod will
       come up Running and the first claim will fail at the model call.
 - [ ] every component reporting installed, no rollout timeouts
+- [ ] `The keystone policy is Ready` — the script waits for it and fails
+      rather than printing it if the policy never arms
 
 ### T-15 — start the surfaces, and leave this terminal alone
 
@@ -278,7 +313,19 @@ Watch for, at the end of the run:
 ```
 
 It prints every URL it established. Confirm you see a `Backstage` line and not
-`Backstage: SKIPPED` — `SKIPPED` means the cluster is below stage 6.
+`Backstage: SKIPPED` — `SKIPPED` means the cluster is below stage 6. Its first
+line is the keystone pre-flight, and it must read:
+
+```
+Keystone pre-flight: policy Ready, over-grant absent.
+```
+
+It refuses to start (exit 1) if the policy is not Ready or if the beat's
+over-grant is still applied. The first matters because the policy **fails
+closed**: with Kyverno down, Backstage's flag flip in beat 7 is refused too.
+The second matters because the over-grant is a standing permission for
+`settlement-agent` to patch the flag, which is exactly what this demo says
+never exists.
 
 ### T-10 — verify with your own eyes, not with a green banner
 
@@ -322,6 +369,13 @@ Expect exactly this shape, with **both** identities resolving `assisted`:
 - [ ] Jaeger loads and its service dropdown is populated — http://localhost:16686
 - [ ] Backstage loads and the **Guest → Enter** button works — http://localhost:7007
 - [ ] Autonomy contract card reads `assisted` / `assisted`
+
+```bash
+# 4. the keystone is armed, and the beat's over-grant is NOT standing
+kubectl get validatingpolicy agents-cannot-edit-their-own-authority   # READY true
+kubectl -n northstar-platform get role,rolebinding keystone-demo-overgrant \
+  || echo "absent, as it should be"
+```
 
 ### T-5 — the rehearsal claim
 
@@ -432,6 +486,55 @@ span for `execute_payment`, and **no** `payments-api` execute span.
 > MCP to the gateway directly with **two different SPIRE-minted identities**
 > and shows the verdict change with the caller. That is what makes 'identity
 > is an input to the decision' a demonstration instead of a claim."
+
+---
+
+### Beat R — the only way in · *stage 7* · ~2 min
+
+The Reach ring: a workload with no business at the tool cannot even open a
+connection to it. No model call, no browser, no cost.
+
+**DO**
+
+```bash
+./scripts/beat-reach.sh
+```
+
+**SHOW** — the output below is a real run. Step 1 is the control (the same
+pod reaches the one peer it exists to call); step 2 is the point.
+
+```
+=== Beat R: the only way in ===
+Probing from inside claims-agent-57fcb4b7f9-d7q47 (claims-agent: no SVID, no MCP client, no business at the tool).
+
+1. Control: claims-agent calls settlement-agent, the one peer it exists to call
+$ GET http://settlement-agent.northstar-agents.svc.cluster.local:9002/.well-known/agent-card.json
+  -> REACHED 200
+  reachable, as it should be.
+
+2. Around the gateway: claims-agent sends an MCP initialize straight to payments-mcp
+$ POST http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp   (initialize, 8s connect timeout)
+  -> DROPPED timeout
+  DROPPED. Nothing answered: not a 401, not a refusal. The packet never arrived.
+
+Beat R holds: the gateway is the only route to payments-mcp.
+(Cilium drops are not in the trace; Hubble is not installed.)
+```
+
+**SAY**
+
+> "`claims-agent` is a real neighbour in the agents' own namespace. It has no
+> identity of its own and no business at the payments tool. Step one: it can
+> reach the one thing it is for. Step two: it tries to talk to the tool
+> directly, around the gateway. Not a 401. Not a refusal. **Nothing answers.**
+> Cilium dropped the packet, so the only way into `payments-mcp` is the
+> gateway, and the gateway is where the policy decision happens."
+
+**Say the limit out loud.** Cilium drops are **not** in the trace: Hubble is
+not installed, so this refusal is on the terminal and nowhere in Jaeger. The
+script exits non-zero if the control fails or if the direct call is *not*
+dropped (a refusal, i.e. a reset, also fails it: that would mean something
+answered).
 
 ---
 
@@ -629,6 +732,85 @@ curl -s localhost:18300/score -X POST \
 
 ---
 
+### Beat K — the keystone · *stage 7* · ~4 min
+
+Run this **after** beat 7, with the contract resting at `assisted` (§7 item 1).
+No model call.
+
+**DO**
+
+```bash
+./scripts/beat-keystone.sh
+```
+
+**SHOW** — a real run. Five steps: the agent tries and RBAC refuses; someone
+makes a mistake (the over-grant); the **same** patch, and now Kyverno refuses;
+the mistake is taken back; the flag still resolves `assisted`.
+
+```
+=== Beat K: the keystone ===
+Acting as system:serviceaccount:northstar-agents:settlement-agent (kubectl --as).
+
+1. The agent tries to flip its own autonomy flag to 'autonomous'
+$ kubectl --as=system:serviceaccount:northstar-agents:settlement-agent -n northstar-platform patch featureflag/northstar-autonomy --type=json -p '<replace targeting.if[1] with autonomous>'
+  Error from server (Forbidden): featureflags.core.openfeature.dev "northstar-autonomy" is forbidden: User "system:serviceaccount:northstar-agents:settlement-agent" cannot get resource "featureflags" in API group "core.openfeature.dev" in the namespace "northstar-platform"
+  RBAC says no. That is the first line.
+
+2. Someone makes a mistake: the agent is over-granted 'patch' on that one flag
+$ kubectl apply -f deploy/demo/keystone-overgrant.yaml
+  role.rbac.authorization.k8s.io/keystone-demo-overgrant created
+  rolebinding.rbac.authorization.k8s.io/keystone-demo-overgrant created
+$ kubectl --as=system:serviceaccount:northstar-agents:settlement-agent auth can-i patch featureflag/northstar-autonomy
+  yes
+
+3. The same patch again. RBAC now allows it. Kyverno does not.
+$ kubectl --as=system:serviceaccount:northstar-agents:settlement-agent -n northstar-platform patch featureflag/northstar-autonomy --type=json -p '<replace targeting.if[1] with autonomous>'
+  Error from server: admission webhook "vpol.validate.kyverno.svc-fail-finegrained-agents-cannot-edit-their-own-authority" denied the request: Policy agents-cannot-edit-their-own-authority failed: DENIED: agent identity 'system:serviceaccount:northstar-agents:settlement-agent' may not change the objects that define its own authority (FeatureFlag/northstar-autonomy). Authority changes go through a reviewed commit, never a runtime decision by the agent.
+  Denied by Kyverno, naming the policy. That is the second line, and it did not need RBAC to be right.
+
+4. Take the mistake back
+$ kubectl delete -f deploy/demo/keystone-overgrant.yaml
+  role.rbac.authorization.k8s.io "keystone-demo-overgrant" deleted
+  rolebinding.rbac.authorization.k8s.io "keystone-demo-overgrant" deleted
+
+5. What does the flag resolve to now?
+$ kubectl -n northstar-platform get featureflag/northstar-autonomy -o jsonpath='{... targeting.if[1]}'
+  settlement-agent resolves: assisted
+
+Beat K holds: the agent could not edit what constrains it, even with the grant.
+```
+
+**SAY**
+
+> "Two lines, not one. The first is RBAC: the agent has no right to touch its
+> own flag, and the cluster says so. But every real cluster collects a mistake
+> like the one in step two, a well-meaning change that gives the agent `patch`
+> on one object. RBAC now says yes. **Kyverno still says no**, and the message
+> names the policy and the reason: authority changes go through a reviewed
+> commit, never a runtime decision by the agent. The agent can never edit what
+> constrains it, and that does not depend on RBAC being right."
+
+> "The thing that **can** change it is the human path you saw in beat 7:
+> Backstage, under its own narrow identity, which the policy does not match."
+
+**SHOW (optional, 30 s)** — the refusal is in Jaeger, with a limit. Service
+`kyverno-admission-controller`, operation
+`VALIDATE UPDATE core.openfeature.dev/v1beta1, Kind=FeatureFlag`: the identity,
+the object, `admission.response.allowed = False` and the message naming the
+policy.
+
+**SAY**
+
+> "That is its **own** trace, not part of the claim's. `kubectl` does not
+> carry a trace context, so nothing joins them. Which refusals the trace can
+> see: the gateway's decision, yes, inside the claim. Kyverno's, yes, but
+> standalone. Cilium's, no."
+
+The script removes the over-grant on every exit path, including Ctrl-C.
+**If you abort the room's patience some other way, check §7 item 2.**
+
+---
+
 ### Beat 8 — close with the limitations · ~2 min
 
 Say these out loud. An audience of platform engineers will spot all three,
@@ -636,6 +818,8 @@ and naming them first is worth more than the features.
 
 | Limitation | The honest version |
 |---|---|
+| **The keystone is fail-closed, and that costs something** | The policy's `failurePolicy` is `Fail`, like the gateway's `failClosed`. With Kyverno down, a request the policy matches is refused, and **Backstage's flip of the flag is one of them**. The API server evaluates the identity match first, so Kyverno being down does **not** stop ordinary ConfigMap or RBAC writes by humans or CI, only an agent identity's, and Backstage's own. Pre-flight checks Kyverno is Ready for this reason. |
+| **The PDS execute limits are not covered by it** | They live in code (`pds/rules.py`) and change only by a reviewed commit and a rebuild. There is no cluster object for the policy to guard. |
 | **Backstage here is unauthenticated** | Be precise, because the sloppy version is wrong: the backend API **does** check a credential — a bare `curl` to it gets HTTP 401. What makes it unauthenticated is that **anyone can mint that credential, unchallenged**, through the guest flow. So: anyone who can reach 7007 can flip the contract. What keeps it honest is **not a login** — it is the narrowness of the one write it can make: `get`/`list`/`patch` on `resourceNames: [northstar-autonomy]`, no delete, no create, separate from the read-only ServiceAccount the Kubernetes plugin uses. **Anyone reaching this port can flip the contract and nothing else.** |
 | **No scaffolder** | M1's claim — "a platform team could add a service in an afternoon through the same API" — is **half** demonstrated. The platform API exists as a real object with a real UI. Nothing here generates a new agent from it. |
 | **The catalog is static** | It reflects committed `catalog-info.yaml` files staged into the image, not a discovered repository — **there is no git remote** for Backstage's discovery processors to point at. A component added without its own file does not appear until the image is rebuilt, and a unit test catches that drift before a demo does. |
@@ -658,7 +842,7 @@ and naming them first is worth more than the features.
 | Jaeger | http://localhost:16686 | 1+ | kind host port |
 | OpenSearch Dashboards | http://localhost:5601 | 4+ | `start-demo.sh` |
 | Prometheus | http://localhost:9090 | 4+ | `start-demo.sh` |
-| Backstage | http://localhost:7007 | 6 | `start-demo.sh` |
+| Backstage | http://localhost:7007 | 6+ | `start-demo.sh` |
 
 Plus the tool ports `start-demo.sh` also forwards, which the walkthrough never
 opens but which are useful when debugging live: `claims-agent` 19001,
@@ -695,9 +879,21 @@ gets its own audit span) or:
 kubectl -n northstar-platform apply -f deploy/platform/openfeature/featureflag.yaml
 ```
 
+```bash
+# 2. THE OVER-GRANT MUST BE ABSENT. beat-keystone.sh removes it itself, even on
+#    Ctrl-C, but check: it is a standing permission for settlement-agent to
+#    patch the flag, which is exactly what this demo says never exists.
+kubectl -n northstar-platform get role,rolebinding keystone-demo-overgrant \
+  || echo "absent, as it should be"
+# if it is there:
+kubectl delete -f deploy/demo/keystone-overgrant.yaml
+```
+
 - [ ] **contract reads `assisted` on both branches** ← the one that ruins a
       second run if you forget it. A cluster left `autonomous` makes beat 1
       execute instead of refuse, and the entire narrative collapses.
+- [ ] **the over-grant is absent** (`start-demo.sh` refuses to start if it is
+      still applied)
 - [ ] the ledger is per-process and in-memory — restart `payments-api` to
       clear refused rows from the reviewer UI:
       `kubectl -n northstar-systems rollout restart deploy/payments-api`
@@ -713,7 +909,12 @@ kubectl -n northstar-platform apply -f deploy/platform/openfeature/featureflag.y
 |---|---|---|
 | First claim submission errors | `ANTHROPIC_API_KEY` empty | it is a **model call**. Check `.env`, restart the agent deployments |
 | A surface at 5601 / 9090 / 7007 does not answer | dead port-forward (a dead forward **keeps its socket bound** and still looks healthy to `lsof`) | Ctrl+C and re-run `./scripts/start-demo.sh` |
-| `Backstage: SKIPPED` in start-demo output | cluster is below stage 6 | `./scripts/setup-kind.sh --stage 6` — no recreate needed from stage 3+ |
+| `Backstage: SKIPPED` in start-demo output | cluster is below stage 6 | `./scripts/setup-kind.sh --stage 7` — no recreate needed from stage 3+ |
+| `start-demo.sh` refuses: *keystone policy is not Ready* | Kyverno is down or the policy never armed | `kubectl -n kyverno get pods`; `kubectl get validatingpolicy agents-cannot-edit-their-own-authority -o yaml` and read `status.conditionStatus.conditions`. **While Kyverno is down, Backstage's flag flip fails closed too**, so do not take beat 7 on stage until it is Ready |
+| Backstage's flip answers with an admission error mentioning `kyverno` | Kyverno is down (the policy fails closed) or the policy's `matchConditions` now match Backstage's identity | `kubectl -n kyverno get pods`. Backstage's identity is `backstage-autonomy-writer` in `northstar-platform`; the policy matches only `northstar-agents` and `northstar-tools` prefixes |
+| `start-demo.sh` refuses: *over-grant is still applied* | an earlier beat-keystone run was killed hard (SIGKILL) | `kubectl delete -f deploy/demo/keystone-overgrant.yaml` |
+| `beat-keystone.sh` step 3 prints `Forbidden` instead of the Kyverno message | the over-grant did not take effect yet | re-run; the script waits for `auth can-i` to say `yes` first, so this means RBAC is not what it was |
+| `beat-reach.sh` step 2 prints `REFUSED` or `REACHED` | the Cilium policy is not enforcing | `kubectl -n northstar-tools get cnp`; `tests/e2e/test_gateway_is_the_only_route.py` reads the datapath |
 | €6,200 comes back `executed` | **contract left flipped from a previous run** | §7 |
 | €5,800 comes back `refused` | contract flipped, or wrong caller identity | check the card; check `policy.caller.spiffe_id` on the span |
 | Backstage card shows the old value | it reads live — so this means the write failed | check the response, then `kubectl get featureflag` as an independent witness |
@@ -732,7 +933,7 @@ kubectl -n northstar-platform apply -f deploy/platform/openfeature/featureflag.y
 
 ---
 
-## 9. The five sentences to land
+## 9. The six sentences to land
 
 If the audience remembers nothing else:
 
@@ -746,6 +947,8 @@ If the audience remembers nothing else:
 4. **"One live value changed what the platform is allowed to do."** — no
    redeploy, no restart, no rebuild.
 5. **"The platform API is the resource. Backstage is just the view."**
+6. **"The agent can never edit what constrains it."** — RBAC is the first
+   line; Kyverno is the one that holds when RBAC is wrong.
 
 ---
 
@@ -754,7 +957,7 @@ If the audience remembers nothing else:
 | Document | What it owns |
 |---|---|
 | [`README.md`](../README.md) | status per milestone, quick start, the stages table |
-| [`docs/architecture.md`](architecture.md) | components, hops, protocols, the trace span by span, the full "See it yourself" walkthrough, and the authoritative limitations list |
+| [`docs/architecture.md`](architecture.md) | the rings and the keystone, components, hops, protocols, the trace span by span, the full "See it yourself" walkthrough, and the authoritative limitations list |
 | [`docs/telemetry-contract.md`](telemetry-contract.md) | verified instrumentation, the published gaps, the pin table, test counts |
 | [`docs/upstream-findings.md`](upstream-findings.md) | filing-ready findings against upstream projects — **none of them filed** |
 | [`docs/superpowers/specs/`](superpowers/specs/) | the design behind each milestone, including what was deliberately dropped |

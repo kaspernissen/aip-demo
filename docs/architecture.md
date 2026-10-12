@@ -1,6 +1,6 @@
-# Northstar Architecture — M6 (Golden path)
+# Northstar Architecture — M7 (Bounded), on M6's Golden path
 
-Status: **M6 (Golden path)**, on branch `m6-golden-path`. **M5 (Progressive
+Status: **M7 (Bounded)**, on branch `m7-bounded`, adding the keystone ring on top of **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
 autonomy) merged 2026-09-15 at `e62238f`, tagged `m5-verified`** -- read that
 tag's own message before trusting it, it claims less than its predecessors.
 Bumped in M6's first commit rather than left to a doc pass: this line went
@@ -574,6 +574,7 @@ the six SPIRE sub-images, including the one carrying the hazard recorded under
 | `agentgateway` | Rust MCP/A2A/LLM proxy. A **Linux Foundation** project — **not** CNCF | `cr.agentgateway.dev/agentgateway:v1.5.0` (note the leading `v`; the tag `1.5.0` does not exist on that registry, though the binary reports `1.5.0` as its internal version) | Interposed on the MCP hop. Verifies the caller's JWT-SVID (`jwtAuth`), asks the Policy Decision Service about every `tools/call` (`mcpGuardrails`), and forwards to `payments-mcp` **only** if the answer is permit. |
 | `policy-decision-service` | **This project's own code** (Python 3.13, `grpcio`), not third-party — listed here because it is platform machinery rather than an application component. Serves agentgateway's `agentgateway.dev.ext_mcp.ExtMcp` contract, from a proto vendored verbatim at v1.5.0 (`platform/policy-decision-service/proto/ext_mcp.proto`, `d459d88`) | `localhost:5001/northstar/policy-decision-service:dev`, `policy-decision-service.northstar-platform.svc.cluster.local:9100` | Answers permit or deny on caller identity plus amount. Holds the milestone's one rule and emits the `policy.decision` span. Makes no Kubernetes API calls and holds no RBAC; nothing in `northstar-agents` can reach it. |
 | `eval-scorer` **(M4; row added M5 Task 6)** | **This project's own code** (Python 3.13, standard library only — no web framework, no third-party OTel SDK dependency beyond what `platform/eval-scorer/requirements.txt` pins), not third-party — the same reason `policy-decision-service` has a row here rather than in the application table | `localhost:5001/northstar/eval-scorer:dev`, `eval-scorer.northstar-platform.svc.cluster.local:8300` | Scores a settled trajectory's identity authority against its own independent copy of the policy table (`scorer/authority.py`) and its own independent copy of the contract's currently-published autonomy level (`scorer/contract.py`'s `CURRENT_LEVEL`), never by re-reading the `policy.decision` span's own claim — the anti-vacuity argument `scorer/contract.py`'s own module docstring makes at length. `CURRENT_LEVEL` is a static constant checked at build time against the committed `deploy/platform/openfeature/featureflag.yaml`, deliberately blind to a live `kubectl patch` against the deployed `FeatureFlag` object (M5-R29/M5-R31) — the two are independent by design, not by oversight, which is exactly what let Task 6 flip the live contract without touching this service or its tests. |
+| Kyverno **(M7)** | Kyverno, chart `kyverno/kyverno` **3.9.1**, installed in the `kyverno` namespace by `setup-kind.sh --stage 7` with `deploy/platform/kyverno/values.yaml` (OTLP tracing on the admission controller; read-only RBAC on the kinds the policy matches) | appVersion **v1.19.1**; one `ValidatingPolicy` (`policies.kyverno.io/v1`, CEL), `deploy/platform/kyverno/keystone-policy.yaml`, named `agents-cannot-edit-their-own-authority` | The keystone: refuses an agent identity's create, update or delete of the objects that define its own authority. See "The rings, and the keystone" below. `failurePolicy: Fail`. |
 | `backstage` **(M6)** | Backstage backend, `@backstage/backend-defaults@^0.17.7` and siblings — third-party framework, plus **this project's own code** in one plugin: `platform/backstage/packages/backend/src/plugins/autonomyContract/` (router, k8s client, evaluator, telemetry), the same reason `policy-decision-service` and `eval-scorer` have rows here rather than in the application table, scaled down to one plugin rather than a whole service | `localhost:5001/northstar/backstage:dev`, `backstage.northstar-platform.svc.cluster.local:7007` | Serves the software catalog (nine `Component` entities: the eight in the tree plus Backstage itself, derived from `catalog-info.yaml` files staged into the image at build time — see "Known limitations" below) and the autonomy-contract card, the one UI in this system with a write path of its own: `POST /api/autonomy-contract/variant` flips `northstar-autonomy`'s `targeting.if[1]` through a second, narrower ServiceAccount (`backstage-autonomy-writer`) than the one the Kubernetes plugin reads with. |
 | SPIRE server / agent | SPIFFE runtime, chart `spiffe/spire` 0.30.2 from the hardened repo | appVersion SPIRE **1.15.3**; `ghcr.io/spiffe/spire-server:1.15.3`, `spire-agent:1.15.3` | Issues the JWT-SVID. Trust domain `northstar.local`, cluster name `northstar`. |
 | SPIRE CRDs | chart `spiffe/spire-crds` 0.6.1, installed first | — | The `spire.spiffe.io` CRDs the `ClusterSPIFFEID` resources need. |
@@ -1713,6 +1714,101 @@ fails only if the audience test asserts an assignment rather than merely
 back with `jsonpath` and compared by checksum against the repo file — a
 `kubectl diff` cannot prove a revert, since it is a three-way merge against
 `last-applied-configuration`.
+
+## The rings, and the keystone — M7
+
+M7 organises what the earlier milestones built as **rings**, a framing taken
+from William Rizzo's *Bounded Agent Autonomy* demo (OSFF 2026), and adds the
+one that was missing. The argument is the one both demos share: you do not
+trust an agent to remember its own authority limits, you make the platform
+enforce them.
+
+| Ring | Question | Northstar's answer | Stage |
+|---|---|---|:---:|
+| Core · Identity | who it is | SPIRE JWT-SVIDs, verified by the gateway on every call | 2 |
+| Ring 1 · Reach | what it connects to | Cilium: the gateway is the only way into `payments-mcp` | 2 |
+| Ring 2 · Capability | what it may do | agentgateway → ExtMCP → policy-decision-service, `failClosed`; the autonomy flag | 2, 5 |
+| Keystone | it cannot edit what constrains it | Kyverno `ValidatingPolicy` | **7** |
+
+M7 deliberately does not port William's other choices. Linkerd would duplicate
+SPIRE on identity (the M2 rationale stands), and his static CEL
+`mcpAuthorization` allowlist is the approach the decision service replaced.
+Those are two layers, "hide" versus "refuse and record", not a disagreement.
+
+### The keystone policy
+
+`deploy/platform/kyverno/keystone-policy.yaml`, a `policies.kyverno.io/v1`
+`ValidatingPolicy` (CEL). Kyverno v1.19 deprecates the legacy `kyverno.io`
+`ClusterPolicy` (kyverno/kyverno#16868), which is what William's version on
+v1.18.1 uses; same rule, current type.
+
+- **Who is denied:** any request whose `request.userInfo.username` starts with
+  `system:serviceaccount:northstar-agents:` or
+  `system:serviceaccount:northstar-tools:`. A prefix, not a list, so a new
+  agent is covered without editing the policy. Humans, CI and
+  `backstage-autonomy-writer` (in `northstar-platform`) do not match. The match
+  is a `matchCondition`, which Kyverno copies into the webhook configuration
+  (confirmed on the live `ValidatingWebhookConfiguration`), so the API server
+  filters **before** calling Kyverno.
+- **What is protected** (CREATE, UPDATE, DELETE): `FeatureFlag` and
+  `FeatureFlagSource` in `northstar-platform`; the `agentgateway-config`
+  ConfigMap; `CiliumNetworkPolicy`; `Role`, `RoleBinding`, `ClusterRole`,
+  `ClusterRoleBinding`; and Kyverno's own `ValidatingPolicy` and
+  `PolicyException` (an exception is a bypass, so creating one is an edit to
+  the constraint). The PDS execute limits are in code (`pds/rules.py`) and
+  change only by a reviewed commit and a rebuild, so there is nothing in the
+  cluster to guard.
+- **Fail closed:** `failurePolicy: Fail`, consistent with the gateway. If
+  Kyverno is down, a request the policy matches is refused, and Backstage's
+  flip of the flag is one of them. Pre-flight checks Kyverno is Ready.
+- **Message,** shown live: `DENIED: agent identity '<username>' may not change
+  the objects that define its own authority (<kind>/<name>). Authority changes
+  go through a reviewed commit, never a runtime decision by the agent.` The
+  API server prefixes it with the webhook name and `Policy
+  agents-cannot-edit-their-own-authority failed:`, which is what the tests
+  assert on so an RBAC `Forbidden` cannot pass for it.
+
+**Two lines, not one.** RBAC already denies every agent ServiceAccount a write
+to the flag, so on a correct cluster an agent sees an RBAC `Forbidden`: the
+first line, not the keystone. The keystone is the line that holds when RBAC is
+wrong. Northstar does not ship a standing over-grant to show it; `Beat K`
+(`scripts/beat-keystone.sh`) applies `deploy/demo/keystone-overgrant.yaml`
+("someone made a mistake"), shows Kyverno refuse the same patch, and deletes
+it. `setup-kind.sh` never applies that file (pinned by a unit test), and
+`start-demo.sh` refuses to start if it is left behind.
+
+**Two things measured while building it** (both would otherwise be assumed):
+
+1. With the chart's default RBAC the policy is stored and its webhook is
+   configured, but `.status.conditionStatus.ready` stays `false`: "Policy is
+   not ready for reporting, missing permissions: get/list/watch" for every
+   non-core kind it matches. `deploy/platform/kyverno/values.yaml` grants the
+   admission and reports controllers read-only access to those kinds, and
+   `setup-kind.sh` waits on `ready` rather than on the object existing.
+2. Kyverno's default webhook `namespaceSelector` excludes `kube-system` and
+   `kyverno`, so an agent identity's writes in those two namespaces are not
+   evaluated. Agents hold no grant there; this is stated rather than fixed.
+
+### Which refusals the trace can see
+
+Kyverno exports OTLP traces (`admissionController.tracing.*`). The admission
+controller is pointed at the collector's **gRPC** receiver, `4317`. Measured on
+the live stage-7 cluster, Kyverno chart 3.9.1 / app v1.19.1:
+
+| Question | Finding |
+|---|---|
+| Does a denial produce a span in Jaeger? | **Yes.** Service `kyverno-admission-controller`. One 8-span trace per denial: `POST` → `ADMISSION POST /vpol/agents-cannot-edit-their-own-authority` → `METRICS POST ...` → `GVK`, `METRICS`, `ROLES`, `FILTER`, `VALIDATE UPDATE core.openfeature.dev/v1beta1, Kind=FeatureFlag`. Sub-millisecond. |
+| Attributes on the denial span | `admission.response.allowed = False`, `admission.response.result.status = Failure`, `admission.response.result.message` (carries the policy name), `admission.request.user.name`, `admission.request.user.groups`, `admission.request.operation`, `admission.request.kind.kind/group/version`, `admission.request.name`, `admission.request.namespace`, `admission.request.roles` (the over-grant is visible), `admission.request.uid`. **The policy name is not an attribute of its own**; it is in the message and in the root span's `url.path`. |
+| Is anything sampled? | **No.** Kyverno v1.19.1's `pkg/tracing/config.go` builds the tracer provider with no `WithSampler`, so the SDK default `ParentBased(AlwaysSample)` applies, and with no parent that is always-on. The chart has no sampling value. 20 consecutive denials produced 20 traces. |
+| Is it part of the claim's trace? | **No, a standalone trace.** One service, one root, no parent. `kubectl` sends no `traceparent` and the kind API server does not propagate trace context to webhooks. Kyverno installs the W3C propagator and would continue a trace if one arrived. |
+| Noise | Kyverno traces its own webhook self-checks (`ADMISSION POST /verifymutate`, a `Lease` update) about six times a minute, so the service is mostly noise. Search by operation `VALIDATE ...` or by `admission.request.user.name`. |
+
+So the answer for the deck: the gateway's decision is in the claim's trace;
+Kyverno's refusal is in Jaeger, attributable, but standalone; **Cilium's drops
+are in no trace**, because Hubble is not installed. That last one is stated, not
+fixed. `tests/e2e/test_keystone.py::test_the_denial_reaches_jaeger_as_a_standalone_kyverno_trace`
+asserts the first two (and fails if the trace ever stops being standalone, so
+the claim cannot silently go stale).
 
 ## What the system deliberately does not do
 
