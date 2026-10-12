@@ -182,7 +182,26 @@ Submit the pre-filled €6,200 claim, watch it come back refused, then approve
 it in the reviewer UI. Both the click and the approved payment show up in
 Jaeger, linked to the refused trace.
 
-Two short scripts show the outer rings and the keystone, with no model call:
+**The five-minute demo** is five commands in one terminal, driven by
+`scripts/demo` (it runs under the repo's `.venv`):
+
+```bash
+scripts/demo guard                # no identity: 401. Around the gateway: dropped. With SPIRE's identity: the tools
+scripts/demo claim 6200           # a real claim: refused by the platform, then the trace
+scripts/demo autonomy autonomous  # one live value, nothing redeployed ...
+scripts/demo claim 6200           # ... the same claim, executed
+scripts/demo autonomy assisted    # ... and back
+scripts/demo keystone             # the agent cannot edit what constrains it
+scripts/demo evidence             # who decided, under which rule, for which identity
+scripts/demo reset                # flag assisted, over-grant absent, run state cleared
+```
+
+Each command exits non-zero when the expected outcome does not happen.
+[`docs/demo-runbook.md`](docs/demo-runbook.md) §5 has what to say at each step.
+The two claims call the model; `guard`, `keystone` and `evidence` do not.
+
+Two short scripts show the outer rings and the keystone, with no model call
+(`scripts/demo guard` and `scripts/demo keystone` run the same checks):
 `./scripts/beat-reach.sh` (a workload cannot reach the payments tool around the
 gateway) and `./scripts/beat-keystone.sh` (an agent cannot change the autonomy
 flag, even when an over-broad grant lets RBAC through).

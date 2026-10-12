@@ -235,7 +235,7 @@ everything below it.
 
 | Length | Stage | Beats to run | Cut |
 |---|:---:|---|---|
-| **5 min** | 6 | §5 beats 1, 2, 7 | everything else — refuse, then flip in Backstage |
+| **5 min** | 7 | §5 "The five-minute flow": `scripts/demo` steps 1–5 | everything else: the longer beats below it |
 | **20 min** | 7 | beats 1–3, R, 6, 7, K | the evidence view and the scorer; Beat R and K are a minute each |
 | **45 min** | 7 | all of §5 | nothing |
 | deep-dive | 7 | all of §5 + architecture.md's "See it yourself" | — |
@@ -247,14 +247,15 @@ everything below it.
 | `ANTHROPIC_API_KEY` | **required** | The settlement decision is a **real model call**. Empty → every pod still comes up Running and fully traced, and the **first claim submission fails**. `setup-kind.sh` prints `SET`/`EMPTY` — **check for SET before going on stage.** |
 | `DASH0_AUTH_TOKEN` + 3 siblings | unset | Adds a second OTLP exporter. **No application code changes.** Good beat if the audience cares about vendor-neutrality. |
 | `NORTHSTAR_CAPTURE_CONTENT` | `true` | `false` → the evidence view loses **nothing** (every field it reads is emitted by the platform, not the model). What is lost is the agent's own statement of the amount. This is OQ-1, measured as a matched pair. |
-| `RUN_BROWSER_TESTS=1` | unset | Unlocks 13 test modules / 75 tests that spend model tokens or drive a browser. **Only for the gate**, not for the demo. |
+| `RUN_BROWSER_TESTS=1` | unset | Unlocks the gated test modules (`docs/telemetry-contract.md` publishes how many) that spend model tokens or drive a browser, `tests/e2e/test_demo_flow.py` among them. **Only for the gate**, not for the demo. |
 | `"emit": false` | — | On `POST /score`: read the scores **without writing spans**. How to look without changing what you are looking at. |
 
-### Option 4: the three ways to flip the autonomy contract
+### Option 4: the four ways to flip the autonomy contract
 
 | Route | Command / click | Use it for |
 |---|---|---|
-| Backstage card | http://localhost:7007/autonomy-contract → **Set settlement-agent: autonomous** | **the demo** — it is the milestone |
+| `scripts/demo autonomy <assisted\|autonomous>` | one command, verifies flagd resolved it and that no pod restarted | **the five-minute flow** (step 3) |
+| Backstage card | http://localhost:7007/autonomy-contract → **Set settlement-agent: autonomous** | the longer slot (Beat 7): it is the milestone |
 | `kubectl` | `kubectl -n northstar-platform patch featureflag northstar-autonomy --type=json ...` | proving the card is not special |
 | the test | `pytest tests/e2e/test_progressive_autonomy.py` | proving it mechanically, restores itself |
 
@@ -390,6 +391,10 @@ model call and it is the single most valuable thing you can do in pre-flight:
 it proves the API key, the whole A2A chain, the gateway, the PDS, flagd and
 the ledger, in one action.
 
+For the five-minute flow the rehearsal is the flow itself:
+`scripts/demo claim 6200 --expect refused` (it exits non-zero unless the claim
+is refused), then `scripts/demo reset`.
+
 Then **reset the ledger** before the audience sees anything — see §7.
 
 ---
@@ -399,6 +404,353 @@ Then **reset the ledger** before the audience sees anything — see §7.
 Each beat below is: **DO** (the action), **SHOW** (where to look), **SAY**
 (the point). The SAY lines are the argument; everything else is scaffolding
 for them.
+
+**The first thing in this section, "The five-minute flow", is the live demo:**
+five commands in one terminal. The beats after it are the longer-slot version.
+
+---
+
+### The five-minute flow · *stage 7* · ~5 min · **the live demo**
+
+This is what the talk runs live. Five commands in one terminal, every main
+point of the talk landed by exactly one of them (design:
+`docs/superpowers/specs/2026-10-12-northstar-m7-bounded-design.md`, section 7).
+Everything below it in this section is the **longer-slot** version, kept for a
+20-, 45- or 90-minute slot, and for the surfaces the five minutes leave out (the
+human approval, Backstage, the scores, OpenSearch Dashboards).
+
+```bash
+scripts/demo guard                  # 1  identity, reach, the tools
+scripts/demo claim 6200             # 2  refused
+scripts/demo autonomy autonomous    # 3  one live value ...
+scripts/demo claim 6200             #    ... the same claim, executed
+scripts/demo autonomy assisted      #    ... and back
+scripts/demo keystone               # 4  the agent cannot edit what constrains it
+scripts/demo evidence               # 5  prove it
+scripts/demo reset                  #    back to the resting state, any time
+```
+
+`scripts/demo` is a shim over `scripts/demo.py`, run by the repo's `.venv`. It
+imports the same helpers the e2e tests import (`tests/harness/live.py`,
+`contract.py`, `jaeger.py`), so what you run on stage is what
+`tests/e2e/test_demo_flow.py` runs in the gate. Every command says what it is
+about to do, then prints the platform's answer, **exits non-zero if the
+expected outcome does not happen** (a refusal that executes, a drop that
+connects, a keystone that does not fire), and never prints a token. The decisive
+word is highlighted (white on red for something stopped, black on green for
+something that went through). It reads at a large font in a 100-column
+terminal.
+
+**Before you start:** §4 pre-flight, then `scripts/demo reset` as the last thing
+you type before the audience arrives. It is safe at any time. The model is
+called in steps 2 and 3 only; 1, 4 and 5 are deterministic.
+
+**Timings below are measured**: `time` over each command, two complete runs on
+the stage-7 cluster, the model answering in 5-7s. They are the command's own
+time. The rest of the five minutes is you talking, which is why none of these is
+a reason to rush.
+
+| Step | Command | Ran in | What eats the time |
+|---|---|---:|---|
+| 1 | `guard` | 8.6s | the 8s connect timeout that *is* the drop |
+| 2 | `claim 6200` | 23s | the model (~7s), then ~15s waiting for every service's spans to land in Jaeger |
+| 3 | `autonomy autonomous` / `claim 6200` / `autonomy assisted` | 0.6s / 21s / 0.6s | same as step 2; the flips take 0.3s to reach flagd |
+| 4 | `keystone` | 0.5s | nothing; talk over the output |
+| 5 | `evidence` | 0.6-1.3s | nothing, once OpenSearch has the spans (it waits, bounded, if it has not) |
+
+Total command time is about 55 seconds across the flow. Everything else is the
+SAY lines.
+
+---
+
+#### Step 1 — `scripts/demo guard` · Core · Identity, Ring 1 · Reach
+
+**DO** — `scripts/demo guard`
+
+**SHOW**
+
+```text
+1  No identity
+  $ POST gateway/mcp  tools/list   (no token)
+  -> HTTP [401]  authentication failure: no bearer token found
+  $ POST gateway/mcp  tools/call execute_payment   (no token)
+  -> HTTP [401]  nothing forwarded
+
+2  Around the gateway
+  From inside claims-agent: no SVID, no business at the tool.
+  $ GET   settlement-agent:9002   (the one peer it may call: the control)
+  -> [REACHED]  200  (the network works)
+  $ POST  payments-mcp:8000/mcp  initialize, straight to the tool, 8s timeout
+  -> [DROPPED]  no answer, no 401. The packet never arrived.
+
+3  With settlement-agent's identity
+  $ spire-server jwt mint   sub=settlement-agent  aud=agentgateway
+    sub              spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
+    aud              spiffe://northstar.local/ns/northstar-platform/sa/agentgateway
+  -> HTTP [200]  tools settlement-agent may call:
+       propose_payment ...   execute_payment ...   refuse_payment ...   get_payment ...
+  Listed is not permitted: every call is decided, one by one.
+```
+
+**SAY**
+
+> "Three ways to reach the payment tool. With no identity, the gateway says
+> 401 and forwards nothing. Going around the gateway, straight at the tool,
+> does not get a no, it gets silence: Cilium drops the packet. And with the
+> identity SPIRE issued to this one agent, I can see the tools. All four,
+> including the one that moves money. Seeing a tool is not being allowed to use
+> it. That comes next."
+
+**Land:** the 8 seconds of waiting on the DROPPED line is the point. Say so out
+loud: "That wait is the drop. There is no error to read, because nothing
+answered." Cilium drops are **not** in the trace (Hubble is not installed); this
+terminal line is the evidence, and the slide says so.
+
+**If it fails** — `FAIL ... the control did not answer`: the network is down, not
+the policy; `kubectl -n northstar-agents get pods`. `FAIL ... was not dropped`:
+the Cilium policy is not enforcing, see §8. No SPIRE token: `kubectl -n
+northstar-platform get pod spire-server-0`. Fallback: the transcript slide, which
+is this output.
+
+---
+
+#### Step 2 — `scripts/demo claim 6200` · Ring 2 · Capability · "a refusal is a success"
+
+**DO** — `scripts/demo claim 6200` (add `--expect refused` when rehearsing, so a
+cluster left `autonomous` fails loudly instead of quietly executing).
+
+**SHOW**
+
+```text
+CLAIM  CLM-DEMO-3FEFBB   EUR 6,200
+  autonomy level   assisted
+  $ A2A message/send  claims-agent  claim CLM-DEMO-3FEFBB  EUR 6,200
+  -> 7s
+
+  Outcome  [REFUSED]  by the platform. Nothing was paid.
+
+  The model's explanation to the claimant:
+    ...the model's own words, different every run...
+
+The same event, as the trace saw it
+  settlement-agent  execute_tool execute_payment   the model asks
+  +- agentgateway  tools/call execute_payment   HTTP 200  ERROR
+      jwt.sub  settlement-agent
+      HTTP 200: the answer is a JSON-RPC error. A no is not an HTTP failure.
+    +- Guardrail   the gateway asks the decision service
+    +- policy-decision-service  policy.decision  [DENY]
+          rule       settlement-agent.assisted.execute_limit
+          limit      6000  (requested 6200)
+          caller     settlement-agent
+          level      assisted
+
+    gateway: mcp: mcpGuardrails rejected: requested 6200 EUR exceeds the 6000 EUR limit ...
+
+  payments-api spans in this trace:
+    present  POST /payments/propose   records the proposal; moves no money
+    present  POST /payments/{paymentId}/refuse   records the refusal; moves no money
+    [ABSENT]   POST /payments/{paymentId}/execute   money did not move
+
+  Jaeger  http://localhost:16686/trace/<id>
+```
+
+**SAY**
+
+> "A real claim, through the real agents, with a real model. The model decided
+> to pay it. The platform said no, and look at what no looks like: the gateway
+> answered HTTP 200. A refusal is not an HTTP error; it is a decision, with a
+> rule and a limit, recorded. And the one span that would have moved money is
+> not there. The proposal is, the refusal record is, the execute is not. The
+> model's explanation to the claimant is its own words, and it is true because
+> the platform told it the truth."
+
+**Land:** there is a ~15 second pause after the model's explanation while the
+command waits for every service to export its spans, so the absence it is about
+to show is a real absence and not an export delay. Fill it: read the
+explanation aloud.
+
+**The corrected shorthand.** The spec's "no `payments-api` span" is not literally
+true: the proposal and the refusal record are `payments-api` spans. The span
+that is absent, and the one that matters, is **`POST /payments/{paymentId}/execute`**.
+Say "no execute span", not "no payments-api span".
+
+**If it fails** — `FAIL ... expected the claim to end 'refused'`: the contract was
+left `autonomous`; `scripts/demo reset`. A model or API-key error: §8's first row.
+Jaeger slow: the command waits up to 90s and then fails by name; the Jaeger UI
+link in the terminal still works. Fallback: the transcript slide.
+
+---
+
+#### Step 3 — `autonomy autonomous`, `claim 6200`, `autonomy assisted` · one live value
+
+**DO**
+
+```bash
+scripts/demo autonomy autonomous
+scripts/demo claim 6200
+scripts/demo autonomy assisted
+```
+
+**SHOW**
+
+```text
+AUTONOMY  set the live value to autonomous
+  flagd resolves   assisted  (before)
+  One field on one FeatureFlag object. Nothing is redeployed.
+  $ kubectl patch featureflag/northstar-autonomy --type=json  targeting.if[1] = autonomous
+  -> flagd resolves for settlement-agent: [autonomous]   (0.3s to take effect)
+  Pods restarted: [NONE]  (13 pods, same UIDs, same start times, same restart counts)
+```
+
+then, for the claim:
+
+```text
+  Outcome  [EXECUTED]  by the platform. The payment was made.
+  +- agentgateway  tools/call execute_payment   HTTP 200  OK
+    +- policy-decision-service  policy.decision  [PERMIT]
+          rule       settlement-agent.autonomous.execute_limit
+          limit      1000000  (requested 6200)
+  payments-api spans in this trace:
+    present  POST /payments/propose
+    [PRESENT]  POST /payments/{paymentId}/execute   money moved
+```
+
+and the last flip prints `[assisted]` and `Pods restarted: [NONE]` again.
+
+**SAY**
+
+> "Same amount, same agents, same code, same image. I changed one value on one
+> Kubernetes object, from the command line, and flagd had it in under a second.
+> Nothing restarted, and the command counts the pods to prove it. The platform's
+> API is the resource, and I just called it. Now the claim executes, under a
+> different rule with a different limit. And I put it back."
+
+**Land:** the line that matters is `Pods restarted: NONE`. It is compared by
+UID, start time and restart count over the agents and platform namespaces, before
+and after, and the e2e test makes the same comparison independently.
+
+**If it fails** — `FAIL ... something restarted when only the value changed`:
+believe it and look at `kubectl -n northstar-agents get pods`; a rollout
+overlapped the flip. `FAIL ... flagd resolves 'assisted'`: the sync watch has not
+caught up; run it again. **Never leave step 3 at `autonomous`:** `scripts/demo
+reset` fixes it. Backstage's card does the same flip (Beat 7, the longer
+version), and either route works from the other's state.
+
+---
+
+#### Step 4 — `scripts/demo keystone` · Keystone
+
+**DO** — `scripts/demo keystone`
+
+**SHOW**
+
+```text
+1  The agent tries to flip its own autonomy flag
+    Error from server ([Forbidden]): featureflags.core.openfeature.dev "northstar-autonomy" is forbidden: User "system:serviceaccount:northstar-agents:settlement-agent" cannot get resource ...
+  -> [RBAC says no]  That is the first line.
+
+2  Someone makes a mistake: the agent is over-granted patch on that one flag
+    role.rbac.authorization.k8s.io/keystone-demo-overgrant created
+    rolebinding.rbac.authorization.k8s.io/keystone-demo-overgrant created
+  -> yes   RBAC would now allow it
+
+3  The same patch again. RBAC allows it. Kyverno does not.
+    Error from server: admission webhook "vpol.validate.kyverno.svc-fail-finegrained-agents-cannot-edit-their-own-authority" denied the request: Policy agents-cannot-edit-their-own-authority failed: [DENIED]: agent identity 'system:serviceaccount:northstar-agents:settlement-agent' may not change the objects that define its own authority (FeatureFlag/northstar-autonomy). Authority changes go through a reviewed commit, never a runtime decision by the agent.
+  -> [DENIED] by Kyverno, naming the policy. The second line.
+
+4  Take the mistake back
+    role.rbac.authorization.k8s.io "keystone-demo-overgrant" deleted
+    rolebinding.rbac.authorization.k8s.io "keystone-demo-overgrant" deleted
+
+5  What does the flag resolve to now?
+  -> settlement-agent resolves: [assisted]
+```
+
+**SAY**
+
+> "The agent can never edit what constrains it. Its own identity tries to flip its
+> own flag: RBAC says no. That is the first line, and RBAC is usually right. So I
+> make RBAC wrong, on purpose: I give it the permission, the kind of mistake that
+> happens in real clusters. Same patch. This time Kyverno says no, in words
+> written for a human, and it does not depend on RBAC being right. I take the
+> mistake back, and the flag still says assisted."
+
+**Land:** the first denial is RBAC's, the second is Kyverno's, and the script
+asserts the policy name is in the message so an RBAC denial can never pass for
+the keystone. The over-grant is removed on every exit path, including Ctrl-C.
+
+**If it fails** — `FAIL ... is not Ready`: stage 7 is not up or Kyverno is down
+(§8). `FAIL ... over-grant is already applied`: `scripts/demo reset`.
+`FAIL ... not by the keystone`: Kyverno did not fire and RBAC did; read §8's
+Kyverno rows. Fallback: the transcript slide (Beat K's, which is this output).
+
+---
+
+#### Step 5 — `scripts/demo evidence` · Prove
+
+**DO** — `scripts/demo evidence`
+
+**SHOW** (one block per claim of **this run**, nothing older)
+
+```text
+CLM-DEMO-3FEFBB   EUR 6,200
+    who decided      policy-decision-service   [DENY]
+    rule             settlement-agent.assisted.execute_limit
+    limit            6000   (requested 6200)
+    autonomy level   assisted
+    caller identity  spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
+    outcome          [REFUSED] no payments-api execute span: nothing moved
+    human approval   none (no human was involved)
+
+CLM-DEMO-569120   EUR 6,200
+    who decided      policy-decision-service   [PERMIT]
+    rule             settlement-agent.autonomous.execute_limit
+    limit            1000000   (requested 6200)
+    autonomy level   autonomous
+    caller identity  spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
+    outcome          [EXECUTED] by settlement-agent
+    human approval   none (no human was involved)
+```
+
+**SAY**
+
+> "Two claims, same amount, two outcomes, and every line here is a recorded span
+> read back from OpenSearch, not something I told you. Who decided: the policy
+> service, not the model. Under which rule, against which limit, for which
+> identity, at which autonomy level. And whether a human was involved: here, no.
+> The difference between the two is the one value I changed."
+
+**Land:** the two claims are decided under two *different* rules
+(`...assisted.execute_limit`, `...autonomous.execute_limit`) because the value
+differs. The longer evidence beat (Beat 5) shows the *same* rule deciding two
+different amounts; do not conflate them.
+
+**If it fails** — it waits for OpenSearch, bounded (90s), printing `waiting for
+OpenSearch (...)`, then fails naming the fields that never arrived: read the
+collector log (`kubectl -n observability logs deploy/otel-collector | grep
+'Exporting failed'`). `FAIL ... no claims in this run yet`: you ran `reset`
+between the claims and this; run the claims again. Fallback: the transcript
+slide, or Beat 5's dashboard.
+
+---
+
+#### After the flow
+
+```bash
+scripts/demo reset     # flag assisted, over-grant absent, run state cleared
+```
+
+`reset` is idempotent and prints what it verified. **Run it at the end of every
+rehearsal and every performance**, and before the audience arrives.
+
+---
+
+### The longer beats · for a longer slot
+
+Everything from here to Beat 8 is the 20-, 45- and 90-minute version of the
+demo, and the only home of the surfaces the five-minute flow leaves out: the
+customer UI, the human approval, the reviewer UI, the scores, OpenSearch
+Dashboards and the Backstage card. They are unchanged by the five-minute flow.
 
 ---
 
@@ -880,6 +1232,11 @@ kubectl -n northstar-platform get featureflag northstar-autonomy \
 # both branches must read "assisted"
 ```
 
+**`scripts/demo reset` does all of this in one command** (flag back to
+`assisted`, with flagd verified; over-grant deleted; the run's state cleared) and
+is the first thing to type when something looks off. The manual checks below are
+what it automates.
+
 If it is flipped, flip it back **through the Backstage card** (so the revert
 gets its own audit span) or:
 
@@ -925,7 +1282,9 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 | `start-demo.sh` refuses: *over-grant is still applied* | an earlier beat-keystone run was killed hard (SIGKILL) | `kubectl delete -f deploy/demo/keystone-overgrant.yaml` |
 | `beat-keystone.sh` step 3 prints `Forbidden` instead of the Kyverno message | the over-grant did not take effect yet | re-run; the script waits for `auth can-i` to say `yes` first, so this means RBAC is not what it was |
 | `beat-reach.sh` step 2 prints `REFUSED` or `REACHED` | the Cilium policy is not enforcing | `kubectl -n northstar-tools get cnp`; `tests/e2e/test_gateway_is_the_only_route.py` reads the datapath |
-| €6,200 comes back `executed` | **contract left flipped from a previous run** | §7 |
+| €6,200 comes back `executed` | **contract left flipped from a previous run** | `scripts/demo reset`, or §7 |
+| `scripts/demo` prints `FAIL` | the expected outcome did not happen: that is the command doing its job | read the line: it names what was expected. `scripts/demo reset`, then re-run the one step |
+| `scripts/demo claim` hangs after the model's explanation | it is waiting (up to 90s) for every service's spans to reach Jaeger, so that an *absent* span is a real absence | give it a few seconds; the explanation is already on screen. If it times out, the Jaeger UI at http://localhost:16686 is the fallback |
 | €5,800 comes back `refused` | contract flipped, or wrong caller identity | check the card; check `policy.caller.spiffe_id` on the span |
 | Backstage card shows the old value | it reads live — so this means the write failed | check the response, then `kubectl get featureflag` as an independent witness |
 | Jaeger shows two disconnected traces | trace context broken at a hop | expected only for the **human approval**, which is a link by design (beat 4) |
