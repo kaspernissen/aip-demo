@@ -137,7 +137,7 @@ cp .env.template .env
 # the first claim fails at the model call. setup-kind.sh prints SET or EMPTY
 # for it. The DASH0_* variables are optional.
 
-./scripts/setup-kind.sh --stage 6
+./scripts/setup-kind.sh --stage 7
 ./scripts/start-demo.sh
 ```
 

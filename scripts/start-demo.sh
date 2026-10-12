@@ -227,7 +227,7 @@ if [[ -n "$DASHBOARDS_AVAILABLE" ]]; then
   DASHBOARDS_PID=$!
   PIDS+=("$DASHBOARDS_PID")
 else
-  echo -e "${YELLOW}  - OpenSearch Dashboards: SKIPPED, svc/opensearch-dashboards does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
+  echo -e "${YELLOW}  - OpenSearch Dashboards: SKIPPED, svc/opensearch-dashboards does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 7)${NC}"
 fi
 
 # Prometheus has no kind host port either (same create-time
@@ -247,7 +247,7 @@ if [[ -n "$PROMETHEUS_AVAILABLE" ]]; then
   PROMETHEUS_PID=$!
   PIDS+=("$PROMETHEUS_PID")
 else
-  echo -e "${YELLOW}  - Prometheus: SKIPPED, svc/prometheus does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
+  echo -e "${YELLOW}  - Prometheus: SKIPPED, svc/prometheus does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 7)${NC}"
 fi
 
 # eval-scorer's policy scores are one of this system's headline outputs, and
@@ -269,7 +269,7 @@ if [[ -n "$EVAL_SCORER_AVAILABLE" ]]; then
   EVAL_SCORER_PID=$!
   PIDS+=("$EVAL_SCORER_PID")
 else
-  echo -e "${YELLOW}  - eval-scorer: SKIPPED, svc/eval-scorer does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
+  echo -e "${YELLOW}  - eval-scorer: SKIPPED, svc/eval-scorer does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 7)${NC}"
 fi
 
 # flagd's own metrics, on its "management" port (8014) alongside `/healthz`
@@ -296,7 +296,7 @@ if [[ -n "$FLAGD_AVAILABLE" ]]; then
   FLAGD_METRICS_PID=$!
   PIDS+=("$FLAGD_METRICS_PID")
 else
-  echo -e "${YELLOW}  - flagd metrics: SKIPPED, no northstar-autonomy FeatureFlag in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
+  echo -e "${YELLOW}  - flagd metrics: SKIPPED, no northstar-autonomy FeatureFlag in this cluster (it arrives with ./scripts/setup-kind.sh --stage 7)${NC}"
 fi
 
 # Backstage has no kind host port (its Service is ClusterIP-only,
@@ -323,7 +323,7 @@ if [[ -n "$BACKSTAGE_AVAILABLE" ]]; then
   BACKSTAGE_PID=$!
   PIDS+=("$BACKSTAGE_PID")
 else
-  echo -e "${YELLOW}  - Backstage: SKIPPED, svc/backstage does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 6)${NC}"
+  echo -e "${YELLOW}  - Backstage: SKIPPED, svc/backstage does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 7)${NC}"
 fi
 
 # Give the forwards a moment to establish before checking them (same
@@ -390,7 +390,7 @@ else
   # there regardless of whether that older stage happens to be sufficient for
   # the one surface being described, which is why this line must always track
   # `CURRENT_STAGE` and never a fixed literal.
-  echo -e "${YELLOW}  - reviewer-ui: SKIPPED, svc/reviewer-ui does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 5)${NC}"
+  echo -e "${YELLOW}  - reviewer-ui: SKIPPED, svc/reviewer-ui does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 7)${NC}"
 fi
 
 echo ""

@@ -86,7 +86,7 @@ kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
   # `test_no_operator_facing_instruction_still_points_at_an_older_stage`
   # keeps this pinned to the current stage as a test rather than trusting a
   # reader to notice it drifted.
-  echo "Run ./scripts/setup-kind.sh --stage 5 first." >&2
+  echo "Run ./scripts/setup-kind.sh --stage 7 first." >&2
   exit 1
 }
 # The gate must PROVE it is running on a stage-4 cluster rather than be told
@@ -112,7 +112,7 @@ kubectl --context kind-northstar -n observability get svc/opensearch-cluster-mas
   echo -e "${RED}Error: svc/opensearch-cluster-master not found in the observability namespace.${NC}" >&2
   echo "This cluster is below stage 4. The gate runs tests/e2e/test_opensearch_trace_ingest.py -- the trace-ingest guard -- and on a cluster without OpenSearch every one of its assertions SKIPs, so the gate would pass while proving nothing about them." >&2
   echo "Bring the cluster to stage 4. No recreate is needed: stage 4 runs on stage 3's cluster config unchanged." >&2
-  echo "Run ./scripts/setup-kind.sh --stage 5 first." >&2
+  echo "Run ./scripts/setup-kind.sh --stage 7 first." >&2
   exit 1
 }
 # The e2e/browser assertions below need all five ports up. Four are
@@ -184,7 +184,7 @@ for probe in \
     # tests/unit/test_stage4_config.py strips whole-line comments and
     # requires BOTH remedies to name it by their own text, so reverting
     # either one goes red on its own.
-    echo "Port-forwards die after a redeploy and need re-establishing: ./scripts/start-demo.sh (or re-run ./scripts/setup-kind.sh --stage 5 first if the cluster itself is gone)." >&2
+    echo "Port-forwards die after a redeploy and need re-establishing: ./scripts/start-demo.sh (or re-run ./scripts/setup-kind.sh --stage 7 first if the cluster itself is gone)." >&2
     exit 1
   }
   # -o /dev/null: the body is irrelevant, only whether one arrived.

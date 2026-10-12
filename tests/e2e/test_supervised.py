@@ -347,7 +347,7 @@ def reviewer_ui_route():
         pytest.skip(
             f"needs the live cluster: cannot reach {KUBE_CONTEXT} "
             f"({reachable.stderr.strip() or 'no output'}); "
-            "run ./scripts/setup-kind.sh --stage 5"
+            "run ./scripts/setup-kind.sh --stage 7"
         )
 
     if not _stage3_workload_present():
@@ -355,7 +355,7 @@ def reviewer_ui_route():
             f"no {STAGE3_DISCRIMINATOR_DEPLOYMENT} Deployment in "
             f"{AGENTS_NAMESPACE}, so this is not a stage-3 cluster and "
             "reviewer-ui was never deployed; run ./scripts/setup-kind.sh "
-            "--stage 5 and deploy the supervised-execution workloads"
+            "--stage 7 and deploy the supervised-execution workloads"
         )
 
     if _reviewer_ui_alive():

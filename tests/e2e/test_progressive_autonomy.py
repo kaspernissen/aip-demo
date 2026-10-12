@@ -131,7 +131,7 @@ def stage_5_or_a_reason():
         pytest.skip(
             f"needs the live cluster: cannot reach {KUBE_CONTEXT} "
             f"({reachable.stderr.strip() or 'no output'}); "
-            "run ./scripts/setup-kind.sh --stage 5"
+            "run ./scripts/setup-kind.sh --stage 7"
         )
 
     ofo = _kubectl(
@@ -142,7 +142,7 @@ def stage_5_or_a_reason():
         pytest.skip(
             "the Open Feature Operator is not installed, so this is "
             "coherently below stage 5. Bring it up with "
-            "./scripts/setup-kind.sh --stage 5 to run these."
+            "./scripts/setup-kind.sh --stage 7 to run these."
         )
 
 

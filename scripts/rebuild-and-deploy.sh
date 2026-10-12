@@ -34,7 +34,7 @@ command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1
 if ! docker ps --format '{{.Names}}' | grep -qx kind-registry; then
   # Points at the current stage, so an operator who lost the registry rebuilds
   # a cluster with everything this repo now needs, rather than an older one.
-  echo -e "${RED}kind-registry is not running. Run scripts/setup-kind.sh --stage 5 first.${NC}" >&2
+  echo -e "${RED}kind-registry is not running. Run scripts/setup-kind.sh --stage 7 first.${NC}" >&2
   exit 1
 fi
 

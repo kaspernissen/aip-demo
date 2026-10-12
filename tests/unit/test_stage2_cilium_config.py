@@ -628,7 +628,7 @@ def test_no_operator_facing_instruction_still_points_at_an_older_stage():
     lists, so a new kind config or script is covered the day it is written
     rather than depending on someone remembering to add it here.
     """
-    CURRENT_STAGE = 5
+    CURRENT_STAGE = 7
     scripts_and_readme = [
         # A glob, not a hand-written list: every script this repo ships is
         # covered the day it is written, rather than depending on someone

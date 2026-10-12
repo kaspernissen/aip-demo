@@ -227,7 +227,7 @@ def policy_present():
     if not cilium.stdout.strip():
         pytest.skip(
             "not a stage-2 cluster (no Cilium agent), so there is no dataplane "
-            "to enforce anything; run ./scripts/setup-kind.sh --stage 5"
+            "to enforce anything; run ./scripts/setup-kind.sh --stage 7"
         )
 
     proc = _kubectl(
