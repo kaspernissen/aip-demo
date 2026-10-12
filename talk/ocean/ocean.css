@@ -1,0 +1,169 @@
+/* Ocean — a theme layer over Broadsheet, loaded after talk.css.
+   Deep Ocean Blue palette (0A1128 · 001F54 · 034078 · 1282A2 · FEFCFB) with a
+   derived aqua, the Ocean type stack, and Ocean's furniture: dark cover and
+   close on a navy diagonal, an aqua flood on the dividers, the signal axis
+   along the foot of every content slide. Broadsheet's press furniture
+   (registration marks, colour bars, halftone fields, misregistered plates)
+   is switched off. Delete the <link> in build/head.html to go back.
+
+   Role mapping: Broadsheet cyan (--color-accent: lines, chart highlights)
+   becomes teal; Broadsheet magenta (--color-accent-2: the emphasis spot)
+   becomes deep ocean blue on light grounds and aqua on dark ones. */
+@import url("fonts/fonts.css");
+
+:root {
+  --ocean-ink: #0A1128;
+  --ocean-navy: #001F54;
+  --ocean-deep: #034078;
+  --ocean-teal: #1282A2;
+  --ocean-paper: #FEFCFB;
+  --ocean-aqua: #3FC1E0;
+  --ocean-aqua-lift: #7AD9EF;
+  --ocean-teal-mute: #9FD0E0;
+  --ocean-on-ink: #C9DCE8;
+  --ocean-on-ink-dim: #86A2B8;
+
+  --color-bg: var(--ocean-paper);
+  --color-surface: #EAF1F5;
+  --color-text: var(--ocean-ink);
+  --color-divider: color-mix(in srgb, #0A1128 16%, transparent);
+
+  --color-neutral-100: #F3F6F8;
+  --color-neutral-200: #E4EAEF;
+  --color-neutral-300: #CDD6DE;
+  --color-neutral-400: #A9B5C1;
+  --color-neutral-500: #8494A4;
+  --color-neutral-600: #657587;
+  --color-neutral-700: #4A5B73;
+  --color-neutral-800: #2C3B52;
+  --color-neutral-900: #18233A;
+
+  /* teal: lines, highlights; ends in the palette's own deep and navy */
+  --color-accent: var(--ocean-teal);
+  --color-accent-100: #E5F4F8;
+  --color-accent-200: #C6E6EF;
+  --color-accent-300: #9FD0E0;
+  --color-accent-400: #4BA8C6;
+  --color-accent-500: #1F94B6;
+  --color-accent-600: #1282A2;
+  --color-accent-700: #0E6A85;
+  --color-accent-800: #034078;
+  --color-accent-900: #001F54;
+
+  /* deep ocean: the emphasis spot (was magenta) */
+  --color-accent-2: var(--ocean-deep);
+  --color-accent-2-100: #E8EFF7;
+  --color-accent-2-200: #CCDCEE;
+  --color-accent-2-300: #A2BFE0;
+  --color-accent-2-400: #6E98C8;
+  --color-accent-2-500: #3A6FA8;
+  --color-accent-2-600: #1B5590;
+  --color-accent-2-700: #034078;
+  --color-accent-2-800: #02315E;
+  --color-accent-2-900: #001F54;
+
+  --color-process-yellow: var(--ocean-aqua);
+
+  --font-heading: "Space Grotesk", system-ui, sans-serif;
+  --font-heading-weight: 500;
+  --font-body: "Public Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 22px;
+}
+
+/* Space Grotesk's capHeight is 700/1000: 216 − 68 × 0.70 */
+deck-stage { --cap-anchor: 168.4px; }
+
+.slide { font-weight: 300; }
+.slide b, .slide strong { font-weight: 600; }
+.slide-title, .display, h1, h2, h3 { letter-spacing: -0.03em; }
+.display { font-weight: 500; }
+
+/* Emphasis is colour, never italic: the sans stack ships no italics. */
+.slide em, .slide i:not([class]) { font-style: normal; color: var(--color-accent-2); }
+
+.code, code, pre { font-family: var(--font-mono) !important; font-feature-settings: normal; }
+.meta, .page-foot { font-family: var(--font-mono); letter-spacing: 0.06em; }
+
+/* ── Press furniture off ───────────────────────────────────────────── */
+.slide::before { background: none; }
+.color-bar, .press-field, .scale-color, .scale-bw, .star-target { display: none !important; }
+.halftone, .halftone::after, .cmyk::after { filter: none; background-image: none; }
+
+/* Plate numerals print as one solid figure. */
+.cmyk-num, .cmyk-head { background: transparent !important; }
+.cmyk-num .plate, .cmyk-head .plate { display: none; }
+.cmyk-num .paper, .cmyk-head .paper { color: inherit !important; text-shadow: none !important; }
+.hero-num { color: var(--ocean-ink); }
+
+/* ── The signal axis along the foot of every content slide ─────────── */
+.slide.content::before {
+  content: ""; inset: auto 0 80px 0; height: 2px; opacity: .55;
+  background: linear-gradient(90deg, transparent, var(--ocean-teal) 8%, var(--ocean-teal) 62%, var(--ocean-aqua) 88%, transparent);
+}
+
+/* ── Cover and close: ink ground, navy diagonal, the axis ──────────── */
+.slide.cover {
+  --color-text: var(--ocean-paper);
+  background: linear-gradient(118deg, var(--ocean-ink) 53.85%, var(--ocean-navy) 53.85%);
+  color: var(--ocean-paper);
+}
+.slide.cover::before {
+  content: ""; inset: 786px 0 auto 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--ocean-teal) 10%, var(--ocean-teal) 60%, var(--ocean-aqua) 86%, transparent);
+}
+.slide.cover .cover-sub { color: var(--ocean-teal-mute); }
+.slide.cover .meta { color: var(--ocean-on-ink-dim); }
+.slide.cover em { color: var(--ocean-aqua-lift); }
+
+/* ── Dividers: the aqua flood, ink type on it ──────────────────────── */
+.slide.divider {
+  --color-text: var(--ocean-ink);
+  background: var(--ocean-ink);
+}
+.slide.divider::before {
+  content: ""; inset: 0;
+  background: var(--ocean-aqua);
+  clip-path: polygon(0 0, 58% 0, 42% 100%, 0 100%);
+}
+.slide.divider .rise { position: relative; max-width: 900px; }
+.slide.divider .slide-title, .slide.divider .ghost-num { color: var(--ocean-ink); }
+.slide.divider em { color: var(--ocean-ink); }
+.slide.divider .ghost-num { font-weight: 600; letter-spacing: -0.05em; }
+
+/* The Ocean stack has no italic cuts; a synthesized slant reads as a mistake,
+   so italics go upright everywhere and emphasis rides on colour. */
+.slide, .slide * { font-style: normal !important; }
+
+/* Cover/close credits: proportional, one line per credit. */
+.slide.cover .meta { font-family: var(--font-body); letter-spacing: 0; font-size: 26px; }
+.slide.cover .meta span { white-space: nowrap; }
+
+/* ── Icons: Phosphor duotone in Ocean's two tones ──────────────────── */
+/* Teal line, aqua fill (the duotone layer is ::before). Icons that carry the
+   slide's emphasis go deep ocean; the "open door" stays muted on purpose. */
+.slide i.ph-duotone { color: var(--ocean-teal) !important; }
+.slide i.ph-duotone::before { color: var(--ocean-aqua); opacity: .5; }
+.slide .x10-eq-loop i.ph-duotone,
+.slide .x31-doors .shut i.ph-duotone { color: var(--ocean-deep) !important; }
+.slide .x31-doors .open i.ph-duotone { color: var(--color-neutral-500) !important; }
+.slide .x31-doors .open i.ph-duotone::before { color: var(--color-neutral-400); }
+
+/* ── Photographs: clean, no press separation ───────────────────────── */
+.cmyk .print { filter: none !important; }
+.cmyk img:first-child { opacity: 1 !important; }
+.cmyk img + img { display: none !important; }
+/* Portraits are nodes on the trace: a circle, a ground-coloured gap, a teal ring. */
+.cmyk.portrait { border-radius: 50%; overflow: hidden;
+  box-shadow: 0 0 0 8px var(--color-bg), 0 0 0 14px var(--color-accent-400); }
+.cmyk.portrait img { aspect-ratio: 1; object-fit: cover; object-position: center top; }
+
+/* ── Screenshots: Ocean's rounded surface, a hairline edge, soft depth ─ */
+.shot { border-radius: 14px !important;
+  box-shadow: 0 0 0 1px var(--color-neutral-300), 0 14px 36px color-mix(in srgb, #0A1128 14%, transparent) !important; }
+/* Ocean duotone: the photo's light and shade, the palette's hue. */
+.cmyk.portrait { background: var(--ocean-teal); }
+.cmyk.portrait img:first-child { filter: grayscale(1) contrast(1.08) brightness(1.04); mix-blend-mode: luminosity; }
