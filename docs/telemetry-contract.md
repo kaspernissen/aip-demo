@@ -492,11 +492,12 @@ look at — so the split was 4 of the 14 launching a browser and 10 of the 14
 starting none, until the demo-flow file made it a fifteenth that starts none:
 **4 of the 15 launch a browser** and **11 of the 15 start no browser**.
 
-Gate row: **PREDICTED, NOT MEASURED** — the last gate run was at commit `a9a99a5`;
-the tree with the demo flow has not been gated. The collection predicts
-`506 passed, 1 xfailed` (507 collected, zero skips required), and the run that
-turns this row MEASURED again is the one `./scripts/smoke-test.sh` after the
-review. For the record, the run at `a9a99a5` was
+Gate row: **MEASURED** — M7's final gate run was at commit `d4bed6e`,
+`./scripts/smoke-test.sh`, run by the orchestrator on 2026-10-12 against the
+stage-7 cluster with Backstage rebuilt from that clean tree and warmed, exit
+**0**: `506 passed, 1 xfailed`, in 643.67s (10m43s), zero skips (`grep -c
+SKIPPED` over the full output returns 0). That is the figure the collection
+predicted (507 collected). The run before it, at `a9a99a5`, was
 `./scripts/smoke-test.sh` (which sets `RUN_BROWSER_TESTS=1` itself), run by the
 orchestrator on 2026-10-12 against a stage-7 cluster with Backstage rebuilt from
 that clean tree, exit **0**: 488 passed, 1 xfailed, in 597.16s (9m57s), which
