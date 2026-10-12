@@ -465,14 +465,20 @@ that *does* call `chromium.launch(` — it has no page to drive, only pages to
 look at — so the split is now **4 of the 14 launch a browser** and **10 of the
 14 start no browser**.
 
-Gate row: **PREDICTED, NOT MEASURED** — `488 passed, 1 xfailed`. That figure is
-*derived*, not observed: 489 collected above, minus the one test that xfails
-only once `RUN_BROWSER_TESTS=1` ungates it, and **zero skips** — the flag
-ungates all 76 gated tests, so the gate executes the whole of `tests/`. Nobody
-has run it against this tree.
+Gate row: **MEASURED** — M7's gate run was at commit `a9a99a5`,
+`./scripts/smoke-test.sh` (which sets `RUN_BROWSER_TESTS=1` itself), run by the
+orchestrator on 2026-10-12 against a stage-7 cluster with Backstage rebuilt from
+that clean tree, exit **0**: `488 passed, 1 xfailed`, in 597.16s (9m57s). That
+is the figure the collection predicted. Two earlier M7 runs are part of the
+record: at `f87e950`, `483 passed, 4 failed` (Kyverno's colliding span keys
+rejected by OpenSearch, twice; criterion 4's accounted set; a Backstage image
+from an older commit), fixed in `6419ac8`; at `6419ac8`, `486 passed, 2 failed`
+(the Backstage image marked `-dirty` by uncommitted, unrelated `talk/` files,
+and a cold-pod band-walk flake that passed on a warm pod), cleared by
+committing those files in `a9a99a5` and warming Backstage before the run.
 
-The last real gate run is the reason the shape above is trusted at all, and it
-no longer describes this tree. That gate run was at commit `6588570`,
+The gate run before it, M6's, is kept for the record. It was at
+`6588570`,
 `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh`, run by the orchestrator,
 exit **0**, 429 passed and 1 xfailed in 597.91s (9m57s), with zero skips
 (`grep -c SKIPPED` over the run's full output returned 0). 429 + 1 = 430, which

@@ -163,3 +163,78 @@ running them), then the whole-branch review and its fix wave, **then** one
 Linkerd; a CEL `mcpAuthorization` layer; Hubble; an AgentCard CRD (Northstar's
 agent cards are A2A documents served by the agents, not cluster objects);
 William's model-driven `--agent` mode.
+
+---
+
+## 7. The five-minute demo flow (added 2026-10-12)
+
+**Why.** By the end of §1–6 the runbook had ten beats over six surfaces
+(customer UI, Jaeger, reviewer UI, OpenSearch Dashboards, Backstage, a
+terminal), 2–6 minutes each. The talk is 30 minutes, co-presented. William's
+OSFF demo runs in about five minutes because each point is one command in one
+terminal. The talk's live demo now follows that shape: five commands, about
+five minutes, every main point of the talk landed by exactly one of them.
+
+### 7.1 The flow
+
+| # | Command | ~Time | What the audience sees | Talk point |
+|---|---|---|---|---|
+| 1 | `demo guard` | 45s | No identity → **401** at the gateway; around the gateway → **dropped** by Cilium; with settlement-agent's SPIRE identity → the **MCP tools it may call** (`tools/list` through the gateway) | Core · Identity, Ring 1 · Reach, access to MCP |
+| 2 | `demo claim 6200` | 90s | The real claims-agent → settlement-agent → model proposes €6,200; the platform **refuses**; the model's explanation to the claimant; then the span tree from Jaeger in the terminal: `policy.decision` deny, rule and limit, **no** `payments-api` span; the Jaeger link | Ring 2 · Capability, "a refusal is a success", "HTTP 200 means no", Trace |
+| 3 | `demo autonomy autonomous` → `demo claim 6200` → `demo autonomy assisted` | 75s | The same claim **executed**; nothing redeployed; the flag back to `assisted` | one live value; "the platform API is the resource" (done with the CLI, not Backstage) |
+| 4 | `demo keystone` | 45s | As settlement-agent: RBAC **Forbidden**; over-grant; Kyverno **Denied**; over-grant removed; flag still `assisted` | Keystone |
+| 5 | `demo evidence` | 45s | For both claims of this run, from OpenSearch: who decided, rule, limit, caller identity, outcome | Prove |
+
+Total ≈ 5:00. The model is called in steps 2 and 3 only; 1, 4 and 5 are
+deterministic. `demo reset` returns the cluster to the resting state
+(flag `assisted`, no over-grant) and is safe to run at any time.
+
+### 7.2 What moves out of the live demo
+
+Each keeps its slide (screenshot or transcript), so the story keeps it; only
+the live moment goes: the human approval (Beat 4), Backstage (Beat 7's UI —
+the flip itself is now step 3's CLI), the evaluation scores and OpenSearch
+Dashboards (Beats 5–6; step 5 prints the evidence), and the separate Beats 3
+and R (folded into `demo guard`).
+
+### 7.3 Build
+
+- `scripts/demo` — one Python entry point (repo venv), subcommands `guard`,
+  `claim <amount>`, `autonomy <assisted|autonomous>`, `keystone`, `evidence`,
+  `reset`. Every subcommand prints what it is about to do, then the platform's
+  answer, with a timeout on every network call, and exits non-zero if the
+  expected outcome does not happen (a refusal that executes, a drop that
+  connects). Output is written for a room: short lines, the decisive word
+  highlighted, no secrets (tokens are never printed).
+- **No new mechanism.** It reuses what the tests already prove: claim
+  submission over A2A (`_submit_claim`), server-side SVID minting and direct
+  MCP calls (`mint_svid`, `call_tool_directly`), the Jaeger harness, and
+  `evidence_for`. Those helpers move from test files into a shared module
+  (`demo/` package or `tests/harness/`) imported by both the tests and the
+  driver, so the stage path and the tested path are the same code.
+- `beat-reach.sh` and `beat-keystone.sh` stay as the implementation of
+  `guard`'s reach half and of `keystone` (or are absorbed into the driver);
+  either way the gate keeps running them.
+- `demo claim` uses a fresh claim id per run and remembers the run's claim ids
+  in a state file under the git-ignored scratch path, so `demo evidence`
+  reports this run's claims and nothing older.
+
+### 7.4 Tests and verification
+
+- `tests/e2e/test_demo_flow.py` runs 1 → 5 in order against the live stage-7
+  cluster (with `RUN_BROWSER_TESTS=1`, because steps 2–3 spend model calls),
+  asserting each step's outcome and that `demo reset` leaves the resting
+  state. It joins the gate.
+- Every assumption the slides make about the flow is checked by running it:
+  the refusal's HTTP status and rule, the absent `payments-api` span, the
+  executed claim after the flip with no pod restarted (pod start times
+  compared before and after), the keystone messages, and the evidence fields.
+- The runbook gets a "5-minute flow" section first; the longer beats stay
+  below it for a longer slot.
+
+### 7.5 The deck
+
+"The demo" slide becomes the §7.1 table. The five steps are the only live
+moments, each with a real-output fallback slide (terminal transcript, as R and
+K already have). The old live-beat slides (1, 2, 4, 7, R) become ordinary
+slides from their screenshots or transcripts, so they can be kept or cut.
