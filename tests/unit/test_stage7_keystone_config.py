@@ -74,29 +74,56 @@ def test_it_denies_and_fails_closed():
 
 def test_it_covers_create_update_and_delete_on_every_rule():
     for rule in _policy()["spec"]["matchConstraints"]["resourceRules"]:
+        if rule["resources"] == ["serviceaccounts/token"]:
+            # A TokenRequest is only ever created.
+            assert rule["operations"] == ["CREATE"], rule
+            continue
         assert set(rule["operations"]) == {"CREATE", "UPDATE", "DELETE"}, rule
 
 
-def test_it_covers_the_five_object_groups():
+def test_it_covers_every_rings_configuration_and_the_identity_routes():
     pairs = _rule_pairs(_policy())
     expected = {
-        # 1. the autonomy contract
+        # Capability: the autonomy contract and the gateway's rules
         ("core.openfeature.dev", "featureflags"),
         ("core.openfeature.dev", "featureflagsources"),
-        # 2. the gateway's rules
         ("", "configmaps"),
-        # 3. the Reach ring
+        # Reach, namespaced and cluster-wide
         ("cilium.io", "ciliumnetworkpolicies"),
-        # 4. RBAC
+        ("cilium.io", "ciliumclusterwidenetworkpolicies"),
+        # Identity: who is issued which SVID
+        ("spire.spiffe.io", "clusterspiffeids"),
+        ("spire.spiffe.io", "clusterstaticentries"),
+        ("spire.spiffe.io", "clusterfederatedtrustdomains"),
+        # RBAC
         ("rbac.authorization.k8s.io", "roles"),
         ("rbac.authorization.k8s.io", "rolebindings"),
         ("rbac.authorization.k8s.io", "clusterroles"),
         ("rbac.authorization.k8s.io", "clusterrolebindings"),
-        # 5. Kyverno's own constraint, and the bypass
-        ("policies.kyverno.io", "validatingpolicies"),
-        ("policies.kyverno.io", "policyexceptions"),
+        # Kyverno itself: every kind in both groups
+        ("policies.kyverno.io", "*"),
+        ("kyverno.io", "*"),
+        # Workloads anywhere: a pod running as another ServiceAccount is issued
+        # that ServiceAccount's SVID
+        ("", "pods"),
+        ("apps", "deployments"),
+        ("apps", "replicasets"),
+        ("apps", "statefulsets"),
+        ("apps", "daemonsets"),
+        ("batch", "jobs"),
+        ("batch", "cronjobs"),
+        # Minting a token for another ServiceAccount
+        ("", "serviceaccounts/token"),
     }
     assert expected <= pairs, f"the policy no longer covers {sorted(expected - pairs)}"
+
+
+def test_webhook_configurations_are_not_claimed_as_covered():
+    """The API server never sends admission for webhook configurations to
+    webhooks, so listing them here would be a claim the policy cannot keep.
+    They are RBAC-only, and docs/architecture.md says so."""
+    pairs = _rule_pairs(_policy())
+    assert not {r for g, r in pairs if "webhookconfigurations" in r}
 
 
 def test_the_agent_identity_is_a_prefix_match_on_both_agent_namespaces():
@@ -222,8 +249,15 @@ def test_kyverno_can_read_every_kind_the_policy_matches_or_it_never_becomes_read
         for rule in _policy()["spec"]["matchConstraints"]["resourceRules"]
         for group in rule["apiGroups"]
         for resource in rule["resources"]
-        if group not in ("", "policies.kyverno.io")  # core and Kyverno's own are default
+        # Kubernetes' own groups Kyverno reads by default (measured: the
+        # policy reports Ready without a grant for them); the wildcard rules
+        # over Kyverno's own groups are the exception, the readiness check
+        # wants those spelled out.
+        if group not in ("", "apps", "batch")
     }
+    # `serviceaccounts/token` is core but a subresource, which the check
+    # does ask for by name.
+    policy_groups.add(("", "serviceaccounts/token"))
     for controller in ("admissionController", "reportsController"):
         granted = set()
         for rule in values[controller]["rbac"]["clusterRole"]["extraResources"]:
@@ -239,3 +273,29 @@ def test_kyverno_can_read_every_kind_the_policy_matches_or_it_never_becomes_read
 def test_start_demos_preflight_checks_the_overgrant_is_absent():
     effective = _effective(START_DEMO)
     assert "keystone-demo-overgrant" in effective
+
+
+SMOKE_TEST = REPO_ROOT / "scripts" / "smoke-test.sh"
+
+
+def test_the_gate_refuses_below_stage_7_and_runs_both_beats_unconditionally():
+    """Comment-stripped, so prose cannot supply any of it. The beats run bare
+    under `set -e`: a non-zero exit from either fails the gate."""
+    effective = _effective(SMOKE_TEST)
+    assert "validatingpolicy agents-cannot-edit-their-own-authority" in effective
+    assert "kyverno-resource-validating-webhook-cfg" in effective
+    lines = [line.strip() for line in effective.splitlines()]
+    assert '"$ROOT/scripts/beat-reach.sh"' in lines
+    assert '"$ROOT/scripts/beat-keystone.sh"' in lines
+    assert "set +e" not in "\n".join(
+        lines[lines.index('"$ROOT/scripts/beat-reach.sh"') - 2:
+              lines.index('"$ROOT/scripts/beat-keystone.sh"') + 1]
+    )
+
+
+def test_start_demos_preflight_also_asks_for_the_webhook_registration_and_endpoints():
+    """Measured: a graceful stop of Kyverno deletes its webhook configs and the
+    keystone goes fail-open while the policy object still says Ready."""
+    effective = _effective(START_DEMO)
+    assert "kyverno-resource-validating-webhook-cfg" in effective
+    assert "kubernetes.io/service-name=kyverno-svc" in effective

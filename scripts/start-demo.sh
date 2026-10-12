@@ -220,6 +220,21 @@ if [[ -n "$(kubectl get "$KEYSTONE_POLICY" --ignore-not-found -o name 2>/dev/nul
     echo "It fails closed: with Kyverno down, Backstage's flag flip is refused too. Check: kubectl -n kyverno get pods; kubectl get ${KEYSTONE_POLICY} -o yaml" >&2
     exit 1
   fi
+  # Ready on the policy is not enough. MEASURED: a graceful stop of the
+  # admission controller (scale to 0) makes Kyverno delete its own webhook
+  # configurations on the way out, after which an over-granted agent's write
+  # SUCCEEDS -- fail-open -- while the policy object still exists. So also ask
+  # for the registration and for something answering behind the Service.
+  if [[ -z "$(kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg --ignore-not-found -o name 2>/dev/null)" ]]; then
+    echo -e "${RED}Error: Kyverno's resource webhook configuration is not registered, so the keystone is NOT enforcing (a stopped admission controller removes it, and requests then pass).${NC}" >&2
+    echo "Bring Kyverno back: kubectl -n kyverno scale deploy/kyverno-admission-controller --replicas=1, then wait for the configuration to reappear." >&2
+    exit 1
+  fi
+  if [[ -z "$(kubectl -n kyverno get endpointslices -l kubernetes.io/service-name=kyverno-svc -o jsonpath='{.items[*].endpoints[*].addresses[*]}' 2>/dev/null)" ]]; then
+    echo -e "${RED}Error: nothing answers behind svc/kyverno-svc in the kyverno namespace.${NC}" >&2
+    echo "The policy fails closed while registered: an agent's write is refused, and so is anything else it matches. Check: kubectl -n kyverno get pods" >&2
+    exit 1
+  fi
   if [[ -n "$(kubectl -n northstar-platform get role,rolebinding keystone-demo-overgrant --ignore-not-found -o name 2>/dev/null)" ]]; then
     echo -e "${RED}Error: the keystone demo over-grant is still applied (role/rolebinding keystone-demo-overgrant in northstar-platform).${NC}" >&2
     echo "A previous beat-keystone.sh run was interrupted. It is a standing grant letting settlement-agent patch the autonomy flag. Remove it: kubectl delete -f deploy/demo/keystone-overgrant.yaml" >&2

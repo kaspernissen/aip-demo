@@ -399,3 +399,185 @@ def test_the_denial_reaches_jaeger_as_a_standalone_kyverno_trace(keystone_armed)
     # Standalone: one service, one root, no parent from anything else.
     assert trace.services() == {KYVERNO_SERVICE}, trace.services()
     assert len(trace.roots()) == 1 and trace.roots()[0].parent_id is None
+
+
+# --- Coverage beyond the flag: every ring's configuration, and identity ------
+#
+# The slide says "the agent can never edit what constrains it", so the policy
+# has to hold for each ring's configuration and for the ways an agent could
+# ACQUIRE another identity, not just for the one object beat 7 flips. Each case
+# below over-grants the agent the one verb it needs (a temporary
+# ClusterRole/ClusterRoleBinding, removed in the `finally`), has it make the
+# request, and asserts the refusal names the policy -- so RBAC, which would
+# otherwise have refused first, cannot pass for Kyverno.
+
+GRANT_NAME = "keystone-test-grant"
+
+CASES = {
+    "pod-as-senior-settlement-agent": dict(
+        # The identity edit: a pod running as another ServiceAccount is issued
+        # that ServiceAccount's SVID, with no RBAC object touched at all.
+        rules=[{"apiGroups": [""], "resources": ["pods"], "verbs": ["create"]}],
+        manifest={
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {"name": "keystone-test-pod", "namespace": AGENTS_NAMESPACE},
+            "spec": {
+                "serviceAccountName": "senior-settlement-agent",
+                "containers": [{
+                    "name": "pause",
+                    "image": "registry.k8s.io/pause:3.10",
+                }],
+            },
+        },
+        cleanup=["-n", AGENTS_NAMESPACE, "delete", "pod", "keystone-test-pod",
+                 "--ignore-not-found", "--wait=false"],
+        names="Pod/keystone-test-pod",
+    ),
+    "cilium-clusterwide-network-policy": dict(
+        rules=[{"apiGroups": ["cilium.io"],
+                "resources": ["ciliumclusterwidenetworkpolicies"],
+                "verbs": ["create"]}],
+        manifest={
+            "apiVersion": "cilium.io/v2",
+            "kind": "CiliumClusterwideNetworkPolicy",
+            "metadata": {"name": "keystone-test-ccnp"},
+            "spec": {
+                "endpointSelector": {"matchLabels": {"keystone-test": "never"}},
+                "ingress": [{"fromEntities": ["all"]}],
+            },
+        },
+        cleanup=["delete", "ciliumclusterwidenetworkpolicy",
+                 "keystone-test-ccnp", "--ignore-not-found"],
+        names="CiliumClusterwideNetworkPolicy/keystone-test-ccnp",
+    ),
+    "spire-clusterspiffeid": dict(
+        # Identity ring: who is issued which SVID.
+        rules=[{"apiGroups": ["spire.spiffe.io"],
+                "resources": ["clusterspiffeids"], "verbs": ["create"]}],
+        manifest={
+            "apiVersion": "spire.spiffe.io/v1alpha1",
+            "kind": "ClusterSPIFFEID",
+            "metadata": {"name": "keystone-test-spiffeid"},
+            "spec": {
+                "spiffeIDTemplate": "spiffe://northstar.local/keystone-test",
+                "podSelector": {"matchLabels": {"keystone-test": "never"}},
+            },
+        },
+        cleanup=["delete", "clusterspiffeid", "keystone-test-spiffeid",
+                 "--ignore-not-found"],
+        names="ClusterSPIFFEID/keystone-test-spiffeid",
+    ),
+    "kyverno-legacy-cluster-policy": dict(
+        # Every kind in Kyverno's own groups, not just the two the first
+        # version of the policy named.
+        rules=[{"apiGroups": ["kyverno.io"], "resources": ["clusterpolicies"],
+                "verbs": ["create"]}],
+        manifest={
+            "apiVersion": "kyverno.io/v1",
+            "kind": "ClusterPolicy",
+            "metadata": {"name": "keystone-test-clusterpolicy"},
+            "spec": {"rules": [{
+                "name": "noop",
+                "match": {"any": [{"resources": {"kinds": ["ConfigMap"],
+                                                 "names": ["keystone-never"]}}]},
+                "validate": {"message": "never", "deny": {}},
+            }]},
+        },
+        cleanup=["delete", "clusterpolicy", "keystone-test-clusterpolicy",
+                 "--ignore-not-found"],
+        names="ClusterPolicy/keystone-test-clusterpolicy",
+    ),
+}
+
+
+def _apply_json(manifest: dict, *, as_user: str | None = None, verb: str = "create"):
+    cmd = ["kubectl", "--context", KUBE_CONTEXT]
+    if as_user:
+        cmd += ["--as", as_user]
+    cmd += [verb, "-f", "-"]
+    return subprocess.run(
+        cmd, input=json.dumps(manifest), capture_output=True, text=True, timeout=60
+    )
+
+
+def _over_grant_cluster_wide(
+    rules: list[dict], can_i: list[str] | None = None
+) -> None:
+    grant = {
+        "apiVersion": "v1",
+        "kind": "List",
+        "items": [
+            {"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
+             "metadata": {"name": GRANT_NAME}, "rules": rules},
+            {"apiVersion": "rbac.authorization.k8s.io/v1",
+             "kind": "ClusterRoleBinding", "metadata": {"name": GRANT_NAME},
+             "roleRef": {"apiGroup": "rbac.authorization.k8s.io",
+                         "kind": "ClusterRole", "name": GRANT_NAME},
+             "subjects": [{"kind": "ServiceAccount", "name": "settlement-agent",
+                           "namespace": AGENTS_NAMESPACE}]},
+        ],
+    }
+    applied = _apply_json(grant, verb="apply")
+    assert applied.returncode == 0, applied.stderr
+    resource = rules[0]["resources"][0]
+    group = rules[0]["apiGroups"][0]
+    target = f"{resource}.{group}" if group else resource
+    check = can_i or [rules[0]["verbs"][0], target, "-A"]
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        can = _as_agent("auth", "can-i", *check)
+        if can.stdout.strip() == "yes":
+            return
+        time.sleep(1)
+    pytest.fail(f"the temporary grant on {target} never took effect")
+
+
+def _remove_cluster_wide_grant() -> None:
+    _kubectl("delete", "clusterrolebinding,clusterrole", GRANT_NAME,
+             "--ignore-not-found")
+
+
+@pytest.mark.parametrize("case", sorted(CASES))
+def test_an_over_granted_agent_is_refused_by_kyverno_on_every_ring(
+    keystone_armed, case
+):
+    spec = CASES[case]
+    created = None
+    try:
+        _over_grant_cluster_wide(spec["rules"])
+        created = _apply_json(spec["manifest"], as_user=AGENT)
+    finally:
+        _kubectl(*spec["cleanup"])
+        _remove_cluster_wide_grant()
+    assert created is not None and created.returncode != 0, (
+        f"an over-granted agent created {spec['names']}: the keystone does "
+        "not cover this object"
+    )
+    assert POLICY in created.stderr and "DENIED" in created.stderr, (
+        f"refused, but not by the keystone: {created.stderr}"
+    )
+    assert spec["names"] in created.stderr, created.stderr
+
+
+def test_an_over_granted_agent_cannot_mint_another_serviceaccounts_token(
+    keystone_armed,
+):
+    """`serviceaccounts/token`: minting a token for senior-settlement-agent is
+    acquiring its identity by a shorter route than creating a pod."""
+    try:
+        _over_grant_cluster_wide([{
+            "apiGroups": [""], "resources": ["serviceaccounts/token"],
+            "verbs": ["create"],
+        }], can_i=["create", "serviceaccounts", "--subresource=token",
+                   "-n", AGENTS_NAMESPACE])
+        proc = _as_agent(
+            "-n", AGENTS_NAMESPACE, "create", "token", "senior-settlement-agent"
+        )
+    finally:
+        _remove_cluster_wide_grant()
+    assert proc.returncode != 0, (
+        "an over-granted agent minted a token for senior-settlement-agent: "
+        "serviceaccounts/token is not covered"
+    )
+    assert POLICY in proc.stderr and "DENIED" in proc.stderr, proc.stderr

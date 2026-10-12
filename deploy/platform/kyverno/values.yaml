@@ -17,32 +17,35 @@ admissionController:
   #    assumed: with the chart's default RBAC the ValidatingPolicy is stored and
   #    its webhook is configured, but `.status.conditionStatus.ready` stays
   #    `false` with "Policy is not ready for reporting, missing permissions:
-  #    get/list/watch ..." for every group below that is not a core Kubernetes
-  #    kind. An unready policy is a keystone that is applied but not armed,
-  #    so setup-kind.sh waits on `ready` and would time out without this.
-  #    Read-only: Kyverno gains no write verb anywhere.
+  #    get/list/watch ..." for every kind below that Kyverno cannot already
+  #    read (including the `serviceaccounts/token` subresource and the `*`
+  #    wildcards over Kyverno's own groups, which the check wants spelled out).
+  #    An unready policy is a keystone that is applied but not armed, so
+  #    setup-kind.sh waits on `ready` and would time out without this.
+  #    Read-only: Kyverno gains no write verb anywhere. The reports controller
+  #    gets the same list through the YAML anchor.
   rbac:
     clusterRole:
-      extraResources:
+      extraResources: &keystoneReadAccess
         - apiGroups: ["core.openfeature.dev"]
           resources: ["featureflags", "featureflagsources"]
           verbs: ["get", "list", "watch"]
         - apiGroups: ["cilium.io"]
-          resources: ["ciliumnetworkpolicies"]
+          resources: ["ciliumnetworkpolicies", "ciliumclusterwidenetworkpolicies"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: ["spire.spiffe.io"]
+          resources: ["clusterspiffeids", "clusterstaticentries", "clusterfederatedtrustdomains"]
           verbs: ["get", "list", "watch"]
         - apiGroups: ["rbac.authorization.k8s.io"]
           resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: [""]
+          resources: ["serviceaccounts/token"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: ["policies.kyverno.io", "kyverno.io"]
+          resources: ["*"]
           verbs: ["get", "list", "watch"]
 reportsController:
   rbac:
     clusterRole:
-      extraResources:
-        - apiGroups: ["core.openfeature.dev"]
-          resources: ["featureflags", "featureflagsources"]
-          verbs: ["get", "list", "watch"]
-        - apiGroups: ["cilium.io"]
-          resources: ["ciliumnetworkpolicies"]
-          verbs: ["get", "list", "watch"]
-        - apiGroups: ["rbac.authorization.k8s.io"]
-          resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
-          verbs: ["get", "list", "watch"]
+      extraResources: *keystoneReadAccess

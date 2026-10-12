@@ -30,26 +30,54 @@
 # editing this file. Humans, CI and `backstage-autonomy-writer` (which lives in
 # northstar-platform, and is how beat 7 flips the flag on purpose) do not match.
 #
-# WHAT is protected, on CREATE, UPDATE and DELETE:
-#   1. FeatureFlag / FeatureFlagSource in northstar-platform -- the autonomy
-#      contract;
-#   2. the `agentgateway-config` ConfigMap -- the gateway's rules;
-#   3. CiliumNetworkPolicy -- the Reach ring;
-#   4. Role, RoleBinding, ClusterRole, ClusterRoleBinding;
-#   5. Kyverno's own ValidatingPolicy and PolicyException -- an exception is a
-#      bypass, so creating one IS an edit to the constraint.
-# The Policy Decision Service's execute limits live in code (pds/rules.py), so
-# they change only by a reviewed commit and a rebuild; there is nothing in the
-# cluster for this policy to guard there.
+# WHAT is protected, on CREATE, UPDATE and DELETE -- every ring's configuration,
+# and the way an agent could acquire a different identity:
+#   1. Capability: FeatureFlag / FeatureFlagSource in northstar-platform (the
+#      autonomy contract); the `agentgateway-config` ConfigMap (the gateway's
+#      rules);
+#   2. Reach: CiliumNetworkPolicy and CiliumClusterwideNetworkPolicy;
+#   3. Identity: SPIRE's ClusterSPIFFEID, ClusterStaticEntry and
+#      ClusterFederatedTrustDomain -- who gets which SVID;
+#   4. RBAC: Role, RoleBinding, ClusterRole, ClusterRoleBinding;
+#   5. Kyverno itself: EVERY kind in the `policies.kyverno.io` and `kyverno.io`
+#      groups (`*`), because a mutating, generating or namespaced policy, a
+#      legacy ClusterPolicy and either PolicyException are each a way to bend
+#      or bypass this one. Kyverno's own reports live in other groups
+#      (wgpolicyk8s.io, reports.kyverno.io) and are not matched;
+#   6. Workloads anywhere: Pod, Deployment, ReplicaSet, StatefulSet, DaemonSet,
+#      Job, CronJob. A pod created with `serviceAccountName:
+#      senior-settlement-agent` is issued that identity's SVID: creating one IS
+#      editing your own identity, with no RBAC object touched at all;
+#   7. `serviceaccounts/token`: minting a token for another ServiceAccount is
+#      the same act by a shorter route.
+# Controllers (system:serviceaccount:kube-system:*), humans and CI are never
+# matched, so none of this affects them, and no Northstar agent creates a
+# workload or holds any RBAC to (no RoleBinding names an agent ServiceAccount,
+# and no agent imports a Kubernetes client).
 #
-# FAIL CLOSED. `failurePolicy: Fail` is consistent with the gateway's
-# `failClosed`: if Kyverno is down, a request this policy matches is refused
-# rather than waved through. The cost is real and stated in
-# docs/demo-runbook.md: with Kyverno down, Backstage's flip of the flag fails
-# too. The identity match lives in `matchConditions` rather than only in the
-# validation, so the API server evaluates it BEFORE calling Kyverno -- only
-# agent-identity requests ever reach the webhook, and a Kyverno outage does
-# not take every ConfigMap write in the cluster down with it.
+# WHAT IS NOT COVERED, and is RBAC-only, stated in docs/architecture.md and the
+# runbook rather than left for a reader to find:
+#   * ValidatingWebhookConfiguration / MutatingWebhookConfiguration: the API
+#     server never sends admission for webhook configurations to webhooks, so
+#     no admission policy can guard them;
+#   * anything outside the lists above that RBAC happens to grant an agent.
+# The PDS execute limits live in code (pds/rules.py), so they change only by a
+# reviewed commit and a rebuild; there is nothing in the cluster to guard.
+#
+# FAIL CLOSED, WITH A MEASURED EXCEPTION. `failurePolicy: Fail` makes an
+# UNREACHABLE Kyverno refuse the request: measured, with the webhook registered
+# and the Service having no endpoints, an over-granted agent's patch is refused
+# with "failed calling webhook ... connection refused". But a GRACEFUL stop of
+# the admission controller (scale to 0, a normal rollout of a broken image)
+# makes Kyverno DELETE its own webhook configurations on the way out, and the
+# same patch then SUCCEEDS: fail-open. So the guarantee is "fail closed while
+# Kyverno is registered", not "fail closed whenever Kyverno is down";
+# start-demo.sh's pre-flight checks the registration and the endpoints, and
+# docs/architecture.md records the measurement. The identity match lives in
+# `matchConditions` (copied into the webhook, confirmed on the live
+# configuration), so the API server evaluates it BEFORE calling Kyverno: only
+# agent-identity requests ever reach the webhook, and Backstage's own write
+# (backstage-autonomy-writer) and every human are unaffected by an outage.
 apiVersion: policies.kyverno.io/v1
 kind: ValidatingPolicy
 metadata:
@@ -70,19 +98,35 @@ spec:
       - apiGroups: [""]
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["configmaps"]
+        resources: ["configmaps", "pods"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["serviceaccounts/token"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["jobs", "cronjobs"]
       - apiGroups: ["cilium.io"]
         apiVersions: ["*"]
         operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["ciliumnetworkpolicies"]
+        resources: ["ciliumnetworkpolicies", "ciliumclusterwidenetworkpolicies"]
+      - apiGroups: ["spire.spiffe.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["clusterspiffeids", "clusterstaticentries", "clusterfederatedtrustdomains"]
       - apiGroups: ["rbac.authorization.k8s.io"]
         apiVersions: ["*"]
         operations: ["CREATE", "UPDATE", "DELETE"]
         resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
-      - apiGroups: ["policies.kyverno.io"]
+      - apiGroups: ["policies.kyverno.io", "kyverno.io"]
         apiVersions: ["*"]
         operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["validatingpolicies", "policyexceptions"]
+        resources: ["*"]
   matchConditions:
     - name: request-comes-from-an-agent-identity
       expression: >-
@@ -94,14 +138,16 @@ spec:
       expression: "object != null ? object : oldObject"
     - name: kind
       expression: "request.kind.kind"
+    # `metadata.name` is absent on a create that uses generateName.
     - name: name
-      expression: "variables.target.metadata.name"
-    # Two rules match wholesale because a resource rule cannot select a name or
-    # a namespace: every ConfigMap, and FeatureFlags in any namespace. Narrow
-    # them here to what is actually an authority object -- the gateway's own
-    # ConfigMap, and the flags in northstar-platform. Everything else the
-    # rules above name (Cilium policies, RBAC, Kyverno's own) is protected
-    # whatever its name and namespace.
+      expression: "has(variables.target.metadata.name) ? variables.target.metadata.name : '(generated name)'"
+    # Four kinds match wholesale because a resource rule cannot select a name
+    # or a namespace: every ConfigMap, every ServiceAccount token request,
+    # and FeatureFlags in any namespace. Narrow them here to what is actually
+    # an authority object -- the gateway's own ConfigMap, and the flags in
+    # northstar-platform. Everything else the rules above name is protected
+    # whatever its name and namespace. (`serviceaccounts/token` is a
+    # subresource: its `request.kind.kind` is TokenRequest.)
     - name: isProtected
       expression: >-
         variables.kind == 'ConfigMap' ?

@@ -115,6 +115,25 @@ kubectl --context kind-northstar -n observability get svc/opensearch-cluster-mas
   echo "Run ./scripts/setup-kind.sh --stage 7 first." >&2
   exit 1
 }
+# The gate must also PROVE it is running on a stage-7 cluster, for the same
+# reason: tests/e2e/test_keystone.py skips when Kyverno's CRD is absent (a
+# coherently-below-stage-7 cluster), and a skip is invisible in a green gate --
+# the zero-skips check at the end would catch it, but only after ten minutes.
+# Ask the cluster now: the keystone policy must exist and be Ready, and Kyverno's
+# resource webhook must be REGISTERED. The second is not redundant: a graceful
+# stop of the admission controller removes the registration while the policy
+# object stays Ready-looking, and an agent's write then passes (measured).
+[[ "$(kubectl --context kind-northstar get validatingpolicy agents-cannot-edit-their-own-authority -o jsonpath='{.status.conditionStatus.ready}' 2>/dev/null)" == "true" ]] || {
+  echo -e "${RED}Error: validatingpolicy/agents-cannot-edit-their-own-authority is missing or not Ready.${NC}" >&2
+  echo "This cluster is below stage 7, or Kyverno is not up. The gate runs the keystone beat and tests/e2e/test_keystone.py." >&2
+  echo "Run ./scripts/setup-kind.sh --stage 7 first." >&2
+  exit 1
+}
+[[ -n "$(kubectl --context kind-northstar get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg --ignore-not-found -o name 2>/dev/null)" ]] || {
+  echo -e "${RED}Error: Kyverno's resource webhook configuration is not registered, so the keystone is not enforcing.${NC}" >&2
+  echo "Scale deploy/kyverno-admission-controller in the kyverno namespace back to 1 and wait for it." >&2
+  exit 1
+}
 # The e2e/browser assertions below need all five ports up. Four are
 # `kubectl port-forward`s that die after any redeploy and simply need
 # re-establishing; the fifth (reviewer-ui) is normally kept alive by kind's
@@ -275,6 +294,18 @@ echo -e "${YELLOW}eval-scorer${NC}"
 # than fail it.
 echo -e "${YELLOW}backstage (jest)${NC}"
 (cd "$ROOT/platform/backstage" && CI=true node_modules/.bin/backstage-cli repo test --silent)
+
+echo ""
+echo -e "${BLUE}--- Stage 7: the two beat scripts, exactly as an operator runs them ---${NC}"
+# Run as the operator runs them, not re-implemented: the only check that the
+# beats' instructions work is running them. Each exits non-zero if its refusal
+# does NOT fire (Beat R: the direct call to payments-mcp must be dropped;
+# Beat K: RBAC must refuse, then Kyverno must refuse with the over-grant), and
+# `set -e` makes that fail the gate. beat-keystone.sh removes its over-grant
+# on every exit path. tests/e2e/test_keystone.py runs in Step 2 with the rest
+# of tests/.
+"$ROOT/scripts/beat-reach.sh"
+"$ROOT/scripts/beat-keystone.sh"
 
 echo ""
 echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included ---${NC}"
