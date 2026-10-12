@@ -195,15 +195,45 @@ def test_setup_kind_applies_the_policy_and_waits_for_it_to_be_ready():
     assert "conditionStatus.ready" in effective
 
 
-def test_kyverno_tracing_points_the_admission_controller_at_the_collectors_grpc_port():
+VALUES = REPO_ROOT / "deploy" / "platform" / "kyverno" / "values.yaml"
+
+
+def test_setup_kind_installs_kyverno_with_the_values_file():
     effective = _effective(SETUP_KIND)
-    assert "admissionController.tracing.enabled=true" in effective
-    assert (
-        "admissionController.tracing.address=otel-collector.observability.svc.cluster.local"
-        in effective
-    )
+    assert '-f "$ROOT/deploy/platform/kyverno/values.yaml"' in effective
+
+
+def test_kyverno_tracing_points_the_admission_controller_at_the_collectors_grpc_port():
+    tracing = yaml.safe_load(VALUES.read_text())["admissionController"]["tracing"]
+    assert tracing["enabled"] is True
+    assert tracing["address"] == "otel-collector.observability.svc.cluster.local"
     # Kyverno exports OTLP/gRPC; 4318 (HTTP) would silently drop every span.
-    assert "admissionController.tracing.port=4317" in effective
+    # A string, because the chart's values schema types it that way.
+    assert tracing["port"] == "4317"
+
+
+def test_kyverno_can_read_every_kind_the_policy_matches_or_it_never_becomes_ready():
+    """Measured: without read access to the non-core kinds the policy is
+    stored, its webhook is configured, and `status.conditionStatus.ready`
+    stays false -- so setup-kind.sh's wait times out. Read-only, always."""
+    values = yaml.safe_load(VALUES.read_text())
+    policy_groups = {
+        (group, resource)
+        for rule in _policy()["spec"]["matchConstraints"]["resourceRules"]
+        for group in rule["apiGroups"]
+        for resource in rule["resources"]
+        if group not in ("", "policies.kyverno.io")  # core and Kyverno's own are default
+    }
+    for controller in ("admissionController", "reportsController"):
+        granted = set()
+        for rule in values[controller]["rbac"]["clusterRole"]["extraResources"]:
+            assert set(rule["verbs"]) == {"get", "list", "watch"}, (
+                f"{controller} must gain no write verb: {rule}"
+            )
+            granted |= {(g, r) for g in rule["apiGroups"] for r in rule["resources"]}
+        assert policy_groups <= granted, (
+            f"{controller} cannot read {sorted(policy_groups - granted)}"
+        )
 
 
 def test_start_demos_preflight_checks_the_overgrant_is_absent():

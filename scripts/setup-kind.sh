@@ -889,12 +889,14 @@ if [[ "${STAGE}" -ge 7 ]]; then
   # agent ServiceAccount (see its matchConditions), and nothing this script
   # applies is one, so Step 9's workloads deploy the same either side of it.
   #
-  # Tracing is switched on for the ADMISSION controller only -- the one that
-  # serves the webhook, so the only one that can emit a span for a denial.
-  # `address`/`port` are the collector's OTLP/gRPC receiver (Kyverno exports
-  # gRPC, which is why this is 4317 and not the 4318 every service here
-  # uses). `--set admissionController.tracing.creds` is left empty:
-  # in-cluster, plaintext, like every other hop to the collector.
+  # Everything this install changes from the chart's defaults is in
+  # deploy/platform/kyverno/values.yaml, each change with its reason: OTLP
+  # tracing on the ADMISSION controller (the one that serves the webhook, so
+  # the only one that can emit a span for a denial; gRPC, so the collector's
+  # 4317), and read access to the kinds the keystone policy matches. The
+  # second is load-bearing and was measured: without it the policy is stored
+  # and its webhook configured, but it never reports Ready, and the wait
+  # below times out.
   echo -e "${BLUE}Step 8j/9 (stage 7): Installing Kyverno ${KYVERNO_CHART_VERSION} (app ${KYVERNO_APP_VERSION})...${NC}"
   helm repo add kyverno "${KYVERNO_HELM_REPO}" --force-update >/dev/null
   helm repo update kyverno >/dev/null
@@ -902,9 +904,7 @@ if [[ "${STAGE}" -ge 7 ]]; then
     --version "${KYVERNO_CHART_VERSION}" \
     --namespace kyverno --create-namespace \
     --kube-context "kind-${CLUSTER_NAME}" \
-    --set admissionController.tracing.enabled=true \
-    --set admissionController.tracing.address=otel-collector.observability.svc.cluster.local \
-    --set-string admissionController.tracing.port=4317 \
+    -f "$ROOT/deploy/platform/kyverno/values.yaml" \
     --wait --timeout 5m
   echo -e "${GREEN}Kyverno ${KYVERNO_CHART_VERSION} is ready, tracing to otel-collector.observability:4317.${NC}"
 

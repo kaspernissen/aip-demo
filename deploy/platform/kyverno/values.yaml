@@ -1,0 +1,48 @@
+# Helm values for Kyverno (chart 3.9.1 / app v1.19.1; see scripts/setup-kind.sh,
+# which pins the chart and installs it with `-f` on this file). Everything not
+# named here is the chart's default.
+#
+# 1. Tracing. The ADMISSION controller is the one that serves the webhook, so
+#    it is the only one that can emit a span for a denial. Kyverno exports
+#    OTLP/gRPC, which is why the port is the collector's 4317 and not the 4318
+#    every other service here uses. No `creds`: in-cluster and plaintext, like
+#    every other hop to the collector. `port` is a string in the chart's
+#    values schema.
+admissionController:
+  tracing:
+    enabled: true
+    address: otel-collector.observability.svc.cluster.local
+    port: "4317"
+  # 2. Read access to the kinds the keystone policy matches. MEASURED, not
+  #    assumed: with the chart's default RBAC the ValidatingPolicy is stored and
+  #    its webhook is configured, but `.status.conditionStatus.ready` stays
+  #    `false` with "Policy is not ready for reporting, missing permissions:
+  #    get/list/watch ..." for every group below that is not a core Kubernetes
+  #    kind. An unready policy is a keystone that is applied but not armed,
+  #    so setup-kind.sh waits on `ready` and would time out without this.
+  #    Read-only: Kyverno gains no write verb anywhere.
+  rbac:
+    clusterRole:
+      extraResources:
+        - apiGroups: ["core.openfeature.dev"]
+          resources: ["featureflags", "featureflagsources"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: ["cilium.io"]
+          resources: ["ciliumnetworkpolicies"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: ["rbac.authorization.k8s.io"]
+          resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+          verbs: ["get", "list", "watch"]
+reportsController:
+  rbac:
+    clusterRole:
+      extraResources:
+        - apiGroups: ["core.openfeature.dev"]
+          resources: ["featureflags", "featureflagsources"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: ["cilium.io"]
+          resources: ["ciliumnetworkpolicies"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: ["rbac.authorization.k8s.io"]
+          resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+          verbs: ["get", "list", "watch"]
