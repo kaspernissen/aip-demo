@@ -288,12 +288,12 @@ def test_stages_above_the_implemented_one_still_refuse_to_run():
     exists, and it should not be possible to change one without the other.
     """
     text = _effective_script()
-    assert re.search(r'"\$\{STAGE\}" -gt 6', text), (
-        "the stage gate must refuse stages above 6; expected an effective "
-        '`"${STAGE}" -gt 6` test'
+    assert re.search(r'"\$\{STAGE\}" -gt 7', text), (
+        "the stage gate must refuse stages above 7; expected an effective "
+        '`"${STAGE}" -gt 7` test'
     )
-    assert not re.search(r'"\$\{?STAGE\}?" -gt 5', text), (
-        "the stage gate must not refuse stage 6, which is implemented"
+    assert not re.search(r'"\$\{?STAGE\}?" -gt 6', text), (
+        "the stage gate must not refuse stage 7, which is implemented"
     )
 
 
@@ -753,8 +753,8 @@ def test_an_unimplemented_stage_actually_exits_nonzero():
     script loads `.env` or touches anything, so the real script can be invoked
     directly with no side effects whatsoever."""
     proc = subprocess.run(
-        ["bash", str(SETUP_KIND), "--stage", "7"],
+        ["bash", str(SETUP_KIND), "--stage", "8"],
         capture_output=True, text=True, cwd=REPO_ROOT, timeout=60,
     )
-    assert proc.returncode != 0, "stage 7 must not be accepted"
+    assert proc.returncode != 0, "stage 8 must not be accepted"
     assert "not implemented yet" in proc.stdout + proc.stderr

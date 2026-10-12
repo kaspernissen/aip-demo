@@ -61,3 +61,46 @@ def test_anyio_is_pinned_to_the_version_the_synchronous_mcp_calls_use():
 
 def test_playwright_is_pinned_to_the_version_the_browser_tests_use():
     assert md.version("playwright") == "1.49.1"
+
+
+# --- Stage 7: Kyverno, pinned in scripts/setup-kind.sh ----------------------
+#
+# The helm chart is not in the venv, so it cannot be asserted from an installed
+# tree the way the packages above are. The pin lives in `scripts/setup-kind.sh`
+# beside Cilium's, SPIRE's and the rest, and is read back out of that file's
+# ASSIGNMENT lines (whole-line comments cannot satisfy these: the regex anchors
+# at the start of the line, so a comment that merely quotes the version does
+# not count).
+#
+# Chart 3.9.1 / app v1.19.1: the newest upstream release, checked against the
+# GitHub releases API on 2026-10-12. Both numbers are asserted because they are
+# unrelated -- bumping one and not the other is a half-done upgrade.
+
+import re
+from pathlib import Path
+
+_SETUP_KIND = Path(__file__).resolve().parents[2] / "scripts" / "setup-kind.sh"
+
+
+def _setup_kind_pin(name: str) -> str:
+    match = re.search(
+        rf'^{name}="([^"]+)"\s*$', _SETUP_KIND.read_text(), re.MULTILINE
+    )
+    assert match, f"scripts/setup-kind.sh has no `{name}=\"...\"` assignment"
+    return match.group(1)
+
+
+def test_kyverno_chart_is_pinned_to_the_release_the_policy_was_checked_against():
+    assert _setup_kind_pin("KYVERNO_CHART_VERSION") == "3.9.1"
+
+
+def test_kyverno_app_version_is_pinned_to_the_chart_it_ships_with():
+    assert _setup_kind_pin("KYVERNO_APP_VERSION") == "v1.19.1"
+
+
+def test_kyverno_is_installed_from_its_own_repo_at_the_pinned_chart_version():
+    text = _SETUP_KIND.read_text()
+    assert _setup_kind_pin("KYVERNO_HELM_REPO") == "https://kyverno.github.io/kyverno/"
+    # The install must use the variable, never a retyped literal: a literal
+    # here would let the pin above change without the install changing.
+    assert '--version "${KYVERNO_CHART_VERSION}"' in text

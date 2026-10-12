@@ -1,0 +1,41 @@
+# DEMO FIXTURE -- models a MISTAKE. Never applied by scripts/setup-kind.sh,
+# never part of any stage, and it must be ABSENT whenever the demo is not
+# mid-beat (scripts/start-demo.sh's pre-flight and the runbook's reset
+# checklist both assert that).
+#
+# Why it exists. RBAC already denies every agent ServiceAccount a write to the
+# autonomy flag, so on a correct cluster the keystone beat would show an RBAC
+# `Forbidden` -- a true and useful first line, but not the keystone. The
+# keystone is the SECOND line, the one that holds when the first is wrong. To
+# show it working you need the first to be wrong, and the honest way to do
+# that on a reference implementation is to make the mistake on stage, in
+# front of the audience, and take it back: scripts/beat-keystone.sh applies
+# this file ("someone over-granted"), shows Kyverno refuse the patch anyway,
+# and deletes it. Northstar does not ship a standing over-grant.
+#
+# The grant is exactly what a well-meaning change would add: `patch` on the
+# one FeatureFlag that holds the autonomy level, for settlement-agent.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: keystone-demo-overgrant
+  namespace: northstar-platform
+rules:
+  - apiGroups: ["core.openfeature.dev"]
+    resources: ["featureflags"]
+    resourceNames: ["northstar-autonomy"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keystone-demo-overgrant
+  namespace: northstar-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: keystone-demo-overgrant
+subjects:
+  - kind: ServiceAccount
+    name: settlement-agent
+    namespace: northstar-agents

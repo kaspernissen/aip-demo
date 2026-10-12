@@ -1,0 +1,118 @@
+# The keystone: an agent cannot edit what constrains it.
+#
+# Every other ring in this demo limits what an agent can DO (Cilium: who it can
+# reach; the gateway and the Policy Decision Service: what it may call). This
+# policy limits what an agent can CHANGE -- the objects that define those very
+# limits. Without it, a single over-broad RBAC grant (the kind of mistake a
+# real cluster collects) would let an agent patch `northstar-autonomy` to
+# `autonomous`, rewrite the gateway's rules, loosen its own network policy or
+# mint itself a Role, and the rings would be advisory. RBAC is the first line
+# and is written to deny all of that already; this is the second, and it does
+# not depend on RBAC being right.
+#
+# The idea, and the shape of the rule, come from William Rizzo's "Bounded
+# Agent Autonomy" demo (OSFF 2026), where this ring is called the keystone.
+# His version is a legacy `kyverno.io` ClusterPolicy; this is the current
+# `policies.kyverno.io/v1` ValidatingPolicy (CEL), because Kyverno v1.19
+# deprecates ClusterPolicy (kyverno/kyverno#16868).
+#
+# Schema checked against the CRD this chart version installs
+# (`helm show crds kyverno/kyverno --version 3.9.1`, not memory):
+# ValidatingPolicy is cluster-scoped; `failurePolicy` is a top-level spec field
+# (Fail | Ignore); `validationActions` is Deny | Audit | Warn; `matchConditions`,
+# `variables` and `validations[].messageExpression` are the Kubernetes
+# ValidatingAdmissionPolicy CEL surface.
+#
+# WHO is denied: any request whose username starts with
+#   system:serviceaccount:northstar-agents:   or
+#   system:serviceaccount:northstar-tools:
+# A prefix, not a list, so an agent added tomorrow is covered without anyone
+# editing this file. Humans, CI and `backstage-autonomy-writer` (which lives in
+# northstar-platform, and is how beat 7 flips the flag on purpose) do not match.
+#
+# WHAT is protected, on CREATE, UPDATE and DELETE:
+#   1. FeatureFlag / FeatureFlagSource in northstar-platform -- the autonomy
+#      contract;
+#   2. the `agentgateway-config` ConfigMap -- the gateway's rules;
+#   3. CiliumNetworkPolicy -- the Reach ring;
+#   4. Role, RoleBinding, ClusterRole, ClusterRoleBinding;
+#   5. Kyverno's own ValidatingPolicy and PolicyException -- an exception is a
+#      bypass, so creating one IS an edit to the constraint.
+# The Policy Decision Service's execute limits live in code (pds/rules.py), so
+# they change only by a reviewed commit and a rebuild; there is nothing in the
+# cluster for this policy to guard there.
+#
+# FAIL CLOSED. `failurePolicy: Fail` is consistent with the gateway's
+# `failClosed`: if Kyverno is down, a request this policy matches is refused
+# rather than waved through. The cost is real and stated in
+# docs/demo-runbook.md: with Kyverno down, Backstage's flip of the flag fails
+# too. The identity match lives in `matchConditions` rather than only in the
+# validation, so the API server evaluates it BEFORE calling Kyverno -- only
+# agent-identity requests ever reach the webhook, and a Kyverno outage does
+# not take every ConfigMap write in the cluster down with it.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: agents-cannot-edit-their-own-authority
+spec:
+  validationActions:
+    - Deny
+  failurePolicy: Fail
+  evaluation:
+    admission:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["core.openfeature.dev"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["featureflags", "featureflagsources"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["configmaps"]
+      - apiGroups: ["cilium.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["ciliumnetworkpolicies"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+      - apiGroups: ["policies.kyverno.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["validatingpolicies", "policyexceptions"]
+  matchConditions:
+    - name: request-comes-from-an-agent-identity
+      expression: >-
+        request.userInfo.username.startsWith('system:serviceaccount:northstar-agents:') ||
+        request.userInfo.username.startsWith('system:serviceaccount:northstar-tools:')
+  variables:
+    # DELETE has no `object`; fall back to `oldObject` so the name is always readable.
+    - name: target
+      expression: "object != null ? object : oldObject"
+    - name: kind
+      expression: "request.kind.kind"
+    - name: name
+      expression: "variables.target.metadata.name"
+    # Two rules match wholesale because a resource rule cannot select a name or
+    # a namespace: every ConfigMap, and FeatureFlags in any namespace. Narrow
+    # them here to what is actually an authority object -- the gateway's own
+    # ConfigMap, and the flags in northstar-platform. Everything else the
+    # rules above name (Cilium policies, RBAC, Kyverno's own) is protected
+    # whatever its name and namespace.
+    - name: isProtected
+      expression: >-
+        variables.kind == 'ConfigMap' ?
+          (request.namespace == 'northstar-platform' && variables.name == 'agentgateway-config') :
+        variables.kind in ['FeatureFlag', 'FeatureFlagSource'] ?
+          request.namespace == 'northstar-platform' :
+        true
+  validations:
+    - expression: "!variables.isProtected"
+      messageExpression: >-
+        'DENIED: agent identity \'' + request.userInfo.username +
+        '\' may not change the objects that define its own authority (' +
+        variables.kind + '/' + variables.name +
+        '). Authority changes go through a reviewed commit, never a runtime decision by the agent.'

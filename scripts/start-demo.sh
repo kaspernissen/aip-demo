@@ -193,6 +193,43 @@ if service_exists northstar-platform backstage; then
   BACKSTAGE_AVAILABLE=1
 fi
 
+# Stage-7 pre-flight: the keystone. Two assertions, both made BEFORE any
+# forward is started so a refusal here has nothing to tear down:
+#
+#   1. Kyverno is Ready. The policy fails closed (`failurePolicy: Fail`), so a
+#      Kyverno that is down does not merely stop protecting anything -- it
+#      also makes Backstage's flip of the autonomy flag (beat 7) fail, on
+#      stage, with an admission error that looks like a Backstage bug.
+#   2. The beat's over-grant is ABSENT. deploy/demo/keystone-overgrant.yaml
+#      models a mistake; scripts/beat-keystone.sh applies it and takes it back.
+#      One left behind by an aborted beat is a standing grant letting
+#      settlement-agent patch the flag, which is exactly what this demo exists
+#      to say never exists.
+#
+# Both are asked with `--ignore-not-found -o name` and judged on OUTPUT, not
+# exit status: `kubectl get` exits 0 on some "found nothing" paths and the
+# unit-test fakes answer every `get` with exit 0, so an exit-status check
+# would read "present" everywhere. Output is the one thing an absent object
+# cannot fake. Below stage 7 there is no ValidatingPolicy and both checks are
+# skipped with a line saying which stage provides them.
+KEYSTONE_POLICY="validatingpolicy/agents-cannot-edit-their-own-authority"
+if [[ -n "$(kubectl get "$KEYSTONE_POLICY" --ignore-not-found -o name 2>/dev/null)" ]]; then
+  KEYSTONE_READY="$(kubectl get "$KEYSTONE_POLICY" -o jsonpath='{.status.conditionStatus.ready}' 2>/dev/null || true)"
+  if [[ "$KEYSTONE_READY" != "true" ]]; then
+    echo -e "${RED}Error: the keystone policy is not Ready (conditionStatus.ready='${KEYSTONE_READY}').${NC}" >&2
+    echo "It fails closed: with Kyverno down, Backstage's flag flip is refused too. Check: kubectl -n kyverno get pods; kubectl get ${KEYSTONE_POLICY} -o yaml" >&2
+    exit 1
+  fi
+  if [[ -n "$(kubectl -n northstar-platform get role,rolebinding keystone-demo-overgrant --ignore-not-found -o name 2>/dev/null)" ]]; then
+    echo -e "${RED}Error: the keystone demo over-grant is still applied (role/rolebinding keystone-demo-overgrant in northstar-platform).${NC}" >&2
+    echo "A previous beat-keystone.sh run was interrupted. It is a standing grant letting settlement-agent patch the autonomy flag. Remove it: kubectl delete -f deploy/demo/keystone-overgrant.yaml" >&2
+    exit 1
+  fi
+  echo -e "${GREEN}Keystone pre-flight: policy Ready, over-grant absent.${NC}"
+else
+  echo -e "${YELLOW}  - Keystone pre-flight: not installed, no ValidatingPolicy in this cluster (it arrives with ./scripts/setup-kind.sh --stage 7)${NC}"
+fi
+
 echo -e "${BLUE}=== Starting Northstar port-forwards ===${NC}"
 
 echo "  - claims-agent       (19001 -> 9001)"

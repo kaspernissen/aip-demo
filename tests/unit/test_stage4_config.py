@@ -13,7 +13,7 @@ comments or an unrelated `echo` and stay green through the edit it was meant
 to catch:
 
 * `test_stage_4_reuses_the_stage_3_cluster_config` binds to the
-  `STAGE -eq 4|5|6` -> `stage3.yaml` mapping itself, in the comment-stripped
+  `STAGE -eq 4|5|6|7` -> `stage3.yaml` mapping itself, in the comment-stripped
   script.
 * `test_the_port_forward_remedy_points_at_the_script` requires BOTH of
   `smoke-test.sh`'s two remedies (the lsof branch and the curl branch) to
@@ -118,11 +118,11 @@ def test_stage_4_reuses_the_stage_3_cluster_config():
     check with "deploy/kind/stage4.yaml not found", and be unable to bring a
     cluster up at all.
 
-    Stages 5 and 6 share the same reasoning and the same cluster config --
-    nothing either stage installs needs a new host port, so the conditional
-    covers all three: `if [[ "${STAGE}" -eq 4 || "${STAGE}" -eq 5 ||
-    "${STAGE}" -eq 6 ]]; then`. This test's regex matches that combined form
-    specifically, not a generic `-eq 4` fragment, so an edit that split it
+    Stages 5, 6 and 7 share the same reasoning and the same cluster config --
+    nothing any of them installs needs a new host port, so the conditional
+    covers all four: `if [[ "${STAGE}" -eq 4 || "${STAGE}" -eq 5 ||
+    "${STAGE}" -eq 6 || "${STAGE}" -eq 7 ]]; then`. This test's regex
+    matches that combined form specifically, not a generic `-eq 4` fragment, so an edit that split it
     back into separate `if` blocks, or that dropped any one disjunct while
     leaving the others, reddens here rather than passing on a coincidental
     substring match.
@@ -146,20 +146,26 @@ def test_stage_4_reuses_the_stage_3_cluster_config():
         "authorised, delete this test in the same commit that adds the file, "
         "and say who authorised it."
     )
+    assert not (REPO_ROOT / "deploy/kind/stage7.yaml").exists(), (
+        "deploy/kind/stage7.yaml exists. Stage 7 was deliberately built on "
+        "stage 3's cluster config too -- Kyverno is reached by nothing from "
+        "the host. If a recreate has since been authorised, delete this test "
+        "in the same commit that adds the file, and say who authorised it."
+    )
     setup = _without_comments(SETUP_KIND)
     mapping = re.search(
         r'if \[\[ "\$\{STAGE\}" -eq 4 \|\| "\$\{STAGE\}" -eq 5 '
-        r'\|\| "\$\{STAGE\}" -eq 6 \]\]; then\s*\n'
+        r'\|\| "\$\{STAGE\}" -eq 6 \|\| "\$\{STAGE\}" -eq 7 \]\]; then\s*\n'
         r'\s*KIND_CONFIG="\$ROOT/deploy/kind/stage3\.yaml"\s*\n'
         r"\s*fi",
         setup,
     )
     assert mapping, (
-        "scripts/setup-kind.sh does not map `--stage 4`, `--stage 5` and "
-        "`--stage 6` onto deploy/kind/stage3.yaml via one combined condition. "
+        "scripts/setup-kind.sh does not map `--stage 4`, `--stage 5`, "
+        "`--stage 6` and `--stage 7` onto deploy/kind/stage3.yaml via one combined condition. "
         "Without that mapping KIND_CONFIG falls through to "
         "deploy/kind/stage${STAGE}.yaml, which must never exist for any of "
-        "the three, so the affected `--stage N` cannot create a cluster at "
+        "the four, so the affected `--stage N` cannot create a cluster at "
         "all -- it dies at the `[[ -f \"$KIND_CONFIG\" ]]` check. (A loose "
         "`\"stage3.yaml\" in setup` substring test would stay green through "
         "that deletion, because the filename appears elsewhere too -- bind "

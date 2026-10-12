@@ -74,6 +74,14 @@ PROMETHEUS_HELM_REPO="https://prometheus-community.github.io/helm-charts"
 CERT_MANAGER_VERSION="1.21.2"
 OPENFEATURE_CHART_VERSION="v0.9.3"
 OPENFEATURE_HELM_REPO="https://open-feature.github.io/open-feature-operator/"
+# Kyverno (stage 7). Chart 3.9.1 / app v1.19.1 -- the newest upstream release,
+# checked against `helm search repo kyverno/kyverno --versions` and the GitHub
+# releases API on 2026-10-12 (v1.19.1, 2026-09-10). The chart and app versions
+# are unrelated numbers, like SPIRE's. Both are pinned by
+# tests/unit/test_pins.py, which reads them back out of this file.
+KYVERNO_CHART_VERSION="3.9.1"
+KYVERNO_APP_VERSION="v1.19.1"
+KYVERNO_HELM_REPO="https://kyverno.github.io/kyverno/"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -176,19 +184,38 @@ Usage: setup-kind.sh [--stage N]
                           follows. Runs on stage 3's cluster config UNCHANGED
                           -- see the KIND_CONFIG note below -- nothing this
                           stage installs needs a host port]
+  --stage 7   Bounded:              + Kyverno, and the keystone policy
+                          [Kyverno (chart 3.9.1, app v1.19.1) is installed in
+                          its own namespace with OTLP tracing on the
+                          admission controller pointed at the in-cluster
+                          collector, then
+                          deploy/platform/kyverno/keystone-policy.yaml -- a
+                          `policies.kyverno.io/v1` ValidatingPolicy -- is
+                          applied: an agent ServiceAccount (northstar-agents
+                          or northstar-tools) may not create, update or delete
+                          the objects that define its own authority (the
+                          autonomy FeatureFlag, the gateway's ConfigMap,
+                          Cilium policies, RBAC, Kyverno's own policy and
+                          exceptions). It fails closed. Runs on stage 3's
+                          cluster config UNCHANGED -- see the KIND_CONFIG
+                          note below -- nothing it installs needs a host
+                          port. The over-grant the keystone beat
+                          uses is a demo fixture, applied and removed by
+                          scripts/beat-keystone.sh, and is NEVER applied
+                          here]
 
 Each stage installs only what that stage of the demo needs, so the laptop
 runs exactly one stage at a time.
 
-Stages 2, 3, 4 and 5 all need `networking.disableDefaultCNI`, a create-time
+Stages 2 and up all need `networking.disableDefaultCNI`, a create-time
 kind flag: it cannot be applied to a cluster that already exists, so the
 cluster must be created FROM a kind config that sets it -- deploy/kind/
 stage2.yaml or deploy/kind/stage3.yaml (whose only difference from stage 2's
-is the reviewer-ui port reservation; stages 4 and 5 both reuse stage 3's, see
+is the reviewer-ui port reservation; stages 4 to 7 all reuse stage 3's, see
 below) -- and this script refuses rather than layering Cilium on a running
 default CNI. Note that --stage defaults to 1, so a bare
 `./scripts/setup-kind.sh` builds a stage-1 (kindnet) cluster -- pass --stage
-2, 3, 4 or 5 explicitly for the Cilium dataplane.
+2 or higher explicitly for the Cilium dataplane.
 
 Stage 4 is the first exception to "each stage brings its own deploy/kind/
 stageN.yaml": there is deliberately no stage4.yaml. OpenSearch Dashboards
@@ -224,8 +251,8 @@ if ! [[ "$STAGE" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-if [[ "${STAGE}" -gt 6 ]]; then
-  echo "Stage $STAGE is not implemented yet. Stages 1 (Connected), 2 (Governed: Cilium), 3 (Supervised), 4 (Observable), 5 (Progressive autonomy) and 6 (Golden path) are implemented." >&2
+if [[ "${STAGE}" -gt 7 ]]; then
+  echo "Stage $STAGE is not implemented yet. Stages 1 (Connected), 2 (Governed: Cilium), 3 (Supervised), 4 (Observable), 5 (Progressive autonomy), 6 (Golden path) and 7 (Bounded) are implemented." >&2
   exit 1
 fi
 
@@ -294,10 +321,10 @@ KIND_CONFIG="$ROOT/deploy/kind/stage${STAGE}.yaml"
 # every platform component in this cluster already follows, so it needs no
 # `extraPortMappings` entry of its own -- and that entry is the only thing a
 # create-time kind config buys here (same as stages 4 and 5). Written as
-# `-eq 4 || -eq 5 || -eq 6` rather than `-ge 4`, still: whether a stage past
-# 6 needs a new host port has not been measured, so this does not silently
-# decide it either.
-if [[ "${STAGE}" -eq 4 || "${STAGE}" -eq 5 || "${STAGE}" -eq 6 ]]; then
+# `-eq 4 || -eq 5 || -eq 6 || -eq 7` rather than `-ge 4`, still: whether a
+# stage past 7 needs a new host port has not been measured, so this does not
+# silently decide it either. Stage 7 (Kyverno) reaches nothing from the host.
+if [[ "${STAGE}" -eq 4 || "${STAGE}" -eq 5 || "${STAGE}" -eq 6 || "${STAGE}" -eq 7 ]]; then
   KIND_CONFIG="$ROOT/deploy/kind/stage3.yaml"
 fi
 [[ -f "$KIND_CONFIG" ]] || { echo -e "${RED}Error: ${KIND_CONFIG} not found.${NC}" >&2; exit 1; }
@@ -856,6 +883,43 @@ if [[ "${STAGE}" -ge 6 ]]; then
   echo -e "${GREEN}Backstage is up on 7007 with its read-only ServiceAccount and its separate write ServiceAccount (backstage-autonomy-writer); the autonomy-contract card answered 200 as a guest, so the writer credential is live, not merely the pod.${NC}"
 fi
 
+if [[ "${STAGE}" -ge 7 ]]; then
+  # Kyverno and the keystone policy. After the stage-6 block and before Step 9
+  # for no ordering reason that matters: the policy only ever matches an
+  # agent ServiceAccount (see its matchConditions), and nothing this script
+  # applies is one, so Step 9's workloads deploy the same either side of it.
+  #
+  # Tracing is switched on for the ADMISSION controller only -- the one that
+  # serves the webhook, so the only one that can emit a span for a denial.
+  # `address`/`port` are the collector's OTLP/gRPC receiver (Kyverno exports
+  # gRPC, which is why this is 4317 and not the 4318 every service here
+  # uses). `--set admissionController.tracing.creds` is left empty:
+  # in-cluster, plaintext, like every other hop to the collector.
+  echo -e "${BLUE}Step 8j/9 (stage 7): Installing Kyverno ${KYVERNO_CHART_VERSION} (app ${KYVERNO_APP_VERSION})...${NC}"
+  helm repo add kyverno "${KYVERNO_HELM_REPO}" --force-update >/dev/null
+  helm repo update kyverno >/dev/null
+  helm upgrade --install kyverno kyverno/kyverno \
+    --version "${KYVERNO_CHART_VERSION}" \
+    --namespace kyverno --create-namespace \
+    --kube-context "kind-${CLUSTER_NAME}" \
+    --set admissionController.tracing.enabled=true \
+    --set admissionController.tracing.address=otel-collector.observability.svc.cluster.local \
+    --set-string admissionController.tracing.port=4317 \
+    --wait --timeout 5m
+  echo -e "${GREEN}Kyverno ${KYVERNO_CHART_VERSION} is ready, tracing to otel-collector.observability:4317.${NC}"
+
+  echo -e "${BLUE}Step 8k/9 (stage 7): Applying the keystone policy (agents-cannot-edit-their-own-authority)...${NC}"
+  kubectl --context "kind-${CLUSTER_NAME}" apply -f "$ROOT/deploy/platform/kyverno/keystone-policy.yaml"
+  # `apply` returns as soon as the object is stored. The policy is only
+  # enforced once Kyverno has compiled it and registered its webhook, which is
+  # what `.status.conditionStatus.ready` reports, so wait on that rather than
+  # on the object existing -- a keystone that is "applied" but not yet armed
+  # is the false-green this script exists to refuse.
+  kubectl --context "kind-${CLUSTER_NAME}" wait validatingpolicy/agents-cannot-edit-their-own-authority \
+    --for=jsonpath='{.status.conditionStatus.ready}'=true --timeout=120s
+  echo -e "${GREEN}The keystone policy is Ready: an agent identity can no longer change the objects that define its own authority.${NC}"
+fi
+
 echo -e "${BLUE}Step 9/9: Building and deploying stage 1 workloads, then starting port-forwards...${NC}"
 "$ROOT/scripts/rebuild-and-deploy.sh" \
   payments-api payments-mcp settlement-agent claims-agent customer-ui
@@ -1017,7 +1081,9 @@ verify_port_forward 18080 "${API_PF_PID}" payments-api
 echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payments-mcp, payments-api.${NC}"
 
 echo ""
-if [[ "${STAGE}" -eq 6 ]]; then
+if [[ "${STAGE}" -eq 7 ]]; then
+  echo -e "${GREEN}Stage 7 (Bounded) is up: stage 6's workloads and backends, unchanged, plus Kyverno ${KYVERNO_CHART_VERSION} (app ${KYVERNO_APP_VERSION}) tracing to the collector, and the keystone policy agents-cannot-edit-their-own-authority (ValidatingPolicy, failurePolicy Fail): a northstar-agents or northstar-tools ServiceAccount cannot create, update or delete the autonomy FeatureFlag, the gateway's ConfigMap, Cilium policies, RBAC or Kyverno's own policy and exceptions -- even if RBAC were wrong. Beats: ./scripts/beat-reach.sh and ./scripts/beat-keystone.sh. Run ./scripts/start-demo.sh to reach Backstage at http://localhost:7007.${NC}"
+elif [[ "${STAGE}" -eq 6 ]]; then
   echo -e "${GREEN}Stage 6 (Golden path) is up: stage 5's workloads and backends, unchanged, plus Backstage in northstar-platform on SQLite. Its read-only ServiceAccount is wired to the Kubernetes plugin (get/list/watch on Pods, Deployments, ReplicaSets, Services, ConfigMaps and the other default object types; no Secrets, no write verbs) and its own, separate ServiceAccount carries the one narrow write grant (get/list/patch, resourceNames: [northstar-autonomy], no delete -- deploy/k8s/backstage.yaml). The catalog covers this repo's own eight components (agent cards linked, not restated) plus Backstage itself, each showing its live workload; the autonomy card reads northstar-autonomy live, per identity, and can change it from a UI instead of kubectl. Run ./scripts/start-demo.sh to reach it, unauthenticated at http://localhost:7007 once forwarded.${NC}"
 elif [[ "${STAGE}" -eq 5 ]]; then
   echo -e "${GREEN}Stage 5 (Progressive autonomy) is up: stage 4's workloads and backends, unchanged, plus cert-manager ${CERT_MANAGER_VERSION}, the Open Feature Operator ${OPENFEATURE_CHART_VERSION}, and the northstar-autonomy FeatureFlag/FeatureFlagSource pair. The PDS pod carries a flagd sidecar answering on localhost:8013 inside it, serving flag 'autonomy-level' (variants assisted/autonomous, targeted on evaluation-context key spiffeId) -- still resolved nowhere yet, since this stage stands up the machinery only.${NC}"
