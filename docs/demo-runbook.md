@@ -320,10 +320,16 @@ line is the keystone pre-flight, and it must read:
 Keystone pre-flight: policy Ready, over-grant absent.
 ```
 
-It refuses to start (exit 1) if the policy is not Ready or if the beat's
-over-grant is still applied. The first matters because the policy **fails
-closed**: with Kyverno down, Backstage's flag flip in beat 7 is refused too.
-The second matters because the over-grant is a standing permission for
+It refuses to start (exit 1) if the policy is not Ready, if Kyverno's webhook
+registration is missing, if nothing answers behind `svc/kyverno-svc`, or if the
+beat's over-grant is still applied. The registration check matters because of a
+measured failure mode: a **graceful stop** of Kyverno deletes its own webhook
+configurations, after which the keystone is **silently off** (an over-granted
+agent's write succeeds) while the policy object still exists. An *unreachable*
+Kyverno with the webhook still registered fails closed for agents. Neither
+affects Backstage's flip in beat 7: the identity match is evaluated by the API
+server first, and Backstage's identity never matches. The over-grant check
+matters because the over-grant is a standing permission for
 `settlement-agent` to patch the flag, which is exactly what this demo says
 never exists.
 
@@ -818,8 +824,10 @@ and naming them first is worth more than the features.
 
 | Limitation | The honest version |
 |---|---|
-| **The keystone is fail-closed, and that costs something** | The policy's `failurePolicy` is `Fail`, like the gateway's `failClosed`. With Kyverno down, a request the policy matches is refused, and **Backstage's flip of the flag is one of them**. The API server evaluates the identity match first, so Kyverno being down does **not** stop ordinary ConfigMap or RBAC writes by humans or CI, only an agent identity's, and Backstage's own. Pre-flight checks Kyverno is Ready for this reason. |
+| **The keystone fails closed only while Kyverno is registered** | Measured. `failurePolicy: Fail` means an *unreachable* Kyverno (webhook registered, no endpoints) **refuses** an over-granted agent's write (`connection refused`). But a *graceful stop* of the admission controller makes Kyverno delete its own webhook configurations, and then the same write **succeeds**: fail-open. Pre-flight and the gate check the registration for this reason. **Backstage's flip is unaffected either way** (and so are humans and CI), because the API server evaluates the identity condition before calling Kyverno. |
+| **Kyverno cannot guard webhook configurations, or RBAC itself** | `ValidatingWebhookConfiguration` and `MutatingWebhookConfiguration` objects are **RBAC-only**: the API server never sends admission for them to webhooks, so an agent allowed to edit one could remove Kyverno's registration and only RBAC would stop it. Agents hold no such grant. Likewise anything RBAC grants an agent that the policy's list does not name, and Kyverno's default `namespaceSelector` skips `kube-system` and `kyverno`. |
 | **The PDS execute limits are not covered by it** | They live in code (`pds/rules.py`) and change only by a reviewed commit and a rebuild. There is no cluster object for the policy to guard. |
+| **What the keystone does cover** | Every ring's configuration (the flag, the gateway ConfigMap, Cilium policies namespaced and cluster-wide, SPIRE's `ClusterSPIFFEID`/`ClusterStaticEntry`/`ClusterFederatedTrustDomain`, RBAC, **all** Kyverno policy kinds and exceptions) and the routes to another identity: workloads (pods, deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs) and `serviceaccounts/token`. |
 | **Backstage here is unauthenticated** | Be precise, because the sloppy version is wrong: the backend API **does** check a credential — a bare `curl` to it gets HTTP 401. What makes it unauthenticated is that **anyone can mint that credential, unchallenged**, through the guest flow. So: anyone who can reach 7007 can flip the contract. What keeps it honest is **not a login** — it is the narrowness of the one write it can make: `get`/`list`/`patch` on `resourceNames: [northstar-autonomy]`, no delete, no create, separate from the read-only ServiceAccount the Kubernetes plugin uses. **Anyone reaching this port can flip the contract and nothing else.** |
 | **No scaffolder** | M1's claim — "a platform team could add a service in an afternoon through the same API" — is **half** demonstrated. The platform API exists as a real object with a real UI. Nothing here generates a new agent from it. |
 | **The catalog is static** | It reflects committed `catalog-info.yaml` files staged into the image, not a discovered repository — **there is no git remote** for Backstage's discovery processors to point at. A component added without its own file does not appear until the image is rebuilt, and a unit test catches that drift before a demo does. |
@@ -910,8 +918,10 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 | First claim submission errors | `ANTHROPIC_API_KEY` empty | it is a **model call**. Check `.env`, restart the agent deployments |
 | A surface at 5601 / 9090 / 7007 does not answer | dead port-forward (a dead forward **keeps its socket bound** and still looks healthy to `lsof`) | Ctrl+C and re-run `./scripts/start-demo.sh` |
 | `Backstage: SKIPPED` in start-demo output | cluster is below stage 6 | `./scripts/setup-kind.sh --stage 7` — no recreate needed from stage 3+ |
-| `start-demo.sh` refuses: *keystone policy is not Ready* | Kyverno is down or the policy never armed | `kubectl -n kyverno get pods`; `kubectl get validatingpolicy agents-cannot-edit-their-own-authority -o yaml` and read `status.conditionStatus.conditions`. **While Kyverno is down, Backstage's flag flip fails closed too**, so do not take beat 7 on stage until it is Ready |
-| Backstage's flip answers with an admission error mentioning `kyverno` | Kyverno is down (the policy fails closed) or the policy's `matchConditions` now match Backstage's identity | `kubectl -n kyverno get pods`. Backstage's identity is `backstage-autonomy-writer` in `northstar-platform`; the policy matches only `northstar-agents` and `northstar-tools` prefixes |
+| `start-demo.sh` refuses: *keystone policy is not Ready* | the policy never armed (usually Kyverno cannot read a kind it matches) | `kubectl get validatingpolicy agents-cannot-edit-their-own-authority -o yaml` and read `status.conditionStatus.conditions`. Beat 7 is **not** affected: Backstage's flip works with Kyverno down |
+| `start-demo.sh` refuses: *webhook configuration is not registered* | Kyverno was stopped gracefully (scaled to 0, a rollout) and deleted its own registration: **the keystone is silently off** | `kubectl -n kyverno scale deploy/kyverno-admission-controller --replicas=1`, wait for `kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg`, re-run |
+| `start-demo.sh` refuses: *nothing answers behind svc/kyverno-svc* | Kyverno pods not Ready, webhook still registered: an agent's write is *refused* (fails closed) | `kubectl -n kyverno get pods`, logs |
+| Backstage's flip answers with an admission error mentioning `kyverno` | the policy's `matchConditions` now match Backstage's identity (a Kyverno outage alone cannot do this: measured, Backstage is unaffected by one) | Backstage's identity is `backstage-autonomy-writer` in `northstar-platform`; the policy matches only `northstar-agents` and `northstar-tools` prefixes. `kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg -o yaml` and read the `matchConditions` |
 | `start-demo.sh` refuses: *over-grant is still applied* | an earlier beat-keystone run was killed hard (SIGKILL) | `kubectl delete -f deploy/demo/keystone-overgrant.yaml` |
 | `beat-keystone.sh` step 3 prints `Forbidden` instead of the Kyverno message | the over-grant did not take effect yet | re-run; the script waits for `auth can-i` to say `yes` first, so this means RBAC is not what it was |
 | `beat-reach.sh` step 2 prints `REFUSED` or `REACHED` | the Cilium policy is not enforcing | `kubectl -n northstar-tools get cnp`; `tests/e2e/test_gateway_is_the_only_route.py` reads the datapath |

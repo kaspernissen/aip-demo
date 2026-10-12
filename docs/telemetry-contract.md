@@ -404,15 +404,19 @@ both), and the gated one launches a browser, which is what moves the browser
 split below. It costs no model call and no settlement: ten page loads, about
 five seconds.
 
-**M7 (Bounded) takes the collected count from 456 to 480, and moves no gated
-figure.** Twenty-four new tests: `tests/unit/test_pins.py` three (Kyverno's chart
+**M7 (Bounded) takes the collected count from 456 to 488, and moves no gated
+figure.** Thirty-two new tests: `tests/unit/test_pins.py` three (Kyverno's chart
 and app version, read back out of `scripts/setup-kind.sh`'s assignment lines),
-`tests/unit/test_stage7_keystone_config.py` sixteen (the keystone policy and
+`tests/unit/test_stage7_keystone_config.py` nineteen (the keystone policy and
 the over-grant fixture, parsed with `yaml.safe_load`, so no comment can supply
-an assertion), and `tests/e2e/test_keystone.py` five (RBAC refuses the agent;
+an assertion; plus the gate's and the pre-flight's stage-7 checks, comment-stripped),
+and `tests/e2e/test_keystone.py` ten (RBAC refuses the agent;
 Kyverno refuses it even when RBAC allows it; a human can still patch and it is
 reverted; an agent cannot create a `PolicyException`; the denial reaches Jaeger
-as a standalone Kyverno trace). The last file needs the live stage-7 cluster and
+as a standalone Kyverno trace; and, parametrized, that an over-granted agent is
+refused on a pod running as `senior-settlement-agent`, a cluster-wide Cilium
+policy, a SPIRE `ClusterSPIFFEID` and a legacy Kyverno `ClusterPolicy`, plus a
+`serviceaccounts/token` request). The last file needs the live stage-7 cluster and
 spends no model tokens, so it carries no `RUN_BROWSER_TESTS` gate and is not in
 the gated spread below: on a bare run with the cluster up it passes, and on a
 cluster below stage 7 it skips (only when Kyverno's CRD is absent; if Kyverno is
@@ -420,8 +424,8 @@ installed and the policy is not, it fails, which a mutation run verified).
 `CURRENT_STAGE` in `tests/unit/test_stage2_cilium_config.py` moved from 5 to 7 in
 the same milestone, a value change that adds no test.
 
-Bare-suite row, derived from that same collection: 480 collected − 76 gated −
-**0** xfailed = `404 passed, 76 skipped, 0 xfailed`.
+Bare-suite row, derived from that same collection: 488 collected − 76 gated −
+**0** xfailed = `412 passed, 76 skipped, 0 xfailed`.
 
 The gated figure moves to **76** — re-measured the same way as every figure
 below it, a `--collect-only` run with a plugin that counts items carrying a
@@ -438,7 +442,7 @@ test) is `tests/unit`-only and carries no `skipif`, so it adds none, and the
 internal-platform pass's eight new `tests/unit` tests, the mermaid pass's eight
 and the page-banner pass's eight `tests/unit` tests carry none either; the
 page-banner pass's own e2e file adds exactly **one** — and
-reports 76 of 480, with the per-module spread and the browser split both
+reports 76 of 488, with the per-module spread and the browser split both
 moving for the first time this milestone. Full spread:
 `test_settlement_llm_trace.py` 9,
 `test_prometheus_metrics_ingest.py` 10, `test_browser_root_span.py` 8,
@@ -457,8 +461,8 @@ that *does* call `chromium.launch(` — it has no page to drive, only pages to
 look at — so the split is now **4 of the 14 launch a browser** and **10 of the
 14 start no browser**.
 
-Gate row: **PREDICTED, NOT MEASURED** — `479 passed, 1 xfailed`. That figure is
-*derived*, not observed: 480 collected above, minus the one test that xfails
+Gate row: **PREDICTED, NOT MEASURED** — `487 passed, 1 xfailed`. That figure is
+*derived*, not observed: 488 collected above, minus the one test that xfails
 only once `RUN_BROWSER_TESTS=1` ungates it, and **zero skips** — the flag
 ungates all 76 gated tests, so the gate executes the whole of `tests/`. Nobody
 has run it against this tree.
@@ -468,7 +472,7 @@ no longer describes this tree. That gate run was at commit `6588570`,
 `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh`, run by the orchestrator,
 exit **0**, 429 passed and 1 xfailed in 597.91s (9m57s), with zero skips
 (`grep -c SKIPPED` over the run's full output returned 0). 429 + 1 = 430, which
-was the full collection that day. It is **480 today**, and the fifty-test gap
+was the full collection that day. It is **488 today**, and the fifty-eight-test gap
 is itself the evidence that this row is stale rather than merely unre-run.
 
 **What demoted it, 2026-09-15.** A visual pass over the two demo surfaces —

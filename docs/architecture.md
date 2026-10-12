@@ -1750,17 +1750,66 @@ v1.18.1 uses; same rule, current type.
   is a `matchCondition`, which Kyverno copies into the webhook configuration
   (confirmed on the live `ValidatingWebhookConfiguration`), so the API server
   filters **before** calling Kyverno.
-- **What is protected** (CREATE, UPDATE, DELETE): `FeatureFlag` and
-  `FeatureFlagSource` in `northstar-platform`; the `agentgateway-config`
-  ConfigMap; `CiliumNetworkPolicy`; `Role`, `RoleBinding`, `ClusterRole`,
-  `ClusterRoleBinding`; and Kyverno's own `ValidatingPolicy` and
-  `PolicyException` (an exception is a bypass, so creating one is an edit to
-  the constraint). The PDS execute limits are in code (`pds/rules.py`) and
-  change only by a reviewed commit and a rebuild, so there is nothing in the
-  cluster to guard.
-- **Fail closed:** `failurePolicy: Fail`, consistent with the gateway. If
-  Kyverno is down, a request the policy matches is refused, and Backstage's
-  flip of the flag is one of them. Pre-flight checks Kyverno is Ready.
+- **What is protected** (CREATE, UPDATE, DELETE; `serviceaccounts/token` is
+  CREATE only), every ring's configuration plus the routes to a different
+  identity:
+  - Capability: `FeatureFlag` and `FeatureFlagSource` in `northstar-platform`;
+    the `agentgateway-config` ConfigMap.
+  - Reach: `CiliumNetworkPolicy` and `CiliumClusterwideNetworkPolicy`.
+  - Identity: SPIRE's `ClusterSPIFFEID`, `ClusterStaticEntry` and
+    `ClusterFederatedTrustDomain`.
+  - RBAC: `Role`, `RoleBinding`, `ClusterRole`, `ClusterRoleBinding`.
+  - Kyverno itself: **every** kind in the `policies.kyverno.io` and
+    `kyverno.io` groups (`*`), because mutating, generating and namespaced
+    policies, legacy `ClusterPolicy` and either `PolicyException` are each a way
+    to bend or bypass this one. Kyverno's reports live in other groups and are
+    not matched.
+  - Workloads anywhere: `Pod`, `Deployment`, `ReplicaSet`, `StatefulSet`,
+    `DaemonSet`, `Job`, `CronJob`. A pod created with `serviceAccountName:
+    senior-settlement-agent` is issued that identity's SVID, so creating one is
+    editing your own identity with no RBAC object touched.
+  - `serviceaccounts/token`: minting a token for another ServiceAccount. Kyverno
+    does match this subresource (verified: the test below is refused with the
+    policy's message, and fails when the rule is removed).
+
+  Controllers (`system:serviceaccount:kube-system:*`), humans and CI are never
+  matched, because the identity condition only admits the `northstar-agents` and
+  `northstar-tools` prefixes. No Northstar agent creates a workload or holds any
+  RBAC to: no RoleBinding names an agent ServiceAccount, and no agent imports a
+  Kubernetes client. Each of the objects above has a live test in
+  `tests/e2e/test_keystone.py` (pod, cluster-wide Cilium policy, ClusterSPIFFEID,
+  legacy ClusterPolicy, PolicyException, token) and was mutation-checked by
+  removing its rule from the live policy and watching the test go red.
+- **What Kyverno cannot cover, so it is RBAC-only:**
+  - `ValidatingWebhookConfiguration` and `MutatingWebhookConfiguration`: the API
+    server never sends admission for webhook configurations to webhooks. An
+    agent with write access to one could remove Kyverno's registration, and
+    nothing in the cluster would say no except RBAC. Agents hold no such grant.
+  - Anything else RBAC happens to grant an agent outside the list above, and the
+    PDS execute limits, which are in code (`pds/rules.py`) and change only by a
+    reviewed commit and a rebuild.
+  - Kyverno's default webhook `namespaceSelector` excludes `kube-system` and
+    `kyverno`: an agent identity's writes in those two namespaces are not
+    evaluated either.
+- **Fail closed, with a measured exception.** `failurePolicy: Fail`, consistent
+  with the gateway. Measured on the live stage-7 cluster by taking Kyverno away
+  two ways, always against the same four requests (Backstage's writer patching
+  the flag, `settlement-agent` with the over-grant patching it, a human creating
+  a ConfigMap, a human patching the flag):
+
+  | Kyverno | Backstage's writer | Over-granted agent | Humans |
+  |---|---|---|---|
+  | **Unreachable, webhook still registered** (the Service has no endpoints) | allowed | **refused**: `failed calling webhook ... connect: connection refused` | allowed |
+  | **Stopped gracefully** (`scale --replicas=0`) | allowed | **ALLOWED** (fail-open) | allowed |
+
+  So Backstage's flip is **not** affected by a Kyverno outage: the identity
+  condition is evaluated by the API server before the webhook is called, and
+  Backstage's identity never matches it. The caveat is the second row: a
+  graceful stop makes Kyverno delete its own webhook configurations on the way
+  out, so the keystone silently stops enforcing while the policy object still
+  exists. The guarantee is "fail closed while Kyverno is registered", not "fail
+  closed whenever Kyverno is down". `start-demo.sh` and the gate therefore check
+  the webhook registration and the endpoints, not only the policy's `Ready`.
 - **Message,** shown live: `DENIED: agent identity '<username>' may not change
   the objects that define its own authority (<kind>/<name>). Authority changes
   go through a reviewed commit, never a runtime decision by the agent.` The
@@ -1777,7 +1826,7 @@ wrong. Northstar does not ship a standing over-grant to show it; `Beat K`
 it. `setup-kind.sh` never applies that file (pinned by a unit test), and
 `start-demo.sh` refuses to start if it is left behind.
 
-**Two things measured while building it** (both would otherwise be assumed):
+**Two more things measured while building it** (both would otherwise be assumed):
 
 1. With the chart's default RBAC the policy is stored and its webhook is
    configured, but `.status.conditionStatus.ready` stays `false`: "Policy is
@@ -1785,9 +1834,9 @@ it. `setup-kind.sh` never applies that file (pinned by a unit test), and
    non-core kind it matches. `deploy/platform/kyverno/values.yaml` grants the
    admission and reports controllers read-only access to those kinds, and
    `setup-kind.sh` waits on `ready` rather than on the object existing.
-2. Kyverno's default webhook `namespaceSelector` excludes `kube-system` and
-   `kyverno`, so an agent identity's writes in those two namespaces are not
-   evaluated. Agents hold no grant there; this is stated rather than fixed.
+2. The policy only reports Ready once Kyverno can read every kind it matches,
+   including the `serviceaccounts/token` subresource and `*` over Kyverno's own
+   groups, which the readiness check wants spelled out. Same file, same fix.
 
 ### Which refusals the trace can see
 
