@@ -94,6 +94,7 @@ from tests.e2e.test_caller_identity import (
     SPIRE_SERVER_POD,
     _json_body,
 )
+from tests.harness import live
 from tests.harness.jaeger import JaegerClient
 # Reading `returncode == 0` as "it exists" and every other exit as "it is
 # absent" would let an unreachable API server make the fixture below skip
@@ -157,44 +158,15 @@ OPENSEARCH_SETTLE_TIMEOUT_S = 90.0
 
 
 def _kubectl(*args: str, stdin: str | None = None, timeout: int = 90):
-    return subprocess.run(
-        ["kubectl", "--context", KUBE_CONTEXT, *args],
-        input=stdin,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    """`tests.harness.live.kubectl`, kept under this name because sibling
+    modules import it from here."""
+    return live.kubectl(*args, stdin=stdin, timeout=timeout)
 
 
 def _opensearch(path: str, body: dict | None = None) -> dict:
-    """One OpenSearch request, made from inside the cluster.
-
-    `kubectl exec ... curl` rather than a port-forward on purpose: this file
-    should not add a fifth thing that can leave a socket behind, and the repo's
-    standing rule is to own every forward you start. The OpenSearch Service is
-    reachable in-cluster without one.
-    """
-    args = [
-        "-n", OBSERVABILITY_NAMESPACE, "exec", "-i", f"svc/{OPENSEARCH_SERVICE}",
-        "--", "curl", "-s", "-X", "GET" if body is None else "POST",
-        f"http://localhost:9200{path}",
-    ]
-    stdin = None
-    if body is not None:
-        args += ["-H", "Content-Type: application/json", "--data-binary", "@-"]
-        stdin = json.dumps(body)
-    result = _kubectl(*args, stdin=stdin)
-    assert result.returncode == 0, (
-        f"could not reach OpenSearch at {path!r}:\nstdout:\n{result.stdout}\n"
-        f"stderr:\n{result.stderr}"
-    )
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as exc:  # pragma: no cover -- diagnostic path
-        raise AssertionError(
-            f"OpenSearch returned a non-JSON body for {path!r}: "
-            f"{result.stdout[:500]!r}"
-        ) from exc
+    """One OpenSearch request, made from inside the cluster
+    (`tests.harness.live.opensearch`, shared with the stage driver)."""
+    return live.opensearch(path, body)
 
 
 def _opensearch_is_installed() -> bool:

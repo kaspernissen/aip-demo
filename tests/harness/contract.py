@@ -207,6 +207,14 @@ def set_targeted_branch(variant: str, *, propagation_timeout: float = 30.0) -> N
     )
 
 
+def resolved_level(timeout: float = 15.0) -> str:
+    """What flagd itself resolves for `TARGETED_CALLER` right now -- the answer
+    the decision path consults, not the Kubernetes object's spec. Public so the
+    stage driver (`scripts/demo autonomy`) prints the same value the tests
+    assert on."""
+    return _resolved_variant(_pds_pod_name(), timeout=timeout)
+
+
 def assert_assisted(context: str) -> None:
     """Fail loudly, immediately, if the live contract is not in its shipped
     refusing state for the targeted caller -- called before a fixture drives

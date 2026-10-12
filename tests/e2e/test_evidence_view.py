@@ -77,7 +77,6 @@ import time
 import uuid
 from types import SimpleNamespace
 
-import httpx
 import pytest
 import requests
 
@@ -119,6 +118,7 @@ from tests.e2e.test_caller_identity import KUBE_CONTEXT
 # `absent_or_fail` lives in the shared harness so that neither of the two
 # e2e modules that need it owns it, and so both check "does this object
 # exist?" against the same one definition rather than against a copy.
+from tests.harness import live
 from tests.harness.kube import absent_or_fail
 # Same reasoning: the parsed reading of the deployed pipelines lives in the
 # shared harness rather than as a private function duplicated per caller.
@@ -187,6 +187,10 @@ WINDOW_SKEW_S = 30.0
 SPAN_PAGE_SIZE = 1000
 
 _WINDOW_START_MS: int | None = None
+_WINDOW_NEVER_OPENED = (
+    "the evidence window was never opened -- the `evidence_window` fixture "
+    "did not run before a query was made"
+)
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
@@ -202,216 +206,41 @@ pytestmark = pytest.mark.skipif(
 
 def _search(body: dict) -> dict:
     """One `_search` against the trace index, with a missing index as a failure.
-
-    `_opensearch` (imported from test_opensearch_trace_ingest.py) asserts that
-    `curl` ran; it does not assert that OpenSearch liked the request. A 404
-    `index_not_found_exception` comes back as a perfectly well-formed JSON body
-    with an `error` key and no `hits`, so without this the mutation Step 7 asks
-    for -- point the query at an index that does not exist -- would surface as
-    a `KeyError` traceback rather than as a named red. It is named here.
-    """
-    result = _opensearch(f"/{TRACE_INDEX}/_search", body)
-    assert "error" not in result, (
-        f"OpenSearch refused the evidence query against {TRACE_INDEX!r}: "
-        f"{json.dumps(result.get('error'))[:600]}\n"
-        "If this says `index_not_found_exception`, the index this dashboard "
-        "and this file both read does not exist -- which is a stage-4 cluster "
-        "with no trace ingest, not a cluster below stage 4. Check the "
-        "`opensearch/trace` exporter in the deployed collector config and the "
-        "collector's own log for `Exporting failed`."
-    )
-    return result
+    The implementation moved to `tests/harness/live.py` (shared with the stage
+    driver); the mutation Step 7 asks for -- point the query at an index that
+    does not exist -- still surfaces as a named red, not a `KeyError`."""
+    return live.search(body)
 
 
 def _window_filter() -> dict:
     """The lower bound every query below carries. See the module docstring."""
-    assert _WINDOW_START_MS is not None, (
-        "the evidence window was never opened -- the `evidence_window` fixture "
-        "did not run before a query was made"
-    )
-    # Epoch milliseconds rather than an ISO string: `startTime` is mapped
-    # `{"type": "date"}` with no explicit format (read from
-    # `_mapping/field/startTime` on this cluster), so both parse, and millis
-    # cannot be misread as a local time by anything.
-    return {"range": {"startTime": {"gte": _WINDOW_START_MS}}}
+    assert _WINDOW_START_MS is not None, _WINDOW_NEVER_OPENED
+    return live.window_filter(_WINDOW_START_MS)
 
 
 def _trace_ids_for_claim(claim_id: str) -> list[str]:
-    """Step 1 of the join: claim id -> the trace ids that claim touched.
-
-    **GAP 4 -- DO NOT COLLAPSE THE TWO STEPS INTO ONE FILTER.** A single
-    `attributes.northstar.claim.id = X` filter would return a strict and
-    silently incomplete subset of this claim's story. `northstar.claim.id`
-    travels as W3C baggage and is copied onto spans only inside the processes
-    that hold it (customer-ui, claims-agent, settlement-agent). It does **not**
-    cross the MCP boundary -- FastMCP 4.0.3 never reads or writes `baggage` in
-    `params._meta`, Gap 4 in docs/telemetry-contract.md -- so payments-mcp and
-    payments-api spans never carry it; and the Policy Decision Service is
-    reached over the gateway's guardrail hop, which carries no baggage either,
-    so `policy.decision` spans never carry it. Measured across several
-    supervised runs rather than assumed from one: a `CLM-1842` filter
-    returns **73-75 documents** per run (settlement-agent and claims-agent
-    only), while the two traces those runs actually span hold **214-218**.
-    **Zero** of the filtered documents are from payments-api or the PDS in any
-    of the four -- the filter drops all 5 payments-api and all 5
-    policy-decision-service documents every time, i.e. every span that records
-    the decision and every span where money moved.
-    **The trace id is the join.** This file does not close Gap 4 (closing it
-    means changing baggage propagation in the money path, more risk than this
-    file's own scope justifies); it is built around the constraint, here and
-    in the saved dashboard's own two-step layout.
-
-    Returns more than one trace id for a supervised claim, and that is the
-    point rather than an accident: the refusal is one trace (rooted at
-    customer-ui) and the human approval is a second (rooted at reviewer-ui's
-    `review.decision` span), joined to the claim because
-    `settlement.execute_approved` re-attaches the claim id from the ledger
-    record -- see `agents/settlement-agent/settlement.py::execute_approved`.
-    """
-    buckets = _search(
-        {
-            "size": 0,
-            "query": {
-                "bool": {
-                    "filter": [
-                        {"term": {f"attributes.{ATTR_CLAIM_ID}.keyword": claim_id}},
-                        _window_filter(),
-                    ]
-                }
-            },
-            "aggs": {
-                "traces": {
-                    "terms": {"field": "traceId.keyword", "size": 20},
-                    "aggs": {"first": {"min": {"field": "startTime"}}},
-                }
-            },
-        }
-    )["aggregations"]["traces"]["buckets"]
-    return [bucket["key"] for bucket in sorted(buckets, key=lambda b: b["first"]["value"])]
+    """Step 1 of the join (claim id -> trace ids). See
+    `tests.harness.live.trace_ids_for_claim` for **GAP 4 -- DO NOT COLLAPSE THE
+    TWO STEPS INTO ONE FILTER**: the warning, and the measurements behind it,
+    moved with the code. `test_the_trace_id_join_is_what_reaches_the_money_hops`
+    below is what asserts it."""
+    assert _WINDOW_START_MS is not None, _WINDOW_NEVER_OPENED
+    return live.trace_ids_for_claim(claim_id, _WINDOW_START_MS)
 
 
 def _spans_in_traces(trace_ids: list[str]) -> list[dict]:
-    """Step 2 of the join: every span in those traces, claim id or not.
-
-    This is the half `_trace_ids_for_claim`'s warning is about. Filtering on
-    the claim id here as well -- which reads like a harmless belt-and-braces
-    narrowing -- would drop the decision spans and the money hops again.
-    """
-    if not trace_ids:
-        return []
-    result = _search(
-        {
-            "size": SPAN_PAGE_SIZE,
-            "query": {"bool": {"filter": [{"terms": {"traceId": trace_ids}}, _window_filter()]}},
-            "sort": [{"startTime": "asc"}],
-            "track_total_hits": True,
-        }
-    )["hits"]
-    hits = result["hits"]
-    # A silent truncation here would present as a missing money hop -- a red,
-    # but one pointing at instrumentation instead of at this page size. A
-    # supervised pair is 214-218 documents against a 1,000-document page (see
-    # SPAN_PAGE_SIZE), so this has headroom and is a tripwire rather than a
-    # live risk -- but it is not idle, either: run unbounded over an
-    # unbounded accumulation of `CLM-1842` traces, this fires, which is what
-    # the time window exists to prevent.
-    # `track_total_hits` is set because OpenSearch caps the
-    # reported total at 10,000 by default, which would make the comparison
-    # itself lie exactly when it matters.
-    total = (result.get("total") or {}).get("value", len(hits))
-    assert len(hits) == total, (
-        f"the trace-id join returned {len(hits)} of {total} matching documents "
-        f"-- `size` is {SPAN_PAGE_SIZE} and these traces no longer fit in one "
-        "page, so the evidence row below is built from a truncated span set. "
-        "Raise SPAN_PAGE_SIZE or paginate; do not read the short list."
-    )
-    return [hit["_source"] for hit in hits]
+    """Step 2 of the join (every span in those traces, claim id or not)."""
+    assert _WINDOW_START_MS is not None, _WINDOW_NEVER_OPENED
+    return live.spans_in_traces(trace_ids, _WINDOW_START_MS)
 
 
 def evidence_for(claim_id: str) -> dict:
     """One row of the evidence view, read out of OpenSearch exactly as the
-    saved dashboard's panels read it.
-
-    Each key is something a panel of `evidence.ndjson` puts on screen, and the
-    panel it comes from is named beside it:
-
-      `trace_ids`                  panel 1, "Claims in this window"
-      `policy_decision`/`rule`/    panel 2, "What the platform decided"
-        `limit`/`requested`/
-        `autonomy_level`/
-        `contract_version`/
-        `executing_identity`/
-        `executing_rule`
-      `reviewer`/`review_decision` panel 3, "Was a human in the loop?"
-      `money_hops`                 panel 4, the ledger hops
-
-    `autonomy_level` and `contract_version` are the contract's own two
-    signals on the first decision span -- `ATTR_AUTONOMY` (always present,
-    `pds/server.py`) and `ATTR_FLAG_VERSION` (present only when flagd's
-    response carries a version, which measurably never happens against
-    this deployment; see `scorer/contract.py`'s module docstring).
-    `contract_version` is expected to read `None` for both of
-    this file's live claims today -- that is the honest value, not a gap in
-    this function -- and the panel's own `missingBucket` surfaces it as
-    "(no version published)" rather than an empty row.
-
-    So a field that stops arriving reddens here *and* empties a panel there,
-    which is the whole reason this file exists.
-    """
-    trace_ids = _trace_ids_for_claim(claim_id)
-    spans = _spans_in_traces(trace_ids)
-
-    def attrs(span: dict) -> dict:
-        # ss4o writes attribute keys FLAT and dotted into `_source` while
-        # OpenSearch expands them into objects for the mapping -- so the Python
-        # lookup is the dotted string and the query path is the dotted path.
-        # Measured; the same shape test_opensearch_trace_ingest.py reads.
-        return span.get("attributes") or {}
-
-    decisions = [
-        span
-        for span in spans
-        if span.get("name") == DECISION_SPAN
-        and attrs(span).get(ATTR_POLICY_TOOL) == EXECUTE_TOOL
-    ]
-    # The decision on the agent's OWN attempt to move the money: the first
-    # `execute_payment` decision in the window. For CLM-1842 that is the
-    # refusal; a later, permitted one exists in the approval trace and belongs
-    # in `executing_identity`, not here.
-    first_decision = decisions[0] if decisions else {}
-    # Who was actually allowed to move the money: the last PERMITTED
-    # `execute_payment` decision. For the €5,800 claim that is
-    # settlement-agent's own attempt; for CLM-1842 it is senior-settlement-agent
-    # acting on the human's approval.
-    permitted = [d for d in decisions if attrs(d).get(ATTR_DECISION) == "permit"]
-    executor = permitted[-1] if permitted else {}
-
-    reviews = [span for span in spans if span.get("name") == REVIEW_DECISION_SPAN]
-    review = reviews[-1] if reviews else {}
-
-    money = [
-        span
-        for span in spans
-        if (span.get("resource") or {}).get("service.name") == PAYMENTS_API
-    ]
-
-    return {
-        "claim_id": claim_id,
-        "trace_ids": trace_ids,
-        "policy_decision": attrs(first_decision).get(ATTR_DECISION),
-        "rule": attrs(first_decision).get(ATTR_POLICY_RULE),
-        "limit": attrs(first_decision).get(ATTR_POLICY_LIMIT),
-        "requested": attrs(first_decision).get(ATTR_POLICY_AMOUNT),
-        "autonomy_level": attrs(first_decision).get(ATTR_AUTONOMY),
-        "contract_version": attrs(first_decision).get(ATTR_FLAG_VERSION),
-        "reviewer": attrs(review).get(ATTR_REVIEW_REVIEWER),
-        "review_decision": attrs(review).get(ATTR_REVIEW_DECISION),
-        "executing_identity": attrs(executor).get(ATTR_POLICY_CALLER),
-        "executing_rule": attrs(executor).get(ATTR_POLICY_RULE),
-        "money_hops": [span["name"] for span in money],
-        "decision_count": len(decisions),
-        "span_count": len(spans),
-    }
+    saved dashboard's panels read it (`tests.harness.live.evidence_for`, which
+    the stage driver's `evidence` step calls too), bounded to the window this
+    module opened."""
+    assert _WINDOW_START_MS is not None, _WINDOW_NEVER_OPENED
+    return live.evidence_for(claim_id, _WINDOW_START_MS)
 
 
 def _settled_evidence(claim_id: str, required: tuple[str, ...]) -> dict:
@@ -559,52 +388,12 @@ def evidence_window():
 
 
 def _submit_claim(claim_id: str, amount: float) -> dict:
-    """One settlement, submitted to claims-agent over A2A, no browser.
-
-    `test_claim_correlation.py`'s shape: this test originates the request, so
-    it mints its own trace id and sends it as a `traceparent` rather than
-    searching for a plausible trace afterwards. Nothing below reads this
-    trace id: the evidence query starts from the claim id, because that is what
-    an operator reading the dashboard actually has. It is minted anyway so that
-    a failure in this fixture can be traced by hand without guessing which of
-    the day's traces it was.
-    """
-    trace_id = uuid.uuid4().hex
-    traceparent = f"00-{trace_id}-{uuid.uuid4().hex[:16]}-01"
-    response = httpx.post(
-        f"{CLAIMS_AGENT_URL}/",
-        json={
-            "jsonrpc": "2.0",
-            "id": uuid.uuid4().hex,
-            "method": "message/send",
-            "params": {
-                "message": {
-                    "role": "user",
-                    "messageId": uuid.uuid4().hex,
-                    "parts": [
-                        {
-                            "kind": "text",
-                            "text": json.dumps(
-                                {
-                                    "claimId": claim_id,
-                                    "policyNumber": "POL-77120",
-                                    "description": "Rear-end collision at a junction",
-                                    "estimatedAmount": amount,
-                                }
-                            ),
-                        }
-                    ],
-                }
-            },
-        },
-        headers={"traceparent": traceparent},
-        timeout=SETTLEMENT_TIMEOUT_S,
+    """One settlement, submitted to claims-agent over A2A, no browser
+    (`tests.harness.live.submit_claim`, the same call `scripts/demo claim`
+    makes). Returns `{"trace_id", "reply"}`."""
+    return live.submit_claim(
+        claim_id, amount, claims_agent_url=CLAIMS_AGENT_URL, timeout=SETTLEMENT_TIMEOUT_S
     )
-    response.raise_for_status()
-    body = response.json()
-    assert "error" not in body, f"claims-agent refused claim {claim_id!r}: {response.text[:500]}"
-    reply = json.loads(body["result"]["parts"][0]["text"])
-    return {"trace_id": trace_id, "reply": reply}
 
 
 @pytest.fixture(scope="module")

@@ -69,11 +69,8 @@ from __future__ import annotations
 import base64
 import json
 import os
-import re
-import subprocess
 import time
 import uuid
-from dataclasses import dataclass, field
 
 import httpx
 import jwt as pyjwt
@@ -81,25 +78,34 @@ import pytest
 import requests
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+# The helpers this file used to own -- the MCP caller, the SVID minting, the
+# gateway port-forward, the outcome type -- live in `tests/harness/live.py` so
+# the stage driver (`scripts/demo`) runs the very same code these tests assert
+# on. The private names are kept as aliases because other e2e modules import
+# them from here by those names.
+from tests.harness import live
 from tests.harness.jaeger import JaegerClient
+from tests.harness.live import (  # noqa: F401 -- re-exported to sibling modules
+    CALLER_SPIFFE_ID,
+    GATEWAY_AUDIENCE,
+    GATEWAY_NAMESPACE,
+    KUBE_CONTEXT,
+    MCP_PROTOCOL_VERSION,
+    SPIRE_SERVER_POD,
+    UNAUTHORIZED,
+    Outcome as _Outcome,
+    call_tool_directly,
+    claims as _claims,
+    json_body as _json_body,
+    kubectl as _kubectl,
+    post as _post,
+)
 
-KUBE_CONTEXT = "kind-northstar"
-GATEWAY_NAMESPACE = "northstar-platform"
-SPIRE_SERVER_POD = "spire-server-0"
-
-# The audience settlement-agent's real SVIDs are minted for, and the single
-# entry in the gateway's `jwtAuth.audiences` list. One string, both ends of the
-# check -- `tests/unit/test_stage2_spire_config.py` pins that the configuration
-# files agree on it; this file uses it as the *correct* value a wrong one is
-# measured against.
-GATEWAY_AUDIENCE = "spiffe://northstar.local/ns/northstar-platform/sa/agentgateway"
 
 # A different, equally real SPIFFE ID in the same trust domain. A token minted
 # for this audience is a token minted for payments-mcp, not for the gateway --
 # the replay this audience scoping exists to stop.
 OTHER_AUDIENCE = "spiffe://northstar.local/ns/northstar-tools/sa/payments-mcp"
-
-CALLER_SPIFFE_ID = "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
 
 # What SPIRE actually mints as `iss`, rendered by the chart from the single
 # `global.spire.jwtIssuer` value and matched exactly by the gateway's
@@ -110,293 +116,28 @@ SPIRE_ISSUER = (
 
 UNTRUSTED_ISSUER = "http://issuer.invalid"
 
-MCP_PROTOCOL_VERSION = "2025-06-18"
-
-# agentgateway v1.5.0 answers a jwtAuth rejection with this status and a
-# `text/plain` body, measured -- see `_Outcome.refused`.
-UNAUTHORIZED = 401
-
-
-def _kubectl(*args: str, timeout: int = 60) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["kubectl", "--context", KUBE_CONTEXT, *args],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-
-
-def _claims(token: str) -> dict:
-    """The token's payload, decoded and **not** verified.
-
-    Verification is the gateway's job and is the thing under test; this exists
-    only so an assertion message can name the identity that was presented
-    without printing a usable credential.
-    """
-    payload = token.split(".")[1]
-    payload += "=" * (-len(payload) % 4)
-    return json.loads(base64.urlsafe_b64decode(payload))
-
-
-@dataclass
-class _Outcome:
-    """The normalised result of one direct MCP call through the gateway.
-
-    `refused` means *the gateway rejected the caller's identity* — not merely
-    "something non-2xx happened". That distinction is the whole point of this
-    dataclass, and getting it wrong would make every test in this file pass
-    vacuously: a bare `tools/call` with a perfectly valid token also returns a
-    non-2xx status (measured: `400 mcp: session header is required for
-    non-initialize requests`), so a `refused = not ok` definition would report
-    the accepted path as refused too and the suite would go green on a gateway
-    with its `jwtAuth` policy deleted.
-
-    So `refused` is true for exactly two shapes, and both are handled because
-    only one of them was measured:
-
-    * **HTTP 401 with a `text/plain` body.** What agentgateway v1.5.0 actually
-      does, in every rejection case measured here. `TokenError`'s
-      `Display` text is the whole body (`crates/agentgateway/src/http/jwt.rs`),
-      e.g. `authentication failure: no bearer token found`.
-    * **A JSON-RPC error object riding on a non-2xx status.** A plausible
-      shape for a JSON-RPC-framed rejection, but *not* what the deployed
-      gateway produces for any identity rejection — the refusal never
-      reaches JSON-RPC framing at all, because `jwtAuth` runs as an HTTP
-      filter before the MCP backend is consulted. Handled anyway rather than
-      dropped: if a later version moves the rejection into the MCP layer, these
-      tests should keep asserting the property instead of silently inverting.
-    """
-
-    http_status: int
-    body: str
-    stage: str
-    jsonrpc_error: dict | None = None
-    tool_result: dict | None = None
-    claims: dict = field(default_factory=dict)
-
-    @property
-    def refused(self) -> bool:
-        if self.http_status == UNAUTHORIZED:
-            return True
-        return self.jsonrpc_error is not None and self.http_status >= 400
-
-    def __repr__(self) -> str:  # noqa: D105 -- assertion messages only
-        return (
-            f"<call {self.stage}: HTTP {self.http_status} body={self.body[:200]!r} "
-            f"jsonrpc_error={self.jsonrpc_error!r} claims={self.claims!r}>"
-        )
-
-
-def _post(url: str, payload: dict, headers: dict) -> httpx.Response:
-    return httpx.post(
-        f"{url}/mcp",
-        json=payload,
-        headers={
-            "content-type": "application/json",
-            # Streamable HTTP requires both; the gateway answers `initialize`
-            # as an SSE event stream, which `_json_body` unwraps.
-            "accept": "application/json, text/event-stream",
-            **headers,
-        },
-        timeout=30,
-    )
-
-
-def _json_body(response: httpx.Response) -> dict | None:
-    """The JSON-RPC message out of either an `application/json` or an SSE body.
-
-    agentgateway returns MCP responses as `text/event-stream` (measured), so a
-    bare `response.json()` raises on the accepted path. Returns None when the
-    body is not JSON-RPC at all, which is what a `text/plain` refusal is.
-    """
-    text = response.text
-    for line in text.splitlines():
-        if line.startswith("data:"):
-            try:
-                return json.loads(line[len("data:") :].strip())
-            except json.JSONDecodeError:
-                return None
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
-def call_tool_directly(
-    gateway_url: str, tool: str, arguments: dict, headers: dict
-) -> _Outcome:
-    """Speak MCP to the gateway's `/mcp` and normalise the outcome.
-
-    Deliberately performs the **full** streamable-HTTP sequence — `initialize`,
-    then `tools/call` with the session id the gateway hands back — rather than
-    firing a bare `tools/call`. Two reasons, and the second is the load-bearing
-    one:
-
-    1. A bare `tools/call` cannot succeed at all (no session header), so a test
-       built on it could never distinguish "refused" from "accepted".
-    2. `initialize` passes through the same route and therefore the same
-       `jwtAuth` policy (measured: it 401s identically without a token). So an
-       identity that is refused never gets a session, and an identity that is
-       accepted goes on to really execute the tool. `refused` then means
-       "could not open an MCP session through the gateway", and its negation is
-       witnessed by a real tool result rather than by the absence of an error.
-    """
-    claims = {}
-    authorization = headers.get("authorization") or headers.get("Authorization")
-    if authorization and authorization.lower().startswith("bearer "):
-        token = authorization.split(" ", 1)[1]
-        try:
-            claims = _claims(token)
-        except Exception:  # noqa: BLE001 -- a deliberately malformed token
-            claims = {"<undecodable>": True}
-
-    init = _post(
-        gateway_url,
-        {
-            "jsonrpc": "2.0",
-            "id": uuid.uuid4().hex,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": MCP_PROTOCOL_VERSION,
-                "capabilities": {},
-                "clientInfo": {"name": "identity-probe", "version": "0"},
-            },
-        },
-        headers,
-    )
-    init_body = _json_body(init)
-    if init.status_code != 200 or init_body is None or "result" not in init_body:
-        return _Outcome(
-            http_status=init.status_code,
-            body=init.text,
-            stage="initialize",
-            jsonrpc_error=(init_body or {}).get("error"),
-            claims=claims,
-        )
-
-    session_id = init.headers.get("mcp-session-id")
-    assert session_id, (
-        "the gateway accepted `initialize` but returned no `mcp-session-id` "
-        f"header, so this probe cannot continue: headers={dict(init.headers)!r}"
-    )
-
-    called = _post(
-        gateway_url,
-        {
-            "jsonrpc": "2.0",
-            "id": uuid.uuid4().hex,
-            "method": "tools/call",
-            "params": {"name": tool, "arguments": arguments},
-        },
-        {**headers, "mcp-session-id": session_id},
-    )
-    body = _json_body(called)
-    return _Outcome(
-        http_status=called.status_code,
-        body=called.text,
-        stage="tools/call",
-        jsonrpc_error=(body or {}).get("error"),
-        tool_result=(body or {}).get("result"),
-        claims=claims,
-    )
-
-
 # --- fixtures ---------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
 def gateway_url():
-    """A port-forward to `svc/agentgateway`, owned and cleaned up by this file.
-
-    `:3000` (no local port) makes `kubectl` choose a free ephemeral port and
-    print it, which is why this cannot shadow one of the four repo-managed
-    forwards even by accident. The chosen port is parsed out of kubectl's own
-    "Forwarding from 127.0.0.1:<port> -> 3000" line rather than guessed.
-    """
-    proc = subprocess.Popen(
-        [
-            "kubectl",
-            "--context",
-            KUBE_CONTEXT,
-            "-n",
-            GATEWAY_NAMESPACE,
-            "port-forward",
-            "svc/agentgateway",
-            ":3000",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    port = None
-    deadline = time.monotonic() + 30
-    try:
-        while time.monotonic() < deadline:
-            line = proc.stdout.readline()
-            if not line:
-                break
-            match = re.search(r"Forwarding from 127\.0\.0\.1:(\d+) -> 3000", line)
-            if match:
-                port = int(match.group(1))
-                break
-        assert port, (
-            "could not establish a port-forward to svc/agentgateway in "
-            f"{GATEWAY_NAMESPACE} -- is the kind-northstar cluster up and the "
-            "gateway deployed? (this file needs the live cluster, and fails "
-            "rather than skipping when it is absent)"
-        )
-        yield f"http://127.0.0.1:{port}"
-    finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+    """A port-forward to `svc/agentgateway`, owned and cleaned up by this file
+    (see `tests.harness.live.gateway_port_forward` for how the ephemeral port
+    is chosen and why it cannot shadow a repo-managed forward)."""
+    with live.gateway_port_forward() as url:
+        yield url
 
 
 @pytest.fixture(scope="module")
 def mint_svid():
-    """Mint a real JWT-SVID for any (subject, audience) pair, via SPIRE itself.
-
-    `spire-server jwt mint` is used rather than the Workload API on purpose:
-    the Workload API only ever answers with the identity of whoever is calling
-    it, so it *cannot* produce the wrong-audience-but-otherwise-genuine token
-    this file needs. Minting server-side keeps everything else about the token
-    real — same signing key, same `kid`, same `iss`, same subject SPIRE would
-    attest for settlement-agent — so the only thing wrong with it is the one
-    thing under test.
-    """
+    """Mint a real JWT-SVID for any (subject, audience) pair, via SPIRE itself
+    (`tests.harness.live.mint_svid` -- why server-side minting is used is
+    documented there)."""
 
     def _mint(audience: str, subject: str = CALLER_SPIFFE_ID) -> str:
-        result = _kubectl(
-            "-n",
-            GATEWAY_NAMESPACE,
-            "exec",
-            SPIRE_SERVER_POD,
-            "-c",
-            "spire-server",
-            "--",
-            "/opt/spire/bin/spire-server",
-            "jwt",
-            "mint",
-            "-spiffeID",
-            subject,
-            "-audience",
-            audience,
-            "-output",
-            "json",
-        )
-        assert result.returncode == 0, (
-            "`spire-server jwt mint` failed, so this file cannot build the "
-            f"tokens it asserts on:\nstdout:\n{result.stdout}\n"
-            f"stderr:\n{result.stderr}"
-        )
-        # Deliberately not logged: the value is a live bearer credential.
-        return json.loads(result.stdout)["svid"]["token"]
+        return live.mint_svid(audience, subject)
 
     return _mint
-
 
 @pytest.fixture(scope="module")
 def valid_svid(mint_svid):

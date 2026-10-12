@@ -91,6 +91,7 @@ from tests.e2e.test_evidence_view import (
     _traces_pipeline_tees_to_opensearch,
 )
 from tests.e2e.test_caller_identity import KUBE_CONTEXT
+from tests.harness import live
 
 AGENTS_NAMESPACE = "northstar-agents"
 PLATFORM_NAMESPACE = "northstar-platform"
@@ -324,48 +325,12 @@ def settlement_agent_route():
 
 
 def _submit_claim(claim_id: str, amount: float) -> dict:
-    """One settlement, submitted to claims-agent over A2A, no browser.
-
-    `test_claim_correlation.py`'s and `test_evidence_view.py`'s shape: this
-    test originates the request, so it mints its own trace id and sends it as
-    a `traceparent` rather than searching for a plausible trace afterwards.
-    """
-    traceparent = f"00-{uuid.uuid4().hex}-{uuid.uuid4().hex[:16]}-01"
-    response = httpx.post(
-        f"{CLAIMS_AGENT_URL}/",
-        json={
-            "jsonrpc": "2.0",
-            "id": uuid.uuid4().hex,
-            "method": "message/send",
-            "params": {
-                "message": {
-                    "role": "user",
-                    "messageId": uuid.uuid4().hex,
-                    "parts": [
-                        {
-                            "kind": "text",
-                            "text": json.dumps(
-                                {
-                                    "claimId": claim_id,
-                                    "policyNumber": "POL-77120",
-                                    "description": "Rear-end collision at a junction",
-                                    "estimatedAmount": amount,
-                                }
-                            ),
-                        }
-                    ],
-                }
-            },
-        },
-        headers={"traceparent": traceparent},
-        timeout=SETTLEMENT_TIMEOUT_S,
-    )
-    response.raise_for_status()
-    body = response.json()
-    assert "error" not in body, (
-        f"claims-agent refused claim {claim_id!r}: {response.text[:500]}"
-    )
-    return json.loads(body["result"]["parts"][0]["text"])
+    """One settlement, submitted to claims-agent over A2A, no browser
+    (`tests.harness.live.submit_claim`). Returns the reply only; this file
+    reads no trace id."""
+    return live.submit_claim(
+        claim_id, amount, claims_agent_url=CLAIMS_AGENT_URL, timeout=SETTLEMENT_TIMEOUT_S
+    )["reply"]
 
 
 def _post_score(claim_id: str, *, emit: bool) -> dict:
