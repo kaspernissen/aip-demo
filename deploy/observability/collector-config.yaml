@@ -84,12 +84,14 @@ processors:
   # tests/e2e/test_opensearch_trace_ingest.py asserts both halves of that
   # against the live cluster.
   #
-  # ONE key, because one is all that collides: enumerating every attribute
-  # key Jaeger holds across all ten services (/api/traces per service) turns
-  # up 114 distinct span attribute keys, of which `policy.decision` ->
-  # `policy.decision.retryable` is the only pair where one key is a dotted
-  # prefix of another. No resource attribute and no span-event attribute
-  # collides at all.
+  # TWO families, because two are all that collide: enumerating every
+  # attribute key Jaeger holds across all thirteen services at stage 7
+  # (/api/traces per service, 2026-10-12) turns up 168 distinct span
+  # attribute keys, and the only pairs where one key is a dotted prefix of
+  # another are `policy.decision` -> `policy.decision.retryable` (ours) and
+  # `admission.request.kind` -> `admission.request.kind.{group,kind,version}`
+  # (Kyverno's, stage 7 only). No resource attribute and no span-event
+  # attribute collides at all.
   #
   # WHAT PINS THAT, stated precisely -- the mapping is index-wide, so the two
   # colliding keys need not be on the same span or even come from the same
@@ -118,6 +120,28 @@ processors:
         from_attribute: policy.decision.retryable
         action: insert
       - key: policy.decision.retryable
+        action: delete
+      # Kyverno's admission spans (stage 7) emit `admission.request.kind` -- an
+      # empty string -- next to `admission.request.kind.{group,kind,version}`,
+      # which OpenSearch would have to map as an object. The keys are
+      # Kyverno's own, so the source scan in tests/unit/test_stage4_config.py
+      # cannot see them; THIRD_PARTY_COLLISIONS there pins them instead.
+      # Without these renames OpenSearch rejects every batch that carries a
+      # Kyverno span, and the Northstar spans in the same batch with it.
+      - key: admission.request.kind_group
+        from_attribute: admission.request.kind.group
+        action: insert
+      - key: admission.request.kind.group
+        action: delete
+      - key: admission.request.kind_kind
+        from_attribute: admission.request.kind.kind
+        action: insert
+      - key: admission.request.kind.kind
+        action: delete
+      - key: admission.request.kind_version
+        from_attribute: admission.request.kind.version
+        action: insert
+      - key: admission.request.kind.version
         action: delete
   # END stage-4-only
 

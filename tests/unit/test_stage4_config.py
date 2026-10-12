@@ -824,6 +824,40 @@ def test_the_opensearch_compat_processor_covers_every_colliding_attribute():
             )
 
 
+# Collisions in keys a third-party component emits, which the first-party
+# source scan above cannot see. Measured against live Jaeger at stage 7 on
+# 2026-10-12: Kyverno v1.19.1's admission spans carry `admission.request.kind`
+# (an empty string) beside `admission.request.kind.{group,kind,version}`.
+# Before the rename the collector logged 169 permanent `Exporting failed`
+# rejections from `opensearch/trace` in 90 minutes, and each one took the
+# Northstar spans batched with it.
+THIRD_PARTY_COLLISIONS = {
+    ("admission.request.kind", "admission.request.kind.group"),
+    ("admission.request.kind", "admission.request.kind.kind"),
+    ("admission.request.kind", "admission.request.kind.version"),
+}
+
+
+def test_every_known_third_party_collision_is_renamed_on_the_opensearch_branch():
+    """Same rule as the first-party test, for keys only live data reveals.
+
+    The backstop for a NEW third-party collider is still the gate's log
+    assertion in tests/e2e/test_opensearch_trace_ingest.py; this pins the
+    ones already found so a config edit cannot quietly undo them.
+    """
+    for config in COLLECTOR_CONFIGS:
+        parsed = yaml.safe_load(config.read_text())
+        actions = parsed["processors"]["attributes/opensearch-compat"]["actions"]
+        deleted = {a["key"] for a in actions if a.get("action") == "delete"}
+        copied_from = {a["from_attribute"] for a in actions if a.get("from_attribute")}
+        for shorter, longer in sorted(THIRD_PARTY_COLLISIONS):
+            assert longer in deleted and longer in copied_from, (
+                f"{config.name}: {longer!r} collides with {shorter!r} but is "
+                "not renamed on the OpenSearch branch, so every batch carrying "
+                "a Kyverno admission span is rejected, Northstar spans included"
+            )
+
+
 def test_the_rename_is_confined_to_the_opensearch_branch():
     """The rename is OpenSearch-branch only, as far as a unit test can see it.
 

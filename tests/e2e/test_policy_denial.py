@@ -1408,6 +1408,12 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
         # Workload API socket path, 0.30.1 -> 0.30.2). See this test's
         # docstring for the measured one-line diff.
         "agents/settlement-agent/svid.py",
+        # Docstring- and comment-only, from 97bc786 ("make comments describe
+        # the code, not its history"). Measured 2026-10-12: each file's AST
+        # with docstrings stripped is identical at m2.1-verified and HEAD.
+        "agents/settlement-agent/correlation.py",
+        "agents/settlement-agent/main.py",
+        "tools/payments-mcp/correlation.py",
     }
     assert production_changed <= expected, (
         "production source changed in these components since m2.1-verified, "

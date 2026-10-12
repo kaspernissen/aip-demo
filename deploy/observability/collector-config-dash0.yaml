@@ -66,6 +66,28 @@ processors:
         action: insert
       - key: policy.decision.retryable
         action: delete
+      # Kyverno's admission spans (stage 7) emit `admission.request.kind` -- an
+      # empty string -- next to `admission.request.kind.{group,kind,version}`,
+      # which OpenSearch would have to map as an object. The keys are
+      # Kyverno's own, so the source scan in tests/unit/test_stage4_config.py
+      # cannot see them; THIRD_PARTY_COLLISIONS there pins them instead.
+      # Without these renames OpenSearch rejects every batch that carries a
+      # Kyverno span, and the Northstar spans in the same batch with it.
+      - key: admission.request.kind_group
+        from_attribute: admission.request.kind.group
+        action: insert
+      - key: admission.request.kind.group
+        action: delete
+      - key: admission.request.kind_kind
+        from_attribute: admission.request.kind.kind
+        action: insert
+      - key: admission.request.kind.kind
+        action: delete
+      - key: admission.request.kind_version
+        from_attribute: admission.request.kind.version
+        action: insert
+      - key: admission.request.kind.version
+        action: delete
   # END stage-4-only
 
 exporters:
