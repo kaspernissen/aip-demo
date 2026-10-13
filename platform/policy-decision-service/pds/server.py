@@ -14,13 +14,14 @@ v1.5.0 on this cluster, not assumed. The three facts this file is built on:
 3. `traceparent` is forwarded in `McpRequest.headers`, so the decision span is
    a real child of the gateway's `tools/call` SERVER span.
 
-And one fact about the way out, measured byte-for-byte: the gateway maps
-`AuthorizationError.reason` to `error.message` and `AuthorizationError.mcp_error`
-to `error.data`, parsed whole. `error.code` comes from the four-value
-`AuthorizationError.Code` enum (`PERMISSION_DENIED` -> `-32001`) and is not ours
-to choose. So the refusal a human or a model reads has to be in `reason`:
-that is what survives `str(McpError)` at the agent, while `error.data` is
-dropped by it.
+And one fact about the way out, measured on agentgateway v1.6.0: a
+`PERMISSION_DENIED` rejection on `tools/call` reaches the client as HTTP 200
+with an MCP tool result, `{"isError": true, "content": [{"type": "text",
+"text": <rejection message>}]}`. `error.data` no longer reaches it (upstream PR
+#3526); only `INTERNAL_ERROR` keeps the JSON-RPC error form, and a policy
+refusal is not an internal error. So everything the agent needs -- the reason,
+the rule, the limit, the requested amount -- rides in the message text, in the
+one format `pds/deny_text.py::format_deny` writes.
 """
 from __future__ import annotations
 
@@ -49,6 +50,7 @@ from pds.autonomy import (
     emit_evaluation_event,
     resolve_autonomy,
 )
+from pds.deny_text import format_deny
 from pds.identity import caller_spiffe_id
 from pds.rules import Decision, PolicyInput, decide
 
@@ -83,9 +85,10 @@ _flag_client = api.get_client()
 _flag_client.add_hooks([TracingHook()])
 
 # The JSON-RPC application-error range. The exact code is ours because this is
-# our error -- and it is worth being clear that the client never sees it:
-# `mcp_error` lands whole under `error.data`, so this code appears at
-# `$.error.data.code` while `$.error.code` is the gateway's -32001.
+# our error -- and the client never sees it: on agentgateway v1.6.0 a deny is
+# returned as an `isError` tool result whose text is the message below, and
+# `error.data` (where this code and the decision body used to land) is dropped.
+# The body is still sent in `mcp_error` in case a gateway version reads it.
 DENY_JSONRPC_CODE = -32003
 
 # Only `tools/call` is configured to reach us (the gateway's `methods` block),
@@ -188,22 +191,18 @@ def build_result(
     `metadata`. The response side is unused and touching a successful call
     would put the PDS in its data path for no gain.
 
-    A deny carries the reason twice, because two different consumers read two
-    different places and neither can see the other's:
-
-    - `AuthorizationError.reason` becomes `error.message`, which is what
-      `str(McpError)` yields at the agent and therefore the only text that
-      reaches the A2A caller and the model that must narrate the refusal.
-    - `mcp_error` becomes `error.data`, parsed whole, which `str(McpError)`
-      drops -- but which `mcp_tools.py` can still read off `exc.error.data` to
-      key its terminal branch on `retryable: false`.
+    A deny carries the same formatted text (`format_deny`) twice, because which
+    of `AuthorizationError.reason` and `mcp_error.message` the gateway reads
+    into its rejection message is not ours to rely on. On v1.6.0 that text is
+    the tool result's `content[0].text`, and the agent parses the tag at its end.
     """
     if permit:
         return pb.McpRequestResult(**{"pass": pb.Pass()})
 
+    text = format_deny(reason, rule, limit, requested)
     body = {
         "code": DENY_JSONRPC_CODE,
-        "message": reason,
+        "message": text,
         "data": {
             "rule": rule,
             "limit": limit,
@@ -217,7 +216,7 @@ def build_result(
     return pb.McpRequestResult(
         error=pb.AuthorizationError(
             code=pb.AuthorizationError.PERMISSION_DENIED,
-            reason=reason,
+            reason=text,
             mcp_error=json.dumps(body).encode("utf-8"),
         )
     )

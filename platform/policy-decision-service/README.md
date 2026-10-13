@@ -12,7 +12,7 @@ It implements `agentgateway.dev.ext_mcp.ExtMcp` on port **9100**.
 cd platform/policy-decision-service && ./gen-stubs.sh
 ```
 
-`proto/ext_mcp.proto` is vendored from agentgateway v1.5.0 and is the only
+`proto/ext_mcp.proto` is vendored from agentgateway v1.6.0 and is the only
 source of truth for the wire contract. The generated `ext_mcp_pb2.py` and
 `ext_mcp_pb2_grpc.py` are **git-ignored** and produced by that script — at dev
 time by hand, and again inside `docker build`, which runs the same file

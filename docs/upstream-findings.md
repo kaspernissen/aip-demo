@@ -1560,6 +1560,8 @@ maintainers.
 
 ## Finding 9: `AuthorizationError.mcp_error` is documented as overriding the JSON-RPC error and does not — it is nested whole under `error.data` while the gateway assigns its own code
 
+**Superseded at agentgateway v1.6.0 (2026-10-13): a `tools/call` deny is now an `isError` tool result and `error.data` is not sent. See Finding 17. The text below describes v1.5.0.**
+
 **The problem, plainly:** the ExtMCP protobuf's own comment on
 `AuthorizationError.mcp_error` reads *"Optional explicit JSON-RPC error
 payload, as raw JSON bytes. **Overrides the code-derived default.**"* At
@@ -2846,6 +2848,66 @@ exists to record a real cost this project paid against a working-as-designed
 default, not to propose upstream change.
 
 ---
+
+## Finding 17: v1.6.0 returns an ExtMCP deny on `tools/call` as an `isError` tool result, and `error.data` — where the PDS's deny marker lived — is gone
+
+**Status: local, not filed.** This is a behaviour change between two releases
+of a component this project does not own, recorded because it overturned a
+claim Finding 9 documents and a property the deck states ("HTTP 200 means no,
+carrying JSON-RPC error `-32001`").
+
+**Project and version:** `agentgateway` `cr.agentgateway.dev/agentgateway`
+v1.5.0 → v1.6.0, measured on this cluster on 2026-10-13 (M8 Task 0). Upstream
+change: PR [`#3526`](https://github.com/agentgateway/agentgateway/pull/3526),
+`tool_error_body` in `crates/agentgateway/src/mcp/mod.rs`.
+
+**What changed, plainly.** A `PERMISSION_DENIED` `AuthorizationError` from the
+ExtMCP `mcpGuardrails` hook, on a `tools/call`, used to come back as HTTP 200
+with a JSON-RPC **error** (`error.code = -32001`, `error.message` the PDS's
+reason, `error.data` the PDS's `mcp_error` payload whole; Finding 9). On v1.6.0
+it comes back as HTTP 200 with a JSON-RPC **result** carrying an MCP tool
+error, and nothing of `mcp_error` survives. Only
+`AuthorizationError.Code == INTERNAL_ERROR` keeps the JSON-RPC error form, and a
+policy refusal is not an internal error, so this project does not use it to get
+the old shape back.
+
+**The wire bytes, measured** (direct `tools/call`, EUR 6,200 `execute_payment`
+at autonomy level `assisted`, `Content-Type: application/json`):
+
+```
+HTTP/1.1 200 OK
+{"jsonrpc":"2.0","id":"2","result":{"content":[{"type":"text","text":"requested 6200 EUR exceeds the 6000 EUR limit for this agent at autonomy level assisted [policy-denial rule=settlement-agent.assisted.execute_limit limit=6000.00 requested=6200.00]"}],"isError":true}}
+```
+
+The text is the PDS's `AuthorizationError.reason`, byte for byte. On v1.5.0 the
+gateway's own prefix `mcp: mcpGuardrails rejected: ` came with it into
+`error.message`; on v1.6.0 the **response** text carries no prefix (the SERVER
+span's `otel.status_description` still does). The agent's parser is anchored on
+the tag at the end of the text, so it does not depend on the prefix either way.
+
+**What this project did about it.** The facts a client needs (rule, limit,
+requested amount) now ride in the message text, in one fixed format written by
+`platform/policy-decision-service/pds/deny_text.py::format_deny` and read by
+`agents/settlement-agent/policy_denial_text.py::parse_deny`:
+`<reason> [policy-denial rule=<rule> limit=<amount|none> requested=<amount|none>]`.
+A contract test feeds the PDS's real output into the agent's real parser, and
+an `isError` result with no tag stays a malfunction, never a policy decision.
+
+**Two neighbours of the same upgrade**, measured in the same pass:
+
+- The gateway's SERVER spans moved to stable HTTP semantic conventions (PR
+  `#3182`): `http.request.method`, `http.response.status_code`, `url.path`,
+  `client.address`, `server.address`, `server.port` replace `http.method`,
+  `http.status`, `http.path`, `src.addr`, `http.host`, `http.version`.
+  `docs/telemetry-contract.md` carries the re-measured tables.
+- Refused SERVER spans gained `error.type` (`"MCP"` for a policy refusal,
+  `"JwtAuth"` for an authentication one) beside the existing `error = true`.
+  A scalar and its dotted extension on one key cannot be mapped by OpenSearch,
+  so the collector's `attributes/opensearch-compat` processor now renames
+  `error.type` to `error_type` on the OpenSearch branch.
+
+The ExtMCP proto is byte-identical between the two releases and
+`deploy/platform/agentgateway/config.yaml` validates unchanged.
 
 ## Open questions — not findings, because nobody has demonstrated them
 

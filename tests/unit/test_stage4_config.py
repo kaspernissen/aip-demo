@@ -835,6 +835,9 @@ THIRD_PARTY_COLLISIONS = {
     ("admission.request.kind", "admission.request.kind.group"),
     ("admission.request.kind", "admission.request.kind.kind"),
     ("admission.request.kind", "admission.request.kind.version"),
+    # agentgateway v1.6.0, on a refused tools/call SERVER span (measured
+    # 2026-10-13): `error` = true beside `error.type` = "MCP".
+    ("error", "error.type"),
 }
 
 
@@ -854,7 +857,8 @@ def test_every_known_third_party_collision_is_renamed_on_the_opensearch_branch()
             assert longer in deleted and longer in copied_from, (
                 f"{config.name}: {longer!r} collides with {shorter!r} but is "
                 "not renamed on the OpenSearch branch, so every batch carrying "
-                "a Kyverno admission span is rejected, Northstar spans included"
+                "a Kyverno admission span or a refused gateway span is rejected, "
+                "Northstar spans included"
             )
 
 

@@ -1,31 +1,24 @@
-"""The deny-marker contract, asserted against **both** real implementations.
+"""The deny-text contract, asserted against **both** real implementations.
 
-Before this file the marker was hand-duplicated: the PDS wrote
-`"decision": "deny"` in `pds/server.py::build_result`, and
-`tests/test_mcp_tools.py` carried a copied literal of the same body. Producer
-and consumer of a contract with nothing asserting they agree is the classic
-silent-drift shape, and it was measured: changing the PDS to emit `"denied"`
-reddened two tests in the PDS suite and **zero** here, even though this
-service is the thing that stops narrating a refusal when the marker changes.
-
-So this file does not copy anything. It drives the real chain, end to end,
-from the bytes the gateway measurably sends the PDS to the exception
-`mcp_tools._policy_denial` measurably receives:
+The PDS writes the deny message in `pds/deny_text.py::format_deny`; the agent
+reads it with `policy_denial_text.parse_deny` inside `mcp_tools._unwrap`.
+Producer and consumer of a contract with nothing asserting they agree is the
+classic silent-drift shape. So this file does not copy anything. It drives the
+real chain, end to end, from the bytes the gateway measurably sends the PDS to
+the exception `mcp_tools._unwrap` raises:
 
     the measured `mcp_request` bytes
       -> pds.server.parse_call          (the PDS's real wire parser)
       -> pds.rules.decide               (the real policy)
-      -> pds.server.build_result        (the real deny body)
-      -> the gateway's measured mapping (`_as_it_arrives_at_the_agent`)
-      -> mcp.shared.exceptions.MCPError (the real exception type)
-      -> mcp_tools._policy_denial       (the real detector)
+      -> pds.server.build_result        (the real deny, via format_deny)
+      -> agentgateway v1.6.0's mapping  (`_as_it_arrives_at_the_agent`)
+      -> mcp.types.CallToolResult       (the real result type)
+      -> mcp_tools._unwrap              (the real reader, via parse_deny)
 
 Only one hop in that chain is a stand-in, and it is the one hop that is not
-Python: agentgateway. Its mapping is not invented here either -- it was
-measured byte-for-byte (`AuthorizationError.reason` -> `error.message`,
-`mcp_error` parsed whole -> `error.data`, `error.code` -> the gateway's own
-`-32001`, never the `-32003` inside the body) and `_as_it_arrives_at_the_agent`
-is that mapping and nothing else.
+Python: agentgateway. Its mapping was measured on v1.6.0: a PERMISSION_DENIED
+rejection on `tools/call` becomes HTTP 200 with an `isError` tool result whose
+text is the rejection message (upstream PR #3526). `error.data` is gone.
 
 **The import of `pds` is test-only.** Nothing in `agents/settlement-agent`'s
 production code imports the PDS, and nothing may: the agent reaches the policy
@@ -51,10 +44,9 @@ transitive closure). This does not add anything to
 service's `.venv` -- it reads a sibling venv's already-installed packages
 exactly as it already reads a sibling service's already-written source.
 
-Concrete regression check: change `"decision": "deny"` to `"denied"` in
-`pds/server.py::build_result` and
-`test_the_pds_deny_body_is_recognised_by_the_agents_own_detector` fails here,
-outside the PDS suite, which is the whole point of the file.
+Concrete regression check: change `DENY_TAG` in `pds/deny_text.py` and
+`test_the_pds_deny_is_a_policy_denial_at_the_agent` fails here, outside the PDS
+suite, which is the whole point of the file.
 """
 from __future__ import annotations
 
@@ -63,9 +55,9 @@ import pathlib
 import sys
 
 import pytest
-from mcp.shared.exceptions import MCPError
+from mcp.types import CallToolResult, TextContent
 
-from mcp_tools import PolicyDenial, _deny_marker, _policy_denial
+from mcp_tools import PolicyDenial, _unwrap
 
 # --- the test-only path to the producer -------------------------------------
 
@@ -106,6 +98,7 @@ for _site_packages in _PDS_SITE_PACKAGES:
 try:  # pragma: no cover - the failure path is exercised by deleting the stubs
     from pds.autonomy import RESTRICTIVE_LEVEL
     from pds.rules import PolicyInput, decide
+    from pds import server
     from pds.server import build_result, parse_call
 except ImportError as exc:
     raise RuntimeError(str(exc) + _HOW) from exc
@@ -164,65 +157,49 @@ def _pds_decision(params: bytes):
     return decision, result
 
 
-def _as_it_arrives_at_the_agent(result) -> MCPError:
-    """agentgateway's mapping, measured byte-for-byte.
-
-    The one hop in this chain that is not Python. `reason` becomes
-    `error.message`; `mcp_error` is parsed whole and becomes `error.data`; the
-    code is the gateway's `-32001` (`PERMISSION_DENIED`) and never the
-    `-32003` the PDS put inside the body.
-    """
-    return MCPError(
-        code=-32001,
-        message=result.error.reason,
-        data=json.loads(result.error.mcp_error),
+def _as_it_arrives_at_the_agent(pds_result) -> CallToolResult:
+    """agentgateway v1.6.0's mapping, measured: a PERMISSION_DENIED rejection on
+    tools/call becomes HTTP 200, `result: {isError: true, content: [{type: text,
+    text: <rejection message>}]}`. The PDS puts the same text in `reason` and in
+    `mcp_error.message`, so this does not depend on which one the gateway reads."""
+    assert pds_result.WhichOneof("result") == "error"
+    return CallToolResult(
+        isError=True,
+        content=[TextContent(type="text", text=pds_result.error.reason)],
     )
 
 
 # --- the contract -----------------------------------------------------------
 
 
-def test_the_pds_deny_body_is_recognised_by_the_agents_own_detector():
-    """The finding, closed. Nothing here is copied from the PDS.
-
-    Change the marker key or its value in `pds/server.py::build_result` and
-    this fails -- in `agents/settlement-agent`, not only in the PDS suite.
-    """
+def test_the_pds_deny_is_a_policy_denial_at_the_agent():
+    """Nothing here is copied from the PDS. Change the tag or its fields in
+    `pds/deny_text.py` and this fails -- in `agents/settlement-agent`, not only
+    in the PDS suite."""
     decision, result = _pds_decision(MEASURED_EXECUTE)
     assert decision.permit is False, "the fixture stopped being a denial at all"
 
-    denial = _policy_denial(_as_it_arrives_at_the_agent(result))
+    with pytest.raises(PolicyDenial) as raised:
+        _unwrap(_as_it_arrives_at_the_agent(result))
 
-    assert isinstance(denial, PolicyDenial), (
-        "the PDS's real deny body was not recognised as a denial by "
-        "mcp_tools._policy_denial -- producer and consumer have drifted"
-    )
-    # Every structured fact, taken from the PDS's own Decision rather than
-    # from a literal typed here.
-    assert denial.rule == decision.rule
-    assert denial.limit == decision.limit
-    assert denial.retryable is decision.retryable
-    assert denial.requested == 6200.0
-    # And the narration text is the PDS's reason, unaltered.
-    assert decision.reason in str(denial)
+    assert raised.value.rule == decision.rule
+    assert raised.value.limit == decision.limit
+    assert raised.value.requested == 6200.0
+    assert raised.value.retryable is False
+    assert decision.reason in str(raised.value)
 
 
-def test_the_marker_the_two_sides_agree_on_is_decision_deny():
-    """The contract stated as one assertion, in both parties' terms.
-
-    `_deny_marker` is the consumer's whole notion of what a denial is; this
-    pins that the producer's body satisfies exactly that and by that key.
-    """
+def test_reason_and_mcp_error_message_are_the_same_text_for_the_real_pds():
+    """Which of the two the gateway reads is not ours to know; both must parse."""
     _, result = _pds_decision(MEASURED_EXECUTE)
-    body = json.loads(result.error.mcp_error)
+    assert result.error.reason == json.loads(result.error.mcp_error)["message"]
 
-    marker = _deny_marker(_as_it_arrives_at_the_agent(result))
-    assert marker is not None
-    assert marker["decision"] == "deny"
-    # ...and it is the nested member, which is where the gateway's whole-payload
-    # mapping puts it. A producer that moved it up a level would still be
-    # recognised (the detector checks both), but this records where it is today.
-    assert body["data"] is marker or body["data"] == marker
+
+def test_the_pds_internal_error_deny_is_also_a_policy_denial():
+    pds_result = server._internal_error_result()
+    with pytest.raises(PolicyDenial) as raised:
+        _unwrap(_as_it_arrives_at_the_agent(pds_result))
+    assert raised.value.rule == "internal_error"
 
 
 def test_the_pds_permit_result_gives_the_detector_nothing_to_find():
@@ -242,45 +219,17 @@ def test_the_pds_permit_result_gives_the_detector_nothing_to_find():
     assert result.WhichOneof("result") == "pass"
 
 
-def test_the_hand_written_denial_fixtures_still_match_what_the_pds_emits():
-    """`tests/test_mcp_tools.py`'s fixtures are literals, and stay honest here.
-
-    Those literals exist so the unit tests can run without importing the PDS
-    at all (they cover parsing, not the contract). This test is what stops
-    them drifting: the reason string, every key, and every value are compared
-    against what the real producer emits for the same request.
-    """
-    from test_mcp_tools import DENY_REASON, _denial_body
-
-    _, result = _pds_decision(MEASURED_EXECUTE)
-    real = json.loads(result.error.mcp_error)
-    copied = _denial_body()
-
-    assert result.error.reason == DENY_REASON, (
-        "test_mcp_tools.DENY_REASON no longer matches the PDS's own refusal "
-        "text; the model narrates that text, so update the fixture"
-    )
-    assert copied == real, (
-        "test_mcp_tools._denial_body() has drifted from the body the PDS "
-        f"actually emits:\n  fixture: {copied}\n  real:    {real}"
-    )
-
-
-def test_a_denial_with_an_unreadable_amount_still_carries_the_marker():
-    """The `"requested": null` case, from the real producer.
-
-    A hostile or unparseable amount is denied with a strictly-valid body whose
-    `requested` is null. Both sides have to survive that: the PDS emits it, and
-    the agent's detector must not raise while handling a denial.
-    """
+def test_a_denial_with_an_unreadable_amount_still_parses():
+    """A hostile or unparseable amount is denied with `requested=none`. Both
+    sides have to survive that: the PDS writes it, and the agent must not raise
+    anything but PolicyDenial while handling it."""
     hostile = b'{"name":"execute_payment","arguments":{"amount":"6200"}}'
     decision, result = _pds_decision(hostile)
     assert decision.permit is False
-    assert json.loads(result.error.mcp_error)["data"]["requested"] is None
 
-    denial = _policy_denial(_as_it_arrives_at_the_agent(result))
-    assert isinstance(denial, PolicyDenial)
-    assert denial.requested is None
+    with pytest.raises(PolicyDenial) as raised:
+        _unwrap(_as_it_arrives_at_the_agent(result))
+    assert raised.value.requested is None
 
 
 def test_the_agent_does_not_import_the_pds_in_production():

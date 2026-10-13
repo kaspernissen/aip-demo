@@ -32,7 +32,7 @@ either of them.
 
 | Direction | Protocol | Detail |
 |---|---|---|
-| In | ExtMCP over gRPC | `agentgateway.dev.ext_mcp.ExtMcp`, port `9100`. The proto is vendored verbatim at gateway v1.5.0. |
+| In | ExtMCP over gRPC | `agentgateway.dev.ext_mcp.ExtMcp`, port `9100`. The proto is vendored verbatim at gateway v1.6.0 (byte-identical to v1.5.0). |
 | Out | gRPC | flagd on `localhost:8013`, inside this same pod. |
 
 A **denial is the `error` branch** of the response oneof; a permit is `pass`.

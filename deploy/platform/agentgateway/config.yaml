@@ -1,9 +1,16 @@
-# agentgateway v1.5.0 standalone config. Image:
-# cr.agentgateway.dev/agentgateway:v1.5.0 (note the leading `v` — the tag
-# `1.5.0` with no `v` does not exist on cr.agentgateway.dev; confirmed by a
-# failed `docker pull` against that exact string. `agentgateway --version`
-# reports the bare "1.5.0" as its internal version string, but the pullable
-# image tag carries the `v` prefix).
+# agentgateway v1.6.0 standalone config. Image:
+# cr.agentgateway.dev/agentgateway:v1.6.0 (note the leading `v` -- the tag
+# `1.6.0` with no `v` does not exist on cr.agentgateway.dev, as for 1.5.0.
+# `agentgateway --version` reports the bare "1.6.0" as its internal version
+# string, but the pullable image tag carries the `v` prefix).
+#
+# Upstream check, 2026-10-13: v1.6.0 (GA 2026-10-02, the newest non-prerelease
+# per `gh api repos/agentgateway/agentgateway/releases`) bumped from v1.5.0
+# (2026-08-27). The v1.6.0, -rc.1, -alpha.2 and -alpha.1 release notes were read
+# for everything this file touches. This file's keys needed no change to parse:
+# the v1.5.0 and v1.6.0 images both reach the JWKS fetch (the validator's
+# last stage) on this exact file. One key was ADDED for a changed default:
+# `frontendPolicies.tracing.parentNotSampled` (see below).
 #
 # The external `ExtMCP` gRPC hook is configured below, as `mcpGuardrails`,
 # pointed at the Policy Decision Service and set to `failureMode: failClosed`.
@@ -11,7 +18,7 @@
 # decision belongs to the PDS, not to this file.
 #
 # Schema verified directly against the pinned image: `docker run --rm
-# cr.agentgateway.dev/agentgateway:v1.5.0 -f config.yaml --validate-only`
+# cr.agentgateway.dev/agentgateway:v1.6.0 -f config.yaml --validate-only`
 # returns "Configuration is valid!" for exactly the shape below. Source of
 # truth for this schema is the agentgateway repo's examples/ directory, NOT
 # its documentation site -- the docs are thin and unreliable; the examples
@@ -49,11 +56,23 @@
 # it"). settlement-agent always sends the header (HTTPXClientInstrumentor), so
 # our spans would appear either way; this makes a headerless caller visible
 # too, instead of silently untraced.
+#
+# `parentNotSampled: true` is new in v1.6.0 (upstream PR #3316, verified in
+# v1.6.0's `TraceSampler::trace_sampled`, log.rs:554-579) and is the same
+# standing requirement as `randomSampling`: 100% of telemetry, always. v1.6.0
+# splits the incoming-`traceparent` case in two: a sampled parent (`-01`) still
+# defaults to recorded (`clientSampling`, default true), but an UNSAMPLED parent
+# (`-00`) now follows `parentNotSampled`, which defaults to false -- the
+# OpenTelemetry ParentBased sampler's `remoteParentNotSampled` delegate. No
+# caller here sends `-00` today (every SDK is always-on), so this changes
+# nothing measured; it is set so that a caller that ever does is recorded
+# rather than silently dropped by a default that moved under the pin.
 frontendPolicies:
   tracing:
     host: otel-collector.observability.svc.cluster.local:4317
     protocol: grpc
     randomSampling: true
+    parentNotSampled: true
 binds:
 - port: 3000
   listeners:
@@ -85,7 +104,7 @@ binds:
     # at v1.5.0 shows the same keys (there with `jwks.file`).
     #
     # Validated against the pinned image before deploying, from this directory:
-    #   docker run --rm -v .:/w cr.agentgateway.dev/agentgateway:v1.5.0 \
+    #   docker run --rm -v .:/w cr.agentgateway.dev/agentgateway:v1.6.0 \
     #     -f /w/config.yaml --validate-only
     #
     # Note the literal `.` rather than the shell's usual current-directory
@@ -159,7 +178,7 @@ binds:
         # by iterating against the pinned image's own validator, not read off
         # documentation. Validate before deploying, from
         # deploy/platform/agentgateway:
-        #   docker run --rm -v .:/c cr.agentgateway.dev/agentgateway:v1.5.0 \
+        #   docker run --rm -v .:/c cr.agentgateway.dev/agentgateway:v1.6.0 \
         #     --validate-only -f /c/config.yaml
         # A rejected config names the offending key. Note that the validator
         # goes on to fetch the JWKS, so reaching that stage already proves the

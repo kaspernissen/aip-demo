@@ -5,7 +5,7 @@
 # produced by this script -- at dev time by hand, and at Docker
 # build time by the Dockerfile, which runs this same file. Committing them would
 # let the image and the repo disagree about a contract whose only source of
-# truth is `proto/ext_mcp.proto` (vendored at agentgateway v1.5.0).
+# truth is `proto/ext_mcp.proto` (vendored at agentgateway v1.6.0).
 #
 # The stubs land in this directory, flat, because protoc emits
 # `import ext_mcp_pb2` inside `ext_mcp_pb2_grpc.py` -- so the directory holding

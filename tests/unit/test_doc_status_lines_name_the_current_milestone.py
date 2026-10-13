@@ -26,7 +26,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLANS_DIR = REPO_ROOT / "docs" / "superpowers" / "plans"
 
-_PLAN_MILESTONE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-m(\d+)(?:\.\d+)?-", re.I)
+_PLAN_MILESTONE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-(?:northstar-)?m(\d+)(?:\.\d+)?-", re.I)
 
 
 def _current_milestone_tag() -> str:

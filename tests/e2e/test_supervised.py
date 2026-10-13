@@ -214,23 +214,19 @@ def _get_payment(payment_id: str) -> dict:
     return response.json()
 
 
-def _deny_marker(error: dict | None) -> dict:
-    """The structured `{"decision": "deny", ...}` marker `mcp_tools._deny_marker`
-    builds, read back off a JSON-RPC error exactly the way
-    `test_policy_denial.py::test_criterion_5...` does: agentgateway parses the
-    PDS's own JSON-RPC error object whole into `error.data`, so the marker can
-    sit one level down or, if the gateway ever stops double-wrapping, at
-    `error.data` itself. Both positions are checked."""
-    assert error is not None, "expected a JSON-RPC error carrying a deny marker, got none"
-    data = error.get("data")
-    if isinstance(data, dict):
-        for candidate in (data.get("data"), data):
-            if isinstance(candidate, dict) and candidate.get("decision") == "deny":
-                return candidate
-    raise AssertionError(
-        f"no structured deny marker on this JSON-RPC error, so the refusal "
-        f"cannot be distinguished from a transport error or an outage: {error!r}"
+def _deny_marker(outcome) -> SimpleNamespace:
+    """The PDS denial on a direct `tools/call`, read with the agent's own parser
+    (`Outcome.denial`): agentgateway v1.6.0 answers a deny as HTTP 200 with an
+    `isError` tool result whose text ends in the `[policy-denial ...]` tag.
+    Returned with `.get()` so the call sites read as before."""
+    denial = outcome.denial
+    assert denial is not None, (
+        "no policy-denial tag on this tool result, so the refusal cannot be "
+        f"distinguished from a transport error or an outage: {outcome!r}"
     )
+    fields = {"rule": denial.rule, "limit": denial.limit,
+              "requested": denial.requested, "retryable": False}
+    return SimpleNamespace(get=fields.get, **fields)
 
 
 def _raw_span_for(trace, operation: str, service: str) -> dict:
@@ -987,11 +983,11 @@ def test_criterion_6_the_junior_identity_still_cannot_execute_6200_after_the_app
         {"payment_id": payment_id, "amount": DENIED_AMOUNT, "currency": "EUR"},
         headers={"authorization": f"Bearer {valid_svid}"},
     )
-    assert result.tool_result is None, (
+    assert (result.tool_result or {}).get("isError") is True, (
         "THE JUNIOR IDENTITY EXECUTED A PAYMENT ITS OWN APPROVAL NEVER "
         f"WIDENED ITS ALLOWANCE FOR: {result!r}"
     )
-    marker = _deny_marker(result.jsonrpc_error)
+    marker = _deny_marker(result)
     assert marker.get("rule") == "settlement-agent.assisted.execute_limit", (
         "the junior was refused, but not under its own execute-limit rule -- "
         f"something else decided this: {marker!r}"
@@ -1058,11 +1054,11 @@ def test_criterion_7_reviewer_uis_own_spiffe_id_cannot_execute_a_payment(
         {"payment_id": payment_id, "amount": 100, "currency": "EUR"},
         headers={"authorization": f"Bearer {reviewer_ui_svid}"},
     )
-    assert result.tool_result is None, (
+    assert (result.tool_result or {}).get("isError") is True, (
         "REVIEWER-UI'S OWN IDENTITY EXECUTED A PAYMENT -- the surface that "
         f"approves payouts can now also make one: {result!r}"
     )
-    marker = _deny_marker(result.jsonrpc_error)
+    marker = _deny_marker(result)
     assert marker.get("rule") == "unknown_caller", (
         "reviewer-ui's identity was refused, but not for having no execute "
         f"allowance -- rule {marker.get('rule')!r}: {marker!r}"

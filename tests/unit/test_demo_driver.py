@@ -137,7 +137,7 @@ def test_a_refused_claim_that_executes_would_fail_the_run():
         "traceID": "t",
         "processes": {n: {"serviceName": n} for n in ("agentgateway", "policy-decision-service", "payments-api")},
         "spans": [
-            span("g", None, "agentgateway", "tools/call", **{"gen_ai.tool.name": "execute_payment", "http.status": 200}),
+            span("g", None, "agentgateway", "tools/call", **{"gen_ai.tool.name": "execute_payment", "http.response.status_code": 200}),
             span("r", "g", "agentgateway", "Guardrail"),
             span("d", "g", "policy-decision-service", "policy.decision", **{
                 "policy.tool.name": "execute_payment", "policy.decision": "deny",

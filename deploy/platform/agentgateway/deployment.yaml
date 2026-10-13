@@ -40,7 +40,7 @@ spec:
       serviceAccountName: agentgateway
       containers:
         - name: agentgateway
-          image: cr.agentgateway.dev/agentgateway:v1.5.0
+          image: cr.agentgateway.dev/agentgateway:v1.6.0
           args: ["-f", "/etc/agentgateway/config.yaml"]
           ports:
             - name: mcp

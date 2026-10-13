@@ -400,12 +400,12 @@ def render_span_tree(trace: Trace, executed_expected: bool) -> dict:
     if settlement:
         out(f"  settlement-agent  {paint('execute_tool execute_payment', 'bold')}"
             "   the model asks")
-    status = gateway.attrs.get("http.status")
+    status = gateway.attrs.get("http.response.status_code")
     out(f"  +- agentgateway  {paint('tools/call execute_payment', 'bold')}"
         f"   HTTP {status}  {gateway.attrs.get('otel.status_code', 'OK')}")
     out(f"      jwt.sub  {short_id(gateway.attrs.get('jwt.sub'))}")
     if denied and str(status) == "200":
-        out(paint("      HTTP 200: the answer is a JSON-RPC error. A no is not an HTTP failure.", "dim"))
+        out(paint("      HTTP 200: the answer is a tool result marked isError. A no is not an HTTP failure.", "dim"))
     out(f"    +- {GUARDRAIL_SPAN}   the gateway asks the decision service")
     mark = word("DENY", "stop") if denied else word("PERMIT", "go")
     out(f"    +- {live.PDS_SERVICE}  {paint('policy.decision', 'bold')}  {mark}")

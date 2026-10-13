@@ -1561,43 +1561,30 @@ def test_criterion_5_the_decision_changes_when_the_callers_spiffe_id_changes(
 
     # The stranger, at the identical amount: denied, and denied on identity.
     stranger = execute_as(stranger_svid, "stranger")
-    assert stranger.tool_result is None, (
-        "an identity with no execute allowance executed a payment anyway: "
-        f"{stranger!r}"
+    # agentgateway v1.6.0 answers a PDS deny as HTTP 200 carrying an `isError`
+    # tool result whose text ends in the `[policy-denial ...]` tag.
+    assert stranger.http_status == 200, stranger
+    assert (stranger.tool_result or {}).get("isError") is True, (
+        "an identity with no execute allowance did not get an isError tool "
+        f"result: {stranger!r}"
     )
-    error = stranger.jsonrpc_error
-    assert error is not None, (
-        f"expected a JSON-RPC error for the unknown caller: {stranger!r}"
+    denial = stranger.denial
+    assert denial is not None, (
+        "the refusal carries no policy-denial tag, so it cannot be "
+        f"distinguished from a transport error or an outage: {stranger!r}"
     )
-    # agentgateway parses the PDS's mcp_error -- itself a JSON-RPC error object
-    # -- whole into error.data, so the structured marker sits one level down.
-    # The un-nested position is accepted too, exactly as
-    # mcp_tools._deny_marker does, so this keeps working if the gateway ever
-    # stops double-wrapping.
-    data = error.get("data")
-    marker = None
-    if isinstance(data, dict):
-        for candidate in (data.get("data"), data):
-            if isinstance(candidate, dict) and candidate.get("decision") == "deny":
-                marker = candidate
-                break
-    assert marker is not None, (
-        "the refusal carries no structured deny marker, so it cannot be "
-        f"distinguished from a transport error or an outage: {error!r}"
-    )
-    assert marker.get("rule") == "unknown_caller", (
+    assert denial.rule == "unknown_caller", (
         "the unknown caller was refused, but not because of its identity -- "
-        f"rule {marker.get('rule')!r}. Something other than the SPIFFE ID "
+        f"rule {denial.rule!r}. Something other than the SPIFFE ID "
         "decided this, and the criterion is about the SPIFFE ID"
     )
-    assert marker.get("retryable") is False, marker
-    assert marker.get("requested") == IDENTITY_PROBE_AMOUNT, (
+    assert denial.requested == IDENTITY_PROBE_AMOUNT, (
         "the denied request must be for the same amount the authorised caller "
-        f"just executed, or the identity is not what differs: {marker!r}"
+        f"just executed, or the identity is not what differs: {denial!r}"
     )
-    assert marker.get("limit") is None, (
+    assert denial.limit is None, (
         "an unknown caller has no allowance to exceed, so no limit should be "
-        f"reported: {marker!r}"
+        f"reported: {denial!r}"
     )
 
 

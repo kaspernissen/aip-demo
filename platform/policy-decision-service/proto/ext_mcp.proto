@@ -1,10 +1,11 @@
 // VENDORED FILE -- DO NOT EDIT.
 //
-// Source:  https://raw.githubusercontent.com/agentgateway/agentgateway/v1.5.0/crates/protos/proto/ext_mcp.proto
+// Source:  https://raw.githubusercontent.com/agentgateway/agentgateway/v1.6.0/crates/protos/proto/ext_mcp.proto
 // Repo:    github.com/agentgateway/agentgateway
-// Tag:     v1.5.0  (matches the deployed image cr.agentgateway.dev/agentgateway:v1.5.0)
+// Tag:     v1.6.0  (matches the deployed image cr.agentgateway.dev/agentgateway:v1.6.0;
+//          byte-identical to the v1.5.0 file this was first vendored from)
 // Path:    crates/protos/proto/ext_mcp.proto
-// Fetched: 2026-09-10
+// Fetched: 2026-10-13
 // sha256:  4ba750cca44e9ba68de2ad04e6d507b67f44b1728f09840b78d9e32f3f563584
 //          (of the upstream bytes, i.e. this file with this comment block removed)
 //

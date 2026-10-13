@@ -35,13 +35,16 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import importlib.util
 import json
 import re
 import subprocess
+import sys
 import time
 import urllib.parse
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import httpx
 import requests
@@ -228,6 +231,19 @@ def claims(token: str) -> dict:
     return json.loads(base64.urlsafe_b64decode(payload))
 
 
+# The settlement-agent's deny parser, loaded from its file (test-only: the same
+# borrowing tests/test_policy_deny_contract.py does), so the agent and the e2e
+# tests share one parser rather than two copies that can drift.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+_DENIAL_TEXT = REPO_ROOT / "agents" / "settlement-agent" / "policy_denial_text.py"
+_spec = importlib.util.spec_from_file_location("policy_denial_text", _DENIAL_TEXT)
+_denial_text = importlib.util.module_from_spec(_spec)
+# dataclasses resolves the module by name while the class body runs.
+sys.modules.setdefault("policy_denial_text", _denial_text)
+_spec.loader.exec_module(_denial_text)
+parse_deny = _denial_text.parse_deny
+
+
 @dataclass
 class Outcome:
     """The normalised result of one direct MCP call through the gateway.
@@ -240,7 +256,7 @@ class Outcome:
     go green on a gateway with its `jwtAuth` policy deleted.
 
     So `refused` is true for exactly two shapes: **HTTP 401 with a `text/plain`
-    body** (what agentgateway v1.5.0 does in every rejection case measured), and
+    body** (what agentgateway v1.6.0 does in every rejection case measured), and
     a JSON-RPC error object riding on a non-2xx status (handled in case a later
     version moves the rejection into the MCP layer, so the property keeps being
     asserted instead of silently inverting).
@@ -252,6 +268,18 @@ class Outcome:
     jsonrpc_error: dict | None = None
     tool_result: dict | None = None
     claims: dict = field(default_factory=dict)
+
+    @property
+    def denial(self):
+        """The PDS's policy denial, if this tools/call result is one.
+
+        agentgateway v1.6.0 returns it as HTTP 200 with an `isError` tool result
+        whose text ends in the `[policy-denial ...]` tag."""
+        result = self.tool_result or {}
+        if not result.get("isError"):
+            return None
+        text = " ".join(c.get("text", "") for c in result.get("content") or [])
+        return parse_deny(text)
 
     @property
     def refused(self) -> bool:

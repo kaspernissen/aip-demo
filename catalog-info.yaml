@@ -65,7 +65,7 @@ kind: Resource
 metadata:
   name: agentgateway
   description: >-
-    The enforcement point. A Rust proxy (v1.5.0) running as a sidecar that
+    The enforcement point. A Rust proxy (v1.6.0) running as a sidecar that
     verifies the caller's JWT-SVID, refers every `tools/call` to the policy
     decision service before forwarding it, strips the credential on the way
     out, and is configured `failureMode: failClosed` -- a policy service that

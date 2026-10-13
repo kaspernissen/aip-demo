@@ -1,6 +1,6 @@
-# Northstar Architecture — M7 (Bounded), on M6's Golden path
+# Northstar Architecture — M8 (Human in the loop), on M7's Bounded
 
-Status: **M7 (Bounded)**, on branch `m7-bounded`, adding the keystone ring on top of **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
+Status: **M8 (Human in the loop)**, on branch `m8-human-in-the-loop`, on top of **M7 (Bounded)**, which sat on **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
 autonomy) merged 2026-09-15 at `e62238f`, tagged `m5-verified`** -- read that
 tag's own message before trusting it, it claims less than its predecessors.
 Bumped in M6's first commit rather than left to a doc pass: this line went

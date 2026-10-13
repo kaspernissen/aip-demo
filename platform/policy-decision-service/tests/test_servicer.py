@@ -207,6 +207,9 @@ def test_the_demo_refusal_end_to_end(spans):
         _request(params=_execute(6200.0)), None)
     assert result.WhichOneof("result") == "error"
     assert "6200" in result.error.reason and "6000" in result.error.reason
+    assert result.error.reason.endswith(
+        "[policy-denial rule=settlement-agent.assisted.execute_limit "
+        "limit=6000.00 requested=6200.00]")
     body = json.loads(result.error.mcp_error)
     assert body["data"] == {"rule": "settlement-agent.assisted.execute_limit",
                             "limit": 6000.0, "requested": 6200.0,
@@ -577,6 +580,7 @@ def test_the_servicer_answers_on_the_real_grpc_service_name(spans):
                                        timeout=10)
             assert result.WhichOneof("result") == "error"
             assert "6200" in result.error.reason
+            assert result.error.reason.endswith("requested=6200.00]")
             assert stub.CheckResponse(
                 pb.McpResponse(method="tools/call"),
                 timeout=10).WhichOneof("result") == "pass"

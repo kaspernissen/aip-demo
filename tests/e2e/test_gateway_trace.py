@@ -268,15 +268,22 @@ JAEGER_ADDED_TAGS = {"internal.span.format", "span.kind"}
 # own multiplexing convention (see `mcp-multiplex` in its examples/), not a
 # tool name payments-mcp would recognise: payments-mcp's own span for the same
 # call is named `tools/call propose_payment`.
+#
+# **Re-measured on agentgateway v1.6.0 (2026-10-13), which moved the SERVER
+# span to stable HTTP semantic conventions (upstream PR #3182).** Six keys of
+# the v1.5.0 set are gone -- `http.host`, `http.method`, `http.path`,
+# `http.status`, `http.version`, `src.addr` -- and six are new --
+# `client.address`, `http.request.method`, `http.response.status_code`,
+# `server.address`, `server.port`, `url.path`. The CLIENT spans below are
+# unchanged, and so is the Guardrail CLIENT span (it still carries `http.host`,
+# `http.method`, `http.path`: measured, and not asserted here).
 GATEWAY_TOOLS_CALL_SERVER_ATTRS = {
+    "client.address",
     "duration",
     "gateway",
     "gen_ai.tool.name",
-    "http.host",
-    "http.method",
-    "http.path",
-    "http.status",
-    "http.version",
+    "http.request.method",
+    "http.response.status_code",
     # agentgateway's own attribute, not ours and not Jaeger's: it
     # appears once the route carries a `jwtAuth` policy, and it carries the
     # verified token's `sub` claim -- which for a SPIRE-minted JWT-SVID is the
@@ -295,9 +302,11 @@ GATEWAY_TOOLS_CALL_SERVER_ATTRS = {
     "otel.scope.name",
     "protocol",
     "route",
+    "server.address",
+    "server.port",
     "span.id",
-    "src.addr",
     "trace.id",
+    "url.path",
     "url.scheme",
 }
 
@@ -467,22 +476,16 @@ def test_gateway_span_attributes_are_exactly_what_was_measured(gateway_settlemen
     published list that silently gained a member is the defect class this repo
     has already had to correct three times.
 
-    **The finding this test makes non-optional: agentgateway v1.5.0 does not
-    speak either HTTP semantic convention.** It emits `http.method`,
-    `http.path`, `http.status`, `http.host` and `http.version` — not the
-    stable spelling (`http.request.method`, `url.path`,
-    `http.response.status_code`, `server.address`) that this project's Go
-    service emits by default and that all three of its Python services are
-    forced onto with `OTEL_SEMCONV_STABILITY_OPT_IN=http`, and not the OTel
-    *legacy* spelling either: legacy is `http.status_code` and `http.url`,
-    while the gateway emits `http.status` and no URL attribute at all. It is a
-    third vocabulary. Two attributes are the exception and are correct stable
-    semconv — `url.scheme` and `network.protocol.version` — which is exactly
-    what the v1.5.0 source predicts, since those two are the only keys it
-    routes through its own `semconv` module
-    (`crates/agentgateway/src/telemetry/trc.rs`); everything else is a raw
-    string key. Asserted here so the day this changes upstream, this project
-    finds out from a red test rather than from a stale document.
+    **The finding this test makes non-optional, as of agentgateway v1.6.0:
+    the SERVER span speaks the stable HTTP semantic convention.** v1.5.0 emitted
+    a third vocabulary (`http.method`, `http.path`, `http.status`, `http.host`,
+    `http.version`, `src.addr`); v1.6.0 (upstream PR #3182) emits
+    `http.request.method`, `url.path`, `http.response.status_code`,
+    `server.address`, `server.port` and `client.address`, which is the spelling
+    this project's Go service emits by default and all three Python services
+    are forced onto with `OTEL_SEMCONV_STABILITY_OPT_IN=http`. Asserted here so
+    the day a bump changes it again, this project finds out from a red test
+    rather than from a stale document.
     """
     trace = gateway_settlement.trace
     gateway_spans = _gateway_spans(trace)
@@ -504,13 +507,18 @@ def test_gateway_span_attributes_are_exactly_what_was_measured(gateway_settlemen
         )
         # Stated separately from the set equality above so the failure message
         # names the convention rather than just a set difference.
-        assert "http.request.method" not in span.attrs, (
-            "agentgateway now emits the stable HTTP semconv spelling; the "
-            "third-vocabulary finding in docs/telemetry-contract.md is stale"
+        assert "http.request.method" in span.attrs and (
+            "http.response.status_code" in span.attrs
+        ), (
+            "agentgateway no longer emits the stable HTTP semconv spelling; "
+            "the v1.6.0 finding in docs/telemetry-contract.md is stale"
         )
-        assert "http.status_code" not in span.attrs and "http.url" not in span.attrs, (
-            "agentgateway now emits the OTel legacy HTTP spelling; the "
-            "third-vocabulary finding in docs/telemetry-contract.md is stale"
+        legacy = {"http.method", "http.path", "http.status", "http.host",
+                  "http.version", "http.status_code", "http.url", "src.addr"}
+        assert not (legacy & set(span.attrs)), (
+            "agentgateway emits a legacy HTTP key again: "
+            f"{sorted(legacy & set(span.attrs))}; the v1.6.0 finding in "
+            "docs/telemetry-contract.md is stale"
         )
 
     for span in clients:

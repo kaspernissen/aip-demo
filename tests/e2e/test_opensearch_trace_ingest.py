@@ -381,7 +381,12 @@ def ingest_run(gateway_url, svid):
         session,
     )
     executed_body = _json_body(executed) or {}
-    assert executed_body.get("error") is not None, (
+    # agentgateway v1.6.0 answers a policy deny as HTTP 200 with an `isError`
+    # tool result whose text ends in the PDS's `[policy-denial ...]` tag.
+    result = executed_body.get("result") or {}
+    result_text = " ".join(
+        c.get("text", "") for c in result.get("content") or [])
+    assert result.get("isError") is True and live.parse_deny(result_text), (
         f"€{DENIED_AMOUNT} above a €6,000 allowance was not refused, so this "
         "run did not produce the denial half of the decision pair: "
         f"{executed.text[:300]!r}"
@@ -568,7 +573,7 @@ def test_no_attribute_key_in_the_driven_trace_collides_uncovered(ingest_run):
         if longer != shorter and longer.startswith(shorter + ".")
     }
     # The keys the OpenSearch branch already renames away.
-    covered = {ATTR_RETRYABLE_CANONICAL}
+    covered = {ATTR_RETRYABLE_CANONICAL, "error.type"}
     uncovered = {(s, l) for s, l in collisions if l not in covered}
     assert not uncovered, (
         f"trace {ingest_run.trace_id} carries {len(uncovered)} attribute-key "

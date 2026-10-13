@@ -14,7 +14,7 @@ section's own header.
 from __future__ import annotations
 
 import pytest
-from mcp.shared.exceptions import MCPError
+from mcp.types import CallToolResult, TextContent
 from pydantic_ai.messages import (
     ModelResponse,
     RetryPromptPart,
@@ -24,7 +24,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import FunctionModel
 
-from mcp_tools import PolicyDenial, ToolCallError, _policy_denial
+from mcp_tools import PolicyDenial, ToolCallError, _unwrap
 from settlement import decide_settlement, settlement_agent
 
 # The denial fixtures live next to the code that parses them. Importable by
@@ -221,12 +221,10 @@ async def test_model_finishing_without_executing_a_payment_raises():
 
 
 def _denial() -> PolicyDenial:
-    """A PolicyDenial built by the production translator from the real
-    exception the deployed gateway produces -- not hand-constructed, so these
-    tests fail if the translation stops carrying the reason or the facts."""
-    denial = _policy_denial(_denial_error())
-    assert denial is not None, "the fixture stopped being recognised as a denial"
-    return denial
+    """A PolicyDenial built by the production `_unwrap` from the tool result
+    the deployed gateway produces -- not hand-constructed, so these tests fail
+    if the translation stops carrying the reason or the facts."""
+    return _denial_error()
 
 
 def _obedient_model(narrative: str = "I could not complete this payment."):
@@ -527,18 +525,17 @@ async def test_a_refused_propose_records_no_refusal_since_no_payment_exists_yet(
 async def test_a_transport_failure_still_propagates_rather_than_being_narrated():
     """Regression guard at the agent level.
 
-    The PDS being unreachable arrives as an MCPError with no deny marker
-    (the failClosed measurement). It is an outage, not a decision: it
-    must reach the caller as an error, never as a refusal the model explains
-    away to a claimant.
+    A tool error with no deny tag (payments-api's own failure, or any
+    `isError` result that is not the PDS's decision) is a malfunction, not a
+    decision: it must reach the caller as an error, never as a refusal the
+    model explains away to a claimant.
     """
-    outage = MCPError(
-        code=-32001,
-        message=(
-            "mcpGuardrails checkRequest failed: upstream call failed: "
-            "Connect: Connection refused (os error 111)"
-        ),
-    )
+    with pytest.raises(ToolCallError) as built:
+        _unwrap(CallToolResult(isError=True, content=[TextContent(
+            type="text",
+            text="mcpGuardrails checkRequest failed: upstream call failed: "
+                 "Connect: Connection refused (os error 111)")]))
+    outage = built.value
     payments = FakePayments(execute_raises=outage)
-    with pytest.raises(MCPError, match="Connection refused"):
+    with pytest.raises(ToolCallError, match="Connection refused"):
         await _run(CLAIM, payments, _obedient_model())

@@ -88,6 +88,17 @@ processors:
         action: insert
       - key: admission.request.kind.version
         action: delete
+      # agentgateway v1.6.0 marks a refused `tools/call` SERVER span with
+      # `error` (true) AND `error.type` ("MCP"): a scalar and a dotted
+      # extension of it, which OpenSearch cannot map. v1.5.0 wrote `error`
+      # alone. Measured 2026-10-13; pinned by THIRD_PARTY_COLLISIONS in
+      # tests/unit/test_stage4_config.py. The mapping is index-wide, so this
+      # applies to every service's `error.type`.
+      - key: error_type
+        from_attribute: error.type
+        action: insert
+      - key: error.type
+        action: delete
   # END stage-4-only
 
 exporters:

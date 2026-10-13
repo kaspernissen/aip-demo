@@ -1,7 +1,8 @@
 # Northstar Telemetry Contract
 
-Status: **M7 (Bounded)** -- current milestone, branch `m7-bounded`, on top of
-**M6 (Golden path)** (branch `m6-golden-path`, tagged `m6-verified`);
+Status: **M8 (Human in the loop)** -- current milestone, branch
+`m8-human-in-the-loop`, on top of **M7 (Bounded)** (branch `m7-bounded`);
+before it **M6 (Golden path)** (branch `m6-golden-path`, tagged `m6-verified`);
 M5 merged 2026-09-15 at `e62238f`. Full revision history follows.
 
 Originally M1.1, revised through M1.2 for the settlement-agent's model-driven
@@ -492,7 +493,18 @@ look at — so the split was 4 of the 14 launching a browser and 10 of the 14
 starting none, until the demo-flow file made it a fifteenth that starts none:
 **4 of the 15 launch a browser** and **11 of the 15 start no browser**.
 
-Gate row: **MEASURED** — M7's final gate run was at commit `d4bed6e`,
+Gate row: **PREDICTED, NOT MEASURED** — M8 Task 0 bumps agentgateway to v1.6.0 and
+changes the deny path, the gateway's span vocabulary, the collector's OpenSearch
+rename list and the settlement-agent image, all `GATE_PATHS` files, so the row
+below describes a tree this branch has since altered. The collected count is
+unchanged at 507 (no test was added to `tests/`; two were renamed or rewritten in
+place). What has to happen to make it MEASURED: one `./scripts/smoke-test.sh` at
+the end of M8. The files this task touches were run on their own against the live
+stage-7 cluster: `test_policy_denial`, `test_gateway_trace`,
+`test_opensearch_trace_ingest`, `test_caller_identity`,
+`test_gateway_config_drift` and `test_gateway_is_the_only_route`, 29 passed in
+116s, which is not the gate having run. The last measured row follows, from M7:
+M7's final gate run was at commit `d4bed6e`,
 `./scripts/smoke-test.sh`, run by the orchestrator on 2026-10-12 against the
 stage-7 cluster with Backstage rebuilt from that clean tree and warmed, exit
 **0**: `506 passed, 1 xfailed`, in 643.67s (10m43s), zero skips (`grep -c
@@ -2151,9 +2163,17 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (all nine run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 114, payments-mcp 16, payments-api (Go) 31,
-customer-ui (vitest) 6, policy-decision-service 129,
+claims-agent 16, settlement-agent 119, payments-mcp 16, payments-api (Go) 31,
+customer-ui (vitest) 6, policy-decision-service 134,
 reviewer-ui 56, eval-scorer 160, backstage (jest) 37 — all passing.
+(**2026-10-13, M8 Task 0 (agentgateway v1.6.0): settlement-agent 114 → 119,
+policy-decision-service 129 → 134.** The deny now travels as tagged text in an
+`isError` tool result: the PDS gains `tests/test_deny_text.py` (4) and one
+reason/`mcp_error` agreement test (1); the agent gains
+`tests/test_policy_denial_text.py` (6) and the `_unwrap` denial tests replace the
+`MCPError` fixtures, net of the contract-test rewrite. Re-measured with
+`.venv/bin/python -m pytest --collect-only -q tests` from each service's own
+directory.)
 (**2026-09-15, whole-branch review fix wave Part B: backstage (jest) row
 added, at 37.** C1: `platform/backstage`'s six autonomy-contract plugin test
 files (`evaluate`, `k8sClient`, `router`, `telemetry`, `index` under
@@ -3193,7 +3213,8 @@ a dependency bump.
 
 ## agentgateway instrumentation, as measured (M2.1 Task 3)
 
-`cr.agentgateway.dev/agentgateway:v1.5.0`, standalone (ConfigMap + Deployment +
+`cr.agentgateway.dev/agentgateway:v1.6.0` (bumped from v1.5.0 in M8 Task 0),
+standalone (ConfigMap + Deployment +
 Service, not the Helm chart), in `northstar-platform`, with
 `deploy/platform/agentgateway/config.yaml`'s `frontendPolicies.tracing`
 exporting OTLP/gRPC to `otel-collector.observability.svc.cluster.local:4317`.
@@ -3207,6 +3228,17 @@ no-invented-telemetry rule applies to it without exception. In-tree evidence:
 `tests/e2e/test_gateway_trace.py`, which asserts exact set equality on the
 attribute keys below in both directions — a key appearing is a failure as much
 as a key disappearing.
+
+**Re-measured on v1.6.0, 2026-10-13.** v1.6.0 moved the gateway's SERVER spans
+to the stable HTTP semantic conventions (upstream PR
+[`#3182`](https://github.com/agentgateway/agentgateway/pull/3182)). Six
+attribute keys left and six arrived; the tables below are the v1.6.0 dumps, and
+`tests/e2e/test_gateway_trace.py` pins them. The span shape, the CLIENT spans and
+the Guardrail span are unchanged, and the Guardrail span still carries the
+legacy `http.host`, `http.method` and `http.path` (see its own section).
+Anything below that names `http.status`, `http.method`, `http.path`,
+`http.host`, `http.version` or `src.addr` on a SERVER span was measured on
+v1.5.0 and says so.
 
 ### Span shape
 
@@ -3243,17 +3275,16 @@ get wrong from the outside:
 
 ### Attributes on the `tools/call` SERVER span
 
-Read off a live span; 22 keys, the complete set, nothing omitted:
+Read off a live span on v1.6.0; 22 keys, the complete set, nothing omitted
+(Jaeger's own `span.kind` and `internal.span.format` excluded, as below):
 
 ```
+client.address               e.g. "10.244.0.15"
 duration                     e.g. "3ms"  (a string; see the note below)
 gateway                      "default/default"
 gen_ai.tool.name             "propose_payment" | "execute_payment"
-http.host                    "agentgateway.northstar-platform.svc.cluster.local"
-http.method                  "POST"
-http.path                    "/mcp"
-http.status                  200
-http.version                 "HTTP/1.1"
+http.request.method          "POST"
+http.response.status_code    200
 jwt.sub                      "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
 listener                     "listener0"
 mcp.method.name              "tools/call"
@@ -3264,11 +3295,17 @@ network.protocol.version     "1.1"
 otel.scope.name              "agentgateway"
 protocol                     "mcp"
 route                        "default/route0"
+server.address               "agentgateway.northstar-platform.svc.cluster.local"
+server.port                  3000
 span.id                      the span's own id, repeated as an attribute
-src.addr                     e.g. "10.244.0.138:56988"
 trace.id                     the trace's own id, repeated as an attribute
+url.path                     "/mcp"
 url.scheme                   "http"
 ```
+
+The v1.5.0 set had `http.host`, `http.method`, `http.path`, `http.status`,
+`http.version` and `src.addr` where this one has the six stable keys. `src.addr`
+was `ip:port`; `client.address` is the bare IP.
 
 **`jwt.sub` is the newest of those and the only one M2.1 Task 4 added** — this
 block held one fewer key when Task 3 measured it, and the key appeared because
@@ -3305,21 +3342,20 @@ produces a span too, and it is a different shape — worth publishing because
 exists to answer, and here the answer is yes.
 
 Measured by sending an MCP `initialize` with **no** `Authorization` header
-and a hand-minted `traceparent`, then looking the trace up by that exact id
-(`38d4634f1ae44908bbb75a06c6198086`). The gateway joined that trace rather
-than starting one of its own, and emitted exactly one span. Its attribute
-set, with Jaeger's own two excluded as described below —
-20 keys, the complete set, nothing omitted:
+and a hand-minted `traceparent`, then looking the trace up by that exact id.
+The gateway joined that trace rather than starting one of its own, and emitted
+exactly one span. Re-measured on v1.6.0 on 2026-10-13 (trace
+`0e23d152d01236e676d13f8b3fbc160e`); its attribute set, with Jaeger's own two
+excluded as described below — 21 keys, the complete set, nothing omitted:
 
 ```
+client.address                  "127.0.0.1"
 duration                        "0ms"
 error                           true
+error.type                      "JwtAuth"
 gateway                         "default/default"
-http.host                       "127.0.0.1"
-http.method                     "POST"
-http.path                       "/mcp"
-http.status                     401
-http.version                    "HTTP/1.1"
+http.request.method             "POST"
+http.response.status_code       401
 listener                        "listener0"
 network.protocol.version        "1.1"
 otel.scope.name                 "agentgateway"
@@ -3328,11 +3364,19 @@ otel.status_description         "authentication failure: no bearer token found"
 protocol                        "http"
 reason                          "JwtAuth"
 route                           "default/route0"
-span.id                         "bcdaf74f718bd242"
-src.addr                        "127.0.0.1:46138"
-trace.id                        "38d4634f1ae44908bbb75a06c6198086"
+server.address                  "localhost"  (the Host header the probe sent)
+server.port                     18777  (the probe's port-forward)
+span.id                         "f7a0162c65f6dbd2"
+trace.id                        "0e23d152d01236e676d13f8b3fbc160e"
+url.path                        "/mcp"
 url.scheme                      "http"
 ```
+
+(On v1.5.0 the same span had 20 keys: the legacy `http.*` six, `src.addr`, and
+no `error.type`. `error.type` is new in v1.6.0 and repeats `reason`. It also
+makes `error` and `error.type` a scalar-and-object pair that OpenSearch cannot
+map; the collector's `attributes/opensearch-compat` processor now renames
+`error.type` to `error_type`, see `docs/upstream-findings.md`.)
 
 Four things differ from the accepted path, and each matters diagnostically:
 
@@ -3352,7 +3396,8 @@ Four things differ from the accepted path, and each matters diagnostically:
   returns. This is the one place the refusal reason is machine-readable from
   telemetry alone.
 - **`reason = "JwtAuth"`**, a coarse category naming the policy that refused,
-  and **`error = true`**. Neither appears on any accepted span.
+  and **`error = true`** (from v1.6.0 also `error.type = "JwtAuth"`). None of
+  these appears on any accepted span.
 
 There is **no CLIENT span**, which is the trace-level evidence that the
 refusal was a refusal rather than a failed forward.
@@ -3378,7 +3423,8 @@ already cover the property.
 ### Findings, in the same shape as Finding 1 (`a2a-sdk`)
 
 1. **A third HTTP attribute vocabulary — in the pinned v1.5.0, and only
-   there.** `http.method`, `http.path`,
+   there. Superseded at v1.6.0 (2026-10-13): the SERVER span now speaks stable
+   semconv, see the re-measured tables above; kept below as history.** `http.method`, `http.path`,
    `http.status`, `http.host`, `http.version` — not stable semconv
    (`http.request.method`, `url.path`, `http.response.status_code`,
    `server.address`), and not OTel legacy either (`http.status_code`,
@@ -3545,19 +3591,20 @@ reading of the source:
 ### Attributes on a policy-denied `tools/call` SERVER span
 
 The accepted-call block earlier in this document lists 22 attribute names. A
-call the policy refuses carries **26 keys** on the same span — those same 22
-plus exactly four, and the four are the whole of the difference:
+call the policy refuses carries **27 keys** on the same span on v1.6.0 — those
+same 22 plus exactly five, and the five are the whole of the difference
+(v1.5.0 carried 26: the same four without `error.type`). Re-measured
+2026-10-13, trace `a835b2c045184df4b6288d3822f14c81`:
 
 ```
-duration                     "1ms"
+client.address               "10.244.0.15"
+duration                     "4ms"
 error                        true
+error.type                   "MCP"
 gateway                      "default/default"
 gen_ai.tool.name             "execute_payment"
-http.host                    "agentgateway.northstar-platform.svc.cluster.local"
-http.method                  "POST"
-http.path                    "/mcp"
-http.status                  200
-http.version                 "HTTP/1.1"
+http.request.method          "POST"
+http.response.status_code    200
 jwt.sub                      "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
 listener                     "listener0"
 mcp.method.name              "tools/call"
@@ -3567,32 +3614,40 @@ mcp.target                   "payments-mcp"
 network.protocol.version     "1.1"
 otel.scope.name              "agentgateway"
 otel.status_code             "ERROR"
-otel.status_description      "mcp: mcpGuardrails rejected: requested 6200 EUR exceeds the 6000 EUR limit for this agent at autonomy level assisted"
+otel.status_description      "mcp: mcpGuardrails rejected: requested 6200 EUR exceeds the 6000 EUR limit for this agent at autonomy level assisted [policy-denial rule=settlement-agent.assisted.execute_limit limit=6000.00 requested=6200.00]"
 protocol                     "mcp"
 reason                       "MCP"
 route                        "default/route0"
-span.id                      "de60313895471382"
-src.addr                     "10.244.0.149:38056"
-trace.id                     "b05167ba11744cff81bcedce615cb379"
+server.address               "agentgateway.northstar-platform.svc.cluster.local"
+server.port                  3000
+span.id                      "c1121277ac4b582c"
+trace.id                     "a835b2c045184df4b6288d3822f14c81"
+url.path                     "/mcp"
 url.scheme                   "http"
 ```
 
-The four that only a refusal carries are `error`, `otel.status_code`,
-`otel.status_description` and `reason`. Five observations, all measured:
+The five that only a refusal carries are `error`, `error.type`,
+`otel.status_code`, `otel.status_description` and `reason`. Observations, all
+measured:
 
-- **`http.status` is 200, not 4xx.** ExtMCP's refusal is a JSON-RPC error
-  inside a successful HTTP response — measured on the wire in M2.2 Task 1 and
-  confirmed here on the span. It matches neither the native CEL
-  `mcpAuthorization` mechanism's 400 nor `jwtAuth`'s 401, both of which this
-  project has also measured on v1.5.0. Anyone alerting on HTTP status alone
-  will not see this refusal at all.
+- **`http.response.status_code` is 200, not 4xx.** On v1.6.0 ExtMCP's refusal is
+  an MCP **tool result marked `isError`** inside a successful HTTP response
+  (upstream PR #3526; on v1.5.0 it was a JSON-RPC error, code `-32001`, with the
+  PDS's body under `error.data`, which v1.6.0 no longer sends). It matches
+  neither the native CEL `mcpAuthorization` mechanism's 400 nor `jwtAuth`'s 401.
+  Anyone alerting on HTTP status alone will not see this refusal at all. The
+  rule, the limit and the requested amount now reach the client only as the
+  `[policy-denial ...]` tag at the end of the result's text
+  (`pds/deny_text.py::format_deny`).
 - **`reason = "MCP"`, and that is all the categorisation there is.** On the
   M2.1 jwtAuth refusal documented above the same key reads `"JwtAuth"`. So the
   key does separate an authentication refusal from a policy refusal, but it
-  names the *layer*, not the rule — `"MCP"` is as specific as v1.5.0 gets.
+  names the *layer*, not the rule — `"MCP"` is as specific as v1.5.0 and
+  v1.6.0 get. v1.6.0 repeats it as `error.type`.
 - **`otel.status_description` carries the PDS's own reason string verbatim**,
-  behind a fixed `mcp: mcpGuardrails rejected: ` prefix the gateway adds.
-  `AuthorizationError.reason` is what lands there. This is the one place the
+  behind a fixed `mcp: mcpGuardrails rejected: ` prefix the gateway adds,
+  followed on v1.6.0 by the `[policy-denial rule=... limit=... requested=...]`
+  tag. `AuthorizationError.reason` is what lands there. This is the one place the
   refusal's *reason* is machine-readable from gateway telemetry alone, and it
   is a free-text string, not a code.
 - **Unlike the M2.1 jwtAuth refusal, every `mcp.*` attribute is present.** The

@@ -12,14 +12,14 @@ proto -- a field renumbered, a field made non-optional, a message removed --
 would be invisible to every suite in this repository: the stubs would
 regenerate happily from the edited file, the service would keep passing its
 own tests against its own new shape, and the published pin would go on
-claiming agentgateway v1.5.0. In a repo that guards the published test
+claiming agentgateway v1.6.0. In a repo that guards the published test
 counts, the attribute inventory and the SPIFFE ID for exactly this reason,
 this would be the one published constant with nothing behind it.
 
 **What this test does and does not prove.** It proves the bytes below the
 header still hash to the digest the header publishes -- i.e. that nobody
 edited the contract without also re-stating what it is. It cannot prove the
-digest matches what upstream serves at tag v1.5.0: that needs the network, and
+digest matches what upstream serves at tag v1.6.0: that needs the network, and
 a test that reaches out to raw.githubusercontent.com would fail offline for a
 reason that has nothing to do with this repository. Refreshing the pin is the
 documented manual step in the header itself, and the review that accompanies

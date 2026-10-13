@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from pds.deny_text import format_deny
 from pds.server import build_result, parse_call
 
 import ext_mcp_pb2 as pb
@@ -50,17 +51,14 @@ def test_malformed_params_do_not_raise():
 
 
 def test_the_human_readable_reason_is_on_the_authorization_error_itself():
-    """The gateway puts `AuthorizationError.reason` in `error.message`,
-    which is what survives
-    `str(McpError)` and therefore the only part of the refusal that reaches the
-    A2A caller and the model that has to narrate it. `mcp_error` lands whole in
-    `error.data`, which `str(McpError)` drops. A refusal explained only in
-    `mcp_error` would be invisible to the model.
-    """
+    """On agentgateway v1.6.0 the rejection text becomes the `isError` tool
+    result's text and `error.data` is dropped, so the refusal the model
+    narrates, and the facts the agent parses, must be in `reason`, written by
+    `format_deny`. A refusal explained only in `mcp_error` would be invisible."""
     reason = ("requested 6200 EUR exceeds the 6000 EUR limit for this agent "
               "at autonomy level assisted")
     result = build_result(permit=False, reason=reason, rule="r", limit=6000.0)
-    assert result.error.reason == reason
+    assert result.error.reason == format_deny(reason, "r", 6000.0, None)
 
 
 def test_the_deny_body_carries_what_was_requested_not_only_the_limit():
@@ -167,3 +165,10 @@ def test_a_finite_amount_of_every_ordinary_shape_still_parses():
     assert amount(b"0.01") == 0.01
 
 
+
+
+def test_reason_and_mcp_error_message_carry_the_same_formatted_text():
+    result = build_result(permit=False, reason="r", rule="x.y", limit=0.0, requested=5800.0)
+    body = json.loads(result.error.mcp_error)
+    assert result.error.reason == body["message"]
+    assert result.error.reason.endswith("[policy-denial rule=x.y limit=0.00 requested=5800.00]")

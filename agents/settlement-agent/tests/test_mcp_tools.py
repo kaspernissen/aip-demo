@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import pytest
 from mcp.shared.exceptions import MCPError
+from mcp.types import CallToolResult, TextContent
 from opentelemetry import baggage, context, trace
 from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
 
@@ -53,7 +54,6 @@ from mcp_tools import (
     PolicyDenial,
     ToolCallError,
     _leaf_exception,
-    _policy_denial,
     _unwrap,
 )
 from svid import SvidUnavailable
@@ -554,70 +554,54 @@ async def test_execute_defaults_the_currency_but_never_the_amount():
 # So there is an explicit test for the absence of a retry loop, not merely
 # for the presence of a deny.
 #
-# The exception that actually arrives here was measured, not guessed:
-# `mcp.shared.exceptions.MCPError`, because the gateway denies on **HTTP
-# 200** with an `application/json` JSON-RPC error body, so
-# `raise_for_status()` is a no-op and there is no `httpx.HTTPStatusError` on
-# this path at all. Every fixture below therefore builds a real `MCPError`
-# (2.x renamed it from `McpError`, and its constructor now takes
-# `code`/`message`/`data` directly rather than an `ErrorData` instance), in
-# the real nesting the gateway produces, rather than a hand-rolled stand-in.
+# On agentgateway v1.6.0 a policy deny arrives as HTTP 200 with a JSON-RPC
+# `result`, `{"isError": true, "content": [{"type": "text", "text": <the
+# rejection message>}]}`; `error.data` is gone (upstream PR #3526). The PDS puts
+# the rule, the limit and the requested amount in a tag at the end of that text
+# (`pds/deny_text.py::format_deny`), and `_unwrap` reads it with
+# `policy_denial_text.parse_deny`. Every fixture below is a real
+# `CallToolResult` carrying a literal formatted deny.
 #
 # Concrete regression checks:
 # - Make `PolicyDenial` subclass `ModelRetry` ->
 #   test_a_policy_denial_is_not_a_ModelRetry fails immediately, and
 #   test_the_agent_makes_exactly_one_execute_attempt_after_a_denial (in
 #   test_settlement.py) fails on the count.
-# - Key `_deny_marker` on the message text instead of `decision` ->
-#   test_a_denial_shaped_message_with_no_marker_is_not_a_denial fails.
-# - Drop the `_policy_denial` call from `_call`'s handler ->
-#   test_call_translates_a_denied_tool_call_into_a_policy_denial fails (a bare
-#   MCPError propagates, giving the A2A caller a -32603 with no narration).
-# - Read only `str(exc)` instead of `exc.error.data` ->
-#   test_a_policy_denial_carries_the_structured_facts_str_drops fails.
+# - Recognise a denial by the wording of the reason instead of the tag ->
+#   test_a_denial_shaped_message_with_no_tag_is_not_a_denial fails.
+# - Drop the `parse_deny` call from `_unwrap` ->
+#   test_call_translates_a_denied_tool_call_into_a_policy_denial fails (a
+#   ToolCallError, a retryable malfunction, comes out instead).
 # ---------------------------------------------------------------------------
 
-# The reason string the deployed PDS emits, verbatim. It is on
-# `error.message` deliberately: that is the one place `str(MCPError)`
-# preserves, and therefore the only text that can reach the model that must
-# narrate the refusal.
 DENY_REASON = (
     "requested 6200 EUR exceeds the 6000 EUR limit for this agent at "
     "autonomy level assisted"
 )
+DENY_RULE = "settlement-agent.assisted.execute_limit"
 
 
-def _denial_body(*, retryable: bool = False, requested: float | None = 6200.0) -> dict:
-    """The PDS's `mcp_error` payload, verbatim in shape.
-
-    It is itself a JSON-RPC error object; agentgateway parses it whole into
-    `error.data`, so the deny marker ends up one level down at
-    `error.data["data"]`.
-    """
-    return {
-        "code": -32003,
-        "message": DENY_REASON,
-        "data": {
-            "rule": "settlement-agent.assisted.execute_limit",
-            "limit": 6000.0,
-            # `null` when the PDS could not read an amount at all (a hostile or
-            # unparseable argument) -- the body stays strictly valid JSON.
-            "requested": requested,
-            "retryable": retryable,
-            "decision": "deny",
-        },
-    }
+def _deny_text(*, limit: str = "6000.00", requested: str = "6200.00") -> str:
+    """The PDS's deny message, literally as `format_deny` writes it, behind the
+    prefix v1.5.0 used to add (the tag is last, so a prefix cannot matter)."""
+    return (
+        f"mcp: mcpGuardrails rejected: {DENY_REASON} "
+        f"[policy-denial rule={DENY_RULE} limit={limit} requested={requested}]"
+    )
 
 
-def _denial_error(**kwargs) -> MCPError:
-    """The exception as it arrives inside mcp_tools, end to end.
+def _denied_result(text: str | None = None) -> CallToolResult:
+    return CallToolResult(
+        isError=True,
+        content=[TextContent(type="text", text=text if text is not None else _deny_text())],
+    )
 
-    `error.code` is the gateway's own `-32001` (PERMISSION_DENIED), *not* the
-    `-32003` inside the body -- `mcp_error` only ever lands in `data`.
-    Pinning the gateway's code here means a test that accidentally started
-    depending on -32003 would be caught.
-    """
-    return MCPError(code=-32001, message=DENY_REASON, data=_denial_body(**kwargs))
+
+def _denial_error(**kwargs) -> PolicyDenial:
+    """The exception as `_unwrap` raises it for a denied tool result."""
+    with pytest.raises(PolicyDenial) as raised:
+        _unwrap(_denied_result(_deny_text(**kwargs)))
+    return raised.value
 
 
 def _as_anyio_group(exc: BaseException) -> BaseExceptionGroup:
@@ -627,7 +611,7 @@ def _as_anyio_group(exc: BaseException) -> BaseExceptionGroup:
 
 def test_a_policy_denial_becomes_a_terminal_result_not_a_retry():
     """The whole hazard in one assertion."""
-    denial = _policy_denial(_denial_error(retryable=False))
+    denial = _denial_error()
     assert isinstance(denial, PolicyDenial)
     assert denial.retryable is False
 
@@ -651,137 +635,75 @@ def test_a_policy_denial_is_a_ToolFailed_so_the_model_sees_it():
 
 
 def test_the_denial_message_reaches_the_model_intact():
-    """The model narrates this text, so it must survive unwrapping.
-
-    `str(MCPError)` yields `error.message` and nothing else, so the reason has
-    to be carried across into PolicyDenial's own message -- which is what
-    PydanticAI puts in the failed ToolReturnPart the model reads.
-    """
-    denial = _policy_denial(_denial_error())
+    """The model narrates this text, so the reason must survive into
+    PolicyDenial's own message -- which is what PydanticAI puts in the failed
+    ToolReturnPart the model reads."""
+    denial = _denial_error()
     assert DENY_REASON in denial.message
     assert denial.message == str(denial)
-    # The two numbers the narration needs.
     assert "6000" in str(denial)
     assert "6200" in str(denial)
-    # And it tells the model the answer is final, in the message itself, so
-    # the terminality does not rest solely on framework behaviour.
+    # The terminality is in the message itself, not only in framework behaviour.
     assert "final" in str(denial)
+    # The tag is machine-readable detail, not the model's business.
+    assert "[policy-denial" not in str(denial)
 
 
-def test_a_policy_denial_carries_the_structured_facts_str_drops():
-    """`str(MCPError)` silently drops `error.data`: without reading it
-    separately, the deny marker never reaches the A2A caller at all. The
-    structured facts have to be read off `exc.error.data`."""
-    denial = _policy_denial(_denial_error())
-    assert denial.rule == "settlement-agent.assisted.execute_limit"
+def test_a_policy_denial_carries_the_structured_facts_from_the_tag():
+    denial = _denial_error()
+    assert denial.rule == DENY_RULE
     assert denial.limit == 6000.0
     assert denial.requested == 6200.0
     assert denial.body["decision"] == "deny"
-    # The rule is named in the message too -- it is what an operator watching
-    # the demo needs in order to point at the line that refused.
-    assert "settlement-agent.assisted.execute_limit" in str(denial)
-    # The machine-readable numbers are on attributes and stay off the prose:
-    # str() carries the PDS's own reason text, not a re-rendering of the body.
+    assert DENY_RULE in str(denial)
     assert "6000.0" not in str(denial)
     assert "6200.0" not in str(denial)
 
 
 def test_a_denial_with_an_unreadable_amount_carries_requested_as_none():
-    """For a hostile or unparseable amount the PDS emits `"requested": null`
-    and denies. Parsing must tolerate it rather than raise while handling a
+    """For a hostile or unparseable amount the PDS writes `requested=none` and
+    denies. Parsing must tolerate it rather than raise while handling a
     denial."""
-    denial = _policy_denial(_denial_error(requested=None))
+    denial = _denial_error(requested="none")
     assert isinstance(denial, PolicyDenial)
     assert denial.requested is None
     assert denial.limit == 6000.0
 
 
-def test_a_transport_error_is_still_a_transport_error():
-    """Regression guard: the new branch must not swallow real failures and
-    report them as policy denials.
-
-    This exact message is the PDS-unreachable case, measured in the
-    failClosed test. It arrives as an MCPError too, and it carries no marker.
-    An outage reported as "policy said no" is a lie the model would go on to
-    narrate to a claimant.
-    """
-    outage = MCPError(
-        code=-32001,
-        message=(
-            "mcpGuardrails checkRequest failed: upstream call failed: "
-            "Connect: Connection refused (os error 111)"
-        ),
-    )
-    assert _policy_denial(outage) is None
+def test_an_is_error_result_with_no_tag_is_a_tool_error_never_a_denial():
+    """Regression guard: payments-api's own 409, as payments-mcp surfaces it,
+    is a malfunction. Reporting it as "policy said no" would be a lie the
+    model would narrate."""
+    result = _denied_result("Error calling tool 'execute_payment': Client error '409 Conflict'")
+    with pytest.raises(ToolCallError) as raised:
+        _unwrap(result)
+    assert not isinstance(raised.value, PolicyDenial)
 
 
-def test_a_denial_shaped_message_with_no_marker_is_not_a_denial():
-    """Recognition is structural, never prose.
-
-    Same reason text as a real denial, no structured body. A message is
-    written for humans and will be reworded; if the branch keyed on the text,
-    a rewording would turn a terminal denial into a retryable error silently
-    -- and here, the reverse: any upstream that happened to echo the reason
-    would be mistaken for the policy layer.
-    """
-    lookalike = MCPError(code=-32603, message=DENY_REASON)
-    assert _policy_denial(lookalike) is None
+def test_a_denial_shaped_message_with_no_tag_is_not_a_denial():
+    """Recognition is by the tag, never by prose. Same reason text as a real
+    denial, no tag: a reworded or echoed reason must not become a policy
+    decision."""
+    with pytest.raises(ToolCallError) as raised:
+        _unwrap(_denied_result(DENY_REASON))
+    assert not isinstance(raised.value, PolicyDenial)
 
 
-def test_a_permit_marker_is_not_a_denial():
-    """A body that says `permit` is not a denial, *even carrying deny prose*.
-
-    The message here carries real deny prose deliberately, rather than an
-    inert placeholder: swapping the structural check for a prose one while
-    still reading the facts out of the body --
-
-        for candidate in (data.get("data"), data):
-            if isinstance(candidate, dict) and "exceeds the" in str(exc):
-                return candidate
-
-    -- would pass every other test in this file, because no test hands the
-    detector deny prose together with a body that structurally says permit.
-    That is the realistic shape of the mistake: someone reaching for the
-    message keeps reading the body for the rule and the limit, so every test
-    that asserts on those still passes.
-
-    The two ways to get the detection wrong pull in opposite directions, so
-    both messages have to appear somewhere in this file: this test is
-    prose-that-must-be-ignored-because-the-structure-says-permit, and
-    `test_a_denial_shaped_message_with_no_marker_is_not_a_denial` is
-    prose-with-no-structure-at-all. Neither alone is sufficient.
-    """
-    body = _denial_body()
-    body["data"]["decision"] = "permit"
-    permitted = MCPError(code=-32001, message=DENY_REASON, data=body)
-    assert _policy_denial(permitted) is None, (
-        "a permit was read as a denial -- the detector is keying on the "
-        "reason text rather than on data.decision"
-    )
+def test_a_successful_result_is_not_a_denial():
+    result = CallToolResult(isError=False, content=[], structuredContent={"result": {"ok": 1}})
+    assert _unwrap(result) == {"ok": 1}
 
 
-def test_an_ordinary_exception_carrying_no_error_attribute_is_not_a_denial():
-    """ToolCallError, ValueError, SvidUnavailable -- none of them have
-    `.error`, and none of them may be re-typed as a policy decision."""
-    assert _policy_denial(ToolCallError("payment already executed")) is None
-    assert _policy_denial(ValueError("nope")) is None
-
-
-def test_the_marker_is_recognised_un_nested_too():
-    """The measured shape nests the marker under `error.data["data"]` because
-    the gateway parses the PDS's whole JSON-RPC error object into `data`. The
-    un-nested position is accepted as well, so a gateway that stopped
-    double-wrapping would not silently make denials retryable."""
-    marker = _denial_body()["data"]
-    flat = MCPError(code=-32001, message=DENY_REASON, data=marker)
-    denial = _policy_denial(flat)
-    assert isinstance(denial, PolicyDenial)
-    assert denial.rule == "settlement-agent.assisted.execute_limit"
+def test_leaf_exception_prefers_a_policy_denial_over_a_tool_error():
+    denial = _denial_error()
+    group = BaseExceptionGroup(
+        "g", [ToolCallError("x"), ValueError("y"), denial])
+    assert _leaf_exception(group) is denial
 
 
 class _FakeSessionDenying:
-    """Stands in for mcp.ClientSession, raising the denial exactly as measured:
-    an `MCPError` doubly wrapped by the two anyio TaskGroups."""
+    """Stands in for mcp.ClientSession, returning the denial exactly as
+    measured on v1.6.0: an `isError` tool result with the tagged text."""
 
     def __init__(self, read, write):
         pass
@@ -796,38 +718,35 @@ class _FakeSessionDenying:
         pass
 
     async def send_request(self, request, result_type):
-        raise _as_anyio_group(_denial_error())
+        return _denied_result()
 
 
-class _FakeSessionDenyingUnwrapped(_FakeSessionDenying):
-    """The same denial with no TaskGroup wrapping at all -- the shape a future
-    anyio or mcp that stopped wrapping would produce."""
-
-    async def send_request(self, request, result_type):
-        raise _denial_error()
-
-
-@pytest.mark.parametrize(
-    "session", [_FakeSessionDenying, _FakeSessionDenyingUnwrapped]
-)
+@pytest.mark.parametrize("wrapped", [True, False])
 async def test_call_translates_a_denied_tool_call_into_a_policy_denial(
-    monkeypatch, session
+    monkeypatch, wrapped
 ):
-    """End to end through the production `_call` handler, both wrappings.
-
-    Without the translation, `_call` re-raises the MCPError leaf: it
-    propagates out of Agent.run(), the a2a-sdk turns it into JSON-RPC -32603
-    with no `result`, and nothing narrates the refusal.
-    """
+    """End to end through the production `_call` handler. The denial is raised
+    inside the `async with`, so it reaches `_call`'s handler either wrapped by
+    the two anyio TaskGroups or, if a future anyio stopped wrapping, bare."""
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
     _patch_transport(monkeypatch, {})
-    monkeypatch.setattr(mcp_tools, "ClientSession", session)
+    monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionDenying)
+    if wrapped:
+        original = mcp_tools._unwrap
+
+        def wrapping_unwrap(result):
+            try:
+                return original(result)
+            except PolicyDenial as exc:
+                raise _as_anyio_group(exc)
+
+        monkeypatch.setattr(mcp_tools, "_unwrap", wrapping_unwrap)
 
     tools = PaymentsTools("http://fake-mcp/mcp")
     with pytest.raises(PolicyDenial) as excinfo:
         await tools.execute("PAY-000001", 6200.0, "EUR")
 
-    assert excinfo.value.rule == "settlement-agent.assisted.execute_limit"
+    assert excinfo.value.rule == DENY_RULE
     assert excinfo.value.retryable is False
     assert DENY_REASON in str(excinfo.value)
 
@@ -836,7 +755,7 @@ class _FakeSessionTransportFailing(_FakeSessionDenying):
     async def send_request(self, request, result_type):
         raise _as_anyio_group(
             MCPError(
-                code=-32001,
+                code=-32603,
                 message=(
                     "mcpGuardrails checkRequest failed: upstream call "
                     "failed: Connect: Connection refused (os error 111)"
@@ -845,13 +764,10 @@ class _FakeSessionTransportFailing(_FakeSessionDenying):
         )
 
 
-async def test_call_leaves_a_transport_failure_as_an_mcp_error(monkeypatch):
-    """The `failClosed` outage path, through the production handler.
-
-    It must reach the caller as the failure it is, so `decide_settlement` lets
-    it propagate to a JSON-RPC error rather than handing the model a refusal
-    to narrate.
-    """
+async def test_call_leaves_a_json_rpc_error_as_the_malfunction_it_is(monkeypatch):
+    """A JSON-RPC error from the gateway (the `INTERNAL_ERROR` form, e.g. the
+    PDS being unreachable under `failClosed`) is no longer how a policy
+    decision arrives, so it must propagate as itself, never as a denial."""
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
     _patch_transport(monkeypatch, {})
     monkeypatch.setattr(

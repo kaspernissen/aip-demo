@@ -38,8 +38,9 @@ drift from the cluster without this file going red:
 * `reset` -- the resting state: flag `assisted`, over-grant absent.
 
 One more property is asserted that the driver does not itself print: that a
-refusal is **HTTP 200 carrying a JSON-RPC error** (`-32001`, with the rule in
-`data`), probed straight at the gateway. That is the slide's "HTTP 200 means
+refusal is **HTTP 200 carrying an `isError` tool result** (agentgateway
+v1.6.0; the rule is in the `[policy-denial ...]` tag at the end of the text),
+probed straight at the gateway. That is the slide's "HTTP 200 means
 no" and it was measured, not assumed.
 
 **Gated behind `RUN_BROWSER_TESTS=1`** -- the repo's single cost gate, which
@@ -216,7 +217,7 @@ def test_2_claim_6200_under_assisted_is_refused_and_no_money_moved(flow):
     assert "http://localhost:16686/trace/" in out, "no Jaeger link was printed:\n" + out
 
 
-def test_2b_a_refusal_is_http_200_carrying_a_jsonrpc_error(flow):
+def test_2b_a_refusal_is_http_200_carrying_an_is_error_tool_result(flow):
     """The slide's "HTTP 200 means no", measured straight at the gateway, with
     no model in the loop: propose, then execute over the limit."""
     flow.require("claim-refused")
@@ -235,11 +236,9 @@ def test_2b_a_refusal_is_http_200_carrying_a_jsonrpc_error(flow):
             headers,
         )
     assert executed.http_status == 200, executed
-    assert executed.tool_result is None, executed
-    assert executed.jsonrpc_error and executed.jsonrpc_error["code"] == -32001, executed
-    refusal = executed.jsonrpc_error["data"]["data"]
-    assert refusal["rule"] == "settlement-agent.assisted.execute_limit", refusal
-    assert refusal["decision"] == "deny" and refusal["limit"] == 6000.0, refusal
+    assert executed.tool_result["isError"] is True, executed
+    assert executed.denial.rule == "settlement-agent.assisted.execute_limit", executed
+    assert executed.denial.limit == 6000.0, executed
 
 
 def test_3_flipping_the_value_executes_the_same_claim_and_restarts_nothing(flow):
