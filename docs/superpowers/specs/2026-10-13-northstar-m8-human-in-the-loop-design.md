@@ -102,7 +102,7 @@ payments-api statuses become `proposed`, `awaiting_approval`, `executed` and
 
 A2A defines a task with states. `a2a-sdk` 0.3.7, already pinned, ships the
 task store and an updater for them. M8 uses those states instead of building a
-polling API.
+polling API or a callback.
 
 1. **The customer submits a claim.** The claims-agent creates a task and
    delegates to the settlement-agent, as today.
@@ -111,8 +111,13 @@ polling API.
    and the limit. The claims-agent moves its task to **`input-required`**: the
    task is waiting on someone. The message tells the customer why, using the
    PDS's rule and limit.
-3. **The customer-ui shows "Awaiting human approval"** with a running timer.
-   It polls the task (`tasks/get`) every 3 seconds.
+3. **The customer-ui shows "Awaiting human approval"** with a running timer,
+   and waits on **one A2A stream**. A2A closes a stream when a task reaches an
+   interrupted state such as `input-required`, so the customer-ui then calls
+   `tasks/resubscribe` on the task id. That call is a single streaming request
+   (server-sent events) that stays open until the task changes. The
+   claims-agent declares `capabilities.streaming: true` in its agent card, as
+   the SDK expects.
 4. **The reviewer decides in the reviewer-ui.**
    - **Approve:** the reviewer-ui executes through the gateway (§3.1). It then
      sends an A2A message to the claims-agent **on the same task id**. That is
@@ -121,7 +126,10 @@ polling API.
      "Settled".
    - **Reject:** the reviewer-ui calls `/reject`, then resumes the task the
      same way. The claims-agent completes it with "Declined by a reviewer".
-5. **The customer-ui sees `completed`** and renders the final state.
+5. **The stream delivers `completed`**, closes, and the customer-ui renders
+   the final state. If the stream drops (a network blip, a pod restart), the
+   customer-ui reads the task once with `tasks/get` and resubscribes. That is
+   a reconnect, not a polling loop.
 
 A declined claim is `completed`, not A2A's `rejected`. In A2A, `rejected`
 means *the agent* refused to do the task. Here the agent did the work, and a
@@ -151,11 +159,17 @@ SDK's.
   ids are deliberately left off: they would make the metric high-cardinality.
   The collector already has a metrics pipeline. This adds the reviewer-ui as a
   source, with no sampling and no change to the never-sample rule.
-- **The polls.** Each `tasks/get` is a short trace of its own: about 20 per
-  minute of waiting. We measure that in the gate and record it in the
-  telemetry contract. If it drowns Jaeger's search, the fallback is A2A
-  streaming (`tasks/resubscribe`) instead of polling; it is not built unless
-  it is needed.
+- **The customer's wait is one span.** The `tasks/resubscribe` request is
+  one span per waiting claim, not a stream of polls. It carries a span link to
+  the claim's trace A, and its duration is **how long the customer waited**.
+  The histogram above is **how long the human took**. The two differ by the
+  time the payment itself takes, and the talk can show both.
+- **Measured before it is relied on:** a stream held open for 10 minutes
+  survives every hop from the browser to the claims-agent (the customer-ui
+  server, and agentgateway if that route goes through it), with no proxy idle
+  timeout cutting it. If a hop cuts it, the fix is that hop's timeout or a
+  keep-alive comment on the stream. If neither works, polling `tasks/get` is
+  the fallback, and the spec is amended before it is built.
 
 **On stage:** *"Trace A: the agent did everything up to the money. Trace B:
 the human released it. The link joins them, and the histogram says how long
@@ -177,13 +191,13 @@ terminal.
 
 | # | What | ~Time | What the audience sees | Talk point |
 |---|---|---|---|---|
-| 1 | `demo guard` | 55s | 401 without identity; dropped around the gateway; the tools list with identity; **€60,000 → 403 at the gateway, PDS never asked** (§5) | Identity, Reach, gateway guardrail |
+| 1 | `demo guard` | 45s | unchanged from M7: 401 without identity; dropped around the gateway; the tools list with identity | Identity, Reach |
 | 2 | Claim €5,800 in the customer-ui → approve in the reviewer-ui | 90s | "Awaiting human approval" with a timer; the reviewer sees rule `assisted`, limit €0, and the model's narrative; approve; the customer-ui flips to "Settled" | Maker-checker; human in the loop |
 | 3 | `demo autonomy autonomous` → `demo claim 5800` → `demo claim 6200` | 75s | €5,800 settled by the agent, nothing waiting; €6,200 waits (limit €6,000) | One live dial; the band widens, the human stays |
 | 4 | `demo keystone` | 45s | unchanged | Keystone |
 | 5 | `demo evidence` | 45s | For each claim: who decided, the rule, who approved, how long the human took | Prove |
 
-That is about 5:10. `demo reset` returns to `assisted`, removes the
+That is about 5:00. `demo reset` returns to `assisted`, removes the
 over-grant, and leaves no task waiting: it rejects any open approval as
 `demo-reset`.
 
@@ -193,7 +207,7 @@ misbehaves, and the path the e2e test drives.
 
 ## 5. Guardrails in agentgateway itself
 
-The talk shows **two ways to say no**, both live:
+The ceiling is in the config and tested, but it is **not** shown in the live demo (Kasper, 2026-10-13: "we will not need it for this demo"). It lives on the deck. The talk shows **two ways to say no**:
 
 1. **A gateway guardrail (CEL, config only, no code).** One route-level
    `authorization` rule in `agentgateway-config` sets a hard ceiling:
@@ -245,18 +259,21 @@ caller.
   - reject → `completed` "Declined", the ledger shows `rejected`, and execute
     afterwards is refused;
   - autonomous €5,800 → `completed` with no wait; €6,200 → `input-required`.
+  - the stream: a resubscribe held open across a 10-minute wait delivers
+    `completed`; a dropped stream reconnects and still sees the outcome.
 - **e2e gateway:** €60,000 → 403, no `policy.decision` span;
   `initialize` and `tools/list` pass.
 - **The five-minute flow test** follows §4.
 - **Telemetry contract:** new rows for the task states, trace B's spans, the
-  histogram and the poll count, all MEASURED in the gate.
+  histogram and the resubscribe span, all MEASURED in the gate.
 
 ## 7. Build: one lean milestone, five tasks
 
 1. **Policy and ledger.** The PDS table (§3.1), the senior agent removed,
    payments-api statuses, `/reject`, `a2aTaskId`.
-2. **The task lifecycle.** The claims-agent task store, `input-required`, the
-   resume handler; the settlement-agent's "awaiting approval" reply; the
+2. **The task lifecycle.** First, measure the 10-minute stream across the
+   real path (§3.4). Then the claims-agent task store, `input-required`,
+   streaming and resubscribe, the resume handler; the settlement-agent's "awaiting approval" reply; the
    reviewer-ui executing and resuming; the customer-ui waiting view.
 3. **Trace and metric.** Trace B's spans, the link, the histogram, the
    collector pipeline, the contract rows.
@@ -271,5 +288,5 @@ caller.
 - Routing model traffic through agentgateway (§5's second slide).
 - Persistent storage for the ledger or the task store.
 - Expiry, escalation or a second approver for waiting claims.
-- A2A push notifications. The browser can't receive them; polling is the
-  standard for a browser client.
+- A2A push notifications. They are webhooks to a server, and a browser
+  can't receive one; streaming is the standard for a browser client.
