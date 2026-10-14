@@ -32,6 +32,11 @@ EXECUTE_LIMITS: dict[tuple[str, str], float] = {
 # widens for cannot write the fact that widens it. For the agent it only
 # narrows (see PROPOSED below). server.py reads the status from payments-api
 # (pds/ledger.py) for every known caller of execute_payment.
+#
+# The same reasoning depends on a second fact, which is network and not code:
+# reviewer-ui's Cilium L7 egress to payments-api allows only list, get and
+# reject (deploy/platform/cilium-policies.yaml), so it cannot write a payment's
+# status either. Loosen that egress and the widening above stops being safe.
 HUMAN_APPROVERS: frozenset[str] = frozenset({
     "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui",
 })
@@ -39,6 +44,9 @@ AWAITING_APPROVAL = "awaiting_approval"
 PROPOSED = "proposed"
 HUMAN_APPROVAL_RULE = "human-approved.execute"
 AGENT_NOT_PROPOSED_RULE = "settlement-agent.payment_not_proposed"
+# The ledger could not be read, so the agent's call is denied under a name of its
+# own: "I could not look" is a different fact from "the payment is not proposed".
+AGENT_LEDGER_UNREADABLE_RULE = "settlement-agent.ledger_unreadable"
 
 # The status is read for EVERY execute_payment, and each caller class may
 # execute from exactly one state: the settlement agent (the maker) only a
@@ -46,7 +54,8 @@ AGENT_NOT_PROPOSED_RULE = "settlement-agent.payment_not_proposed"
 # checker) only a payment `awaiting_approval`. So the maker cannot release a
 # payment it routed to a human, even at `autonomous` and under the limit, and
 # a payment that is `executed` or `rejected` is executable by nobody. An
-# unreadable ledger is None and denies for both.
+# unreadable ledger is None and denies for both (the agent's denial is named
+# `settlement-agent.ledger_unreadable`, the human's stays `human-approved.execute`).
 
 # EXECUTE_LIMITS is keyed by (caller, level), so a miss below is ambiguous
 # between "this caller has no row at all" and "this caller is known, but not
@@ -227,6 +236,14 @@ def decide(req: PolicyInput) -> Decision:
     # Everything the limit asks has passed; the last question is the ledger's.
     # Placed last so every existing denial keeps its own rule name, and this
     # one fires only for a payment the limit alone would have released.
+    if req.ledger_status is None:
+        return Decision(
+            False,
+            "the settlement agent may only execute a payment the ledger shows "
+            "proposed, and the ledger could not be read",
+            rule=AGENT_LEDGER_UNREADABLE_RULE,
+            limit=limit,
+        )
     if req.ledger_status != PROPOSED:
         return Decision(
             False,

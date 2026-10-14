@@ -39,6 +39,12 @@ drift from the cluster without this file going red:
 * `reset` -- the resting state: flag `assisted`, over-grant absent, and no
   approval open (the EUR 6,200 claim was rejected as `demo-reset`).
 
+* **the browser path** (`test_7`) -- a claim filed the way the customer-ui files it
+  (`live.submit_claim`, not `demo claim`), so the driver's state has never heard
+  of it. `approve last` must still find it (it reads the reviewer-ui's queue),
+  and `evidence` must still print the human-approval row for it: who approved and
+  how long the human took.
+
 One more property is asserted that the driver does not itself print: that a
 no is **HTTP 200 carrying an `isError` tool result** (agentgateway v1.6.0;
 the rule is in the `[policy-denial ...]` tag at the end of the text), probed
@@ -60,6 +66,7 @@ import json
 import os
 import re
 import subprocess
+import uuid
 from pathlib import Path
 
 import httpx
@@ -360,3 +367,36 @@ def test_6_reset_rejects_the_open_approval_and_leaves_the_resting_state(flow):
     # The run's claims are gone, so a stale `evidence` has nothing to report.
     again = flow.run("evidence-after-reset", "evidence")
     assert again.returncode != 0 and "no claims in this run yet" in again.stderr, again.stderr
+
+
+def test_7_a_claim_filed_in_the_browser_is_approved_and_evidenced_like_any_other(tmp_path):
+    """The on-stage path (spec section 4, step 2) files the claim in the
+    customer-ui, which `scripts/demo` knows nothing about. The harness's own
+    `submit_claim` is that path without the browser. A fresh state directory
+    makes the driver as ignorant of it as it is on stage."""
+    reachable = live.kubectl("cluster-info", timeout=30)
+    assert reachable.returncode == 0, reachable.stderr
+    browser = Flow(tmp_path)
+    claim_id = f"CLM-BROWSER-{uuid.uuid4().hex[:6].upper()}"
+    try:
+        with live.claims_agent_route() as url:
+            run = live.submit_claim(claim_id, AMOUNT, claims_agent_url=url, timeout=170)
+        assert run["reply"]["status"] == "awaiting_approval", run
+        assert not (tmp_path / "state.json").exists(), "the driver must not know this claim yet"
+
+        out = browser.ok("browser-approve", "approve", "last")
+        assert claim_id in out and "[SETTLED]" in out and "released by a human" in out, out
+        assert "[completed]" in out, out
+        # Adopted into the run's state, with the window opened where the claim began.
+        (adopted,) = browser.claims()
+        assert adopted["id"] == claim_id and adopted["status"] == "executed", adopted
+        task = live.get_task(run["task_id"])
+        assert task["state"] == "completed" and task["reply"]["status"] == "executed", task
+
+        evidence = browser.ok("browser-evidence", "evidence")
+        assert claim_id in evidence, evidence
+        assert "[SENT TO A HUMAN]" in evidence and "[SETTLED]" in evidence, evidence
+        # The human-approval row: who approved, and how long the human took.
+        assert re.search(r"approved by\s+kasper\.on\.stage, after \d+ s", evidence), evidence
+    finally:
+        browser.run("browser-reset", "reset")

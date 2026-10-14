@@ -183,6 +183,11 @@ class ClaimsAgentExecutor(AgentExecutor):
             raise RuntimeError(
                 f"task {task_id} is not waiting in this claims-agent process "
                 "(it may have restarted); nothing was resumed")
+        if waiting.outcome.done():
+            # Two resumes raced (a retry on top of a slow first one). The first has
+            # set the outcome; a second set_result would be an InvalidStateError
+            # surfaced as a confusing 500.
+            raise RuntimeError(f"task {task_id} was already resumed")
         record = await self._ledger.get(waiting.reply["paymentId"])
         decision = OUTCOMES.get(record.get("status"))
         if decision is None:

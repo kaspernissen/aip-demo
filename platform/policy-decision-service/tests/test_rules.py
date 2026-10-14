@@ -80,8 +80,15 @@ def test_the_agent_may_execute_a_proposed_payment_within_its_limit():
     assert d.permit is True and d.rule == "settlement-agent.autonomous.execute_limit"
 
 
-@pytest.mark.parametrize("status", [None, "executed", "rejected", "refused", ""])
-def test_the_agent_is_denied_when_the_ledger_is_unreadable_or_not_proposed(status):
+def test_an_unreadable_ledger_has_its_own_rule_for_the_agent():
+    d = decide(_input(amount=5800.0, autonomy_level="autonomous", ledger_status=None))
+    assert d.permit is False
+    assert d.rule == "settlement-agent.ledger_unreadable"
+    assert d.limit == 6000.0
+
+
+@pytest.mark.parametrize("status", ["executed", "rejected", "refused", ""])
+def test_the_agent_is_denied_when_the_payment_is_not_proposed(status):
     d = decide(_input(amount=5800.0, autonomy_level="autonomous", ledger_status=status))
     assert d.permit is False and d.rule == "settlement-agent.payment_not_proposed"
 

@@ -3035,6 +3035,17 @@ throughout, and stdio was never probed.
 > this probe needs. The rest of this paragraph stands unchanged — the *why* is
 > still unread at the image's revision, and stdio is still unprobed.
 
+> **Masked since M8 (v1.6.0, the gateway's own ceiling).** The route's CEL
+> `authorization` ceiling runs *before* the MCP body is parsed, and a JSON-RPC
+> array carries no `mcp.methodName`, so a batch is now answered
+> `HTTP 403 authorization failed` and never reaches the MCP layer's own
+> deserializer. The `400 mcp: fail to deserialize request body` measured above is
+> therefore **masked, not gone**: it is what a batch would get if the ceiling were
+> removed, and it has not been re-measured on v1.6.0. The test pins the 403 and its
+> body exactly (`BATCH_REJECTED_BY_CEILING`), so the day either layer changes, the
+> test goes red and this question is asked again on purpose. Still no bypass: the
+> bait payment stays `proposed` and there are zero `policy.decision` spans.
+
 **Status: nothing filed, nothing asked upstream, and nothing to file.** No
 issue, comment, pull request or discussion post exists anywhere for this, and
 the question was not put to the maintainers. There is also no defect here to

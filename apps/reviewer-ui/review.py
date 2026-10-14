@@ -44,10 +44,14 @@ from opentelemetry import context as otel_context
 from opentelemetry.trace import SpanContext, SpanKind, Status, StatusCode, TraceFlags
 
 import approval_metrics
+from claims import TaskNotWaiting
 from levels import autonomy_level_of
 
 _VALID_DECISIONS = ("approve", "reject")
 AWAITING_APPROVAL = "awaiting_approval"
+# What the ledger shows once each decision has been taken. A decision that is
+# already on the ledger can be *re-told to the customer*, never taken again.
+LEDGER_STATUS_OF = {"approve": "executed", "reject": "rejected"}
 
 
 class PaymentNotAwaitingReview(RuntimeError):
@@ -102,6 +106,9 @@ class ReviewResult:
     # say whether the customer was told.
     resumed_state: str | None = None
     resume_error: str | None = None
+    # True when this call took no money decision: the ledger already showed it,
+    # and the call only told the customer's waiting task again (see `decide`).
+    resent_only: bool = False
 
 
 def _elapsed_ms(awaiting_since: str, now: datetime) -> int:
@@ -179,6 +186,20 @@ async def decide(
         # injects -- had no parent to attach to, which put both it and
         # payments-api's own server span in a trace of their own.
         record = await ledger.get(payment_id)
+        if (
+            record.get("status") == LEDGER_STATUS_OF[decision]
+            and record.get("a2aTaskId")
+        ):
+            # The decision is already on the ledger, and the customer may never
+            # have been told (the answer to the release was lost, claims-agent
+            # was unreachable, or the decision landed before the task parked).
+            # Re-send the resume: claims-agent re-reads the ledger and takes no
+            # word from this message, so sending it twice is safe. If the task
+            # is no longer waiting there is nothing left to heal, and the
+            # caller gets the same 409 as for any decided payment.
+            return await _resend_resume(
+                span, record, payment_id, reviewer_id, decision,
+                reviewer_spiffe_id=reviewer_spiffe_id, claims=claims)
         if record.get("status") != AWAITING_APPROVAL:
             raise PaymentNotAwaitingReview(
                 f"payment {payment_id!r}: ledger status is "
@@ -264,3 +285,45 @@ async def decide(
                 otel_context.detach(claim_token)
 
         return result
+
+
+async def _resend_resume(
+    span, record: dict[str, Any], payment_id: str, reviewer_id: str, decision: str,
+    *, reviewer_spiffe_id: str, claims: ClaimsLike,
+) -> ReviewResult:
+    """Tell the customer's still-waiting task about a decision the ledger holds.
+
+    No money moves and no `review.elapsed_ms` is set: the human's wait was
+    measured by the call that took the decision, and a second figure read off
+    `awaitingSince` now would be a wrong one, so the span says what it is
+    (`review.resume_only`) and the histogram records nothing.
+    """
+    span.set_attribute("review.resume_only", True)
+    claim_token = None
+    if record.get("claimId"):
+        span.set_attribute("northstar.claim.id", record["claimId"])
+        claim_token = otel_context.attach(
+            baggage.set_baggage("northstar.claim.id", record["claimId"]))
+    refusal = record.get("refusal") or {}
+    result = ReviewResult(
+        payment_id=payment_id, decision=decision, reviewer_id=reviewer_id,
+        reviewer_spiffe_id=reviewer_spiffe_id, elapsed_ms=0,
+        autonomy_level=autonomy_level_of(refusal.get("rule")),
+        resent_only=True,
+        executed=record if decision == "approve" else None,
+        rejected=record if decision == "reject" else None,
+    )
+    try:
+        result.resumed_state = await claims.resume(record["a2aTaskId"], {
+            "decision": "approved" if decision == "approve" else "rejected",
+            "paymentId": payment_id, "reviewerId": reviewer_id})
+    except TaskNotWaiting as exc:
+        raise PaymentNotAwaitingReview(
+            f"payment {payment_id!r}: ledger status is {record.get('status')!r} "
+            f"and the customer's task is not waiting ({exc}) -- nothing to heal") from exc
+    except Exception as exc:  # noqa: BLE001 -- the decision stands; say the customer is still untold
+        result.resume_error = str(exc)
+    finally:
+        if claim_token is not None:
+            otel_context.detach(claim_token)
+    return result

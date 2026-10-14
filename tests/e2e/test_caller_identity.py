@@ -457,15 +457,16 @@ def test_gateway_refuses_a_bearer_value_that_is_not_a_jwt(gateway_url):
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 PAYMENTS_API_URL = os.environ.get("PAYMENTS_API_URL", "http://localhost:18080")
 
-# The status agentgateway v1.5.0 answers a JSON-RPC array with, measured
-# directly against the live gateway.
-BATCH_REJECTED = 400
 # M8: the route's `authorization` ceiling runs BEFORE the MCP body is parsed, and
 # a JSON-RPC array carries no `mcp.methodName`, so its allow rule errors and the
-# batch is answered `403 authorization failed` instead of the 400 above. Measured
-# live, M8 Task 4. Both are a refusal before `mcpGuardrails` runs; the ledger and
-# no-decision-span assertions below are what actually say "not a bypass".
+# batch is answered `403 authorization failed`. Measured live, M8 Task 4. This is
+# pinned to exactly that: a 400 here would mean the ceiling no longer sees the
+# batch and the MCP layer's own rejection (OQ-U1 in docs/upstream-findings.md,
+# `400 mcp: fail to deserialize request body`) is the only thing left, which is a
+# change somebody must look at. The ledger and no-decision-span assertions below
+# are what actually say "not a bypass".
 BATCH_REJECTED_BY_CEILING = 403
+BATCH_REJECTED_BODY = "authorization failed"
 
 # Over `settlement-agent`'s assisted allowance (0 since M8), so a batch that DID
 # reach the guardrail would produce a `policy.decision` span -- and one that
@@ -614,12 +615,14 @@ def test_a_jsonrpc_batch_is_rejected_before_the_policy_hook_and_changes_nothing(
     )
 
     # 1. Rejected outright.
-    assert batched.status_code in (BATCH_REJECTED, BATCH_REJECTED_BY_CEILING), (
-        "agentgateway no longer rejects a JSON-RPC array outright -- OQ-U1 "
-        "(docs/upstream-findings.md) is REOPENED, and whether `mcpGuardrails` "
-        "evaluates every message in a batch is an open policy-bypass question "
-        f"again. HTTP {batched.status_code}: {batched.text[:500]}"
+    assert batched.status_code == BATCH_REJECTED_BY_CEILING, (
+        "the gateway no longer answers a JSON-RPC array with the ceiling's "
+        "`403 authorization failed`. If it is a 400 again, the ceiling stopped seeing "
+        "batches and only the MCP layer's own rejection (OQ-U1) stands; if it is a "
+        "2xx, whether `mcpGuardrails` evaluates every message in a batch is an open "
+        f"policy-bypass question again. HTTP {batched.status_code}: {batched.text[:500]}"
     )
+    assert batched.text.strip() == BATCH_REJECTED_BODY, batched.text[:500]
 
     # 3. The ledger, first, because it is the primary evidence and it needs no
     # export delay to settle.

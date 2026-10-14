@@ -143,6 +143,11 @@ ATTR_CLAIM_ID = "northstar.claim.id"
 # and the span name -- is imported above rather than restated, so the two files
 # cannot disagree about what the decision span carries.
 ATTR_REVIEW_REVIEWER = "review.reviewer.id"
+# The only payments-api hops whose spans may carry the claim id on their own.
+CLAIM_ID_TAGGED_PAYMENTS_HOPS = frozenset({
+    "GET /payments/{paymentId}",
+    "POST /payments/{paymentId}/reject",
+})
 ATTR_REVIEW_DECISION = "review.decision"
 
 # The rule this demo's evidence story turns on: it fires for both claims,
@@ -583,12 +588,12 @@ def test_the_trace_id_join_is_what_reaches_the_money_hops(
             "file, the saved dashboard's two-step layout and Gap 4 in "
             "docs/telemetry-contract.md all have to change in the same commit."
         )
-        # M8: the claims-agent resumes a waiting claim with the claim id in
-        # baggage, and its ledger READ (`GET /payments/{paymentId}`) reaches
-        # payments-api with it, so payments-api's read spans now carry the
-        # claim id. The MONEY hops still do not: the claim-id filter alone
-        # finds neither propose nor execute, which is what the trace-id join
-        # exists for.
+        # M8: the claims-agent and reviewer-ui carry the claim id in baggage, so
+        # the payments-api hops they make carry it: the ledger READ and the
+        # human's REJECT. Those two are the whole allowlist. Every other
+        # payments-api hop (propose, execute, refuse, anything added later) must
+        # still be reachable only through the trace-id join, so this is an
+        # allowlist: a new hop that starts carrying the claim id fails here.
         payments_names = {
             bucket["key"]
             for bucket in _search(
@@ -607,10 +612,12 @@ def test_the_trace_id_join_is_what_reaches_the_money_hops(
                 }
             )["aggregations"]["names"]["buckets"]
         }
-        assert not (payments_names & {EXECUTE_HOP, PROPOSE_HOP}), (
-            f"claim {claim_id}: the claim-id filter now reaches payments-api's "
-            f"money hops {sorted(payments_names & {EXECUTE_HOP, PROPOSE_HOP})}; "
-            "the trace-id join is no longer what reaches them."
+        unexpected = payments_names - CLAIM_ID_TAGGED_PAYMENTS_HOPS
+        assert not unexpected, (
+            f"claim {claim_id}: the claim-id filter now reaches payments-api hops "
+            f"{sorted(unexpected)} beyond the allowlist "
+            f"{sorted(CLAIM_ID_TAGGED_PAYMENTS_HOPS)}; the trace-id join is no longer "
+            "what reaches them."
         )
 
 

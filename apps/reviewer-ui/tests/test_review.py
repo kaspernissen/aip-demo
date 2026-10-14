@@ -241,7 +241,7 @@ async def test_a_payment_not_awaiting_review_ends_the_span_error_and_never_relea
     the two ledger-derived attributes are absent, because there was no
     usable record to read them off.
     """
-    ledger = FakeLedger(record={**AWAITING_PAYMENT, "status": "executed"})
+    ledger = FakeLedger(record={**AWAITING_PAYMENT, "status": "proposed"})
     gateway = FakeGateway()
 
     with pytest.raises(PaymentNotAwaitingReview):
@@ -472,3 +472,71 @@ async def test_a_reject_records_decision_rejected(traced, waits):
 async def test_a_refused_execute_records_no_sample(traced, waits):
     result = await _go("approve", gateway=FakeGateway(error=ExecutionRefused("no")))
     assert result.error and waits() == []
+
+
+# ---- fix wave: a customer is never stranded by a lost resume ----
+
+from claims import TaskNotWaiting
+
+
+async def test_a_decision_already_on_the_ledger_resends_the_resume_and_moves_no_money(traced, waits):
+    """The release went through but the customer was never told (the gateway's
+    answer was lost, claims-agent was unreachable). The retry heals it."""
+    claims = FakeClaims()
+    gateway = FakeGateway()
+    ledger = FakeLedger(record={**AWAITING_PAYMENT, "status": "executed"})
+    result = await decide("PAY-000053", "alex.mercer", "approve", ledger=ledger, gateway=gateway,
+                          claims=claims, reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW)
+    assert gateway.calls == [], "a healed resume must never release money a second time"
+    assert [c[0] for c in ledger.calls] == ["get"], ledger.calls
+    assert claims.calls == [("task-1", {"decision": "approved", "paymentId": "PAY-000053",
+                                        "reviewerId": "alex.mercer"})]
+    assert result.resent_only is True and result.error is None
+    assert result.resumed_state == "input-required"
+    assert waits() == [], "no second wait sample: the human's wait was measured by the first decision"
+    span, = traced.get_finished_spans()
+    assert span.attributes["review.resume_only"] is True
+    assert "review.elapsed_ms" not in span.attributes
+
+
+async def test_a_reject_already_on_the_ledger_resends_the_resume_too(traced):
+    claims = FakeClaims()
+    ledger = FakeLedger(record={**AWAITING_PAYMENT, "status": "rejected"})
+    result = await decide("PAY-000053", "alex.mercer", "reject", ledger=ledger, gateway=FakeGateway(),
+                          claims=claims, reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW)
+    assert [c[1]["decision"] for c in claims.calls] == ["rejected"]
+    assert result.resent_only and ledger.calls == [("get", "PAY-000053")]
+
+
+async def test_a_decision_the_ledger_contradicts_is_still_a_409_and_tells_nobody(traced):
+    claims = FakeClaims()
+    ledger = FakeLedger(record={**AWAITING_PAYMENT, "status": "rejected"})
+    with pytest.raises(PaymentNotAwaitingReview):
+        await decide("PAY-000053", "alex.mercer", "approve", ledger=ledger, gateway=FakeGateway(),
+                     claims=claims, reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW)
+    assert claims.calls == []
+
+
+async def test_a_task_that_is_no_longer_waiting_stays_a_409(traced):
+    ledger = FakeLedger(record={**AWAITING_PAYMENT, "status": "executed"})
+    with pytest.raises(PaymentNotAwaitingReview):
+        await decide("PAY-000053", "alex.mercer", "approve", ledger=ledger, gateway=FakeGateway(),
+                     claims=FakeClaims(error=TaskNotWaiting("task is 'completed', not waiting")),
+                     reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW)
+
+
+async def test_a_resend_that_fails_for_another_reason_is_reported_not_swallowed(traced):
+    ledger = FakeLedger(record={**AWAITING_PAYMENT, "status": "executed"})
+    result = await decide("PAY-000053", "alex.mercer", "approve", ledger=ledger, gateway=FakeGateway(),
+                          claims=FakeClaims(error=ResumeFailed("claims-agent unreachable")),
+                          reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW)
+    assert result.resume_error == "claims-agent unreachable" and result.resumed_state is None
+
+
+async def test_a_decided_payment_with_no_task_is_still_a_409(traced):
+    record = {**AWAITING_PAYMENT, "status": "executed"}
+    record.pop("a2aTaskId")
+    with pytest.raises(PaymentNotAwaitingReview):
+        await decide("PAY-000053", "alex.mercer", "approve", ledger=FakeLedger(record=record),
+                     gateway=FakeGateway(), claims=FakeClaims(),
+                     reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW)

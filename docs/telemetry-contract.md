@@ -493,8 +493,8 @@ tree this change has since altered. What has to happen to make it MEASURED: one
 run on its own against the live stage-7 cluster, 7 passed in 55.8s, which is not
 the gate having run.
 
-Bare-suite row, derived from that same collection: 539 collected − 96 gated −
-**0** xfailed = `443 passed, 96 skipped, 0 xfailed`. (M8 Task 5 took the collection from 529 to 539: eight driver unit tests net in `test_demo_driver.py`, one deck-quotes-the-rule test in `test_gateway_ceiling_config.py`, one non-gated live test in `test_gateway_ceiling.py` (a session's GET and DELETE are not stopped by the ceiling), and one gated live test in `test_demo_flow.py` (the human approves and the customer's task completes), so the gated figure is 96.) (M8 Task 4 took the collection from 522 to 529: three config tests in `test_gateway_ceiling_config.py` and four live tests in `test_gateway_ceiling.py`, none gated, because they spend no model call, so the gated figure stays 95.) (M8 Task 3 took the collection from 512 to 522: four gated live tests in `test_human_in_the_loop.py` (trace B and its link, trace A's deny, the histogram, and the release's rule split from the repeat-execute check) and one gated Prometheus control in `test_prometheus_metrics_ingest.py`, so the gated figure is 95, plus five harness tests in `test_jaeger_assertions.py`.) (M8 Task 2 took the collection
+Bare-suite row, derived from that same collection: 550 collected − 98 gated −
+**0** xfailed = `452 passed, 98 skipped, 0 xfailed`. (The final-review fix wave took the collection from 539 to 550: the additions are nine driver unit tests in `test_demo_driver.py`, one gated live test in `test_demo_flow.py` (a claim filed in the browser is approved and evidenced), one gated live test in `test_gateway_ceiling.py` (a claim over the ceiling fails and nobody is asked), so the gated figure is 98.) (M8 Task 5 took the collection from 529 to 539: eight driver unit tests net in `test_demo_driver.py`, one deck-quotes-the-rule test in `test_gateway_ceiling_config.py`, one non-gated live test in `test_gateway_ceiling.py` (a session's GET and DELETE are not stopped by the ceiling), and one gated live test in `test_demo_flow.py` (the human approves and the customer's task completes), so the gated figure is 96.) (M8 Task 4 took the collection from 522 to 529: three config tests in `test_gateway_ceiling_config.py` and four live tests in `test_gateway_ceiling.py`, none gated, because they spend no model call, so the gated figure stays 95.) (M8 Task 3 took the collection from 512 to 522: four gated live tests in `test_human_in_the_loop.py` (trace B and its link, trace A's deny, the histogram, and the release's rule split from the repeat-execute check) and one gated Prometheus control in `test_prometheus_metrics_ingest.py`, so the gated figure is 95, plus five harness tests in `test_jaeger_assertions.py`.) (M8 Task 2 took the collection
 from 504 to 512: five gated live tests in `test_human_in_the_loop.py` (task states, the
 autonomous wait, the 10-minute resubscribe, the dropped-stream reconnect), so the gated
 figure is 90, and two Cilium config tests in `test_stage2_network_policy.py` and one harness test in
@@ -522,14 +522,14 @@ test) is `tests/unit`-only and carries no `skipif`, so it adds none, and the
 internal-platform pass's eight new `tests/unit` tests, the mermaid pass's eight
 and the page-banner pass's eight `tests/unit` tests carry none either; the
 page-banner pass's own e2e file adds exactly **one** — and
-reports 96 of 539, with the per-module spread and the browser split both
+reports 98 of 550, with the per-module spread and the browser split both
 moving for the first time this milestone. Full spread:
 `test_settlement_llm_trace.py` 9,
 `test_prometheus_metrics_ingest.py` 11, `test_browser_root_span.py` 8,
 `test_settlement_agent_trace.py` 8, `test_claims_chain_trace.py` 7,
 `test_claim_correlation.py` 6, `test_gateway_trace.py` 6,
 `test_human_in_the_loop.py` 17, `test_policy_scores.py` 5,
-`test_demo_flow.py` 8, `test_evidence_view.py` 4, `test_policy_denial.py` 4,
+`test_demo_flow.py` 9, `test_gateway_ceiling.py` 1, `test_evidence_view.py` 4, `test_policy_denial.py` 4,
 `test_backstage_page_bands.py` 1, `test_golden_path.py` 1,
 `test_progressive_autonomy.py` 1. **The browser split changes twice this
 milestone, having not moved since M4 Task 5.** First a thirteenth gated module
@@ -540,11 +540,13 @@ never one of the three either). Then the page-banner pass added a fourteenth
 that *does* call `chromium.launch(` — it has no page to drive, only pages to
 look at — so the split was 4 of the 14 launching a browser and 10 of the 14
 starting none, until the demo-flow file made it a fifteenth that starts none:
-**3 of the 15 launch a browser** and **12 of the 15 start no browser** (M8 Task 1 swapped
+**3 of the 16 launch a browser** and **13 of the 16 start no browser** (the fix wave's gated ceiling test made `test_gateway_ceiling.py` a sixteenth module, starting none) (M8 Task 1 swapped
 `test_supervised.py` for `test_human_in_the_loop.py`, neither of which launches one,
 and the browser count had been miscounted as 4 since the demo-flow file).
 
-Gate row: **PREDICTED, NOT MEASURED** — M8 Task 5 predicts `538 passed, 1 xfailed`
+Gate row: **PREDICTED, NOT MEASURED** — the M8 final-review fix wave predicts `549 passed, 1 xfailed`
+(550 collected): it changes the PDS, the reviewer-ui, the claims-agent, the driver, the harness and the e2e suite, all `GATE_PATHS`, so no gate row describes this tree; the controller's one `./scripts/smoke-test.sh` follows. Before it,
+M8 Task 5 predicted `538 passed, 1 xfailed`
 (539 collected): it changes the gateway config's CEL rule, the driver, the customer-ui's log words, the e2e suite and the docs, all `GATE_PATHS` or docs the guards read, so no gate row describes this tree; the controller's whole-branch review and one `./scripts/smoke-test.sh` follow. Before it,
 M8 Task 4 predicted `528 passed, 1 xfailed`
 (529 collected): it changes the gateway config, the harness, the driver and the e2e suite,
@@ -2236,9 +2238,10 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (all nine run by `smoke-test.sh`, before any e2e test):
-claims-agent 30, settlement-agent 99, payments-mcp 16, payments-api (Go) 39,
+claims-agent 32, settlement-agent 99, payments-mcp 16, payments-api (Go) 39,
 customer-ui (vitest) 21, policy-decision-service 157,
-reviewer-ui 95, eval-scorer 166, backstage (jest) 37 — all passing.
+reviewer-ui 101, eval-scorer 166, backstage (jest) 37 — all passing.
+(**2026-10-15, M8 final-review fix wave: claims-agent 30 → 32, reviewer-ui 95 → 101.** The claims-agent gains two lifecycle tests (a second resume while the first publishes is refused; a ledger read that fails once leaves the task waiting for the retry); the reviewer-ui gains six healing tests in `test_review.py` (a decision already on the ledger re-sends the resume and moves no money, for approve and reject; a contradicting decision stays a 409; a task no longer waiting stays a 409; another resend failure is reported; no task id stays a 409). The policy-decision-service stays at 157: one parametrised test split in two.)
 (**2026-10-14, M8 Task 3: reviewer-ui 87 → 95, eval-scorer 165 → 166.** reviewer-ui gains
 `tests/test_approval_metrics.py` (2) and six tests in `test_review.py` (the span link, no link
 without ids, the claim baggage, and one histogram sample per successful decision, per reject and
@@ -3528,9 +3531,10 @@ asserts it.
   from every service. The first is Jaeger's record of the receive format; the
   second is its representation of the OTel `SpanKind` this document's Kind
   column already states. Neither is listed above.
-- **The gateway sets no `otel.scope.version`** — 0 of 20 spans, against
-  settlement-agent 49/52, payments-mcp 2/6, payments-api 2/2. The version is on
-  the Resource (`service.version=1.5.0`), not the scope.
+- **The gateway sets no `otel.scope.version`** — measured on v1.5.0: 0 of 20
+  spans, against settlement-agent 49/52, payments-mcp 2/6, payments-api 2/2. The
+  version is on the Resource (measured on v1.5.0: `service.version=1.5.0`), not
+  the scope. Not re-measured on v1.6.0, which is the pinned image since M8.
 
 ### Findings, in the same shape as Finding 1 (`a2a-sdk`)
 
@@ -3901,7 +3905,8 @@ payments-api itself, on **both** kinds of execute decision.
 - The settlement agent, after its limit passes, may execute only a payment that
   is still `proposed`. Any other status is denied under the rule
   **`settlement-agent.payment_not_proposed`**, with the limit still on the span.
-  The status reads `proposed` on a permit.
+  The status reads `proposed` on a permit. A ledger the PDS could not read
+  (status `unreadable`) has its own rule, **`settlement-agent.ledger_unreadable`**.
 
 So the limit-rule block above, which listed eleven keys, now has **twelve** on an
 `execute_payment` decision: those eleven plus `policy.ledger.status`. A decision

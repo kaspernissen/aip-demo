@@ -310,7 +310,11 @@ def release_wait(payment_id: str, reviewer_id: str = "demo-cleanup") -> dict:
     for what the wait looked like.
     """
     before = get_payment(payment_id)
-    review(payment_id, "reject", reviewer_id)
+    decided = review(payment_id, "reject", reviewer_id)
+    assert not decided.get("error"), (
+        f"release_wait could not reject {payment_id}: {decided['error']} -- the claim is still "
+        "waiting and its trace will never settle"
+    )
     return before
 
 
@@ -768,6 +772,47 @@ def window_start_ms_now() -> int:
     return int((time.time() - WINDOW_SKEW_S) * 1000)
 
 
+CLAIM_LOOKBACK_S = 900
+
+
+def claim_first_seen_ms(claim_id: str) -> int | None:
+    """When the first span carrying this claim id started (epoch ms), looking
+    back at most `CLAIM_LOOKBACK_S`; None if OpenSearch has none yet.
+
+    A claim filed in the browser leaves no trace in the demo driver's state, so
+    the driver asks the record itself where that claim's window begins. Bounded
+    on the way back so a re-used claim id cannot drag the window to last week.
+    """
+    lower = int((time.time() - CLAIM_LOOKBACK_S) * 1000)
+    result = search({
+        "size": 0,
+        "query": {"bool": {"filter": [
+            {"term": {f"attributes.{ATTR_CLAIM_ID}.keyword": claim_id}},
+            window_filter(lower),
+        ]}},
+        "aggs": {"first": {"min": {"field": "startTime"}}},
+    })
+    value = result["aggregations"]["first"]["value"]
+    return int(value) if value is not None else None
+
+
+def claim_ids_since(window_start_ms: int) -> list[str]:
+    """Every claim id any span carries since the window opened, oldest first:
+    how `demo evidence` finds the claims a human filed in the browser."""
+    buckets = search({
+        "size": 0,
+        "query": {"bool": {"filter": [
+            {"exists": {"field": f"attributes.{ATTR_CLAIM_ID}.keyword"}},
+            window_filter(window_start_ms),
+        ]}},
+        "aggs": {"claims": {
+            "terms": {"field": f"attributes.{ATTR_CLAIM_ID}.keyword", "size": 100},
+            "aggs": {"first": {"min": {"field": "startTime"}}},
+        }},
+    })["aggregations"]["claims"]["buckets"]
+    return [b["key"] for b in sorted(buckets, key=lambda b: b["first"]["value"])]
+
+
 def trace_ids_for_claim(claim_id: str, window_start_ms: int) -> list[str]:
     """Step 1 of the join: claim id -> the trace ids that claim touched.
 
@@ -902,7 +947,12 @@ def evidence_for(claim_id: str, window_start_ms: int) -> dict:
     # The review that released the money: who approved, and how long the human
     # took (the span's own `review.elapsed_ms`, read off the ledger's
     # awaitingSince). Both None when no human approved.
-    approving = [r for r in reviews if attrs(r).get(ATTR_REVIEW_DECISION) == "approve"]
+    # A resume-only decision (`review.resume_only`: the ledger already held the
+    # decision and the call only told the customer again) carries no elapsed time
+    # and is not the approval.
+    approving = [r for r in reviews
+                 if attrs(r).get(ATTR_REVIEW_DECISION) == "approve"
+                 and attrs(r).get(ATTR_REVIEW_ELAPSED_MS) is not None]
     approval = approving[-1] if approving else {}
     elapsed_ms = attrs(approval).get(ATTR_REVIEW_ELAPSED_MS)
 
@@ -1016,6 +1066,15 @@ def prometheus_series(selector: str, *, prometheus_url: str | None = None,
             if found or time.monotonic() >= deadline:
                 return found
             time.sleep(10)
+
+
+def prometheus_sum(selector: str, *, prometheus_url: str | None = None) -> float:
+    """The sum of an instant query's current values; 0.0 if the series does not
+    exist yet. For "did this count go up", read before and after."""
+    with contextlib.ExitStack() as stack:
+        url = prometheus_url or stack.enter_context(prometheus_port_forward())
+        result = prometheus_query(url, "/api/v1/query", [f"query={selector}"])
+        return sum(float(item["value"][1]) for item in result["result"])
 
 
 # --- settlement-agent (A2A), the violating path --------------------------------

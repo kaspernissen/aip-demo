@@ -68,7 +68,8 @@ state or an unknown id is a deny.
 
 The settlement agent is held to the ledger too: after its limit passes, it may
 execute only a payment still `proposed`. Any other status is a deny under the
-rule `settlement-agent.payment_not_proposed`. So both kinds of `execute_payment`
+rule `settlement-agent.payment_not_proposed`, or `settlement-agent.ledger_unreadable`
+when the ledger could not be read at all. So both kinds of `execute_payment`
 decision span carry `policy.ledger.status`, the status the PDS read.
 
 ## Telemetry

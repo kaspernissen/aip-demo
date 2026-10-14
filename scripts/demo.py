@@ -6,7 +6,9 @@
     claim <amount>        a real claim through claims-agent and the model: it
                           settles, or it WAITS for a human. The outcome, the span
                           tree from Jaeger, a Jaeger link
-    approve <claim|last>  a human releases a waiting claim (the reviewer-ui's route)
+    approve <claim|last>  a human releases a waiting claim (the reviewer-ui's route).
+                          The claim may have been filed here or in the customer-ui:
+                          the reviewer-ui's queue is asked, not only this run's notes
     reject <claim|last>   a human declines a waiting claim. Nothing is paid
     autonomy <level>      flip the one live value: assisted | autonomous
     keystone              the agent tries to edit what constrains it
@@ -42,12 +44,16 @@ that is open. Every network call and subprocess carries a timeout.
 **No secrets on screen.** JWT-SVIDs are minted at runtime and used; only their
 `sub` and `aud` are ever printed.
 
-State: `.demo/state.json` (git-ignored; `DEMO_STATE_DIR` moves it) remembers this run's claim ids and when
-the run started, so `evidence` reports this run's claims and nothing older.
+State: `.demo/state.json` (git-ignored; `DEMO_STATE_DIR` moves it) remembers when the run
+started and the claims it knows, so `evidence` reports this run's claims and nothing older.
+A claim filed in the customer-ui is not in it: `approve`/`reject` adopt it from the
+reviewer-ui's queue, and `evidence` also reads every claim id OpenSearch has seen since
+the run started.
 """
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -62,6 +68,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # The harness is imported as `tests.harness`, exactly as the e2e tests import it.
 sys.path.insert(0, str(ROOT))
 
+import httpx  # noqa: E402
 import requests  # noqa: E402
 
 from tests.harness import contract, live  # noqa: E402
@@ -271,8 +278,21 @@ def probe_from_claims_agent(pod: str, url: str, method: str) -> str:
     return lines[-1]
 
 
+def start_run(state: dict, window_start_ms: int | None = None) -> dict:
+    """The run starts with its first command that needs a window; evidence is
+    bounded to here. An existing window is kept."""
+    if "window_start_ms" not in state:
+        state = {
+            "run_id": uuid.uuid4().hex[:8],
+            "window_start_ms": window_start_ms or live.window_start_ms_now(),
+            "claims": state.get("claims") or [],
+        }
+    return state
+
+
 def cmd_guard(_: argparse.Namespace) -> None:
     title("GUARD  who may call the payment tools, and by which road")
+    save_state(start_run(load_state()))
 
     with live.gateway_port_forward() as gateway:
         step("1  No identity")
@@ -485,13 +505,7 @@ def cmd_claim(args: argparse.Namespace) -> None:
 
     level_before = flag_level()
     state = load_state()
-    if not state.get("claims"):
-        # The run starts with its first claim; evidence is bounded to here.
-        state = {
-            "run_id": uuid.uuid4().hex[:8],
-            "window_start_ms": live.window_start_ms_now(),
-            "claims": [],
-        }
+    state = start_run(state)
     kv("autonomy level", paint(level_before, "bold"), indent=2)
     out()
     say("A claimant files the claim. claims-agent hands it to settlement-agent.")
@@ -580,17 +594,64 @@ def awaiting_payments() -> list[dict]:
     return response.json()
 
 
+_LEVELS = importlib.util.spec_from_file_location(
+    "reviewer_levels", ROOT / "apps" / "reviewer-ui" / "levels.py")
+_levels = importlib.util.module_from_spec(_LEVELS)
+_LEVELS.loader.exec_module(_levels)
+
+
+def _adopt(item: dict) -> dict:
+    """A claim the customer-ui filed, read off the reviewer-ui's queue, written
+    into this run's state so `evidence` and a later `approve` know it.
+
+    The window opens where the record says the claim began (its first span in
+    OpenSearch, less one second), not at a guess and not with the host-clock skew
+    margin: both clocks here are the record's own, and a wider margin would pull
+    the previous claim's last spans into this run.
+    """
+    refusal = item.get("refusal") or {}
+    level = _levels.autonomy_level_of(refusal.get("rule"))
+    claim = {
+        "id": item["claimId"], "amount": item["amount"], "status": "awaiting_approval",
+        "trace_id": refusal.get("refusedTraceId"), "payment_id": item["paymentId"],
+        "task_id": item.get("a2aTaskId"), "level": None if level == "unknown" else level,
+        "adopted": True,
+    }
+    state = load_state()
+    if "window_start_ms" not in state:
+        first = live.claim_first_seen_ms(claim["id"])
+        state = start_run(state, (first - 1000) if first else None)
+    state["claims"] = [c for c in state.get("claims", []) if c["id"] != claim["id"]] + [claim]
+    save_state(state)
+    return claim
+
+
 def _claim_from_state(ref: str) -> dict:
+    """The claim a human is about to decide: this run's notes first, then what
+    the reviewer-ui says is waiting (a claim filed in the customer-ui)."""
     claims = load_state().get("claims") or []
-    waiting = [c for c in claims if c.get("status") == "awaiting_approval"]
+    queue = {p["paymentId"]: p for p in awaiting_payments()}
     if ref == "last":
-        if not waiting:
-            raise Fail("no claim in this run is waiting for a human")
-        return waiting[-1]
+        known = [c for c in claims
+                 if c.get("status") == "awaiting_approval" and c.get("payment_id") in queue]
+        if known:
+            return known[-1]
+        if queue:
+            return _adopt(max(queue.values(), key=lambda p: p.get("awaitingSince", "")))
+        # Nothing is waiting on the ledger, but a claim this run saw waiting may
+        # never have been told its decision: deciding it again re-sends the resume.
+        untold = [c for c in claims if c.get("status") == "awaiting_approval"]
+        if untold:
+            return untold[-1]
+        raise Fail("no claim is waiting for a human (the reviewer-ui's queue is empty)")
     for claim in claims:
         if claim["id"] == ref:
             return claim
-    raise Fail(f"{ref!r} is not a claim in this run: {[c['id'] for c in claims]}")
+    for item in queue.values():
+        if item.get("claimId") == ref:
+            return _adopt(item)
+    raise Fail(f"{ref!r} is neither a claim in this run {[c['id'] for c in claims]} "
+               f"nor waiting in the reviewer-ui {[p.get('claimId') for p in queue.values()]}")
 
 
 def _decide(args: argparse.Namespace, decision: str) -> None:
@@ -605,12 +666,17 @@ def _decide(args: argparse.Namespace, decision: str) -> None:
     if result.get("error"):
         raise Fail(f"the reviewer-ui could not {decision}: {result['error']}")
     seconds = result["elapsedMs"] / 1000
-    if decision == "approve":
+    if result.get("resentOnly"):
+        say("The decision was already on the ledger. This only told the customer's claim again.")
+    elif decision == "approve":
         out(f"  Outcome  {word('SETTLED', 'go')}  released by a human after {seconds:0.0f}s")
     else:
         out(f"  Outcome  {word('DECLINED', 'stop')}  by a human after {seconds:0.0f}s. Nothing was paid.")
     if result.get("resumeError"):
-        raise Fail(f"the customer's claim could not be told: {result['resumeError']}")
+        raise Fail(
+            f"the customer's claim could not be told: {result['resumeError']}. The decision "
+            f"stands. Run `scripts/demo {decision} {claim['id']}` again: it tells the claim again."
+        )
     out(f"  The customer's claim was told: {word('completed', 'info')}")
     claim["status"] = "executed" if decision == "approve" else "rejected"
     claim["decision"] = decision
@@ -792,14 +858,43 @@ def _settled(claim: dict, window_start_ms: int) -> dict:
         time.sleep(4)
 
 
+def _claims_seen_in_opensearch(known: list[dict], window_start_ms: int) -> list[dict]:
+    """Claims this run did not file through `scripts/demo claim` (a human used the
+    customer-ui), found by the claim id on their spans since the run began.
+
+    What each one is comes from its own record: a claim with a decision span is
+    reported; an id with none (a claim that failed before the platform was asked)
+    has no evidence to show and is left out rather than waited for.
+    """
+    have = {c["id"] for c in known}
+    found = []
+    for claim_id in live.claim_ids_since(window_start_ms):
+        if claim_id in have:
+            continue
+        row = live.evidence_for(claim_id, window_start_ms)
+        if not row["policy_decision"]:
+            continue
+        hops = row["money_hops"]
+        executed = EXECUTE_HOP in hops
+        found.append({
+            "id": claim_id, "amount": row["requested"] or 0.0,
+            "status": "executed" if executed else ("rejected" if REJECT_HOP in hops else "awaiting_approval"),
+            "decision": "approve" if row.get("approved_by") else ("reject" if REJECT_HOP in hops else None),
+            "level": row["autonomy_level"], "discovered": True,
+        })
+    return found
+
+
 def cmd_evidence(_: argparse.Namespace) -> None:
     title("EVIDENCE  can we prove why each claim ended the way it did?")
     state = load_state()
-    claims = state.get("claims") or []
+    claims = list(state.get("claims") or [])
+    window = state.get("window_start_ms")
+    if window is not None:
+        claims += _claims_seen_in_opensearch(claims, window)
     if not claims:
         raise Fail("no claims in this run yet: run `scripts/demo claim <amount>` first")
     say(f"From OpenSearch, for this run's {len(claims)} claim(s). Nothing older.")
-    window = state["window_start_ms"]
     problems = []
     for claim in claims:
         out()
@@ -831,7 +926,7 @@ def cmd_evidence(_: argparse.Namespace) -> None:
         if (claim["status"] == "executed" and row["executing_identity"] != row["caller_identity"]
                 and not row.get("approved_by")):
             problems.append(f"{claim['id']}: executed by someone other than the caller and no human approved it")
-        if claim["level"] != row["autonomy_level"]:
+        if claim["level"] is not None and claim["level"] != row["autonomy_level"]:
             problems.append(f"{claim['id']}: the flag read {claim['level']!r} but the decision recorded {row['autonomy_level']!r}")
     if problems:
         raise Fail("; ".join(problems))
@@ -921,7 +1016,8 @@ def main(argv: list[str] | None = None) -> int:
     except Fail as exc:
         print(f"\n{paint('FAIL', 'stop') if _COLOR else 'FAIL'}  {exc}", file=sys.stderr)
         return 1
-    except (AssertionError, subprocess.TimeoutExpired, requests.RequestException) as exc:
+    except (AssertionError, subprocess.TimeoutExpired, requests.RequestException,
+            httpx.HTTPError) as exc:
         print(f"\n{paint('FAIL', 'stop') if _COLOR else 'FAIL'}  {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:

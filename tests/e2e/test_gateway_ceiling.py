@@ -1,4 +1,8 @@
 """The gateway's ceiling, live: a payment over it is stopped before the PDS is asked."""
+import os
+import uuid
+
+import httpx
 import pytest
 
 from tests.harness import live
@@ -67,3 +71,38 @@ def test_a_sessions_get_and_delete_are_not_stopped_by_the_ceiling(gateway):
         assert got.status_code != 403, got.status_code
     deleted = requests.delete(url, headers=session, timeout=10)
     assert deleted.status_code != 403, deleted.status_code
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_BROWSER_TESTS") != "1",
+    reason="a real claim spends model tokens; gated behind the RUN_BROWSER_TESTS=1 flag smoke-test.sh sets",
+)
+def test_a_claim_over_the_ceiling_fails_and_nobody_is_asked(gateway):
+    """The behaviour the ceiling carries, pinned (docs/demo-runbook.md appendix):
+    above the ceiling the agent's execute is a 403 from the gateway, not a deny
+    from the PDS, so the task ends `failed`, the payment stays `proposed`, no
+    reviewer ever sees it and no `policy.decision` span exists for the execute.
+    By design nobody, a human included, may release it through this gateway.
+    """
+    claim_id = f"CLM-CEIL-{uuid.uuid4().hex[:8]}"
+    over = float(OVER)
+    with live.claims_agent_route() as url:
+        run = live.submit_claim(claim_id, over, claims_agent_url=url, timeout=170)
+    assert run["state"] == "failed", run
+    assert run["reply"]["status"] == "failed", run["reply"]
+
+    # The ledger: the proposal is there, and it was never executed or sent to a human.
+    payments = httpx.get(f"{live.PAYMENTS_API_URL}/payments", timeout=10).json()
+    mine = [p for p in payments if p.get("claimId") == claim_id]
+    assert [p["status"] for p in mine] == ["proposed"], mine
+    assert live.get_payment(mine[0]["paymentId"])["status"] == "proposed"
+    awaiting = httpx.get(f"{live.REVIEWER_UI_URL}/api/awaiting", timeout=15).json()
+    assert claim_id not in [a.get("claimId") for a in awaiting], "a reviewer would see this claim"
+
+    # The trace: the gateway stopped the execute, and the PDS was never asked about it.
+    trace = JaegerClient(JAEGER_API).wait_for_trace_id(
+        run["trace_id"], services={"agentgateway"}, timeout=90)
+    executes = [s for s in trace.spans if s.service == live.PDS_SERVICE
+                and s.operation == live.DECISION_SPAN
+                and s.attrs.get(live.ATTR_POLICY_TOOL) == live.EXECUTE_TOOL]
+    assert executes == [], executes

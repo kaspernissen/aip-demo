@@ -20,6 +20,12 @@ class ResumeFailed(RuntimeError):
     """The customer's task could not be resumed. The money decision stands."""
 
 
+class TaskNotWaiting(ResumeFailed):
+    """The task is no longer `input-required`: someone already resumed it, or it
+    reached a terminal state. Distinct from a transient failure, because only
+    this one means there is nothing left to heal."""
+
+
 class ClaimsClient:
     def __init__(self, base_url: str, transport: httpx.AsyncBaseTransport | None = None,
                  timeout: float = 30.0):
@@ -44,7 +50,7 @@ class ClaimsClient:
             async with httpx.AsyncClient(transport=self._transport, timeout=self._timeout) as client:
                 task = await self._call(client, "tasks/get", {"id": task_id})
                 if task["status"]["state"] != "input-required":
-                    raise ResumeFailed(f"task {task_id} is {task['status']['state']!r}, not waiting")
+                    raise TaskNotWaiting(f"task {task_id} is {task['status']['state']!r}, not waiting")
                 accepted = await self._call(client, "message/send", {
                     "message": {"role": "user", "messageId": uuid.uuid4().hex,
                                 "kind": "message",

@@ -268,3 +268,37 @@ async def test_a_settlement_failure_fails_the_task_with_the_real_reason_instead_
     body = json.loads(events[-1].status.message.parts[0].root.text)
     assert body["status"] == "failed" and "amount must not be negative" in body["error"]
     assert executor._waiting == {}
+
+
+async def test_a_second_resume_while_the_first_is_publishing_is_refused_not_a_crash():
+    from executor import _Waiting
+    executor = ClaimsAgentExecutor(delegates={"settlement-agent": FakeDelegate(_awaiting())},
+                                   ledger=FakeLedger("executed"))
+    waiting = _Waiting(reply=_awaiting(), outcome=asyncio.get_running_loop().create_future())
+    waiting.outcome.set_result(({}, None))
+    executor._waiting["task-1"] = waiting
+    with pytest.raises(RuntimeError, match="already resumed"):
+        await executor._resume("task-1")
+
+
+async def test_a_ledger_read_that_fails_once_leaves_the_task_waiting_for_the_retry():
+    handler, executor = _handler(_awaiting(), ledger_status="executed")
+    task, _ = await _until_input_required(handler)
+    real_get = executor._ledger.get
+    calls = {"n": 0}
+
+    async def flaky(payment_id):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ConnectionError("payments-api blinked")
+        return await real_get(payment_id)
+
+    executor._ledger.get = flaky
+    with pytest.raises(ConnectionError):
+        await _resume(handler, task, "approved")
+    stored = await handler.on_get_task(TaskQueryParams(id=task.id))
+    assert stored.status.state == TaskState.input_required
+    await _resume(handler, task, "approved")
+    await asyncio.sleep(0.2)
+    stored = await handler.on_get_task(TaskQueryParams(id=task.id))
+    assert stored.status.state == TaskState.completed

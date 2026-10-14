@@ -82,7 +82,7 @@ export default function Page() {
       }
     });
 
-    // The wait is a second root span (trace B) LINKED to the first, because the
+    // The wait is a second root span, its own trace, LINKED to the first, because the
     // human decides minutes later and trace A has long since ended. One stream
     // carries the whole wait: no polling.
     if (waiting) {

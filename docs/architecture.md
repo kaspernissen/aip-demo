@@ -23,7 +23,7 @@
 > | Caller | Level | `execute_payment` is permitted |
 > |---|---|---|
 > | `settlement-agent` | `assisted` | never (limit €0) |
-> | `settlement-agent` | `autonomous` | up to €6,000, and only a payment the ledger shows `proposed` (else rule `settlement-agent.payment_not_proposed`) |
+> | `settlement-agent` | `autonomous` | up to €6,000, and only a payment the ledger shows `proposed` (else rule `settlement-agent.payment_not_proposed`, or `settlement-agent.ledger_unreadable` when the ledger cannot be read) |
 > | `reviewer-ui` (in `HUMAN_APPROVERS`) | no level | only when payments-api shows the payment `awaiting_approval`, under rule `human-approved.execute` |
 > | any other caller | any | never (`unknown_caller`) |
 >
@@ -2004,6 +2004,16 @@ What was measured, and how each result shaped the rule:
 - **A JSON-RPC batch is still refused.** A batch (an array) is a `POST` with no
   `mcp.methodName`, so the allow rule errors and denies: `403 authorization
   failed` at the gateway instead of the `400` from the deserializer.
+
+- **A claim above the ceiling reaches no human.** The ceiling answers the
+  agent's `execute_payment` with a `403`, not with a "no" tool result, so the
+  agent's tool client fails the call: the claim's task ends `failed`, the payment
+  stays `proposed` (never `awaiting_approval`, so it is not in the reviewer-ui's
+  queue) and no `policy.decision` span exists for the execute. **By design nobody,
+  a human included, may release it through this gateway:** the reviewer-ui's
+  release is the same call on the same route. Pinned by
+  `test_a_claim_over_the_ceiling_fails_and_nobody_is_asked`; the operator's
+  version is the last appendix of `docs/demo-runbook.md`.
 
 ## What the system deliberately does not do
 

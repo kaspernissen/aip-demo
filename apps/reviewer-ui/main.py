@@ -186,6 +186,7 @@ async def api_review(payment_id: str, body: ReviewRequest):
         "error": result.error,
         "resumedState": result.resumed_state,
         "resumeError": result.resume_error,
+        "resentOnly": result.resent_only,
     }
 
 

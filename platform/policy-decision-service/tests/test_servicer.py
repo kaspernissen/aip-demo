@@ -676,7 +676,7 @@ def test_the_agent_is_denied_when_the_ledger_is_unreadable(monkeypatch, spans):
     result = PolicyServicer().CheckRequest(
         _request(caller=AGENT, params=_execute_payment(amount=100.0)), None)
     assert result.WhichOneof("result") == "error"
-    assert "rule=settlement-agent.payment_not_proposed" in result.error.reason
+    assert "rule=settlement-agent.ledger_unreadable" in result.error.reason
     span, = spans.get_finished_spans()
     assert span.attributes[telemetry.ATTR_LEDGER_STATUS] == "unreadable"
 

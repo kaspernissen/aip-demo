@@ -596,8 +596,9 @@ payments-api span": the proposal and the refusal record are payments-api spans.
 
 **If it fails** — `FAIL ... expected the claim to end 'awaiting_approval'`: the
 contract was left `autonomous`; `scripts/demo reset`. A model or API-key error:
-§8's first row. `FAIL ... no claim in this run is waiting for a human`: the
-claim already ended, or `reset` cleared the run. The customer tab never flips:
+§8's first row. `FAIL ... no claim is waiting for a human`: the reviewer-ui's queue is
+empty, so the claim already ended or `reset` rejected it. `approve last` finds
+a claim filed in the customer tab too: it reads the queue, not only this run's notes. The customer tab never flips:
 §8.
 
 ---
@@ -811,34 +812,42 @@ The mechanism each beat shows is unchanged; the numbers on screen are not.
 **DO** — http://localhost:8080. The form is pre-filled: claim `CLM-1842`,
 policy `POL-77120`, **€6,200**. Click **Submit claim**.
 
-**SHOW** — the Outcome block, within a few seconds:
+**SHOW** — the Outcome block, within a few seconds. At `assisted` the agent may
+release nothing, so the claim **waits for a human** (the customer tab says
+"Awaiting human approval"). The reply it carries:
 
 ```json
-{ "status": "refused",
+{ "status": "awaiting_approval",
   "paymentId": "PAY-0000NN",
   "amount": 6200,
   "narrative": "…the model's own words, different every run…" }
 ```
 
+Reject it in the reviewer tab (or `scripts/demo reject last`) before the next
+step, so nothing is left waiting.
+
 **SAY**
 
 > "That is not a failure. That is the platform working. The agent *proposed*
-> the payment — the platform refused to execute it. And notice the narrative
+> the payment — the platform said no to its own execute, and a person has to
+> decide. And notice the narrative
 > is different every time you run this, because it is genuinely the model
 > explaining its own refusal, not a canned string."
 
-> ⚠️ **Do not let a `refused` land as an error.** Name it as the success
+> ⚠️ **Do not let a `waits` land as an error.** Name it as the success
 > before anyone reads it as a bug. This is the most common way this demo is
 > misread.
 
-**DO** — change the amount to **5800**, submit again. It comes back
-`"status": "executed"`.
+**DO** — flip the dial to `autonomous` (Beat 7's card, or `scripts/demo autonomy
+autonomous`), change the amount to **5800**, submit again. It comes back
+`"status": "executed"`. Flip it back to `assisted` afterwards.
 
 **SAY**
 
-> "Same claim, same agents, same path, four hundred euros apart. One is
-> refused and one goes through. A platform that refused everything would have
-> looked identical on the first run alone — that is why you always see both."
+> "Same claim, same agents, same path. At `assisted` it waits for a person. At
+> `autonomous`, inside the agent's limit, it goes through. A platform that
+> made everyone wait would have looked identical on the first run alone — that
+> is why you always see both."
 
 ---
 
@@ -857,7 +866,7 @@ policy `POL-77120`, **€6,200**. Click **Submit claim**.
 |---|---|---|
 | `claim.submit` | customer-ui | the trace **root** — no parent, attributes set in the browser |
 | `tools/call` (SERVER) | agentgateway | `jwt.sub` = the caller's **attested** SPIFFE ID, set by the gateway from the token it verified |
-| `policy.decision` | policy-decision-service | `policy.decision=deny`, `policy.rule=settlement-agent.assisted.execute_limit`, `policy.request.amount=6200`, `policy.limit.amount=6000` |
+| `policy.decision` | policy-decision-service | `policy.decision=deny`, `policy.rule=settlement-agent.assisted.execute_limit`, `policy.request.amount=6200`, `policy.limit.amount=0` (the agent's limit at `assisted`) |
 | `Guardrail` (CLIENT) | agentgateway | `grpc.status = 0` — the *call* succeeded, the **deny is in the payload** |
 
 **SAY**
@@ -1019,9 +1028,9 @@ flowchart LR
 
 | Panel | What it shows | The point |
 |---|---|---|
-| 1 · Claims in this window | claim id → trace ids. €6,200 has **two** (refusal + approval); €5,800 has one | this is where a human hops from the number they have to the id telemetry joins on |
+| 1 · Claims in this window | claim id → trace ids. A claim a human released has **two** (the wait, then the approval); a claim the agent settled at `autonomous` has one | this is where a human hops from the number they have to the id telemetry joins on |
 | 2 · What the platform decided | both claims' `execute_payment` decisions, **same rule**, different outcomes | same rule, different caller, different answer |
-| 3 · Was a human in the loop? | **empty** for €5,800 | the emptiness *is* the evidence |
+| 3 · Was a human in the loop? | **empty** for the claim the agent settled at `autonomous` | the emptiness *is* the evidence |
 | 4 · What reached the ledger | every `payments-api` server span | not one of them carries a claim id — they are here only via the trace-id join |
 
 **SAY**
@@ -1116,9 +1125,11 @@ curl -s localhost:18300/score -X POST \
 > "That is a **live read** of the Kubernetes object, per identity — not a
 > static description of what the demo does."
 
-**DO** — submit **€6,200** again first (or point back at beat 1) and confirm
-`refused`. Then click **Set settlement-agent: autonomous**. Then submit the
-**identical** €6,200 claim again.
+**DO** — submit **€5,800** first (or point back at beat 1) and confirm it
+**waits** for a human; approve or reject it so nothing is left waiting. Then
+click **Set settlement-agent: autonomous**. Then submit the **identical** €5,800
+claim again. (Do not use €6,200 here: it is above the `autonomous` limit of
+€6,000 and would wait again.)
 
 **SHOW** — `"status": "executed"`.
 
@@ -1346,8 +1357,9 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 | `beat-reach.sh` step 2 prints `REFUSED` or `REACHED` | the Cilium policy is not enforcing | `kubectl -n northstar-tools get cnp`; `tests/e2e/test_gateway_is_the_only_route.py` reads the datapath |
 | EUR 5,800 comes back `executed` at the start of step 2 | **contract left flipped from a previous run** | `scripts/demo reset`, or §7 |
 | The customer tab never flips to "Settled" after the approve | the customer-ui's stream to claims-agent is down (a dead forward), or the page lost the task | check `scripts/start-demo.sh`'s claims-agent forward (`localhost:19001`), then finish from the terminal: `scripts/demo approve last` (the stage fallback). The payment is settled either way; only the tab is stale |
-| A claims-agent restart while a claim waits | waiting tasks live in claims-agent's memory, by design: a restart loses them | reject the stranded approvals with `scripts/demo reset` and file the claim again |
-| `scripts/demo approve last` says no claim is waiting | the run state was cleared, or the claim already ended | `curl -s localhost:8081/api/awaiting` lists what is waiting; approve it in the reviewer tab |
+| A claims-agent restart while a claim waits | waiting tasks live in claims-agent's memory, by design: a restart loses them | the re-send above cannot help (the task is gone). Reject the stranded approvals with `scripts/demo reset` and file the claim again |
+| `scripts/demo approve last` says no claim is waiting | the reviewer-ui's queue is empty: the claim already ended, or `reset` rejected it | `curl -s localhost:8081/api/awaiting` lists what is waiting; approve it in the reviewer tab |
+| The money moved but the customer tab is stuck on "Awaiting human approval" (`demo approve` printed `the customer's claim could not be told`) | the decision is on the ledger, but the message to claims-agent was lost (a dropped answer, claims-agent unreachable for a moment) | **run the same command again**: `scripts/demo approve last` (or `reject last`, or the Approve button). The reviewer-ui sees the decision is already on the ledger, takes no new money decision and tells the claim again. It only answers 409 if the claim is no longer waiting |
 | `scripts/demo` prints `FAIL` | the expected outcome did not happen: that is the command doing its job | read the line: it names what was expected. `scripts/demo reset`, then re-run the one step |
 | `scripts/demo claim` hangs after the model's explanation | it is waiting (up to 90s) for every service's spans to reach Jaeger, so that an *absent* span is a real absence | give it a few seconds; the explanation is already on screen. If it times out, the Jaeger UI at http://localhost:16686 is the fallback |
 | EUR 5,800 waits at `autonomous` | the flag did not take, or the caller identity is wrong | check the card; check `policy.caller.spiffe_id` on the span |
@@ -1415,3 +1427,26 @@ answer is the "Two ways to say no" table in `docs/architecture.md`.
 The rule opens with `request.method != "POST"`, so the agents' MCP client's own
 `GET` and `DELETE` on `/mcp` pass. Only a `POST` that is a `tools/call` for
 `execute_payment` is judged, and a JSON-RPC batch is still `403`.
+
+### A claim above the ceiling: nobody sees it, by design
+
+The gateway's ceiling is **not a decision the PDS makes**, so it does not send
+anything to a human. Claim above the ceiling (EUR 50,000 today; the figure is
+read from `deploy/platform/agentgateway/config.yaml`) and this happens:
+
+1. The settlement agent proposes the payment. The ledger records it `proposed`.
+2. The agent's `execute_payment` is answered by the gateway with `HTTP 403
+   authorization failed`. The PDS is never asked, so there is no
+   `policy.decision` span for the execute and no refusal is recorded.
+3. The agent's tool client treats a 403 as a failed call, not as a "no" tool
+   result, so the claim's task ends `failed` ("could not be processed").
+4. The payment stays `proposed`. It is **not** `awaiting_approval`, so it is not
+   in the reviewer-ui's queue and no human sees it.
+
+By design nobody, a human included, may release it through this gateway: the
+reviewer-ui's release is the same `execute_payment` call through the same
+route, and the ceiling stops it too. A payment that large is out of scope for
+this demo (spec section 8) and would need a different road, not a bigger
+number. `tests/e2e/test_gateway_ceiling.py::test_a_claim_over_the_ceiling_fails_and_nobody_is_asked`
+pins every part of this.
+

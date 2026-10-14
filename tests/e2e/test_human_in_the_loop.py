@@ -41,6 +41,13 @@ pytestmark = pytest.mark.skipif(
 )
 
 REVIEWER = "alex.mercer"
+
+
+def _reviewer_id() -> str:
+    """One reviewer id per decision. Payment ids restart when the ledger does, so a
+    Jaeger lookup by `review.payment.id` can find an older run's trace B; a uuid
+    reviewer id cannot (test_evidence_view.py does the same)."""
+    return f"{REVIEWER}-{uuid.uuid4().hex[:8]}"
 REVIEWER_UI_SPIFFE_ID = live.REVIEWER_UI_SPIFFE_ID
 AMOUNT = 5800.0
 
@@ -62,8 +69,12 @@ def approved():
     run = _claim(AMOUNT)
     assert run["reply"]["status"] == "awaiting_approval", run
     payment_id = run["reply"]["paymentId"]
-    return {**run, "payment_id": payment_id,
-            "review": live.review(payment_id, "approve", REVIEWER)}
+    # Read BEFORE the approval, so the histogram test can ask whether this
+    # approval added a sample rather than whether any sample ever existed.
+    waits_before = live.prometheus_sum(APPROVED_WAIT_COUNT)
+    reviewer = _reviewer_id()
+    return {**run, "payment_id": payment_id, "reviewer": reviewer, "waits_before": waits_before,
+            "review": live.review(payment_id, "approve", reviewer)}
 
 
 @pytest.fixture(scope="module")
@@ -71,8 +82,9 @@ def rejected():
     run = _claim(AMOUNT)
     assert run["reply"]["status"] == "awaiting_approval", run
     payment_id = run["reply"]["paymentId"]
-    return {**run, "payment_id": payment_id,
-            "review": live.review(payment_id, "reject", REVIEWER)}
+    reviewer = _reviewer_id()
+    return {**run, "payment_id": payment_id, "reviewer": reviewer,
+            "review": live.review(payment_id, "reject", reviewer)}
 
 
 def test_assisted_5800_waits_with_rule_and_a_zero_limit(approved):
@@ -144,10 +156,12 @@ def test_a_dropped_stream_reconnects_and_still_sees_the_outcome():
     assert once["state"] == "completed" and once["reply"]["status"] == "rejected"
 
 
-def test_the_ledger_shows_the_wait_before_the_human_acts(approved):
-    # Read after the fixture released it: the record keeps what the wait was.
+def test_the_ledger_keeps_the_wait_after_the_human_has_acted(approved):
+    # Read after the fixture released it: the record keeps when the wait began,
+    # which is the clock `review.elapsed_ms` was measured from.
     record = live.get_payment(approved["payment_id"])
     assert record["awaitingSince"], record
+    assert record["status"] == "executed", record
 
 
 def test_approve_releases_the_payment_through_the_pds(approved):
@@ -159,7 +173,7 @@ def test_approve_releases_the_payment_through_the_pds(approved):
 def test_reject_records_the_reviewer_and_moves_no_money(rejected):
     assert rejected["review"]["error"] is None, rejected["review"]
     assert rejected["review"]["rejected"]["status"] == "rejected"
-    assert rejected["review"]["rejected"]["rejection"]["reviewerId"] == REVIEWER
+    assert rejected["review"]["rejected"]["rejection"]["reviewerId"] == rejected["reviewer"]
     assert live.get_payment(rejected["payment_id"])["status"] == "rejected"
 
 
@@ -191,7 +205,7 @@ def test_the_release_was_decided_under_the_human_rule(approved):
     # rule and the ledger status it was decided on.
     trace_b = JaegerClient(JAEGER_URL).wait_for_operation(
         "reviewer-ui", "review.decision",
-        attrs={"review.payment.id": approved["payment_id"]}, timeout=90)
+        attrs={"review.reviewer.id": approved["reviewer"]}, timeout=90)
     permits = [s for s in trace_b.spans
                if s.operation == "policy.decision" and s.attrs.get("policy.decision") == "permit"]
     assert [p.attrs["policy.rule"] for p in permits] == ["human-approved.execute"], permits
@@ -207,7 +221,7 @@ def test_executing_the_released_payment_again_is_refused(approved):
 def test_trace_b_is_rooted_at_review_decision_and_links_to_trace_a(approved):
     trace_b = JaegerClient(JAEGER_URL).wait_for_operation(
         "reviewer-ui", "review.decision",
-        attrs={"review.payment.id": approved["payment_id"]}, timeout=90)
+        attrs={"review.reviewer.id": approved["reviewer"]}, timeout=90)
     root = trace_b.root()
     assert root.operation == "review.decision"
     assert any(link.trace_id == approved["trace_id"] for link in root.links), root.links
@@ -231,13 +245,20 @@ def test_trace_a_holds_the_deny_and_no_execute(approved):
 # Read off the running Prometheus on 2026-10-14, never predicted; see
 # docs/telemetry-contract.md.
 APPROVAL_WAIT_SERIES = "northstar_approval_wait_duration_seconds"
+APPROVED_WAIT_COUNT = f'{APPROVAL_WAIT_SERIES}_count{{job="reviewer-ui",decision="approved"}}'
 
 
 def test_the_histogram_has_a_sample_for_the_approval(approved):
-    series = live.prometheus_series(
-        f'{APPROVAL_WAIT_SERIES}_count{{job="reviewer-ui",decision="approved"}}',
-        timeout_s=180)
-    assert series, "no approval-wait sample reached Prometheus"
+    """This approval added a sample. The count is read before the fixture approves
+    and again here: a series that merely exists from an earlier run proves nothing."""
+    deadline = time.monotonic() + 180
+    after = live.prometheus_sum(APPROVED_WAIT_COUNT)
+    while after <= approved["waits_before"] and time.monotonic() < deadline:
+        time.sleep(10)
+        after = live.prometheus_sum(APPROVED_WAIT_COUNT)
+    assert after > approved["waits_before"], (
+        f"the approved-wait count did not rise: {approved['waits_before']} before the "
+        f"approval, {after} after")
 
 
 # --- the two bypasses the review found (M8 review I1 and I2) ----------------
