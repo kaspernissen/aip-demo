@@ -37,7 +37,8 @@
 > `execute_payment` (agent and human; unreadable denies), so the maker cannot release
 > a payment it routed to a human. payments-api has no caller authentication, so the
 > reviewer-ui's egress to it is L7 (Cilium `rules.http`: list, get and reject only),
-> and a direct `POST .../execute` from that pod is refused by the proxy with 403: nothing else is in `HUMAN_APPROVERS`, and the
+> and a direct `POST .../execute` from that pod is refused by the proxy with 403.
+> Only the reviewer-ui is in `HUMAN_APPROVERS`, and the
 > Kyverno keystone policy refuses an agent the verbs to run a pod as, or mint a
 > token for, that ServiceAccount.
 >
@@ -1990,16 +1991,19 @@ What was measured, and how each result shaped the rule:
   cannot evaluate: in the spike a string amount `"60000"` went through and
   executed. An allow rule that errors denies.
   `test_a_string_amount_is_denied_not_waved_through` guards it.
-- **It must let everything else through.** The `mcp.methodName != "tools/call"`
-  guard keeps `initialize` and `tools/list` working for every caller.
+- **It must let everything else through.** Two guards open the rule:
+  `request.method != "POST"` lets the MCP client's own `GET` and `DELETE` on
+  `/mcp` through, and `mcp.methodName != "tools/call"` keeps `initialize` and
+  `tools/list` working for every caller. The method guard was added after
+  measuring that the first version answered 403 to every session's `GET` and
+  `DELETE`; `tests/e2e/test_gateway_ceiling.py` guards it.
 - **It only works on v1.6.0 and later.** On v1.5.0 the route policy has no MCP
   context and the same rule denies everything.
 - **Its 403 leaves no `policy.decision` span**, because the PDS is never asked.
   The refusal is visible, but it is one generic span with no rule and no limit.
-- **It also answers 403 to a request with no MCP method.** Measured live: a
-  JSON-RPC batch (an array) is now `403 authorization failed` at the gateway
-  instead of the `400` from the deserializer, and the GET and DELETE the MCP
-  client sends on `/mcp` are 403 as well (see `docs/demo-runbook.md`, appendix).
+- **A JSON-RPC batch is still refused.** A batch (an array) is a `POST` with no
+  `mcp.methodName`, so the allow rule errors and denies: `403 authorization
+  failed` at the gateway instead of the `400` from the deserializer.
 
 ## What the system deliberately does not do
 

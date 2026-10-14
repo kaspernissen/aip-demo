@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { SpanStatusCode, type SpanContext } from "@opentelemetry/api";
 import { awaitOutcome, streamClaim, type Claim, type ClaimResult } from "../a2a";
-import { determinationView, formatElapsed } from "../view";
+import { determinationView, formatElapsed, outcomeWord } from "../view";
 import { getTracer, initTelemetry } from "../telemetry";
 
 const CLAIMS_AGENT_URL =
@@ -66,7 +66,7 @@ export default function Page() {
           setWaitingSince(Date.now());
           setLog((entries) => [...entries, "Waiting for a person to decide"]);
         } else {
-          setLog((entries) => [...entries, `Settled: ${snap.result?.status ?? snap.state}`]);
+          setLog((entries) => [...entries, `Claim ${outcomeWord(snap.result?.status, snap.state)}`]);
         }
       } catch (error) {
         span.setStatus({
@@ -98,7 +98,7 @@ export default function Page() {
               (s) => s.result && setResult(s.result),
             );
             if (final.result) setResult(final.result);
-            setLog((entries) => [...entries, `Decided: ${final.result?.status ?? final.state}`]);
+            setLog((entries) => [...entries, `Claim ${outcomeWord(final.result?.status, final.state)}`]);
           } catch (error) {
             wait.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
             setLog((entries) => [...entries, `Failed: ${String(error)}`]);

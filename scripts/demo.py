@@ -3,15 +3,24 @@
 
     guard                 no identity -> 401, around the gateway -> dropped,
                           with settlement-agent's SPIRE identity -> its tools
-    claim <amount>        a real claim through claims-agent and the model, the
-                          outcome, the span tree from Jaeger, a Jaeger link
+    claim <amount>        a real claim through claims-agent and the model: it
+                          settles, or it WAITS for a human. The outcome, the span
+                          tree from Jaeger, a Jaeger link
+    approve <claim|last>  a human releases a waiting claim (the reviewer-ui's route)
+    reject <claim|last>   a human declines a waiting claim. Nothing is paid
     autonomy <level>      flip the one live value: assisted | autonomous
     keystone              the agent tries to edit what constrains it
-    evidence              who decided, rule, limit, identity, outcome, human
-    reset                 flag assisted, over-grant absent, state cleared
+    evidence              who decided, the rule, who approved, how long the human took
+    reset                 rejects open approvals as demo-reset, flag assisted,
+                          over-grant absent, state cleared
     ceiling               (off stage) the gateway's own CEL ceiling: a 403 before the PDS
 
-Design: docs/superpowers/specs/2026-10-12-northstar-m7-bounded-design.md, section 7.
+The five-minute flow (spec section 4): guard; claim 5800 (it WAITS at assisted)
+then approve last; autonomy autonomous; claim 5800 (settled by the agent) and
+claim 6200 (waits: the limit is 6,000); autonomy assisted; keystone; evidence;
+reset. At rest the contract is `assisted` and nothing waits.
+
+Design: docs/superpowers/specs/2026-10-13-northstar-m8-human-in-the-loop-design.md, section 4.
 
 **No new mechanism.** Everything here is code the tests already prove, imported
 from `tests/harness/` (`live.py`, `contract.py`, `jaeger.py`) -- claim submission
@@ -22,8 +31,8 @@ So the stage path and the tested path are the same code, and
 `tests/e2e/test_demo_flow.py` runs these commands, not a re-implementation.
 
 **Written for a room.** Short lines, at most ~100 columns, the decisive word
-highlighted, each step says what it is about to do before it does it. A
-refusal is shown as a success of the platform, in the colour of one.
+highlighted, each step says what it is about to do before it does it. The
+words are "awaiting human approval", "settled" and "declined".
 
 **Exit status is the point.** Each command exits non-zero when the expected
 outcome does not happen -- a refusal that executes, a drop that connects, a
@@ -87,6 +96,10 @@ DIRECT_URL = "http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp"
 # allowed connection is not mistaken for a drop, short enough for a stage.
 CONNECT_TIMEOUT_S = 8
 
+REVIEWER_UI = os.environ.get("REVIEWER_UI_URL", "http://localhost:8081")
+STAGE_REVIEWER = "kasper.on.stage"
+RESET_REVIEWER = "demo-reset"
+
 AGENT = "system:serviceaccount:northstar-agents:settlement-agent"
 POLICY = "agents-cannot-edit-their-own-authority"
 FLAG = "featureflag/northstar-autonomy"
@@ -98,6 +111,7 @@ GUARDRAIL_SPAN = "Guardrail"
 EXECUTE_HOP = "POST /payments/{paymentId}/execute"
 PROPOSE_HOP = "POST /payments/propose"
 REFUSE_HOP = "POST /payments/{paymentId}/refuse"
+REJECT_HOP = "POST /payments/{paymentId}/reject"
 
 # OpenSearch is near-real-time and the collector batches on a 1s timeout;
 # bounded, and exceeding it is a failure (that is what a dropped span looks like).
@@ -299,10 +313,10 @@ def cmd_guard(_: argparse.Namespace) -> None:
         doing(f"POST  payments-mcp:8000/mcp  initialize, straight to the tool, {CONNECT_TIMEOUT_S}s timeout")
         direct = probe_from_claims_agent(pod, DIRECT_URL, "POST")
         if not direct.startswith("DROPPED"):
+            how = "refused (REFUSED) by something other than the dataplane" if direct.startswith("REFUSED") else "let through"
             raise Fail(
                 f"claims-agent was not dropped on the way to payments-mcp ({direct}): "
-                "either it got through, or something refused it instead of the "
-                "dataplane dropping it. The gateway is not provably the only way in."
+                f"it was {how}. The gateway is not provably the only way in."
             )
         out(f"  -> {word('DROPPED', 'stop')}  no answer, no 401. The packet never arrived.")
 
@@ -356,6 +370,24 @@ def _decision_of(trace: Trace):
     return spans
 
 
+_DENIAL_TAG = re.compile(r"\[policy-denial rule=(\S+) limit=(\S+) requested=(\S+)\]")
+
+
+def plain_denial(text: str) -> str:
+    """The gateway's words for a no, with the machine tag read out in plain
+    words: the rule, the limit, the amount asked for."""
+    match = _DENIAL_TAG.search(text)
+    if not match:
+        return text.strip()
+    rule, limit, requested = match.groups()
+    try:
+        figures = f"limit EUR {float(limit):,.0f}, asked EUR {float(requested):,.0f}"
+    except ValueError:
+        figures = f"limit {limit}, asked {requested}"
+    head = _DENIAL_TAG.sub("", text).strip()
+    return f"{head}  (rule {rule}; {figures})".strip()
+
+
 def render_span_tree(trace: Trace, executed_expected: bool) -> dict:
     """Print the part of the trace that matters on stage, return the facts.
 
@@ -406,7 +438,7 @@ def render_span_tree(trace: Trace, executed_expected: bool) -> dict:
         f"   HTTP {status}  {gateway.attrs.get('otel.status_code', 'OK')}")
     out(f"      jwt.sub  {short_id(gateway.attrs.get('jwt.sub'))}")
     if denied and str(status) == "200":
-        out(paint("      HTTP 200: the answer is a tool result marked isError. A no is not an HTTP failure.", "dim"))
+        out(paint("      HTTP 200: the no is a tool result marked isError, with the rule in its text.", "dim"))
     out(f"    +- {GUARDRAIL_SPAN}   the gateway asks the decision service")
     mark = word("DENY", "stop") if denied else word("PERMIT", "go")
     out(f"    +- {live.PDS_SERVICE}  {paint('policy.decision', 'bold')}  {mark}")
@@ -418,7 +450,7 @@ def render_span_tree(trace: Trace, executed_expected: bool) -> dict:
     description = gateway.attrs.get("otel.status_description")
     if description:
         out()
-        say("gateway: " + str(description), indent=4)
+        say("gateway: " + plain_denial(str(description)), indent=4)
 
     out()
     out("  payments-api spans in this trace:")
@@ -474,9 +506,9 @@ def cmd_claim(args: argparse.Namespace) -> None:
     out(f"  -> {took:0.0f}s")
     out()
     if status == "awaiting_approval":
-        out(f"  Outcome  {word('WAITING', 'stop')}  for a human. Nothing was paid.")
+        out(f"  Outcome  {word('WAITING', 'stop')}  awaiting human approval. Nothing was paid.")
     elif status == "executed":
-        out(f"  Outcome  {word('EXECUTED', 'go')}  by the platform. The payment was made.")
+        out(f"  Outcome  {word('SETTLED', 'go')}  by the agent, inside its band. The payment was made.")
     else:
         raise Fail(f"the claim ended {status!r}, neither waiting for a human nor executed: {reply}")
     out()
@@ -487,9 +519,11 @@ def cmd_claim(args: argparse.Namespace) -> None:
 
     state["claims"].append(
         {"id": claim_id, "amount": amount, "status": status, "trace_id": run["trace_id"],
-         "payment_id": reply.get("paymentId"), "level": level_before}
+         "payment_id": reply.get("paymentId"), "task_id": run.get("task_id"), "level": level_before}
     )
     save_state(state)
+    if status == "awaiting_approval":
+        out(f"  Approve with:  scripts/demo approve {claim_id}   (or: scripts/demo approve last)")
 
     step("The same event, as the trace saw it")
     doing(f"Jaeger  trace {run['trace_id'][:8]}...  (waiting for every service to land)")
@@ -526,14 +560,71 @@ def cmd_claim(args: argparse.Namespace) -> None:
         facts["limit"] is not None and facts["requested"] is not None
         and facts["requested"] > facts["limit"]
     ):
-        problems.append(f"a refusal must name a limit below the request: {facts}")
+        problems.append(f"a claim awaiting a human must name a limit below the request: {facts}")
     if problems:
         raise Fail("; ".join(problems))
     out()
     if status == "awaiting_approval":
-        out(paint("A refusal is a success: the model asked, the platform said no, and the record shows both.", "bold"))
+        out(paint("The model asked. The platform sent it to a human. The record shows both.", "bold"))
     else:
-        out(paint("Same amount, same agent, same code. Only the value changed.", "bold"))
+        out(paint("Settled by the agent, inside its band. Same code; only the value changed.", "bold"))
+
+
+# --- approve / reject: the human --------------------------------------------------
+
+
+def awaiting_payments() -> list[dict]:
+    """What the reviewer-ui says is waiting for a human."""
+    response = requests.get(f"{REVIEWER_UI}/api/awaiting", timeout=15)
+    response.raise_for_status()
+    return response.json()
+
+
+def _claim_from_state(ref: str) -> dict:
+    claims = load_state().get("claims") or []
+    waiting = [c for c in claims if c.get("status") == "awaiting_approval"]
+    if ref == "last":
+        if not waiting:
+            raise Fail("no claim in this run is waiting for a human")
+        return waiting[-1]
+    for claim in claims:
+        if claim["id"] == ref:
+            return claim
+    raise Fail(f"{ref!r} is not a claim in this run: {[c['id'] for c in claims]}")
+
+
+def _decide(args: argparse.Namespace, decision: str) -> None:
+    claim = _claim_from_state(args.claim)
+    if claim.get("status") != "awaiting_approval":
+        raise Fail(f"{claim['id']} is not waiting for a human (it is {claim.get('status')!r})")
+    verb = "APPROVE" if decision == "approve" else "REJECT"
+    title(f"{verb}  {claim['id']}   EUR {claim['amount']:,.0f}")
+    say("A person decides. The reviewer-ui acts under its own identity, through the gateway.")
+    doing(f"reviewer-ui  POST /api/review/{claim['payment_id']}  decision={decision}")
+    result = live.review(claim["payment_id"], decision, STAGE_REVIEWER)
+    if result.get("error"):
+        raise Fail(f"the reviewer-ui could not {decision}: {result['error']}")
+    seconds = result["elapsedMs"] / 1000
+    if decision == "approve":
+        out(f"  Outcome  {word('SETTLED', 'go')}  released by a human after {seconds:0.0f}s")
+    else:
+        out(f"  Outcome  {word('DECLINED', 'stop')}  by a human after {seconds:0.0f}s. Nothing was paid.")
+    if result.get("resumeError"):
+        raise Fail(f"the customer's claim could not be told: {result['resumeError']}")
+    out(f"  The customer's claim was told: {word('completed', 'info')}")
+    claim["status"] = "executed" if decision == "approve" else "rejected"
+    claim["decision"] = decision
+    state = load_state()
+    state["claims"] = [claim if c["id"] == claim["id"] else c for c in state["claims"]]
+    save_state(state)
+
+
+def cmd_approve(args: argparse.Namespace) -> None:
+    _decide(args, "approve")
+
+
+def cmd_reject(args: argparse.Namespace) -> None:
+    _decide(args, "reject")
 
 
 # --- autonomy -------------------------------------------------------------------
@@ -682,6 +773,8 @@ def _settled(claim: dict, window_start_ms: int) -> dict:
     required = ["policy_decision", "rule", "caller_identity", "money_hops"]
     if claim["status"] == "executed":
         required.append("executing_identity")
+    if claim.get("decision") == "approve":
+        required += ["approved_by", "human_wait_s"]
     deadline = time.time() + EVIDENCE_WAIT_S
     row: dict = {}
     while True:
@@ -715,19 +808,23 @@ def cmd_evidence(_: argparse.Namespace) -> None:
         row = _settled(claim, window)
         denied = row["policy_decision"] == "deny"
         outcome_executed = EXECUTE_HOP in row["money_hops"]
-        kv("who decided", f"{live.PDS_SERVICE}   {word('DENY' if denied else 'PERMIT', 'stop' if denied else 'go')}")
+        kv("who decided", f"{live.PDS_SERVICE}   {word('SENT TO A HUMAN' if denied else 'PERMIT', 'stop' if denied else 'go')}")
         kv("rule", str(row["rule"]))
         kv("limit", f"{row['limit']}   (requested {row['requested']})")
         kv("autonomy level", str(row["autonomy_level"]))
         kv("caller identity", str(row["caller_identity"]))
         if outcome_executed:
-            kv("outcome", f"{word('EXECUTED', 'go')} by {short_id(row['executing_identity'])}")
+            kv("outcome", f"{word('SETTLED', 'go')} by {short_id(row['executing_identity'])}")
+        elif REJECT_HOP in row["money_hops"]:
+            kv("outcome", f"{word('DECLINED', 'stop')} by a human. Nothing moved.")
         else:
-            kv("outcome", f"{word('REFUSED', 'stop')} no payments-api execute span: nothing moved")
+            kv("outcome", f"{word('AWAITING HUMAN APPROVAL', 'stop')} no execute span: nothing moved")
         if row.get("approved_by"):
-            kv("human approval", f"{row['approved_by']}, after {row['human_wait_s']:.0f} s")
+            kv("approved by", f"{row['approved_by']}, after {row['human_wait_s']:.0f} s")
+        elif row["reviewer"]:
+            kv("approved by", f"none ({row['reviewer']} declined)")
         else:
-            kv("human approval", str(row["reviewer"]) if row["reviewer"] else "none (no human was involved)")
+            kv("approved by", "none")
         # The record must agree with what the run saw at the time.
         if (claim["status"] == "executed") != outcome_executed:
             problems.append(f"{claim['id']}: the run saw {claim['status']!r} but OpenSearch says executed={outcome_executed}")
@@ -747,6 +844,15 @@ def cmd_evidence(_: argparse.Namespace) -> None:
 
 def cmd_reset(_: argparse.Namespace) -> None:
     title("RESET  back to the resting state")
+    doing("open approvals: reject each as demo-reset")
+    open_approvals = awaiting_payments()
+    for item in open_approvals:
+        decided = live.review(item["paymentId"], "reject", RESET_REVIEWER)
+        if decided.get("error"):
+            raise Fail(f"could not reject {item['paymentId']}: {decided['error']}")
+    if awaiting_payments():
+        raise Fail("an approval is still open after the rejects")
+    out(f"  open approvals  {word('NONE', 'info')}  (rejected {len(open_approvals)})")
     doing("over-grant: delete if present")
     delete_overgrant()
     if overgrant_present():
@@ -800,9 +906,14 @@ def main(argv: list[str] | None = None) -> int:
     autonomy = sub.add_parser("autonomy", help="flip the live autonomy value")
     autonomy.add_argument("level", choices=[contract.ASSISTED, contract.AUTONOMOUS])
     autonomy.set_defaults(fn=cmd_autonomy)
+    for name, text in (("approve", "a human releases a waiting claim (claim id or 'last')"),
+                       ("reject", "a human declines a waiting claim (claim id or 'last')")):
+        decide = sub.add_parser(name, help=text)
+        decide.add_argument("claim", help="a claim id from this run, or 'last'")
+        decide.set_defaults(fn=cmd_approve if name == "approve" else cmd_reject)
     sub.add_parser("keystone", help="the agent tries to edit what constrains it").set_defaults(fn=cmd_keystone)
     sub.add_parser("evidence", help="who decided, and why, from OpenSearch").set_defaults(fn=cmd_evidence)
-    sub.add_parser("reset", help="flag assisted, over-grant absent, state cleared").set_defaults(fn=cmd_reset)
+    sub.add_parser("reset", help="reject open approvals, flag assisted, over-grant absent, state cleared").set_defaults(fn=cmd_reset)
     sub.add_parser("ceiling", help="the gateway's own CEL ceiling (not in the five-minute flow)").set_defaults(fn=cmd_ceiling)
     args = parser.parse_args(argv)
     try:

@@ -1,10 +1,11 @@
 """The five-minute demo flow, run as the commands themselves.
 
-`scripts/demo` is what the speaker types on stage (spec section 7,
-`docs/superpowers/specs/2026-10-12-northstar-m7-bounded-design.md`):
+`scripts/demo` is what the speaker types on stage (spec section 4,
+`docs/superpowers/specs/2026-10-13-northstar-m8-human-in-the-loop-design.md`):
 
-    guard -> claim 5800 -> autonomy autonomous -> claim 5800 -> autonomy assisted
-          -> keystone -> evidence -> reset
+    guard -> claim 5800 (WAITS) -> approve last -> autonomy autonomous
+          -> claim 5800 (settled by the agent) -> claim 6200 (WAITS)
+          -> autonomy assisted -> keystone -> evidence -> reset
 
 This file runs exactly that sequence, **by invoking the driver as a subprocess**
 -- not by importing its functions -- so a regression in the shim, the argument
@@ -12,7 +13,8 @@ parsing, the exit status or the printed output reddens here. Each test is one
 step, they share state through the cluster (the flag, the run's claims in a
 private `DEMO_STATE_DIR`), and they are meant to be read and run **in file
 order**; a step that fails makes the later ones fail for a stated reason
-(`flow.require`) rather than for a confusing one.
+(`flow.require`) rather than for a confusing one. The browser half of step 2 is
+`test_policy_denial.py`'s; this file drives the stage fallback (`approve last`).
 
 **What each step asserts is what the slides say about it**, so a slide cannot
 drift from the cluster without this file going red:
@@ -20,40 +22,37 @@ drift from the cluster without this file going red:
 * `guard` -- no identity is HTTP 401 at the gateway; the direct road to
   payments-mcp is DROPPED (not refused, not a 401); settlement-agent's SVID
   lists the tools.
-* `claim 5800` under `assisted` -- REFUSED, the gateway's own span answers
+* `claim 5800` under `assisted` -- WAITING, the gateway's own span answers
   HTTP 200 with the tool call marked ERROR, the decision is a `deny` under
-  `settlement-agent.assisted.execute_limit` against a limit of 0 (M8: the dial is maker-checker), and the
-  `payments-api` **execute** span is absent. (Not *every* payments-api span:
-  the proposal and the refusal record are there, and the spec's shorthand "no
-  payments-api span" was corrected to this by running it.)
-* `autonomy autonomous`, then the same claim -- EXECUTED, a `permit` under
-  `settlement-agent.autonomous.execute_limit`, the execute span present, and
-  **no pod restarted**: start times, UIDs and restart counts of every pod in
-  the agents and platform namespaces are compared across the flip, here and
-  independently of the driver's own check.
+  `settlement-agent.assisted.execute_limit` against a limit of 0, and the
+  `payments-api` **execute** span is absent. `approve last` -- SETTLED by a
+  human, and the customer's A2A task reads `completed` (`tasks/get`).
+* `autonomy autonomous`, then `claim 5800` -- settled by the agent, a `permit`
+  under `settlement-agent.autonomous.execute_limit`, the execute span present,
+  and **no pod restarted** across the flip. `claim 6200` -- WAITS: the limit
+  the decision span carries is 6000.
 * `keystone` -- RBAC `Forbidden`, then Kyverno `DENIED` naming the policy, the
   over-grant gone, the flag still `assisted`.
-* `evidence` -- for this run's two claims, from OpenSearch: who decided, rule,
-  limit, caller identity, outcome.
-* `reset` -- the resting state: flag `assisted`, over-grant absent.
+* `evidence` -- for this run's three claims, from OpenSearch: who decided, the
+  rule, who approved (the stage reviewer for the first, none for the other
+  two), and the human wait in seconds for the approved one.
+* `reset` -- the resting state: flag `assisted`, over-grant absent, and no
+  approval open (the EUR 6,200 claim was rejected as `demo-reset`).
 
 One more property is asserted that the driver does not itself print: that a
-refusal is **HTTP 200 carrying an `isError` tool result** (agentgateway
-v1.6.0; the rule is in the `[policy-denial ...]` tag at the end of the text),
-probed straight at the gateway. That is the slide's "HTTP 200 means
-no" and it was measured, not assumed.
+no is **HTTP 200 carrying an `isError` tool result** (agentgateway v1.6.0;
+the rule is in the `[policy-denial ...]` tag at the end of the text), probed
+straight at the gateway.
 
 **Gated behind `RUN_BROWSER_TESTS=1`** -- the repo's single cost gate, which
 `scripts/smoke-test.sh` sets unconditionally -- although no browser is started:
-the two `claim` steps are real model calls (same reason `test_evidence_view.py`
-and `test_settlement_llm_trace.py` carry it). The one thing that makes this
-file more than a cost question: the second claim **executes a real EUR 5,800
-payment** under settlement-agent's own identity, with the flag flipped, which a
-bare `pytest tests/` must never do.
+the three `claim` steps are real model calls, and one **executes a real EUR
+5,800 payment** under settlement-agent's own identity with the flag flipped,
+which a bare `pytest tests/` must never do.
 
 **The resting state is restored whatever happens.** The module's finalizer runs
-`demo reset`, so a red step cannot leave the cluster at `autonomous` or with the
-over-grant standing -- the one thing the keystone exists to say never exists.
+`demo reset`, so a red step cannot leave the cluster at `autonomous`, with the
+over-grant standing, or with a claim waiting.
 """
 from __future__ import annotations
 
@@ -63,6 +62,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import httpx
 import pytest
 
 from tests.harness import contract, live
@@ -71,6 +71,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEMO = REPO_ROOT / "scripts" / "demo"
 
 AMOUNT = 5800
+OVER_AUTONOMOUS = 6200
 
 # A claim is three sequential model turns plus a ~10s trace-quiet wait; 180s
 # for the model call matches every other call site, and the driver's own
@@ -103,8 +104,11 @@ class Flow:
         self.env.pop("DEMO_COLOR", None)
         self.results: dict[str, subprocess.CompletedProcess] = {}
         self.pods_before_flip: dict | None = None
-        self.refused_claim: str | None = None
-        self.executed_claim: str | None = None
+        self.state_dir = state_dir
+
+    def claims(self) -> list[dict]:
+        """This run's claims, as the driver remembers them."""
+        return json.loads((self.state_dir / "state.json").read_text())["claims"]
 
     def run(self, key: str, *args: str) -> subprocess.CompletedProcess:
         result = subprocess.run(
@@ -201,26 +205,42 @@ def test_1_guard_no_identity_is_401_the_direct_road_is_dropped_and_the_svid_list
     assert "eyJ" not in out and "Bearer " not in out, "a bearer credential reached the output"
 
 
-def test_2_claim_5800_under_assisted_is_refused_and_no_money_moved(flow):
+def test_2_claim_5800_under_assisted_waits_for_a_human_and_no_money_moved(flow):
     flow.require("guard")
-    out = flow.ok("claim-refused", "claim", str(AMOUNT), "--expect", "awaiting_approval")
-    assert "[WAITING]" in out, out
+    out = flow.ok("claim-waiting", "claim", str(AMOUNT), "--expect", "awaiting_approval")
+    assert "[WAITING]" in out and "awaiting human approval" in out, out
     assert "[DENY]" in out, out
     assert "settlement-agent.assisted.execute_limit" in out, out
-    assert "limit      0  (requested 5800)" in out, out
+    assert "limit      0  (requested 5800" in out, out
     # The gateway's own span: HTTP 200, the tool call marked ERROR.
     assert re.search(r"tools/call execute_payment\s+HTTP 200\s+ERROR", out), out
     assert "mcpGuardrails rejected" in out, out
+    assert "policy-denial" not in out, "the raw denial tag reached the room:\n" + out
     # The money hop is the absent one -- and only that one.
     assert re.search(r"\[ABSENT\]\s+POST /payments/\{paymentId\}/execute", out), out
     assert "present  POST /payments/propose" in out, out
+    assert "scripts/demo approve" in out, out
     assert "http://localhost:16686/trace/" in out, "no Jaeger link was printed:\n" + out
+
+
+def test_2a_a_human_approves_and_the_customers_task_completes(flow):
+    flow.require("claim-waiting")
+    (claim,) = flow.claims()
+    out = flow.ok("approve", "approve", "last")
+    assert "[SETTLED]" in out and "released by a human" in out, out
+    assert "[completed]" in out, out
+    # The customer's A2A task, asked directly, not through the driver's print.
+    task = live.get_task(claim["task_id"])
+    assert task["state"] == "completed", task
+    assert task["reply"]["status"] == "executed", task
+    # Nothing is left waiting.
+    assert httpx.get(f"{live.REVIEWER_UI_URL}/api/awaiting", timeout=15).json() == []
 
 
 def test_2b_a_refusal_is_http_200_carrying_an_is_error_tool_result(flow):
     """The slide's "HTTP 200 means no", measured straight at the gateway, with
     no model in the loop: propose, then execute over the limit."""
-    flow.require("claim-refused")
+    flow.require("claim-waiting")
     token = live.mint_svid(live.GATEWAY_AUDIENCE)
     headers = {"authorization": f"Bearer {token}"}
     with live.gateway_port_forward() as gateway:
@@ -241,19 +261,26 @@ def test_2b_a_refusal_is_http_200_carrying_an_is_error_tool_result(flow):
     assert executed.denial.limit == 0.0, executed
 
 
-def test_3_flipping_the_value_executes_the_same_claim_and_restarts_nothing(flow):
-    flow.require("claim-refused")
+def test_3_the_dial_widens_the_band_and_the_human_stays(flow):
+    flow.require("approve")
     flow.pods_before_flip = _pods()
     flipped = flow.ok("flip-up", "autonomy", "autonomous")
     assert "[autonomous]" in flipped and "[NONE]" in flipped, flipped
     # flagd itself, independently of the driver's own print.
     assert contract.resolved_level() == contract.AUTONOMOUS
 
-    out = flow.ok("claim-executed", "claim", str(AMOUNT), "--expect", "executed")
-    assert "[EXECUTED]" in out and "[PERMIT]" in out, out
+    out = flow.ok("claim-settled", "claim", str(AMOUNT), "--expect", "executed")
+    assert "[SETTLED]" in out and "[PERMIT]" in out, out
     assert "settlement-agent.autonomous.execute_limit" in out, out
     assert re.search(r"\[PRESENT\]\s+POST /payments/\{paymentId\}/execute", out), out
     assert "ABSENT" not in out, out
+
+    over = flow.ok("claim-over", "claim", str(OVER_AUTONOMOUS), "--expect", "awaiting_approval")
+    assert "[WAITING]" in over and "awaiting human approval" in over, over
+    assert "settlement-agent.autonomous.execute_limit" in over, over
+    # The limit is read off the decision span, not typed into the driver.
+    assert re.search(r"limit\s+6000(\.0)?\s+\(requested 6200", over), over
+    assert re.search(r"\[ABSENT\]\s+POST /payments/\{paymentId\}/execute", over), over
 
     back = flow.ok("flip-down", "autonomy", "assisted")
     assert "[assisted]" in back and "[NONE]" in back, back
@@ -284,32 +311,51 @@ def test_4_keystone_rbac_forbids_then_kyverno_denies_and_the_grant_is_gone(flow)
     assert contract.resolved_level() == contract.ASSISTED
 
 
-def test_5_evidence_names_who_decided_for_both_of_this_runs_claims(flow):
-    flow.require("claim-refused", "claim-executed", "keystone")
+def test_5_evidence_names_who_decided_and_who_approved_for_each_claim(flow):
+    flow.require("claim-waiting", "claim-settled", "claim-over", "keystone")
     out = flow.ok("evidence", "evidence")
-    assert "for this run's 2 claim(s)" in out, out
-    refused, executed = out.split("EUR 5,800")[1:3]
-    for section in (refused, executed):
+    assert "for this run's 3 claim(s)" in out, out
+    ids = [c["id"] for c in flow.claims()]
+    assert len(ids) == 3, ids
+    # One section per claim, in the order they were made: a section starts at
+    # the claim's own header line (`CLM-DEMO-XXXXXX   EUR 5,800`).
+    parts = re.split(r"^(CLM-DEMO-\w+)   EUR [\d,]+$", out, flags=re.M)
+    assert parts[1::2] == ids, (parts[1::2], ids)
+    sections = [body.split("Every line above")[0] for body in parts[2::2]]
+    approved, settled, waiting = sections
+    for section in sections:
         assert "policy-decision-service" in section, section
         assert "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent" in section, section
-        assert "human approval   none" in section, section
-    assert "[DENY]" in refused and "[REFUSED]" in refused, refused
-    assert "settlement-agent.assisted.execute_limit" in refused, refused
-    assert "limit            0   (requested 5800)" in refused, refused
-    assert "autonomy level   assisted" in refused, refused
-    assert "[PERMIT]" in executed and "[EXECUTED]" in executed, executed
-    assert "settlement-agent.autonomous.execute_limit" in executed, executed
-    assert "autonomy level   autonomous" in executed, executed
+    # 1: agent asked, a human approved.
+    assert "[SENT TO A HUMAN]" in approved and "[SETTLED]" in approved, approved
+    assert "settlement-agent.assisted.execute_limit" in approved, approved
+    assert "autonomy level   assisted" in approved, approved
+    assert re.search(r"approved by\s+kasper\.on\.stage, after \d+ s", approved), approved
+    assert re.search(r"limit\s+0\s", approved), approved
+    # 2: the agent settled it alone, inside the widened band.
+    assert "[PERMIT]" in settled and "[SETTLED]" in settled, settled
+    assert "settlement-agent.autonomous.execute_limit" in settled, settled
+    assert "autonomy level   autonomous" in settled, settled
+    assert re.search(r"approved by\s+none\s*$", settled.strip(), re.M), settled
+    # 3: over the widened band, still waiting.
+    assert "[SENT TO A HUMAN]" in waiting and "[AWAITING HUMAN APPROVAL]" in waiting, waiting
+    assert re.search(r"limit\s+6000(\.0)?\s+\(requested 6200", waiting), waiting
+    assert re.search(r"approved by\s+none\s*$", waiting.strip(), re.M), waiting
 
 
-def test_6_reset_leaves_the_resting_state(flow):
+def test_6_reset_rejects_the_open_approval_and_leaves_the_resting_state(flow):
     flow.require("evidence")
-    flow.ok("reset", "reset")
+    waiting = httpx.get(f"{live.REVIEWER_UI_URL}/api/awaiting", timeout=15).json()
+    assert len(waiting) == 1, f"step 3's EUR 6,200 claim should be the one open approval: {waiting}"
+    out = flow.ok("reset", "reset")
+    assert "open approvals" in out and "(rejected 1)" in out, out
     assert contract.resolved_level() == contract.ASSISTED
     assert contract.get_committed_then_branch() == contract.ASSISTED
     assert not _overgrant_present()
+    assert httpx.get(f"{live.REVIEWER_UI_URL}/api/awaiting", timeout=15).json() == []
     # And reset is safe at any time: a second one changes nothing and says so.
-    flow.ok("reset-again", "reset")
+    again_reset = flow.ok("reset-again", "reset")
+    assert "(rejected 0)" in again_reset, again_reset
     assert _pods() == flow.pods_before_flip, "a pod changed during the demo flow"
     # The run's claims are gone, so a stale `evidence` has nothing to report.
     again = flow.run("evidence-after-reset", "evidence")

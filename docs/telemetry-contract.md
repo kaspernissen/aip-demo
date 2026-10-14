@@ -493,8 +493,8 @@ tree this change has since altered. What has to happen to make it MEASURED: one
 run on its own against the live stage-7 cluster, 7 passed in 55.8s, which is not
 the gate having run.
 
-Bare-suite row, derived from that same collection: 529 collected − 95 gated −
-**0** xfailed = `434 passed, 95 skipped, 0 xfailed`. (M8 Task 4 took the collection from 522 to 529: three config tests in `test_gateway_ceiling_config.py` and four live tests in `test_gateway_ceiling.py`, none gated, because they spend no model call, so the gated figure stays 95.) (M8 Task 3 took the collection from 512 to 522: four gated live tests in `test_human_in_the_loop.py` (trace B and its link, trace A's deny, the histogram, and the release's rule split from the repeat-execute check) and one gated Prometheus control in `test_prometheus_metrics_ingest.py`, so the gated figure is 95, plus five harness tests in `test_jaeger_assertions.py`.) (M8 Task 2 took the collection
+Bare-suite row, derived from that same collection: 538 collected − 96 gated −
+**0** xfailed = `442 passed, 96 skipped, 0 xfailed`. (M8 Task 5 took the collection from 529 to 538: eight driver unit tests net in `test_demo_driver.py`, one non-gated live test in `test_gateway_ceiling.py` (a session's GET and DELETE are not stopped by the ceiling), and one gated live test in `test_demo_flow.py` (the human approves and the customer's task completes), so the gated figure is 96.) (M8 Task 4 took the collection from 522 to 529: three config tests in `test_gateway_ceiling_config.py` and four live tests in `test_gateway_ceiling.py`, none gated, because they spend no model call, so the gated figure stays 95.) (M8 Task 3 took the collection from 512 to 522: four gated live tests in `test_human_in_the_loop.py` (trace B and its link, trace A's deny, the histogram, and the release's rule split from the repeat-execute check) and one gated Prometheus control in `test_prometheus_metrics_ingest.py`, so the gated figure is 95, plus five harness tests in `test_jaeger_assertions.py`.) (M8 Task 2 took the collection
 from 504 to 512: five gated live tests in `test_human_in_the_loop.py` (task states, the
 autonomous wait, the 10-minute resubscribe, the dropped-stream reconnect), so the gated
 figure is 90, and two Cilium config tests in `test_stage2_network_policy.py` and one harness test in
@@ -522,14 +522,14 @@ test) is `tests/unit`-only and carries no `skipif`, so it adds none, and the
 internal-platform pass's eight new `tests/unit` tests, the mermaid pass's eight
 and the page-banner pass's eight `tests/unit` tests carry none either; the
 page-banner pass's own e2e file adds exactly **one** — and
-reports 95 of 529, with the per-module spread and the browser split both
+reports 96 of 538, with the per-module spread and the browser split both
 moving for the first time this milestone. Full spread:
 `test_settlement_llm_trace.py` 9,
 `test_prometheus_metrics_ingest.py` 11, `test_browser_root_span.py` 8,
 `test_settlement_agent_trace.py` 8, `test_claims_chain_trace.py` 7,
 `test_claim_correlation.py` 6, `test_gateway_trace.py` 6,
 `test_human_in_the_loop.py` 17, `test_policy_scores.py` 5,
-`test_demo_flow.py` 7, `test_evidence_view.py` 4, `test_policy_denial.py` 4,
+`test_demo_flow.py` 8, `test_evidence_view.py` 4, `test_policy_denial.py` 4,
 `test_backstage_page_bands.py` 1, `test_golden_path.py` 1,
 `test_progressive_autonomy.py` 1. **The browser split changes twice this
 milestone, having not moved since M4 Task 5.** First a thirteenth gated module
@@ -544,7 +544,9 @@ starting none, until the demo-flow file made it a fifteenth that starts none:
 `test_supervised.py` for `test_human_in_the_loop.py`, neither of which launches one,
 and the browser count had been miscounted as 4 since the demo-flow file).
 
-Gate row: **PREDICTED, NOT MEASURED** — M8 Task 4 predicts `528 passed, 1 xfailed`
+Gate row: **PREDICTED, NOT MEASURED** — M8 Task 5 predicts `537 passed, 1 xfailed`
+(538 collected): it changes the gateway config's CEL rule, the driver, the customer-ui's log words, the e2e suite and the docs, all `GATE_PATHS` or docs the guards read, so no gate row describes this tree; the controller's whole-branch review and one `./scripts/smoke-test.sh` follow. Before it,
+M8 Task 4 predicted `528 passed, 1 xfailed`
 (529 collected): it changes the gateway config, the harness, the driver and the e2e suite,
 all `GATE_PATHS`, so no gate row describes this tree; what has to happen to make it
 MEASURED is one `./scripts/smoke-test.sh` at the end of M8. Its own files were run against
@@ -2235,7 +2237,7 @@ the plan defect described two paragraphs up).
 
 Per-service unit suites (all nine run by `smoke-test.sh`, before any e2e test):
 claims-agent 30, settlement-agent 99, payments-mcp 16, payments-api (Go) 39,
-customer-ui (vitest) 19, policy-decision-service 157,
+customer-ui (vitest) 21, policy-decision-service 157,
 reviewer-ui 95, eval-scorer 166, backstage (jest) 37 — all passing.
 (**2026-10-14, M8 Task 3: reviewer-ui 87 → 95, eval-scorer 165 → 166.** reviewer-ui gains
 `tests/test_approval_metrics.py` (2) and six tests in `test_review.py` (the span link, no link
@@ -3510,6 +3512,12 @@ caller). **There is no `policy.decision` span in that trace**, because the
 Policy Decision Service is never asked;
 `tests/e2e/test_gateway_ceiling.py::test_the_403_leaves_no_policy_decision_span`
 asserts it. No attribute names the rule, the limit or the amount.
+
+The rule opens with `request.method != "POST"`. Measured live after the rule
+was first shipped: without it every MCP session's `GET` and `DELETE` on `/mcp`
+was a 403 in the gateway's log. With it they pass (`GET` 200, `DELETE` 202);
+`tests/e2e/test_gateway_ceiling.py::test_a_sessions_get_and_delete_are_not_stopped_by_the_ceiling`
+asserts it.
 
 ### What this project does *not* claim about those spans
 

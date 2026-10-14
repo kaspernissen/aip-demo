@@ -45,3 +45,25 @@ def test_a_string_amount_is_denied_not_waved_through(gateway):
     url, headers = gateway
     outcome = live.call_tool_directly(url, live.EXECUTE_TOOL, _payment(str(OVER)), headers)
     assert outcome.http_status == 403, outcome
+
+
+def test_a_sessions_get_and_delete_are_not_stopped_by_the_ceiling(gateway):
+    """The rule judges payments. The MCP client's own GET and DELETE on /mcp are
+    not payments and must not be 403 (they were, before the method guard)."""
+    import requests
+
+    url, headers = gateway
+    base = {**headers, "content-type": "application/json",
+            "accept": "application/json, text/event-stream"}
+    init = requests.post(url, headers=base, timeout=20, json={
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                   "clientInfo": {"name": "ceiling-test", "version": "1"}}})
+    assert init.status_code == 200, init.text
+    session = {**base, "mcp-session-id": init.headers["mcp-session-id"]}
+    requests.post(url, headers=session, timeout=20,
+                  json={"jsonrpc": "2.0", "method": "notifications/initialized"})
+    with requests.get(url, headers=session, timeout=5, stream=True) as got:
+        assert got.status_code != 403, got.status_code
+    deleted = requests.delete(url, headers=session, timeout=10)
+    assert deleted.status_code != 403, deleted.status_code

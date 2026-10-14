@@ -21,3 +21,21 @@ export function formatElapsed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
+
+/** The one word the log line uses for a terminal state, matching the outcome. */
+export function outcomeWord(status?: string, state?: string): string {
+  switch ((status ?? "").toLowerCase()) {
+    case "executed":
+      return "settled";
+    case "rejected":
+      return "declined";
+    case "refusal_unrecorded":
+      return "not routed";
+    case "failed":
+      return "failed";
+    case "awaiting_approval":
+      return "awaiting human approval";
+    default:
+      return status || state || "recorded";
+  }
+}

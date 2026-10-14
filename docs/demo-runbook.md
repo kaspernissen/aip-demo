@@ -1,15 +1,16 @@
-# Northstar — Demo Runbook (M7, Bounded)
+# Northstar — Demo Runbook (M8, Human in the loop)
 
-Status: M7 (Bounded), on top of M6's Golden path. This is the **operator's** document: how the demo is
+Status: M8 (Human in the loop), on top of M7's Bounded. This is the **operator's** document: how the demo is
 brought up, how it is run in front of an audience, what to say at each beat,
 and what to say when something breaks.
 
 > **M8 note.** `senior-settlement-agent` no longer exists, and the autonomy dial
-> is now maker-checker (`assisted` = €0, `autonomous` = €6,000), so a human
-> releases an over-limit payment from the reviewer-ui under its own identity.
-> The beats below were written for M7's amounts and identities; the senior
-> removals are applied, and the beat-by-beat rewrite for the human-in-the-loop
-> flow is M8's demo task.
+> is maker-checker: `assisted` lets the agent release nothing (limit EUR 0),
+> `autonomous` lets it release up to its limit. Above its limit, **a human
+> releases the payment** from the reviewer-ui, under the reviewer-ui's own
+> identity, through the gateway. The five-minute flow below is written for that.
+> The longer beats further down were written for M7's amounts; Beat 4 is
+> rewritten, the others are marked where they differ.
 
 It is deliberately **not** a second copy of the architecture. Where this
 document says *what to do*, [`docs/architecture.md`](architecture.md) says
@@ -172,18 +173,20 @@ Underneath all of it: **Cilium** (dataplane) · **SPIFFE/SPIRE** (workload
 identity, trust domain `northstar.local`) — every MCP call carries a
 SPIRE-minted JWT-SVID the gateway verifies before anything else happens.
 
-### The two claims the whole demo runs on
+### The claims the whole demo runs on
 
-| | Claim | Amount | Junior limit | What happens |
+| | Claim | Amount | Agent's limit | What happens |
 |---|---|---|---|---|
-| **A** | `CLM-1842` | **€6,200** | €6,000 | **refused** — this is the platform working |
-| **B** | `CLM-1842` | **€5,800** | €6,000 | **executed** — no human anywhere |
+| **A** | `CLM-1842` | **€5,800** at `assisted` | €0 | **waits** for a human; the human approves and it settles |
+| **B** | `CLM-1842` | **€5,800** at `autonomous` | €6,000 | **settled** by the agent, no human |
+| **C** | `CLM-1842` | **€6,200** at `autonomous` | €6,000 | **waits** for a human: the band widened, the human stayed |
 
-Same claim id, same shape, one number apart. **Showing both is mandatory**: a
-platform that refused everything would look identical if you only ran A.
+Same claim id, same shape. **Showing both outcomes is mandatory**: a platform
+that sent everything to a human would look identical if you only ran A.
 
-Then the same €6,200 claim is made to succeed **three different ways**, and
-each one is a different milestone's point:
+Then a payment the agent could not release is made to succeed **three different
+ways** (this is the longer-slot version, kept from M7), and each one is a
+different milestone's point:
 
 <pre class="mermaid">
 flowchart LR
@@ -388,14 +391,20 @@ kubectl -n northstar-platform get role,rolebinding keystone-demo-overgrant \
 
 ### T-5 — the rehearsal claim
 
-**Submit €6,200 once and confirm it comes back `refused`.** This costs one
+**Claim EUR 5,800 once and confirm it WAITS for a human.** This costs one
 model call and it is the single most valuable thing you can do in pre-flight:
-it proves the API key, the whole A2A chain, the gateway, the PDS, flagd and
-the ledger, in one action.
+it proves the API key, the whole A2A chain, the gateway, the PDS, flagd, the
+ledger and the reviewer-ui, in one action.
 
 For the five-minute flow the rehearsal is the flow itself:
-`scripts/demo claim 6200 --expect awaiting_approval` (it exits non-zero unless the claim
-is refused), then `scripts/demo reset`.
+`scripts/demo claim 5800 --expect awaiting_approval` (it exits non-zero unless the
+claim waits for a human), `scripts/demo approve last`, then `scripts/demo reset`.
+
+**No open approvals before the audience arrives:**
+
+```bash
+curl -s localhost:8081/api/awaiting      # expect: []
+```
 
 Then **reset the ledger** before the audience sees anything — see §7.
 
@@ -414,22 +423,33 @@ five commands in one terminal. The beats after it are the longer-slot version.
 
 ### The five-minute flow · *stage 7* · ~5 min · **the live demo**
 
-This is what the talk runs live. Five commands in one terminal, every main
-point of the talk landed by exactly one of them (design:
-`docs/superpowers/specs/2026-10-12-northstar-m7-bounded-design.md`, section 7).
-Everything below it in this section is the **longer-slot** version, kept for a
-20-, 45- or 90-minute slot, and for the surfaces the five minutes leave out (the
-human approval, Backstage, the scores, OpenSearch Dashboards).
+This is what the talk runs live. Two browser tabs (the customer-ui, the
+reviewer-ui) and one terminal; the terminal does the rest and is also the
+fallback for both tabs. Design:
+`docs/superpowers/specs/2026-10-13-northstar-m8-human-in-the-loop-design.md`,
+section 4. Everything below it in this section is the **longer-slot** version.
+
+| # | What | ~Time | What the audience sees | Talk point |
+|---|---|---|---|---|
+| 1 | `scripts/demo guard` | 45s | 401 without identity; dropped around the gateway; the tools list with identity | Identity, Reach |
+| 2 | Claim EUR 5,800 in the customer-ui, approve in the reviewer-ui | 90s | "Awaiting human approval" with a timer; the reviewer sees the rule, the limit and the model's narrative; approve; the customer tab flips to "Settled" | Maker-checker; human in the loop |
+| 3 | `autonomy autonomous`, `claim 5800`, `claim 6200` | 75s | EUR 5,800 settled by the agent, nothing waiting; EUR 6,200 waits (limit 6,000) | One live dial; the band widens, the human stays |
+| 4 | `scripts/demo keystone` | 45s | RBAC says no; Kyverno says no | Keystone |
+| 5 | `scripts/demo evidence` | 45s | For each claim: who decided, the rule, who approved, how long the human took | Prove |
+
+The terminal version of the whole flow:
 
 ```bash
 scripts/demo guard                  # 1  identity, reach, the tools
-scripts/demo claim 6200             # 2  refused
+scripts/demo claim 5800             # 2  WAITS for a human ...
+scripts/demo approve last           #    ... a human releases it
 scripts/demo autonomy autonomous    # 3  one live value ...
-scripts/demo claim 6200             #    ... the same claim, executed
+scripts/demo claim 5800             #    ... settled by the agent
+scripts/demo claim 6200             #    ... EUR 6,200 still waits
 scripts/demo autonomy assisted      #    ... and back
 scripts/demo keystone               # 4  the agent cannot edit what constrains it
 scripts/demo evidence               # 5  prove it
-scripts/demo reset                  #    back to the resting state, any time
+scripts/demo reset                  #    rejects open approvals, back to rest
 ```
 
 `scripts/demo` is a shim over `scripts/demo.py`, run by the repo's `.venv`. It
@@ -437,31 +457,27 @@ imports the same helpers the e2e tests import (`tests/harness/live.py`,
 `contract.py`, `jaeger.py`), so what you run on stage is what
 `tests/e2e/test_demo_flow.py` runs in the gate. Every command says what it is
 about to do, then prints the platform's answer, **exits non-zero if the
-expected outcome does not happen** (a refusal that executes, a drop that
-connects, a keystone that does not fire), and never prints a token. The decisive
-word is highlighted (white on red for something stopped, black on green for
-something that went through). It reads at a large font in a 100-column
-terminal.
+expected outcome does not happen** (a payment that settles when it should wait,
+a drop that connects, a keystone that does not fire), and never prints a token.
+The decisive word is highlighted (white on red for something stopped, black on
+green for something that went through). It reads at a large font in a
+100-column terminal.
 
 **Before you start:** §4 pre-flight, then `scripts/demo reset` as the last thing
 you type before the audience arrives. It is safe at any time. The model is
-called in steps 2 and 3 only; 1, 4 and 5 are deterministic.
+called by `claim` only; the other commands are deterministic. Time any command
+yourself with `time scripts/demo <command>`: a claim is the model (a few
+seconds) plus a bounded wait for every service's spans to land in Jaeger; the
+flips take under a second to reach flagd.
 
-**Timings below are measured**: `time` over each command, two complete runs on
-the stage-7 cluster, the model answering in 5-7s. They are the command's own
-time. The rest of the five minutes is you talking, which is why none of these is
-a reason to rush.
-
-| Step | Command | Ran in | What eats the time |
-|---|---|---:|---|
-| 1 | `guard` | 8.6s | the 8s connect timeout that *is* the drop |
-| 2 | `claim 6200` | 23s | the model (~7s), then ~15s waiting for every service's spans to land in Jaeger |
-| 3 | `autonomy autonomous` / `claim 6200` / `autonomy assisted` | 0.6s / 21s / 0.6s | same as step 2; the flips take 0.3s to reach flagd |
-| 4 | `keystone` | 0.5s | nothing; talk over the output |
-| 5 | `evidence` | 0.6-1.3s | nothing, once OpenSearch has the spans (it waits, bounded, if it has not) |
-
-Total command time is about 55 seconds across the flow. Everything else is the
-SAY lines.
+**On stage, about trace A while a claim waits.** While a claim waits for a
+human, a2a-sdk adds an `EventQueue.dequeue_event` span about every 0.5 seconds
+to the claim's first trace (trace A), and its `_run_event_stream` span stays
+open for the whole wait. Both were measured and are kept: nothing is sampled or
+filtered out of the data. So: **open trace A in Jaeger after the decision, not
+during the wait** (it is a long, noisy trace until then), and use the terminal
+driver's trace view on stage, which prints only the road the money would take
+and leaves those polling spans out.
 
 ---
 
@@ -516,79 +532,83 @@ is this output.
 
 ---
 
-#### Step 2 — `scripts/demo claim 6200` · Ring 2 · Capability · "a refusal is a success"
+#### Step 2 — a human signs · Ring 2 · Capability · maker-checker
 
-**DO** — `scripts/demo claim 6200` (add `--expect awaiting_approval` when rehearsing, so a
-cluster left `autonomous` fails loudly instead of quietly executing).
+**DO** — in the **customer tab**, file a claim for EUR 5,800. In the
+**reviewer tab**, read the rule (`assisted`), the limit (EUR 0) and the model's
+narrative, then approve.
 
-**SHOW**
+**SHOW** — the customer tab says "Awaiting human approval" with a timer. The
+reviewer tab lists the claim with four facts. After the approve, the customer
+tab flips to "Settled" **without a reload**.
+
+**SAY**
+
+> "The agent did the work. A human signed. The trace shows how long the human
+> took."
+
+> "This is maker-checker. The agent is the maker: it proposed the payment and
+> tried to release it. The platform said no, and it said why: a rule, a limit.
+> The reviewer is the checker, and the reviewer-ui is a different service with
+> a different identity. The agent cannot approve its own payment, because the
+> platform reads the ledger before it lets anyone release money."
+
+**Fallback — the terminal does both halves.**
+
+```bash
+scripts/demo claim 5800 --expect awaiting_approval
+scripts/demo approve last
+```
 
 ```text
-CLAIM  CLM-DEMO-3FEFBB   EUR 6,200
+CLAIM  CLM-DEMO-656406   EUR 5,800
   autonomy level   assisted
-  $ A2A message/send  claims-agent  claim CLM-DEMO-3FEFBB  EUR 6,200
-  -> 7s
+  $ A2A message/stream  claims-agent  claim CLM-DEMO-656406  EUR 5,800
+  -> 6s
 
-  Outcome  [REFUSED]  by the platform. Nothing was paid.
-
-  The model's explanation to the claimant:
-    ...the model's own words, different every run...
+  Outcome  [WAITING]  awaiting human approval. Nothing was paid.
+  ...the model's own words, different every run...
+  Approve with:  scripts/demo approve CLM-DEMO-656406   (or: scripts/demo approve last)
 
 The same event, as the trace saw it
   settlement-agent  execute_tool execute_payment   the model asks
   +- agentgateway  tools/call execute_payment   HTTP 200  ERROR
-      jwt.sub  settlement-agent
-      HTTP 200: the answer is a JSON-RPC error. A no is not an HTTP failure.
+      HTTP 200: the no is a tool result marked isError, with the rule in its text.
     +- Guardrail   the gateway asks the decision service
     +- policy-decision-service  policy.decision  [DENY]
           rule       settlement-agent.assisted.execute_limit
-          limit      6000  (requested 6200)
-          caller     settlement-agent
-          level      assisted
-
-    gateway: mcp: mcpGuardrails rejected: requested 6200 EUR exceeds the 6000 EUR limit ...
-
+          limit      0  (requested 5800)
+    gateway: mcp: mcpGuardrails rejected: requested 5800 EUR exceeds the 0 EUR limit ...
   payments-api spans in this trace:
     present  POST /payments/propose   records the proposal; moves no money
-    present  POST /payments/{paymentId}/refuse   records the refusal; moves no money
     [ABSENT]   POST /payments/{paymentId}/execute   money did not move
 
-  Jaeger  http://localhost:16686/trace/<id>
+APPROVE  CLM-DEMO-656406   EUR 5,800
+  $ reviewer-ui  POST /api/review/PAY-000026  decision=approve
+  Outcome  [SETTLED]  released by a human after 19s
+  The customer's claim was told: [completed]
 ```
 
-**SAY**
+**Land:** the no is `HTTP 200`: a tool result marked `isError`, with the rule in
+its text. A no is a decision, not an HTTP failure. And the one span that would
+have moved money is absent until the human acts. Say "no execute span", not "no
+payments-api span": the proposal and the refusal record are payments-api spans.
 
-> "A real claim, through the real agents, with a real model. The model decided
-> to pay it. The platform said no, and look at what no looks like: the gateway
-> answered HTTP 200. A refusal is not an HTTP error; it is a decision, with a
-> rule and a limit, recorded. And the one span that would have moved money is
-> not there. The proposal is, the refusal record is, the execute is not. The
-> model's explanation to the claimant is its own words, and it is true because
-> the platform told it the truth."
-
-**Land:** there is a ~15 second pause after the model's explanation while the
-command waits for every service to export its spans, so the absence it is about
-to show is a real absence and not an export delay. Fill it: read the
-explanation aloud.
-
-**The corrected shorthand.** The spec's "no `payments-api` span" is not literally
-true: the proposal and the refusal record are `payments-api` spans. The span
-that is absent, and the one that matters, is **`POST /payments/{paymentId}/execute`**.
-Say "no execute span", not "no payments-api span".
-
-**If it fails** — `FAIL ... expected the claim to end 'refused'`: the contract was
-left `autonomous`; `scripts/demo reset`. A model or API-key error: §8's first row.
-Jaeger slow: the command waits up to 90s and then fails by name; the Jaeger UI
-link in the terminal still works. Fallback: the transcript slide.
+**If it fails** — `FAIL ... expected the claim to end 'awaiting_approval'`: the
+contract was left `autonomous`; `scripts/demo reset`. A model or API-key error:
+§8's first row. `FAIL ... no claim in this run is waiting for a human`: the
+claim already ended, or `reset` cleared the run. The customer tab never flips:
+§8.
 
 ---
 
-#### Step 3 — `autonomy autonomous`, `claim 6200`, `autonomy assisted` · one live value
+#### Step 3 — `autonomy autonomous`, `claim 5800`, `claim 6200` · one live dial
 
 **DO**
 
 ```bash
 scripts/demo autonomy autonomous
+scripts/demo claim 5800
 scripts/demo claim 6200
 scripts/demo autonomy assisted
 ```
@@ -596,47 +616,52 @@ scripts/demo autonomy assisted
 **SHOW**
 
 ```text
-AUTONOMY  set the live value to autonomous
-  flagd resolves   assisted  (before)
-  One field on one FeatureFlag object. Nothing is redeployed.
-  $ kubectl patch featureflag/northstar-autonomy --type=json  targeting.if[1] = autonomous
   -> flagd resolves for settlement-agent: [autonomous]   (0.3s to take effect)
-  Pods restarted: [NONE]  (13 pods, same UIDs, same start times, same restart counts)
+  Pods restarted: [NONE]  (12 pods, same UIDs, same start times, same restart counts)
 ```
 
-then, for the claim:
+then, for EUR 5,800:
 
 ```text
-  Outcome  [EXECUTED]  by the platform. The payment was made.
-  +- agentgateway  tools/call execute_payment   HTTP 200  OK
+  Outcome  [SETTLED]  by the agent, inside its band. The payment was made.
     +- policy-decision-service  policy.decision  [PERMIT]
           rule       settlement-agent.autonomous.execute_limit
-          limit      1000000  (requested 6200)
-  payments-api spans in this trace:
-    present  POST /payments/propose
+          limit      6000  (requested 5800)
     [PRESENT]  POST /payments/{paymentId}/execute   money moved
 ```
 
-and the last flip prints `[assisted]` and `Pods restarted: [NONE]` again.
+and for EUR 6,200:
+
+```text
+  Outcome  [WAITING]  awaiting human approval. Nothing was paid.
+    +- policy-decision-service  policy.decision  [DENY]
+          rule       settlement-agent.autonomous.execute_limit
+          limit      6000  (requested 6200)
+    [ABSENT]   POST /payments/{paymentId}/execute   money did not move
+```
+
+The EUR 6,200 claim is left waiting on purpose; `scripts/demo reset` (or
+`scripts/demo reject last`) ends it.
 
 **SAY**
 
-> "Same amount, same agents, same code, same image. I changed one value on one
-> Kubernetes object, from the command line, and flagd had it in under a second.
-> Nothing restarted, and the command counts the pods to prove it. The platform's
-> API is the resource, and I just called it. Now the claim executes, under a
-> different rule with a different limit. And I put it back."
+> "One live dial. The band widens; the human stays."
 
-**Land:** the line that matters is `Pods restarted: NONE`. It is compared by
-UID, start time and restart count over the agents and platform namespaces, before
-and after, and the e2e test makes the same comparison independently.
+> "Same agents, same code, same image. I changed one value on one Kubernetes
+> object and flagd had it in under a second. Nothing restarted, and the command
+> counts the pods to prove it. Now EUR 5,800 settles without a human, because
+> it is inside the band. EUR 6,200 is outside it, so it waits. More autonomy
+> did not remove the human. It moved the line."
+
+**Land:** the line that matters is `Pods restarted: NONE`, compared by UID,
+start time and restart count before and after, and the e2e test makes the same
+comparison independently. The limit on screen is read off the decision span.
 
 **If it fails** — `FAIL ... something restarted when only the value changed`:
 believe it and look at `kubectl -n northstar-agents get pods`; a rollout
-overlapped the flip. `FAIL ... flagd resolves 'assisted'`: the sync watch has not
-caught up; run it again. **Never leave step 3 at `autonomous`:** `scripts/demo
-reset` fixes it. Backstage's card does the same flip (Beat 7, the longer
-version), and either route works from the other's state.
+overlapped the flip. `FAIL ... flagd resolves 'assisted'`: the sync watch has
+not caught up; run it again. **Never leave step 3 at `autonomous`:**
+`scripts/demo reset` fixes it. Backstage's card does the same flip (Beat 7).
 
 ---
 
@@ -692,40 +717,46 @@ Kyverno rows. Fallback: the transcript slide (Beat K's, which is this output).
 
 **DO** — `scripts/demo evidence`
 
-**SHOW** (one block per claim of **this run**, nothing older)
+**SHOW** (one block per claim of **this run**, nothing older; three, in order)
 
 ```text
-CLM-DEMO-3FEFBB   EUR 6,200
-    who decided      policy-decision-service   [DENY]
+CLM-DEMO-656406   EUR 5,800
+    who decided      policy-decision-service   [SENT TO A HUMAN]
     rule             settlement-agent.assisted.execute_limit
-    limit            6000   (requested 6200)
+    limit            0   (requested 5800)
     autonomy level   assisted
-    caller identity  spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
-    outcome          [REFUSED] no payments-api execute span: nothing moved
-    human approval   none (no human was involved)
+    outcome          [SETTLED] by reviewer-ui
+    approved by      kasper.on.stage, after 19 s
 
-CLM-DEMO-569120   EUR 6,200
+CLM-DEMO-7AC411   EUR 5,800
     who decided      policy-decision-service   [PERMIT]
     rule             settlement-agent.autonomous.execute_limit
-    limit            1000000   (requested 6200)
-    autonomy level   autonomous
-    caller identity  spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
-    outcome          [EXECUTED] by settlement-agent
-    human approval   none (no human was involved)
+    limit            6000   (requested 5800)
+    outcome          [SETTLED] by settlement-agent
+    approved by      none
+
+CLM-DEMO-CC1273   EUR 6,200
+    who decided      policy-decision-service   [SENT TO A HUMAN]
+    rule             settlement-agent.autonomous.execute_limit
+    limit            6000   (requested 6200)
+    outcome          [AWAITING HUMAN APPROVAL] no execute span: nothing moved
+    approved by      none
 ```
 
 **SAY**
 
-> "Two claims, same amount, two outcomes, and every line here is a recorded span
-> read back from OpenSearch, not something I told you. Who decided: the policy
-> service, not the model. Under which rule, against which limit, for which
-> identity, at which autonomy level. And whether a human was involved: here, no.
-> The difference between the two is the one value I changed."
+> "For each claim: who decided, the rule, who approved, how long the human
+> took."
 
-**Land:** the two claims are decided under two *different* rules
-(`...assisted.execute_limit`, `...autonomous.execute_limit`) because the value
-differs. The longer evidence beat (Beat 5) shows the *same* rule deciding two
-different amounts; do not conflate them.
+> "Every line here is a recorded span read back from OpenSearch, not something
+> I told you. The policy service decided, not the model. The first claim was
+> approved by a person, and the record says who and after how many seconds. The
+> second the agent settled alone. The third is still waiting, and the record
+> says so."
+
+**Land:** "who approved" and "how long" come from the reviewer-ui's own span
+(`review.decision`, with `review.elapsed_ms`), not from the model or the
+driver.
 
 **If it fails** — it waits for OpenSearch, bounded (90s), printing `waiting for
 OpenSearch (...)`, then fails naming the fields that never arrived: read the
@@ -739,11 +770,23 @@ slide, or Beat 5's dashboard.
 #### After the flow
 
 ```bash
-scripts/demo reset     # flag assisted, over-grant absent, run state cleared
+scripts/demo reset     # rejects open approvals as demo-reset, flag assisted,
+                       # over-grant absent, run state cleared
 ```
 
-`reset` is idempotent and prints what it verified. **Run it at the end of every
-rehearsal and every performance**, and before the audience arrives.
+`reset` is idempotent and prints what it verified (`open approvals  NONE
+(rejected N)`). **Run it at the end of every rehearsal and every performance**,
+and before the audience arrives.
+
+**Two things about the reviewer-ui to say plainly if asked.** First, it has no
+ingress policy and no login on `/review` and `/api/review`: any pod in the
+cluster that has egress to it can approve a payment. That is out of scope for
+this demo (spec section 8) and it is a limitation, not a hidden property. What
+the demo does hold is the other half: the reviewer-ui is the only service the
+platform lets release a human-approved payment, and it can only reach
+payments-api on three verbs (list, get, reject). Second, every resume logs a
+`NoTaskQueue` ERROR from a2a-sdk's cleanup in the claims-agent. It is expected
+noise, not a failure: the claim completed.
 
 ---
 
@@ -753,6 +796,13 @@ Everything from here to Beat 8 is the 20-, 45- and 90-minute version of the
 demo, and the only home of the surfaces the five-minute flow leaves out: the
 customer UI, the human approval, the reviewer UI, the scores, OpenSearch
 Dashboards and the Backstage card. They are unchanged by the five-minute flow.
+
+**M8 caveat for Beats 1, 2, 5, 6, 7 and K:** they use M7's amounts and the
+M7 limit table. Under M8 the agent's limit is EUR 0 at `assisted` and EUR 6,000
+at `autonomous` (read the live values from `scripts/demo claim`'s output, not
+from this file), so an EUR 6,200 claim at `assisted` **waits for a human**
+rather than being refused, and a claim at `autonomous` below the limit settles.
+The mechanism each beat shows is unchanged; the numbers on screen are not.
 
 ---
 
@@ -898,14 +948,18 @@ answered).
 
 ---
 
-### Beat 4 — the human overturns it · *stage 3* · ~5 min
+### Beat 4 — the human releases it · *stage 3* · ~5 min
+
+This is step 2 of the five-minute flow, taken slowly.
 
 **DO** — http://localhost:8081 (a NodePort — needs no port-forward and
-survives a redeploy). The refused €6,200 payment is listed with **four
+survives a redeploy). The payment that is waiting is listed with **four
 facts**: the rule that fired, the limit the caller held, the amount
-requested, and the model's own narrative.
+requested, and the model's own narrative. Meanwhile the customer-ui shows
+"Awaiting human approval" for the same claim.
 
-Type any reviewer id (placeholder `alex.mercer`) → **Approve**.
+Type a reviewer id (the form supplies it; the stage uses `kasper.on.stage`)
+→ **Approve**. The customer tab flips to "Settled" without a reload.
 
 **SAY**
 
@@ -913,22 +967,23 @@ Type any reviewer id (placeholder `alex.mercer`) → **Approve**.
 > content capture off and this page is unchanged. Telemetry is for the
 > platform team; the ledger is for the reviewer."
 
-> "There is a Reject button and it is honest about doing nothing — it records
-> a span and leaves the payment exactly as refused. No second approver, no
-> timeout, no expiry, and the reviewer id is a string the form supplies. That
-> is written down as a limitation rather than hidden."
+> "There is a Reject button and it means it: the payment is recorded as
+> rejected, it is final, and the customer is told their claim was declined.
+> Executing a rejected payment is a 409. What there is not: a second approver,
+> a timeout, an expiry, or a login. The reviewer id is a string the form
+> supplies. That is written down as a limitation rather than hidden."
 
 **SHOW** — Jaeger, service `reviewer-ui`, operation `review.decision`:
 
 <pre class="mermaid">
 flowchart LR
-    subgraph A["trace A — refused"]
-        a1["browser → … → settlement-agent"] --> a2["deny"]
+    subgraph A["trace A — the agent did everything up to the money"]
+        a1["customer-ui → claims-agent → settlement-agent"] --> a2["deny: awaiting_approval"]
     end
-    subgraph B["trace B — approved"]
-        b1["review.decision"] --> b2["settlement.execute_approved"]
+    subgraph B["trace B — a human released it"]
+        b1["review.decision"] --> b2["execute_payment through the gateway"]
     end
-    b2 -.->|"span LINK"| a1
+    b1 -.->|"span LINK"| a1
 </pre>
 
 **SAY**
@@ -937,12 +992,17 @@ flowchart LR
 > process that no longer exists. A parent edge would have misstated both the
 > duration and what was executing."
 
-> "Now compare the policy.decision span in *this* trace with the one from
-> beat 2. Same rule shape, same service, same code path — but the caller is
-> now `reviewer-ui`, the rule is `human-approved.execute`, the PDS has read
-> `awaiting_approval` from the ledger, and the verdict is permit. **Nothing was overridden. A different caller was asked about.**"
+> "Now compare the policy.decision span in *this* trace with the one in trace
+> A. Same service, same code path, but the caller is now `reviewer-ui`, the
+> rule is `human-approved.execute`, the decision service has read
+> `awaiting_approval` from the ledger, and the verdict is permit. **Nothing
+> was overridden. A different caller was asked about.**"
 
-> The approver is a different service now, so `service.name` tells you who
+> "And how long humans take is a metric:
+> `northstar_approval_wait_duration_seconds`, by autonomy level and decision.
+> Ask Prometheus for the 95th percentile."
+
+> The approver is a different service, so `service.name` tells you who
 > called. `policy.caller.spiffe_id` is still the attested answer.
 
 ---
@@ -1231,8 +1291,9 @@ kubectl -n northstar-platform get featureflag northstar-autonomy \
 # both branches must read "assisted"
 ```
 
-**`scripts/demo reset` does all of this in one command** (flag back to
-`assisted`, with flagd verified; over-grant deleted; the run's state cleared) and
+**`scripts/demo reset` does all of this in one command** (every open approval
+rejected as `demo-reset`; flag back to `assisted`, with flagd verified;
+over-grant deleted; the run's state cleared) and
 is the first thing to type when something looks off. The manual checks below are
 what it automates.
 
@@ -1254,12 +1315,14 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 ```
 
 - [ ] **contract reads `assisted` on both branches** ← the one that ruins a
-      second run if you forget it. A cluster left `autonomous` makes beat 1
-      execute instead of refuse, and the entire narrative collapses.
+      second run if you forget it. A cluster left `autonomous` settles EUR 5,800
+      without a human, and step 2 collapses.
+- [ ] **no approval is open**: `curl -s localhost:8081/api/awaiting` reads `[]`.
+      `scripts/demo reset` rejects any open approval as `demo-reset`.
 - [ ] **the over-grant is absent** (`start-demo.sh` refuses to start if it is
       still applied)
 - [ ] the ledger is per-process and in-memory — restart `payments-api` to
-      clear refused rows from the reviewer UI:
+      clear old rows from the reviewer UI:
       `kubectl -n northstar-systems rollout restart deploy/payments-api`
 - [ ] payment ids are cumulative since that pod's last restart, so
       `PAY-000001` only appears on a fresh one. **Never promise a specific
@@ -1281,12 +1344,17 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 | `start-demo.sh` refuses: *over-grant is still applied* | an earlier beat-keystone run was killed hard (SIGKILL) | `kubectl delete -f deploy/demo/keystone-overgrant.yaml` |
 | `beat-keystone.sh` step 3 prints `Forbidden` instead of the Kyverno message | the over-grant did not take effect yet | re-run; the script waits for `auth can-i` to say `yes` first, so this means RBAC is not what it was |
 | `beat-reach.sh` step 2 prints `REFUSED` or `REACHED` | the Cilium policy is not enforcing | `kubectl -n northstar-tools get cnp`; `tests/e2e/test_gateway_is_the_only_route.py` reads the datapath |
-| €6,200 comes back `executed` | **contract left flipped from a previous run** | `scripts/demo reset`, or §7 |
+| EUR 5,800 comes back `executed` at the start of step 2 | **contract left flipped from a previous run** | `scripts/demo reset`, or §7 |
+| The customer tab never flips to "Settled" after the approve | the customer-ui's stream to claims-agent is down (a dead forward), or the page lost the task | check `scripts/start-demo.sh`'s claims-agent forward (`localhost:19001`), then finish from the terminal: `scripts/demo approve last` (the stage fallback). The payment is settled either way; only the tab is stale |
+| A claims-agent restart while a claim waits | waiting tasks live in claims-agent's memory, by design: a restart loses them | reject the stranded approvals with `scripts/demo reset` and file the claim again |
+| `scripts/demo approve last` says no claim is waiting | the run state was cleared, or the claim already ended | `curl -s localhost:8081/api/awaiting` lists what is waiting; approve it in the reviewer tab |
 | `scripts/demo` prints `FAIL` | the expected outcome did not happen: that is the command doing its job | read the line: it names what was expected. `scripts/demo reset`, then re-run the one step |
 | `scripts/demo claim` hangs after the model's explanation | it is waiting (up to 90s) for every service's spans to reach Jaeger, so that an *absent* span is a real absence | give it a few seconds; the explanation is already on screen. If it times out, the Jaeger UI at http://localhost:16686 is the fallback |
-| €5,800 comes back `refused` | contract flipped, or wrong caller identity | check the card; check `policy.caller.spiffe_id` on the span |
+| EUR 5,800 waits at `autonomous` | the flag did not take, or the caller identity is wrong | check the card; check `policy.caller.spiffe_id` on the span |
 | Backstage card shows the old value | it reads live — so this means the write failed | check the response, then `kubectl get featureflag` as an independent witness |
 | Jaeger shows two disconnected traces | trace context broken at a hop | expected only for the **human approval**, which is a link by design (beat 4) |
+| Trace A is huge and still growing while a claim waits | a2a-sdk adds an `EventQueue.dequeue_event` span about every 0.5 s for the wait | expected and kept (nothing is sampled). Open it after the decision, or use the terminal driver's trace view |
+| `NoTaskQueue` ERROR in the claims-agent log after an approve | a2a-sdk's cleanup on every resume | expected noise; the claim completed |
 | Scores come back with `spanCount` still climbing | OpenSearch near-real-time lag | wait, re-ask with `"emit": false` until it settles |
 | A pod is CrashLooping | — | `kubectl -n <ns> logs <pod> --previous` |
 
@@ -1344,8 +1412,6 @@ and exits non-zero unless the answer was a 403. It changes no state and leaves
 no claim waiting. Use it only when a question asks "why not a CEL rule?"; the
 answer is the "Two ways to say no" table in `docs/architecture.md`.
 
-Before you point at the gateway log: the ceiling rule answers
-`403 authorization failed` to every `/mcp` request that carries no MCP method,
-not only to an over-limit payment. The agents' MCP client sends a `GET` and a
-`DELETE` on `/mcp` per session, and both show as 403 in the gateway's log. They
-are not payments, and nothing in the flow fails because of them.
+The rule opens with `request.method != "POST"`, so the agents' MCP client's own
+`GET` and `DELETE` on `/mcp` pass. Only a `POST` that is a `tools/call` for
+`execute_payment` is judged, and a JSON-RPC batch is still `403`.

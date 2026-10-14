@@ -310,7 +310,7 @@ binds:
         # leaves no policy.decision span: the PDS is never asked.
         authorization:
           rules:
-          - allow: 'mcp.methodName != "tools/call" || mcp.tool.name != "execute_payment" || (mcp.tool.arguments.amount > 0 && mcp.tool.arguments.amount <= 50000)'
+          - allow: 'request.method != "POST" || mcp.methodName != "tools/call" || mcp.tool.name != "execute_payment" || (mcp.tool.arguments.amount > 0 && mcp.tool.arguments.amount <= 50000)'
       backends:
       - mcp:
           targets:

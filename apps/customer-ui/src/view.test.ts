@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { determinationView, formatElapsed } from "./view";
+import { determinationView, formatElapsed, outcomeWord } from "./view";
 
 describe("determinationView", () => {
   it("says awaiting human approval while the task waits", () => {
@@ -31,5 +31,19 @@ describe("formatElapsed", () => {
     expect(formatElapsed(0)).toBe("0:00");
     expect(formatElapsed(65_000)).toBe("1:05");
     expect(formatElapsed(600_000)).toBe("10:00");
+  });
+});
+
+describe("outcomeWord", () => {
+  it("names the outcome in the words the log should use", () => {
+    expect(outcomeWord("executed")).toBe("settled");
+    expect(outcomeWord("rejected")).toBe("declined");
+    expect(outcomeWord("refusal_unrecorded")).toBe("not routed");
+    expect(outcomeWord("failed")).toBe("failed");
+    expect(outcomeWord("awaiting_approval")).toBe("awaiting human approval");
+  });
+  it("falls back to the state for a status it does not know", () => {
+    expect(outcomeWord(undefined, "completed")).toBe("completed");
+    expect(outcomeWord("surprise")).toBe("surprise");
   });
 });

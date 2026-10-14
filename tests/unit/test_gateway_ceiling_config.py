@@ -8,7 +8,7 @@ CONFIG = Path(__file__).resolve().parents[2] / "deploy" / "platform" / "agentgat
 # CEILING_EUR is read from the config, never retyped: the rule text below is the
 # spec's shape with the one number taken from the file under test.
 CEILING_EUR = int(re.search(r"arguments\.amount <= (\d+)", CONFIG.read_text()).group(1))
-RULE = ('mcp.methodName != "tools/call" || mcp.tool.name != "execute_payment" '
+RULE = ('request.method != "POST" || mcp.methodName != "tools/call" || mcp.tool.name != "execute_payment" '
         f'|| (mcp.tool.arguments.amount > 0 && mcp.tool.arguments.amount <= {CEILING_EUR})')
 
 
