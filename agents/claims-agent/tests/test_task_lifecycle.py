@@ -204,7 +204,7 @@ async def test_resubscribe_after_the_task_finished_is_refused_not_streamed():
     # Measured (a2a-sdk 0.3.7): once execute() has returned the task is terminal
     # in the store and tasks/resubscribe answers InvalidParams "is in terminal
     # state". A task the store never held (a restarted claims-agent) is
-    # TaskNotFound. Either way the customer-ui falls back to tasks/get.
+    # TaskNotFound. Either way the customer-ui's awaitOutcome reads tasks/get once and resolves if terminal.
     handler, _ = _handler(_awaiting(), ledger_status="executed")
     task, _ = await _until_input_required(handler)
     await _resume(handler, task, "approved")

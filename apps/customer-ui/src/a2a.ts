@@ -194,7 +194,22 @@ export async function awaitOutcome(
 ): Promise<TaskSnapshot> {
   let emptyDrops = 0;
   for (;;) {
-    const done = await resubscribe(baseUrl, taskId, onEvent);
+    let done: TaskSnapshot | null;
+    try {
+      done = await resubscribe(baseUrl, taskId, onEvent);
+    } catch (err) {
+      // The decision can land before the resubscribe: the SDK then refuses with
+      // "is in terminal state". Read the task once; a terminal snapshot is the outcome.
+      let snap: TaskSnapshot | null = null;
+      try {
+        snap = await getTask(baseUrl, taskId);
+      } catch {
+        throw err;
+      }
+      if (!TERMINAL_STATES.has(snap.state)) throw err;
+      onEvent(snap);
+      return snap;
+    }
     if (done) return done;
     const now = await getTask(baseUrl, taskId);
     onEvent(now);

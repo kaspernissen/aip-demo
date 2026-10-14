@@ -2225,10 +2225,10 @@ the plan defect described two paragraphs up).
 
 Per-service unit suites (all nine run by `smoke-test.sh`, before any e2e test):
 claims-agent 30, settlement-agent 99, payments-mcp 16, payments-api (Go) 39,
-customer-ui (vitest) 18, policy-decision-service 157,
+customer-ui (vitest) 19, policy-decision-service 157,
 reviewer-ui 87, eval-scorer 165, backstage (jest) 37 — all passing.
 (**2026-10-14, M8 Task 2 (the waiting claim): claims-agent 16 → 30, reviewer-ui 73 → 87,
-customer-ui 6 → 18.** The claims-agent gains `tests/test_task_lifecycle.py` (13) and the
+customer-ui 6 → 19.** The claims-agent gains `tests/test_task_lifecycle.py` (13) and the
 card's streaming pin (1); the reviewer-ui gains `tests/test_claims.py` (5), six resume tests
 in `test_review.py` and three in `test_render.py`; the customer-ui's `a2a.test.ts` is
 rewritten around `message/stream` and `tasks/resubscribe` and `view.test.ts` is new.)

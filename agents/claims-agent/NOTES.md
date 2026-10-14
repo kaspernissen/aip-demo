@@ -759,7 +759,7 @@ customer-ui already holds the earlier state from its claim stream.
 (b) After `execute()` has returned, a resubscribe to the finished task is
 refused with `InvalidParams: Task ... is in terminal state: completed`, not
 `TaskNotFound`. A task the store never held (a restarted claims-agent) is
-`TaskNotFound`. Both are JSON-RPC errors; the customer-ui falls back to `tasks/get`.
+`TaskNotFound`. Both are JSON-RPC errors; on a resubscribe error the customer-ui's `awaitOutcome` reads the task once with `tasks/get`, resolves if it is terminal, and rethrows the original error otherwise.
 
 (c) **The SDK keeps a SERVER span open in trace A for the whole wait.** Measured
 live, claim `CLM-M8T2-001`, trace `41f75218242b4029ba2435b62bc72de1`, a 75 s wait

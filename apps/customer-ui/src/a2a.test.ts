@@ -127,11 +127,26 @@ describe("awaitOutcome", () => {
     await expect(awaitOutcome("http://agent", "t1", () => {}, { maxEmptyDrops: 3 })).rejects.toThrow(/lost the claim's stream/);
   });
 
-  it("surfaces a JSON-RPC error from resubscribe instead of retrying", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(`data: ${JSON.stringify({ jsonrpc: "2.0", id: "1", error: { code: -32001, message: "Task not found" } })}\n\n`, { status: 200 }),
-    ));
-    await expect(awaitOutcome("http://agent", "t1", () => {})).rejects.toThrow(/Task not found/);
+  it("surfaces a JSON-RPC error from resubscribe when the task is not terminal", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(`data: ${JSON.stringify({ jsonrpc: "2.0", id: "1", error: { code: -32602, message: "Task is in terminal state" } })}\n\n`, { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ jsonrpc: "2.0", id: "1", result: task("input-required", undefined) })));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(awaitOutcome("http://agent", "t1", () => {})).rejects.toThrow(/terminal state/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("resolves from tasks/get when resubscribe is refused because the decision already landed", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(`data: ${JSON.stringify({ jsonrpc: "2.0", id: "1", error: { code: -32602, message: "Task is in terminal state" } })}\n\n`, { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ jsonrpc: "2.0", id: "1", result: task("completed", { claimId: "C", status: "executed" }) })));
+    vi.stubGlobal("fetch", fetchMock);
+    const seen: string[] = [];
+    const done = await awaitOutcome("http://agent", "t1", (s) => seen.push(s.state));
+    expect(done.state).toBe("completed");
+    expect(done.result).toEqual({ claimId: "C", status: "executed" });
+    expect(seen).toEqual(["completed"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 

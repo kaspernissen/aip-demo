@@ -276,6 +276,13 @@ def resubscribe(
         if not drop_after:
             raise
         return {**snap, "dropped": True, "ended_without_terminal": True}
+    except AssertionError:
+        # The decision landed before the resubscribe: the SDK refuses with "is in
+        # terminal state". Read the task once, as the customer-ui does.
+        now = get_task(task_id, claims_agent_url=claims_agent_url)
+        if now["state"] not in TERMINAL_STATES:
+            raise
+        return {**snap, **now, "events": snap["events"], "ended_without_terminal": False}
     return {**snap, "ended_without_terminal": True}
 
 
