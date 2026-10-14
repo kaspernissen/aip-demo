@@ -44,6 +44,20 @@
 > - There is one settlement Deployment. The approver is a different
 >   `service.name` (`reviewer-ui`), so the "same service name, tell them apart
 >   by SPIFFE ID" caveat below no longer applies.
+> - **Trace B is the approval, and the span link now sits on its root.**
+>   `review.decision` (reviewer-ui, SERVER) is the root of trace B. Under it:
+>   the ledger read, the MCP calls through agentgateway, the PDS's
+>   `policy.decision` (rule `human-approved.execute`, `policy.ledger.status` =
+>   `awaiting_approval`), payments-mcp and payments-api's execute, and the
+>   claims-agent resume. It carries one **span link** to the refusal span in trace A
+>   (ids from the ledger's `refusal.refusedTraceId` and `refusedSpanId`), and
+>   the claim id as both an attribute and baggage. Wherever the text below says
+>   the link sits on `settlement.execute_approved`, that is dated M3 to M7 history.
+> - **How long humans take is a metric.** reviewer-ui records the OpenTelemetry
+>   histogram `northstar.approval.wait.duration` (seconds, attributes `decision`
+>   and `autonomy.level`, never the reviewer) at each decision that took effect:
+>   `awaitingSince` to the decision. It is not sampled, and it reaches Prometheus as
+>   `northstar_approval_wait_duration_seconds_*` (measured; see the contract).
 
 Status: **M8 (Human in the loop)**, on branch `m8-human-in-the-loop`, on top of **M7 (Bounded)**, which sat on **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
 autonomy) merged 2026-09-15 at `e62238f`, tagged `m5-verified`** -- read that
@@ -192,7 +206,7 @@ prose: a sentence true when written, falsified by an edit two lines below it.)
    fourth item this list has needed.** It is not, and that is the design: the
    human acts minutes later, from a different browser tab, in a process that
    did not exist when the refusal happened. There are **two traces**, joined
-   by a span **link** from `settlement.execute_approved` back to the span that
+   by a span **link** (M8: from `review.decision`; M3 to M7: from `settlement.execute_approved`) back to the span that
    recorded the refusal — which is why the ledger's `refusal` object persists
    a trace id *and* a span id. A reader looking for one trace that contains
    both the deny and the approved execution will not find it, and should not:

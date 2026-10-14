@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import requests
@@ -22,6 +22,17 @@ class Span:
     parent_id: str | None
     kind: str | None
     attrs: dict[str, Any]
+    trace_id: str = ""
+    duration_s: float = 0.0
+    # Span links, as the trace ids they point at (Jaeger renders a link as a
+    # FOLLOWS_FROM reference; a parent is a CHILD_OF one).
+    links: tuple["Link", ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class Link:
+    trace_id: str
+    span_id: str
 
 
 class Trace:
@@ -35,9 +46,12 @@ class Trace:
         for raw_span in raw.get("spans", []):
             attrs = {tag["key"]: tag["value"] for tag in raw_span.get("tags", [])}
             parent_id = None
+            links = []
             for ref in raw_span.get("references", []):
                 if ref.get("refType") == "CHILD_OF":
                     parent_id = ref.get("spanID")
+                elif ref.get("refType") == "FOLLOWS_FROM":
+                    links.append(Link(ref.get("traceID", ""), ref.get("spanID", "")))
             self.spans.append(
                 Span(
                     operation=raw_span["operationName"],
@@ -46,6 +60,9 @@ class Trace:
                     parent_id=parent_id,
                     kind=attrs.get("span.kind"),
                     attrs=attrs,
+                    trace_id=raw_span.get("traceID", raw.get("traceID", "")),
+                    duration_s=raw_span.get("duration", 0) / 1_000_000,
+                    links=tuple(links),
                 )
             )
 
@@ -96,6 +113,16 @@ class Trace:
     def roots(self) -> list[Span]:
         return [s for s in self.spans if s.parent_id is None]
 
+    def root(self) -> Span:
+        """The one span with no parent; raises if there is not exactly one."""
+        roots = self.roots()
+        if len(roots) != 1:
+            raise AssertionError(
+                f"expected one root span, found {len(roots)}: "
+                f"{[(s.service, s.operation) for s in roots]}"
+            )
+        return roots[0]
+
     def orphans(self) -> list[Span]:
         """Spans whose declared parent is not present in this trace."""
         ids = {s.span_id for s in self.spans}
@@ -139,6 +166,42 @@ class JaegerClient:
         resp = requests.get(f"{self.base_url}/api/traces", params=params, timeout=15)
         resp.raise_for_status()
         return [Trace(t) for t in (resp.json().get("data") or [])]
+
+    def wait_for_operation(
+        self,
+        service: str,
+        operation: str,
+        attrs: dict[str, Any] | None = None,
+        timeout: float = 60.0,
+        interval: float = 2.0,
+        links_to: str | None = None,
+    ) -> Trace:
+        """The newest trace holding `operation` in `service` whose span carries
+        every attribute in `attrs`; the trace is re-fetched whole by id, since a
+        search result can be cut short. `links_to`, if given, keeps only traces
+        where that operation's span links to that trace id (a claim id can be
+        reused across runs; a link cannot). Fails on timeout, never returns None."""
+        tags = {k: str(v) for k, v in (attrs or {}).items()}
+        deadline = time.time() + timeout
+        last_error: Exception | None = None
+        while time.time() < deadline:
+            try:
+                for found in self.find_traces(service, operation, tags, limit=20):
+                    if links_to is not None and not any(
+                        link.trace_id == links_to
+                        for span in found.spans_named(operation, service)
+                        for link in span.links
+                    ):
+                        continue
+                    return self.get_trace(found.trace_id)
+            except (requests.RequestException, AssertionError) as exc:
+                last_error = exc
+            time.sleep(interval)
+        detail = f" (last error: {last_error})" if last_error else ""
+        raise AssertionError(
+            f"no trace with {operation!r} in {service!r} carrying {attrs!r} "
+            f"within {timeout}s{detail}"
+        )
 
     def get_trace(self, trace_id: str) -> Trace:
         resp = requests.get(f"{self.base_url}/api/traces/{trace_id}", timeout=15)

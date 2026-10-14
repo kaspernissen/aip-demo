@@ -386,3 +386,89 @@ async def test_a_payment_with_no_task_id_resumes_nothing(traced):
                           gateway=FakeGateway(), claims=claims,
                           reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW)
     assert claims.calls == [] and result.resumed_state is None
+
+
+# ---- M8 Task 3: the span link, the claim baggage, the wait histogram ----
+
+from opentelemetry import baggage
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+import approval_metrics
+
+
+@pytest.fixture
+def waits():
+    reader = InMemoryMetricReader()
+    approval_metrics.use_meter(MeterProvider(metric_readers=[reader]).get_meter("test"))
+
+    def samples():
+        data = reader.get_metrics_data()
+        if not data or not data.resource_metrics:
+            return []
+        out = []
+        for scope in data.resource_metrics[0].scope_metrics:
+            for m in scope.metrics:
+                if m.name == "northstar.approval.wait.duration":
+                    out.extend(m.data.data_points)
+        return out
+    return samples
+
+
+async def _go(decision="approve", record=None, gateway=None, claims=None):
+    return await decide(
+        "PAY-000053", "alex.mercer", decision,
+        ledger=FakeLedger(record=record), gateway=gateway or FakeGateway(),
+        claims=claims or FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW)
+
+
+async def test_the_decision_span_links_to_the_refusal_span(traced):
+    await _go()
+    (span,) = traced.get_finished_spans()
+    (link,) = span.links
+    assert format(link.context.trace_id, "032x") == AWAITING_PAYMENT["refusal"]["refusedTraceId"]
+    assert format(link.context.span_id, "016x") == AWAITING_PAYMENT["refusal"]["refusedSpanId"]
+
+
+async def test_no_link_when_the_refusal_ids_are_empty(traced):
+    record = dict(AWAITING_PAYMENT)
+    record["refusal"] = {**AWAITING_PAYMENT["refusal"], "refusedTraceId": "", "refusedSpanId": ""}
+    await _go(record=record)
+    (span,) = traced.get_finished_spans()
+    assert list(span.links) == []
+
+
+async def test_the_claim_id_is_baggage_for_the_gateway_call_and_the_resume(traced):
+    seen = {}
+
+    class G(FakeGateway):
+        async def execute_payment(self, *a):
+            seen["gateway"] = baggage.get_baggage("northstar.claim.id")
+            return await super().execute_payment(*a)
+
+    class C(FakeClaims):
+        async def resume(self, *a):
+            seen["resume"] = baggage.get_baggage("northstar.claim.id")
+            return await super().resume(*a)
+
+    await _go(gateway=G(), claims=C())
+    assert seen == {"gateway": "CLM-1842", "resume": "CLM-1842"}
+    assert baggage.get_baggage("northstar.claim.id") is None  # detached
+
+
+async def test_one_histogram_sample_per_successful_approval(traced, waits):
+    await _go("approve")
+    (point,) = waits()
+    assert point.count == 1 and point.sum == 5.0
+    assert dict(point.attributes) == {"decision": "approved", "autonomy.level": "assisted"}
+
+
+async def test_a_reject_records_decision_rejected(traced, waits):
+    await _go("reject")
+    (point,) = waits()
+    assert dict(point.attributes) == {"decision": "rejected", "autonomy.level": "assisted"}
+
+
+async def test_a_refused_execute_records_no_sample(traced, waits):
+    result = await _go("approve", gateway=FakeGateway(error=ExecutionRefused("no")))
+    assert result.error and waits() == []

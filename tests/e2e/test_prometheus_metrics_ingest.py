@@ -104,6 +104,7 @@ import pytest
 # The one definition of this repo's skip-or-fail discriminator, shared so
 # that no caller holds its own, weaker copy. This file's shape is the strict
 # one; see tests/harness/kube.py's module docstring for why.
+from tests.harness import live
 from tests.harness.kube import absent_or_fail
 
 # The parsed form of "what does the deployed collector route?", argued for in
@@ -234,63 +235,14 @@ def stage_4_or_a_reason():
 
 @pytest.fixture(scope="module")
 def prometheus_url():
-    """An ephemeral port-forward to `svc/prometheus`, owned by this file.
-
-    `:9090` with no local port makes kubectl choose a free one and print it, so
-    this cannot shadow `scripts/start-demo.sh`'s own 9090 forward even when
-    both are up -- the same shape `test_opensearch_trace_ingest.py::gateway_url`
-    uses, and for the same reason: a stray forward silently shadowing a host
-    port has cost this project a measurement before.
-    """
-    proc = subprocess.Popen(
-        [
-            "kubectl", "--context", KUBE_CONTEXT, "-n", OBSERVABILITY_NAMESPACE,
-            "port-forward", f"svc/{PROMETHEUS_SERVICE}", ":9090",
-        ],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-    )
-    port = None
-    deadline = time.monotonic() + 30
-    try:
-        while time.monotonic() < deadline:
-            line = proc.stdout.readline()
-            if not line:
-                break
-            match = re.search(r"Forwarding from 127\.0\.0\.1:(\d+) -> 9090", line)
-            if match:
-                port = int(match.group(1))
-                break
-        assert port, (
-            f"could not establish a port-forward to svc/{PROMETHEUS_SERVICE} "
-            f"in {OBSERVABILITY_NAMESPACE} -- is the kind-northstar cluster up?"
-        )
-        yield f"http://127.0.0.1:{port}"
-    finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:  # pragma: no cover
-            proc.kill()
+    """An ephemeral port-forward to `svc/prometheus`, owned by this file (the
+    forward itself lives in the harness: `live.prometheus_port_forward`)."""
+    with live.prometheus_port_forward() as url:
+        yield url
 
 
 def _query(prometheus_url: str, path: str, params: list[str] = ()) -> dict:
-    """A Prometheus HTTP API call, made with curl through the forward.
-
-    `curl` rather than `httpx` only so the command in the task report is the
-    command this test runs; the API is the same either way.
-    """
-    command = ["curl", "-s", "--max-time", "30"]
-    for param in params:
-        command += ["--data-urlencode", param]
-    command.append(f"{prometheus_url}{path}")
-    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
-    assert result.returncode == 0, (
-        f"curl failed against {path}: rc={result.returncode} "
-        f"stderr={result.stderr[:400]!r}"
-    )
-    body = json.loads(result.stdout)
-    assert body.get("status") == "success", f"{path} returned {body!r}"
-    return body["data"]
+    return live.prometheus_query(prometheus_url, path, params)
 
 
 @pytest.fixture(scope="module")
@@ -340,18 +292,9 @@ CONTROL_POLL_TIMEOUT_S = 150.0
 def _recent_series(prometheus_url: str, selector: str) -> list[dict]:
     """Series matching `selector` with at least one sample inside
     `FRESH_WINDOW_S`, polled until `CONTROL_POLL_TIMEOUT_S`."""
-    deadline = time.monotonic() + CONTROL_POLL_TIMEOUT_S
-    found: list[dict] = []
-    while True:
-        now = time.time()
-        found = _query(
-            prometheus_url, "/api/v1/series",
-            [f"match[]={selector}", f"start={now - FRESH_WINDOW_S:.0f}",
-             f"end={now:.0f}"],
-        )
-        if found or time.monotonic() >= deadline:
-            return found
-        time.sleep(10)
+    return live.prometheus_series(
+        selector, prometheus_url=prometheus_url,
+        fresh_window_s=FRESH_WINDOW_S, timeout_s=CONTROL_POLL_TIMEOUT_S)
 
 
 # --- Control 1: the collector -> Prometheus hop, proved without any service --
@@ -512,6 +455,15 @@ SERVICES_WITH_A_KNOWN_METRIC = (
         "OTEL_SEMCONV_STABILITY_OPT_IN, recorded in docs/telemetry-contract.md",
         marks=_REVIEWER_UI_TRAFFIC_REQUIRED,
         id="reviewer-ui",
+    ),
+    pytest.param(
+        "reviewer-ui",
+        "northstar_approval_wait_duration_seconds_count",
+        "reviewer-ui records northstar.approval.wait.duration once per human "
+        "decision that took effect (apps/reviewer-ui/approval_metrics.py); the "
+        "series name is the one read off this Prometheus, not predicted",
+        marks=_REVIEWER_UI_TRAFFIC_REQUIRED,
+        id="reviewer-ui-approval-wait",
     ),
 )
 

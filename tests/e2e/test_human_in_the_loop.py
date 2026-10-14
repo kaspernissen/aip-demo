@@ -26,6 +26,9 @@ import httpx
 import pytest
 
 from tests.harness import contract, live
+from tests.harness.jaeger import JaegerClient
+
+JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
@@ -184,10 +187,57 @@ def test_execute_after_reject_is_refused(rejected):
 
 
 def test_the_release_was_decided_under_the_human_rule(approved):
+    # The decision that PERMITTED the release, read off trace B, names the human
+    # rule and the ledger status it was decided on.
+    trace_b = JaegerClient(JAEGER_URL).wait_for_operation(
+        "reviewer-ui", "review.decision",
+        attrs={"review.payment.id": approved["payment_id"]}, timeout=90)
+    permits = [s for s in trace_b.spans
+               if s.operation == "policy.decision" and s.attrs.get("policy.decision") == "permit"]
+    assert [p.attrs["policy.rule"] for p in permits] == ["human-approved.execute"], permits
+
+
+def test_executing_the_released_payment_again_is_refused(approved):
     # The payment is already executed, so the human rule must now deny it.
     outcome = _execute_as_reviewer_ui(approved["payment_id"])
     assert outcome.denial is not None, outcome
     assert outcome.denial.rule == "human-approved.execute"
+
+
+def test_trace_b_is_rooted_at_review_decision_and_links_to_trace_a(approved):
+    trace_b = JaegerClient(JAEGER_URL).wait_for_operation(
+        "reviewer-ui", "review.decision",
+        attrs={"review.payment.id": approved["payment_id"]}, timeout=90)
+    root = trace_b.root()
+    assert root.operation == "review.decision"
+    assert any(link.trace_id == approved["trace_id"] for link in root.links), root.links
+    decisions = [s for s in trace_b.spans if s.operation == "policy.decision"]
+    assert [d.attrs["policy.rule"] for d in decisions] == ["human-approved.execute"]
+    assert decisions[0].attrs["policy.ledger.status"] == "awaiting_approval"
+    ops = {s.operation for s in trace_b.spans}
+    assert "POST /payments/{paymentId}/execute" in ops, sorted(ops)
+
+
+def test_trace_a_holds_the_deny_and_no_execute(approved):
+    trace_a = JaegerClient(JAEGER_URL).wait_for_trace_id(
+        approved["trace_id"], services={"policy-decision-service"}, timeout=90,
+        steady_ignoring=JaegerClient.WAIT_POLLING_SPANS)
+    denies = [s for s in trace_a.spans
+              if s.operation == "policy.decision" and s.attrs.get("policy.decision") == "deny"]
+    assert denies and denies[0].attrs["policy.limit.amount"] == 0.0
+    assert "POST /payments/{paymentId}/execute" not in {s.operation for s in trace_a.spans}
+
+
+# Read off the running Prometheus on 2026-10-14, never predicted; see
+# docs/telemetry-contract.md.
+APPROVAL_WAIT_SERIES = "northstar_approval_wait_duration_seconds"
+
+
+def test_the_histogram_has_a_sample_for_the_approval(approved):
+    series = live.prometheus_series(
+        f'{APPROVAL_WAIT_SERIES}_count{{job="reviewer-ui",decision="approved"}}',
+        timeout_s=180)
+    assert series, "no approval-wait sample reached Prometheus"
 
 
 # --- the two bypasses the review found (M8 review I1 and I2) ----------------

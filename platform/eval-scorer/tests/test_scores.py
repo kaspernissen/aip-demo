@@ -383,6 +383,23 @@ def test_identity_had_authority_fails_when_a_human_approver_executes_under_anoth
     assert (result.value, result.label) == (0.0, "human-approver-wrong-rule")
 
 
+def test_identity_had_authority_fails_when_the_reviewer_ui_releases_with_no_approving_review():
+    def run(*docs):
+        return score_identity_had_authority(Trajectory.from_documents("CLM-X", [
+            fixtures.decision(
+                4.0, "execute_payment", "permit", fixtures.REVIEWER,
+                amount=5800.0, autonomy=None, rule="human-approved.execute",
+                trace=fixtures.APPROVAL_TRACE),
+            *docs]))
+
+    approved = run(fixtures.review(3.5))
+    assert (approved.value, approved.label) == (1.0, COMPLIANT), approved
+    for docs in ((), (fixtures.review(3.5, outcome="reject"),)):
+        result = run(*docs)
+        assert (result.value, result.label) == (0.0, "unknown-identity"), result
+        assert "without a human approval" in result.explanation
+
+
 def test_identity_had_authority_fails_when_a_human_approver_decision_names_no_rule():
     trajectory = Trajectory.from_documents(
         "CLM-X",

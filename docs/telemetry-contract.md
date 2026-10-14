@@ -45,7 +45,8 @@ now releases an approved payment itself, calling `execute_payment` through
 agentgateway under its own SPIFFE ID, so the `policy.decision` span for a human
 release carries `policy.caller.spiffe_id` = the reviewer-ui, `policy.rule` =
 `human-approved.execute`, and a new attribute, `policy.ledger.status`: what the
-PDS read from payments-api for that payment (`awaiting_approval` for a permit).
+PDS read from payments-api for that payment (`awaiting_approval` for a permit; the
+settlement agent's own execute decision carries it too, `proposed` for a permit).
 The approver is also a different `service.name`, so the "same service name for
 both settlement Deployments" caveats below no longer apply.
 
@@ -492,8 +493,8 @@ tree this change has since altered. What has to happen to make it MEASURED: one
 run on its own against the live stage-7 cluster, 7 passed in 55.8s, which is not
 the gate having run.
 
-Bare-suite row, derived from that same collection: 504 collected − 85 gated −
-**0** xfailed = `422 passed, 90 skipped, 0 xfailed`. (M8 Task 2 took the collection
+Bare-suite row, derived from that same collection: 522 collected − 95 gated −
+**0** xfailed = `427 passed, 95 skipped, 0 xfailed`. (M8 Task 3 took the collection from 512 to 522: four gated live tests in `test_human_in_the_loop.py` (trace B and its link, trace A's deny, the histogram, and the release's rule split from the repeat-execute check) and one gated Prometheus control in `test_prometheus_metrics_ingest.py`, so the gated figure is 95, plus five harness tests in `test_jaeger_assertions.py`.) (M8 Task 2 took the collection
 from 504 to 512: five gated live tests in `test_human_in_the_loop.py` (task states, the
 autonomous wait, the 10-minute resubscribe, the dropped-stream reconnect), so the gated
 figure is 90, and two Cilium config tests in `test_stage2_network_policy.py` and one harness test in
@@ -521,13 +522,13 @@ test) is `tests/unit`-only and carries no `skipif`, so it adds none, and the
 internal-platform pass's eight new `tests/unit` tests, the mermaid pass's eight
 and the page-banner pass's eight `tests/unit` tests carry none either; the
 page-banner pass's own e2e file adds exactly **one** — and
-reports 90 of 512, with the per-module spread and the browser split both
+reports 95 of 522, with the per-module spread and the browser split both
 moving for the first time this milestone. Full spread:
 `test_settlement_llm_trace.py` 9,
-`test_prometheus_metrics_ingest.py` 10, `test_browser_root_span.py` 8,
+`test_prometheus_metrics_ingest.py` 11, `test_browser_root_span.py` 8,
 `test_settlement_agent_trace.py` 8, `test_claims_chain_trace.py` 7,
 `test_claim_correlation.py` 6, `test_gateway_trace.py` 6,
-`test_human_in_the_loop.py` 13, `test_policy_scores.py` 5,
+`test_human_in_the_loop.py` 17, `test_policy_scores.py` 5,
 `test_demo_flow.py` 7, `test_evidence_view.py` 4, `test_policy_denial.py` 4,
 `test_backstage_page_bands.py` 1, `test_golden_path.py` 1,
 `test_progressive_autonomy.py` 1. **The browser split changes twice this
@@ -543,7 +544,11 @@ starting none, until the demo-flow file made it a fifteenth that starts none:
 `test_supervised.py` for `test_human_in_the_loop.py`, neither of which launches one,
 and the browser count had been miscounted as 4 since the demo-flow file).
 
-Gate row: **PREDICTED, NOT MEASURED** — M8 Task 2 predicts `511 passed, 1 xfailed`
+Gate row: **PREDICTED, NOT MEASURED** — M8 Task 3 predicts `521 passed, 1 xfailed`
+(522 collected): it changes the reviewer-ui, the eval-scorer, the harness, the driver, the
+PDS's comments and the e2e suite, all `GATE_PATHS`, so no gate row describes this tree; what
+has to happen to make it MEASURED is one `./scripts/smoke-test.sh` at the end of M8. Before it,
+M8 Task 2 predicted `511 passed, 1 xfailed`
 (512 collected): it changes the claims-agent, the reviewer-ui, the customer-ui, the
 harness, the driver, the manifests and the e2e suite, all `GATE_PATHS`, so no gate
 row describes this tree; what has to happen to make it MEASURED is one
@@ -2226,7 +2231,12 @@ the plan defect described two paragraphs up).
 Per-service unit suites (all nine run by `smoke-test.sh`, before any e2e test):
 claims-agent 30, settlement-agent 99, payments-mcp 16, payments-api (Go) 39,
 customer-ui (vitest) 19, policy-decision-service 157,
-reviewer-ui 87, eval-scorer 165, backstage (jest) 37 — all passing.
+reviewer-ui 95, eval-scorer 166, backstage (jest) 37 — all passing.
+(**2026-10-14, M8 Task 3: reviewer-ui 87 → 95, eval-scorer 165 → 166.** reviewer-ui gains
+`tests/test_approval_metrics.py` (2) and six tests in `test_review.py` (the span link, no link
+without ids, the claim baggage, and one histogram sample per successful decision, per reject and
+none for a refused execute); eval-scorer gains one test (a reviewer-ui release with no approving
+review scores 0.0 `unknown-identity`).)
 (**2026-10-14, M8 Task 2 (the waiting claim): claims-agent 16 → 30, reviewer-ui 73 → 87,
 customer-ui 6 → 19.** The claims-agent gains `tests/test_task_lifecycle.py` (13) and the
 card's streaming pin (1); the reviewer-ui gains `tests/test_claims.py` (5), six resume tests
@@ -3849,17 +3859,28 @@ against, whether the limit that rule states is €6,000 (assisted) or
 €1,000,000 (autonomous) — the trace shows that distinction being made rather
 than asserted.
 
-**M8 adds one attribute and one rule to this span.** A `tools/call
-execute_payment` from a caller in the PDS's `HUMAN_APPROVERS` set (the
-reviewer-ui) is decided by `policy.rule` = `human-approved.execute`, and the
-span carries `policy.ledger.status`: the status the PDS read for that payment
-from payments-api itself (`awaiting_approval` on a permit; `executed`,
-`rejected`, `proposed` or `unreadable` on a deny). The attribute is set only
-on that path, so the eleven-key limit-rule block above is unchanged, and
-`policy.limit.amount` is absent on a human release because the rule states no
-limit. The values after M8's limit change are: `settlement-agent` at `assisted`
-EUR 0, at `autonomous` EUR 6,000; the EUR 1,000,000 and EUR 25,000 figures in
-the dated measurements above are history.
+**M8 adds one attribute and two rules to this span.** A `tools/call
+execute_payment` is now decided with the ledger's own word for the payment, and
+the span carries `policy.ledger.status`: the status the PDS read from
+payments-api itself, on **both** kinds of execute decision.
+
+- A caller in the PDS's `HUMAN_APPROVERS` set (the reviewer-ui) is decided by
+  `policy.rule` = `human-approved.execute`, which permits only
+  `awaiting_approval`; the status reads `awaiting_approval` on a permit and
+  `executed`, `rejected`, `proposed` or `unreadable` on a deny. The rule states
+  no limit, so `policy.limit.amount` is absent on a human release.
+- The settlement agent, after its limit passes, may execute only a payment that
+  is still `proposed`. Any other status is denied under the rule
+  **`settlement-agent.payment_not_proposed`**, with the limit still on the span.
+  The status reads `proposed` on a permit.
+
+So the limit-rule block above, which listed eleven keys, now has **twelve** on an
+`execute_payment` decision: those eleven plus `policy.ledger.status`. A decision
+on `propose_payment` or `refuse_payment` reads no ledger and carries no such
+key, so those rows are unchanged. The values after M8's limit change are:
+`settlement-agent` at `assisted` EUR 0, at `autonomous` EUR 6,000; the
+EUR 1,000,000 and EUR 25,000 figures in the dated measurements above are
+history.
 
 Four properties worth stating because they are easy to get wrong from the
 outside:
@@ -4402,6 +4423,14 @@ that call, connected to it by ordinary parent/child propagation (the outbound
 A2A POST carries `traceparent` while `review.decision` is current), not by a
 link of its own.
 
+**Dated note, M8 Task 3: both statements above are superseded.** The span now
+carries **one span link of its own**, to the refusal span in trace A (ids read
+from the ledger's `refusal.refusedTraceId` and `refusedSpanId`), and a seventh
+key, `northstar.claim.id`, read from the ledger's `claimId`. The link is added
+after the span starts, because the ids come from the ledger read, which must run
+inside the span. Nothing is linked when the record holds no ids. See "Trace B:
+the human release (M8 Task 3)" below.
+
 ### `review.queue`, and the two reasons the ledger reads were untraceable (M3 final-review fix round, R36)
 
 **The second owned span this service creates**, added in the M3 final-review
@@ -4749,6 +4778,143 @@ same two-step shape `tests/e2e/test_evidence_view.py` asserts. The score spans
 own evidence is not — asserted from both sides in
 `tests/e2e/test_policy_scores.py`.
 
+## reviewer-ui's `northstar.approval.wait.duration` (M8 Task 3)
+
+**One histogram, recorded at each human decision that took effect.** Created in
+`apps/reviewer-ui/approval_metrics.py`, recorded by `review.decide()` after a
+successful release or reject. A failed execute records nothing: no decision took
+effect. The value is the span's own `review.elapsed_ms` divided by 1000, so the
+metric and the span cannot disagree: both read the ledger's `awaitingSince`.
+
+| Field | Value |
+|---|---|
+| OpenTelemetry instrument | `northstar.approval.wait.duration` |
+| Kind and unit | histogram, `s` |
+| Attributes | `decision` (`approved` or `rejected`), `autonomy.level` (read off the refusal's rule, `assisted` at rest) |
+| Deliberately absent | the reviewer's id: one series per person would be high-cardinality |
+| Aggregation | the SDK default (explicit bucket histogram); `bootstrap.py` installs the provider with no views, and nothing is sampled |
+
+**MEASURED, read off the running Prometheus on 2026-10-14 (never predicted):**
+after one approved claim, `label/__name__/values` held exactly three names with
+`approval` in them:
+
+```
+northstar_approval_wait_duration_seconds_bucket
+northstar_approval_wait_duration_seconds_count
+northstar_approval_wait_duration_seconds_sum
+```
+
+The series carried `job="reviewer-ui"`, `decision="approved"` and
+**`autonomy_level="assisted"`**: Prometheus rewrites the dot in `autonomy.level`
+to an underscore. The default buckets arrived as `le` = 0, 5, 10, 25, 50, 75, 100,
+250, 500, 750, 1000, 2500, 5000, 7500, 10000 and +Inf. No collector change was
+needed: the `metrics` pipeline already exported to Prometheus at stage 4 and up
+(`otlp_http/prometheus`), and both collector configs are unchanged.
+`tests/e2e/test_human_in_the_loop.py::test_the_histogram_has_a_sample_for_the_approval`
+asserts the `_count` series with `decision="approved"`.
+
+## Trace B: the human release (M8 Task 3)
+
+A refused claim waits in the ledger. The human's decision is a separate trace,
+**trace B**, rooted at reviewer-ui's `review.decision` and joined to trace A by a
+span link. Measured on claim `CLM-DEMO-E131FE`, payment `PAY-000001`, trace B
+`6a27c66630644534a6111b3c5339b608`, trace A `ecb8a9ac6f2b4c0a9f3f48ad30d887e5`:
+
+```
+review.decision [reviewer-ui, SERVER]            link -> trace A, span fcbfc06e2358b36c
+  GET [reviewer-ui, CLIENT]                      the ledger read
+    GET /payments/{paymentId} [payments-api]
+  POST [reviewer-ui, CLIENT]  x3                 initialize, notifications/initialized, tools/call
+    tools/call [agentgateway]
+      policy.decision [policy-decision-service]  rule human-approved.execute
+        GET /payments/{paymentId} [payments-api] the PDS's own ledger read
+      Guardrail [agentgateway]
+      tools/call payments-mcp_execute_payment [agentgateway]
+        tools/call execute_payment [payments-mcp]
+          POST [payments-mcp] -> POST /payments/{paymentId}/execute [payments-api]
+  POST [reviewer-ui, CLIENT] -> POST / [claims-agent]   tasks/get, then message/send (the resume)
+```
+
+(Trimmed to the spans this milestone depends on; the a2a-sdk's own spans under the
+claims-agent `POST /` are listed in "A2A task states on claims-agent spans" below.)
+
+### Attributes on trace B's root span, review.decision (M8 Task 3)
+
+Seven keys (plus Jaeger's `span.kind`), all of them:
+
+```
+northstar.claim.id           "CLM-DEMO-E131FE"
+review.decision              "approve"
+review.elapsed_ms            22998
+review.payment.id            "PAY-000001"
+review.refused.trace_id      "ecb8a9ac6f2b4c0a9f3f48ad30d887e5"
+review.reviewer.id           "alex.mercer"
+review.reviewer.spiffe_id    "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui"
+```
+
+The claim id is also **baggage** for the gateway call and the resume, so the
+downstream spans that run `ClaimIdSpanProcessor` carry it.
+
+### Attributes on trace B's permitting decision span, policy.decision (M8 Task 3)
+
+Eleven keys, the scope included, all of them:
+
+```
+otel.scope.name              "northstar.policy-decision-service"
+policy.autonomy.level        "assisted"
+policy.autonomy.reason       "TARGETING_MATCH"
+policy.caller.spiffe_id      "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui"
+policy.decision              "permit"
+policy.decision.retryable    false
+policy.ledger.status         "awaiting_approval"
+policy.request.amount        5800
+policy.request.currency      "EUR"
+policy.rule                  "human-approved.execute"
+policy.tool.name             "execute_payment"
+```
+
+(`policy.limit.amount` is absent: the human rule states no limit.) Trace A holds
+the other half: the agent's `policy.decision` for `execute_payment` is a **deny**
+with `policy.limit.amount` 0 and no `POST /payments/{paymentId}/execute` span.
+
+**The link, as Jaeger shows it.** Jaeger renders a span link as a `FOLLOWS_FROM`
+reference carrying the target's `traceID` and `spanID`; a parent is `CHILD_OF`.
+The harness's `Span.links` reads the former and `Span.parent_id` the latter.
+
+## The customer's wait: `claim.wait` and `tasks/resubscribe` (M8 Task 3)
+
+Only the browser emits `claim.wait`, so it is asserted in
+`tests/e2e/test_policy_denial.py`'s browser run. The customer-ui opens
+`claim.wait` when the stream returns `input-required` and ends it when the
+decision arrives over `tasks/resubscribe`. It is its **own trace**, linked to the
+`claim.submit` trace (one link), and carries `northstar.claim.id`. Measured on a
+run with a 6 s "human": `claim.wait` 6.287 s, root of its own trace, one link whose
+trace id is the `claim.submit` trace; `claim.submit` itself 7.73 s. The
+`tasks/resubscribe` request appears under it as a claims-agent `POST /` server span
+(6.285 s, ending with an `http.disconnect`) whose children are the a2a-sdk's
+`on_resubscribe_to_task` handler spans, an `EventQueue.dequeue_event` span about
+every 0.5 s while the wait lasts, and a last `dequeue_event` that ends ERROR with
+`QueueShutDown` when the queue closes (the SDK's own shutdown, kept, not dropped).
+The test asserts the wait is at least as long as the test measured between the page
+showing "Awaiting human approval" and the approval, less one second.
+
+## A2A task states on claims-agent spans (M8 Task 3)
+
+claims-agent writes two attributes, owned by this project, on the SDK's
+`DefaultRequestHandler._run_event_stream` SERVER span (the one that lasts the whole
+wait; see the M8 Task 2 measurement at the top of this document):
+
+| Attribute | Value | Meaning |
+|---|---|---|
+| `northstar.a2a.task.id` | the task's id (a UUID) | the A2A task the customer streams |
+| `northstar.a2a.task.state` | `input-required` on a waiting claim | the state the task was in when the executor last set it |
+
+Measured on trace `0178866fbd4dac2d34722175166b1b3e` (a 14.0 s `_run_event_stream`):
+`northstar.a2a.task.id` `2cd8d414-7290-4c6d-a91a-31c656f5126e`,
+`northstar.a2a.task.state` `input-required`. Nothing else in that trace carries
+either key. The a2a-sdk's own spans add no `rpc.*` or `gen_ai.*` attributes: they
+carry `otel.scope.name` `a2a-python-sdk` and, on success, `otel.status_code` `OK`.
+
 ## Conventions adopted
 
 **Where each one lives, corrected M4 Task 2.** This list used to name "GenAI
@@ -4786,7 +4952,9 @@ is in "Metrics, as measured (M4 Task 2)" above.
 | `policy.*` (ten keys, M2.2 nine + M5 Task 3's `policy.autonomy.reason`) plus one borrowed key, `feature_flag.version` (M5-R6, an existing OTel semantic convention, not `policy.*`-prefixed because it is not this project's own to name) | policy-decision-service, on its own `policy.decision` span | none — set locally, never propagated | That one span only, `feature_flag.version` only when flagd's response actually carries a version (measured against the live sidecar in M5 Task 3: it never does for this deployment's `autonomy-level` flag, so it is routinely absent). Keys declared in `platform/policy-decision-service/pds/telemetry.py`'s `ATTRIBUTES`/`INVENTED_ATTRIBUTES`. **Dated note, 2026-09-14 (M5 Task 3): corrected — that section is above, not below.** **Dated note, 2026-09-15 (M5 Task 6): re-derived.** The worked example and live-trace inventory in "The policy decision, as measured (M2.2)" above now cites two fresh M5 traces (`c6666319…` assisted-deny, `08d797e4…` autonomous-permit) instead of the pre-M5 nine-key shape; the eleven-key (ten `policy.*` plus scope) count there is current, not historical, and `feature_flag.version`'s routine absence was re-confirmed against both traces |
 | `northstar.payment.refusal_cause` (M2.2 Task 4) | payments-api, on its own server span for a refused execute; two closed values, `amount_mismatch` and `already_executed` (`systems/payments-api/handlers.go`) | none | payments-api's execute span, and **only when it refuses** — absent on success, so its presence means "refused here". Read off a real recorded span by that service's own Go tests via an in-memory `tracetest.SpanRecorder`; it appears on **none** of the six M2.2 traces named in this document, because neither the denied nor the permitted scenario reaches a 409 |
 | `northstar.payment.id`, `northstar.approval.reviewer_id` (M3 Task 3) | settlement-agent, on its own `settlement.execute_approved` span (`agents/settlement-agent/settlement.py`) | none | That span only, on the human-approved execution path. See "settlement-agent's own instrumentation" above, including this milestone's first span **link** and the same span's `northstar.claim.id` baggage (M3 Task 3 review, R16) |
-| `review.*` (six keys, M3 Task 4) | reviewer-ui, on its own `review.decision` span (`apps/reviewer-ui/review.py`) | none | That span only, one per submitted approve/reject decision — reviewer-ui's second owned span, `review.queue` (M3 final-review fix round), deliberately carries **none** of them, and no attributes at all. Two of the six (`review.refused.trace_id`, `review.elapsed_ms`) are now set *after* the span opens rather than at creation, because the ledger read they come from moved inside it; a decision that never reaches a refused record therefore emits the other four and an ERROR status. See "reviewer-ui's own instrumentation" above |
+| `review.*` (six keys, M3 Task 4; M8 Task 3 adds a span link and `northstar.claim.id` to the same span) | reviewer-ui, on its own `review.decision` span (`apps/reviewer-ui/review.py`) | none | That span only, one per submitted approve/reject decision — reviewer-ui's second owned span, `review.queue` (M3 final-review fix round), deliberately carries **none** of them, and no attributes at all. Two of the six (`review.refused.trace_id`, `review.elapsed_ms`) are now set *after* the span opens rather than at creation, because the ledger read they come from moved inside it; a decision that never reaches a refused record therefore emits the other four and an ERROR status. See "reviewer-ui's own instrumentation" above |
+| `northstar.a2a.task.id`, `northstar.a2a.task.state` (M8 Task 2) | claims-agent, on the a2a-sdk's `_run_event_stream` SERVER span (`agents/claims-agent/executor.py`) | none | That span only. See "A2A task states on claims-agent spans (M8 Task 3)" |
+| `northstar.approval.wait.duration` histogram, attributes `decision` and `autonomy.level` (M8 Task 3) | reviewer-ui (`apps/reviewer-ui/approval_metrics.py`) | none (a metric, not a span attribute) | One sample per human decision that took effect; no reviewer id. See "reviewer-ui's `northstar.approval.wait.duration`" |
 | `northstar.contract.previous_variant`, `northstar.contract.new_variant`, `northstar.contract.field_manager`, `northstar.contract.actor` (M6 Task 3/4) | Backstage's autonomyContract plugin, on its own `northstar.autonomy_contract.change` span (`platform/backstage/packages/backend/src/plugins/autonomyContract/telemetry.ts`) | none | That span only, one per successful write to the `northstar-autonomy` FeatureFlag through the autonomy card. `northstar.contract.actor` is a fixed literal (`"backstage-autonomy-card"`), not a caller identity — Backstage's guest auth (design §10) means there is no signed user upstream of this route to name honestly. See "Backstage's own instrumentation" above |
 
 **Two M2.2 notes on this table, both measured rather than reasoned.** The
@@ -5210,6 +5378,8 @@ For each: the evidence, whether upstream already has work in flight, and what we
   convention lands, which is worth knowing.
 
 ### Gap 4: baggage propagation across the MCP boundary
+
+**Dated note, M8 Task 3 (measured): payments-api's ledger READS now carry the claim id; its money hops still do not.** The claims-agent resumes a waiting claim with `northstar.claim.id` in baggage, and its `GET /payments/{paymentId}` reaches payments-api with it: four such server spans carried the claim id after one approval run, each parented by a claims-agent `GET`. `POST /payments/propose` and `POST /payments/{paymentId}/execute` carry none, and no `policy.decision` span does, so the trace-id join below is still what reaches the money hops. `tests/e2e/test_evidence_view.py::test_the_trace_id_join_is_what_reaches_the_money_hops` asserts exactly that split.
 
 - **Evidence:** Neither. `northstar.claim.id` reaches payments-mcp on **0** of
   its tool-call spans, and payments-api on **0** of its spans, in a live

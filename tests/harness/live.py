@@ -88,6 +88,7 @@ ATTR_FLAG_VERSION = "feature_flag.version"
 ATTR_CLAIM_ID = "northstar.claim.id"
 ATTR_REVIEW_REVIEWER = "review.reviewer.id"
 ATTR_REVIEW_DECISION = "review.decision"
+ATTR_REVIEW_ELAPSED_MS = "review.elapsed_ms"
 REVIEW_DECISION_SPAN = "review.decision"
 
 # One page is enough for a claim's whole story; `spans_in_traces` asserts it.
@@ -851,6 +852,8 @@ def evidence_for(claim_id: str, window_start_ms: int) -> dict:
         `executing_identity`/
         `executing_rule`
       `reviewer`/`review_decision` panel 3, "Was a human in the loop?"
+      `approved_by`/`human_wait_s` who approved the release, and how long the
+                                   human took (None when no human approved)
       `money_hops`                 panel 4, the ledger hops
 
     `contract_version` is expected to read `None` today (flagd's response
@@ -881,6 +884,12 @@ def evidence_for(claim_id: str, window_start_ms: int) -> dict:
 
     reviews = [span for span in spans if span.get("name") == REVIEW_DECISION_SPAN]
     review = reviews[-1] if reviews else {}
+    # The review that released the money: who approved, and how long the human
+    # took (the span's own `review.elapsed_ms`, read off the ledger's
+    # awaitingSince). Both None when no human approved.
+    approving = [r for r in reviews if attrs(r).get(ATTR_REVIEW_DECISION) == "approve"]
+    approval = approving[-1] if approving else {}
+    elapsed_ms = attrs(approval).get(ATTR_REVIEW_ELAPSED_MS)
 
     money = [
         span
@@ -898,6 +907,8 @@ def evidence_for(claim_id: str, window_start_ms: int) -> dict:
         "autonomy_level": attrs(first_decision).get(ATTR_AUTONOMY),
         "contract_version": attrs(first_decision).get(ATTR_FLAG_VERSION),
         "reviewer": attrs(review).get(ATTR_REVIEW_REVIEWER),
+        "approved_by": attrs(approval).get(ATTR_REVIEW_REVIEWER),
+        "human_wait_s": elapsed_ms / 1000 if elapsed_ms is not None else None,
         "review_decision": attrs(review).get(ATTR_REVIEW_DECISION),
         # Who asked, on the agent's own first attempt -- the identity the
         # gateway verified and the decision was made about. Distinct from
@@ -909,3 +920,147 @@ def evidence_for(claim_id: str, window_start_ms: int) -> dict:
         "decision_count": len(decisions),
         "span_count": len(spans),
     }
+
+
+# --- Prometheus ----------------------------------------------------------------
+
+OBSERVABILITY_NAMESPACE = "observability"
+PROMETHEUS_SERVICE = "prometheus"
+
+
+@contextlib.contextmanager
+def prometheus_port_forward():
+    """An ephemeral port-forward to `svc/prometheus`; yields its base URL.
+
+    `:9090` with no local port makes kubectl choose a free one and print it, so
+    this cannot shadow `scripts/start-demo.sh`'s own 9090 forward: a stray
+    forward silently shadowing a host port has cost this project a measurement
+    before.
+    """
+    proc = subprocess.Popen(
+        ["kubectl", "--context", KUBE_CONTEXT, "-n", OBSERVABILITY_NAMESPACE,
+         "port-forward", f"svc/{PROMETHEUS_SERVICE}", ":9090"],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    )
+    port = None
+    deadline = time.monotonic() + 30
+    try:
+        while time.monotonic() < deadline:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            match = re.search(r"Forwarding from 127\.0\.0\.1:(\d+) -> 9090", line)
+            if match:
+                port = int(match.group(1))
+                break
+        assert port, (
+            f"could not establish a port-forward to svc/{PROMETHEUS_SERVICE} "
+            f"in {OBSERVABILITY_NAMESPACE} -- is the kind-northstar cluster up?"
+        )
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:  # pragma: no cover
+            proc.kill()
+
+
+def prometheus_query(prometheus_url: str, path: str, params=()) -> dict:
+    """A Prometheus HTTP API call, made with curl through the forward (so the
+    command in a task report is the command the test runs)."""
+    command = ["curl", "-s", "--max-time", "30"]
+    for param in params:
+        command += ["--data-urlencode", param]
+    command.append(f"{prometheus_url}{path}")
+    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, (
+        f"curl failed against {path}: rc={result.returncode} "
+        f"stderr={result.stderr[:400]!r}"
+    )
+    body = json.loads(result.stdout)
+    assert body.get("status") == "success", f"{path} returned {body!r}"
+    return body["data"]
+
+
+def prometheus_series(selector: str, *, prometheus_url: str | None = None,
+                      fresh_window_s: float = 900, timeout_s: float = 150.0) -> list[dict]:
+    """Series matching `selector` with a sample inside `fresh_window_s`, polled
+    until `timeout_s`. A stale series is not proof the path works today.
+
+    Opens its own port-forward unless given a `prometheus_url`."""
+    with contextlib.ExitStack() as stack:
+        url = prometheus_url or stack.enter_context(prometheus_port_forward())
+        deadline = time.monotonic() + timeout_s
+        while True:
+            now = time.time()
+            found = prometheus_query(
+                url, "/api/v1/series",
+                [f"match[]={selector}", f"start={now - fresh_window_s:.0f}",
+                 f"end={now:.0f}"])
+            if found or time.monotonic() >= deadline:
+                return found
+            time.sleep(10)
+
+
+# --- settlement-agent (A2A), the violating path --------------------------------
+
+SETTLEMENT_AGENT_URL_DEFAULT = "http://localhost:19002"
+
+
+@contextlib.contextmanager
+def settlement_agent_route(url: str = SETTLEMENT_AGENT_URL_DEFAULT):
+    """settlement-agent's A2A endpoint reachable at `url` (its own forward,
+    owned and torn down here). Used only by the test that has to make the
+    refused identity act again."""
+    port = urllib.parse.urlsplit(url).port
+    proc = subprocess.Popen(
+        ["kubectl", "--context", KUBE_CONTEXT, "-n", "northstar-agents",
+         "port-forward", "svc/settlement-agent", f"{port}:9002"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            try:
+                requests.get(f"{url}/.well-known/agent-card.json", timeout=3)
+                break
+            except requests.RequestException:
+                time.sleep(1)
+        else:
+            raise AssertionError(f"could not reach settlement-agent at {url} within 30s")
+        yield url
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def send_claim_to_settlement_agent(
+    claim_id: str, amount: float, *, url: str, traceparent: str | None = None,
+    timeout: float = SETTLEMENT_TIMEOUT_S,
+) -> dict:
+    """The claim sent straight to settlement-agent over A2A `message/send`,
+    skipping claims-agent: the refused identity proposes and tries to execute
+    AGAIN for a claim that is already waiting for a human. Returns the JSON
+    reply the agent gives (`status`, `paymentId`, `rule`, ...)."""
+    headers = {"traceparent": traceparent} if traceparent else {}
+    request = _jsonrpc("message/send", {"message": {
+        "role": "user", "messageId": uuid.uuid4().hex,
+        "parts": [{"kind": "text", "text": json.dumps({
+            "claimId": claim_id, "amount": amount, "currency": "EUR"})}]}})
+    response = httpx.post(f"{url}/", json=request, headers=headers, timeout=timeout)
+    response.raise_for_status()
+    body = response.json()
+    assert "error" not in body, f"settlement-agent refused the A2A call: {body['error']}"
+    result = body["result"]
+    parts = result.get("parts") or (result.get("status", {}).get("message") or {}).get("parts") or []
+    for part in reversed(parts):
+        if part.get("kind") == "text":
+            try:
+                return json.loads(part["text"])
+            except json.JSONDecodeError:
+                continue
+    raise AssertionError(f"settlement-agent returned no JSON reply: {result!r}")

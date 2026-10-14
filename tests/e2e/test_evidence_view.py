@@ -577,12 +577,40 @@ def test_the_trace_id_join_is_what_reaches_the_money_hops(
             }
         )["aggregations"]["services"]["buckets"]
         reached_by_claim_id = {bucket["key"] for bucket in claim_scoped}
-        assert not (reached_by_claim_id & {PAYMENTS_API, PDS_SERVICE}), (
-            f"claim {claim_id}: {ATTR_CLAIM_ID!r} now reaches "
-            f"{sorted(reached_by_claim_id & {PAYMENTS_API, PDS_SERVICE})}. If "
+        assert PDS_SERVICE not in reached_by_claim_id, (
+            f"claim {claim_id}: {ATTR_CLAIM_ID!r} now reaches {PDS_SERVICE}. If "
             "Gap 4 has genuinely been closed, that is good news -- but this "
             "file, the saved dashboard's two-step layout and Gap 4 in "
             "docs/telemetry-contract.md all have to change in the same commit."
+        )
+        # M8: the claims-agent resumes a waiting claim with the claim id in
+        # baggage, and its ledger READ (`GET /payments/{paymentId}`) reaches
+        # payments-api with it, so payments-api's read spans now carry the
+        # claim id. The MONEY hops still do not: the claim-id filter alone
+        # finds neither propose nor execute, which is what the trace-id join
+        # exists for.
+        payments_names = {
+            bucket["key"]
+            for bucket in _search(
+                {
+                    "size": 0,
+                    "query": {
+                        "bool": {
+                            "filter": [
+                                {"term": {f"attributes.{ATTR_CLAIM_ID}.keyword": claim_id}},
+                                {"term": {"resource.service.name.keyword": PAYMENTS_API}},
+                                _window_filter(),
+                            ]
+                        }
+                    },
+                    "aggs": {"names": {"terms": {"field": "name.keyword", "size": 50}}},
+                }
+            )["aggregations"]["names"]["buckets"]
+        }
+        assert not (payments_names & {EXECUTE_HOP, PROPOSE_HOP}), (
+            f"claim {claim_id}: the claim-id filter now reaches payments-api's "
+            f"money hops {sorted(payments_names & {EXECUTE_HOP, PROPOSE_HOP})}; "
+            "the trace-id join is no longer what reaches them."
         )
 
 

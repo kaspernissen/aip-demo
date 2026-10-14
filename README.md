@@ -80,6 +80,7 @@ flowchart LR
 </pre>
 
 A refused claim and its later approval are two traces, joined by a span link
+from `review.decision` (the root of trace B) back to the refusal span in trace A,
 rather than a parent-child edge, because the human decides minutes later in a
 different process:
 
@@ -89,9 +90,9 @@ flowchart LR
         a1["browser → ... → settlement-agent"] --> a2["deny"]
     end
     subgraph B["trace B — approved"]
-        b1["review.decision"] --> b2["settlement.execute_approved"]
+        b1["review.decision"] --> b2["execute_payment via the gateway"]
     end
-    b2 -.->|"span link"| a1
+    b1 -.->|"span link"| a1
 </pre>
 
 | Component | What it does |

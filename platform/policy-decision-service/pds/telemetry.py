@@ -53,8 +53,10 @@ ATTR_AUTONOMY = "policy.autonomy.level"     # resolved from flagd, not a constan
 # we could not ask" without cross-referencing a second signal.
 ATTR_AUTONOMY_REASON = "policy.autonomy.reason"
 ATTR_RETRYABLE = "policy.decision.retryable"
-# What payments-api showed for the payment a human approver asked to release.
-# Set only on that decision; `unreadable` when the ledger read failed.
+# What payments-api showed for the payment an `execute_payment` asked about: set
+# on the human approver's decision (which needs `awaiting_approval`) AND on the
+# settlement agent's (which needs `proposed`). `unreadable` when the ledger read
+# failed. Not set on a tool that reads no ledger.
 ATTR_LEDGER_STATUS = "policy.ledger.status"
 
 # The one attribute on this span that is NOT ours to name. Unlike

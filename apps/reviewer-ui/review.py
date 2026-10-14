@@ -39,9 +39,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
-from opentelemetry import trace
-from opentelemetry.trace import SpanKind, Status, StatusCode
+from opentelemetry import baggage, trace
+from opentelemetry import context as otel_context
+from opentelemetry.trace import SpanContext, SpanKind, Status, StatusCode, TraceFlags
 
+import approval_metrics
 from levels import autonomy_level_of
 
 _VALID_DECISIONS = ("approve", "reject")
@@ -196,8 +198,21 @@ async def decide(
         # different trace from, the refusal, and the claim id is what ties the
         # two together (Gap 4). Read off the ledger record, like everything
         # else on this span.
+        trace_id, span_id = refusal.get("refusedTraceId"), refusal.get("refusedSpanId")
+        if trace_id and span_id:
+            # Trace B (this decision) is its own trace; the link is what ties it
+            # back to trace A, where the refusal happened. Added after start
+            # because the ids come from the ledger read, which must itself run
+            # inside the span (module docstring). The SDK keeps a valid link
+            # and drops an invalid one.
+            span.add_link(SpanContext(
+                trace_id=int(trace_id, 16), span_id=int(span_id, 16),
+                is_remote=True, trace_flags=TraceFlags(TraceFlags.SAMPLED)))
+        claim_token = None
         if record.get("claimId"):
             span.set_attribute("northstar.claim.id", record["claimId"])
+            claim_token = otel_context.attach(
+                baggage.set_baggage("northstar.claim.id", record["claimId"]))
 
         result = ReviewResult(
             payment_id=payment_id,
@@ -209,33 +224,43 @@ async def decide(
         )
 
         try:
-            if decision == "approve":
-                # The ledger's amount and currency, never a form field. The
-                # PDS still decides, and reads the ledger status itself: a
-                # check this function did for itself would be a check a
-                # compromised reviewer-ui skips.
-                result.executed = await gateway.execute_payment(
-                    payment_id, record["amount"], record["currency"]
-                )
-            else:
-                result.rejected = await ledger.reject(payment_id, reviewer_id)
-        except Exception as exc:  # noqa: BLE001 -- surfaced on the result and the span
-            # Surface the failure honestly rather than showing a success: the
-            # span records that this decision did not go through, and
-            # result.error is what render.py reads to say so on the page. The
-            # decision attribute above is left as the reviewer chose it.
-            span.set_status(Status(StatusCode.ERROR, str(exc)))
-            span.record_exception(exc)
-            result.error = str(exc)
-
-        # Tell the customer, only after the money decision went through. The
-        # claims-agent does not trust this message: it reads the ledger.
-        if result.error is None and record.get("a2aTaskId"):
             try:
-                result.resumed_state = await claims.resume(record["a2aTaskId"], {
-                    "decision": "approved" if decision == "approve" else "rejected",
-                    "paymentId": payment_id, "reviewerId": reviewer_id})
-            except Exception as exc:  # noqa: BLE001 -- the money decision stands; say so
-                result.resume_error = str(exc)
+                if decision == "approve":
+                    # The ledger's amount and currency, never a form field. The
+                    # PDS still decides, and reads the ledger status itself: a
+                    # check this function did for itself would be a check a
+                    # compromised reviewer-ui skips.
+                    result.executed = await gateway.execute_payment(
+                        payment_id, record["amount"], record["currency"]
+                    )
+                else:
+                    result.rejected = await ledger.reject(payment_id, reviewer_id)
+            except Exception as exc:  # noqa: BLE001 -- surfaced on the result and the span
+                # Surface the failure honestly rather than showing a success: the
+                # span records that this decision did not go through, and
+                # result.error is what render.py reads to say so on the page. The
+                # decision attribute above is left as the reviewer chose it.
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                span.record_exception(exc)
+                result.error = str(exc)
+
+            # Tell the customer, only after the money decision went through. The
+            # claims-agent does not trust this message: it reads the ledger.
+            if result.error is None and record.get("a2aTaskId"):
+                try:
+                    result.resumed_state = await claims.resume(record["a2aTaskId"], {
+                        "decision": "approved" if decision == "approve" else "rejected",
+                        "paymentId": payment_id, "reviewerId": reviewer_id})
+                except Exception as exc:  # noqa: BLE001 -- the money decision stands; say so
+                    result.resume_error = str(exc)
+
+            if result.error is None:
+                approval_metrics.record_wait(
+                    elapsed_ms / 1000.0,
+                    decision="approved" if decision == "approve" else "rejected",
+                    autonomy_level=result.autonomy_level)
+        finally:
+            if claim_token is not None:
+                otel_context.detach(claim_token)
 
         return result

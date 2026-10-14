@@ -98,6 +98,8 @@ from tests.e2e.test_caller_identity import (  # noqa: F401 -- fixtures used by n
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
+# How long the browser test lets the "human" take before approving.
+HUMAN_TAKES_S = 6.0
 UI_URL = os.environ.get("CUSTOMER_UI_URL", "http://localhost:8080")
 CLAIMS_AGENT_URL = os.environ.get("CLAIMS_AGENT_URL", "http://localhost:19001")
 # The ledger itself, for criterion 1's read-back. Same env var and same default
@@ -313,6 +315,7 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
 
     captured: dict[str, str] = {}
     outcome: dict[str, str] = {}
+    ledger_record = None
     client = JaegerClient(JAEGER_URL)
 
     with sync_playwright() as playwright:
@@ -352,8 +355,21 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
         outcome["raw"] = page.locator("h2:text-is('Outcome') + pre").inner_text()
         # A claim the platform routes to a human is a waiting claim, said so on
         # the page; not a failure and not a settlement.
+        waiting_payment = None
+        waiting_seen_at_s = approved_at_s = 0.0
         if json.loads(outcome["raw"]).get("status") == "awaiting_approval":
             page.wait_for_selector("text=Awaiting human approval", timeout=30_000)
+            waiting_seen_at_s = time.time()
+            # The human takes a few seconds, so the wait is told apart from a
+            # span that merely opened and closed.
+            time.sleep(HUMAN_TAKES_S)
+            # A human decides, with the page still open: the customer's wait
+            # (`claim.wait`) ends, and is exported, only while the page lives.
+            waiting_payment = json.loads(outcome["raw"])["paymentId"]
+            ledger_record = live.get_payment(waiting_payment)
+            live.review(waiting_payment, "approve", "alex.mercer")
+            approved_at_s = time.time()
+            page.wait_for_selector("text=Settled", timeout=60_000)
 
         traceparent = captured.get("traceparent")
         assert traceparent, (
@@ -378,6 +394,25 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
 
         # Trap A: this happens with the page still open, on purpose.
         _wait_for_browser_root(client, trace_id, timeout=90)
+        if waiting_payment is not None:
+            # The customer's wait is its own trace, linked to the claim's, and
+            # lasts at least as long as the human took (minus a second of slack).
+            # The claim id is reused across runs (CLM-1842), so the submit is
+            # the trace this run observed on the wire, and the wait is the one
+            # that links to it.
+            submit = client.get_trace(trace_id).span("claim.submit", "customer-ui")
+            wait = client.wait_for_operation(
+                "customer-ui", "claim.wait", attrs={"northstar.claim.id": claim_id},
+                timeout=90, links_to=trace_id).root()
+            assert wait.trace_id != submit.trace_id          # the wait is its own trace
+            assert [l.trace_id for l in wait.links] == [submit.trace_id], wait.links
+            # The wait starts when the page shows the claim waiting (not at
+            # Submit: the model's own turns come before that) and ends when the
+            # decision arrives, so it is at least what this test measured
+            # between the two, less a second of slack for the page's own timing.
+            assert wait.duration_s >= approved_at_s - waiting_seen_at_s - 1.0, (
+                wait.duration_s, approved_at_s - waiting_seen_at_s)
+            assert wait.duration_s >= HUMAN_TAKES_S - 1.0, wait.duration_s
         browser.close()
 
     cors_errors = [e for e in console_errors if "CORS" in e or "Access-Control" in e]
@@ -387,12 +422,10 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
 
     # A claim routed to a human is waiting, and a waiting claim keeps its trace
     # open (a2a-sdk's `_run_event_stream` span and a 0.5 s polling span last as
-    # long as the wait), so the trace would never hold steady. Decide it first;
-    # `ledger_record` is what the ledger said while it waited.
+    # long as the wait), so the trace would not hold steady. The human decided
+    # above, with the page open; `ledger_record` is what the ledger said while
+    # the claim waited.
     reply = json.loads(outcome["raw"])
-    ledger_record = (
-        live.release_wait(reply["paymentId"]) if reply.get("status") == "awaiting_approval" else None
-    )
 
     # Wait for the whole chain to land *and hold steady* past the 5s
     # BatchSpanProcessor delay, not merely for one span to appear.
@@ -626,8 +659,8 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
     # And nothing executed. The ledger first, read straight from the service
     # that owns it: the proposal was refused, not paid.
     payment_id = reply["paymentId"]
-    # Read from the ledger while the claim was waiting (`release_wait` returns
-    # it just before rejecting, so the trace can settle); this criterion is
+    # Read from the ledger while the claim was waiting (read just before the
+    # approval, so the trace can settle); this criterion is
     # about the wait, not about its later outcome.
     record = denial_run.ledger_record
     assert record is not None, f"the claim was not waiting for a human: {reply}"

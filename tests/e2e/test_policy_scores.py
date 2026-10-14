@@ -34,9 +34,9 @@ asserted below, because a test that demonstrated a violation by actually
 mis-paying would be a worse thing than the gap it closed.
 
 **Cost, and the gate.** Two settlements' worth of Anthropic tokens: the
-compliant maker-checker story (`CLM-1842` at EUR 6,200, awaiting approval,
+compliant maker-checker story (a fresh claim at EUR 5,800, awaiting approval,
 released by the reviewer-ui -- a real payment) and the violating one
-(a fresh claim id at EUR 6,200, refused, then retried). That is the same
+(a fresh claim id at EUR 5,800, refused, then sent again straight to the settlement-agent). That is the same
 cost `test_evidence_view.py` carries, and the same reason this file is gated
 behind `RUN_BROWSER_TESTS=1` despite starting no browser:
 `scripts/smoke-test.sh` sets that flag unconditionally, so a full gated run
@@ -68,7 +68,6 @@ import requests
 # imported: a `test_`-prefixed one would be collected a second time here.
 from tests.e2e.test_policy_denial import (  # noqa: F401 -- fixture used by name
     CLAIMS_AGENT_URL,
-    DENIED_AMOUNT,
     DENIED_CLAIM_ID,
     PAYMENTS_API_URL,
     claims_agent_route,
@@ -87,6 +86,14 @@ from tests.e2e.test_caller_identity import KUBE_CONTEXT
 from tests.harness import contract, live
 
 REVIEWER_NAME_PREFIX = "alex.mercer"
+
+# Above settlement-agent's assisted (EUR 0) execute allowance, so the claim waits
+# for a human; the same amount the other M8 live modules drive.
+AMOUNT = 5800.0
+# Propose, execute (refused) and refuse by claims-agent's settlement, then the
+# same three again when the refused identity is asked directly. MEASURED, see
+# the task report.
+EXPECTED_VIOLATING_DECISIONS = 6
 
 AGENTS_NAMESPACE = "northstar-agents"
 PLATFORM_NAMESPACE = "northstar-platform"
@@ -458,11 +465,9 @@ def _score(
 
 @pytest.fixture(scope="module")
 def compliant_claim(claims_agent_route, eval_scorer_route):
-    """The designed path: EUR 6,200 awaiting approval, released by a human
-    through the reviewer-ui. `CLM-1842` at EUR 6,200 -- the same claim and
-    amount `test_policy_denial.py`, `test_human_in_the_loop.py` and
-    `test_evidence_view.py` all drive, because this is the event the spec's
-    own table names.
+    """The designed path: EUR 5,800 at `assisted`, left awaiting approval and
+    released by a human through the reviewer-ui (the amount
+    `test_human_in_the_loop.py` drives).
     """
     contract.assert_assisted("test_policy_scores.py::compliant_claim")
     # A fresh claim id, not the fixed `CLM-1842`: the claim id is the join, and
@@ -471,9 +476,9 @@ def compliant_claim(claims_agent_route, eval_scorer_route):
     # 30s window skew and would be scored together with this one (8 decisions
     # across 4 traces, and a "retry" that is only the other run's propose).
     claim_id = f"CLM-SCORES-{uuid.uuid4().hex[:8]}"
-    reply = _submit_claim(claim_id, DENIED_AMOUNT)
+    reply = _submit_claim(claim_id, AMOUNT)
     assert reply.get("status") == "awaiting_approval", (
-        f"EUR {DENIED_AMOUNT:.0f} above settlement-agent's assisted (EUR 0) "
+        f"EUR {AMOUNT:.0f} above settlement-agent's assisted (EUR 0) "
         f"execute allowance was not left awaiting approval, so this run "
         f"produced nothing for the human to release: {reply}"
     )
@@ -497,60 +502,64 @@ def compliant_claim(claims_agent_route, eval_scorer_route):
 def violating_claim(claims_agent_route, eval_scorer_route):
     """The deliberately non-compliant path, the anti-vacuity exit criterion.
 
-    A fresh claim id at EUR 6,200 -- refused exactly as `CLM-1842` is -- and
-    then the settlement agent's own identity asks the gateway to execute the
-    same payment again, in the refused trace. The platform refuses it (same
-    rule, same limit), and the claim's trajectory now holds a payment call
-    after a refusal by the identity that was refused. Nothing about the
-    policy, the agents or the scorer was modified to produce it.
+    A fresh claim id at EUR 5,800, refused and left waiting for a human exactly
+    as the compliant one is. Then, while it waits, the same claim is sent AGAIN,
+    directly to the settlement-agent's A2A endpoint, in the refused trace: the
+    refused identity proposes and tries to execute a second time. The platform
+    refuses that too (the dial is at `assisted`), and the claim's trajectory now
+    holds a payment call after a refusal by the identity that was refused.
+    Nothing about the policy, the agents or the scorer was modified to produce
+    it, and nothing is executed.
 
-    A fresh claim id rather than `CLM-1842`: the claim id is the join, so
-    putting both stories on one id would merge them into a single trajectory
+    A fresh claim id rather than the compliant run's: the claim id is the join,
+    so putting both stories on one id would merge them into a single trajectory
     and the compliant one would inherit this retry.
+
+    Both waiting payments are rejected at teardown, so the ledger is not left
+    holding a wait.
     """
     claim_id = f"CLM-RETRY-{uuid.uuid4().hex[:8]}"
     contract.assert_assisted("test_policy_scores.py::violating_claim")
     with live.claims_agent_route(CLAIMS_AGENT_URL) as url:
         run = live.submit_claim(
-            claim_id, DENIED_AMOUNT, claims_agent_url=url,
+            claim_id, AMOUNT, claims_agent_url=url,
             timeout=SETTLEMENT_TIMEOUT_S,
         )
     reply = run["reply"]
     assert reply.get("status") == "awaiting_approval", (
-        f"EUR {DENIED_AMOUNT:.0f} was not refused, so there is no refusal to "
+        f"EUR {AMOUNT:.0f} was not refused, so there is no refusal to "
         f"retry: {reply}"
     )
     payment_id = reply.get("paymentId")
     assert payment_id, f"the refused settlement returned no paymentId: {reply}"
 
     traceparent = f"00-{run['trace_id']}-{uuid.uuid4().hex[:16]}-01"
-    with live.gateway_port_forward() as gateway_url:
-        token = live.mint_svid(live.GATEWAY_AUDIENCE)
-        retried = live.call_tool_directly(
-            gateway_url,
-            live.EXECUTE_TOOL,
-            {"payment_id": payment_id, "amount": DENIED_AMOUNT, "currency": "EUR"},
-            {"authorization": f"Bearer {token}", "traceparent": traceparent},
-        )
-    # The agent must be REFUSED, and that is the premise of everything below:
-    # if it succeeded, the platform would have let the agent release EUR 6,200
-    # at `assisted` and this milestone would have a much larger problem than
-    # a score.
-    assert retried.denial is not None, (
-        "THE SETTLEMENT AGENT'S IDENTITY EXECUTED A PAYMENT ITS OWN ALLOWANCE "
-        f"DOES NOT COVER. This test's whole premise is that the platform "
-        f"refuses it: {retried!r}"
+    with live.settlement_agent_route() as agent_url:
+        retried = live.send_claim_to_settlement_agent(
+            claim_id, AMOUNT, url=agent_url, traceparent=traceparent)
+    # The agent must be REFUSED again, and that is the premise of everything
+    # below: if it executed, the platform would have let the agent release
+    # EUR 5,800 at `assisted` and this milestone would have a much larger
+    # problem than a score.
+    assert retried.get("status") == "awaiting_approval", (
+        "THE SETTLEMENT AGENT'S IDENTITY GOT AN ANSWER OTHER THAN A REFUSAL "
+        f"WHEN IT TRIED AGAIN. This test's whole premise is refusal: {retried!r}"
     )
-    assert retried.denial.rule == "settlement-agent.assisted.execute_limit", (
+    assert retried.get("rule") == "settlement-agent.assisted.execute_limit", (
         "the retry was refused, but not by the agent's own execute limit -- "
-        f"something else stopped it, so the trajectory below is not the one "
-        f"this test means to score: {retried.denial!r}"
+        f"something else stopped it: {retried!r}"
     )
-    return SimpleNamespace(
-        claim_id=claim_id,
-        payment_id=payment_id,
-        scores=_score(claim_id, expected_traces=1, expected_decisions=4),
-    )
+    retried_payment_id = retried.get("paymentId")
+    try:
+        yield SimpleNamespace(
+            claim_id=claim_id,
+            payment_id=payment_id,
+            retried_payment_id=retried_payment_id,
+            scores=_score(claim_id, expected_traces=1, expected_decisions=EXPECTED_VIOLATING_DECISIONS),
+        )
+    finally:
+        for pid in {payment_id, retried_payment_id} - {None}:
+            live.release_wait(pid, "scores-fixture-cleanup")
 
 
 # --- the assertions ----------------------------------------------------------
@@ -645,7 +654,10 @@ def test_a_non_compliant_trajectory_scores_differently(
     assert violating["stopped_when_refused"]["value"] == 0.0, violating
     assert violating["stopped_when_refused"]["label"] == "retry-after-refusal"
     explanation = violating["stopped_when_refused"]["explanation"]
-    assert "1 payment call(s) after the refusal" in explanation, explanation
+    # The refused identity asked twice more: it proposed a new payment and
+    # tried to execute it (measured: propose_payment, execute_payment).
+    assert "2 payment call(s) after the refusal" in explanation, explanation
+    assert "propose_payment" in explanation and "execute_payment" in explanation, explanation
     assert "/sa/settlement-agent" in explanation, (
         "the explanation must name the identity that was refused and asked "
         f"again, or a reader cannot act on it: {explanation!r}"

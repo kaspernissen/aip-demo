@@ -64,8 +64,12 @@ caller in that set is decided by one rule, `human-approved.execute`: permit
 only when the ledger shows the payment `awaiting_approval`. The PDS reads that
 status itself, from payments-api, with the caller's `traceparent`; it never
 takes the caller's word for it. An unreadable ledger, a payment in any other
-state or an unknown id is a deny. The decision span carries
-`policy.ledger.status`.
+state or an unknown id is a deny.
+
+The settlement agent is held to the ledger too: after its limit passes, it may
+execute only a payment still `proposed`. Any other status is a deny under the
+rule `settlement-agent.payment_not_proposed`. So both kinds of `execute_payment`
+decision span carry `policy.ledger.status`, the status the PDS read.
 
 ## Telemetry
 

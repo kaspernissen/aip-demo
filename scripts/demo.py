@@ -723,12 +723,16 @@ def cmd_evidence(_: argparse.Namespace) -> None:
             kv("outcome", f"{word('EXECUTED', 'go')} by {short_id(row['executing_identity'])}")
         else:
             kv("outcome", f"{word('REFUSED', 'stop')} no payments-api execute span: nothing moved")
-        kv("human approval", str(row["reviewer"]) if row["reviewer"] else "none (no human was involved)")
+        if row.get("approved_by"):
+            kv("human approval", f"{row['approved_by']}, after {row['human_wait_s']:.0f} s")
+        else:
+            kv("human approval", str(row["reviewer"]) if row["reviewer"] else "none (no human was involved)")
         # The record must agree with what the run saw at the time.
         if (claim["status"] == "executed") != outcome_executed:
             problems.append(f"{claim['id']}: the run saw {claim['status']!r} but OpenSearch says executed={outcome_executed}")
-        if claim["status"] == "executed" and row["executing_identity"] != row["caller_identity"]:
-            problems.append(f"{claim['id']}: executed by someone other than the caller")
+        if (claim["status"] == "executed" and row["executing_identity"] != row["caller_identity"]
+                and not row.get("approved_by")):
+            problems.append(f"{claim['id']}: executed by someone other than the caller and no human approved it")
         if claim["level"] != row["autonomy_level"]:
             problems.append(f"{claim['id']}: the flag read {claim['level']!r} but the decision recorded {row['autonomy_level']!r}")
     if problems:
