@@ -470,6 +470,11 @@ def cmd_claim(args: argparse.Namespace) -> None:
     reply = run["reply"]
     took = time.monotonic() - started
     status = reply.get("status")
+    if status == "awaiting_approval":
+        # M8: a refusal now leaves the payment waiting for a human. This driver
+        # still tells the refused/executed story; the human-in-the-loop flow is
+        # M8's demo task (Task 5).
+        status = "refused"
     out(f"  -> {took:0.0f}s")
     out()
     if status == "refused":

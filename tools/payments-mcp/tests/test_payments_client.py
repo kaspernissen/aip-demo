@@ -77,7 +77,7 @@ def test_get_reads_the_payment_endpoint():
                 "claimId": "CLM-1842",
                 "amount": 6200.0,
                 "currency": "EUR",
-                "status": "refused",
+                "status": "awaiting_approval",
             },
         )
 
@@ -86,7 +86,7 @@ def test_get_reads_the_payment_endpoint():
 
     assert seen["method"] == "GET"
     assert seen["url"] == "http://payments-api:8080/payments/PAY-000001"
-    assert result["status"] == "refused"
+    assert result["status"] == "awaiting_approval"
 
 
 def test_http_errors_are_raised():
@@ -119,7 +119,7 @@ def test_refuse_posts_to_refuse_endpoint():
                 "claimId": "CLM-1842",
                 "amount": 6200,
                 "currency": "EUR",
-                "status": "refused",
+                "status": "awaiting_approval",
                 "refusal": {
                     "rule": "execute_limit",
                     "limit": 6000.0,
@@ -127,8 +127,8 @@ def test_refuse_posts_to_refuse_endpoint():
                     "narrative": "narrative",
                     "refusedTraceId": "331edba8cb21223e9de2f244360c42ef",
                     "refusedSpanId": "b7997877797c1b27",
-                    "refusedAt": "2026-09-10T00:00:00Z",
                 },
+                "awaitingSince": "2026-09-10T00:00:00Z",
             },
         )
 
@@ -140,6 +140,7 @@ def test_refuse_posts_to_refuse_endpoint():
         narrative="narrative",
         refused_trace_id="331edba8cb21223e9de2f244360c42ef",
         refused_span_id="b7997877797c1b27",
+        a2a_task_id="task-1",
     )
 
     assert seen["method"] == "POST"
@@ -151,5 +152,6 @@ def test_refuse_posts_to_refuse_endpoint():
         "narrative": "narrative",
         "refusedTraceId": "331edba8cb21223e9de2f244360c42ef",
         "refusedSpanId": "b7997877797c1b27",
+        "a2aTaskId": "task-1",
     }
-    assert result["status"] == "refused"
+    assert result["status"] == "awaiting_approval"

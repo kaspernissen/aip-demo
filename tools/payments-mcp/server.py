@@ -71,13 +71,15 @@ def refuse_payment(
     narrative: str,
     refused_trace_id: str,
     refused_span_id: str,
+    a2a_task_id: str = "",
 ) -> dict:
     """Record why a payout was refused, beside the payout.
 
     Called by settlement-agent's own decide_settlement, through the same
     governed MCP path every other payments call in this repo takes -- not a
-    new HTTP path from the agent to payments-api. Moves no money; the
-    execute path stays exactly as guarded as it always was.
+    new HTTP path from the agent to payments-api. Moves no money: it leaves
+    the payment awaiting a human. a2a_task_id is the customer's A2A task, kept
+    on the ledger so the reviewer-ui can resume it.
     """
     return payments.refuse(
         payment_id,
@@ -87,14 +89,14 @@ def refuse_payment(
         narrative=narrative,
         refused_trace_id=refused_trace_id,
         refused_span_id=refused_span_id,
+        a2a_task_id=a2a_task_id,
     )
 
 
 @mcp.tool(
     annotations={
         "readOnlyHint": True,
-        # execute_approved reads the ledger back through this tool before
-        # executing an approval, so it has to be reachable through the same
+        # Reading the ledger back has to be reachable through the same
         # governed MCP path as every other payments call. It moves nothing
         # and reverses nothing -- the
         # Policy Decision Service reads this tool as unlimited for exactly
@@ -108,9 +110,8 @@ def refuse_payment(
 def get_payment(payment_id: str) -> dict:
     """Read back what the ledger recorded for a payment.
 
-    Used by settlement-agent's execute_approved to confirm, before executing,
-    that a refusal record actually exists for this payment and that its
-    recorded amount matches what this approval asks to execute.
+    Read by the callers that need the ledger's own record of a payment (its
+    status, amount and refusal), not a model's account of it.
     """
     return payments.get(payment_id)
 

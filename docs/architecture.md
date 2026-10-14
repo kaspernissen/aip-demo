@@ -1,5 +1,46 @@
 # Northstar Architecture — M8 (Human in the loop), on M7's Bounded
 
+> **M8 change, read this first.** `senior-settlement-agent` was **retired in
+> M8**. Wherever this document, written milestone by milestone, describes it,
+> its `ClusterSPIFFEID` fallback, its Cilium policies, its €25,000 row or the
+> `approval.py` A2A hop, that is **dated history of M3 to M7**, kept because it
+> records what was measured then. What is true now:
+>
+> - The autonomy dial is a **maker-checker policy**. `settlement-agent` may
+>   release €0 at `assisted` and up to €6,000 at `autonomous`
+>   (`EXECUTE_LIMITS` in `pds/rules.py`).
+> - payments-api has two new states, `awaiting_approval` and `rejected`. A
+>   refused payment is `awaiting_approval`; a human moves it to `executed` or
+>   `rejected`.
+> - **reviewer-ui releases the money itself**: it calls `execute_payment`
+>   through agentgateway with its own JWT-SVID (`northstar-reviewer-ui`
+>   `ClusterSPIFFEID`). The PDS permits it under rule
+>   `human-approved.execute`, and only when it reads `awaiting_approval` from
+>   payments-api itself (span attribute `policy.ledger.status`). A ledger it
+>   cannot read is a deny.
+> The policy, as `pds/rules.py` enforces it:
+>
+> | Caller | Level | `execute_payment` is permitted |
+> |---|---|---|
+> | `settlement-agent` | `assisted` | never (limit €0) |
+> | `settlement-agent` | `autonomous` | up to €6,000 |
+> | `reviewer-ui` (in `HUMAN_APPROVERS`) | no level | only when payments-api shows the payment `awaiting_approval`, under rule `human-approved.execute` |
+> | any other caller | any | never (`unknown_caller`) |
+>
+> The ledger state machine: `proposed` becomes `executed` (the agent, inside its
+> band) or `awaiting_approval` (the agent was refused and recorded why);
+> `awaiting_approval` becomes `executed` (the reviewer-ui, through the PDS) or
+> `rejected` (`POST /payments/{id}/reject`, final). `executed` and `rejected`
+> are terminal, and executing a rejected payment is a 409 whose
+> `northstar.payment.refusal_cause` is `rejected`. **The reviewer-ui is the only
+> path for a human approval**: nothing else is in `HUMAN_APPROVERS`, and the
+> Kyverno keystone policy refuses an agent the verbs to run a pod as, or mint a
+> token for, that ServiceAccount.
+>
+> - There is one settlement Deployment. The approver is a different
+>   `service.name` (`reviewer-ui`), so the "same service name, tell them apart
+>   by SPIFFE ID" caveat below no longer applies.
+
 Status: **M8 (Human in the loop)**, on branch `m8-human-in-the-loop`, on top of **M7 (Bounded)**, which sat on **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
 autonomy) merged 2026-09-15 at `e62238f`, tagged `m5-verified`** -- read that
 tag's own message before trusting it, it claims less than its predecessors.
@@ -448,7 +489,7 @@ Namespaces, ports, and service DNS names below are read directly from
 | `payments-mcp` | Python 3.13, FastMCP 4.0.3 | `northstar-tools` | `payments-mcp.northstar-tools.svc.cluster.local:8000`, MCP endpoint at `/mcp` | `localhost:5001/northstar/payments-mcp:dev` | MCP server exposing **four** tools as of M3 — `propose_payment` and `execute_payment` since M1.1, plus `refuse_payment` and `get_payment` from M3 Task 3 (this row said "two tools" until M3 Task 5B, and `contracts/mcp/payments-mcp.json` still listed only two, which is what made the gate red). An adapter over payments-api — it owns no state of its own (`server.py`'s own docstring: "This is an adapter over payments-api, not a system of record."). |
 | `payments-api` | Go 1.27.1, `otelhttp v0.71.0` / otel core `v1.46.0` (**2026-09-11 (M3): was Go 1.24, `otelhttp v0.66.0` / otel core `v1.41.0`** — see Finding 11) | `northstar-systems` | `payments-api.northstar-systems.svc.cluster.local:8080` | `localhost:5001/northstar/payments-api:dev` | The system of record for payments. In-memory store, sequential IDs, no persistence. As of M3 it also records **why** a payout did not happen (`POST /refuse`) and lists them (`GET /payments`) — a record, not a gate. |
 | `reviewer-ui` **(M3 Task 4)** | Python 3.13, FastAPI 0.141.1 + uvicorn, server-rendered HTML strings — **no frontend toolchain and no build step**, deliberately unlike `customer-ui` | `northstar-agents` | `reviewer-ui.northstar-agents.svc.cluster.local:8080`, exposed as a `NodePort` (30081) mapped to host `8081` by `deploy/kind/stage3.yaml` | `localhost:5001/northstar/reviewer-ui:dev` | The page a human reads and clicks. Lists refusals straight from payments-api's REST API (never through the MCP path), and POSTs an approval to `senior-settlement-agent` over A2A. Emits the `review.decision` span. |
-| `senior-settlement-agent` **(M3 Task 3)** | **No image and no code of its own** — the `settlement-agent` image, byte-identical, in a second Deployment under a second ServiceAccount | `northstar-agents` | `senior-settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` (the same mutable `:dev` tag settlement-agent runs) | Executes what a human approved, under an identity the Policy Decision Service grants a higher limit. "Senior" is an *identity*, not a different program — which is the entire point, and the reason this row's Image cell repeats another row's. |
+| `senior-settlement-agent` **(M3 Task 3; retired in M8)** | **No image and no code of its own** — the `settlement-agent` image, byte-identical, in a second Deployment under a second ServiceAccount | `northstar-agents` | `senior-settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` (the same mutable `:dev` tag settlement-agent runs) | Executes what a human approved, under an identity the Policy Decision Service grants a higher limit. "Senior" is an *identity*, not a different program — which is the entire point, and the reason this row's Image cell repeats another row's. |
 
 **Namespace note, worth stating plainly:** `customer-ui` deploys into
 `northstar-agents` — the same namespace as `claims-agent` and
@@ -1419,7 +1460,7 @@ explicitly would have added a manifest that changed no outcome. Read back off
 the same live entry list:
 
 ```
-spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent
+(retired in M8) .../ns/northstar-agents/sa/senior-settlement-agent
 spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui
 ```
 
@@ -2476,7 +2517,7 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
    - Compare the **`policy.decision`** span in *this* trace with the one from
      step 1. Same rule shape, same service, same code path —
      `policy.caller.spiffe_id` now reads
-     `spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent`,
+     `.../ns/northstar-agents/sa/senior-settlement-agent` (retired in M8),
      `policy.limit.amount` reads `25000`, and the verdict is `permit`. Nothing
      was overridden; a different caller was asked about.
    - One thing that will look wrong and is not: **the senior agent's spans

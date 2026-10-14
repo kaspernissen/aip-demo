@@ -10,7 +10,6 @@ const STATUS_ASSISTED = {
   defaultVariant: 'assisted',
   perIdentity: {
     'settlement-agent': { level: 'assisted', branch: 'targeting-then' },
-    'senior-settlement-agent': { level: 'assisted', branch: 'targeting-else' },
   },
 };
 
@@ -40,20 +39,20 @@ function renderCard(fetchImpl: jest.Mock) {
 }
 
 describe('AutonomyContractPage', () => {
-  it('reads live status on mount and shows both identities', async () => {
+  it('reads live status on mount and shows the identity', async () => {
     const fetchImpl = jest.fn(async () => jsonResponse(200, STATUS_ASSISTED));
 
     await renderCard(fetchImpl);
 
     await waitFor(() => {
-      expect(screen.getByText(/settlement-agent \(junior\)/)).toBeInTheDocument();
+      expect(screen.getByText("settlement-agent")).toBeInTheDocument();
     });
-    expect(screen.getByText(/senior-settlement-agent/)).toBeInTheDocument();
+    expect(screen.queryByText(/senior-settlement-agent/)).not.toBeInTheDocument();
     expect(fetchImpl).toHaveBeenCalledWith(
       'http://localhost:7007/api/autonomy-contract/status',
     );
-    // Two "assisted" chips -- one per identity -- plus the defaultVariant
-    // chip: this is the fail-closed shipped state, not a guess.
+    // One "assisted" chip for the identity plus the defaultVariant chip:
+    // this is the fail-closed shipped state, not a guess.
     expect(screen.getAllByText('assisted').length).toBeGreaterThanOrEqual(2);
   });
 
@@ -82,7 +81,7 @@ describe('AutonomyContractPage', () => {
       );
 
     await renderCard(fetchImpl);
-    await waitFor(() => screen.getByText(/settlement-agent \(junior\)/));
+    await waitFor(() => screen.getByText("settlement-agent"));
 
     fireEvent.click(screen.getByText(/Set settlement-agent: autonomous/));
 
@@ -109,7 +108,7 @@ describe('AutonomyContractPage', () => {
       .mockResolvedValueOnce(jsonResponse(200, STATUS_ASSISTED));
 
     await renderCard(fetchImpl);
-    await waitFor(() => screen.getByText(/settlement-agent \(junior\)/));
+    await waitFor(() => screen.getByText("settlement-agent"));
     fireEvent.click(screen.getByText(/Set settlement-agent: autonomous/));
 
     await waitFor(() => {
@@ -128,7 +127,7 @@ describe('AutonomyContractPage', () => {
       );
 
     await renderCard(fetchImpl);
-    await waitFor(() => screen.getByText(/settlement-agent \(junior\)/));
+    await waitFor(() => screen.getByText("settlement-agent"));
     fireEvent.click(screen.getByText(/Set settlement-agent: autonomous/));
 
     await waitFor(() => {

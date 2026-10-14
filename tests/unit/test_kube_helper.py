@@ -66,7 +66,6 @@ _RAW_RETURNCODE_SKIPS_ALLOWED = {
     ("test_golden_path.py", "stage_6_backstage_deployed_or_a_reason"),
     ("test_backstage_page_bands.py", "stage_6_backstage_deployed_or_a_reason"),
     ("test_gateway_config_drift.py", "live_gateway_config_text"),
-    ("test_supervised.py", "reviewer_ui_route"),
     # Label-selector pod lookups and in-pod `exec` probes. A selector does not
     # 404, and an exec that cannot start means the dataplane is absent rather
     # than that an object is missing -- `absent_or_fail` has no `NotFound` to

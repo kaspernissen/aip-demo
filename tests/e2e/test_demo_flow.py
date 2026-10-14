@@ -3,7 +3,7 @@
 `scripts/demo` is what the speaker types on stage (spec section 7,
 `docs/superpowers/specs/2026-10-12-northstar-m7-bounded-design.md`):
 
-    guard -> claim 6200 -> autonomy autonomous -> claim 6200 -> autonomy assisted
+    guard -> claim 5800 -> autonomy autonomous -> claim 5800 -> autonomy assisted
           -> keystone -> evidence -> reset
 
 This file runs exactly that sequence, **by invoking the driver as a subprocess**
@@ -20,9 +20,9 @@ drift from the cluster without this file going red:
 * `guard` -- no identity is HTTP 401 at the gateway; the direct road to
   payments-mcp is DROPPED (not refused, not a 401); settlement-agent's SVID
   lists the tools.
-* `claim 6200` under `assisted` -- REFUSED, the gateway's own span answers
+* `claim 5800` under `assisted` -- REFUSED, the gateway's own span answers
   HTTP 200 with the tool call marked ERROR, the decision is a `deny` under
-  `settlement-agent.assisted.execute_limit` against a limit of 6000, and the
+  `settlement-agent.assisted.execute_limit` against a limit of 0 (M8: the dial is maker-checker), and the
   `payments-api` **execute** span is absent. (Not *every* payments-api span:
   the proposal and the refusal record are there, and the spec's shorthand "no
   payments-api span" was corrected to this by running it.)
@@ -47,7 +47,7 @@ no" and it was measured, not assumed.
 `scripts/smoke-test.sh` sets unconditionally -- although no browser is started:
 the two `claim` steps are real model calls (same reason `test_evidence_view.py`
 and `test_settlement_llm_trace.py` carry it). The one thing that makes this
-file more than a cost question: the second claim **executes a real EUR 6,200
+file more than a cost question: the second claim **executes a real EUR 5,800
 payment** under settlement-agent's own identity, with the flag flipped, which a
 bare `pytest tests/` must never do.
 
@@ -70,7 +70,7 @@ from tests.harness import contract, live
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEMO = REPO_ROOT / "scripts" / "demo"
 
-AMOUNT = 6200
+AMOUNT = 5800
 
 # A claim is three sequential model turns plus a ~10s trace-quiet wait; 180s
 # for the model call matches every other call site, and the driver's own
@@ -85,7 +85,7 @@ pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
     reason=(
         "spends two settlements' worth of model tokens and executes a real "
-        "EUR 6,200 payment under settlement-agent's identity with the flag "
+        "EUR 5,800 payment under settlement-agent's identity with the flag "
         "flipped; gated behind the same RUN_BROWSER_TESTS=1 flag "
         "scripts/smoke-test.sh sets unconditionally (no browser is started -- "
         "test_evidence_view.py rides the same flag for the same reason)"
@@ -201,13 +201,13 @@ def test_1_guard_no_identity_is_401_the_direct_road_is_dropped_and_the_svid_list
     assert "eyJ" not in out and "Bearer " not in out, "a bearer credential reached the output"
 
 
-def test_2_claim_6200_under_assisted_is_refused_and_no_money_moved(flow):
+def test_2_claim_5800_under_assisted_is_refused_and_no_money_moved(flow):
     flow.require("guard")
     out = flow.ok("claim-refused", "claim", str(AMOUNT), "--expect", "refused")
     assert "[REFUSED]" in out, out
     assert "[DENY]" in out, out
     assert "settlement-agent.assisted.execute_limit" in out, out
-    assert "limit      6000  (requested 6200)" in out, out
+    assert "limit      0  (requested 5800)" in out, out
     # The gateway's own span: HTTP 200, the tool call marked ERROR.
     assert re.search(r"tools/call execute_payment\s+HTTP 200\s+ERROR", out), out
     assert "mcpGuardrails rejected" in out, out
@@ -238,7 +238,7 @@ def test_2b_a_refusal_is_http_200_carrying_an_is_error_tool_result(flow):
     assert executed.http_status == 200, executed
     assert executed.tool_result["isError"] is True, executed
     assert executed.denial.rule == "settlement-agent.assisted.execute_limit", executed
-    assert executed.denial.limit == 6000.0, executed
+    assert executed.denial.limit == 0.0, executed
 
 
 def test_3_flipping_the_value_executes_the_same_claim_and_restarts_nothing(flow):
@@ -288,14 +288,14 @@ def test_5_evidence_names_who_decided_for_both_of_this_runs_claims(flow):
     flow.require("claim-refused", "claim-executed", "keystone")
     out = flow.ok("evidence", "evidence")
     assert "for this run's 2 claim(s)" in out, out
-    refused, executed = out.split("EUR 6,200")[1:3]
+    refused, executed = out.split("EUR 5,800")[1:3]
     for section in (refused, executed):
         assert "policy-decision-service" in section, section
         assert "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent" in section, section
         assert "human approval   none" in section, section
     assert "[DENY]" in refused and "[REFUSED]" in refused, refused
     assert "settlement-agent.assisted.execute_limit" in refused, refused
-    assert "limit            6000   (requested 6200)" in refused, refused
+    assert "limit            0   (requested 5800)" in refused, refused
     assert "autonomy level   assisted" in refused, refused
     assert "[PERMIT]" in executed and "[EXECUTED]" in executed, executed
     assert "settlement-agent.autonomous.execute_limit" in executed, executed

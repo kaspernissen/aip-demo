@@ -53,13 +53,19 @@ The limit table is keyed on `(caller, autonomy_level)`:
 
 | Caller | Level | Execute limit |
 |---|---|---|
-| `settlement-agent` | `assisted` | €6,000 |
-| `settlement-agent` | `autonomous` | higher — this is what the demo's flip changes |
-| `senior-settlement-agent` | `assisted` | €25,000 |
+| `settlement-agent` | `assisted` | €0 |
+| `settlement-agent` | `autonomous` | €6,000 — this is what the demo's flip changes |
 
-`reviewer-ui` has **no row at all**, which is the stronger claim: not "it does
-not try to execute payments" but "it could not if it did". That is criterion 7
-in `tests/e2e/test_supervised.py`.
+The dial means maker-checker: at `assisted` the agent may release nothing, at
+`autonomous` up to €6,000.
+
+`reviewer-ui` has **no row in that table**. It is in `HUMAN_APPROVERS`, and a
+caller in that set is decided by one rule, `human-approved.execute`: permit
+only when the ledger shows the payment `awaiting_approval`. The PDS reads that
+status itself, from payments-api, with the caller's `traceparent`; it never
+takes the caller's word for it. An unreadable ledger, a payment in any other
+state or an unknown id is a deny. The decision span carries
+`policy.ledger.status`.
 
 ## Telemetry
 

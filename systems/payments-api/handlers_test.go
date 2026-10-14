@@ -467,6 +467,25 @@ func TestAnAlreadyExecutedPaymentRecordsItsRefusalCauseOnTheSpan(t *testing.T) {
 	}
 }
 
+func TestTheRejectedRefusalCauseIsDistinguishable(t *testing.T) {
+	if refusalRejected == refusalAmountMismatch || refusalRejected == refusalAlreadyExecuted {
+		t.Fatalf("the rejected cause %q collides with another cause", refusalRejected)
+	}
+	recorder := recordSpans(t)
+	srv := newTestServer()
+	payment := awaitingPayment(t, srv)
+	rejectPayment(srv, payment.PaymentID, "alex.mercer")
+	recorder = recordSpans(t)
+	rec := executePayment(srv, payment.PaymentID,
+		map[string]any{"amount": 5800.0, "currency": "EUR"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("got status %d, want 409 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if got := executeSpanAttributes(t, recorder)[northstarRefusalCause]; got != "rejected" {
+		t.Errorf("span attribute %s is %q, want %q", northstarRefusalCause, got, "rejected")
+	}
+}
+
 func TestTheTwoRefusalCausesAreDistinguishable(t *testing.T) {
 	// The property both tests above exist to establish, stated once directly:
 	// a single value would leave the trace exactly as unable to answer "which
@@ -512,12 +531,11 @@ func TestTheRefusalCauseAttributeIsNorthstarPrefixed(t *testing.T) {
 // ---------------------------------------------------------------------------
 // The refusal record in the ledger.
 //
-// This is the ledger side of "a human reviewer can see, and later approve, a
-// refused payout." `refused` is terminal-until-approved, not a new state
-// machine: the execute path stays exactly as guarded as it always was, so a
-// refused payment must still be executable through it. These tests pin the
-// request/response shape as a contract for its consumers -- the settlement
-// agent and the reviewer UI -- not a guess.
+// This is the ledger side of "a human reviewer can see, and later release or
+// reject, a payment the agent could not release." `awaiting_approval` is where
+// refuse leaves a payment; the PDS, not this service, decides who may then
+// execute it. These tests pin the request/response shape as a contract for its
+// consumers -- the settlement agent and the reviewer UI -- not a guess.
 // ---------------------------------------------------------------------------
 
 func refusePayment(srv http.Handler, paymentID string, body any) *httptest.ResponseRecorder {
@@ -548,7 +566,7 @@ func refusePayment(srv http.Handler, paymentID string, body any) *httptest.Respo
 // exporter -- so linking the approved-execution trace back to the refusal
 // needs a real span id, not a placeholder. This is the ledger's only carrier
 // for it: settlement.py reads it off the current span when it records the
-// refusal, and execute_approved reads it back to build a real link.
+// refusal.
 func refusalBody(rule string, limit, requested float64, narrative, traceID, spanID string) map[string]any {
 	return map[string]any{
 		"rule":           rule,
@@ -595,8 +613,8 @@ func TestRefusingAProposedPaymentSetsRefusedAndStoresEveryField(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &refused); err != nil {
 		t.Fatalf("refuse: decoding response: %v", err)
 	}
-	if refused.Status != StatusRefused {
-		t.Fatalf("got status %q, want %q", refused.Status, StatusRefused)
+	if refused.Status != StatusAwaitingApproval {
+		t.Fatalf("got status %q, want %q", refused.Status, StatusAwaitingApproval)
 	}
 	if refused.Refusal == nil {
 		t.Fatalf("refusal record is nil on the response")
@@ -621,13 +639,13 @@ func TestRefusingAProposedPaymentSetsRefusedAndStoresEveryField(t *testing.T) {
 		t.Errorf("got refusedSpanId %q, want %q", refused.Refusal.RefusedSpanID,
 			"b7997877797c1b27")
 	}
-	if refused.Refusal.RefusedAt == "" {
-		t.Errorf("refusedAt must be stamped by the ledger, got empty string")
+	if refused.AwaitingSince == "" {
+		t.Errorf("awaitingSince must be stamped by the ledger, got empty string")
 	}
 
 	// And it is persisted, not just echoed in the response.
 	got := getPayment(t, srv, payment.PaymentID)
-	if got.Status != StatusRefused || got.Refusal == nil || got.Refusal.Rule != "execute_limit" {
+	if got.Status != StatusAwaitingApproval || got.Refusal == nil || got.Refusal.Rule != "execute_limit" {
 		t.Errorf("refusal record did not persist: %+v", got)
 	}
 }
@@ -664,7 +682,7 @@ func TestRefusingAnUnknownPaymentReturns404(t *testing.T) {
 	}
 }
 
-func TestListPaymentsFiltersToRefusedStatus(t *testing.T) {
+func TestListPaymentsFiltersToAwaitingApprovalStatus(t *testing.T) {
 	srv := newTestServer()
 	refusedPayment := proposePayment(t, srv, "CLM-1842", 6200)
 	proposedPayment := proposePayment(t, srv, "CLM-1901", 800)
@@ -679,7 +697,7 @@ func TestListPaymentsFiltersToRefusedStatus(t *testing.T) {
 		t.Fatalf("execute: got status %d, want 200 (body: %s)", rec.Code, rec.Body.String())
 	}
 
-	got := listPayments(t, srv, "refused")
+	got := listPayments(t, srv, StatusAwaitingApproval)
 	if len(got) != 1 {
 		t.Fatalf("got %d refused payments, want 1: %+v", len(got), got)
 	}
@@ -690,41 +708,8 @@ func TestListPaymentsFiltersToRefusedStatus(t *testing.T) {
 	// The other two statuses must not leak into the refused-only view.
 	for _, p := range got {
 		if p.PaymentID == proposedPayment.PaymentID || p.PaymentID == executedPayment.PaymentID {
-			t.Errorf("status=refused list leaked a non-refused payment: %+v", p)
+			t.Errorf("status=awaiting_approval list leaked a non-refused payment: %+v", p)
 		}
-	}
-}
-
-func TestARefusedPaymentCanStillBeExecutedAfterwards(t *testing.T) {
-	// The design point this whole task turns on: `refused` is
-	// terminal-until-approved, not a dead end. Nothing in this service closes
-	// the execute path on a refusal -- the PDS is what guards it, and that
-	// guard lives entirely outside payments-api. This test proves the ledger
-	// side never forecloses the possibility of the same payment executing
-	// later under a different, more senior, identity's approval.
-	srv := newTestServer()
-	payment := proposePayment(t, srv, "CLM-1842", 6200)
-
-	if rec := refusePayment(srv, payment.PaymentID,
-		refusalBody("execute_limit", 6000.0, 6200.0, "narrative", "trace-id", "span-id")); rec.Code != http.StatusOK {
-		t.Fatalf("refuse: got status %d, want 200 (body: %s)", rec.Code, rec.Body.String())
-	}
-	if got := getPayment(t, srv, payment.PaymentID); got.Status != StatusRefused {
-		t.Fatalf("payment did not reach refused: got %q", got.Status)
-	}
-
-	rec := executePayment(srv, payment.PaymentID,
-		map[string]any{"amount": 6200.0, "currency": "EUR"})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("execute after refuse: got status %d, want 200 (body: %s)",
-			rec.Code, rec.Body.String())
-	}
-	var executed Payment
-	if err := json.Unmarshal(rec.Body.Bytes(), &executed); err != nil {
-		t.Fatalf("decoding response: %v", err)
-	}
-	if executed.Status != StatusExecuted {
-		t.Errorf("got status %q, want %q", executed.Status, StatusExecuted)
 	}
 }
 
@@ -850,5 +835,118 @@ func TestListPaymentsWithNoStatusReturnsEveryPayment(t *testing.T) {
 	got := listPayments(t, srv, "")
 	if len(got) != 2 {
 		t.Fatalf("got %d payments, want 2: %+v", len(got), got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Maker-checker: awaiting_approval, reject, and the execute that follows.
+// ---------------------------------------------------------------------------
+
+func rejectPayment(srv http.Handler, paymentID, reviewerID string) *httptest.ResponseRecorder {
+	body := "{}"
+	if reviewerID != "" {
+		body = `{"reviewerId":"` + reviewerID + `"}`
+	}
+	req := httptest.NewRequest(http.MethodPost, "/payments/"+paymentID+"/reject", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	return rec
+}
+
+func awaitingPayment(t *testing.T, srv http.Handler) Payment {
+	t.Helper()
+	p := proposePayment(t, srv, "CLM-1", 5800)
+	body := refusalBody("r", 0, 5800, "n", "t", "s")
+	body["a2aTaskId"] = "task-1"
+	if rec := refusePayment(srv, p.PaymentID, body); rec.Code != http.StatusOK {
+		t.Fatalf("refuse: %d %s", rec.Code, rec.Body.String())
+	}
+	return p
+}
+
+func TestRefusingRecordsTheTaskIdAndWhenTheWaitStarted(t *testing.T) {
+	srv := newTestServer()
+	p := awaitingPayment(t, srv)
+	got := getPayment(t, srv, p.PaymentID)
+	if got.Status != StatusAwaitingApproval || got.A2ATaskID != "task-1" || got.AwaitingSince == "" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestRejectMovesAwaitingToRejectedAndRecordsTheReviewer(t *testing.T) {
+	srv := newTestServer()
+	p := awaitingPayment(t, srv)
+	rec := rejectPayment(srv, p.PaymentID, "alex.mercer")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reject: %d %s", rec.Code, rec.Body.String())
+	}
+	got := getPayment(t, srv, p.PaymentID)
+	if got.Status != StatusRejected || got.Rejection == nil || got.Rejection.ReviewerID != "alex.mercer" || got.Rejection.RejectedAt == "" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestRejectOfAPaymentNotAwaitingIsAConflict(t *testing.T) {
+	srv := newTestServer()
+	p := proposePayment(t, srv, "CLM-1", 5800)
+	if rec := rejectPayment(srv, p.PaymentID, "a"); rec.Code != http.StatusConflict {
+		t.Fatalf("want 409, got %d", rec.Code)
+	}
+}
+
+func TestRejectOfAnUnknownPaymentIs404(t *testing.T) {
+	srv := newTestServer()
+	if rec := rejectPayment(srv, "PAY-999999", "a"); rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", rec.Code)
+	}
+}
+
+func TestRejectWithoutAReviewerIsABadRequest(t *testing.T) {
+	srv := newTestServer()
+	p := awaitingPayment(t, srv)
+	if rec := rejectPayment(srv, p.PaymentID, ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rec.Code)
+	}
+	if got := getPayment(t, srv, p.PaymentID); got.Status != StatusAwaitingApproval {
+		t.Fatalf("a bad reject changed state: %+v", got)
+	}
+}
+
+func TestExecuteRefusesARejectedPaymentAndSaysWhy(t *testing.T) {
+	srv := newTestServer()
+	p := awaitingPayment(t, srv)
+	rejectPayment(srv, p.PaymentID, "a")
+	rec := executePayment(srv, p.PaymentID, map[string]any{"amount": 5800.0, "currency": "EUR"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("want 409, got %d", rec.Code)
+	}
+	if got := getPayment(t, srv, p.PaymentID); got.Status != StatusRejected {
+		t.Fatalf("a rejected payment changed state: %+v", got)
+	}
+}
+
+func TestExecuteReleasesAPaymentAwaitingApproval(t *testing.T) {
+	srv := newTestServer()
+	p := awaitingPayment(t, srv)
+	rec := executePayment(srv, p.PaymentID, map[string]any{"amount": 5800.0, "currency": "EUR"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	if got := getPayment(t, srv, p.PaymentID); got.Status != StatusExecuted {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestRefusingARejectedPaymentIsAConflict(t *testing.T) {
+	srv := newTestServer()
+	p := awaitingPayment(t, srv)
+	rejectPayment(srv, p.PaymentID, "a")
+	rec := refusePayment(srv, p.PaymentID, refusalBody("r", 0, 5800, "n", "t", "s"))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("want 409, got %d", rec.Code)
+	}
+	if got := getPayment(t, srv, p.PaymentID); got.Status != StatusRejected {
+		t.Fatalf("a rejected payment changed state: %+v", got)
 	}
 }

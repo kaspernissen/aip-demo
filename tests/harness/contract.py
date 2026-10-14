@@ -3,8 +3,8 @@ else -- no trace assertions, no browser, no policy knowledge.
 
 **Why this lives here rather than inside `tests/e2e/test_progressive_autonomy.py`
 itself.** That file is not the only one with an opinion about the contract's
-live state: `test_supervised.py::denial_run` and
-`test_policy_denial.py::denial_run` both drive a real settlement expecting the
+live state: `test_policy_denial.py::denial_run` and
+`test_human_in_the_loop.py`'s claims both drive a real settlement expecting the
 junior identity to be *denied* under `settlement-agent.assisted.execute_limit`.
 That assumption holds only as long as nothing in this suite has flipped the
 targeting block away from its shipped no-op, even transiently. Both fixtures

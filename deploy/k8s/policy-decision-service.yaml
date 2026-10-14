@@ -87,11 +87,16 @@ spec:
               value: http://otel-collector.observability.svc.cluster.local:4318
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
               value: http/protobuf
+            # The one ledger read the policy makes (pds/ledger.py): a human
+            # approver's execute_payment is allowed only when payments-api
+            # shows the payment awaiting approval.
+            - name: PAYMENTS_API_URL
+              value: http://payments-api.northstar-systems.svc.cluster.local:8080
           # No OTEL_SEMCONV_STABILITY_OPT_IN here, unlike the three services
           # that set it: that opt-in converges *HTTP client* instrumentation on
-          # the stable attribute spelling, and this service makes no outbound
-          # HTTP call of its own except the exporter's, which is not
-          # instrumented. Setting it would be cargo-culted from a sibling
+          # the stable attribute spelling, and this service makes no
+          # instrumented outbound HTTP call (the ledger read is stdlib urllib
+          # with a hand-injected traceparent; the exporter is not instrumented). Setting it would be cargo-culted from a sibling
           # manifest rather than doing anything.
           ports:
             - name: grpc

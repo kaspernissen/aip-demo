@@ -191,6 +191,14 @@ def _request(*, method="tools/call", caller=AGENT, params=MEASURED_PROPOSE,
     return request
 
 
+def _autonomous(monkeypatch):
+    monkeypatch.setattr(
+        _pds_server_module, "_flag_client",
+        _FailClosedFlagClient(value="autonomous", reason="TARGETING_MATCH",
+                              error_code=None),
+    )
+
+
 def _execute(amount, currency="EUR"):
     return json.dumps({"name": "execute_payment",
                        "arguments": {"payment_id": "PAY-1", "amount": amount,
@@ -201,23 +209,26 @@ def _execute(amount, currency="EUR"):
 
 
 def test_the_demo_refusal_end_to_end(spans):
-    """The headline case: 6200 EUR on `execute_payment` is refused, and the
-    refusal text the model narrates is on `AuthorizationError.reason`."""
+    """The headline case: at `assisted` the agent may release nothing, so
+    5800 EUR on `execute_payment` is refused, and the refusal text the model
+    narrates is on `AuthorizationError.reason`."""
     result = PolicyServicer().CheckRequest(
-        _request(params=_execute(6200.0)), None)
+        _request(params=_execute(5800.0)), None)
     assert result.WhichOneof("result") == "error"
-    assert "6200" in result.error.reason and "6000" in result.error.reason
+    assert "5800" in result.error.reason and "0 EUR limit" in result.error.reason
     assert result.error.reason.endswith(
         "[policy-denial rule=settlement-agent.assisted.execute_limit "
-        "limit=6000.00 requested=6200.00]")
+        "limit=0.00 requested=5800.00]")
     body = json.loads(result.error.mcp_error)
     assert body["data"] == {"rule": "settlement-agent.assisted.execute_limit",
-                            "limit": 6000.0, "requested": 6200.0,
+                            "limit": 0.0, "requested": 5800.0,
                             "retryable": False, "decision": "deny"}
 
 
-def test_a_payment_within_the_limit_is_permitted(spans):
-    """The platform must permit as well as refuse."""
+def test_a_payment_within_the_limit_is_permitted(spans, monkeypatch):
+    """The platform must permit as well as refuse: at `autonomous`, 5800 is
+    inside the 6000 limit."""
+    _autonomous(monkeypatch)
     result = PolicyServicer().CheckRequest(_request(params=_execute(5800.0)), None)
     assert result.WhichOneof("result") == "pass"
 
@@ -397,7 +408,7 @@ def test_an_unusable_traceparent_costs_the_parent_and_nothing_else(spans,
     as a PDS outage."""
     spans.clear()
     result = PolicyServicer().CheckRequest(
-        _request(params=_execute(5800.0), traceparent=traceparent), None)
+        _request(params=MEASURED_PROPOSE, traceparent=traceparent), None)
     assert result.WhichOneof("result") == "pass"
     span, = spans.get_finished_spans()
     assert span.parent is None
@@ -420,7 +431,7 @@ def test_the_deny_span_carries_the_decision_and_both_numbers(spans):
     assert span.attributes[telemetry.ATTR_TOOL] == "execute_payment"
     assert span.attributes[telemetry.ATTR_AMOUNT] == 6200.0
     assert span.attributes[telemetry.ATTR_CURRENCY] == "EUR"
-    assert span.attributes[telemetry.ATTR_LIMIT] == 6000.0
+    assert span.attributes[telemetry.ATTR_LIMIT] == 0.0
     assert span.attributes[telemetry.ATTR_AUTONOMY] == RESTRICTIVE_LEVEL
     assert span.attributes[telemetry.ATTR_AUTONOMY_REASON] == "ERROR"
     assert telemetry.ATTR_FLAG_VERSION not in span.attributes, (
@@ -445,8 +456,8 @@ def test_the_autonomous_resolution_reaches_policyinput_and_changes_the_outcome(
     default `error_code=PROVIDER_NOT_READY` would force the level back down
     if left in place here) -- and drives the same €6,200 `execute_payment`
     scenario the headline denial uses. At `autonomous`,
-    `EXECUTE_LIMITS[(settlement-agent, "autonomous")]` is €1,000,000, so the
-    same payment that every other test in this module sees denied must now
+    `EXECUTE_LIMITS[(settlement-agent, "autonomous")]` is €6,000, so the
+    5,800 payment that every other test in this module sees denied must now
     be permitted, under the rule name that names the level actually used.
     Asserted on all four: level, rule, limit, and decision.
     """
@@ -457,13 +468,13 @@ def test_the_autonomous_resolution_reaches_policyinput_and_changes_the_outcome(
         _FailClosedFlagClient(value="autonomous", reason="TARGETING_MATCH",
                               error_code=None),
     )
-    result = PolicyServicer().CheckRequest(_request(params=_execute(6200.0)), None)
+    result = PolicyServicer().CheckRequest(_request(params=_execute(5800.0)), None)
     assert result.WhichOneof("result") == "pass"
     span, = spans.get_finished_spans()
     assert span.attributes[telemetry.ATTR_AUTONOMY] == "autonomous"
     assert span.attributes[telemetry.ATTR_RULE] == \
         "settlement-agent.autonomous.execute_limit"
-    assert span.attributes[telemetry.ATTR_LIMIT] == 1_000_000.0
+    assert span.attributes[telemetry.ATTR_LIMIT] == 6000.0
     assert span.attributes[telemetry.ATTR_DECISION] == "permit"
 
 
@@ -488,11 +499,12 @@ def test_the_flag_version_lands_on_the_span_when_the_contract_carries_one(
     assert span.attributes[telemetry.ATTR_FLAG_VERSION] == "7"
 
 
-def test_a_permit_span_says_permit_and_is_not_an_error(spans):
+def test_a_permit_span_says_permit_and_is_not_an_error(spans, monkeypatch):
     """A refusal is this service working. A trace must not show a red span for
     the one thing this service exists to do, and must not show a green one
     for a deny either -- the attribute is what carries the decision, not the
     status."""
+    _autonomous(monkeypatch)
     PolicyServicer().CheckRequest(_request(params=_execute(5800.0)), None)
     span, = spans.get_finished_spans()
     assert span.attributes[telemetry.ATTR_DECISION] == "permit"
@@ -586,3 +598,51 @@ def test_the_servicer_answers_on_the_real_grpc_service_name(spans):
                 timeout=10).WhichOneof("result") == "pass"
     finally:
         server.stop(grace=None).wait()
+
+
+# --- the human approval reads the ledger -------------------------------------
+
+REVIEWER = "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui"
+
+
+def _execute_payment(payment_id="PAY-000001", amount=5800.0):
+    return json.dumps({"name": "execute_payment",
+                       "arguments": {"payment_id": payment_id, "amount": amount,
+                                     "currency": "EUR"}}).encode()
+
+
+def test_a_reviewer_execute_reads_the_ledger_and_permits_when_awaiting(monkeypatch, spans):
+    monkeypatch.setattr(_pds_server_module, "payment_status", lambda pid: "awaiting_approval")
+    result = PolicyServicer().CheckRequest(
+        _request(caller=REVIEWER, params=_execute_payment()), None)
+    assert result.WhichOneof("result") == "pass"
+    span, = spans.get_finished_spans()
+    assert span.attributes[telemetry.ATTR_RULE] == "human-approved.execute"
+    assert span.attributes[telemetry.ATTR_LEDGER_STATUS] == "awaiting_approval"
+
+
+def test_a_reviewer_execute_denies_when_the_ledger_is_unreadable(monkeypatch, spans):
+    monkeypatch.setattr(_pds_server_module, "payment_status", lambda pid: None)
+    result = PolicyServicer().CheckRequest(
+        _request(caller=REVIEWER, params=_execute_payment()), None)
+    assert result.WhichOneof("result") == "error"
+    assert "rule=human-approved.execute" in result.error.reason
+    span, = spans.get_finished_spans()
+    assert span.attributes[telemetry.ATTR_LEDGER_STATUS] == "unreadable"
+
+
+def test_the_agent_never_triggers_a_ledger_read(monkeypatch, spans):
+    calls = []
+    monkeypatch.setattr(_pds_server_module, "payment_status", lambda pid: calls.append(pid))
+    PolicyServicer().CheckRequest(_request(caller=AGENT, params=_execute_payment()), None)
+    assert calls == []
+    span, = spans.get_finished_spans()
+    assert telemetry.ATTR_LEDGER_STATUS not in span.attributes
+
+
+def test_a_reviewer_tool_that_is_not_execute_triggers_no_ledger_read(monkeypatch, spans):
+    calls = []
+    monkeypatch.setattr(_pds_server_module, "payment_status", lambda pid: calls.append(pid))
+    params = json.dumps({"name": "get_payment", "arguments": {"payment_id": "PAY-000001"}}).encode()
+    PolicyServicer().CheckRequest(_request(caller=REVIEWER, params=params), None)
+    assert calls == []

@@ -76,15 +76,15 @@ class FakePayments:
 
     async def refuse(
         self, payment_id, *, rule, limit, requested, narrative,
-        refused_trace_id, refused_span_id,
+        refused_trace_id, refused_span_id, a2a_task_id="",
     ):
         self.calls.append((
             "refuse", payment_id, rule, limit, requested, narrative,
-            refused_trace_id, refused_span_id,
+            refused_trace_id, refused_span_id, a2a_task_id,
         ))
         if self._refuse_raises:
             raise self._refuse_raises
-        return {"paymentId": payment_id, "status": "refused"}
+        return {"paymentId": payment_id, "status": "awaiting_approval"}
 
 
 def _script(*, amount: float = 6200.0, narrative: str = "Settled in full."):
@@ -347,7 +347,7 @@ async def test_a_second_execute_attempt_never_reaches_the_payment_system():
     assert calls.count("execute") == 1, f"a refused payment was re-sent: {calls}"
     # And the run still finishes as a refusal with the model's explanation,
     # rather than dying on the second attempt.
-    assert result["status"] == "refused"
+    assert result["status"] == "awaiting_approval"
 
 
 async def test_the_model_sees_the_denial_reason_and_can_narrate_it():
@@ -391,7 +391,7 @@ async def test_the_model_sees_the_denial_reason_and_can_narrate_it():
 
 
 async def test_a_refused_settlement_replies_instead_of_raising():
-    """The demo's moment. status "refused", and the narrative survives.
+    """The demo's moment. status "awaiting_approval", and the narrative survives.
 
     Left untranslated, a policy denial is a bare JSON-RPC -32603 with the
     reason intact but no `result` at all, so nothing narrates the refusal. A
@@ -405,7 +405,7 @@ async def test_a_refused_settlement_replies_instead_of_raising():
         _obedient_model(narrative="I proposed the assessed amount but I am not authorised to pay it."),
     )
 
-    assert result["status"] == "refused"
+    assert result["status"] == "awaiting_approval"
     assert result["narrative"] == (
         "I proposed the assessed amount but I am not authorised to pay it."
     )
@@ -413,6 +413,10 @@ async def test_a_refused_settlement_replies_instead_of_raising():
     assert result["paymentId"] == "PAY-000001"
     assert result["amount"] == 6200.0
     assert result["currency"] == "EUR"
+    # The platform's own rule and limit ride along, so the caller can say why.
+    denial = _denial()
+    assert result["rule"] == denial.rule
+    assert result["limit"] == denial.limit
 
 
 async def test_a_refused_propose_is_reported_as_refused_too():
@@ -427,7 +431,7 @@ async def test_a_refused_propose_is_reported_as_refused_too():
     result = await _run(CLAIM, payments, _obedient_model(narrative="I cannot open this payment."))
 
     assert [c[0] for c in payments.calls] == ["propose"]
-    assert result["status"] == "refused"
+    assert result["status"] == "awaiting_approval"
     assert result["paymentId"] is None
     assert result["narrative"] == "I cannot open this payment."
 
@@ -464,7 +468,7 @@ async def test_a_refusal_is_recorded_in_the_ledger_with_the_real_trace_and_span_
 
     refuse_calls = [c for c in payments.calls if c[0] == "refuse"]
     assert len(refuse_calls) == 1, f"expected exactly one refuse call, got {payments.calls}"
-    (_, payment_id, rule, limit, requested, narrative, trace_id, span_id) = refuse_calls[0]
+    (_, payment_id, rule, limit, requested, narrative, trace_id, span_id, task_id) = refuse_calls[0]
 
     denial = _denial()
     assert payment_id == "PAY-000001"
@@ -478,6 +482,17 @@ async def test_a_refusal_is_recorded_in_the_ledger_with_the_real_trace_and_span_
     assert trace_id == format(span_ctx.trace_id, "032x")
     assert span_id == format(span_ctx.span_id, "016x")
     assert trace_id != "0" * 32 and span_id != "0" * 16
+    assert task_id == ""
+
+
+async def test_the_claims_a2a_task_id_is_sent_to_the_ledger_with_the_refusal():
+    payments = FakePayments(execute_raises=_denial())
+    claim = {**CLAIM, "a2aTaskId": "task-1"}
+    await _run(claim, payments, _obedient_model())
+
+    refuse_calls = [c for c in payments.calls if c[0] == "refuse"]
+    assert len(refuse_calls) == 1
+    assert refuse_calls[0][-1] == "task-1"
 
 
 async def test_a_refusal_with_no_active_span_records_empty_ids_rather_than_a_fake_zero():
@@ -489,7 +504,7 @@ async def test_a_refusal_with_no_active_span_records_empty_ids_rather_than_a_fak
 
     refuse_calls = [c for c in payments.calls if c[0] == "refuse"]
     assert len(refuse_calls) == 1
-    _, _, _, _, _, _, trace_id, span_id = refuse_calls[0]
+    _, _, _, _, _, _, trace_id, span_id, _ = refuse_calls[0]
     assert trace_id == ""
     assert span_id == ""
 
@@ -505,7 +520,7 @@ async def test_a_failure_to_record_the_refusal_does_not_reach_the_claimant():
         _obedient_model(narrative="I am not authorised to pay this."),
     )
 
-    assert result["status"] == "refused"
+    assert result["status"] == "awaiting_approval"
     assert result["narrative"] == "I am not authorised to pay this."
     assert result["paymentId"] == "PAY-000001"
 
@@ -519,7 +534,7 @@ async def test_a_refused_propose_records_no_refusal_since_no_payment_exists_yet(
     result = await _run(CLAIM, payments, _obedient_model(narrative="I cannot open this payment."))
 
     assert [c[0] for c in payments.calls] == ["propose"]
-    assert result["status"] == "refused"
+    assert result["status"] == "awaiting_approval"
 
 
 async def test_a_transport_failure_still_propagates_rather_than_being_narrated():

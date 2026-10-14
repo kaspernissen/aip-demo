@@ -1,45 +1,77 @@
-import ast
-import re
-from pathlib import Path
-
 import pytest
 from pds.rules import Decision, PolicyInput, decide
 
-# platform/policy-decision-service/tests/test_rules.py -> repo root is three
-# parents up.
-REPO_ROOT = Path(__file__).resolve().parents[3]
-TEST_SUPERVISED = REPO_ROOT / "tests" / "e2e" / "test_supervised.py"
-CRITERION_4_FUNCTION = (
-    "test_criterion_4_the_pds_permits_under_the_same_rule_for_a_different_caller"
-)
-
 AGENT = "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
 OTHER = "spiffe://northstar.local/ns/northstar-agents/sa/claims-agent"
-SENIOR = "spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent"
+REVIEWER = "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui"
 
 
 def _input(**kw):
     base = dict(caller=AGENT, tool="execute_payment", amount=6200.0,
-                currency="EUR", autonomy_level="assisted")
+                currency="EUR", autonomy_level="assisted", ledger_status=None)
     base.update(kw)
     return PolicyInput(**base)
 
 
-def test_execute_above_the_threshold_is_denied():
-    d = decide(_input(amount=6200.0))
+def test_assisted_may_release_nothing():
+    d = decide(_input(amount=0.01, autonomy_level="assisted"))
     assert d.permit is False
     assert d.rule == "settlement-agent.assisted.execute_limit"
+    assert d.limit == 0.0
+
+
+def test_autonomous_may_release_up_to_6000_inclusive():
+    assert decide(_input(amount=6000.0, autonomy_level="autonomous")).permit is True
+
+
+def test_autonomous_denies_a_cent_over_6000():
+    d = decide(_input(amount=6000.01, autonomy_level="autonomous"))
+    assert d.permit is False
+    assert d.rule == "settlement-agent.autonomous.execute_limit"
     assert d.limit == 6000.0
 
 
-def test_execute_at_the_threshold_is_permitted():
-    """The limit is inclusive: 'up to €6,000' means €6,000 is allowed."""
-    assert decide(_input(amount=6000.0)).permit is True
+def test_autonomous_permits_below_the_limit():
+    assert decide(_input(amount=5800.0, autonomy_level="autonomous")).permit is True
 
 
-def test_execute_below_the_threshold_is_permitted():
-    """Exit criterion 6: the platform must permit as well as refuse."""
-    assert decide(_input(amount=5800.0)).permit is True
+def test_proposing_stays_allowed_at_every_level():
+    for level in ("assisted", "autonomous"):
+        assert decide(_input(tool="propose_payment", autonomy_level=level)).permit is True
+
+
+def test_a_human_may_release_a_payment_awaiting_approval_at_any_level():
+    for level in ("assisted", "autonomous", "some-level-nobody-published"):
+        d = decide(_input(caller=REVIEWER, amount=60000.0, autonomy_level=level,
+                          ledger_status="awaiting_approval"))
+        assert d.permit is True
+        assert d.rule == "human-approved.execute"
+        assert d.limit is None
+
+
+def test_a_human_may_only_release_a_payment_awaiting_approval():
+    for status in ("proposed", "executed", "rejected", None):
+        d = decide(_input(caller=REVIEWER, ledger_status=status))
+        assert d.permit is False
+        assert d.rule == "human-approved.execute"
+        assert repr(status) in d.reason
+
+
+def test_a_human_approval_still_refuses_a_non_amount():
+    for amount in (None, 0.0, -1.0, float("nan")):
+        d = decide(_input(caller=REVIEWER, amount=amount, ledger_status="awaiting_approval"))
+        assert d.permit is False
+
+
+def test_the_ledger_status_widens_nothing_for_the_agent():
+    d = decide(_input(amount=5800.0, autonomy_level="assisted", ledger_status="awaiting_approval"))
+    assert d.permit is False and d.rule == "settlement-agent.assisted.execute_limit"
+
+
+def test_no_senior_identity_is_known_any_more():
+    from pds.rules import EXECUTE_LIMITS, HUMAN_APPROVERS
+    named = {caller for caller, _ in EXECUTE_LIMITS} | HUMAN_APPROVERS
+    assert not any("senior" in c for c in named)
 
 
 def test_proposing_any_amount_is_permitted():
@@ -55,8 +87,8 @@ def test_identity_is_load_bearing_not_decoration():
     An unknown caller is denied at an amount an authorised caller may execute,
     which is what makes the SPIFFE ID a real input rather than scenery.
     """
-    assert decide(_input(caller=OTHER, amount=100.0)).permit is False
-    assert decide(_input(caller=AGENT, amount=100.0)).permit is True
+    assert decide(_input(caller=OTHER, amount=100.0, autonomy_level="autonomous")).permit is False
+    assert decide(_input(caller=AGENT, amount=100.0, autonomy_level="autonomous")).permit is True
 
 
 def test_an_unknown_tool_is_denied():
@@ -70,7 +102,8 @@ def test_a_missing_amount_on_execute_is_denied_not_defaulted():
 
 def test_a_higher_autonomy_level_raises_the_limit():
     """A higher autonomy level raises the limit for the same identity."""
-    assert decide(_input(amount=6200.0, autonomy_level="autonomous")).permit is True
+    assert decide(_input(amount=6000.0, autonomy_level="autonomous")).permit is True
+    assert decide(_input(amount=6000.0, autonomy_level="assisted")).permit is False
 
 
 def test_the_autonomous_row_gets_its_own_honest_rule_name():
@@ -78,14 +111,14 @@ def test_the_autonomous_row_gets_its_own_honest_rule_name():
     literal `settlement-agent.assisted.execute_limit` -- composing the
     autonomy segment gives this row its own honest rule name, distinct from
     the assisted-level rows."""
-    d = decide(_input(caller=AGENT, amount=6200.0, autonomy_level="autonomous"))
+    d = decide(_input(caller=AGENT, amount=5800.0, autonomy_level="autonomous"))
     assert d.permit is True
     assert d.rule == "settlement-agent.autonomous.execute_limit"
 
 
 def test_the_autonomous_rows_deny_branch_also_gets_its_own_honest_rule_name():
     """The test above only ever drives the PERMIT side of the
-    `(settlement-agent, autonomous)` row -- 6,200 against its 1,000,000
+    `(settlement-agent, autonomous)` row -- 5,800 against its 6,000
     limit -- so nothing asserts the DENY branch's rule name without this
     one. Reverting `decide()`'s deny-branch composition to a hardcoded
     literal would leave an autonomous-level request over its own limit
@@ -93,7 +126,7 @@ def test_the_autonomous_rows_deny_branch_also_gets_its_own_honest_rule_name():
     the exact mislabel the composed rule name exists to avoid -- with
     nothing else in the suite catching it.
     """
-    d = decide(_input(caller=AGENT, amount=2_000_000.0, autonomy_level="autonomous"))
+    d = decide(_input(caller=AGENT, amount=6200.0, autonomy_level="autonomous"))
     assert d.permit is False
     assert d.rule == "settlement-agent.autonomous.execute_limit"
 
@@ -101,7 +134,7 @@ def test_the_autonomous_rows_deny_branch_also_gets_its_own_honest_rule_name():
 def test_the_denial_reason_names_both_numbers():
     """The model narrates this string, so it must contain what a customer
     needs to hear: what was asked and what the limit is."""
-    reason = decide(_input(amount=6200.0)).reason
+    reason = decide(_input(amount=6200.0, autonomy_level="autonomous")).reason
     assert "6200" in reason and "6000" in reason
 
 
@@ -150,20 +183,20 @@ def test_an_unpayable_amount_is_not_attributed_to_the_limit_rule(amount):
 def test_the_unpayable_amount_denial_still_reports_the_callers_allowance():
     """`limit` is what the caller *was* allowed, which an audit trail needs
     even for a request that never qualified for it."""
-    assert decide(_input(amount=float("nan"))).limit == 6000.0
+    assert decide(_input(amount=float("nan"))).limit == 0.0
 
 
 def test_the_smallest_payable_amount_is_still_permitted():
     """The guard must refuse non-money, not quietly tighten the limit. Without
     this, `amount <= 0` could drift to `amount <= 1` unnoticed."""
-    assert decide(_input(amount=0.01)).permit is True
+    assert decide(_input(amount=0.01, autonomy_level="autonomous")).permit is True
 
 
 def test_a_missing_currency_does_not_leave_a_hole_in_the_refusal_text():
     """The reason is narrated to a customer. `server.py` falls back to an empty
     currency rather than inventing "EUR", so the text must still read as
     English: not "requested 6200  exceeds the 6000  limit"."""
-    reason = decide(_input(amount=6200.0, currency="")).reason
+    reason = decide(_input(amount=6200.0, currency="", autonomy_level="autonomous")).reason
     assert "  " not in reason
     assert "requested 6200 exceeds the 6000 limit" in reason
 
@@ -171,78 +204,31 @@ def test_a_missing_currency_does_not_leave_a_hole_in_the_refusal_text():
 def test_the_refusal_text_still_names_the_currency_when_one_was_sent():
     """The other half of the helper: EUR must not have been dropped. This is
     the exact string measured off the running container."""
-    assert decide(_input(amount=6200.0)).reason == (
+    assert decide(_input(amount=6200.0, autonomy_level="autonomous")).reason == (
         "requested 6200 EUR exceeds the 6000 EUR limit for this agent at "
-        "autonomy level assisted")
+        "autonomy level autonomous")
 
 
 def test_the_permit_text_also_names_the_currency_once_each():
-    assert decide(_input(amount=5800.0)).reason == \
+    assert decide(_input(amount=5800.0, autonomy_level="autonomous")).reason == \
         "5800 EUR is within the 6000 EUR limit"
 
 
 # ---------------------------------------------------------------------------
-# The colleague with higher approval authority.
-#
-# One new EXECUTE_LIMITS row, nothing else -- `decide()` itself is unchanged.
-# The rule name `settlement-agent.assisted.execute_limit` is composed from
-# `req.autonomy_level` only, never from `req.caller`, so the senior
-# identity's decision -- permit or deny -- is reported under the
-# exact same rule string as the junior identity's. That is what "same rule,
-# different principal" means in practice, and it is asserted here rather than
-# narrated.
-# ---------------------------------------------------------------------------
-
-
-def test_the_senior_identity_is_permitted_at_the_amount_the_junior_is_denied():
-    """Exit criterion 1: EUR 6,200 refused for one principal, permitted for the
-    other, same rule name."""
-    junior = decide(_input(caller=AGENT, amount=6200.0))
-    senior = decide(_input(caller=SENIOR, amount=6200.0))
-
-    assert junior.permit is False
-    assert senior.permit is True
-    assert junior.rule == senior.rule == "settlement-agent.assisted.execute_limit"
-
-
-def test_the_senior_identity_is_denied_above_its_own_higher_limit():
-    """More authority, not unlimited authority. The colleague still has a
-    ceiling, and going over it is refused under the same rule name."""
-    d = decide(_input(caller=SENIOR, amount=30_000.0))
-    assert d.permit is False
-    assert d.rule == "settlement-agent.assisted.execute_limit"
-    assert d.limit == 25_000.0
-
-
-def test_the_senior_limit_is_higher_than_the_junior_limit_not_equal_to_it():
-    junior = decide(_input(caller=AGENT, amount=6000.0))
-    senior = decide(_input(caller=SENIOR, amount=6000.0))
-    assert senior.limit is not None and junior.limit is not None
-    assert senior.limit > junior.limit
-
-
-# ---------------------------------------------------------------------------
-# Recording a refusal must itself be a policy
-# call the gateway will pass through (settlement-agent reaches payments-api
-# only through the same governed MCP path everything else in this repo uses).
 # `refuse_payment` moves no money -- it writes a reason beside a payment that
-# already did not execute -- so it belongs with `propose_payment` among the
-# tools that carry no effect to authorise, not with `execute_payment`.
+# already did not execute -- so it carries no effect to authorise. It is
+# scoped to the settlement-agent: the only way a payment reaches
+# `awaiting_approval` is this tool, and the human rule widens on that fact.
 # ---------------------------------------------------------------------------
 
 
-def test_refusing_a_payment_is_unlimited_for_either_settlement_identity():
-    """Unconditional would be wrong -- `refuse_payment` is scoped to the two
-    settlement identities, as data, not to every caller. A caller-scoped
-    tool is still unlimited *for its allowed callers*, which is what this
-    test pins; the disallowed and unauthenticated cases are below."""
-    assert decide(_input(tool="refuse_payment", amount=None, caller=AGENT)).permit is True
-    assert decide(_input(tool="refuse_payment", amount=None, caller=SENIOR)).permit is True
+def test_only_the_settlement_agent_may_record_a_refusal():
+    assert decide(_input(tool="refuse_payment", amount=None)).permit is True
+    assert decide(_input(tool="refuse_payment", amount=None, caller=REVIEWER)).permit is False
 
 
 # ---------------------------------------------------------------------------
-# `execute_approved` needs a way to read
-# the ledger back before executing. `get_payment` is read-only, moves no
+# `get_payment` is read by the reviewer-ui and alongside the claims-agent. It is read-only, moves no
 # money and reverses nothing -- the same argument `propose_payment` already
 # carries in UNLIMITED_TOOLS -- so it joins that set unconditionally, for any
 # caller. Unlike `refuse_payment`, nothing about `get_payment` writes to the
@@ -252,7 +238,6 @@ def test_refusing_a_payment_is_unlimited_for_either_settlement_identity():
 
 def test_getting_a_payment_is_unlimited_for_any_caller():
     assert decide(_input(tool="get_payment", amount=None, caller=AGENT)).permit is True
-    assert decide(_input(tool="get_payment", amount=None, caller=SENIOR)).permit is True
     assert decide(_input(tool="get_payment", amount=None, caller=OTHER)).permit is True
     assert decide(_input(tool="get_payment", amount=None, caller=None)).permit is True
 
@@ -326,54 +311,3 @@ def test_an_unrecognised_identity_still_denies_under_unknown_caller():
     decision = decide(_input(caller=OTHER, autonomy_level="assisted"))
     assert decision.permit is False
     assert decision.rule == "unknown_caller"
-
-
-# ---------------------------------------------------------------------------
-# `tests/e2e/test_supervised.py`'s criterion 4 is a live-cluster assertion
-# behind a gate, so a regression in `decide()`'s rule composition needs a
-# hermetic proxy too: a direct read of criterion 4's own asserted string,
-# parsed live from that file and compared against `decide()`'s actual output.
-# ---------------------------------------------------------------------------
-
-
-def _criterion_4_asserted_rule() -> str:
-    """Criterion 4's own asserted `policy.rule` literal, parsed live out of
-    `tests/e2e/test_supervised.py` -- not retyped here, so a change to that
-    file's literal is what this test reads, rather than a copy that can
-    drift from it silently."""
-    source = TEST_SUPERVISED.read_text()
-    tree = ast.parse(source, filename=str(TEST_SUPERVISED))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == CRITERION_4_FUNCTION:
-            segment = ast.get_source_segment(source, node)
-            match = re.search(r'ATTR_POLICY_RULE\)\s*==\s*"([^"]+)"', segment)
-            assert match, (
-                f"found {CRITERION_4_FUNCTION} in {TEST_SUPERVISED}, but no "
-                '`ATTR_POLICY_RULE) == "..."` assertion inside it -- has its '
-                "shape changed?"
-            )
-            return match.group(1)
-    raise AssertionError(
-        f"{TEST_SUPERVISED} no longer defines {CRITERION_4_FUNCTION} -- "
-        "nothing to compare decide()'s output against"
-    )
-
-
-def test_criterion_4s_own_asserted_rule_matches_deciders_output_for_the_senior_identity():
-    """Criterion 4 is a `@browser_test` (live cluster, live LLM narration),
-    run only behind a gate. This is the hermetic substitute: read criterion
-    4's own literal (above) and compare it against `decide()`'s actual
-    output for exactly the scenario criterion 4 exercises -- the senior
-    identity, `assisted`, `execute_payment`, EUR 6,200 (permitted). It is
-    evidence about `decide()`, not about the live path -- the link a live
-    run's own guard closes is one this substitute cannot cover -- but a
-    regression in either `decide()`'s rule composition or criterion 4's own
-    literal is caught here without a browser or a live cluster.
-    """
-    asserted = _criterion_4_asserted_rule()
-    produced = decide(_input(caller=SENIOR, amount=6200.0)).rule
-    assert produced == asserted, (
-        f"decide()'s rule for the senior identity at EUR 6,200 is "
-        f"{produced!r}, but tests/e2e/test_supervised.py's criterion 4 "
-        f"asserts {asserted!r}"
-    )

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Northstar Payments API
-  version: 1.1.0
+  version: 1.2.0
   description: >
     System of record for claim payments. Deliberately tiny: it has no
     authorization of any kind, so anything that can reach it can move money.
@@ -10,12 +10,14 @@ info:
     them.
 
 
-    It also carries the ledger half of putting a human in the loop: a third
-    status, `refused`, a `refusal` record beside the payment saying what the
+    It also carries the ledger half of maker-checker: `awaiting_approval`
+    (the agent could not release the payment, so a human decides), `rejected`
+    (a human said no), a `refusal` record beside the payment saying what the
     platform decided and what the claimant was told, and a status-filtered
-    list so a reviewer UI can find the refusals. Nothing here approves
-    anything: `refused` is terminal-until-approved, and `executed` stays
-    reachable only through the execute route below.
+    list so a reviewer UI can find what is waiting. Nothing here decides who
+    may release money: the Policy Decision Service does, and for a human it
+    reads this ledger's `status` first. `executed` stays reachable only
+    through the execute route below; `executed` and `rejected` are terminal.
 
 
     NOTHING ENFORCES THIS FILE AGAINST THE IMPLEMENTATION. Treat any
@@ -119,8 +121,10 @@ paths:
           description: Unknown payment
         "409":
           description: >
-            Payment already executed, or the stated amount and currency do not
-            match the recorded proposal
+            Payment already executed, rejected by a reviewer, or the stated
+            amount and currency do not match the recorded proposal
+            (`northstar.payment.refusal_cause` on the span is
+            `already_executed`, `rejected` or `amount_mismatch`)
   /payments/{paymentId}/refuse:
     post:
       operationId: refusePayment
@@ -137,10 +141,11 @@ paths:
         `narrative` is the model's own words to the claimant, stored verbatim
         as a quotation of the model and never as a statement of what happened;
         `refusedTraceId`/`refusedSpanId` name the trace and span that recorded
-        the refusal, which is what the approved execution's span link later
-        points at. `refusedAt` is NOT part of this request: the ledger stamps
-        it itself (`store.refuse`), so the time a human is measured against is
-        the ledger's clock rather than a caller's claim.
+        the refusal. `a2aTaskId` is the customer's A2A task, kept so the
+        reviewer-ui can resume it after a human decides. `awaitingSince` is
+        NOT part of this request: the ledger stamps it itself
+        (`store.refuse`), so the time a human is measured against is the
+        ledger's clock rather than a caller's claim.
 
 
         `requested` is confirmed against the recorded proposal with the same
@@ -189,9 +194,13 @@ paths:
                 refusedSpanId:
                   type: string
                   examples: ["a4dc36d299704821"]
+                a2aTaskId:
+                  type: string
+                  description: The customer's A2A task id. Optional.
+                  examples: ["task-1"]
       responses:
         "200":
-          description: Refusal recorded. The payment now reads `refused`.
+          description: Refusal recorded. The payment now reads `awaiting_approval`.
           content:
             application/json:
               schema:
@@ -204,30 +213,70 @@ paths:
           description: Unknown payment
         "409":
           description: >
-            Three distinct causes, each with its own message:
+            Four distinct causes, each with its own message:
             `{"error":"requested amount does not match the proposal"}` (the
             confirmation check above refused it),
             `{"error":"payment already executed"}` (the money has already
             moved once, so a refusal record after it would misstate the
             ledger -- the same `ErrExecuted` the execute route's own
             already-executed conflict returns), and
-            `{"error":"payment already refused"}` (the record a reviewer reads
-            is not silently replaceable; a second refuse call would let a
-            caller repoint `refusedTraceId`/`refusedSpanId` at a trace of its
-            own choosing).
+            `{"error":"payment already awaiting approval"}` (the record a
+            reviewer reads is not silently replaceable; a second refuse call
+            would let a caller repoint `refusedTraceId`/`refusedSpanId` at a
+            trace of its own choosing), and
+            `{"error":"payment was rejected by a reviewer"}` (a human's
+            decision is final).
 
 
-            Unlike the execute route's two 409s, none of these sets
+            Unlike the execute route's three 409s, none of these sets
             `northstar.payment.refusal_cause` on the span: that attribute is
-            scoped to the execute route's own two causes and is documented as
+            scoped to the execute route's own causes and is documented as
             set nowhere else (`systems/payments-api/handlers.go`).
+  /payments/{paymentId}/reject:
+    post:
+      operationId: rejectPayment
+      description: >
+        A reviewer's decision not to release a payment awaiting approval. The
+        payment moves to `rejected` (terminal) and the ledger records who
+        rejected it and when (`rejection`). It moves no money. Only a payment
+        in `awaiting_approval` can be rejected.
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reviewerId]
+              properties:
+                reviewerId:
+                  type: string
+                  examples: ["alex.mercer"]
+      responses:
+        "200":
+          description: Rejection recorded. The payment now reads `rejected`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "400":
+          description: Malformed body or no `reviewerId`
+        "404":
+          description: Unknown payment
+        "409":
+          description: Payment is not awaiting approval
   /payments:
     get:
       operationId: listPayments
       description: >
         Every payment, or only those in one status. This is what
-        `reviewer-ui` calls as `GET /payments?status=refused` to find the
-        refusals awaiting a human. The response is sorted by `paymentId`,
+        `reviewer-ui` calls as `GET /payments?status=awaiting_approval` to find
+        the payments waiting for a human. The response is sorted by `paymentId`,
         which is sequential and fixed-width, so the order is deterministic
         across runs (`store.list`).
 
@@ -243,7 +292,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [proposed, executed, refused]
+            enum: [proposed, awaiting_approval, executed, rejected]
           description: >
             Omit, or pass empty, to list every payment.
       responses:
@@ -290,26 +339,45 @@ components:
           type: string
         status:
           type: string
-          # `refused` is reached only from `proposed`, only through
-          # POST /payments/{paymentId}/refuse, and it is terminal-until-approved
-          # rather than a new state machine: `executed` stays reachable only
-          # through the execute route, which accepts a refused payment exactly
-          # as it accepts a proposed one (`store.go`'s own comment, and
-          # TestARefusedPaymentCanStillBeExecutedAfterwards).
-          enum: [proposed, executed, refused]
+          # proposed -> executed (the agent, within its band);
+          # proposed -> awaiting_approval (POST /refuse);
+          # awaiting_approval -> executed (a human, through the PDS) or
+          # -> rejected (POST /reject). executed and rejected are terminal.
+          # Executing a `rejected` payment is a 409 with
+          # `northstar.payment.refusal_cause=rejected` on the span.
+          enum: [proposed, awaiting_approval, executed, rejected]
+        a2aTaskId:
+          type: string
+          description: The customer's A2A task, recorded by refuse.
+        awaitingSince:
+          type: string
+          description: >
+            RFC 3339, stamped by this service when the payment entered
+            `awaiting_approval`. The one clock for how long a human took.
+          examples: ["2026-09-11T05:37:26Z"]
+        rejection:
+          type: object
+          description: Present only on a rejected payment.
+          required: [reviewerId, rejectedAt]
+          properties:
+            reviewerId:
+              type: string
+            rejectedAt:
+              type: string
+              description: RFC 3339, stamped by this service.
         refusal:
           description: >
             Present on any payment that has EVER been refused -- which is not
-            the same as "present only when `status` is `refused`", and the
+            the same as "present only when `status` is `awaiting_approval`", and the
             difference is the audit trail the whole human-in-the-loop step
-            exists to leave behind. Approval does not clear it: a payment that
-            was refused and then executed reads `status: executed` WITH this
+            exists to leave behind. A human release does not clear it: a payment that
+            was refused and then released by a human reads `status: executed` WITH this
             object still attached (`GET /payments` will return exactly such a
             record). Omitted entirely on a payment that was never refused
             (`omitempty`).
           type: object
           required:
-            [rule, limit, requested, narrative, refusedTraceId, refusedSpanId, refusedAt]
+            [rule, limit, requested, narrative, refusedTraceId, refusedSpanId]
           properties:
             rule:
               type: string
@@ -338,10 +406,3 @@ components:
                 sees it, which is why this travels alongside the trace id
                 (`store.go`'s `RefusedSpanID` doc comment).
               examples: ["a4dc36d299704821"]
-            refusedAt:
-              type: string
-              description: >
-                RFC 3339, stamped by this service at the moment it records the
-                refusal. Never supplied by the caller -- it is what
-                `review.elapsed_ms` measures a human against.
-              examples: ["2026-09-11T05:37:26Z"]

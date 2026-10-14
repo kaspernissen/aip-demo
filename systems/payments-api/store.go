@@ -10,36 +10,60 @@ import (
 // Payment status values. Kept as strings so the JSON contract in
 // contracts/openapi/payments-api.yaml is obvious from the code.
 //
-// StatusRefused is terminal-until-approved, not a new state machine: it is
-// reached only from StatusProposed (see store.refuse), and StatusExecuted
-// stays reachable only through store.execute -- the same execute path the
-// policy engine already guards. Recording a refusal never touches that path;
-// it only adds a fact beside the payment for a human reviewer to read. See
-// TestARefusedPaymentCanStillBeExecutedAfterwards in handlers_test.go, which
-// proves store.execute still accepts a refused payment.
+// The state machine, maker-checker:
+//
+//	proposed -> executed            the agent, within its band (PDS-permitted)
+//	proposed -> awaiting_approval   refuse: the PDS denied the agent's release
+//	awaiting_approval -> executed   a human, through the PDS (execute)
+//	awaiting_approval -> rejected   a human, /reject
+//
+// executed and rejected are terminal. This service does not decide who may
+// execute: the PDS does, and for a human it reads this very status back
+// (GET /payments/{id}) before permitting the release. store.execute only
+// refuses a payment that can no longer be released (executed, rejected).
 const (
-	StatusProposed = "proposed"
-	StatusExecuted = "executed"
-	StatusRefused  = "refused"
+	StatusProposed         = "proposed"
+	StatusAwaitingApproval = "awaiting_approval"
+	StatusExecuted         = "executed"
+	StatusRejected         = "rejected"
 )
 
 var (
 	ErrNotFound = errors.New("payment not found")
 	ErrExecuted = errors.New("payment already executed")
-	// ErrAlreadyRefused: a payment already in StatusRefused may not be
+	// ErrAlreadyRefused: a payment already awaiting approval may not be
 	// refused a second time -- replacing the record on a second refuse call
 	// would let a caller repoint the audit trail. See store.refuse's own doc
 	// comment for the full reasoning.
-	ErrAlreadyRefused = errors.New("payment already refused")
+	ErrAlreadyRefused = errors.New("payment already awaiting approval")
+	// ErrRejected: a reviewer rejected this payment; it can be neither
+	// executed nor refused again.
+	ErrRejected = errors.New("payment was rejected by a reviewer")
+	// ErrNotAwaiting: reject is only meaningful for a payment awaiting approval.
+	ErrNotAwaiting = errors.New("payment is not awaiting approval")
 )
 
 type Payment struct {
-	PaymentID string   `json:"paymentId"`
-	ClaimID   string   `json:"claimId"`
-	Amount    float64  `json:"amount"`
-	Currency  string   `json:"currency"`
-	Status    string   `json:"status"`
-	Refusal   *refusal `json:"refusal,omitempty"`
+	PaymentID string  `json:"paymentId"`
+	ClaimID   string  `json:"claimId"`
+	Amount    float64 `json:"amount"`
+	Currency  string  `json:"currency"`
+	Status    string  `json:"status"`
+	// A2ATaskID is the customer's A2A task, recorded by refuse so the
+	// reviewer-ui can resume it after a human decides.
+	A2ATaskID string `json:"a2aTaskId,omitempty"`
+	// AwaitingSince (RFC3339) is when refuse put the payment into
+	// awaiting_approval: the one clock for "how long the human took".
+	AwaitingSince string     `json:"awaitingSince,omitempty"`
+	Refusal       *refusal   `json:"refusal,omitempty"`
+	Rejection     *rejection `json:"rejection,omitempty"`
+}
+
+// rejection is a reviewer's decision not to release the payment. ReviewerID
+// is what the reviewer-ui reports; RejectedAt is stamped by this ledger.
+type rejection struct {
+	ReviewerID string `json:"reviewerId"`
+	RejectedAt string `json:"rejectedAt"`
 }
 
 // refusal is what the platform decided and what the claimant was told.
@@ -48,24 +72,21 @@ type Payment struct {
 // Rule, Limit, Requested and RefusedTraceID are ledger facts: the Policy
 // Decision Service's own denial, and the trace that recorded it -- this
 // service never invents or recomputes any of them, it only carries what the
-// settlement agent reports. RefusedAt is this ledger's own fact too, stamped
-// by store.refuse at the moment it records the refusal, not supplied by the
-// caller.
+// settlement agent reports. The moment the wait began is Payment.AwaitingSince,
+// stamped by this ledger, not supplied by the caller.
 //
 // RefusedSpanID names the refusal's own span, not just its trace: a span
 // link needs a real span id to survive -- the OpenTelemetry SDK silently
 // drops a Link built from an invalid SpanContext (span_id=0, no attributes)
 // before it ever reaches an exporter. The trace id alone cannot carry the
 // approved-execution trace's link back to a specific span, only to the
-// trace as a whole. This field is what makes that link real rather than
-// assumed.
+// trace as a whole.
 //
 // What this field actually carries is the settlement-agent span active in
 // `decide_settlement` when the refusal was recorded -- settlement-agent's
 // own A2A server span, by the time `settlement_agent.run()` has returned --
 // not the Policy Decision Service's `policy.decision` span, and not the
-// denied `execute_payment` client span. It is still the right span for
-// `execute_approved` to link from (see settlement.py's `_refusal_link`).
+// denied `execute_payment` client span.
 //
 // Narrative is the one field on this whole struct that is model output, not
 // a ledger fact. It is stored verbatim as *what the model said* when it
@@ -81,7 +102,6 @@ type refusal struct {
 	Narrative      string  `json:"narrative"`
 	RefusedTraceID string  `json:"refusedTraceId"`
 	RefusedSpanID  string  `json:"refusedSpanId"`
-	RefusedAt      string  `json:"refusedAt"`
 }
 
 // store holds payments in memory. Deterministic sequential IDs matter: the
@@ -120,6 +140,9 @@ func (s *store) execute(paymentID string) (Payment, error) {
 	if !ok {
 		return Payment{}, ErrNotFound
 	}
+	if payment.Status == StatusRejected {
+		return Payment{}, ErrRejected
+	}
 	if payment.Status == StatusExecuted {
 		return Payment{}, ErrExecuted
 	}
@@ -139,22 +162,26 @@ func (s *store) get(paymentID string) (Payment, error) {
 	return payment, nil
 }
 
-// refuse records why a payout was refused, beside the payout. It is the only
-// way a payment reaches StatusRefused.
+// refuse records why a payout was refused, beside the payout, and leaves the
+// payment awaiting a human. It is the only way a payment reaches
+// StatusAwaitingApproval.
 //
 // It rejects an already-executed payment with ErrExecuted -- the same error
 // store.execute returns for its own already-executed case, and the handler
 // gives it the same 409 shape -- because the money has already moved once,
 // and a refusal record after that would misstate the ledger.
 //
-// It also rejects an already-refused payment with ErrAlreadyRefused: propose
+// It rejects a rejected payment with ErrRejected: a reviewer's decision is
+// final.
+//
+// It also rejects an already-awaiting payment with ErrAlreadyRefused: propose
 // CREATES a record; refuse MUTATES the one a human reviewer reads before
 // releasing money, so allowing an unconditional second refuse call would let
 // any caller overwrite refusedTraceId/refusedSpanId, repointing the audit
 // link at a trace of their own choosing. There is exactly one legitimate
-// path to StatusRefused (a payment that is merely `proposed`), so a second
+// path to StatusAwaitingApproval (a payment that is merely `proposed`), so a second
 // refuse call is never the ordinary case.
-func (s *store) refuse(paymentID string, r refusal) (Payment, error) {
+func (s *store) refuse(paymentID string, r refusal, a2aTaskID, now string) (Payment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -165,11 +192,34 @@ func (s *store) refuse(paymentID string, r refusal) (Payment, error) {
 	if payment.Status == StatusExecuted {
 		return Payment{}, ErrExecuted
 	}
-	if payment.Status == StatusRefused {
+	if payment.Status == StatusRejected {
+		return Payment{}, ErrRejected
+	}
+	if payment.Status == StatusAwaitingApproval {
 		return Payment{}, ErrAlreadyRefused
 	}
-	payment.Status = StatusRefused
+	payment.Status = StatusAwaitingApproval
 	payment.Refusal = &r
+	payment.A2ATaskID = a2aTaskID
+	payment.AwaitingSince = now
+	s.payments[paymentID] = payment
+	return payment, nil
+}
+
+// reject records a reviewer's decision not to release a payment awaiting
+// approval. Only awaiting_approval payments can be rejected.
+func (s *store) reject(paymentID, reviewerID, now string) (Payment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	payment, ok := s.payments[paymentID]
+	if !ok {
+		return Payment{}, ErrNotFound
+	}
+	if payment.Status != StatusAwaitingApproval {
+		return Payment{}, ErrNotAwaiting
+	}
+	payment.Status = StatusRejected
+	payment.Rejection = &rejection{ReviewerID: reviewerID, RejectedAt: now}
 	s.payments[paymentID] = payment
 	return payment, nil
 }

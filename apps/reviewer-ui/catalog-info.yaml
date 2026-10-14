@@ -9,8 +9,9 @@ kind: Component
 metadata:
   name: reviewer-ui
   description: >-
-    The human-review surface: shows settlements awaiting approval and
-    records the reviewer's decision to the ledger.
+    The human-review surface: shows payments awaiting approval, releases an
+    approved payment through agentgateway under its own identity, and records
+    a rejection on the ledger.
   annotations:
     backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-id: reviewer-ui

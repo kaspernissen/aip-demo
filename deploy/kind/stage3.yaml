@@ -10,14 +10,13 @@
 # bring-up-able on its own without reviewer-ui's port ever being reserved.
 #
 # WHAT STAGE 3 ACTUALLY DEPLOYS: stage 2, plus reviewer-ui (the approval page
-# a human reads and clicks, reached on the host port reserved below) and
-# senior-settlement-agent -- the SAME settlement-agent image in a second
-# Deployment under a second ServiceAccount, because "senior" here is an
-# identity, not a different program. `scripts/setup-kind.sh` installs both.
-# payments-api's refusal record and the PDS's senior row are already present
-# in stage 2's own images -- only the reviewer-ui and senior-settlement-agent
-# workload manifests are new, so an operator bringing up stage 3 should
-# expect reviewer-ui reachable on 8081, the port reserved below.
+# a human reads and clicks, reached on the host port reserved below, and the
+# identity that releases an approved payment through the gateway).
+# `scripts/setup-kind.sh` installs it. payments-api's awaiting_approval state
+# and the PDS's human-approval rule are already present in stage 2's own
+# images -- only the reviewer-ui workload manifest is new, so an operator
+# bringing up stage 3 should expect reviewer-ui reachable on 8081, the port
+# reserved below.
 #
 # Deliberately NOT set here: same two omissions as stage2.yaml (`podSubnet`,
 # `kubeProxyMode`), for the same reasons -- see that file's header.

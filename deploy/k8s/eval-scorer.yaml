@@ -41,10 +41,10 @@
 # substituting a placeholder to keep the guard green.
 #
 # **It needs a ClusterSPIFFEID of its own**, in
-# deploy/platform/spire/registration.yaml. Unlike reviewer-ui and
-# senior-settlement-agent, it does not take its ID from the SPIRE chart's
-# catch-all `default` CR: those two are in `northstar-agents`, and the
-# catch-all CR's namespaceSelector excludes `northstar-platform` by name.
+# deploy/platform/spire/registration.yaml. Unlike a workload in
+# `northstar-agents`, it does not take its ID from the SPIRE chart's
+# catch-all `default` CR: that CR's namespaceSelector excludes
+# `northstar-platform` by name.
 # Namespace decides, not the ServiceAccount.
 #
 # Grants no RBAC. This pod makes no Kubernetes API calls.

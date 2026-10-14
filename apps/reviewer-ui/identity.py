@@ -1,12 +1,13 @@
 """reviewer-ui's own workload identity.
 
-Not `svid.py`'s job (the two settlement agents' module, fetching a
-*JWT*-SVID scoped to an *audience* so agentgateway can verify it on a
-`tools/call`) -- reviewer-ui makes no MCP call and holds no
-`EXECUTE_LIMITS` row, so there is no audience to mint one for. What this
-module fetches instead is the workload's own *X.509* SVID, purely to read
-back the one fact `review.decision`'s `review.reviewer.spiffe_id` attribute
-needs: this process's real, attested SPIFFE ID.
+Two things are fetched from the SPIFFE Workload API, both for the same
+attested identity. The workload's *X.509* SVID is read back for one fact:
+`review.decision`'s `review.reviewer.spiffe_id` attribute needs this process's
+real SPIFFE ID. And a *JWT*-SVID scoped to an *audience* (`fetch_jwt_svid`,
+the same shape as agents/settlement-agent/svid.py) is what the reviewer-ui
+presents to agentgateway to release an approved payment: the PDS permits that
+identity under `human-approved.execute`, and only for a payment the ledger
+shows awaiting approval.
 
 The identity is real for the same reason settlement-agent's is (svid.py's own
 docstring): the spiffe-csi-driver bind-mounts the spire-agent's Workload API
@@ -17,16 +18,16 @@ this pod to assemble a SPIFFE ID string from by hand; it is read from the
 Workload API or not reported at all.
 
 Same seam-replacement testing technique as svid.py: `_fetch_from_workload_api`
-is the one function that touches the real Workload API, and tests/test_identity.py
-replaces it. Unlike svid.py's JWT cache there is no expiry to track here --
-an X.509 SVID rotates its certificate material periodically, but the
-*spiffe_id* string it carries is stable for the pod's lifetime, so this
-caches the string forever once fetched rather than re-checking a clock.
+and `_fetch_jwt_from_workload_api` are the two functions that touch the real
+Workload API, and tests/test_identity.py replaces them. The X.509 *spiffe_id*
+string is stable for the pod's lifetime, so it is cached forever once fetched;
+a JWT-SVID expires, so it is cached per audience until 30 s before expiry.
 """
 from __future__ import annotations
 
 import asyncio
 import os
+import time
 
 from spiffe import WorkloadApiClient
 
@@ -37,6 +38,9 @@ from spiffe import WorkloadApiClient
 _DEFAULT_ENDPOINT_SOCKET = "unix:///spiffe-workload-api/spire-agent.sock"
 
 _cached_spiffe_id: str | None = None
+
+_jwt_cache: dict[str, tuple[str, float]] = {}
+_REFRESH_MARGIN_SECONDS = 30
 
 
 class IdentityUnavailable(RuntimeError):
@@ -99,3 +103,31 @@ async def workload_spiffe_id() -> str:
     # empty rather than storing a half-result the next call would serve.
     _cached_spiffe_id = spiffe_id
     return _cached_spiffe_id
+
+
+async def _fetch_jwt_from_workload_api(audience: str) -> tuple[str, float]:
+    socket_path = os.getenv("SPIFFE_ENDPOINT_SOCKET", _DEFAULT_ENDPOINT_SOCKET)
+
+    def _fetch() -> tuple[str, float]:
+        client = WorkloadApiClient(socket_path=socket_path)
+        try:
+            svid = client.fetch_jwt_svid(audience={audience})
+            return svid.token, float(svid.expiry)
+        finally:
+            client.close()
+
+    return await asyncio.to_thread(_fetch)
+
+
+async def fetch_jwt_svid(audience: str) -> str:
+    """A JWT-SVID for `audience`, cached until 30 s before it expires. The
+    token is never logged or printed."""
+    cached = _jwt_cache.get(audience)
+    if cached is not None and cached[1] - time.time() > _REFRESH_MARGIN_SECONDS:
+        return cached[0]
+    try:
+        token, expiry = await _fetch_jwt_from_workload_api(audience)
+    except Exception as exc:  # noqa: BLE001 -- see IdentityUnavailable
+        raise IdentityUnavailable(f"could not fetch a JWT-SVID for {audience!r}: {exc}") from exc
+    _jwt_cache[audience] = (token, expiry)
+    return token

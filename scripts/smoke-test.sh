@@ -330,7 +330,7 @@ echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included 
 # modules running inside it hold reachable `pytest.skip` calls on conditions
 # that refusal does not cover (test_egress_policy.py,
 # test_gateway_is_the_only_route.py, test_gateway_config_drift.py,
-# test_supervised.py, test_settlement_llm_trace.py and the cluster-reachability
+# test_human_in_the_loop.py, test_settlement_llm_trace.py and the cluster-reachability
 # skips in the OpenSearch/Prometheus modules). Each is defensible on its own;
 # collectively, nothing would stop a green gate that had silently skipped an
 # assertion it exists to run. So "zero skips" is checked below as a property

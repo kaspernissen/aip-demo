@@ -37,6 +37,18 @@ inside. Recorded rather than silently fixed, for the same reason as the note
 above: this is the one part of the file the count-and-inventory guards do not
 read, and it has now failed twice running.
 
+**M8 (Human in the loop): `senior-settlement-agent` is retired.** Every
+mention of it below, of the "senior identity", of `settlement.execute_approved`
+and of the A2A approval hop is **dated history of M3 to M7**: it records what
+was measured then and is not rewritten. What changed is that the reviewer-ui
+now releases an approved payment itself, calling `execute_payment` through
+agentgateway under its own SPIFFE ID, so the `policy.decision` span for a human
+release carries `policy.caller.spiffe_id` = the reviewer-ui, `policy.rule` =
+`human-approved.execute`, and a new attribute, `policy.ledger.status`: what the
+PDS read from payments-api for that payment (`awaiting_approval` for a permit).
+The approver is also a different `service.name`, so the "same service name for
+both settlement Deployments" caveats below no longer apply.
+
 ## The governing rule
 
 Use the telemetry the frameworks actually emit. Verify per component. Instrument
@@ -455,8 +467,13 @@ tree this change has since altered. What has to happen to make it MEASURED: one
 run on its own against the live stage-7 cluster, 7 passed in 55.8s, which is not
 the gate having run.
 
-Bare-suite row, derived from that same collection: 507 collected − 83 gated −
-**0** xfailed = `424 passed, 83 skipped, 0 xfailed`.
+Bare-suite row, derived from that same collection: 501 collected − 83 gated −
+**0** xfailed = `418 passed, 83 skipped, 0 xfailed`. (M8 Task 1 took the
+collection from 507 to 501: `tests/e2e/test_supervised.py` (6 gated) was deleted
+with the senior agent and `tests/e2e/test_human_in_the_loop.py` (6 gated) was
+added, so the gated figure stays 83; `tests/unit` lost the two companion-deployment
+tests of `test_rebuild_and_deploy_guard.py` and the cold-bring-up test, and
+gained one, net six fewer.)
 
 The gated figure was **76** before that change and is **83** now — re-measured the same way as every figure
 below it, a `--collect-only` run with a plugin that counts items carrying a
@@ -473,13 +490,13 @@ test) is `tests/unit`-only and carries no `skipif`, so it adds none, and the
 internal-platform pass's eight new `tests/unit` tests, the mermaid pass's eight
 and the page-banner pass's eight `tests/unit` tests carry none either; the
 page-banner pass's own e2e file adds exactly **one** — and
-reports 83 of 507, with the per-module spread and the browser split both
+reports 83 of 501, with the per-module spread and the browser split both
 moving for the first time this milestone. Full spread:
 `test_settlement_llm_trace.py` 9,
 `test_prometheus_metrics_ingest.py` 10, `test_browser_root_span.py` 8,
 `test_settlement_agent_trace.py` 8, `test_claims_chain_trace.py` 7,
 `test_claim_correlation.py` 6, `test_gateway_trace.py` 6,
-`test_supervised.py` 6, `test_policy_scores.py` 5,
+`test_human_in_the_loop.py` 6, `test_policy_scores.py` 5,
 `test_demo_flow.py` 7, `test_evidence_view.py` 4, `test_policy_denial.py` 4,
 `test_backstage_page_bands.py` 1, `test_golden_path.py` 1,
 `test_progressive_autonomy.py` 1. **The browser split changes twice this
@@ -491,9 +508,17 @@ never one of the three either). Then the page-banner pass added a fourteenth
 that *does* call `chromium.launch(` — it has no page to drive, only pages to
 look at — so the split was 4 of the 14 launching a browser and 10 of the 14
 starting none, until the demo-flow file made it a fifteenth that starts none:
-**4 of the 15 launch a browser** and **11 of the 15 start no browser**.
+**3 of the 15 launch a browser** and **12 of the 15 start no browser** (M8 Task 1 swapped
+`test_supervised.py` for `test_human_in_the_loop.py`, neither of which launches one,
+and the browser count had been miscounted as 4 since the demo-flow file).
 
-Gate row: **PREDICTED, NOT MEASURED** — M8 Task 0 bumps agentgateway to v1.6.0 and
+Gate row: **PREDICTED, NOT MEASURED** — M8 Task 1 predicts `500 passed, 1 xfailed`
+(501 collected): it changes the PDS, payments-api, the settlement agent, the reviewer-ui,
+the eval-scorer, the manifests and the e2e suite, all `GATE_PATHS`, so the row below
+describes a tree this branch has since altered; what has to happen to make it MEASURED is
+one `./scripts/smoke-test.sh` at the end of M8. Task 1's own files were run against the
+live stage-7 cluster (`test_human_in_the_loop` 6, and the twenty modules it touched), which
+is not the gate having run. Before it, M8 Task 0 bumps agentgateway to v1.6.0 and
 changes the deny path, the gateway's span vocabulary, the collector's OpenSearch
 rename list and the settlement-agent image, all `GATE_PATHS` files, so the row
 below describes a tree this branch has since altered. The collected count is
@@ -2163,9 +2188,9 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (all nine run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 119, payments-mcp 16, payments-api (Go) 31,
-customer-ui (vitest) 6, policy-decision-service 134,
-reviewer-ui 56, eval-scorer 160, backstage (jest) 37 — all passing.
+claims-agent 16, settlement-agent 99, payments-mcp 16, payments-api (Go) 39,
+customer-ui (vitest) 6, policy-decision-service 146,
+reviewer-ui 70, eval-scorer 165, backstage (jest) 37 — all passing.
 (**2026-10-13, M8 Task 0 (agentgateway v1.6.0): settlement-agent 114 → 119,
 policy-decision-service 129 → 134.** The deny now travels as tagged text in an
 `isError` tool result: the PDS gains `tests/test_deny_text.py` (4) and one
@@ -2174,6 +2199,13 @@ reason/`mcp_error` agreement test (1); the agent gains
 `MCPError` fixtures, net of the contract-test rewrite. Re-measured with
 `.venv/bin/python -m pytest --collect-only -q tests` from each service's own
 directory.)
+(**2026-10-14, M8 Task 1 (maker-checker): settlement-agent 119 → 99,
+payments-api 31 → 39, policy-decision-service 134 → 146, reviewer-ui 56 → 70,
+eval-scorer 160 → 165.** The agent loses `execute_approved` and its tests; the
+ledger gains the `awaiting_approval` and `rejected` states; the PDS gains the
+ledger read and the human rule; the reviewer-ui gains the gateway release path and
+loses the A2A approval; the scorer gains the human-approver rule check. Same
+command as above.)
 (**2026-09-15, whole-branch review fix wave Part B: backstage (jest) row
 added, at 37.** C1: `platform/backstage`'s six autonomy-contract plugin test
 files (`evaluate`, `k8sClient`, `router`, `telemetry`, `index` under
@@ -3775,6 +3807,18 @@ moves money; `execute_payment` is the one tool a limit rule ever fires
 against, whether the limit that rule states is €6,000 (assisted) or
 €1,000,000 (autonomous) — the trace shows that distinction being made rather
 than asserted.
+
+**M8 adds one attribute and one rule to this span.** A `tools/call
+execute_payment` from a caller in the PDS's `HUMAN_APPROVERS` set (the
+reviewer-ui) is decided by `policy.rule` = `human-approved.execute`, and the
+span carries `policy.ledger.status`: the status the PDS read for that payment
+from payments-api itself (`awaiting_approval` on a permit; `executed`,
+`rejected`, `proposed` or `unreadable` on a deny). The attribute is set only
+on that path, so the eleven-key limit-rule block above is unchanged, and
+`policy.limit.amount` is absent on a human release because the rule states no
+limit. The values after M8's limit change are: `settlement-agent` at `assisted`
+EUR 0, at `autonomous` EUR 6,000; the EUR 1,000,000 and EUR 25,000 figures in
+the dated measurements above are history.
 
 Four properties worth stating because they are easy to get wrong from the
 outside:
@@ -5808,7 +5852,7 @@ step 5 records why).
 | 2 · `policy_decision` / `rule` | `deny` / `settlement-agent.assisted.execute_limit` | identical |
 | 2 · `limit` / `requested` | 6000 / 6200 | identical |
 | 3 · `reviewer` / `review_decision` | present / `approve` | present / `approve` |
-| 2 · `executing_identity` | `spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent` | identical |
+| 2 · `executing_identity` | `.../ns/northstar-agents/sa/senior-settlement-agent` (retired in M8) | identical |
 | 2 · `executing_rule` | `settlement-agent.assisted.execute_limit` | identical |
 | 4 · `money_hops` | propose → refuse → GET → GET → execute | identical |
 | spans in the join | 214 | 216 |

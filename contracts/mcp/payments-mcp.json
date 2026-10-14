@@ -46,7 +46,7 @@
     },
     {
       "name": "refuse_payment",
-      "description": "Record why a payout was refused, beside the payout.\n\nCalled by settlement-agent's own decide_settlement, through the same\ngoverned MCP path every other payments call in this repo takes -- not a\nnew HTTP path from the agent to payments-api. Moves no money; the\nexecute path stays exactly as guarded as it always was.",
+      "description": "Record why a payout was refused, beside the payout.\n\nCalled by settlement-agent's own decide_settlement, through the same\ngoverned MCP path every other payments call in this repo takes -- not a\nnew HTTP path from the agent to payments-api. Moves no money: it leaves\nthe payment awaiting a human. a2a_task_id is the customer's A2A task, kept\non the ledger so the reviewer-ui can resume it.",
       "inputSchema": {
         "properties": {
           "payment_id": { "type": "string" },
@@ -55,7 +55,8 @@
           "requested": { "type": "number" },
           "narrative": { "type": "string" },
           "refused_trace_id": { "type": "string" },
-          "refused_span_id": { "type": "string" }
+          "refused_span_id": { "type": "string" },
+          "a2a_task_id": { "default": "", "type": "string" }
         },
         "required": [
           "payment_id",
@@ -78,7 +79,7 @@
     },
     {
       "name": "get_payment",
-      "description": "Read back what the ledger recorded for a payment.\n\nUsed by settlement-agent's execute_approved to confirm, before executing,\nthat a refusal record actually exists for this payment and that its\nrecorded amount matches what this approval asks to execute.",
+      "description": "Read back what the ledger recorded for a payment.\n\nRead by the callers that need the ledger's own record of a payment (its\nstatus, amount and refusal), not a model's account of it.",
       "inputSchema": {
         "properties": {
           "payment_id": { "type": "string" }

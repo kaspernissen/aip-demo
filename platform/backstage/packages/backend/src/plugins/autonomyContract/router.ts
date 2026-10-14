@@ -27,10 +27,12 @@ import {
 } from './evaluate';
 import { emitContractChangeSpan } from './telemetry';
 
-// The two identities meant by "per agent identity": the two SPIFFE IDs the
-// settlement flow can present (deploy/platform/spire/
-// registration.yaml for the junior's explicit ClusterSPIFFEID; the senior
-// gets its identity from the chart's own fallback CR, same ns/sa template).
+// The identity meant by "per agent identity": the one SPIFFE ID the dial
+// governs (deploy/platform/spire/registration.yaml's explicit
+// ClusterSPIFFEID). Since M8 there is one settlement agent: the senior was
+// retired, and the human who approves above the autonomous limit is the
+// reviewer-ui, whose authority is a rule and not a level, so the dial has
+// nothing to say about it.
 // Reproduced as literals rather than imported from a Python module -- same
 // reason tests/harness/contract.py gives for reproducing its own
 // TARGETED_CALLER rather than importing it: a different runtime, not a
@@ -38,8 +40,6 @@ import { emitContractChangeSpan } from './telemetry';
 export const TARGETED_IDENTITIES = {
   'settlement-agent':
     'spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent',
-  'senior-settlement-agent':
-    'spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent',
 } as const;
 
 export const VALID_VARIANTS = ['assisted', 'autonomous'] as const;

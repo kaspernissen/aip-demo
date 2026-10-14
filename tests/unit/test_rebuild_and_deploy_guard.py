@@ -23,18 +23,12 @@ it, in a RED demonstration) in an isolated sandbox with every build context
 absent, and asserts on its actual exit code and diagnostic output -- for both
 calling conventions.
 
-**The companion-deployment half.** The tests above all run against a sandbox
-where every build context is *missing*, so the script hard-errors before it
-ever reaches a `kubectl rollout`. That leaves the whole deploy half of this
-script unguarded: `deploy/k8s/settlement-agent.yaml` and
-`deploy/k8s/senior-settlement-agent.yaml` name the same mutable image tag
-(`localhost:5001/northstar/settlement-agent:dev`), and restarting only the
-first of them leaves the senior identity serving the previous build of an
-image the demo's whole argument treats as byte-identical across both. The
-second group of tests below gives the *present*-build-context path a sandbox
-of its own (fake `docker`/`kubectl` that succeed and record what they were
-called with) and pins the restart of both deployments, plus a RED
-demonstration that emptying `COMPANION_DEPLOYMENTS` really does redden it.
+**The deploy half.** The tests above all run against a sandbox where every
+build context is *missing*, so the script hard-errors before it ever reaches a
+`kubectl rollout`. The second group of tests below gives the *present*-build-
+context path a sandbox of its own (fake `docker`/`kubectl` that succeed and
+record what they were called with). There is no companion-deployment mechanism
+any more: M8 retired the one second Deployment of the settlement-agent image.
 """
 import os
 import re
@@ -209,7 +203,7 @@ def test_guard_goes_red_against_a15s_retired_silent_continue(tmp_path):
     )
 
 
-# --- The deploy half: companion deployments ---------------------------------
+# --- The deploy half ---------------------------------------------------------
 #
 # A second sandbox shape. The one above deliberately has NO build contexts, so
 # the script exits before deploying anything; this one has the requested
@@ -248,7 +242,7 @@ exit 0
 
 # `  "name:context:namespace"` lines inside the COMPONENTS array. Anchored on
 # the opening `COMPONENTS=(` and stopped at the closing `)` so the identically
-# shaped COMPANION_DEPLOYMENTS array below it cannot be swept up.
+# shaped arrays elsewhere in the script cannot be swept up.
 _COMPONENTS_BLOCK_RE = re.compile(r"^COMPONENTS=\(\n(.*?)^\)", re.M | re.S)
 _COMPONENT_ENTRY_RE = re.compile(r'^\s*"([^:"]+):([^:"]+):([^:"]+)"\s*$', re.M)
 
@@ -258,7 +252,7 @@ def _component_contexts() -> list[str]:
 
     Read from the script so a sandbox built from it covers whatever COMPONENTS
     actually holds today, rather than whatever it held when the test was
-    written -- see `test_a_bare_full_run_also_restarts_the_companion` for the
+    written -- see `test_the_catalog_stage_holds_exactly_the_real_sources_it_should_have_copied` for the
     drift that prompted this.
     """
     text = (REPO_ROOT / SCRIPT_RELATIVE_PATH).read_text()
@@ -385,14 +379,11 @@ def _deploying_sandbox(
     return script_copy, env, log
 
 
-def test_rebuilding_settlement_agent_also_restarts_its_companion_senior_deployment(
-    tmp_path,
-):
-    """Both settlement Deployments name the mutable tag
-    `localhost:5001/northstar/settlement-agent:dev`, so a push under that tag
-    that restarts only one of them leaves the other serving the previous
-    build -- two pods of "the same image" disagreeing, which undermines the
-    premise that the approval changes the caller, not the code.
+def test_rebuilding_settlement_agent_restarts_one_deployment_and_no_other(tmp_path):
+    """M8 retired senior-settlement-agent, the only second Deployment that ran
+    the settlement-agent image. Rebuilding that image restarts
+    `deployment/settlement-agent` and nothing else, and the script no longer
+    knows the name of a retired identity.
 
     Behavioural, not a source grep: the script is really run and the real
     `kubectl` argv is asserted.
@@ -402,62 +393,15 @@ def test_rebuilding_settlement_agent_also_restarts_its_companion_senior_deployme
     )
     result = _run(script_copy, env, ["settlement-agent"])
     assert result.returncode == 0, (
-        "the script should run to completion in this sandbox (build context "
-        f"present, fakes succeed); stdout:\n{result.stdout}\n"
-        f"stderr:\n{result.stderr}"
-    )
-
-    calls = log.read_text().splitlines()
-    assert any(
-        "rollout restart deployment/settlement-agent" in call for call in calls
-    ), f"the component's own restart is missing entirely: {calls}"
-    assert any(
-        "rollout restart deployment/senior-settlement-agent" in call
-        for call in calls
-    ), (
-        "deployment/senior-settlement-agent was NOT restarted after a new "
-        "settlement-agent image was pushed under the tag both Deployments "
-        f"name, so it keeps serving the previous build: {calls}"
-    )
-    assert any(
-        "rollout status deployment/senior-settlement-agent" in call
-        for call in calls
-    ), (
-        "the companion was restarted but never waited on, so the script can "
-        f"return while the old pod is still serving: {calls}"
-    )
-    # It is a restart, not an apply: senior-settlement-agent's manifest is
-    # setup-kind.sh's to apply, and this script must not take that over.
-    assert not any(
-        "apply -f" in call and "senior-settlement-agent" in call for call in calls
-    ), f"this script must not apply senior-settlement-agent's manifest: {calls}"
-
-
-def test_a_bare_full_run_also_restarts_the_companion(tmp_path):
-    """The other calling convention, and the likelier one before a demo: no
-    arguments at all. Every component's build context is present here, so the
-    script walks the whole COMPONENTS list.
-
-    The context list is **read out of the script** rather than restated here.
-    A hard-coded list of paths goes stale the moment a component is added: the
-    sandbox would stop covering it and this test would say nothing, since the
-    loop would only ever run over whatever happened to be listed. A stale
-    sandbox that fails loudly (a build context that does not exist) is the
-    benign version of that failure; a sandbox that silently stops covering a
-    component is the malign one. `_component_contexts()` asserts it parsed
-    something, so a rewritten COMPONENTS block reddens here instead of
-    emptying this test.
-    """
-    script_copy, env, log = _deploying_sandbox(tmp_path, _component_contexts())
-    result = _run(script_copy, env, [])
-    assert result.returncode == 0, (
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
     calls = log.read_text().splitlines()
     assert any(
-        "rollout restart deployment/senior-settlement-agent" in call
-        for call in calls
-    ), f"a bare full run left the senior identity on the previous build: {calls}"
+        "rollout restart deployment/settlement-agent" in call for call in calls
+    ), f"the component's own restart is missing entirely: {calls}"
+    restarts = [c for c in calls if "rollout restart" in c]
+    assert len(restarts) == 1, f"expected exactly one restart, got {restarts}"
+    assert not any("senior" in call for call in calls), calls
 
 
 def test_the_catalog_stage_holds_exactly_the_real_sources_it_should_have_copied(
@@ -554,208 +498,4 @@ def test_the_catalog_stage_holds_exactly_the_real_sources_it_should_have_copied(
         f"backstage's own context ({backstage_context}) was staged into its "
         "own .catalog-stage/ -- the loop's `[[ \"$cname\" == \"backstage\" ]] "
         "&& continue` guard should have skipped it"
-    )
-
-
-def test_the_companion_guard_goes_red_when_the_mapping_is_emptied(tmp_path):
-    """Proves the two tests above actually guard, the same way
-    `test_guard_goes_red_against_a15s_retired_silent_continue` does for the
-    missing-build-context check: empty `COMPANION_DEPLOYMENTS` and the
-    companion restart must disappear while everything else still succeeds."""
-    real_text = (REPO_ROOT / SCRIPT_RELATIVE_PATH).read_text()
-    marker = (
-        "COMPANION_DEPLOYMENTS=(\n"
-        '  "settlement-agent:senior-settlement-agent:northstar-agents"\n'
-        ")"
-    )
-    assert marker in real_text, (
-        "expected scripts/rebuild-and-deploy.sh's COMPANION_DEPLOYMENTS list "
-        "to match this test's known-good text exactly -- if a companion was "
-        "added or the formatting changed, update `marker` above alongside it"
-    )
-    corrupted_text = real_text.replace(marker, "COMPANION_DEPLOYMENTS=()")
-    assert corrupted_text != real_text
-
-    script_copy, env, log = _deploying_sandbox(
-        tmp_path, ["agents/settlement-agent"], script_text=corrupted_text
-    )
-    result = _run(script_copy, env, ["settlement-agent"])
-    assert result.returncode == 0, (
-        "sanity check on the corruption: an empty companion list should still "
-        f"deploy the component itself.\nstdout:\n{result.stdout}\n"
-        f"stderr:\n{result.stderr}"
-    )
-    calls = log.read_text().splitlines()
-    assert any(
-        "rollout restart deployment/settlement-agent" in call for call in calls
-    ), f"the corruption broke more than it should have: {calls}"
-    assert not any(
-        "senior-settlement-agent" in call for call in calls
-    ), (
-        "the corrupted script still restarted the companion, so the tests "
-        f"above would not go red against this reintroduction: {calls}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# The cold-bring-up ordering, and the silent-skip shape it must not be fixed
-# with.
-#
-# On a cold cluster, Step 9/9 runs rebuild-and-deploy.sh for the five stage-1
-# components before the manifest that CREATES senior-settlement-agent is
-# applied (Step 9d, later in the same script). So `rollout restart
-# deployment/senior-settlement-agent` can hit a Deployment that does not exist
-# yet, and `set -e` kills the run at the first of five components. Warm, the
-# Deployment is always already there, so this ordering only shows up on a
-# genuinely cold bring-up.
-#
-# The fix tolerates a genuine NotFound and nothing else. The tempting version
-# (`kubectl get ... >/dev/null 2>&1 || continue`) is a skip where a failure
-# belongs: it would also swallow an unreachable API server or an RBAC denial
-# and leave the companion serving a stale image -- the exact hazard
-# COMPANION_DEPLOYMENTS was added to prevent. The third test below is the RED
-# demonstration that these guards actually catch that shape.
-
-_CONFIGURABLE_KUBECTL = """#!/usr/bin/env bash
-echo "kubectl $*" >> "$FAKE_CMD_LOG"
-# Everything succeeds exactly as the always-succeeding fake does, EXCEPT the
-# existence probe, which the two env vars below can make fail in the two
-# distinguishable ways the script must treat differently.
-if [[ "$3" == "get" ]]; then
-  if [[ -n "${KUBECTL_GET_NOTFOUND:-}" && "$4" == "deployment/${KUBECTL_GET_NOTFOUND}" ]]; then
-    echo "Error from server (NotFound): deployments.apps \\"${KUBECTL_GET_NOTFOUND}\\" not found" >&2
-    exit 1
-  fi
-  if [[ -n "${KUBECTL_GET_UNREACHABLE:-}" && "$4" == "deployment/${KUBECTL_GET_UNREACHABLE}" ]]; then
-    echo "The connection to the server 127.0.0.1:6443 was refused - did you specify the right host or port?" >&2
-    exit 1
-  fi
-fi
-exit 0
-"""
-
-
-def _cold_sandbox(tmp_path: Path, script_text: str | None = None):
-    """`_deploying_sandbox`, but with the configurable kubectl swapped in."""
-    script_copy, env, log = _deploying_sandbox(
-        tmp_path, ["agents/settlement-agent"], script_text=script_text
-    )
-    bin_dir = tmp_path / "fakebin"
-    _make_executable(bin_dir / "kubectl", _CONFIGURABLE_KUBECTL)
-    return script_copy, env, log
-
-
-def test_a_companion_that_does_not_exist_yet_is_skipped_rather_than_fatal(tmp_path):
-    """The cold-bring-up case. A NotFound on the companion must not kill the
-    run: whatever creates that Deployment later pulls the image this step
-    just pushed, by definition, so no restart is owed.
-
-    This repo has no git remote, so a cold rebuild is the only recovery path
-    that exists -- which is why this is guarded rather than left to the next
-    person to rediscover at the worst possible moment.
-    """
-    script_copy, env, log = _cold_sandbox(tmp_path)
-    env["KUBECTL_GET_NOTFOUND"] = "senior-settlement-agent"
-
-    result = _run(script_copy, env, ["settlement-agent"])
-    assert result.returncode == 0, (
-        "a companion that does not exist yet must not fail the run -- a cold "
-        "`--stage 5` bring-up depends on this.\n"
-        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
-
-    calls = log.read_text().splitlines()
-    assert any(
-        "rollout restart deployment/settlement-agent" in call for call in calls
-    ), f"the component itself must still be deployed: {calls}"
-    assert not any(
-        "rollout restart deployment/senior-settlement-agent" in call
-        for call in calls
-    ), (
-        "the script tried to restart a Deployment it had just been told does "
-        f"not exist: {calls}"
-    )
-    assert "skipping its restart" in result.stdout, (
-        "the skip must be announced -- a silent skip is indistinguishable "
-        f"from the companion having been restarted.\nstdout:\n{result.stdout}"
-    )
-
-
-def test_a_companion_probe_failure_that_is_not_notfound_aborts_loudly(tmp_path):
-    """The half that makes the skip above safe. An unreachable API server is
-    NOT 'not created yet': treating it as such would skip the restart and
-    leave senior-settlement-agent serving the previous build of an image whose
-    byte-identity across both deployments is the premise the whole approval
-    argument rests on.
-    """
-    script_copy, env, log = _cold_sandbox(tmp_path)
-    env["KUBECTL_GET_UNREACHABLE"] = "senior-settlement-agent"
-
-    result = _run(script_copy, env, ["settlement-agent"])
-    assert result.returncode != 0, (
-        "a probe failure that is not NotFound must abort, not be mistaken for "
-        f"'not created yet'.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
-    combined = result.stdout + result.stderr
-    assert "connection to the server" in combined, (
-        "the underlying kubectl error must be surfaced, not swallowed: "
-        f"{combined}"
-    )
-    calls = log.read_text().splitlines()
-    assert not any(
-        "rollout restart deployment/senior-settlement-agent" in call
-        for call in calls
-    ), f"it aborted, so it must not also have restarted the companion: {calls}"
-
-
-def test_these_guards_go_red_against_the_naive_silent_skip(tmp_path):
-    """RED demonstration, in the shape this file already uses for the
-    missing-build-context guard above.
-
-    The tempting one-liner -- `kubectl get ... || continue` -- passes the
-    cold-bring-up test above and silently swallows every other failure with
-    it. If that shape can be reintroduced without a test reddening, these
-    guards are decoration. Here the real script's probe block is replaced with
-    exactly that one-liner and the abort test's condition is re-asserted.
-    """
-    real_text = (REPO_ROOT / SCRIPT_RELATIVE_PATH).read_text()
-    marker = 'if ! companion_probe_err="$(kubectl -n "$companion_ns" get "deployment/${companion_name}" 2>&1 >/dev/null)"; then'
-    assert marker in real_text, (
-        "expected the companion existence probe to still open with this line "
-        "-- if the probe was rewritten, update this RED demonstration "
-        "alongside it rather than deleting it"
-    )
-    start = real_text.index(marker)
-    # Anchored on the leading newline so it lands on the OUTER `fi` (4 spaces),
-    # not the inner one (6 spaces): "    fi\n" is a substring of "      fi\n",
-    # and matching that leaves a dangling `fi` and a bash syntax error instead
-    # of the silent-skip shape this demonstration is meant to build -- a RED
-    # for the wrong reason, which teaches nothing about the guard.
-    closing = "\n    fi\n"
-    end = real_text.index(closing, start) + len(closing)
-    corrupted_text = real_text[:start] + (
-        '    kubectl -n "$companion_ns" get "deployment/${companion_name}" '
-        ">/dev/null 2>&1 || continue\n"
-    ) + real_text[end:]
-    assert corrupted_text != real_text
-
-    script_copy, env, log = _cold_sandbox(tmp_path, script_text=corrupted_text)
-    env["KUBECTL_GET_UNREACHABLE"] = "senior-settlement-agent"
-    result = _run(script_copy, env, ["settlement-agent"])
-
-    assert result.returncode == 0, (
-        "sanity check on the corruption: the naive `|| continue` should "
-        "swallow the unreachable-API failure and exit cleanly -- if it does "
-        "not, this demonstration is not exercising the shape it claims to.\n"
-        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
-    calls = log.read_text().splitlines()
-    assert not any(
-        "rollout restart deployment/senior-settlement-agent" in call
-        for call in calls
-    ), (
-        "the corrupted script skipped the companion restart on an unreachable "
-        "API server, exactly as predicted -- which is what "
-        "`test_a_companion_probe_failure_that_is_not_notfound_aborts_loudly` "
-        f"exists to catch: {calls}"
     )

@@ -91,6 +91,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+from tests.harness import contract, live
 from tests.harness.jaeger import JaegerClient
 
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
@@ -118,7 +119,7 @@ pytestmark = pytest.mark.skipif(
 # propose whatever it likes. The ceiling lives one hop away, in the platform:
 # it denies `execute_payment` above the €6,000 allowance for this caller
 # (`platform/policy-decision-service/pds/rules.py`), so an amount above that
-# comes back `refused` and the fixture's own `status == "executed"` assertion
+# comes back awaiting approval and the fixture's own `status == "executed"` assertion
 # fails before any test body runs.
 #
 # €5,800 rather than a refusal, deliberately. Every one of this file's nine
@@ -191,10 +192,13 @@ def llm_settlement():
     traceparent = f"00-{trace_id}-{span_id}-01"
     claim_id = f"CLM-TEST-{uuid.uuid4().hex[:8]}"
 
-    result = _send(
-        json.dumps({"claimId": claim_id, "amount": REQUESTED_AMOUNT, "currency": "EUR"}),
-        traceparent,
-    )
+    # M8: the resting state (`assisted`) releases nothing, so a claim the agent
+    # is to settle itself runs with the dial at `autonomous` -- always restored.
+    with live.autonomy(contract.AUTONOMOUS):
+        result = _send(
+            json.dumps({"claimId": claim_id, "amount": REQUESTED_AMOUNT, "currency": "EUR"}),
+            traceparent,
+        )
     assert "error" not in result, f"A2A call failed: {result}"
     reply = json.loads(result["result"]["parts"][0]["text"])
     assert reply["status"] == "executed", reply

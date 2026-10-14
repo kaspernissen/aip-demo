@@ -43,8 +43,8 @@ SUPERVISED_DOCUMENTS = [
     fixtures.decision(6.0, "refuse_payment", "permit"),
     fixtures.review(6.5),
     fixtures.decision(
-        6.9, "execute_payment", "permit", fixtures.SENIOR,
-        amount=6200.0, limit=25000.0, trace=fixtures.APPROVAL_TRACE,
+        6.9, "execute_payment", "permit", fixtures.REVIEWER,
+        amount=6200.0, autonomy=None, rule="human-approved.execute", trace=fixtures.APPROVAL_TRACE,
     ),
 ]
 

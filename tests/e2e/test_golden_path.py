@@ -100,7 +100,7 @@ from tests.e2e.test_policy_denial import (  # noqa: F401 -- reused, not reimplem
     browser_test,
     claims_agent_route,
 )
-from tests.e2e.test_supervised import _get_payment  # same ledger-read helper
+from tests.harness.live import get_payment as _get_payment  # same ledger-read helper
 from tests.e2e.test_progressive_autonomy import _pod_uids_and_image_digests
 from tests.e2e.test_opensearch_trace_ingest import (  # noqa: F401 -- reused, not reimplemented
     OBSERVABILITY_NAMESPACE,
@@ -114,10 +114,11 @@ PLATFORM_NAMESPACE = "northstar-platform"
 AGENTS_NAMESPACE = "northstar-agents"
 BACKSTAGE_PORT = 7007
 
-# The same over-the-assisted-limit figure test_progressive_autonomy.py uses
-# -- this file drives the identical claim through a second write path, not a
-# different one.
-AMOUNT = 6200.0
+# The same figure test_progressive_autonomy.py uses -- this file drives the
+# identical claim through a second write path, not a different one. Under
+# maker-checker (M8) EUR 5,800 waits for a human at `assisted` (limit 0) and
+# settles on its own at `autonomous` (limit 6,000).
+AMOUNT = 5800.0
 
 
 def _kubectl(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
@@ -365,7 +366,7 @@ def test_the_catalog_serves_every_component_the_tree_actually_has(
 # --- contract ----------------------------------------------------------------
 
 
-def test_the_card_reads_assisted_for_both_identities_on_the_refusing_contract(
+def test_the_card_reads_assisted_for_the_identity_on_the_refusing_contract(
     backstage_url, auth_headers,
 ):
     """On a freshly built cluster (and at every point this suite
@@ -384,12 +385,12 @@ def test_the_card_reads_assisted_for_both_identities_on_the_refusing_contract(
     `targeting-else`, `default-variant`, `flag-disabled`) returns the same
     string here. A reader that ignores `spiffeId` entirely, hardcodes
     `'assisted'`, resolves both identities through the same branch, or
-    regresses the senior SPIFFE literal would all pass unchanged. `branch` is
+    regresses the settlement-agent SPIFFE literal would all pass unchanged. `branch` is
     already in the response for free -- asserting it too means a caller that
     is not actually reaching the targeting-else arm cannot pass as one that
     is.
     """
-    contract.assert_assisted("test_the_card_reads_assisted_for_both_identities")
+    contract.assert_assisted("test_the_card_reads_assisted_for_the_identity")
 
     resp = requests.get(
         f"{backstage_url}/api/autonomy-contract/status", headers=auth_headers, timeout=10
@@ -400,8 +401,11 @@ def test_the_card_reads_assisted_for_both_identities_on_the_refusing_contract(
     per_identity = body["perIdentity"]
     expected_branch = {
         "settlement-agent": "targeting-then",
-        "senior-settlement-agent": "targeting-else",
     }
+    assert set(per_identity) == set(expected_branch), (
+        f"the card names {sorted(per_identity)}; since M8 the dial governs "
+        "settlement-agent alone (the senior was retired)"
+    )
     for label, branch in expected_branch.items():
         assert label in per_identity, f"{label!r} missing from perIdentity: {per_identity}"
         assert per_identity[label]["level"] == "assisted", (
@@ -461,12 +465,10 @@ def test_no_workload_is_redeployed_by_a_card_driven_flip(backstage_url, auth_hea
 
         # This test already holds the contract
         # flipped, at no extra cost -- the discriminating check that
-        # `test_the_card_reads_assisted_for_both_identities...` cannot make on
+        # `test_the_card_reads_assisted_for_the_identity...` cannot make on
         # the shipped (both-assisted) contract. With the then-branch flipped,
-        # the junior identity must read the NEW level on `targeting-then`
-        # while the senior identity is unaffected on `targeting-else`; a
-        # reader that ignores `spiffeId`, or resolves both identities through
-        # the same branch, would show both as `autonomous` here.
+        # the settlement-agent identity must read the NEW level on
+        # `targeting-then`.
         resp = requests.get(
             f"{backstage_url}/api/autonomy-contract/status",
             headers=auth_headers,
@@ -481,15 +483,6 @@ def test_no_workload_is_redeployed_by_a_card_driven_flip(backstage_url, auth_hea
             f"settlement-agent reads {per_identity['settlement-agent']} while "
             "the contract is flipped to autonomous -- expected the "
             "targeting-then branch to carry the new level"
-        )
-        assert per_identity["senior-settlement-agent"] == {
-            "level": "assisted",
-            "branch": "targeting-else",
-        }, (
-            f"senior-settlement-agent reads "
-            f"{per_identity['senior-settlement-agent']} while the flip only "
-            "touched targeting.if[1] -- expected the targeting-else branch to "
-            "be unaffected"
         )
     finally:
         resp = requests.post(
@@ -533,7 +526,7 @@ def test_driving_the_cards_write_over_http_flips_a_refused_settlement_to_execute
     contract.assert_assisted("test_driving_the_cards_write_over_http_...")
     try:
         refused = _drive_browser(f"CLM-GOLDEN-{uuid.uuid4().hex[:8]}", AMOUNT)
-        assert refused.reply.get("status") == "refused", refused.reply
+        assert refused.reply.get("status") == "awaiting_approval", refused.reply
         refused_decisions = _decisions(refused.trace, EXECUTE_TOOL)
         assert len(refused_decisions) == 1, (
             f"expected exactly one policy.decision span for {EXECUTE_TOOL}, "
@@ -545,7 +538,7 @@ def test_driving_the_cards_write_over_http_flips_a_refused_settlement_to_execute
             refused_decision.attrs.get(ATTR_POLICY_RULE)
             == "settlement-agent.assisted.execute_limit"
         ), refused_decision.attrs
-        assert refused_decision.attrs.get(ATTR_POLICY_LIMIT) == 6000, refused_decision.attrs
+        assert refused_decision.attrs.get(ATTR_POLICY_LIMIT) == 0, refused_decision.attrs
         assert refused_decision.attrs.get(ATTR_POLICY_AMOUNT) == AMOUNT, refused_decision.attrs
 
         flip = requests.post(
@@ -583,7 +576,7 @@ def test_driving_the_cards_write_over_http_flips_a_refused_settlement_to_execute
             settled_decision.attrs.get(ATTR_POLICY_RULE)
             == "settlement-agent.autonomous.execute_limit"
         ), settled_decision.attrs
-        assert settled_decision.attrs.get(ATTR_POLICY_LIMIT) == 1_000_000, (
+        assert settled_decision.attrs.get(ATTR_POLICY_LIMIT) == 6000, (
             settled_decision.attrs
         )
         assert settled_decision.attrs.get(ATTR_POLICY_AMOUNT) == AMOUNT, settled_decision.attrs

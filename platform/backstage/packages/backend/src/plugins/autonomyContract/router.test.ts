@@ -8,16 +8,6 @@ jest.mock('./telemetry');
 
 const SETTLEMENT_AGENT =
   'spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent';
-// Reproduced as a literal, independently of router.ts's own
-// TARGETED_IDENTITIES -- the same reason router.ts's own header comment
-// gives for reproducing rather than importing: if TARGETED_IDENTITIES ever
-// drifts (a typo in the senior's SPIFFE id), a test that imported the same
-// corrupted constant would still agree with itself. This constant, and the
-// test below that uses it, catches a corrupted senior SPIFFE id in
-// router.ts that an import would have missed.
-const SENIOR_SETTLEMENT_AGENT =
-  'spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent';
-
 // `elseBranch` is a required argument, not hardcoded to 'assisted': if
 // then and else were ever byte-identical across every fixture, a mutation
 // swapping router.ts's `if?.[1]` for `if?.[2]` (reading the ELSE branch
@@ -93,7 +83,7 @@ beforeEach(() => {
 });
 
 describe('GET /status', () => {
-  it('resolves both identities from the live object, not a cached copy', async () => {
+  it('resolves the identity from the live object, not a cached copy', async () => {
     const getFlag = jest.fn(async () => flag('assisted', 'assisted'));
     const { app, auditor } = buildApp({ getFlag });
 
@@ -105,10 +95,7 @@ describe('GET /status', () => {
       level: 'assisted',
       branch: 'targeting-then',
     });
-    expect(res.body.perIdentity['senior-settlement-agent']).toEqual({
-      level: 'assisted',
-      branch: 'targeting-else',
-    });
+    expect(Object.keys(res.body.perIdentity)).toEqual(['settlement-agent']);
     expect(auditor.createEvent).toHaveBeenCalledWith(
       expect.objectContaining({ eventId: 'contract-read' }),
     );
@@ -122,36 +109,21 @@ describe('GET /status', () => {
     const res = await request(app).get('/api/autonomy-contract/status');
 
     expect(res.body.perIdentity['settlement-agent'].level).toBe('autonomous');
-    expect(res.body.perIdentity['senior-settlement-agent'].level).toBe('assisted');
   });
 
-  it('resolves BOTH the junior and senior identity to the then-branch when both are targeted, pinning both SPIFFE literals', async () => {
-    // Every OTHER test only requires the senior identity to land on
-    // targeting-else, which ANY non-matching string does, so a corrupted
-    // senior SPIFFE id in router.ts would go unnoticed there. Putting both
-    // ids in the targeted caller list is what pins the literal here: if
-    // TARGETED_IDENTITIES['senior-settlement-agent'] drifts by so much as a
-    // character, it stops matching this fixture's callerIds and falls
-    // through to the else-branch ('assisted') instead of the then-branch
-    // ('autonomous') asserted below.
+  it('pins the settlement-agent SPIFFE literal: it lands on the then-branch only if router.ts names exactly this id', async () => {
+    // A corrupted literal in TARGETED_IDENTITIES would stop matching this
+    // fixture's callerIds and fall through to the else-branch ('assisted')
+    // instead of the then-branch ('autonomous') asserted below.
     const getFlag = jest.fn(async () =>
-      flagWithCallers(
-        [SETTLEMENT_AGENT, SENIOR_SETTLEMENT_AGENT],
-        'autonomous',
-        'assisted',
-      ),
+      flagWithCallers([SETTLEMENT_AGENT], 'autonomous', 'assisted'),
     );
     const { app } = buildApp({ getFlag });
 
     const res = await request(app).get('/api/autonomy-contract/status');
 
-    expect(res.body.perIdentity['settlement-agent']).toEqual({
-      level: 'autonomous',
-      branch: 'targeting-then',
-    });
-    expect(res.body.perIdentity['senior-settlement-agent']).toEqual({
-      level: 'autonomous',
-      branch: 'targeting-then',
+    expect(res.body.perIdentity).toEqual({
+      'settlement-agent': { level: 'autonomous', branch: 'targeting-then' },
     });
   });
 

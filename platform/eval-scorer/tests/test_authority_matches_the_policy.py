@@ -25,7 +25,11 @@ import ast
 from pathlib import Path
 
 import fixtures
-from scorer.authority import PUBLISHED_EXECUTE_LIMITS
+from scorer.authority import (
+    PUBLISHED_EXECUTE_LIMITS,
+    PUBLISHED_HUMAN_APPROVAL_RULE,
+    PUBLISHED_HUMAN_APPROVERS,
+)
 
 # platform/eval-scorer/tests/ -> platform/ -> policy-decision-service/pds
 RULES = (
@@ -66,6 +70,41 @@ def _execute_limits_from_rules() -> dict[tuple[str, str], float]:
         }
     raise AssertionError(
         f"no `EXECUTE_LIMITS = {{...}}` assignment found in {RULES}"
+    )
+
+
+def _assigned_literal(name: str):
+    """The literal `rules.py` assigns to a module-level `name`, via `ast`."""
+    tree = ast.parse(RULES.read_text())
+    for node in tree.body:
+        targets = (
+            [node.target] if isinstance(node, ast.AnnAssign) else
+            getattr(node, "targets", [])
+        )
+        if any(isinstance(t, ast.Name) and t.id == name for t in targets):
+            value = node.value
+            if (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id == "frozenset"
+            ):
+                return frozenset(ast.literal_eval(value.args[0]))
+            return ast.literal_eval(value)
+    raise AssertionError(f"no `{name} = ...` assignment found in {RULES}")
+
+
+def test_the_published_human_approvers_are_the_policys_own():
+    policy = _assigned_literal("HUMAN_APPROVERS")
+    assert policy, "pds/rules.py names no human approver at all"
+    assert PUBLISHED_HUMAN_APPROVERS == policy, (
+        f"eval-scorer publishes {sorted(PUBLISHED_HUMAN_APPROVERS)}; the "
+        f"policy enforces {sorted(policy)}"
+    )
+
+
+def test_the_published_human_approval_rule_is_the_policys_own():
+    assert PUBLISHED_HUMAN_APPROVAL_RULE == _assigned_literal(
+        "HUMAN_APPROVAL_RULE"
     )
 
 

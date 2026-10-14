@@ -461,7 +461,7 @@ PAYMENTS_API_URL = os.environ.get("PAYMENTS_API_URL", "http://localhost:18080")
 # directly against the live gateway.
 BATCH_REJECTED = 400
 
-# Over `settlement-agent`'s assisted allowance of 6,000, so a batch that DID
+# Over `settlement-agent`'s assisted allowance (0 since M8), so a batch that DID
 # reach the guardrail would produce a `policy.decision` span -- and one that
 # bypassed it would execute a real over-limit payment. The probe cannot
 # produce a false negative by asking for something that was never decidable.

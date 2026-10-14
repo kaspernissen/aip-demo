@@ -62,21 +62,11 @@ COMPONENTS=(
   "claims-agent:agents/claims-agent:northstar-agents"
   "customer-ui:apps/customer-ui:northstar-agents"
   "policy-decision-service:platform/policy-decision-service:northstar-platform"
-  # reviewer-ui. Note what is deliberately NOT here: senior-settlement-agent
-  # -- it is the settlement-agent image, unmodified, in a second Deployment
-  # (deploy/k8s/senior-settlement-agent.yaml's own header), so it has no
-  # build context of its own and is applied by hand
-  # (`kubectl apply -f deploy/k8s/senior-settlement-agent.yaml`) rather than
-  # rebuilt here. reviewer-ui is a genuinely new image, built from its own
-  # apps/reviewer-ui context, so it belongs in this list the same way
+  # reviewer-ui: a genuinely new image built from its own apps/reviewer-ui
+  # context, so it belongs in this list the same way
   # policy-decision-service's own addition comment argues: a component
   # outside this list keeps running whatever image happened to be pushed
   # last, silently.
-  #
-  # "Applied by hand" is only half the story for senior-settlement-agent: it
-  # still needs restarting whenever this script pushes a new
-  # settlement-agent image, since both Deployments name the same mutable tag
-  # -- see COMPANION_DEPLOYMENTS below.
   "reviewer-ui:apps/reviewer-ui:northstar-agents"
   # eval-scorer. Registered here for the same reason
   # policy-decision-service's own addition comment argues -- a component
@@ -111,38 +101,6 @@ COMPONENTS=(
   # nothing here reads a catalog-info.yaml file that does not yet exist.
   "backstage:platform/backstage:northstar-platform"
 )
-
-# component:companion-deployment:namespace
-#
-# A *companion* is a Deployment that runs one of COMPONENTS' images but is not
-# a component itself: no build context, no manifest applied by this script. It
-# still has to be RESTARTED whenever that image is rebuilt, because both
-# Deployments name the same MUTABLE tag and `kubectl apply` over an unchanged
-# manifest is a no-op.
-#
-# `deploy/k8s/settlement-agent.yaml` and
-# `deploy/k8s/senior-settlement-agent.yaml` both name
-# `localhost:5001/northstar/settlement-agent:dev` -- read out of both
-# manifests, not assumed. Without this list, running this script for
-# `settlement-agent` (or a bare full run) pushes a new image under that tag
-# and restarts `deployment/settlement-agent` alone, leaving
-# `deployment/senior-settlement-agent` serving the previous build.
-# scripts/setup-kind.sh's Step 9d already states this hazard in full -- "Two
-# pods of 'the same image' silently disagreeing is the worst version of this
-# to debug" -- so this list is what closes it on the per-component rebuild
-# path too, not just the full-cluster one.
-COMPANION_DEPLOYMENTS=(
-  "settlement-agent:senior-settlement-agent:northstar-agents"
-)
-
-component_companions() {
-  local name="$1" entry
-  for entry in "${COMPANION_DEPLOYMENTS[@]}"; do
-    if [[ "${entry%%:*}" == "$name" ]]; then
-      echo "${entry#*:}"
-    fi
-  done
-}
 
 component_names() {
   local entry
@@ -321,48 +279,6 @@ for component in "${targets[@]}"; do
   kubectl apply -f "$ROOT/deploy/k8s/${component}.yaml"
   kubectl -n "$namespace" rollout restart "deployment/${component}"
   kubectl -n "$namespace" rollout status "deployment/${component}" --timeout=180s
-
-  # Every other Deployment running the image this step just pushed. No
-  # `kubectl apply` for these: their manifests are not this script's to apply
-  # (senior-settlement-agent's is applied by setup-kind.sh's Step 9d), and an
-  # apply would be a no-op anyway. What they need is the restart, and they
-  # need it for exactly the reason the component itself does.
-  while IFS= read -r companion; do
-    [[ -n "$companion" ]] || continue
-    companion_ns="${companion##*:}"
-    companion_name="${companion%%:*}"
-    # A companion that does not exist YET is not an error: setup-kind.sh's
-    # Step 9/9 runs this script for the five stage-1 components before the
-    # manifest that creates senior-settlement-agent is applied, later in that
-    # same script (Step 9d). On a cold bring-up, `rollout restart` against a
-    # non-existent Deployment under `set -e` would take the whole run down at
-    # the first of five components -- and since this repo has no git remote,
-    # rebuilding from scratch is the only recovery path there is, so that
-    # failure has to be avoided rather than merely diagnosed.
-    #
-    # Skipping is correct here and costs nothing: a Deployment created AFTER
-    # this push pulls the image this step just pushed, by definition, so no
-    # restart is owed. Step 9d creates it moments later.
-    #
-    # What this must NOT become is a silent skip -- treating any kubectl
-    # failure as "not created yet" would quietly leave a companion serving a
-    # stale image, the exact hazard COMPANION_DEPLOYMENTS exists to prevent.
-    # So only a genuine NotFound is tolerated: an unreachable API server, an
-    # RBAC denial, or any other kubectl failure still aborts loudly instead.
-    if ! companion_probe_err="$(kubectl -n "$companion_ns" get "deployment/${companion_name}" 2>&1 >/dev/null)"; then
-      if [[ "$companion_probe_err" == *NotFound* || "$companion_probe_err" == *"not found"* ]]; then
-        echo -e "${YELLOW}Step ${step}/${total}: companion deployment/${companion_name} does not exist yet -- skipping its restart; whatever creates it will already be running this image.${NC}"
-        continue
-      fi
-      echo -e "${RED}Error: could not determine whether deployment/${companion_name} exists in namespace ${companion_ns}.${NC}" >&2
-      echo "${companion_probe_err}" >&2
-      echo "Refusing to continue: treating this as 'not created yet' could leave the companion on a stale image." >&2
-      exit 1
-    fi
-    echo -e "${BLUE}Step ${step}/${total}: Restarting companion deployment/${companion_name} (same image, second identity)${NC}"
-    kubectl -n "$companion_ns" rollout restart "deployment/${companion_name}"
-    kubectl -n "$companion_ns" rollout status "deployment/${companion_name}" --timeout=180s
-  done < <(component_companions "$component")
 
   echo -e "${GREEN}${component} deployed.${NC}"
   deployed+=("$component")

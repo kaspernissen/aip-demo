@@ -20,12 +20,12 @@ otherwise and roots a trace of its own. `GET /healthz` really does produce
 nothing -- it makes no outbound call and owns no domain event.
 
 HTTPXClientInstrumentor is still applied: it is what emits CLIENT spans for
-the outbound calls ledger.py and approval.py make (to payments-api and to
-senior-settlement-agent respectively), and -- the property that actually
+the outbound calls ledger.py and gateway.py make (to payments-api and to
+agentgateway respectively), and -- the property that actually
 matters for the demo -- it is what injects the `traceparent` header on every
 one of them while one of this service's own spans is current, which is how
-the senior agent's inbound server span, and payments-api's own server spans
-for both ledger reads, end up in `review.decision`'s / `review.queue`'s trace
+the gateway's, the PDS's and payments-mcp's spans for the release, and
+payments-api's own server spans for the ledger reads, end up in `review.decision`'s / `review.queue`'s trace
 rather than starting unrelated ones.
 
 This service registers the stock upstream `TraceContextTextMapPropagator`
@@ -86,8 +86,8 @@ def configure() -> None:
     )
 
     # Emits CLIENT spans for every outbound httpx call this process makes
-    # (ledger.py's calls to payments-api, approval.py's A2A call to
-    # senior-settlement-agent) and injects trace context into those outbound
+    # (ledger.py's calls to payments-api, gateway.py's MCP calls to
+    # agentgateway) and injects trace context into those outbound
     # headers.
     HTTPXClientInstrumentor().instrument()
 

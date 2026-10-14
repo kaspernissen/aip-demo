@@ -156,14 +156,14 @@ _MASTHEAD = (
 
 def _page(title: str, body: str) -> str:
     # The <h1> carries the title as VISIBLE text, not only the <title> tag:
-    # tests/e2e/test_supervised.py waits on `text=Review recorded`, and
+    # the e2e tests wait on `text=Review recorded`, and
     # Playwright's text engine matches rendered text, which <title> is not.
     return (
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         f"<title>{escape(title)}</title>{_FONTS}{_STYLE}</head>"
         f"<body>{_MASTHEAD}<main class=\"shell\"><h1>{escape(title)}</h1>{body}"
-        '<p class="back"><a href="/">&larr; Back to refused payments</a></p>'
+        '<p class="back"><a href="/">&larr; Back to payments awaiting approval</a></p>'
         "</main></body></html>"
     )
 
@@ -185,6 +185,8 @@ def _payment_card(payment: dict[str, Any]) -> str:
      rule <span class="figure">{escape(str(refusal.get("rule", "")))}</span>,
      limit <span class="figure">{escape(str(refusal.get("limit", "")))}</span>,
      requested <span class="figure">{escape(str(refusal.get("requested", "")))}</span></p>
+  <p><span class="label">Status</span> <span class="figure">awaiting approval</span>
+     &middot; <span class="label">Waiting since</span> <span class="figure">{escape(str(payment.get("awaitingSince", "")))}</span></p>
   <p class="narrative">The agent told the claimant: &ldquo;{escape(str(refusal.get("narrative", "")))}&rdquo;</p>
   <form method="post" action="/review/{escape(payment_id, quote=True)}">
     <label>Reviewer name
@@ -204,10 +206,10 @@ def list_page(payments: list[dict[str, Any]]) -> str:
         # No example reference may appear here, not even as a placeholder:
         # test_list_page_says_so_when_there_is_nothing_to_review asserts the
         # string "PAY-" is absent from this whole page.
-        body = '<p class="empty">There are no refused payments awaiting review.</p>'
+        body = '<p class="empty">There are no payments waiting for approval.</p>'
     else:
         body = "".join(_payment_card(p) for p in payments)
-    return _page("Refused payments", body)
+    return _page("Payments awaiting approval", body)
 
 
 def error_page(message: str) -> str:
@@ -225,6 +227,7 @@ class ResultView:
     elapsed_ms: int
     executed: dict[str, Any] | None
     error: str | None
+    rejected: dict[str, Any] | None = None
 
 
 def result_page(outcome: ResultView) -> str:
@@ -232,22 +235,22 @@ def result_page(outcome: ResultView) -> str:
     payment_id = escape(outcome.payment_id)
 
     # The tone class on the wrapper is the ONLY styling difference between
-    # these three, and the rejection branch deliberately takes the neutral one:
-    # test_result_page_for_a_rejection_records_no_execution asserts the
+    # these branches, and the rejection branch deliberately takes the neutral
+    # one: test_result_page_for_a_rejection_records_no_execution asserts the
     # substring "executed" appears nowhere on that page, so the settled state's
     # class is `is-settled`.
-    if outcome.decision == "reject":
+    if outcome.decision == "reject" and outcome.error is None:
         tone = "verdict"
         body = (
             f'<p class="ok">Rejected by {reviewer}.</p>'
-            f"<p>Payment <span class=\"figure\">{payment_id}</span>: no execution "
-            "was attempted.</p>"
+            f"<p>Payment <span class=\"figure\">{payment_id}</span>: no money moved, "
+            "and none will.</p>"
         )
     elif outcome.executed is not None:
         executed = outcome.executed
         tone = "verdict is-settled"
         body = (
-            f'<p class="ok">Approved by {reviewer}.</p>'
+            f'<p class="ok">Paid by the platform after your approval, {reviewer}.</p>'
             f"<p>Payment <span class=\"figure\">{escape(str(executed.get('paymentId', '')))}</span> "
             f"is now <span class=\"figure\">{escape(str(executed.get('status', '')))}</span> for "
             f"<span class=\"figure\">{escape(str(executed.get('amount', '')))} "
@@ -255,11 +258,12 @@ def result_page(outcome: ResultView) -> str:
         )
     else:
         tone = "verdict is-fault"
+        what = "approval" if outcome.decision == "approve" else "rejection"
         body = (
-            f"<p>Approved by {reviewer}, but the execution did not happen.</p>"
+            f"<p>{what.capitalize()} by {reviewer}, but it did not happen.</p>"
             f'<p class="error">Payment <span class="figure">{payment_id}</span> '
-            f"was not executed: {escape(outcome.error or 'unknown error')}</p>"
+            f"was not changed: {escape(outcome.error or 'unknown error')}</p>"
         )
 
-    body += f'<p><span class="label">Elapsed since refusal</span> {outcome.elapsed_ms} ms</p>'
+    body += f'<p><span class="label">Waited</span> {outcome.elapsed_ms} ms</p>'
     return _page("Review recorded", f'<div class="{tone}">{body}</div>')

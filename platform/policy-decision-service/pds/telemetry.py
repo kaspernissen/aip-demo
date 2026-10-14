@@ -53,6 +53,9 @@ ATTR_AUTONOMY = "policy.autonomy.level"     # resolved from flagd, not a constan
 # we could not ask" without cross-referencing a second signal.
 ATTR_AUTONOMY_REASON = "policy.autonomy.reason"
 ATTR_RETRYABLE = "policy.decision.retryable"
+# What payments-api showed for the payment a human approver asked to release.
+# Set only on that decision; `unreadable` when the ledger read failed.
+ATTR_LEDGER_STATUS = "policy.ledger.status"
 
 # The one attribute on this span that is NOT ours to name. Unlike
 # ATTR_AUTONOMY and its `policy.`/`northstar.`-prefixed siblings -- which
@@ -74,7 +77,7 @@ ATTR_FLAG_VERSION = FEATURE_FLAG_VERSION
 ATTRIBUTES = (
     ATTR_DECISION, ATTR_RULE, ATTR_CALLER, ATTR_TOOL, ATTR_AMOUNT,
     ATTR_CURRENCY, ATTR_LIMIT, ATTR_AUTONOMY, ATTR_AUTONOMY_REASON,
-    ATTR_RETRYABLE, ATTR_FLAG_VERSION,
+    ATTR_RETRYABLE, ATTR_LEDGER_STATUS, ATTR_FLAG_VERSION,
 )
 
 # The subset of ATTRIBUTES this service invented (Gap 3) versus borrowed from

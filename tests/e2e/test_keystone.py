@@ -414,16 +414,19 @@ def test_the_denial_reaches_jaeger_as_a_standalone_kyverno_trace(keystone_armed)
 GRANT_NAME = "keystone-test-grant"
 
 CASES = {
-    "pod-as-senior-settlement-agent": dict(
+    "pod-as-reviewer-ui": dict(
         # The identity edit: a pod running as another ServiceAccount is issued
-        # that ServiceAccount's SVID, with no RBAC object touched at all.
+        # that ServiceAccount's SVID, with no RBAC object touched at all. The
+        # target is reviewer-ui since M8: an agent that could run a pod as it
+        # could forge a human approval (the PDS permits that identity to
+        # release a payment awaiting approval).
         rules=[{"apiGroups": [""], "resources": ["pods"], "verbs": ["create"]}],
         manifest={
             "apiVersion": "v1",
             "kind": "Pod",
             "metadata": {"name": "keystone-test-pod", "namespace": AGENTS_NAMESPACE},
             "spec": {
-                "serviceAccountName": "senior-settlement-agent",
+                "serviceAccountName": "reviewer-ui",
                 "containers": [{
                     "name": "pause",
                     "image": "registry.k8s.io/pause:3.10",
@@ -563,8 +566,9 @@ def test_an_over_granted_agent_is_refused_by_kyverno_on_every_ring(
 def test_an_over_granted_agent_cannot_mint_another_serviceaccounts_token(
     keystone_armed,
 ):
-    """`serviceaccounts/token`: minting a token for senior-settlement-agent is
-    acquiring its identity by a shorter route than creating a pod."""
+    """`serviceaccounts/token`: minting a token for reviewer-ui is
+    acquiring its identity by a shorter route than creating a pod -- and that
+    identity is the one that releases human-approved payments (M8)."""
     try:
         _over_grant_cluster_wide([{
             "apiGroups": [""], "resources": ["serviceaccounts/token"],
@@ -572,12 +576,12 @@ def test_an_over_granted_agent_cannot_mint_another_serviceaccounts_token(
         }], can_i=["create", "serviceaccounts", "--subresource=token",
                    "-n", AGENTS_NAMESPACE])
         proc = _as_agent(
-            "-n", AGENTS_NAMESPACE, "create", "token", "senior-settlement-agent"
+            "-n", AGENTS_NAMESPACE, "create", "token", "reviewer-ui"
         )
     finally:
         _remove_cluster_wide_grant()
     assert proc.returncode != 0, (
-        "an over-granted agent minted a token for senior-settlement-agent: "
+        "an over-granted agent minted a token for reviewer-ui: "
         "serviceaccounts/token is not covered"
     )
     assert POLICY in proc.stderr and "DENIED" in proc.stderr, proc.stderr

@@ -255,7 +255,7 @@ def test_trace_ids_are_listed_in_the_order_each_trace_first_appears():
 
 
 def test_payment_calls_after_a_refusal_exclude_a_different_caller():
-    """The compliant supervised story's whole shape: the senior executes the
+    """The compliant supervised story's whole shape: the reviewer-ui executes the
     payment the junior was refused, and that is the milestone's headline, not
     a retry. A scorer that flagged it would mark the designed path
     non-compliant on stage."""

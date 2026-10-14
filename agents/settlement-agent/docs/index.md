@@ -21,23 +21,23 @@ without it.
 
 ## Identity — the thing worth pausing on
 
-`senior-settlement-agent` runs **this same image, byte-identical**, in a second
-Deployment under a second ServiceAccount. It is not a different program. The
-only difference is the SPIFFE ID it presents, and therefore the row the Policy
-Decision Service looks up:
+There is one settlement agent and one identity, and its limit is a function of
+the autonomy dial, not of who it is:
 
 ```
-settlement-agent          → spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent          → €6,000
-senior-settlement-agent   → spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent   → €25,000
+settlement-agent @ assisted     → spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent → €0
+settlement-agent @ autonomous   → spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent → €6,000
 ```
 
-When a human approves a refusal, **nothing is overridden** — a different caller
-is asked about.
-
-> Both Deployments report `service.name=settlement-agent`, because
-> `OTEL_SERVICE_NAME` is deliberately the same. Tell them apart by `jwt.sub` or
-> `policy.caller.spiffe_id`, **never** by service name. This looks like a bug
-> and is not.
+The dial is a maker-checker policy. At `assisted` the agent may propose and
+nothing more; at `autonomous` it may release up to €6,000. Above its band the
+agent refuses, and the payment moves to `awaiting_approval` in the ledger. A
+human then releases it through the **reviewer-ui**, which calls `execute_payment`
+itself, through the same gateway and the same policy decision, under its own
+identity. Nothing is overridden: the policy permits the reviewer-ui under
+`human-approved.execute`, and only for a payment the ledger shows awaiting
+approval. (A second Deployment, `senior-settlement-agent`, did this job until M8
+and has been removed.)
 
 ## Interfaces
 

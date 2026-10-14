@@ -54,7 +54,7 @@ one. Both halves are in this repo —
 `tests/test_anti_vacuity.py` here (fast, every commit) and
 `tests/e2e/test_policy_scores.py` at the repo root, which produces the
 violation on the live cluster by routing a human's approval to the *junior*
-settlement agent instead of the senior, and scores it out of OpenSearch.
+settlement agent instead of the reviewer-ui, and scores it out of OpenSearch.
 
 ## Shape
 

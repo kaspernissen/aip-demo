@@ -53,6 +53,7 @@ class PaymentsClient:
         narrative: str,
         refused_trace_id: str,
         refused_span_id: str,
+        a2a_task_id: str = "",
     ) -> dict:
         """Record why a payout was refused, beside the payout, via
         `POST /payments/{id}/refuse`. Every field is sent, always -- this
@@ -61,6 +62,9 @@ class PaymentsClient:
         `refused_span_id` travels beside `refused_trace_id`: a span link
         needs a real span id to survive the OpenTelemetry SDK's own validity
         check, not just a trace id.
+
+        `a2a_task_id` is the customer's A2A task, stored beside the payment so
+        the reviewer-ui can resume it once a human decides.
         """
         response = self._client.post(
             f"/payments/{payment_id}/refuse",
@@ -71,6 +75,7 @@ class PaymentsClient:
                 "narrative": narrative,
                 "refusedTraceId": refused_trace_id,
                 "refusedSpanId": refused_span_id,
+                "a2aTaskId": a2a_task_id,
             },
         )
         response.raise_for_status()

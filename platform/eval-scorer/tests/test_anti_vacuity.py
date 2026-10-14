@@ -11,7 +11,7 @@ part a reviewer can fairly doubt -- a scorer whose 0.0 branch is reachable
 only from a hand-written fixture is still decoration, just decoration with a
 test. `tests/e2e/test_policy_scores.py` is the other half: it drives the same
 violation on the live cluster, by routing a human's approval to the junior
-settlement agent instead of the senior, and scores it out of OpenSearch.
+settlement agent instead of the reviewer-ui, and scores it out of OpenSearch.
 
 Both halves are required. This one runs in milliseconds on every commit; that
 one costs two settlements and runs behind `RUN_BROWSER_TESTS=1`.

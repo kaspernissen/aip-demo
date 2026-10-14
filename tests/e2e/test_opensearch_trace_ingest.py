@@ -140,7 +140,7 @@ ATTR_RETRYABLE_CANONICAL = "policy.decision.retryable"
 ATTR_RETRYABLE_OPENSEARCH = "policy.decision_retryable"
 ATTR_DECISION = "policy.decision"
 
-# €6,200 against settlement-agent's €6,000 assisted execute allowance -- the
+# €6,200 against settlement-agent's assisted execute allowance (€0 since M8; it was €6,000) -- the
 # same numbers `test_policy_denial.py`'s denial scenario uses, so this file
 # and the demo exercise the same rule.
 DENIED_AMOUNT = 6200
@@ -387,7 +387,7 @@ def ingest_run(gateway_url, svid):
     result_text = " ".join(
         c.get("text", "") for c in result.get("content") or [])
     assert result.get("isError") is True and live.parse_deny(result_text), (
-        f"€{DENIED_AMOUNT} above a €6,000 allowance was not refused, so this "
+        f"€{DENIED_AMOUNT} above the assisted allowance was not refused, so this "
         "run did not produce the denial half of the decision pair: "
         f"{executed.text[:300]!r}"
     )

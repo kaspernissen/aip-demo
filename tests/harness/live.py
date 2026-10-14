@@ -37,6 +37,7 @@ import base64
 import contextlib
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -215,6 +216,54 @@ def submit_claim(
     )
     reply = json.loads(body["result"]["parts"][0]["text"])
     return {"trace_id": trace_id, "reply": reply}
+
+
+@contextlib.contextmanager
+def autonomy(level: str):
+    """The flag at `level` for the duration, always restored to assisted.
+
+    M8's resting state releases nothing; a test that needs the agent to settle
+    a payment itself runs inside `with live.autonomy(contract.AUTONOMOUS):`.
+    """
+    from tests.harness import contract
+
+    contract.set_targeted_branch(level)
+    try:
+        yield
+    finally:
+        contract.set_targeted_branch(contract.ASSISTED)
+
+
+PAYMENTS_API_URL = os.environ.get("PAYMENTS_API_URL", "http://localhost:18080")
+
+
+def get_payment(payment_id: str) -> dict:
+    """Read a payment straight back from the ledger it lives in -- the ledger
+    is the authority on status, amount and the refusal record, never the reply
+    a settlement or an approval happened to carry."""
+    response = httpx.get(f"{PAYMENTS_API_URL}/payments/{payment_id}", timeout=10)
+    assert response.status_code == 200, (
+        f"could not read payment {payment_id} back from the ledger at "
+        f"{PAYMENTS_API_URL} (HTTP {response.status_code}): {response.text[:300]}"
+    )
+    return response.json()
+
+
+REVIEWER_UI_URL = os.environ.get("REVIEWER_UI_URL", "http://localhost:8081")
+REVIEWER_UI_SPIFFE_ID = (
+    "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui"
+)
+
+
+def review(payment_id: str, decision: str, reviewer_id: str) -> dict:
+    """A reviewer's decision through reviewer-ui's own JSON route."""
+    response = httpx.post(
+        f"{REVIEWER_UI_URL}/api/review/{payment_id}",
+        json={"reviewerId": reviewer_id, "decision": decision},
+        timeout=60,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 # --- the gateway (MCP) -------------------------------------------------------

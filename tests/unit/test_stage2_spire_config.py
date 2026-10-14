@@ -118,9 +118,9 @@ GATEWAY_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-platform/sa/agentgate
 PDS_SPIFFE_ID = (
     f"spiffe://{TRUST_DOMAIN}/ns/northstar-platform/sa/policy-decision-service"
 )
-# The fourth and fifth registered workloads. Both are real ServiceAccounts in
-# `deploy/k8s/`, so SPIRE's `spiffeIDTemplate` derives these without any new
-# registration.
+# The reviewer-ui identity: a real ServiceAccount in `deploy/k8s/`. Since M8 it
+# releases money (the PDS permits it under `human-approved.execute`), so it
+# carries an explicit non-fallback ClusterSPIFFEID in registration.yaml.
 #
 # Adding an identity to the cluster and adding it to this allow-list must
 # happen together: an allow-list that lags a real new identity rejects a
@@ -128,9 +128,6 @@ PDS_SPIFFE_ID = (
 # fix that suggests itself -- editing the document to match the test rather
 # than widening the list -- makes the document less true while the guard
 # stays green.
-SENIOR_SETTLEMENT_SPIFFE_ID = (
-    f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/senior-settlement-agent"
-)
 REVIEWER_UI_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/reviewer-ui"
 # The sixth registered workload, and the third in `northstar-platform`.
 #
@@ -166,14 +163,16 @@ EVAL_SCORER_SPIFFE_ID = (
 # the count and the className. Kept in one place because they were two places
 # and the second was a hand-written `== 3`, which is the shape that drifts.
 #
-# `senior-settlement-agent` and `reviewer-ui` are deliberately NOT here: they
-# are in `northstar-agents`, which the chart's catch-all fallback CR does
-# cover, so they genuinely need no registration of their own. Namespace is what
-# decides -- see this file's EVAL_SCORER_SPIFFE_ID comment for the measurement
-# that established it, and what believing otherwise cost.
+# `reviewer-ui` is in `northstar-agents`, which the chart's catch-all fallback
+# CR also covers, so it did not NEED a registration of its own. M8 gave it one
+# anyway, because this identity now releases money and should be in-tree and
+# reviewable. (senior-settlement-agent, retired in M8, never had one.)
 REGISTERED_CLUSTER_SPIFFEIDS = {
     "northstar-settlement-agent": (
         "northstar-agents", "settlement-agent", SETTLEMENT_SPIFFE_ID,
+    ),
+    "northstar-reviewer-ui": (
+        "northstar-agents", "reviewer-ui", REVIEWER_UI_SPIFFE_ID,
     ),
     "northstar-agentgateway": (
         "northstar-platform", "agentgateway", GATEWAY_SPIFFE_ID,
@@ -901,7 +900,6 @@ def test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures(doc):
         SETTLEMENT_SPIFFE_ID,
         GATEWAY_SPIFFE_ID,
         PDS_SPIFFE_ID,
-        SENIOR_SETTLEMENT_SPIFFE_ID,
         REVIEWER_UI_SPIFFE_ID,
         EVAL_SCORER_SPIFFE_ID,
     }

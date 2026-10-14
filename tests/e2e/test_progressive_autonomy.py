@@ -88,7 +88,7 @@ from tests.e2e.test_policy_denial import (  # noqa: F401 -- reused, not reimplem
     browser_test,
     claims_agent_route,
 )
-from tests.e2e.test_supervised import _get_payment  # same ledger-read helper
+from tests.harness.live import get_payment as _get_payment  # same ledger-read helper
 
 KUBE_CONTEXT = "kind-northstar"
 PLATFORM_NAMESPACE = "northstar-platform"
@@ -102,7 +102,7 @@ AGENTS_NAMESPACE = "northstar-agents"
 OFO_NAMESPACE = "open-feature-operator-system"
 OFO_DEPLOYMENT = "open-feature-operator-controller-manager"
 
-AMOUNT = 6200.0  # the over-the-assisted-limit figure used throughout this suite
+AMOUNT = 5800.0  # waits at assisted (limit 0), settles at autonomous (limit 6,000)
 
 
 def _kubectl(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
@@ -198,7 +198,7 @@ def test_the_same_claim_refuses_then_settles_when_only_the_contract_changes(
     contract.set_targeted_branch(contract.ASSISTED)
     try:
         refused = _drive_browser(f"CLM-AUTONOMY-{uuid.uuid4().hex[:8]}", AMOUNT)
-        assert refused.reply.get("status") == "refused", refused.reply
+        assert refused.reply.get("status") == "awaiting_approval", refused.reply
         refused_decisions = _decisions(refused.trace, EXECUTE_TOOL)
         assert len(refused_decisions) == 1, (
             f"expected exactly one policy.decision span for {EXECUTE_TOOL}, "
@@ -210,7 +210,7 @@ def test_the_same_claim_refuses_then_settles_when_only_the_contract_changes(
             refused_decision.attrs.get(ATTR_POLICY_RULE)
             == "settlement-agent.assisted.execute_limit"
         ), refused_decision.attrs
-        assert refused_decision.attrs.get(ATTR_POLICY_LIMIT) == 6000, refused_decision.attrs
+        assert refused_decision.attrs.get(ATTR_POLICY_LIMIT) == 0, refused_decision.attrs
         assert refused_decision.attrs.get(ATTR_POLICY_AMOUNT) == AMOUNT, refused_decision.attrs
 
         contract.set_targeted_branch(contract.AUTONOMOUS)
@@ -228,7 +228,7 @@ def test_the_same_claim_refuses_then_settles_when_only_the_contract_changes(
             settled_decision.attrs.get(ATTR_POLICY_RULE)
             == "settlement-agent.autonomous.execute_limit"
         ), settled_decision.attrs
-        assert settled_decision.attrs.get(ATTR_POLICY_LIMIT) == 1_000_000, (
+        assert settled_decision.attrs.get(ATTR_POLICY_LIMIT) == 6000, (
             settled_decision.attrs
         )
         assert settled_decision.attrs.get(ATTR_POLICY_AMOUNT) == AMOUNT, settled_decision.attrs

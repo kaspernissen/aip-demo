@@ -28,11 +28,7 @@ metadata:
     # label selector (`backstage.io/kubernetes-id=<entity name>`), so this
     # Component's catalog entry (agents/settlement-agent/catalog-info.yaml)
     # shows its live workload. Added to the Pod template below too -- the
-    # plugin queries Pods, not just Deployments. Deliberately NOT added to
-    # senior-settlement-agent's own Deployment (deploy/k8s/
-    # senior-settlement-agent.yaml): that identity has no catalog entry of
-    # its own (this file's catalog-info.yaml says why), so labelling it here
-    # would make it show up under a Component it is not.
+    # plugin queries Pods, not just Deployments.
     backstage.io/kubernetes-id: settlement-agent
 spec:
   replicas: 1

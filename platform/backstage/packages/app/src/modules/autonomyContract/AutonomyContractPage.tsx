@@ -50,8 +50,7 @@ interface StatusResponse {
 // give the two rows a friendlier label, never to decide which identities
 // exist (that stays entirely the backend's own list).
 const IDENTITY_LABELS: Record<string, string> = {
-  'settlement-agent': 'settlement-agent (junior)',
-  'senior-settlement-agent': 'senior-settlement-agent',
+  'settlement-agent': 'settlement-agent',
 };
 
 const WRITABLE_IDENTITY = 'settlement-agent';

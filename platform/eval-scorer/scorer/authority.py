@@ -26,24 +26,33 @@ the two tables disagree. So the copy is independent at runtime (the container
 carries no PDS code, and could not import it if it wanted to) and checked at
 build time, which is the combination the argument above actually needs.
 
-Values below were read from `pds/rules.py::EXECUTE_LIMITS` on 2026-09-13 and
-are reproduced verbatim, including the autonomy level each is keyed by.
+Values below were read from `pds/rules.py::EXECUTE_LIMITS` and
+`HUMAN_APPROVERS` on 2026-10-14 and are reproduced verbatim, including the
+autonomy level each limit is keyed by.
+
+M8 made the dial mean maker-checker: the settlement agent may release nothing
+at `assisted` and up to EUR 6,000 at `autonomous`, and a human releases the
+rest through the reviewer-ui, whose identity has no limit and no level -- it
+may release exactly what the ledger shows awaiting approval.
 """
 from __future__ import annotations
 
 TRUST_DOMAIN = "northstar.local"
 
 SETTLEMENT_AGENT = f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/settlement-agent"
-SENIOR_SETTLEMENT_AGENT = (
-    f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/senior-settlement-agent"
-)
+REVIEWER_UI = f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/reviewer-ui"
 
 # (SPIFFE ID, autonomy level) -> the most this identity may execute.
 PUBLISHED_EXECUTE_LIMITS: dict[tuple[str, str], float] = {
-    (SETTLEMENT_AGENT, "assisted"): 6000.0,
-    (SETTLEMENT_AGENT, "autonomous"): 1_000_000.0,
-    (SENIOR_SETTLEMENT_AGENT, "assisted"): 25_000.0,
+    (SETTLEMENT_AGENT, "assisted"): 0.0,
+    (SETTLEMENT_AGENT, "autonomous"): 6000.0,
 }
+
+# Identities that release a payment a human approved. They have no limit and no
+# level; the PDS permits them under one rule, and only for a payment the ledger
+# shows awaiting approval.
+PUBLISHED_HUMAN_APPROVERS: frozenset[str] = frozenset({REVIEWER_UI})
+PUBLISHED_HUMAN_APPROVAL_RULE = "human-approved.execute"
 
 
 def published_limit(caller: str, autonomy: str) -> float | None:

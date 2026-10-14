@@ -119,14 +119,12 @@ Usage: setup-kind.sh [--stage N]
                           (8081 -> nodePort 30081, for reviewer-ui) --
                           deploy/kind/stage3.yaml.
                           [installs, on top of stage 2: reviewer-ui (the
-                          approval page a human reads and clicks) and
-                          senior-settlement-agent -- the SAME
-                          settlement-agent image in a second Deployment under
-                          a second ServiceAccount, because "senior" here is an
-                          identity, not a different program. The refusal
-                          record and the PDS's senior row are in stage 2's
-                          images already, since they are code in payments-api
-                          and the Policy Decision Service rather than separate
+                          approval page a human reads and clicks, and the
+                          identity that releases an approved payment through
+                          the gateway). The awaiting_approval state and the
+                          PDS's human-approval rule are in stage 2's images
+                          already, since they are code in payments-api and
+                          the Policy Decision Service rather than separate
                           workloads]
   --stage 4   Observable:           + OpenSearch, Prometheus, eval-scorer
                           [OpenSearch (single node, security plugin off) and
@@ -728,7 +726,7 @@ if [[ "${STAGE}" -ge 4 ]]; then
   #
   # **Not** from the SPIRE chart's catch-all `default` CR. That CR's
   # namespaceSelector excludes `northstar-platform` by name, which makes
-  # reviewer-ui and senior-settlement-agent (both in `northstar-agents`) the
+  # reviewer-ui (in `northstar-agents`) the
   # wrong precedent for anything deployed here: a platform workload with no CR
   # of its own gets no identity at all and nothing says so -- verified against
   # the live cluster with `spire-server entry show` rather than assumed.
@@ -982,52 +980,28 @@ if [[ "${STAGE}" -ge 3 ]]; then
   # README's documented path would get a gate that fails on a workload the
   # setup script never deployed.
   #
-  # Two components, and they are deployed differently for a reason that is
-  # already recorded in scripts/rebuild-and-deploy.sh's COMPONENTS list:
+  # One component: reviewer-ui is a genuinely new image with its own build
+  # context (apps/reviewer-ui/Dockerfile), so it goes through
+  # rebuild-and-deploy.sh like every other component -- which also gives it the
+  # apply/restart/rollout-status sequence the blocks above rely on.
   #
-  #   * reviewer-ui is a genuinely new image with its own build context
-  #     (apps/reviewer-ui/Dockerfile), so it goes through rebuild-and-deploy.sh
-  #     like every other component -- which also gives it the
-  #     apply/restart/rollout-status sequence the blocks above rely on.
-  #   * senior-settlement-agent has NO image of its own. It is the
-  #     settlement-agent image, unmodified, in a second Deployment with a
-  #     second ServiceAccount -- the whole point being that "senior" is an
-  #     identity, not a different program (deploy/k8s/senior-settlement-agent.yaml's
-  #     own header). So it is a bare `kubectl apply`, and the `rollout status`
-  #     is spelled out here rather than inherited.
-  #
-  # Order: the identity first, the UI second. reviewer-ui's
-  # SENIOR_SETTLEMENT_AGENT_URL -- the real name is in
-  # deploy/k8s/reviewer-ui.yaml and in apps/reviewer-ui/main.py's own
-  # `os.environ.get` default -- points at senior-settlement-agent's Service,
-  # and although nothing between here and the end of this script drives an
-  # approval (so neither order would leave a real request failing), this
-  # order means the window does not exist if a future step ever does.
-  #
-  # Nothing else is needed for either: deploy/platform/cilium-policies.yaml,
-  # applied at Step 6 above, already carries both workloads' policies, and
-  # neither needs a ClusterSPIFFEID of its own -- both take their ID from the
-  # SPIRE chart's catch-all `default` CR (fallback: true), which derives it
-  # from namespace + ServiceAccount. That is why
-  # deploy/platform/spire/registration.yaml is unchanged by this stage.
+  # Its identity is named in-tree (deploy/platform/spire/registration.yaml,
+  # northstar-reviewer-ui) and its network policy is in
+  # deploy/platform/cilium-policies.yaml, both applied above.
   echo -e "${BLUE}Step 9d/9 (stage 3): Deploying the supervised workloads...${NC}"
-  kubectl --context "kind-${CLUSTER_NAME}" apply \
-    -f "$ROOT/deploy/k8s/senior-settlement-agent.yaml"
-  # `rollout restart` for the same reason rebuild-and-deploy.sh does it, not by
-  # imitation: both Deployments name the MUTABLE tag
-  # `localhost:5001/northstar/settlement-agent:dev` (read from both manifests,
-  # not assumed). On a re-run Step 9 has just pushed a new image under that
-  # same tag, and `kubectl apply` over an unchanged manifest is a no-op -- so
-  # without this, senior-settlement-agent alone would keep serving the previous
-  # build while settlement-agent, which rebuild-and-deploy.sh does restart,
-  # served the new one. Two pods of "the same image" silently disagreeing is
-  # the worst version of this to debug.
-  kubectl --context "kind-${CLUSTER_NAME}" -n northstar-agents \
-    rollout restart deployment/senior-settlement-agent
-  kubectl --context "kind-${CLUSTER_NAME}" -n northstar-agents \
-    rollout status deployment/senior-settlement-agent --timeout=180s
+  # M8 retired senior-settlement-agent: a human approval is now reviewer-ui's
+  # own execute_payment through the gateway. `kubectl apply` never prunes, so a
+  # cluster that ran an earlier stage 3 still has its Deployment, Service,
+  # ServiceAccount and the two CiliumNetworkPolicies. Deleting them here keeps
+  # "senior is gone" true on a re-run, not only on a fresh cluster.
+  kubectl --context "kind-${CLUSTER_NAME}" -n northstar-agents delete \
+    deployment/senior-settlement-agent service/senior-settlement-agent \
+    serviceaccount/senior-settlement-agent --ignore-not-found
+  kubectl --context "kind-${CLUSTER_NAME}" -n northstar-agents delete \
+    ciliumnetworkpolicy/senior-settlement-agent-egress-allowlist \
+    ciliumnetworkpolicy/senior-settlement-agent-ingress-allowlist --ignore-not-found
   "$ROOT/scripts/rebuild-and-deploy.sh" reviewer-ui
-  echo -e "${GREEN}reviewer-ui is up on 8081 (NodePort, mapped by deploy/kind/stage3.yaml); senior-settlement-agent is up on 9002 in its own Deployment.${NC}"
+  echo -e "${GREEN}reviewer-ui is up on 8081 (NodePort, mapped by deploy/kind/stage3.yaml); it releases approved payments through the gateway under its own identity.${NC}"
 fi
 
 # A stray port-forward from another cluster on this machine (e.g.
@@ -1088,9 +1062,9 @@ elif [[ "${STAGE}" -eq 6 ]]; then
 elif [[ "${STAGE}" -eq 5 ]]; then
   echo -e "${GREEN}Stage 5 (Progressive autonomy) is up: stage 4's workloads and backends, unchanged, plus cert-manager ${CERT_MANAGER_VERSION}, the Open Feature Operator ${OPENFEATURE_CHART_VERSION}, and the northstar-autonomy FeatureFlag/FeatureFlagSource pair. The PDS pod carries a flagd sidecar answering on localhost:8013 inside it, serving flag 'autonomy-level' (variants assisted/autonomous, targeted on evaluation-context key spiffeId) -- still resolved nowhere yet, since this stage stands up the machinery only.${NC}"
 elif [[ "${STAGE}" -eq 4 ]]; then
-  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workloads (reviewer-ui, senior-settlement-agent) on the same Cilium ${CILIUM_CHART_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- unchanged -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them with the evidence view already imported, prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone, and eval-scorer scoring a settlement's trajectory against the five policy-adherence properties and emitting each score back into the trace it judges. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port, and the evidence view is at http://localhost:5601/app/dashboards#/view/northstar-evidence.${NC}"
+  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workload (reviewer-ui) on the same Cilium ${CILIUM_CHART_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- unchanged -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them with the evidence view already imported, prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone, and eval-scorer scoring a settlement's trajectory against the five policy-adherence properties and emitting each score back into the trace it judges. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port, and the evidence view is at http://localhost:5601/app/dashboards#/view/northstar-evidence.${NC}"
 elif [[ "${STAGE}" -eq 3 ]]; then
-  echo -e "${GREEN}Stage 3 (Supervised) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity, plus reviewer-ui and senior-settlement-agent -- so a refused payment now has a human who can approve it.${NC}"
+  echo -e "${GREEN}Stage 3 (Supervised) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity, plus reviewer-ui -- so a payment the agent may not release now has a human who can release it.${NC}"
 elif [[ "${STAGE}" -ge 2 ]]; then
   echo -e "${GREEN}Stage 2 (Governed) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity.${NC}"
 else

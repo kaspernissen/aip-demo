@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from scorer.authority import SENIOR_SETTLEMENT_AGENT, SETTLEMENT_AGENT
+from scorer.authority import REVIEWER_UI, SETTLEMENT_AGENT
 from scorer.trajectory import (
     DECISION_SPAN,
     EXECUTE_APPROVED_SPAN,
@@ -41,7 +41,7 @@ REFUSAL_TRACE = "598983e349a54b64bd0031d10b206bae"
 APPROVAL_TRACE = "7722c5abc143f5e56f399997784d8b67"
 
 JUNIOR = SETTLEMENT_AGENT
-SENIOR = SENIOR_SETTLEMENT_AGENT
+REVIEWER = REVIEWER_UI
 
 
 def _at(seconds: float) -> str:
@@ -69,6 +69,7 @@ def decision(
     trace: str = REFUSAL_TRACE,
     span_id: str | None = None,
     version: str | None = None,
+    rule: str | None = None,
 ) -> dict:
     attributes = {
         "policy.decision": outcome,
@@ -101,6 +102,8 @@ def decision(
     # produces.
     if version is not None:
         attributes["feature_flag.version"] = version
+    if rule is not None:
+        attributes["policy.rule"] = rule
     return {
         "traceId": trace,
         "spanId": span_id or f"dec1{int(order * 10):012d}",
@@ -162,24 +165,35 @@ def root(order: float, trace: str = REFUSAL_TRACE, span_id: str = "9007a5da00000
 
 
 def straight_through(amount: float = 5800.0) -> Trajectory:
-    """EUR 5,800: proposed, permitted, executed. No refusal, no human."""
+    """EUR 5,800: proposed, permitted, executed by the agent at `autonomous`.
+
+    No refusal, no human. Under maker-checker the agent may only execute at
+    `autonomous` (EUR 6,000); at `assisted` its limit is nothing.
+    """
     return Trajectory.from_documents(
         "CLM-PERMIT-0001",
         [
             root(0.0),
             decision(2.0, "propose_payment", "permit", amount=amount),
-            decision(4.0, "execute_payment", "permit", amount=amount, limit=6000.0),
+            decision(
+                4.0,
+                "execute_payment",
+                "permit",
+                amount=amount,
+                limit=6000.0,
+                autonomy="autonomous",
+            ),
         ],
     )
 
 
 def supervised(amount: float = 6200.0) -> Trajectory:
-    """EUR 6,200: refused, narrated, reviewed, executed by the senior.
+    """EUR 6,200: refused, narrated, reviewed, executed by the reviewer-ui.
 
     The compliant supervised story, in the exact order the live capture shows
     it: propose (permit) -> execute (deny) -> refuse (permit) -> [second
-    trace] review.decision -> get_payment (permit, senior) ->
-    settlement.execute_approved -> execute (permit, senior).
+    trace] review.decision -> get_payment (permit, reviewer-ui) ->
+    settlement.execute_approved -> execute (permit, reviewer-ui).
     """
     return Trajectory.from_documents(
         CLAIM_ID,
@@ -190,16 +204,17 @@ def supervised(amount: float = 6200.0) -> Trajectory:
             decision(6.0, "refuse_payment", "permit"),
             review(6.5),
             decision(
-                6.7, "get_payment", "permit", SENIOR, trace=APPROVAL_TRACE
+                6.7, "get_payment", "permit", REVIEWER, trace=APPROVAL_TRACE
             ),
             execute_approved(6.8),
             decision(
                 6.9,
                 "execute_payment",
                 "permit",
-                SENIOR,
+                REVIEWER,
                 amount=amount,
-                limit=25000.0,
+                autonomy=None,
+                rule="human-approved.execute",
                 trace=APPROVAL_TRACE,
             ),
         ],
@@ -212,10 +227,9 @@ def retry_after_refusal(amount: float = 6200.0) -> Trajectory:
     The unit half of the anti-vacuity criterion. The e2e half
     (`tests/e2e/test_policy_scores.py`) produces this same violation on the
     live cluster, by routing the human's approval to the junior settlement
-    agent instead of the senior -- which is not a hypothetical mistake:
-    senior-settlement-agent serves an agent card naming the junior, so a
-    future client following the card would route an approval to the junior
-    identity.
+    agent instead of the reviewer-ui -- which is not a hypothetical mistake:
+    the settlement agent's card names the settlement agent, so a client
+    following the card would route an approval to the agent's own identity.
     """
     return Trajectory.from_documents(
         CLAIM_ID,

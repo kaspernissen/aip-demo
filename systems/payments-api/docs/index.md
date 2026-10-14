@@ -9,9 +9,10 @@ Finding 11.
 
 ## Responsibilities
 
-- Hold the payment ledger: propose, execute, refuse, read.
-- Record **why** a payout did not happen (`POST /refuse`) and list refusals
-  (`GET /payments`) for the reviewer console.
+- Hold the payment ledger: propose, execute, refuse, reject, read.
+- Record **why** a payout is waiting for a human (`POST /refuse`), list what is
+  waiting (`GET /payments?status=awaiting_approval`) for the reviewer console,
+  and record a human's rejection (`POST /reject`).
 
 ### What it explicitly does not do
 
@@ -32,13 +33,20 @@ Restarting the deployment is how the ledger is cleared between demo runs:
 kubectl -n northstar-systems rollout restart deploy/payments-api
 ```
 
+## Payment states
+
+`proposed` becomes `executed` when the agent releases it within its band, or
+`awaiting_approval` when the policy refused (`POST /refuse`). A human then
+releases it (`executed`, through the gateway and the policy decision service)
+or rejects it (`rejected`, `POST /reject`). `executed` and `rejected` are final.
+Refuse also stores the customer's A2A task id and stamps `awaitingSince`.
+
 ## Refusal records
 
 A refusal stores both the trace id **and** the span id of the settlement-agent
 span that was active when it was written (`refusedTraceId`, `refusedSpanId`).
 Both are needed: a `Link` built with `span_id=0` is dropped by the
-OpenTelemetry SDK before any exporter sees it. That is what makes the human
-approval joinable back to the original refused trace.
+OpenTelemetry SDK before any exporter sees it. That is what makes the refusal joinable to its trace.
 
 ## Telemetry
 

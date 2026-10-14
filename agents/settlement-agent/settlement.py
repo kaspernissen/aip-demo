@@ -16,7 +16,9 @@ There is no spending limit in this file, deliberately: the model can propose
 any amount and nothing here stops it. That check lives entirely at the
 platform's Policy Decision Service, a choke point the agent cannot reach
 around. The refusal comes from the platform, and this file's only job on
-that path is to let the model *see* the refusal so it can explain it.
+that path is to let the model *see* the refusal so it can explain it, and to
+leave the payment waiting for a human (`awaiting_approval`). A human releases
+it: the reviewer-ui, through the same gateway, under its own identity.
 """
 from __future__ import annotations
 
@@ -25,12 +27,9 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-from opentelemetry import context as otel_context
 from opentelemetry import trace
-from opentelemetry.trace import Link, SpanContext, TraceFlags
 from pydantic_ai import Agent, RunContext
 
-from correlation import set_claim_id
 from mcp_tools import PolicyDenial
 
 logger = logging.getLogger(__name__)
@@ -163,8 +162,10 @@ async def execute_payment(
     return result
 
 
-def _validate(claim: dict[str, Any]) -> tuple[str, float, str]:
-    """Validate before spending tokens."""
+def _validate(claim: dict[str, Any]) -> tuple[str, float, str, str]:
+    """Validate before spending tokens. The fourth value is the optional
+    `a2aTaskId` (the customer's A2A task), kept on the ledger so the
+    reviewer-ui can resume it."""
     claim_id = claim.get("claimId")
     if not claim_id:
         raise ValueError("claimId is required")
@@ -175,7 +176,11 @@ def _validate(claim: dict[str, Any]) -> tuple[str, float, str]:
     if amount < 0:
         raise ValueError("amount must not be negative")
 
-    return claim_id, float(amount), claim.get("currency") or "EUR"
+    a2a_task_id = claim.get("a2aTaskId") or ""
+    if not isinstance(a2a_task_id, str):
+        raise ValueError("a2aTaskId must be a string")
+
+    return claim_id, float(amount), claim.get("currency") or "EUR", a2a_task_id
 
 
 def _current_trace_and_span_ids() -> tuple[str, str]:
@@ -197,6 +202,7 @@ def _current_trace_and_span_ids() -> tuple[str, str]:
 
 async def _record_refusal(
     payments: Any, payment_id: str, refused: PolicyDenial, *, narrative: str,
+    a2a_task_id: str,
 ) -> None:
     """Call `POST /payments/{id}/refuse`, through the existing payments client
     -- not a new HTTP path. A failure here must not turn a
@@ -214,6 +220,7 @@ async def _record_refusal(
             narrative=narrative,
             refused_trace_id=refused_trace_id,
             refused_span_id=refused_span_id,
+            a2a_task_id=a2a_task_id,
         )
     except Exception:
         logger.exception(
@@ -222,166 +229,6 @@ async def _record_refusal(
             "does not carry the reviewer's facts for it",
             payment_id, refused.rule,
         )
-
-
-def _refusal_link(refused_trace_id: str, refused_span_id: str) -> list[Link]:
-    """A link, not a parent. A human takes minutes to review a refusal and
-    the original process is gone by the time they act on it; a span held
-    open across that gap would misstate both the duration and what was
-    executing.
-
-    **Measured, not assumed**: building this link from a `SpanContext`
-    carrying only the refusal's trace id and an explicit `span_id=0` --
-    reasoning that Jaeger would render an invalid span id as a trace-level
-    link -- does not work. Checked directly against the installed
-    opentelemetry-sdk (1.44.0): `Span._new_links` filters every link through
-    `_is_valid_link(context, attributes)`, which is
-    `bool(context and (context.is_valid or (attributes or context.trace_state)))`.
-    A `SpanContext(span_id=0)` has `is_valid == False`, and a `Link` built
-    with no `attributes` and no `trace_state` fails the OR entirely -- the
-    link is dropped by the SDK, before a span processor or an exporter ever
-    sees it. Confirmed by constructing exactly that span in-process and
-    reading `span.links` back: it comes back empty.
-    ('opentelemetry.sdk.trace' source, and a live TracerProvider probe.)
-
-    So this carries the refusal's *span* id too (the ledger's `refusal`
-    record carries a `refusedSpanId` field for exactly this), and builds a
-    genuinely valid remote `SpanContext` -- both ids non-zero, so
-    `context.is_valid` is `True` and the link survives `_new_links` on its
-    own, no attribute workaround needed. Empty ids (no refusal to link to, or
-    one recorded before this field existed) mean no link at all, rather than
-    a link that would only be silently dropped.
-    """
-    if not refused_trace_id or not refused_span_id:
-        return []
-    return [
-        Link(
-            SpanContext(
-                trace_id=int(refused_trace_id, 16),
-                span_id=int(refused_span_id, 16),
-                is_remote=True,
-                trace_flags=TraceFlags(TraceFlags.SAMPLED),
-            )
-        )
-    ]
-
-
-class UnverifiedApproval(RuntimeError):
-    """`execute_approved` refuses to execute: the ledger carries no evidence
-    that a human ever reviewed this payment.
-
-    Without this check -- and without a Cilium ingress policy scoping who can
-    reach a settlement Deployment's A2A port (`Allow Ingress ANY`, measured)
-    -- anything able to reach that port could execute any proposed payment up
-    to that identity's limit, on an unverified `reviewerId` string, with no
-    model call, no proposal step and no review. This exception replaces
-    "anything reaching the port" with "a real refusal record, for this exact
-    amount, exists first" -- raised before any call to `payments.execute`,
-    never after.
-    """
-
-
-# Mirrors systems/payments-api/handlers.go's own `amountEpsilon`: half a cent,
-# the tolerance below the smallest amount anyone can actually be paid. Not
-# shared code across the Go/Python boundary -- the two services do not share a
-# module -- but the same number for the same reason: a float that has been
-# through arithmetic somewhere upstream can land an ULP or two off the value
-# it is really equal to, and refusing an execution over that would be a bug,
-# not rigour. See handlers.go's own comment for the full justification.
-AMOUNT_EPSILON = 0.005
-
-
-async def _verify_refusal(payments: Any, payment_id: str, amount: float) -> dict[str, Any]:
-    """Read the ledger back and refuse to proceed unless it shows a real,
-    matching refusal. Returns the ledger record on success, so the caller can
-    read facts (the claim id, in particular) that only the ledger knows.
-
-    Lets `mcp_tools.ToolCallError` propagate unchanged when the payment does
-    not exist at all (payments-api's 404, surfaced the same way every other
-    ledger lookup in this repo surfaces it) -- that is already a loud
-    failure and already executes nothing, so wrapping it would only relabel
-    it. `UnverifiedApproval` is raised for the two cases a successful lookup
-    can still fail: no refusal was ever recorded, or the amount this approval
-    asks to execute does not match what was refused.
-    """
-    ledger_record = await payments.get(payment_id)
-
-    if ledger_record.get("status") != "refused":
-        raise UnverifiedApproval(
-            f"payment {payment_id}: ledger status is "
-            f"{ledger_record.get('status')!r}, not 'refused' -- no refusal "
-            "record covers this payment, so execute_approved will not "
-            "execute it"
-        )
-
-    ledger_amount = ledger_record.get("amount")
-    if ledger_amount is None or abs(float(ledger_amount) - amount) > AMOUNT_EPSILON:
-        raise UnverifiedApproval(
-            f"payment {payment_id}: this approval asks to execute {amount!r}, "
-            f"but the ledger's refused record is for {ledger_amount!r} -- the "
-            "two must agree within the ledger's own amountEpsilon"
-        )
-
-    return ledger_record
-
-
-async def execute_approved(
-    payment_id: str, amount: float, currency: str, approval: dict[str, Any],
-    payments: Any, refused_trace_id: str, refused_span_id: str,
-) -> dict[str, Any]:
-    """Execute a payment a human approved. Same tools, same gateway, different identity.
-
-    No model call and no new prompt: the reasoning happened in the refused
-    run, a human reviewed *that*, and re-deciding here would mean the human
-    approved something other than what executes. This function's whole job
-    is to carry an approved instruction to the payment system under an
-    identity the policy permits -- nothing more. The identity is not a
-    parameter here: it comes from which workload runs this process
-    (`senior-settlement-agent`'s own SPIFFE ID, via SPIRE), the same way it
-    always has for `execute_payment`.
-
-    Before any of that, this reads the ledger back and refuses unless it
-    shows a real refusal record for this exact amount (`_verify_refusal`).
-    `approval["reviewerId"]` is read first and fails loudly with `KeyError`
-    on a malformed payload, before any payment-system call at all -- the
-    ledger check is an additional gate, not a replacement for that one.
-
-    The approval payload carries no claim id -- unlike a claim submission,
-    which arrives with `northstar.claim.id` already in inbound A2A baggage
-    (set at claims-agent's intake) -- so this is the flow's own point of
-    "intake" for that fact. The ledger record
-    `_verify_refusal` already had to read carries `claimId`, so this sets it
-    as baggage on the context the span and `payments.execute` run under, and
-    detaches it again before returning, so it never bleeds into whatever
-    request this process handles next. Without this, a reviewer correlating
-    by claim id would see the refusal half of the story and not the approval
-    half.
-    """
-    reviewer_id = approval["reviewerId"]
-
-    ledger_record = await _verify_refusal(payments, payment_id, amount)
-
-    claim_id = ledger_record.get("claimId")
-    token = None
-    if claim_id:
-        token = otel_context.attach(set_claim_id(str(claim_id)))
-    try:
-        tracer = trace.get_tracer(__name__)
-        with tracer.start_as_current_span(
-            "settlement.execute_approved",
-            links=_refusal_link(refused_trace_id, refused_span_id),
-            attributes={
-                "northstar.payment.id": payment_id,
-                "northstar.approval.reviewer_id": reviewer_id,
-            },
-        ):
-            # Straight to execute. No propose: the proposal is what was
-            # reviewed.
-            result = await payments.execute(payment_id, amount, currency)
-    finally:
-        if token is not None:
-            otel_context.detach(token)
-    return result
 
 
 async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, Any]:
@@ -395,11 +242,12 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
     not the same kind of event. A ToolCallError is a *malfunction* -- the
     payment system failed to do what it was asked -- and prose over the top of
     it would hide a broken payout. A PolicyDenial is the platform working
-    exactly as designed: the answer is no, it is final, and the claimant is
-    owed an explanation rather than a stack trace. So it returns a reply with
-    status "refused" carrying the model's explanation.
+    exactly as designed: the agent may not release this payment. The denial is
+    final for the agent, but not for the claim: it routes the payment to a
+    human. So it records the refusal, leaving the payment `awaiting_approval`,
+    and returns a reply with that status carrying the model's explanation.
     """
-    claim_id, amount, currency = _validate(claim)
+    claim_id, amount, currency, a2a_task_id = _validate(claim)
 
     deps = SettlementDeps(
         payments=payments,
@@ -419,7 +267,7 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
         # MCPError) would propagate past this point and the A2A caller would
         # get a JSON-RPC -32603 with no `result` at all -- the reason legible
         # but nothing narrating it. The reply is a *reply*, and it says
-        # refused.
+        # awaiting_approval.
         #
         # The honesty rule is unchanged: nothing here comes from model output.
         # `amount`, `currency` and `paymentId` are what the ledger recorded for
@@ -447,6 +295,7 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
         if payment_id:
             await _record_refusal(
                 payments, payment_id, refused, narrative=result.output,
+                a2a_task_id=a2a_task_id,
             )
             # A failed recording attempt is logged inside _record_refusal and
             # swallowed there, deliberately: the ledger already shows this
@@ -463,9 +312,11 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
         return {
             "amount": proposed.get("amount", amount),
             "currency": proposed.get("currency", currency),
-            "status": "refused",
+            "status": "awaiting_approval",
             "paymentId": proposed.get("paymentId"),
             "narrative": result.output,
+            "rule": refused.rule,
+            "limit": refused.limit,
         }
 
     if executed is None:
@@ -480,4 +331,6 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
         "status": executed["status"],
         "paymentId": executed["paymentId"],
         "narrative": result.output,
+        "rule": None,
+        "limit": None,
     }

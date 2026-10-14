@@ -1,12 +1,14 @@
-"""reviewer-ui's FastAPI app.
+"""reviewer-ui's FastAPI app: the human half of maker-checker.
 
-An A2A *client* only: it serves no agent card and answers no A2A request of
-its own, so unlike claims-agent/settlement-agent there is no
-A2AStarletteApplication here, and no agentgateway/payments-mcp/Policy
-Decision Service anywhere on this service's egress
-(deploy/platform/cilium-policies.yaml's reviewer-ui-egress-allowlist is the
-enforced version of that). Its two peers are payments-api (ledger.py, a plain
-REST GET) and senior-settlement-agent (approval.py, a raw A2A JSON-RPC POST).
+The settlement agent prepares every payment; above its band it leaves the
+payment `awaiting_approval`, and a human decides here. Two peers, and no
+other egress (deploy/platform/cilium-policies.yaml's reviewer-ui-egress-
+allowlist is the enforced version of that): payments-api (ledger.py, plain
+REST: read the queue, reject) and agentgateway (gateway.py: release the
+money, as an `execute_payment` tool call under this workload's own SPIFFE
+ID). The PDS permits that call only for a payment it reads as awaiting
+approval from the ledger itself, so this service cannot release anything the
+ledger does not say is waiting.
 """
 import bootstrap  # noqa: F401  configures OTel before anything else runs
 
@@ -14,11 +16,12 @@ import os
 
 import uvicorn
 from fastapi import FastAPI, Form
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
-import approval
+import gateway
 import identity
 import ledger
 import render
@@ -33,10 +36,10 @@ ledger_client = ledger.LedgerClient(
     )
 )
 
-approval_client = approval.ApprovalClient(
+gateway_client = gateway.GatewayClient(
     os.environ.get(
-        "SENIOR_SETTLEMENT_AGENT_URL",
-        "http://senior-settlement-agent.northstar-agents.svc.cluster.local:9002",
+        "AGENTGATEWAY_MCP_URL",
+        "http://agentgateway.northstar-platform.svc.cluster.local:3000/mcp",
     )
 )
 
@@ -46,10 +49,10 @@ async def healthz():
     return {"status": "ok"}
 
 
-# The reviewer's queue: every refusal the ledger is currently holding for a
+# The reviewer's queue: every payment the ledger is currently holding for a
 # human. One owned span, `review.queue`, wraps the ledger read for the same
 # reason `review.decision` does -- without a current span,
-# `HTTPXClientInstrumentor`'s CLIENT span for `list_refused()` would be the
+# `HTTPXClientInstrumentor`'s CLIENT span for `list_awaiting()` would be the
 # root of a trace of its own, and payments-api's server span for the read
 # would land in yet another.
 #
@@ -59,7 +62,7 @@ async def healthz():
 # `policy.decision` (the PDS), `review.decision` (review.py), and the
 # telemetry contract's "Domain attributes we own" table is keyed by that
 # prefix. `review.queue` is the same shape under the same `review.` domain
-# this service already owns: the reviewer's queue of refusals awaiting a
+# this service already owns: the reviewer's queue of payments awaiting a
 # decision, which is exactly what this handler produces. It is deliberately
 # NOT `GET /` (that is the framework's name for a route, and this service
 # applies no framework instrumentation on purpose -- bootstrap.py) and not
@@ -76,7 +79,7 @@ async def index():
     tracer = trace.get_tracer(__name__)
     with tracer.start_as_current_span("review.queue", kind=SpanKind.SERVER) as span:
         try:
-            payments = await ledger_client.list_refused()
+            payments = await ledger_client.list_awaiting()
         except ledger.LedgerUnavailable as exc:
             # The same honesty rule review.py keeps for a failed approval: the
             # span says the read did not work, rather than ending Unset beside
@@ -87,14 +90,13 @@ async def index():
         return HTMLResponse(render.list_page(payments))
 
 
-@app.post("/review/{payment_id}", response_class=HTMLResponse)
-async def submit_review(
-    payment_id: str, reviewer_id: str = Form(...), decision: str = Form(...)
-):
+async def _decide(payment_id: str, reviewer_id: str, decision: str):
+    """Run review.decide and return (result, None) or (None, (status, message)).
+    One mapping of exceptions to statuses for both the form and the JSON route."""
     try:
         reviewer_spiffe_id = await identity.workload_spiffe_id()
     except identity.IdentityUnavailable as exc:
-        return HTMLResponse(render.error_page(str(exc)), status_code=502)
+        return None, (502, str(exc))
 
     try:
         result = await review.decide(
@@ -102,27 +104,76 @@ async def submit_review(
             reviewer_id,
             decision,
             ledger=ledger_client,
-            approver=approval_client,
+            gateway=gateway_client,
             reviewer_spiffe_id=reviewer_spiffe_id,
         )
     except ValueError as exc:
-        return HTMLResponse(render.error_page(str(exc)), status_code=400)
+        return None, (400, str(exc))
     except ledger.PaymentNotFound as exc:
-        return HTMLResponse(render.error_page(str(exc)), status_code=404)
-    except review.PaymentNotAwaitingReview as exc:
-        return HTMLResponse(render.error_page(str(exc)), status_code=409)
+        return None, (404, str(exc))
+    except (review.PaymentNotAwaitingReview, ledger.PaymentNotAwaiting) as exc:
+        return None, (409, str(exc))
     except ledger.LedgerUnavailable as exc:
-        return HTMLResponse(render.error_page(str(exc)), status_code=502)
+        return None, (502, str(exc))
+    return result, None
+
+
+@app.post("/review/{payment_id}", response_class=HTMLResponse)
+async def submit_review(
+    payment_id: str, reviewer_id: str = Form(...), decision: str = Form(...)
+):
+    result, failure = await _decide(payment_id, reviewer_id, decision)
+    if failure is not None:
+        status, message = failure
+        return HTMLResponse(render.error_page(message), status_code=status)
 
     outcome = render.ResultView(
         payment_id=result.payment_id,
         decision=result.decision,
         reviewer_id=result.reviewer_id,
         elapsed_ms=result.elapsed_ms,
-        executed=result.approved_execution,
-        error=result.approval_error,
+        executed=result.executed,
+        error=result.error,
+        rejected=result.rejected,
     )
     return HTMLResponse(render.result_page(outcome))
+
+
+# The JSON routes the demo driver and the e2e tests use: the same queue and the
+# same decision as the page, without the HTML.
+@app.get("/api/awaiting")
+async def api_awaiting():
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span("review.queue", kind=SpanKind.SERVER) as span:
+        try:
+            return await ledger_client.list_awaiting()
+        except ledger.LedgerUnavailable as exc:
+            span.set_status(Status(StatusCode.ERROR, str(exc)))
+            span.record_exception(exc)
+            return JSONResponse({"error": str(exc)}, status_code=502)
+
+
+class ReviewRequest(BaseModel):
+    reviewerId: str
+    decision: str
+
+
+@app.post("/api/review/{payment_id}")
+async def api_review(payment_id: str, body: ReviewRequest):
+    result, failure = await _decide(payment_id, body.reviewerId, body.decision)
+    if failure is not None:
+        status, message = failure
+        return JSONResponse({"error": message}, status_code=status)
+    return {
+        "paymentId": result.payment_id,
+        "decision": result.decision,
+        "reviewerId": result.reviewer_id,
+        "elapsedMs": result.elapsed_ms,
+        "autonomyLevel": result.autonomy_level,
+        "executed": result.executed,
+        "rejected": result.rejected,
+        "error": result.error,
+    }
 
 
 if __name__ == "__main__":

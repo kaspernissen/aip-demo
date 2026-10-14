@@ -24,19 +24,22 @@ is; the runbook is the script.
   SPIRE-issued identity, then asks the Policy Decision Service whether this
   caller may make this call. The decision is fail-closed: if the policy
   service can't answer, the payment is refused.
-- **A refusal is a success.** A €6,200 claim is over the agent's limit, so the
-  payment is proposed, refused and recorded. The model explains the refusal to
-  the claimant instead of retrying. A €5,800 claim settles with no human
-  involved.
-- **A human can overturn it.** The refusal appears in the reviewer UI. When a
-  reviewer approves it, the payment runs under a second, more privileged
-  identity (`senior-settlement-agent`), through the same gateway and policy
-  check. The approval trace is joined to the refused one by a span link.
+- **A refusal is a success.** The autonomy dial is a maker-checker policy: at
+  `assisted` the agent may release nothing (€0), at `autonomous` up to €6,000.
+  A payment over the agent's limit is proposed, refused and recorded as
+  awaiting approval. The model explains the refusal to the claimant instead of
+  retrying.
+- **A human releases the money.** The awaiting payment appears in the reviewer
+  UI. When a reviewer approves it, the reviewer UI itself calls
+  `execute_payment` through the same gateway and policy check, under its own
+  identity. The policy permits that only when it reads `awaiting_approval` from
+  the ledger. A reviewer can also reject, which is final. The approval trace is
+  joined to the refused one by a span link.
 - **One live value changes what the agent may do.** The autonomy level is an
   OpenFeature flag, `northstar-autonomy`, stored as a Kubernetes object and
   read by the policy service through a flagd sidecar. Flipping it from
-  `assisted` to `autonomous` lets the same €6,200 claim execute, with nothing
-  redeployed.
+  `assisted` to `autonomous` lets the agent execute a claim up to €6,000
+  without a human, with nothing redeployed.
 - **Why a payment happened can be proven.** Traces go to Jaeger and
   OpenSearch. The evidence view in OpenSearch Dashboards rebuilds a claim's
   audit trail from spans the system already emits: who decided, under which
@@ -72,11 +75,8 @@ flowchart LR
 
     hb["browser · human"] --> ru["`reviewer-ui
       Python`"]
-    ru -->|A2A| ss["`senior-settlement-agent · Python
-      same image as settlement-agent,
-      different ServiceAccount,
-      own allowance row in the PDS`"]
-    ss -->|MCP| gw
+    ru -->|"`MCP — execute_payment
+      under its own SPIFFE ID`"| gw
 </pre>
 
 A refused claim and its later approval are two traces, joined by a span link
@@ -141,7 +141,7 @@ needs. Each stage adds to the one before.
 |---|---|---|
 | 1 | Connected | Agents, MCP server, payments system, customer UI, Collector, Jaeger |
 | 2 | Governed | Cilium, SPIRE, agentgateway and the Policy Decision Service |
-| 3 | Supervised | Reviewer UI and `senior-settlement-agent` |
+| 3 | Supervised | Reviewer UI, which releases the money itself |
 | 4 | Observable | OpenSearch, OpenSearch Dashboards with the evidence view, Prometheus, eval-scorer |
 | 5 | Progressive autonomy | Open Feature Operator, flagd and the `northstar-autonomy` flag |
 | 6 | Golden path | Backstage |

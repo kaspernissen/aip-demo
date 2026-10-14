@@ -77,7 +77,7 @@ from types import SimpleNamespace
 import pytest
 import requests
 
-from tests.harness import contract
+from tests.harness import contract, live
 from tests.harness.jaeger import JaegerClient, assert_no_orphans, assert_single_root
 
 # The identity probe criterion 5 needs, whole, from the file that already built
@@ -430,7 +430,10 @@ def permit_run(claims_agent_route):
     mistaken for one another in a shared Jaeger, and so that the assertions
     below cannot accidentally read the other run's trace.
     """
-    return _drive_browser(f"CLM-PERMIT-{uuid.uuid4().hex[:8]}", PERMITTED_AMOUNT)
+    # M8: at the resting `assisted` level nothing is released, so the permit
+    # path runs with the dial at `autonomous` (restored on exit).
+    with live.autonomy(contract.AUTONOMOUS):
+        return _drive_browser(f"CLM-PERMIT-{uuid.uuid4().hex[:8]}", PERMITTED_AMOUNT)
 
 
 # --- trace-shape helpers ----------------------------------------------------
@@ -567,7 +570,7 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
     trace = denial_run.trace
 
     assert reply.get("claimId") == DENIED_CLAIM_ID, reply
-    assert reply.get("status") == "refused", reply
+    assert reply.get("status") == "awaiting_approval", reply
     assert reply.get("amount") == DENIED_AMOUNT, reply
     assert reply.get("paymentId"), (
         f"the proposal should still have been recorded and its id returned: {reply}"
@@ -598,7 +601,9 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
         decision.attrs.get(ATTR_POLICY_RULE)
         == "settlement-agent.assisted.execute_limit"
     ), decision.attrs
-    assert decision.attrs.get(ATTR_POLICY_LIMIT) == 6000, decision.attrs
+    # M8: at `assisted` the agent's limit is nothing -- the dial is
+    # maker-checker -- so the limit the denial states is 0.
+    assert decision.attrs.get(ATTR_POLICY_LIMIT) == 0, decision.attrs
     assert decision.attrs.get(ATTR_POLICY_AMOUNT) == 6200, decision.attrs
 
     # And nothing executed. The ledger first, read straight from the service
@@ -612,9 +617,9 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
         f"is a failure, not a pass: {read_back.text[:300]}"
     )
     record = read_back.json()
-    assert record.get("status") == "refused", (
+    assert record.get("status") == "awaiting_approval", (
         "payments-api's own record for "
-        f"{payment_id} reads {record.get('status')!r}, not 'refused'. The "
+        f"{payment_id} reads {record.get('status')!r}, not 'awaiting_approval'. The "
         "ledger is the authority on whether money moved, and this is the "
         "criterion's primary evidence -- so read the value before concluding "
         "anything. 'executed' means THE PAYMENT EXECUTED DESPITE THE DENIAL. "
@@ -967,42 +972,18 @@ ALLOWED_MONEY_COMPARISONS = {
     # This allowlist is checked only by this e2e test, which needs a live
     # cluster and is not part of the unit-test gate -- so a money comparison
     # can land in either component without this guard catching it until the
-    # e2e suite next runs. Each of the four entries below stands on its own
+    # e2e suite next runs. Each of the entries below stands on its own
     # justification rather than on being here first.
     #
     # The classification each entry rests on is not invented here. It is the
     # one docs/architecture.md already applies to payments-api's own
     # `amountEpsilon`: a check that an instruction agrees with itself is a
     # CONFIRMATION OF INTENT, not a decision about whether the caller may pay.
-    # None of the four consults a caller, an autonomy level, or any number that
-    # a policy could configure; three are presence checks and the fourth
-    # compares a figure against the ledger's own record of that same figure.
-    ("settlement-agent", "executor.py", "amount is None"): (
-        "a presence check on the inbound A2A payload in _validate_approval, "
-        "before anything is dispatched. Structurally the same check as "
-        "settlement.py's `amount is None` above and for the same reason -- it "
-        "is about whether a value arrived, not about how large it may be. It "
-        "reads as a separate entry only because this allowlist is keyed by "
-        "file, which is deliberate: a money comparison appearing in a new file "
-        "should have to be justified again rather than inherit a neighbour's "
-        "exemption."
-    ),
-    ("settlement-agent", "settlement.py", "abs(float(ledger_amount) - amount) > AMOUNT_EPSILON"): (
-        "_verify_refusal's confirmation of intent. It compares "
-        "the amount an approval asks to execute against the amount THE LEDGER "
-        "ITSELF recorded as refused -- two representations of one figure -- "
-        "within payments-api's own half-cent tolerance. It is not a policy "
-        "allowance by every test this allowlist's second entry already sets "
-        "out: it consults no caller, no autonomy level and no configurable "
-        "limit, and the number on the right-hand side is read back over HTTP "
-        "from the system of record rather than held here. Deleting it would "
-        "not widen what anyone may be paid; it would let an approval for one "
-        "amount execute against a refusal recorded for another, which is why "
-        "this check exists. The genuine policy question -- may "
-        "senior-settlement-agent pay this much at all -- is still decided "
-        "only by the PDS, and tests/e2e/test_supervised.py's criterion 6 is "
-        "what proves the junior identity still cannot."
-    ),
+    # None consults a caller, an autonomy level, or any number that a policy
+    # could configure; they are presence checks. (M8 retired two entries with
+    # the code they described: the A2A approval payload's presence check and
+    # `_verify_refusal`'s ledger-amount confirmation, both in the removed
+    # `execute_approved` path.)
     ("settlement-agent", "settlement.py", "refused.limit is not None"): (
         "a presence check in _record_refusal, on a field of the PDS's own "
         "reported decision, immediately before writing it to the ledger "
@@ -1274,9 +1255,29 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
         )
         rule_names |= composed
 
-    assert len(literal_rule_keywords) + len(composed_rule_keywords) == len(
-        rule_keywords
-    ), (
+    # A `rule=` that names a module-level string constant (M8's
+    # `rule=HUMAN_APPROVAL_RULE`) is resolved to that constant's literal value
+    # -- read from the same tree, never retyped here -- so the vocabulary
+    # still contains every rule `decide` can emit.
+    module_strings = {
+        target.id: node.value.value
+        for node in rules_tree.body
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    named_rule_keywords = [
+        node
+        for node in rule_keywords
+        if isinstance(node.value, ast.Name) and node.value.id in module_strings
+    ]
+    rule_names |= {module_strings[node.value.id] for node in named_rule_keywords}
+
+    assert len(literal_rule_keywords) + len(composed_rule_keywords) + len(
+        named_rule_keywords
+    ) == len(rule_keywords), (
         "a `rule=` argument in rules.py is neither a plain string literal nor "
         "an f-string this guard knows how to expand, so it cannot read the "
         "full rule vocabulary and would silently under-check. Fix the guard "
@@ -1285,7 +1286,16 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
     assert rule_names, "read no rule names out of rules.py; the guard is inert"
     vocabulary |= rule_names
 
-    allowances = {float(v) for v in rules.EXECUTE_LIMITS.values()}
+    # Zero is left out of the literal scan, and the reason is M8's: the
+    # `assisted` limit is now EUR 0, and `0` is also the guard against a
+    # negative amount, a default for an unreported limit and a loop start --
+    # a scan that flags every zero would be noise that teaches a reader to
+    # extend the allowlist reflexively. A zero is not a *figure* the platform
+    # published; the comparison scan below still catches code that decides on
+    # a limit, and the vocabulary scan catches the rule names.
+    allowances = {
+        float(v) for v in rules.EXECUTE_LIMITS.values() if float(v) != 0.0
+    }
     assert allowances, "the PDS's EXECUTE_LIMITS table is empty; nothing to guard"
 
     vocabulary_hits: list[str] = []
@@ -1414,6 +1424,12 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
         "agents/settlement-agent/correlation.py",
         "agents/settlement-agent/main.py",
         "tools/payments-mcp/correlation.py",
+        # Added with agentgateway v1.6.0 (a deny is now an `isError` tool
+        # result): the parser that reads the PDS's `[policy-denial ...]` tag
+        # back out of the result text. It reports the platform's decision to
+        # the model and holds no allowance; parts 1-3 of this test scan this
+        # file's AST like any other.
+        "agents/settlement-agent/policy_denial_text.py",
     }
     assert production_changed <= expected, (
         "production source changed in these components since m2.1-verified, "
@@ -1547,7 +1563,10 @@ def test_criterion_5_the_decision_changes_when_the_callers_spiffe_id_changes(
         )
 
     # The authorised caller, at an amount inside its allowance: it executes.
-    authorised = execute_as(valid_svid, "settlement-agent")
+    # (M8: its allowance is nothing at `assisted`, so the dial is at
+    # `autonomous` for this one call.)
+    with live.autonomy(contract.AUTONOMOUS):
+        authorised = execute_as(valid_svid, "settlement-agent")
     assert authorised.jsonrpc_error is None, (
         "settlement-agent's own identity was refused at "
         f"{IDENTITY_PROBE_AMOUNT} EUR, well inside its allowance, so the "
@@ -1606,9 +1625,10 @@ def test_criterion_6_a_payment_below_the_threshold_still_executes_end_to_end(
 
     "End to end" is asserted at both ends and in the middle: the browser's own
     reply says `executed` at €5,800; the PDS's decision span says `permit` under
-    the *same* execute-limit rule that denied €6,200, with the same €6,000
-    allowance on it (so the permit and the denial are demonstrably the same rule
-    reaching opposite conclusions, not two different code paths); the gateway
+    the execute-limit rule family that denied €6,200 (at `assisted`, limit 0)
+    with the €6,000 `autonomous` allowance on it (so the permit and the denial
+    are demonstrably the same rule shape reaching opposite conclusions, not two
+    different code paths); the gateway
     forwarded the call rather than stopping it; `payments-mcp` ran the tool; and
     `payments-api` -- which owns the ledger -- recorded the execution.
 
@@ -1634,7 +1654,7 @@ def test_criterion_6_a_payment_below_the_threshold_still_executes_end_to_end(
     assert decision.attrs.get(ATTR_DECISION) == "permit", decision.attrs
     assert (
         decision.attrs.get(ATTR_POLICY_RULE)
-        == "settlement-agent.assisted.execute_limit"
+        == "settlement-agent.autonomous.execute_limit"
     ), (
         "the permit came from some rule other than the execute limit, so this "
         "does not demonstrate the limit permitting as well as refusing: "

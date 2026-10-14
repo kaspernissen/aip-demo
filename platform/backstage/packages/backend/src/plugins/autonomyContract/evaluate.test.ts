@@ -6,8 +6,8 @@ import { resolveAutonomyLevel, UnsupportedTargetingShapeError } from './evaluate
 // like on the wire, not what one YAML file happens to say today.
 const SETTLEMENT_AGENT =
   'spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent';
-const SENIOR_SETTLEMENT_AGENT =
-  'spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent';
+const REVIEWER_UI =
+  'spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui';
 
 function shippedFlagSpec(thenBranch: string, elseBranch: string) {
   return {
@@ -35,7 +35,7 @@ describe('resolveAutonomyLevel', () => {
 
   it('resolves an unnamed caller to the else-branch', () => {
     const spec = shippedFlagSpec('assisted', 'assisted');
-    expect(resolveAutonomyLevel(spec, SENIOR_SETTLEMENT_AGENT)).toEqual({
+    expect(resolveAutonomyLevel(spec, REVIEWER_UI)).toEqual({
       level: 'assisted',
       branch: 'targeting-else',
     });
@@ -46,7 +46,7 @@ describe('resolveAutonomyLevel', () => {
     expect(resolveAutonomyLevel(spec, SETTLEMENT_AGENT).level).toBe(
       'autonomous',
     );
-    expect(resolveAutonomyLevel(spec, SENIOR_SETTLEMENT_AGENT).level).toBe(
+    expect(resolveAutonomyLevel(spec, REVIEWER_UI).level).toBe(
       'assisted',
     );
   });

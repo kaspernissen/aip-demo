@@ -800,6 +800,7 @@ async def test_refuse_sends_every_field_in_the_tool_call_arguments(monkeypatch):
         narrative="I proposed the assessed amount but I am not authorised to pay it.",
         refused_trace_id="331edba8cb21223e9de2f244360c42ef",
         refused_span_id="b7997877797c1b27",
+        a2a_task_id="task-1",
     )
 
     params = _FakeSessionCapturingRequest.captured["request"].params
@@ -812,12 +813,12 @@ async def test_refuse_sends_every_field_in_the_tool_call_arguments(monkeypatch):
         "narrative": "I proposed the assessed amount but I am not authorised to pay it.",
         "refused_trace_id": "331edba8cb21223e9de2f244360c42ef",
         "refused_span_id": "b7997877797c1b27",
+        "a2a_task_id": "task-1",
     }
 
 
 async def test_get_sends_the_payment_id_in_the_tool_call_arguments(monkeypatch):
-    """`execute_approved` reads the ledger back through this call before
-    executing an approval."""
+    """The ledger read-back goes through the same governed tool-call path."""
     monkeypatch.setattr(mcp_tools, "fetch_jwt_svid", _fake_svid_fetcher([]))
     _patch_transport(monkeypatch, {})
     monkeypatch.setattr(mcp_tools, "ClientSession", _FakeSessionCapturingRequest)

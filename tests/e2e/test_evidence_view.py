@@ -30,9 +30,8 @@ same thing: the flag is this repo's single cost gate and
 `scripts/smoke-test.sh` sets it unconditionally, so a gated run loses
 nothing. Left ungated, a bare `pytest tests/` would drive **four**
 settlements instead of two and -- new in kind, not only in degree -- execute
-a real €6,200 payment under `senior-settlement-agent`'s identity, because
-this is the only file that drives the whole supervised path outside
-`test_supervised.py` (which gates 6 of its 7 tests for exactly that reason).
+a real €6,200 payment released by the reviewer-ui, because this is one of
+the few files that drives the whole maker-checker path.
 The three chain files that would otherwise spend tokens on every bare run --
 `test_claim_correlation.py`, `test_claims_chain_trace.py`,
 `test_settlement_agent_trace.py` -- carry the same gate, so a bare
@@ -80,7 +79,7 @@ from types import SimpleNamespace
 import pytest
 import requests
 
-# Reuse, not re-implementation -- the same convention test_supervised.py states
+# Reuse, not re-implementation -- the same convention the other live modules state
 # for its own imports. These are the claim, the amounts and the route fixtures
 # already established elsewhere for exactly these two runs.
 from tests.e2e.test_policy_denial import (  # noqa: F401 -- fixture used by name
@@ -99,11 +98,6 @@ from tests.e2e.test_policy_denial import (  # noqa: F401 -- fixture used by name
     PERMITTED_AMOUNT,
     claims_agent_route,
 )
-from tests.e2e.test_supervised import (  # noqa: F401 -- fixture used by name
-    REVIEW_DECISION_SPAN,
-    REVIEWER_NAME_PREFIX,
-    reviewer_ui_route,
-)
 from tests.e2e.test_opensearch_trace_ingest import (
     DECISION_SPAN,
     OBSERVABILITY_NAMESPACE,
@@ -118,12 +112,18 @@ from tests.e2e.test_caller_identity import KUBE_CONTEXT
 # `absent_or_fail` lives in the shared harness so that neither of the two
 # e2e modules that need it owns it, and so both check "does this object
 # exist?" against the same one definition rather than against a copy.
-from tests.harness import live
+from tests.harness import contract, live
 from tests.harness.kube import absent_or_fail
 # Same reasoning: the parsed reading of the deployed pipelines lives in the
 # shared harness rather than as a private function duplicated per caller.
 # See tests/harness/collector.py.
 from tests.harness.collector import pipeline_exporters
+
+REVIEWER_NAME_PREFIX = "alex.mercer"
+REVIEW_DECISION_SPAN = "review.decision"
+# The rule a human release is decided under (pds/rules.py, HUMAN_APPROVAL_RULE).
+HUMAN_APPROVAL_RULE = "human-approved.execute"
+REVIEWER_UI_SPIFFE_SUFFIX = "/sa/reviewer-ui"
 
 COLLECTOR_CONFIGMAP = "otel-collector-config"
 # The connector that tees the main `traces` pipeline into the OpenSearch-only
@@ -149,7 +149,11 @@ ATTR_REVIEW_DECISION = "review.decision"
 # and decides them differently. Not a constant this file chose -- read off
 # the live decision spans of both runs and already published in
 # docs/telemetry-contract.md's decision table.
-EXECUTE_LIMIT_RULE = "settlement-agent.assisted.execute_limit"
+# Since M8 the denied story is decided at `assisted` (limit 0) and the
+# permitted one at `autonomous` (limit 6,000): the same rule family, one
+# autonomy segment apart, and the human release is its own rule.
+ASSISTED_EXECUTE_LIMIT_RULE = "settlement-agent.assisted.execute_limit"
+AUTONOMOUS_EXECUTE_LIMIT_RULE = "settlement-agent.autonomous.execute_limit"
 
 PAYMENTS_API = "payments-api"
 
@@ -196,7 +200,7 @@ pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
     reason=(
         "needs the live stage-4 cluster, spends two settlements' worth of "
-        "model tokens and executes a real payment under the senior identity; "
+        "model tokens and releases a real payment as the reviewer-ui; "
         "gated behind the same RUN_BROWSER_TESTS=1 flag "
         "scripts/smoke-test.sh sets unconditionally (no browser is started -- "
         "test_settlement_llm_trace.py rides the same flag for the same reason)"
@@ -397,15 +401,15 @@ def _submit_claim(claim_id: str, amount: float) -> dict:
 
 
 @pytest.fixture(scope="module")
-def denied_claim(claims_agent_route, reviewer_ui_route):
-    """The €6,200 story: refused, escalated, approved, executed by the senior.
+def denied_claim(claims_agent_route):
+    """The €6,200 story: refused, escalated, approved, released by the reviewer-ui.
 
     `CLM-1842` at €6,200 -- the same claim and amount `test_policy_denial.py`
-    and `test_supervised.py` drive, because this is the same event the spec's
+    and `test_human_in_the_loop.py` drive, because this is the same event the spec's
     own table names, not a new one invented for the dashboard.
 
     The reviewer id is unique per run (`REVIEWER_NAME_PREFIX` plus a uuid),
-    matching the same precedent `test_supervised.py` sets, for the same
+    matching the precedent the human-in-the-loop suite sets, for the same
     reason: payments-api's payment ids are sequential only within one
     process lifetime, so `review.payment.id` alone is not a unique key -- a
     shared reviewer name across concurrent runs can read a stale
@@ -416,24 +420,21 @@ def denied_claim(claims_agent_route, reviewer_ui_route):
     """
     run = _submit_claim(DENIED_CLAIM_ID, DENIED_AMOUNT)
     reply = run["reply"]
-    assert reply.get("status") == "refused", (
-        f"€{DENIED_AMOUNT:.0f} above settlement-agent's €6,000 assisted "
-        f"execute allowance was not refused, so this run produced no denial "
-        f"half of the story: {reply}"
+    contract.assert_assisted("test_evidence_view.py::denied_claim")
+    assert reply.get("status") == "awaiting_approval", (
+        f"€{DENIED_AMOUNT:.0f} above settlement-agent's assisted (€0) "
+        f"execute allowance was not left awaiting approval, so this run "
+        f"produced no denial half of the story: {reply}"
     )
     payment_id = reply.get("paymentId")
     assert payment_id, f"the refused settlement returned no paymentId: {reply}"
 
     reviewer_id = f"{REVIEWER_NAME_PREFIX}-{uuid.uuid4().hex[:8]}"
-    approval = requests.post(
-        f"{reviewer_ui_route}/review/{payment_id}",
-        data={"reviewer_id": reviewer_id, "decision": "approve"},
-        timeout=SETTLEMENT_TIMEOUT_S,
+    approval = live.review(payment_id, "approve", reviewer_id)
+    assert approval.get("error") is None, (
+        f"reviewer-ui did not release {payment_id}: {approval}"
     )
-    assert approval.status_code == 200 and "Review recorded" in approval.text, (
-        f"reviewer-ui did not record an approval for {payment_id}: "
-        f"HTTP {approval.status_code} {approval.text[:400]!r}"
-    )
+    assert (approval.get("executed") or {}).get("status") == "executed", approval
 
     # The settle check below is a *timing* precondition, and it has a
     # consequence worth naming: because it polls until these five are
@@ -441,7 +442,7 @@ def denied_claim(claims_agent_route, reviewer_ui_route):
     # raised here after the 120s timeout -- naming the empty field and
     # printing the whole row -- rather than as a FAILED at the assertion
     # that reads it. The assertions' *values* still discriminate (`==
-    # "deny"`, `== EXECUTE_LIMIT_RULE`, `.endswith("/sa/senior-settlement-agent")`).
+    # "deny"`, `== ASSISTED_EXECUTE_LIMIT_RULE`, `.endswith("/sa/reviewer-ui")`).
     # Both go red; only the label differs, and the message here is the more
     # useful of the two.
     row = _settled_evidence(
@@ -467,9 +468,12 @@ def permitted_claim_id(claims_agent_route) -> str:
     than pointed at a fixed fixture claim.
     """
     claim_id = f"CLM-PERMIT-{uuid.uuid4().hex[:8]}"
-    reply = _submit_claim(claim_id, PERMITTED_AMOUNT)["reply"]
+    # M8: nothing is released at `assisted`; the straight-through story runs
+    # with the dial at `autonomous` (restored on exit).
+    with live.autonomy(contract.AUTONOMOUS):
+        reply = _submit_claim(claim_id, PERMITTED_AMOUNT)["reply"]
     assert reply.get("status") == "executed", (
-        f"€{PERMITTED_AMOUNT:.0f} is below the €6,000 assisted execute "
+        f"€{PERMITTED_AMOUNT:.0f} is below the €6,000 autonomous execute "
         f"allowance and should have been paid straight through: {reply}"
     )
     _settled_evidence(
@@ -490,15 +494,16 @@ def test_the_evidence_query_returns_both_stories(denied_claim, permitted_claim_i
     """
     denied = evidence_for(DENIED_CLAIM_ID)
     assert denied["policy_decision"] == "deny", denied
-    assert denied["rule"] == "settlement-agent.assisted.execute_limit", denied
+    assert denied["rule"] == ASSISTED_EXECUTE_LIMIT_RULE, denied
     assert denied["reviewer"], "the approval leg is missing from the denied claim"
-    assert denied["executing_identity"].endswith("/sa/senior-settlement-agent"), denied
+    assert denied["executing_identity"].endswith(REVIEWER_UI_SPIFFE_SUFFIX), denied
+    assert denied["executing_rule"] == HUMAN_APPROVAL_RULE, denied
 
     permitted = evidence_for(permitted_claim_id)
     assert permitted["policy_decision"] == "permit", permitted
-    assert permitted["rule"] == denied["rule"], (
-        "both claims must be decided by the SAME rule -- that is the whole "
-        f"point: {permitted['rule']!r} vs {denied['rule']!r}"
+    assert permitted["rule"] == AUTONOMOUS_EXECUTE_LIMIT_RULE, (
+        "the straight-through claim must be decided by the execute-limit rule "
+        f"at `autonomous`: {permitted['rule']!r}"
     )
     assert permitted["reviewer"] is None, (
         "the permitted claim must show no human in the loop; a reviewer here "
@@ -512,8 +517,8 @@ def test_the_contract_signals_reach_the_decision_panel(denied_claim, permitted_c
     saw, if any -- read off the same first decision span
     `rule`/`limit`/`requested` already come from, not a second query.
 
-    Both claims in this file run under the shipped, refusing contract, so
-    both must show `autonomy_level == "assisted"`. `contract_version` is
+    The denied claim runs under the shipped, refusing contract
+    (`autonomy_level == "assisted"`); the permitted one runs at `autonomous`. `contract_version` is
     asserted `None` for both, which is the *honest* value today:
     `featureflag.yaml` publishes no flag `metadata`, so flagd never returns
     one. If this assertion ever reddens
@@ -527,7 +532,7 @@ def test_the_contract_signals_reach_the_decision_panel(denied_claim, permitted_c
     permitted = evidence_for(permitted_claim_id)
 
     assert denied["autonomy_level"] == "assisted", denied
-    assert permitted["autonomy_level"] == "assisted", permitted
+    assert permitted["autonomy_level"] == "autonomous", permitted
     assert denied["contract_version"] is None, denied
     assert permitted["contract_version"] is None, permitted
 
@@ -581,30 +586,34 @@ def test_the_trace_id_join_is_what_reaches_the_money_hops(
         )
 
 
-def test_the_denied_claim_and_the_permitted_one_are_decided_by_one_rule(
+def test_the_denied_claim_and_the_permitted_one_are_decided_by_one_rule_family(
     denied_claim, permitted_claim_id
 ):
     """The demo's own claim about the evidence view, as an assertion.
 
-    Same rule, opposite outcomes, and the limit each was measured against --
-    the row the dashboard puts side by side. `executing_rule` is asserted too:
-    the senior's permitted execution is the *same* rule at a higher limit
-    (€25,000 against settlement-agent's €6,000), not a different rule that
-    happens to allow it, which would make the demo's claim false.
+    The same execute-limit rule, at two autonomy levels, with opposite outcomes
+    and the limit each was measured against (0 at `assisted`, 6,000 at
+    `autonomous`) -- the row the dashboard puts side by side. The denied
+    claim's `executing_rule` is the human release's own rule: the platform
+    permitted the reviewer-ui because it read `awaiting_approval`, not because
+    a limit was raised.
     """
     denied = evidence_for(DENIED_CLAIM_ID)
     permitted = evidence_for(permitted_claim_id)
 
     assert (
-        denied["rule"] == permitted["rule"] == denied["executing_rule"]
-        == permitted["executing_rule"] == EXECUTE_LIMIT_RULE
+        denied["rule"] == ASSISTED_EXECUTE_LIMIT_RULE
+        and permitted["rule"] == permitted["executing_rule"]
+        == AUTONOMOUS_EXECUTE_LIMIT_RULE
+        and denied["executing_rule"] == HUMAN_APPROVAL_RULE
     ), (
-        "every `execute_payment` decision in both stories must name "
-        f"{EXECUTE_LIMIT_RULE!r}: denied={denied['rule']!r}/"
+        "the denied claim must be decided by the assisted execute limit and "
+        "released under the human rule; the permitted claim by the "
+        f"autonomous one: denied={denied['rule']!r}/"
         f"{denied['executing_rule']!r} permitted={permitted['rule']!r}/"
         f"{permitted['executing_rule']!r}"
     )
-    assert denied["requested"] == DENIED_AMOUNT and denied["limit"] == 6000, denied
+    assert denied["requested"] == DENIED_AMOUNT and denied["limit"] == 0, denied
     assert permitted["requested"] == PERMITTED_AMOUNT and permitted["limit"] == 6000, (
         permitted
     )

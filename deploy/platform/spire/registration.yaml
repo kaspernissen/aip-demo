@@ -79,6 +79,33 @@ spec:
   # ClusterSPIFFEID matches).
   fallback: false
 ---
+# reviewer-ui. Same template, same two attestation selectors, same
+# non-fallback; the rendered ID is
+#   spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui
+#
+# It is in northstar-agents, so the chart's fallback would already have issued
+# it an identity. It is named here anyway because this identity now releases
+# money: the PDS permits it under `human-approved.execute`
+# (pds/rules.py, HUMAN_APPROVERS), so the identity a human approval rests on is
+# in-tree and reviewable rather than an emergent property of a chart default.
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: northstar-reviewer-ui
+spec:
+  className: northstar-platform-spire
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  podSelector:
+    matchLabels:
+      app: reviewer-ui
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: northstar-agents
+  workloadSelectorTemplates:
+    - "k8s:ns:{{ .PodMeta.Namespace }}"
+    - "k8s:sa:{{ .PodSpec.ServiceAccountName }}"
+  fallback: false
+---
 apiVersion: spire.spiffe.io/v1alpha1
 kind: ClusterSPIFFEID
 metadata:
@@ -138,10 +165,10 @@ spec:
 # spire-server, spire-system]` -- read back off the live CR). So a workload
 # added to northstar-platform without a CR of its own gets no identity at all,
 # silently. agentgateway and the PDS have one each and that is exactly why;
-# `senior-settlement-agent` and `reviewer-ui` needed none because they are in
-# northstar-agents, which the fallback does cover. A reader could easily take
-# those two as the precedent and conclude a new platform workload needs
-# nothing, which is the mistake this comment exists to prevent.
+# `settlement-agent`-style workloads in northstar-agents are covered by the
+# fallback. A reader could easily take those as the precedent and conclude a
+# new platform workload needs nothing, which is the mistake this comment
+# exists to prevent.
 #
 # Like the gateway and the PDS, eval-scorer does not *fetch* an SVID: it reads
 # OpenSearch over plain HTTP inside the cluster and writes spans to the

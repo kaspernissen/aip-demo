@@ -172,3 +172,13 @@ def test_reason_and_mcp_error_message_carry_the_same_formatted_text():
     body = json.loads(result.error.mcp_error)
     assert result.error.reason == body["message"]
     assert result.error.reason.endswith("[policy-denial rule=x.y limit=0.00 requested=5800.00]")
+
+
+def test_parse_call_reads_a_string_payment_id_and_nothing_else():
+    ok = parse_call(json.dumps({"name": "execute_payment",
+                                "arguments": {"payment_id": "PAY-000001"}}).encode())
+    assert ok.payment_id == "PAY-000001"
+    for bad in (7, None, ["PAY-000001"]):
+        call = parse_call(json.dumps({"name": "execute_payment",
+                                      "arguments": {"payment_id": bad}}).encode())
+        assert call.payment_id is None

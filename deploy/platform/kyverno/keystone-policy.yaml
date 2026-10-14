@@ -46,7 +46,8 @@
 #      (wgpolicyk8s.io, reports.kyverno.io) and are not matched;
 #   6. Workloads anywhere: Pod, Deployment, ReplicaSet, StatefulSet, DaemonSet,
 #      Job, CronJob. A pod created with `serviceAccountName:
-#      senior-settlement-agent` is issued that identity's SVID: creating one IS
+#      reviewer-ui` is issued that identity's SVID (the one that releases a
+#      human-approved payment): creating one IS
 #      editing your own identity, with no RBAC object touched at all;
 #   7. `serviceaccounts/token`: minting a token for another ServiceAccount is
 #      the same act by a shorter route.

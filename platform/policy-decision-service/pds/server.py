@@ -52,7 +52,8 @@ from pds.autonomy import (
 )
 from pds.deny_text import format_deny
 from pds.identity import caller_spiffe_id
-from pds.rules import Decision, PolicyInput, decide
+from pds.ledger import payment_status
+from pds.rules import HUMAN_APPROVERS, LIMITED_TOOLS, Decision, PolicyInput, decide
 
 log = logging.getLogger("pds")
 
@@ -113,6 +114,9 @@ class ToolCall:
     tool: str | None
     amount: float | None
     currency: str
+    # The `payment_id` argument, if it is a string. Only ever used to ask the
+    # ledger about a human approval; the agent's decisions never read it.
+    payment_id: str | None = None
 
 
 def _amount(value) -> float | None:
@@ -174,7 +178,12 @@ def parse_call(params: bytes | None) -> ToolCall:
     if not isinstance(currency, str):
         currency = ""
 
-    return ToolCall(tool=tool, amount=amount, currency=currency)
+    payment_id = arguments.get("payment_id")
+    if not isinstance(payment_id, str):
+        payment_id = None
+
+    return ToolCall(tool=tool, amount=amount, currency=currency,
+                    payment_id=payment_id)
 
 
 def build_result(
@@ -303,12 +312,21 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
             # params we cannot read is harmless.
             decision = _undecidable_method(request.method)
         else:
+            # The one ledger read the policy makes: only for a human approver
+            # releasing money (see rules.HUMAN_APPROVERS). A failed read is
+            # None, which `_human_approval` denies.
+            ledger_status = None
+            if (caller or "") in HUMAN_APPROVERS and call.tool in LIMITED_TOOLS:
+                ledger_status = payment_status(call.payment_id)
+                span.set_attribute(telemetry.ATTR_LEDGER_STATUS,
+                                   ledger_status or "unreadable")
             decision = decide(PolicyInput(
                 caller=caller,
                 tool=call.tool or "",
                 amount=call.amount,
                 currency=call.currency,
                 autonomy_level=resolution.level,
+                ledger_status=ledger_status,
             ))
 
         span.set_attribute(telemetry.ATTR_DECISION,

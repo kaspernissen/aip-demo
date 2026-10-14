@@ -775,10 +775,9 @@ def test_the_agent_planes_ingress_is_exactly_what_the_milestones_intended(datapa
       document would still be caught, because it would not produce a
       claims-agent-labelled row on 9002.
 
-    Scope is unchanged on purpose: `senior-settlement-agent` and `reviewer-ui`
-    have their own ingress documents and their own coverage in
-    tests/e2e/test_supervised.py; widening this module's fixture to them is a
-    separate change, not a bug fix.
+    Scope is unchanged on purpose: `reviewer-ui` has its own ingress document
+    and its own coverage in tests/e2e/test_human_in_the_loop.py; widening this
+    module's fixture to it is a separate change, not a bug fix.
     """
     for app in OTHER_AGENTS:
         catch_all = [

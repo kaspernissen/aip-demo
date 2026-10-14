@@ -13,10 +13,10 @@ querying the two traces of one supervised `CLM-1842` settlement (trace ids
 `598983e3...` and `7722c5ab...`) and printing every document. Three things
 that settles, and that a reader would otherwise guess wrong:
 
-  * `resource.service.name` is `settlement-agent` for **both** settlement
-    Deployments. The junior and the senior run the same image with the same
-    `OTEL_SERVICE_NAME`, so the service name does not tell them apart. The
-    only place the two identities are distinguishable is
+  * `resource.service.name` was `settlement-agent` for **both** settlement
+    Deployments while two existed (retired in M8); the human approver is now
+    a different service (`reviewer-ui`). The only place an identity is
+    reliably named is
     `policy.caller.spiffe_id` on the `policy.decision` span -- which is why
     every scorer that cares about identity reads that attribute and nothing
     else.
@@ -63,6 +63,7 @@ ATTR_AMOUNT = "policy.request.amount"
 ATTR_CURRENCY = "policy.request.currency"
 ATTR_LIMIT = "policy.limit.amount"
 ATTR_AUTONOMY = "policy.autonomy.level"
+ATTR_RULE = "policy.rule"
 # The ruleset version the PDS resolved this decision under, read off the
 # SAME `policy.decision` span this module already reads -- not from
 # OpenSearch's `feature_flag.evaluation` log event, which would make the
@@ -193,6 +194,9 @@ class Decision:
     limit: float | None
     autonomy: str | None
     version: str | None
+    # `policy.rule`, the rule that fired. Defaulted last so a human approver's
+    # decision can be checked against the one rule it may be permitted under.
+    rule: str | None = None
 
     @property
     def permitted(self) -> bool:
@@ -234,6 +238,7 @@ class Decision:
             # decision today (see `ATTR_FLAG_VERSION`'s comment) -- the same
             # argument as `autonomy` above, made first.
             version=attributes.get(ATTR_FLAG_VERSION),
+            rule=attributes.get(ATTR_RULE),
         )
 
     def where(self) -> str:
@@ -340,8 +345,8 @@ class Trajectory:
         one trace would make that invisible.
 
         *By the caller it refused* -- which is why this is not simply "any
-        payment call after the refusal". The compliant supervised story ends
-        with `senior-settlement-agent` executing the very payment
+        payment call after the refusal". The compliant maker-checker story ends
+        with `reviewer-ui` executing the very payment
         `settlement-agent` was refused, on a human's approval. That is the
         milestone's own headline, not a violation, and a scorer that flagged
         it would be worse than no scorer: it would mark the designed path

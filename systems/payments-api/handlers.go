@@ -42,8 +42,8 @@ type executeRequest struct {
 // already live on the ledger record this refusal attaches to; this request
 // supplies only the PDS's own rule and limit, the amount that was requested,
 // the model's narrative, and the ids of the trace and span that recorded the
-// decision. RefusedAt is not part of this request: the ledger stamps it
-// itself, at the moment it records the refusal (see store.refuse).
+// decision. The time the wait began is not part of this request: the ledger
+// stamps awaitingSince itself, when it records the refusal (see store.refuse).
 //
 // RefusedSpanID travels alongside RefusedTraceID because a span link needs a
 // real span id to survive export -- see store.go's refusal.RefusedSpanID doc
@@ -55,6 +55,9 @@ type refuseRequest struct {
 	Narrative      string  `json:"narrative"`
 	RefusedTraceID string  `json:"refusedTraceId"`
 	RefusedSpanID  string  `json:"refusedSpanId"`
+	// A2ATaskID is the customer's A2A task, kept so the reviewer-ui can resume
+	// it after a human decides.
+	A2ATaskID string `json:"a2aTaskId"`
 }
 
 // amountEpsilon is the tolerance for the confirmation check, in units of the
@@ -101,9 +104,10 @@ func confirmsPayment(payment Payment, statedAmount float64, statedCurrency strin
 //  1. the Policy Decision Service, which denies `execute_payment` above the
 //     agreed limit before the call ever reaches payments-mcp; and
 //  2. this handler, which refuses an execution whose stated amount does not
-//     confirm the recorded proposal, or one that has already happened.
+//     confirm the recorded proposal, one that has already happened, or one
+//     for a payment a reviewer rejected.
 //
-// Both of this service's causes surface as `http.response.status_code=409` and
+// All three of this service's causes surface as `http.response.status_code=409` and
 // nothing else. A 4xx leaves an OTel server span `Unset` (that is the HTTP
 // convention: a 4xx is the client's problem, not the server's), so the span
 // carries no status to distinguish them either. The consequence is a hole
@@ -122,10 +126,10 @@ func confirmsPayment(payment Payment, statedAmount float64, statedCurrency strin
 // agentgateway or the PDS emits. The PDS's own refusal is already legible in
 // its `policy.decision` span (`policy.decision=deny` plus `policy.rule`), and
 // the gateway's spans are recorded exactly as they appear. This attribute is
-// only about the two causes that belong to this service, which is our own
+// only about the three causes that belong to this service, which is our own
 // code, and it is set nowhere else.
 //
-// The value set is closed and low-cardinality -- two constants below -- so it
+// The value set is closed and low-cardinality -- three constants below -- so it
 // is safe to group by. Absence is meaningful: a request that was not refused
 // by this service carries no such attribute at all, rather than an "ok" or an
 // empty string. That is asserted in handlers_test.go, because an attribute
@@ -139,6 +143,9 @@ const (
 	// The payment had already been executed. Also unmutated -- but for the
 	// opposite reason: the money has already moved, once.
 	refusalAlreadyExecuted = "already_executed"
+	// A reviewer rejected the payment. Unmutated, and final: no money moved
+	// and none will.
+	refusalRejected = "rejected"
 )
 
 // refuse records the cause on the current server span and writes the 409.
@@ -276,12 +283,12 @@ func newRouter(s *store) http.Handler {
 			}
 			if !confirmsPayment(proposal, *req.Amount, req.Currency) {
 				// 409, the status this handler already uses for "the recorded
-				// state will not allow this execution", and one of the two
+				// state will not allow this execution", and one of the
 				// statuses settlement-agent's mcp_tools.py documents as
 				// surfacing meaningfully through the MCP layer. Nothing is
 				// mutated on this path: the payment stays proposed.
 				//
-				// `refuse` also records WHICH of this service's two 409
+				// `refuse` also records WHICH of this service's three 409
 				// causes this is. The status code alone cannot tell this
 				// apart from the already-executed case
 				// below, and a 4xx leaves the span Unset, so without the
@@ -304,6 +311,9 @@ func newRouter(s *store) http.Handler {
 				// wrong here, and nothing in the response distinguishes them.
 				refuse(r.Context(), w, refusalAlreadyExecuted,
 					"payment already executed")
+			case errors.Is(err, ErrRejected):
+				refuse(r.Context(), w, refusalRejected,
+					"payment was rejected by a reviewer")
 			case err != nil:
 				writeError(w, http.StatusInternalServerError, "unexpected error")
 			default:
@@ -345,6 +355,7 @@ func newRouter(s *store) http.Handler {
 				return
 			}
 
+			now := time.Now().UTC().Format(time.RFC3339)
 			payment, err := s.refuse(paymentID, refusal{
 				Rule:           req.Rule,
 				Limit:          req.Limit,
@@ -352,8 +363,7 @@ func newRouter(s *store) http.Handler {
 				Narrative:      req.Narrative,
 				RefusedTraceID: req.RefusedTraceID,
 				RefusedSpanID:  req.RefusedSpanID,
-				RefusedAt:      time.Now().UTC().Format(time.RFC3339),
-			})
+			}, req.A2ATaskID, now)
 			switch {
 			case errors.Is(err, ErrNotFound):
 				writeError(w, http.StatusNotFound, "payment not found")
@@ -366,7 +376,7 @@ func newRouter(s *store) http.Handler {
 				// This deliberately does not go through the `refuse` helper
 				// above or set northstar.payment.refusal_cause: that
 				// attribute's own doc comment scopes it to the execute
-				// route's two causes and states it is "set nowhere else" --
+				// route's three causes and states it is "set nowhere else" --
 				// this is a different route's conflict, not a third cause
 				// of the same one.
 				writeError(w, http.StatusConflict, "payment already executed")
@@ -378,7 +388,32 @@ func newRouter(s *store) http.Handler {
 				// reason for not using the `refuse` helper: this is a third, distinct
 				// conflict cause, not one of the two the refusal_cause
 				// attribute is scoped to.
-				writeError(w, http.StatusConflict, "payment already refused")
+				writeError(w, http.StatusConflict, "payment already awaiting approval")
+			case errors.Is(err, ErrRejected):
+				writeError(w, http.StatusConflict, "payment was rejected by a reviewer")
+			case err != nil:
+				writeError(w, http.StatusInternalServerError, "unexpected error")
+			default:
+				writeJSON(w, http.StatusOK, payment)
+			}
+		})
+
+	handle("POST /payments/{paymentId}/reject", "POST /payments/{paymentId}/reject",
+		func(w http.ResponseWriter, r *http.Request) {
+			var req struct {
+				ReviewerID string `json:"reviewerId"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ReviewerID == "" {
+				writeError(w, http.StatusBadRequest, "reviewerId is required")
+				return
+			}
+			payment, err := s.reject(r.PathValue("paymentId"), req.ReviewerID,
+				time.Now().UTC().Format(time.RFC3339))
+			switch {
+			case errors.Is(err, ErrNotFound):
+				writeError(w, http.StatusNotFound, "payment not found")
+			case errors.Is(err, ErrNotAwaiting):
+				writeError(w, http.StatusConflict, "payment is not awaiting approval")
 			case err != nil:
 				writeError(w, http.StatusInternalServerError, "unexpected error")
 			default:
@@ -396,7 +431,7 @@ func newRouter(s *store) http.Handler {
 			writeJSON(w, http.StatusOK, payment)
 		})
 
-	// GET /payments?status=refused is what the reviewer UI calls to list what
+	// GET /payments?status=awaiting_approval is what the reviewer UI calls to list what
 	// it needs to review. The query parameter is not part of the route pattern
 	// (Go's ServeMux does not match on it), so the span name below is still a
 	// template, not a raw path, exactly as it is for every other route.

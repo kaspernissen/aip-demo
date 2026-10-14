@@ -511,154 +511,34 @@ spec:
               protocol: TCP
 ---
 # =============================================================================
-# senior-settlement-agent's egress. Same image as settlement-agent, same
-# outbound inventory, because "senior-settlement-agent needs exactly what
-# settlement-agent has" is the design point (deploy/k8s/
-# senior-settlement-agent.yaml's own header): a second Deployment of the
-# identical container, not a variant with a different set of calls to make.
+# The ingress half, for settlement-agent.
 #
-# THE MEASURED HAZARD, restated for this endpoint specifically: in Cilium,
-# ANY egress rule that selects an endpoint makes that endpoint default-deny
-# for egress -- there is no partial application. The moment this document's
-# `endpointSelector` matches senior-settlement-agent's pod, every outbound
-# connection that workload makes has to be listed here or it silently stops
-# working, with a symptom (a hung MCP call, a vanished span, a failed model
-# call) that names nothing about a network policy. So this is deliberately a
-# duplicate of settlement-agent-egress-allowlist's four rules -- DNS
-# (L3/L4 plus the `rules.dns` block toFQDNs depends on), agentgateway:3000,
-# the OTLP collector:4318, and api.anthropic.com:443 -- rather than a
-# `northstar.io/plane: agents`-wide document. A shared document would grant
-# settlement-agent's and claims-agent's endpoints reachability neither one
-# asked for, purely as a side effect of sharing a selector (the same
-# objection this file's egress header already records against one document
-# per plane, applied again here).
-#
-# Behavioural probes are insufficient to prove this is right, only to prove
-# it is not obviously wrong: stripping the DNS proxy's `rules.dns` block, and
-# separately widening egress to payments-mcp directly, both left every
-# behavioural check green while the datapath had actually changed. The
-# datapath assertion for this document is
-# `cilium-dbg bpf policy get <senior-settlement-agent endpoint id>`, run
-# against the live cluster -- not reasoned about from the YAML alone.
-# =============================================================================
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: senior-settlement-agent-egress-allowlist
-  namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m3
-spec:
-  endpointSelector:
-    matchLabels:
-      app: senior-settlement-agent
-  egress:
-    # 1. DNS -- L3/L4 to CoreDNS, plus the L7 `rules.dns` block rule 4's
-    # `toFQDNs` allowance depends on. See settlement-agent-egress-allowlist's
-    # rule 1 above for the full reasoning (CoreDNS selected by label, not
-    # ClusterIP; `matchPattern: "*"` because enforcement happens on the
-    # connect, not the lookup, and `ClusterFirst` DNS's search-domain
-    # expansion means more than one query shape crosses this proxy).
-    - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: kube-system
-            k8s-app: kube-dns
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
-          rules:
-            dns:
-              - matchPattern: "*"
-
-    # 2. agentgateway, on the MCP port. senior-settlement-agent's
-    # PAYMENTS_MCP_URL is the identical value settlement-agent's carries
-    # (deploy/k8s/senior-settlement-agent.yaml) -- same gateway, same "gateway
-    # as the only path" argument, from the same identity-agnostic dataplane
-    # rule.
-    - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: northstar-platform
-            app: agentgateway
-      toPorts:
-        - ports:
-            - port: "3000"
-              protocol: TCP
-
-    # 3. The OTLP collector. Dropping this would not break the demo -- spans
-    # would silently stop leaving this pod while settlements kept succeeding
-    # -- which is exactly the failure mode settlement-agent-egress-
-    # allowlist's own rule 3 calls out as the one most likely to be mistaken
-    # for success.
-    - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: observability
-            app: otel-collector
-      toPorts:
-        - ports:
-            - port: "4318"
-              protocol: TCP
-
-    # 4. The model provider, by name. execute_approved makes no model call
-    # (settlement.py), but the same image's decide_settlement path does, and
-    # this Deployment runs that exact code -- so the allowance has to be
-    # present even though this milestone's approval flow does not exercise
-    # it. `matchName`, not a pattern: exactly the one host, same as
-    # settlement-agent's own rule 4.
-    - toFQDNs:
-        - matchName: api.anthropic.com
-      toPorts:
-        - ports:
-            - port: "443"
-              protocol: TCP
----
-# =============================================================================
-# The ingress half, for both settlement identities.
-#
-# Measured, not assumed: `cilium-dbg bpf policy get` on both settlement
-# endpoints (177 = settlement-agent, 421 = senior-settlement-agent) showed
-# `Allow Ingress ANY` -- neither Deployment had ever gained an ingress policy,
-# despite the egress documents above. Combined with `execute_approved` not
-# verifying the ledger (the code half of this same finding, closed in
-# agents/settlement-agent/settlement.py), anything in the cluster that could
-# reach port 9002 could execute any proposed payment up to that identity's
-# limit, with no model call and no human. The code fix closes "no review
-# happened"; this closes "anything can even ask".
+# Measured, not assumed: `cilium-dbg bpf policy get` on the settlement endpoint
+# showed `Allow Ingress ANY` -- the Deployment had never gained an ingress
+# policy, despite the egress document above. This closes "anything can even
+# ask" for its A2A port.
 #
 # THE MEASURED HAZARD, restated for ingress: exactly as on the egress side,
 # ANY rule that selects an endpoint makes that endpoint default-deny in the
-# direction the rule is written for. The moment either `endpointSelector`
-# below matches, every legitimate caller has to be listed or it silently
-# stops working. So each document lists only what is measured to need in,
-# right now -- "grant the least that is still recognisably a policy"
+# direction the rule is written for. The moment the `endpointSelector` below
+# matches, every legitimate caller has to be listed or it silently stops
+# working. So the document lists only what is measured to need in, right now
+# -- "grant the least that is still recognisably a policy"
 # (customer-ui-egress-allowlist's own phrase, applied here to ingress).
 #
-# settlement-agent (junior): claims-agent is its one real caller today --
+# settlement-agent: claims-agent is its one real caller today --
 # `NORTHSTAR_ALLOWED_AGENTS` in deploy/k8s/claims-agent.yaml names it, and
 # claims-agent-egress-allowlist's rule 2 already permits the egress half of
 # this exact connection. This document is that allowance's other half.
 #
-# senior-settlement-agent: reviewer-ui is its one legitimate caller --
-# it exists (deploy/k8s/reviewer-ui.yaml), and its POST /review/{payment_id}
-# handler is the one and only caller of execute_approved over A2A in this
-# repo. The senior-settlement-agent-ingress-allowlist document below grants
-# exactly that -- one endpoint, one port (9002) -- plus the readiness probe,
-# "grant the least that is still recognisably a policy" applied to a real
-# caller rather than a hypothetical one. (A `kubectl port-forward` also
-# reaches it for manual verification, the same way the readiness probe does:
-# kubelet dials the pod directly from the node, which Cilium classifies as
-# `reserved:host`, not as mesh traffic from another endpoint.)
-#
-# Both readinessProbes are `httpGet` on 9002 (deploy/k8s/settlement-agent.yaml,
-# deploy/k8s/senior-settlement-agent.yaml), dialled by kubelet from the node --
-# the same `fromEntities: [host, remote-node]` reasoning the payments-mcp and
-# policy-decision-service ingress documents above already state in full.
+# The readinessProbe is `httpGet` on 9002 (deploy/k8s/settlement-agent.yaml),
+# dialled by kubelet from the node -- the same `fromEntities: [host,
+# remote-node]` reasoning the payments-mcp and policy-decision-service ingress
+# documents above already state in full.
 #
 # Asserted at the datapath, not just read off this YAML: `cilium-dbg bpf
-# policy get` on both endpoints -- the same discipline this file's egress
-# header prescribes ("behavioural probes have twice gone green against real
+# policy get` on the endpoint -- the same discipline this file's egress header
+# prescribes ("behavioural probes have twice gone green against real
 # regressions").
 # =============================================================================
 apiVersion: cilium.io/v2
@@ -688,41 +568,6 @@ spec:
         - host
         - remote-node
 ---
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: senior-settlement-agent-ingress-allowlist
-  namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m3
-spec:
-  endpointSelector:
-    matchLabels:
-      app: senior-settlement-agent
-  ingress:
-    # 1. reviewer-ui -- and the ONLY application caller this document grants.
-    # reviewer-ui (deploy/k8s/reviewer-ui.yaml) exists, and its
-    # POST /review/{payment_id} handler is the one and only caller of
-    # execute_approved over A2A in this repo, so it is the one and only rule
-    # added here: granting reachability beyond a real, measured caller would
-    # be exactly the "reachability nothing measured asked for" this file's own
-    # egress header argues against.
-    - fromEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: northstar-agents
-            app: reviewer-ui
-      toPorts:
-        - ports:
-            - port: "9002"
-              protocol: TCP
-
-    # 2. The node itself, for the readiness probe -- see the
-    # policy-decision-service ingress document above for why this matters
-    # even once rule 1 exists.
-    - fromEntities:
-        - host
-        - remote-node
----
 # =============================================================================
 # reviewer-ui's own egress.
 #
@@ -732,33 +577,32 @@ spec:
 # hazard produced (stripping the DNS proxy's `rules.dns` block, and widening
 # egress to payments-mcp directly) that stayed green under behavioural probing
 # alone. So this is reviewer-ui's *complete* outbound inventory, taken from
-# `apps/reviewer-ui/bootstrap.py`, `ledger.py`, `approval.py` and
+# `apps/reviewer-ui/bootstrap.py`, `ledger.py`, `gateway.py` and
 # `identity.py` rather than from watching a running pod:
 #
 #   * DNS (L3/L4 only -- no `rules.dns` block, because there is no `toFQDNs`
 #     rule below for it to feed; same reasoning as claims-agent-egress-
 #     allowlist's own rule 1).
 #   * payments-api:8080 in northstar-systems (ledger.py's GET
-#     /payments?status=refused and GET /payments/{id} -- a direct REST call,
-#     never through agentgateway/payments-mcp/the Policy Decision Service:
-#     reviewer-ui has no business anywhere near that governed MCP path, and
-#     this is the enforced half of that boundary).
-#   * senior-settlement-agent:9002 in northstar-agents (approval.py's A2A
-#     POST carrying the human's approval -- the other half of the ingress
-#     rule added above).
+#     /payments?status=awaiting_approval, GET /payments/{id} and POST
+#     /payments/{id}/reject -- direct REST calls that move no money).
+#   * agentgateway:3000 in northstar-platform (gateway.py's execute_payment
+#     tool call: the release of an approved payment, under reviewer-ui's own
+#     JWT-SVID, decided by the Policy Decision Service like any other
+#     execute). It reaches payments-mcp only through the gateway; the
+#     payments-mcp-gateway-only ingress policy above still holds.
 #   * the OTLP collector:4318 -- same "silent, not fatal" argument as every
 #     other workload's own rule 3 in this file: dropping it would not break
 #     the demo, it would just make `review.decision` (and every CLIENT span
 #     this process emits) vanish from the trace no one would notice missing.
 #
-# Deliberately absent: agentgateway:3000, payments-mcp:8000,
-# policy-decision-service:9100, and api.anthropic.com:443. reviewer-ui calls
-# none of them -- it holds no `EXECUTE_LIMITS` row and must never be able to
-# reach a place that would grant one. identity.py's SPIFFE Workload API call
-# is a Unix domain socket, exactly like every other workload's own SVID fetch
-# in this file's header note ("UDS IPC never enters the pod's network
-# namespace, so Cilium policy does not govern it") -- there is nothing to
-# allow here for it.
+# Deliberately absent: payments-mcp:8000, policy-decision-service:9100 and
+# api.anthropic.com:443. reviewer-ui calls none of them directly, and
+# payments-mcp and the PDS accept only the gateway. identity.py's SPIFFE
+# Workload API call is a Unix domain socket, exactly like every other
+# workload's own SVID fetch in this file's header note ("UDS IPC never enters
+# the pod's network namespace, so Cilium policy does not govern it") -- there
+# is nothing to allow here for it.
 #
 # Datapath assertion, not just this YAML: `cilium-dbg bpf policy get
 # <reviewer-ui endpoint id>`, run against the live cluster.
@@ -789,8 +633,7 @@ spec:
             - port: "53"
               protocol: TCP
 
-    # 2. payments-api, directly -- ledger.py's GET /payments?status=refused
-    # and GET /payments/{id}. Cross-namespace (northstar-systems), and still
+    # 2. payments-api, directly -- ledger.py's reads and reject. Cross-namespace (northstar-systems), and still
     # namespace-pinned for the reason every other rule in this file gives.
     - toEndpoints:
         - matchLabels:
@@ -801,16 +644,15 @@ spec:
             - port: "8080"
               protocol: TCP
 
-    # 3. senior-settlement-agent, on its A2A port -- approval.py's one
-    # outbound peer, and the other half of this document's ingress rule for
-    # that endpoint (above).
+    # 3. agentgateway, on the MCP port -- gateway.py's one outbound peer for
+    # the release of an approved payment.
     - toEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: northstar-agents
-            app: senior-settlement-agent
+            k8s:io.kubernetes.pod.namespace: northstar-platform
+            app: agentgateway
       toPorts:
         - ports:
-            - port: "9002"
+            - port: "3000"
               protocol: TCP
 
     # 4. The OTLP collector.

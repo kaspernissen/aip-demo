@@ -1443,7 +1443,6 @@ def test_the_shipped_panels_query_the_fields_the_evidence_tests_name():
         "tests/e2e/test_evidence_view.py",
         "tests/e2e/test_policy_denial.py",
         "tests/e2e/test_opensearch_trace_ingest.py",
-        "tests/e2e/test_supervised.py",
     )
 
     def keyword(attribute: str) -> str:

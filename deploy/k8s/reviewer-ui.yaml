@@ -3,27 +3,20 @@
 # Its own ServiceAccount, for the same reason settlement-agent.yaml's own
 # comment gives: without one this pod attests as
 # spiffe://northstar.local/ns/northstar-agents/sa/default, an identity a
-# policy cannot decide on. It is a REQUIREMENT here, not a nicety --
-# reviewer-ui must have a real SPIFFE ID of its own so the Policy Decision
-# Service's `unknown_caller` refusal is
-# a decision about a real, distinct identity, not one that happens to match
-# some other workload's `default` by accident. It grants no RBAC and this pod
-# makes no Kubernetes API call. No new SPIRE registration is needed: the
-# chart's own catch-all `default` ClusterSPIFFEID (fallback: true) derives the
-# ID from namespace + ServiceAccount the same way it already does for
-# senior-settlement-agent (deploy/k8s/senior-settlement-agent.yaml's own
-# comment).
+# policy cannot decide on. It grants no RBAC and this pod makes no Kubernetes
+# API call.
 #
-# Deliberately NO `EXECUTE_LIMITS` row anywhere in
-# platform/policy-decision-service/pds/rules.py for this identity, and this
-# manifest mounts no SPIFFE Workload API socket for calling agentgateway --
-# reviewer-ui never reaches agentgateway/payments-mcp/the Policy Decision
-# Service at all (deploy/platform/cilium-policies.yaml's
-# reviewer-ui-egress-allowlist is the enforced version of that boundary). The
-# CSI volume it DOES mount below is for a different, narrower purpose: reading
-# its own SPIFFE ID back from the Workload API, for the `review.decision`
-# span's `review.reviewer.spiffe_id` attribute (apps/reviewer-ui/identity.py)
-# -- not for presenting a credential to anything.
+# This identity now releases money: the reviewer-ui calls execute_payment
+# through agentgateway under its own JWT-SVID, and the Policy Decision Service
+# permits it under `human-approved.execute` only for a payment the ledger shows
+# awaiting approval (platform/policy-decision-service/pds/rules.py,
+# HUMAN_APPROVERS). Because of that it is named in-tree as a ClusterSPIFFEID
+# (deploy/platform/spire/registration.yaml, northstar-reviewer-ui) rather than
+# left to the chart's fallback. The CSI volume below mounts the Workload API
+# socket for both uses: its own X.509 SPIFFE ID for the `review.decision` span,
+# and the JWT-SVID it presents to the gateway. Its egress is allow-listed to
+# payments-api (read, reject) and agentgateway (release)
+# (deploy/platform/cilium-policies.yaml, reviewer-ui-egress-allowlist).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -74,22 +67,22 @@ spec:
               value: http://otel-collector.observability.svc.cluster.local:4318
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
               value: http/protobuf
-            # The ledger listing/read routes, reached directly -- no MCP
-            # hop, no agentgateway, no Policy Decision Service. See
+            # The ledger listing, read and reject routes, reached directly --
+            # no MCP hop, they move no money. See
             # apps/reviewer-ui/ledger.py's module docstring for why.
             - name: PAYMENTS_API_URL
               value: http://payments-api.northstar-systems.svc.cluster.local:8080
-            # The colleague with higher approval authority. reviewer-ui's
-            # only outbound A2A peer -- it holds no NORTHSTAR_ALLOWED_AGENTS
-            # list of its own because it is a client to exactly one agent, not
-            # a delegating one.
-            - name: SENIOR_SETTLEMENT_AGENT_URL
-              value: http://senior-settlement-agent.northstar-agents.svc.cluster.local:9002
+            # The release: execute_payment through agentgateway, the same
+            # governed path the settlement-agent uses, under this workload's
+            # own JWT-SVID (apps/reviewer-ui/gateway.py).
+            - name: AGENTGATEWAY_MCP_URL
+              value: http://agentgateway.northstar-platform.svc.cluster.local:3000/mcp
+            - name: NORTHSTAR_GATEWAY_AUDIENCE
+              value: spiffe://northstar.local/ns/northstar-platform/sa/agentgateway
             - name: PORT
               value: "8080"
-            # The Workload API socket path, mounted here for the narrower reason
-            # this file's header comment gives: reading this workload's own
-            # SPIFFE ID back, not presenting a JWT-SVID to anything.
+            # The Workload API socket path: this workload's own SPIFFE ID, and
+            # the JWT-SVID it presents to the gateway (see the header comment).
             - name: SPIFFE_ENDPOINT_SOCKET
               value: unix:///spiffe-workload-api/spire-agent.sock
           ports:

@@ -2,11 +2,11 @@
 
 `decide()` is this service's one piece of real logic; main.py's job is only
 to parse the HTTP form and render whatever this returns. Every figure that
-reaches the approval payload or the span is read back from the ledger at
+reaches the release call or the span is read back from the ledger at
 decision time (`ledger.get(payment_id)`, called fresh here rather than
 trusting anything the listing page rendered earlier or anything a form field
 might carry) -- amounts, currency, the rule, the limit, the refusal's trace
-and span ids, and above all `refusedAt`, the one clock this function is
+and span ids, and above all `awaitingSince`, the one clock this function is
 allowed to compute `review.elapsed_ms` from. There is deliberately no
 "page load" timestamp anywhere in this module: the spec's own words are that
 elapsed time measures how long the *human* took, not how long a browser tab
@@ -42,14 +42,17 @@ from typing import Any, Protocol
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
+from levels import autonomy_level_of
+
 _VALID_DECISIONS = ("approve", "reject")
+AWAITING_APPROVAL = "awaiting_approval"
 
 
 class PaymentNotAwaitingReview(RuntimeError):
-    """The ledger's own record for this payment is not `status: "refused"` --
-    already executed, only proposed, or already reviewed by someone else in
-    the meantime. There is nothing coherent to record a decision about: a
-    real `refusedAt` may not even exist, so `review.elapsed_ms` could not be
+    """The ledger's own record for this payment is not `status:
+    "awaiting_approval"` -- already executed, rejected, only proposed, or
+    already reviewed by someone else in the meantime. There is nothing
+    coherent to record a decision about: a real `awaitingSince` may not even exist, so `review.elapsed_ms` could not be
     computed honestly, and this function raises without ever setting it.
 
     This raises *inside* the `review.decision` span, which ends ERROR
@@ -60,9 +63,13 @@ class PaymentNotAwaitingReview(RuntimeError):
 class LedgerLike(Protocol):
     async def get(self, payment_id: str) -> dict[str, Any]: ...
 
+    async def reject(self, payment_id: str, reviewer_id: str) -> dict[str, Any]: ...
 
-class ApproverLike(Protocol):
-    async def execute_approved(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+class GatewayLike(Protocol):
+    async def execute_payment(
+        self, payment_id: str, amount: float, currency: str
+    ) -> dict[str, Any]: ...
 
 
 @dataclass
@@ -72,28 +79,31 @@ class ReviewResult:
     reviewer_id: str
     reviewer_spiffe_id: str
     elapsed_ms: int
-    # The ledger's own record of what execute_approved returned, only ever
-    # set on a *successful* approval. None for a reject, and None for an
-    # approval that failed -- render.py's honesty rule reads directly off
-    # this being None rather than off any success/failure flag of its own.
-    approved_execution: dict[str, Any] | None = None
-    # Set only when decision == "approve" and the senior agent refused or
-    # could not be reached. Never set for a reject (there was nothing to
-    # attempt).
-    approval_error: str | None = None
+    # The autonomy level the refusal happened at, read off the PDS rule name
+    # (levels.py).
+    autonomy_level: str = "unknown"
+    # The ledger record the gateway returned, only ever set on a *successful*
+    # release. render.py's honesty rule reads directly off this being None
+    # rather than off any success/failure flag of its own.
+    executed: dict[str, Any] | None = None
+    # The ledger record after a reject; None for an approve.
+    rejected: dict[str, Any] | None = None
+    # Set when the release or the reject did not happen: the platform's refusal
+    # text as it came back, or the failure.
+    error: str | None = None
 
 
-def _elapsed_ms(refused_at: str, now: datetime) -> int:
-    """Milliseconds from the ledger's own `refusedAt` to `now`.
+def _elapsed_ms(awaiting_since: str, now: datetime) -> int:
+    """Milliseconds from the ledger's own `awaitingSince` to `now`.
 
-    `refused_at` is payments-api's `time.Now().UTC().Format(time.RFC3339)`
+    `awaiting_since` is payments-api's `time.Now().UTC().Format(time.RFC3339)`
     (systems/payments-api/handlers.go) -- e.g. "2026-09-10T10:00:00Z".
     `datetime.fromisoformat` on the installed Python 3.13 parses the "Z"
     suffix directly, but the explicit replace below makes that independent
     of which Python parses it, rather than relying on a version-specific
     parser behaviour.
     """
-    refused_dt = datetime.fromisoformat(refused_at.replace("Z", "+00:00"))
+    refused_dt = datetime.fromisoformat(awaiting_since.replace("Z", "+00:00"))
     if refused_dt.tzinfo is None:
         refused_dt = refused_dt.replace(tzinfo=timezone.utc)
     delta_ms = (now - refused_dt).total_seconds() * 1000
@@ -111,21 +121,20 @@ async def decide(
     decision: str,
     *,
     ledger: LedgerLike,
-    approver: ApproverLike,
+    gateway: GatewayLike,
     reviewer_spiffe_id: str,
     now: datetime | None = None,
 ) -> ReviewResult:
-    """Process a reviewer's decision on a refused payment.
+    """Process a reviewer's decision on a payment awaiting approval.
 
     Raises ValueError for a malformed request (an unknown `decision` value,
     or an empty `reviewer_id`) before any ledger call -- the same
     "fail loudly, never proceed on a guess" discipline
-    agents/settlement-agent/executor.py's `_validate_approval` holds for the
-    approval payload one hop downstream.
+    the platform's own policy holds one hop downstream.
 
     Raises whatever `ledger.get` raises (ledger.PaymentNotFound,
     ledger.LedgerUnavailable) unchanged, and PaymentNotAwaitingReview if the
-    ledger's record for this payment is not `status: "refused"` -- in both
+    ledger's record for this payment is not `status: "awaiting_approval"` -- in both
     cases from *inside* the `review.decision` span, which ends ERROR carrying
     the exception (see the module docstring).
     """
@@ -158,20 +167,27 @@ async def decide(
         # injects -- had no parent to attach to, which put both it and
         # payments-api's own server span in a trace of their own.
         record = await ledger.get(payment_id)
-        if record.get("status") != "refused":
+        if record.get("status") != AWAITING_APPROVAL:
             raise PaymentNotAwaitingReview(
                 f"payment {payment_id!r}: ledger status is "
-                f"{record.get('status')!r}, not 'refused' -- nothing to review"
+                f"{record.get('status')!r}, not 'awaiting_approval' -- nothing to review"
             )
 
         refusal = record.get("refusal") or {}
         elapsed_ms = _elapsed_ms(
-            refusal.get("refusedAt", ""), now or datetime.now(timezone.utc)
+            record.get("awaitingSince", ""), now or datetime.now(timezone.utc)
         )
         span.set_attribute(
             "review.refused.trace_id", refusal.get("refusedTraceId") or ""
         )
         span.set_attribute("review.elapsed_ms", elapsed_ms)
+        # The join key the evidence view and eval-scorer read a claim's whole
+        # trajectory by: this decision happens minutes after, and in a
+        # different trace from, the refusal, and the claim id is what ties the
+        # two together (Gap 4). Read off the ledger record, like everything
+        # else on this span.
+        if record.get("claimId"):
+            span.set_attribute("northstar.claim.id", record["claimId"])
 
         result = ReviewResult(
             payment_id=payment_id,
@@ -179,28 +195,27 @@ async def decide(
             reviewer_id=reviewer_id,
             reviewer_spiffe_id=reviewer_spiffe_id,
             elapsed_ms=elapsed_ms,
+            autonomy_level=autonomy_level_of(refusal.get("rule")),
         )
 
-        if decision == "approve":
-            payload = {
-                "paymentId": payment_id,
-                "amount": record.get("amount"),
-                "currency": record.get("currency"),
-                "approval": {"reviewerId": reviewer_id},
-                "refusedTraceId": refusal.get("refusedTraceId") or "",
-                "refusedSpanId": refusal.get("refusedSpanId") or "",
-            }
-            try:
-                result.approved_execution = await approver.execute_approved(payload)
-            except Exception as exc:
-                # Surface the failure honestly rather than showing a success:
-                # the span records that this approval did not go through, and
-                # result.approval_error is what render.py reads to say so on
-                # the page. The decision
-                # attribute above is left as "approve" -- that is still what
-                # the reviewer chose, independent of whether it executed.
-                span.set_status(Status(StatusCode.ERROR, str(exc)))
-                span.record_exception(exc)
-                result.approval_error = str(exc)
+        try:
+            if decision == "approve":
+                # The ledger's amount and currency, never a form field. The
+                # PDS still decides, and reads the ledger status itself: a
+                # check this function did for itself would be a check a
+                # compromised reviewer-ui skips.
+                result.executed = await gateway.execute_payment(
+                    payment_id, record["amount"], record["currency"]
+                )
+            else:
+                result.rejected = await ledger.reject(payment_id, reviewer_id)
+        except Exception as exc:  # noqa: BLE001 -- surfaced on the result and the span
+            # Surface the failure honestly rather than showing a success: the
+            # span records that this decision did not go through, and
+            # result.error is what render.py reads to say so on the page. The
+            # decision attribute above is left as the reviewer chose it.
+            span.set_status(Status(StatusCode.ERROR, str(exc)))
+            span.record_exception(exc)
+            result.error = str(exc)
 
         return result

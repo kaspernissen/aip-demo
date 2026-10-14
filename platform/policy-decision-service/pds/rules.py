@@ -9,22 +9,33 @@ import math
 from dataclasses import dataclass
 
 # The rule shape:
-#   "settlement-agent, at autonomy level `assisted`, may execute up to €6,000."
+#   "settlement-agent, at autonomy level `autonomous`, may execute up to €6,000;
+#    at `assisted` it may execute nothing."
 # Keyed by (SPIFFE ID, autonomy level) so the identity is structurally required
 # rather than merely consulted.
 EXECUTE_LIMITS: dict[tuple[str, str], float] = {
     ("spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent",
-     "assisted"): 6000.0,
+     "assisted"): 0.0,
     ("spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent",
-     "autonomous"): 1_000_000.0,
-    # The colleague with higher approval authority the agent already
-    # narrates. Higher limit, same rule, same code path. Approval changes who
-    # asks; it does not change what is allowed -- this row is the only
-    # policy difference for that identity; `decide()` itself needs no
-    # branch for it.
-    ("spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent",
-     "assisted"): 25_000.0,
+     "autonomous"): 6000.0,
 }
+
+# Maker-checker. The agent prepares every payment; above its band, a human
+# releases it. The human's tool, reviewer-ui, has no limit and no autonomy
+# level: it may release exactly the payments the ledger shows waiting for a
+# human, and nothing else.
+#
+# `ledger_status` is an input that widens what this caller may do, which the
+# note above CALLER_SCOPED_TOOLS warns against. It is admissible for one
+# reason: the only way a payment reaches `awaiting_approval` is refuse_payment,
+# and CALLER_SCOPED_TOOLS lets only the settlement-agent call it. The caller
+# this widens for cannot write the fact that widens it. server.py reads the
+# status from payments-api (pds/ledger.py) and only for these callers.
+HUMAN_APPROVERS: frozenset[str] = frozenset({
+    "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui",
+})
+AWAITING_APPROVAL = "awaiting_approval"
+HUMAN_APPROVAL_RULE = "human-approved.execute"
 
 # EXECUTE_LIMITS is keyed by (caller, level), so a miss below is ambiguous
 # between "this caller has no row at all" and "this caller is known, but not
@@ -46,9 +57,8 @@ _KNOWN_CALLERS = frozenset(caller for caller, _level in EXECUTE_LIMITS)
 # money and reverses nothing, so it is unlimited for the same reason
 # proposing is.
 #
-# `get_payment` joins them too. `execute_approved`
-# (agents/settlement-agent/settlement.py) reads the ledger back before
-# executing an approval, and a read that moves nothing and reverses nothing is
+# `get_payment` joins them too: the reviewer-ui and claims-agent read through
+# it or alongside it, and a read that moves nothing and reverses nothing is
 # exactly this set's own admission rule.
 UNLIMITED_TOOLS = frozenset({"propose_payment", "refuse_payment", "get_payment"})
 LIMITED_TOOLS = frozenset({"execute_payment"})
@@ -75,7 +85,6 @@ LIMITED_TOOLS = frozenset({"execute_payment"})
 CALLER_SCOPED_TOOLS: dict[str, frozenset[str]] = {
     "refuse_payment": frozenset({
         "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent",
-        "spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent",
     }),
 }
 
@@ -87,6 +96,10 @@ class PolicyInput:
     amount: float | None
     currency: str
     autonomy_level: str
+    # What payments-api shows for the payment, read once and only for a caller
+    # in HUMAN_APPROVERS (see the note above HUMAN_APPROVERS). None when not
+    # read or unreadable.
+    ledger_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -129,6 +142,9 @@ def decide(req: PolicyInput) -> Decision:
 
     if req.tool not in LIMITED_TOOLS:
         return Decision(False, f"unknown tool {req.tool!r}", rule="unknown_tool")
+
+    if (req.caller or "") in HUMAN_APPROVERS:
+        return _human_approval(req)
 
     limit = EXECUTE_LIMITS.get((req.caller or "", req.autonomy_level))
     if limit is None:
@@ -182,33 +198,11 @@ def decide(req: PolicyInput) -> Decision:
             limit=limit,
         )
 
-    # **`rule` must not be a literal that mislabels one of the three
-    # principals that can reach here. Read this before changing it again** --
-    # `policy.rule` on the `policy.decision` span is what a reader on stage
-    # reads off the trace.
-    #
-    # Composes only the autonomy segment: `f"settlement-agent.
-    # {req.autonomy_level}.execute_limit"`. The lookup above is keyed by
-    # `(caller, autonomy_level)` and EXECUTE_LIMITS holds three rows, and this
-    # composition touches each of them as follows:
-    #
-    #   * `(settlement-agent, assisted)` -> composes to
-    #     `settlement-agent.assisted.execute_limit`.
-    #   * `(senior-settlement-agent, assisted)` -> ALSO composes to
-    #     `settlement-agent.assisted.execute_limit`, because the composition
-    #     is keyed on `autonomy_level` only, never on `caller`. That the name
-    #     still names the junior is **deliberate and load-bearing**: approval
-    #     changes *who is asking*, not what is allowed, and the shared rule
-    #     name across two different callers is what makes that visible in
-    #     one span. `tests/e2e/test_supervised.py` criterion 4 asserts this
-    #     exact string on the permitting decision.
-    #   * `(settlement-agent, autonomous)` -> composes to
-    #     `settlement-agent.autonomous.execute_limit`, reachable once
-    #     `pds/autonomy.py` resolves the level per-decision rather than
-    #     through a fixed constant. The only caller-segment string this file
-    #     ever emits is `settlement-agent`, for both settlement identities,
-    #     so composing just the autonomy segment cannot touch the
-    #     senior/junior naming criterion 4 depends on.
+    # `rule` composes only the autonomy segment, `settlement-agent.<level>.
+    # execute_limit`, so it never mislabels the one settlement identity at
+    # either level: `policy.rule` on the `policy.decision` span is what a
+    # reader on stage reads off the trace. The reviewer-ui is not here at all:
+    # it was answered above by `_human_approval`, under its own rule name.
     if req.amount > limit:
         return Decision(
             False,
@@ -224,3 +218,18 @@ def decide(req: PolicyInput) -> Decision:
                     f"{_money(limit, req.currency)} limit",
                     rule=f"settlement-agent.{req.autonomy_level}.execute_limit",
                     limit=limit)
+
+
+def _human_approval(req: PolicyInput) -> Decision:
+    if req.amount is None or not math.isfinite(req.amount) or req.amount <= 0:
+        return Decision(False, f"requested amount {req.amount!r} is not a payable amount",
+                        rule="invalid_amount")
+    if req.ledger_status != AWAITING_APPROVAL:
+        return Decision(
+            False,
+            "a human approval may only release a payment awaiting approval; "
+            f"the ledger shows {req.ledger_status!r}",
+            rule=HUMAN_APPROVAL_RULE,
+        )
+    return Decision(True, "a human released a payment the ledger shows awaiting approval",
+                    rule=HUMAN_APPROVAL_RULE)

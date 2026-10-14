@@ -344,11 +344,9 @@ class PaymentsTools:
         )
 
     async def get(self, payment_id: str) -> dict:
-        """Read back what the ledger recorded for a payment. `execute_approved`
-        calls this before executing an approval, to confirm a refusal record
-        actually exists and that its recorded amount matches -- through the
-        same governed MCP path every other payments call in this repo takes,
-        not a new HTTP path."""
+        """Read back what the ledger recorded for a payment, through the same
+        governed MCP path every other payments call in this repo takes, not a
+        new HTTP path."""
         return await self._call("get_payment", {"payment_id": payment_id})
 
     async def refuse(
@@ -361,6 +359,7 @@ class PaymentsTools:
         narrative: str,
         refused_trace_id: str,
         refused_span_id: str,
+        a2a_task_id: str = "",
     ) -> dict:
         """Record why a payout was refused, beside the payout (`POST
         /payments/{id}/refuse`, reached through the same governed MCP path
@@ -370,12 +369,10 @@ class PaymentsTools:
         payments-api's refuse endpoint validates more than `rule`: it also
         rejects an already-refused payment and confirms `requested` against
         the recorded proposal. `refused_span_id` travels alongside
-        `refused_trace_id` so `execute_approved` can link to the
-        settlement-agent span active when the refusal was recorded --
-        settlement-agent's own A2A server span, not the Policy Decision
-        Service's `policy.decision` span -- rather than only to the trace as
-        a whole (see settlement.py's `_refusal_link` and its measurement
-        note).
+        `refused_trace_id` so a reader can name the settlement-agent span
+        active when the refusal was recorded, not only the trace as a whole.
+        `a2a_task_id` is the customer's A2A task, kept on the ledger so the
+        reviewer-ui can resume it after a human decides.
         """
         return await self._call(
             "refuse_payment",
@@ -387,5 +384,6 @@ class PaymentsTools:
                 "narrative": narrative,
                 "refused_trace_id": refused_trace_id,
                 "refused_span_id": refused_span_id,
+                "a2a_task_id": a2a_task_id,
             },
         )

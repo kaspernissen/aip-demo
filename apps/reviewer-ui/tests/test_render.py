@@ -16,29 +16,30 @@ import render
 PAYMENT = {
     "paymentId": "PAY-000053",
     "claimId": "CLM-1842",
-    "amount": 6200.0,
+    "amount": 5800.0,
     "currency": "EUR",
-    "status": "refused",
+    "status": "awaiting_approval",
+    "awaitingSince": "2026-09-10T10:00:00Z",
     "refusal": {
         "rule": "settlement-agent.assisted.execute_limit",
-        "limit": 6000.0,
-        "requested": 6200.0,
+        "limit": 0.0,
+        "requested": 5800.0,
         "narrative": "I'm unable to complete this payment myself.",
         "refusedTraceId": "331edba8cb21223e9de2f244360c42ef",
         "refusedSpanId": "b7997877797c1b27",
-        "refusedAt": "2026-09-10T10:00:00Z",
     },
 }
 
 
-def test_list_page_shows_every_ledger_field_for_a_refused_payment():
+def test_list_page_shows_every_ledger_field_for_a_payment_awaiting_approval():
     html = render.list_page([PAYMENT])
     assert "PAY-000053" in html
     assert "CLM-1842" in html
-    assert "6200" in html
+    assert "5800" in html
     assert "EUR" in html
     assert "settlement-agent.assisted.execute_limit" in html
-    assert "6000" in html  # the limit
+    assert "awaiting approval" in html
+    assert "2026-09-10T10:00:00Z" in html  # waiting since
     assert "I&#x27;m unable to complete this payment myself." in html or (
         "I'm unable to complete this payment myself." in html
     )
@@ -89,7 +90,7 @@ def test_the_reviewer_id_echoed_on_a_result_page_is_html_escaped():
     assert "&lt;b&gt;alex&lt;/b&gt;" in html
 
 
-def test_result_page_for_a_successful_approval_shows_the_executed_ledger_record():
+def test_result_page_for_a_successful_approval_shows_the_ledger_record():
     outcome = render.ResultView(
         payment_id="PAY-000053",
         decision="approve",
@@ -97,31 +98,35 @@ def test_result_page_for_a_successful_approval_shows_the_executed_ledger_record(
         elapsed_ms=5000,
         executed={
             "paymentId": "PAY-000053",
-            "amount": 6200.0,
+            "amount": 5800.0,
             "currency": "EUR",
             "status": "executed",
         },
         error=None,
     )
     html = render.result_page(outcome)
+    assert "Review recorded" in html
+    assert "Paid by the platform after your approval" in html
     assert "executed" in html
-    assert "6200" in html
+    assert "5800" in html
     assert "alex.mercer" in html
 
 
-def test_result_page_for_a_failed_approval_never_says_executed():
-    """The honesty requirement: surface a failure honestly rather than
-    showing a success."""
+def test_result_page_for_a_refused_release_shows_the_platforms_text_and_no_success():
+    """The honesty requirement: surface the platform's refusal as it came back
+    rather than showing a success."""
     outcome = render.ResultView(
         payment_id="PAY-000053",
         decision="approve",
         reviewer_id="alex.mercer",
         elapsed_ms=5000,
         executed=None,
-        error="UnverifiedApproval: no refusal record covers this payment",
+        error="the ledger shows 'rejected' [policy-denial rule=human-approved.execute limit=none requested=5800.00]",
     )
     html = render.result_page(outcome)
-    assert "was not executed" in html.lower() or "failed" in html.lower()
+    assert "did not happen" in html.lower()
+    assert "policy-denial rule=human-approved.execute" in html
+    assert "paid by the platform" not in html.lower()
     assert "status executed" not in html.lower()
 
 
@@ -133,7 +138,9 @@ def test_result_page_for_a_rejection_records_no_execution():
         elapsed_ms=5000,
         executed=None,
         error=None,
+        rejected={"paymentId": "PAY-000053", "status": "rejected"},
     )
     html = render.result_page(outcome)
+    assert "Review recorded" in html
     assert "reject" in html.lower()
     assert "executed" not in html.lower()

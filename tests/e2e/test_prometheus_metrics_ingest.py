@@ -429,11 +429,8 @@ def test_prometheus_itself_scrapes_nothing(prometheus_url):
 #
 # The `job` label is Prometheus's rendering of OTLP's `service.name` resource
 # attribute, so these are the service names, not Deployment names.
-# `senior-settlement-agent` is deliberately absent from this list: it runs the
-# settlement-agent image with `OTEL_SERVICE_NAME=settlement-agent` on purpose
-# (deploy/k8s/senior-settlement-agent.yaml's own header -- the demo's point is
-# that the code is byte-identical and the platform tells the two apart by
-# identity), so it has no `job` of its own by design.
+# There is one settlement Deployment (the senior was retired in M8), so
+# `settlement-agent` is the only job for that image.
 #
 # **The settlement-agent row carries the cost gate.** Its known metric is the
 # one that exists only because a *model call* happened -- PydanticAI records

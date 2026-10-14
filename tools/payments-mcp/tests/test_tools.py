@@ -49,17 +49,17 @@ class FakePayments:
         }
 
     def refuse(self, payment_id, *, rule, limit, requested, narrative,
-               refused_trace_id, refused_span_id):
+               refused_trace_id, refused_span_id, a2a_task_id=""):
         self.calls.append((
             "refuse", payment_id, rule, limit, requested, narrative,
-            refused_trace_id, refused_span_id,
+            refused_trace_id, refused_span_id, a2a_task_id,
         ))
         return {
             "paymentId": payment_id,
             "claimId": "CLM-1842",
             "amount": requested,
             "currency": "EUR",
-            "status": "refused",
+            "status": "awaiting_approval",
         }
 
     def get(self, payment_id):
@@ -69,7 +69,7 @@ class FakePayments:
             "claimId": "CLM-1842",
             "amount": 6200.0,
             "currency": "EUR",
-            "status": "refused",
+            "status": "awaiting_approval",
         }
 
 
@@ -151,13 +151,14 @@ def test_refuse_payment_delegates_to_the_system_of_record(server_module, monkeyp
         narrative="narrative",
         refused_trace_id="331edba8cb21223e9de2f244360c42ef",
         refused_span_id="b7997877797c1b27",
+        a2a_task_id="task-1",
     )
 
     assert fake.calls == [(
         "refuse", "PAY-000001", "execute_limit", 6000.0, 6200.0, "narrative",
-        "331edba8cb21223e9de2f244360c42ef", "b7997877797c1b27",
+        "331edba8cb21223e9de2f244360c42ef", "b7997877797c1b27", "task-1",
     )]
-    assert result["status"] == "refused"
+    assert result["status"] == "awaiting_approval"
 
 
 def test_refuse_payment_is_not_advertised_as_destructive(server_module):
@@ -166,8 +167,7 @@ def test_refuse_payment_is_not_advertised_as_destructive(server_module):
 
 
 # ---------------------------------------------------------------------------
-# `execute_approved` needs a way to read the ledger back before executing an
-# approval. `get_payment` reads and moves nothing -- readOnlyHint=true,
+# `get_payment` reads and moves nothing -- readOnlyHint=true,
 # unlike every other tool here -- and is advertised unlimited on the PDS side
 # (test_rules.py) for the same reason propose_payment is.
 # ---------------------------------------------------------------------------
@@ -181,7 +181,7 @@ def test_get_payment_delegates_to_the_system_of_record(server_module, monkeypatc
 
     assert fake.calls == [("get", "PAY-000001")]
     assert result["paymentId"] == "PAY-000001"
-    assert result["status"] == "refused"
+    assert result["status"] == "awaiting_approval"
 
 
 def test_get_payment_is_advertised_as_read_only_and_not_destructive(server_module):

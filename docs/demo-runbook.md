@@ -4,6 +4,13 @@ Status: M7 (Bounded), on top of M6's Golden path. This is the **operator's** doc
 brought up, how it is run in front of an audience, what to say at each beat,
 and what to say when something breaks.
 
+> **M8 note.** `senior-settlement-agent` no longer exists, and the autonomy dial
+> is now maker-checker (`assisted` = €0, `autonomous` = €6,000), so a human
+> releases an over-limit payment from the reviewer-ui under its own identity.
+> The beats below were written for M7's amounts and identities; the senior
+> removals are applied, and the beat-by-beat rewrite for the human-in-the-loop
+> flow is M8's demo task.
+
 It is deliberately **not** a second copy of the architecture. Where this
 document says *what to do*, [`docs/architecture.md`](architecture.md) says
 *why it works*, at span-level detail, in its "See it yourself" section. When
@@ -125,12 +132,8 @@ flowchart TD
         hb["`browser · human
       :8081`"] --> ru["`reviewer-ui
       Python`"]
-        ru -->|A2A| ss["`senior-settlement-agent · Python
-      same image as settlement-agent,
-      different ServiceAccount,
-      its own allowance row in the PDS`"]
     end
-    ss -->|"MCP — the same gateway"| gw
+    ru -->|"MCP — execute_payment under its own identity, the same gateway"| gw
 
     subgraph evidence["THE EVIDENCE PLANE · stage 4"]
         svc["every service"] -->|OTLP| col["`OpenTelemetry Collector
@@ -187,7 +190,7 @@ flowchart LR
     r(["€6,200 refused"])
     r -->|"stage 3"| a["`approved by a human on the reviewer UI
       different **IDENTITY**:
-      senior-settlement-agent, €25,000`"]
+      reviewer-ui, rule human-approved.execute`"]
     r -->|"stage 5"| b["`contract flipped to autonomous by kubectl
       same identity,
       different **LIMIT TABLE ROW**`"]
@@ -210,7 +213,7 @@ everything below it.
 |:---:|---|---|---|
 | 1 | Connected | agents, MCP servers, systems of record, customer UI, collector, Jaeger | distributed tracing across an agent chain |
 | 2 | Governed | Cilium, SPIFFE/SPIRE, agentgateway, Policy Decision Service | authorization and workload identity |
-| 3 | Supervised | reviewer-ui, senior-settlement-agent | human-in-the-loop |
+| 3 | Supervised | reviewer-ui | human-in-the-loop |
 | 4 | Observable | OpenSearch + Dashboards, Prometheus, eval-scorer | evidence and evaluation |
 | 5 | Progressive autonomy | cert-manager, Open Feature Operator, flagd sidecar, the `FeatureFlag` | policy as a live value |
 | 6 | Golden path | Backstage | the platform API and its UI |
@@ -361,14 +364,13 @@ curl -s -H "Authorization: Bearer $TOKEN" \
   localhost:7007/api/autonomy-contract/status | python3 -m json.tool
 ```
 
-Expect exactly this shape, with **both** identities resolving `assisted`:
+Expect exactly this shape, with the identity resolving `assisted`:
 
 ```json
 { "flag": "northstar-autonomy", "namespace": "northstar-platform",
   "state": "ENABLED", "defaultVariant": "assisted",
   "perIdentity": {
-    "settlement-agent":        { "level": "assisted", "branch": "targeting-then" },
-    "senior-settlement-agent": { "level": "assisted", "branch": "targeting-else" } } }
+    "settlement-agent": { "level": "assisted", "branch": "targeting-then" } } }
 ```
 
 - [ ] Customer UI loads — http://localhost:8080
@@ -937,13 +939,11 @@ flowchart LR
 
 > "Now compare the policy.decision span in *this* trace with the one from
 > beat 2. Same rule shape, same service, same code path — but the caller is
-> now `senior-settlement-agent`, the limit reads €25,000, and the verdict is
-> permit. **Nothing was overridden. A different caller was asked about.**"
+> now `reviewer-ui`, the rule is `human-approved.execute`, the PDS has read
+> `awaiting_approval` from the ledger, and the verdict is permit. **Nothing was overridden. A different caller was asked about.**"
 
-> ⚠️ **The thing that looks wrong and is not:** the senior agent's spans
-> arrive under `service.name=settlement-agent`, because its
-> `OTEL_SERVICE_NAME` is deliberately the same. Tell them apart by `jwt.sub`
-> / `policy.caller.spiffe_id`, **never** by service name.
+> The approver is a different service now, so `service.name` tells you who
+> called. `policy.caller.spiffe_id` is still the attested answer.
 
 ---
 
@@ -1043,7 +1043,6 @@ curl -s localhost:18300/score -X POST \
   │  Identity                    Resolved level   Branch              │
   │  ─────────────────────────────────────────────────────────────    │
   │  settlement-agent            [assisted]       targeting-then      │
-  │  senior-settlement-agent     [assisted]       targeting-else      │
   │                                                                   │
   │  The one write this card can make: settlement-agent's             │
   │  targeting branch, assisted ⇄ autonomous.                         │
