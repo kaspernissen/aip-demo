@@ -30,16 +30,16 @@ CAPTURED_DOCUMENT = {
             "namespace": "namespace",
             "type": "span",
         },
-        "policy.autonomy.level": "assisted",
+        "policy.autonomy.level": "autonomous",
         "policy.caller.spiffe_id": (
-            "spiffe://northstar.local/ns/northstar-agents/sa/senior-settlement-agent"
+            "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
         ),
         "policy.decision": "permit",
         "policy.decision_retryable": False,
-        "policy.limit.amount": 25000,
-        "policy.request.amount": 6200,
+        "policy.limit.amount": 6000,
+        "policy.request.amount": 5800,
         "policy.request.currency": "EUR",
-        "policy.rule": "settlement-agent.assisted.execute_limit",
+        "policy.rule": "settlement-agent.autonomous.execute_limit",
         "policy.tool.name": "execute_payment",
     },
     "droppedAttributesCount": 0,
@@ -87,10 +87,10 @@ def test_a_real_captured_document_parses():
     assert decision.tool == "execute_payment"
     assert decision.decision == "permit"
     assert decision.permitted and not decision.denied
-    assert decision.caller.endswith("/sa/senior-settlement-agent")
-    assert decision.amount == 6200.0
-    assert decision.limit == 25000.0
-    assert decision.autonomy == "assisted"
+    assert decision.caller.endswith("/sa/settlement-agent")
+    assert decision.amount == 5800.0
+    assert decision.limit == 6000.0
+    assert decision.autonomy == "autonomous"
     assert decision.currency == "EUR"
     assert "7722c5ab" in decision.where() and "e7ee45db" in decision.where()
 

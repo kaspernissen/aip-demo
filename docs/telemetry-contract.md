@@ -467,8 +467,10 @@ tree this change has since altered. What has to happen to make it MEASURED: one
 run on its own against the live stage-7 cluster, 7 passed in 55.8s, which is not
 the gate having run.
 
-Bare-suite row, derived from that same collection: 501 collected − 83 gated −
-**0** xfailed = `418 passed, 83 skipped, 0 xfailed`. (M8 Task 1 took the
+Bare-suite row, derived from that same collection: 504 collected − 85 gated −
+**0** xfailed = `419 passed, 85 skipped, 0 xfailed`. (M8 Task 1's fix round 1 added
+two gated live bypass tests to `test_human_in_the_loop.py`, so the
+gated figure is 85, and one config test in `test_stage2_network_policy.py`.) (M8 Task 1 took the
 collection from 507 to 501: `tests/e2e/test_supervised.py` (6 gated) was deleted
 with the senior agent and `tests/e2e/test_human_in_the_loop.py` (6 gated) was
 added, so the gated figure stays 83; `tests/unit` lost the two companion-deployment
@@ -490,13 +492,13 @@ test) is `tests/unit`-only and carries no `skipif`, so it adds none, and the
 internal-platform pass's eight new `tests/unit` tests, the mermaid pass's eight
 and the page-banner pass's eight `tests/unit` tests carry none either; the
 page-banner pass's own e2e file adds exactly **one** — and
-reports 83 of 501, with the per-module spread and the browser split both
+reports 85 of 504, with the per-module spread and the browser split both
 moving for the first time this milestone. Full spread:
 `test_settlement_llm_trace.py` 9,
 `test_prometheus_metrics_ingest.py` 10, `test_browser_root_span.py` 8,
 `test_settlement_agent_trace.py` 8, `test_claims_chain_trace.py` 7,
 `test_claim_correlation.py` 6, `test_gateway_trace.py` 6,
-`test_human_in_the_loop.py` 6, `test_policy_scores.py` 5,
+`test_human_in_the_loop.py` 8, `test_policy_scores.py` 5,
 `test_demo_flow.py` 7, `test_evidence_view.py` 4, `test_policy_denial.py` 4,
 `test_backstage_page_bands.py` 1, `test_golden_path.py` 1,
 `test_progressive_autonomy.py` 1. **The browser split changes twice this
@@ -512,8 +514,8 @@ starting none, until the demo-flow file made it a fifteenth that starts none:
 `test_supervised.py` for `test_human_in_the_loop.py`, neither of which launches one,
 and the browser count had been miscounted as 4 since the demo-flow file).
 
-Gate row: **PREDICTED, NOT MEASURED** — M8 Task 1 predicts `500 passed, 1 xfailed`
-(501 collected): it changes the PDS, payments-api, the settlement agent, the reviewer-ui,
+Gate row: **PREDICTED, NOT MEASURED** — M8 Task 1 predicts `503 passed, 1 xfailed`
+(504 collected): it changes the PDS, payments-api, the settlement agent, the reviewer-ui,
 the eval-scorer, the manifests and the e2e suite, all `GATE_PATHS`, so the row below
 describes a tree this branch has since altered; what has to happen to make it MEASURED is
 one `./scripts/smoke-test.sh` at the end of M8. Task 1's own files were run against the
@@ -2189,8 +2191,8 @@ the plan defect described two paragraphs up).
 
 Per-service unit suites (all nine run by `smoke-test.sh`, before any e2e test):
 claims-agent 16, settlement-agent 99, payments-mcp 16, payments-api (Go) 39,
-customer-ui (vitest) 6, policy-decision-service 146,
-reviewer-ui 70, eval-scorer 165, backstage (jest) 37 — all passing.
+customer-ui (vitest) 6, policy-decision-service 157,
+reviewer-ui 73, eval-scorer 165, backstage (jest) 37 — all passing.
 (**2026-10-13, M8 Task 0 (agentgateway v1.6.0): settlement-agent 114 → 119,
 policy-decision-service 129 → 134.** The deny now travels as tagged text in an
 `isError` tool result: the PDS gains `tests/test_deny_text.py` (4) and one

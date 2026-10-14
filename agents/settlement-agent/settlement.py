@@ -17,8 +17,12 @@ any amount and nothing here stops it. That check lives entirely at the
 platform's Policy Decision Service, a choke point the agent cannot reach
 around. The refusal comes from the platform, and this file's only job on
 that path is to let the model *see* the refusal so it can explain it, and to
-leave the payment waiting for a human (`awaiting_approval`). A human releases
-it: the reviewer-ui, through the same gateway, under its own identity.
+leave the payment waiting for a human. A human releases it: the reviewer-ui,
+through the same gateway, under its own identity. The reply says
+`awaiting_approval` only when the ledger's own record of the refusal says so;
+if the refusal could not be recorded (or no payment exists to record it on) the
+reply says `refusal_unrecorded`, because no human is waiting on a payment the
+ledger does not show waiting.
 """
 from __future__ import annotations
 
@@ -203,16 +207,17 @@ def _current_trace_and_span_ids() -> tuple[str, str]:
 async def _record_refusal(
     payments: Any, payment_id: str, refused: PolicyDenial, *, narrative: str,
     a2a_task_id: str,
-) -> None:
+) -> dict | None:
     """Call `POST /payments/{id}/refuse`, through the existing payments client
     -- not a new HTTP path. A failure here must not turn a
     refusal into an error the claimant sees: it is logged loudly and
-    swallowed, because the ledger already shows the payment unexecuted, which
-    is the safe state regardless of whether this record was written.
+    swallowed (returns None), because the ledger already shows the payment
+    unexecuted, which is the safe state. The caller must NOT then claim a wait
+    exists: the status comes from the record this returns.
     """
     refused_trace_id, refused_span_id = _current_trace_and_span_ids()
     try:
-        await payments.refuse(
+        return await payments.refuse(
             payment_id,
             rule=refused.rule,
             limit=refused.limit if refused.limit is not None else 0.0,
@@ -229,6 +234,7 @@ async def _record_refusal(
             "does not carry the reviewer's facts for it",
             payment_id, refused.rule,
         )
+        return None
 
 
 async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, Any]:
@@ -245,7 +251,9 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
     exactly as designed: the agent may not release this payment. The denial is
     final for the agent, but not for the claim: it routes the payment to a
     human. So it records the refusal, leaving the payment `awaiting_approval`,
-    and returns a reply with that status carrying the model's explanation.
+    and returns a reply carrying the model's explanation. The reply's status is
+    read from the record the refuse call returned: `awaiting_approval` only if
+    the ledger says so, else `refusal_unrecorded`.
     """
     claim_id, amount, currency, a2a_task_id = _validate(claim)
 
@@ -267,7 +275,7 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
         # MCPError) would propagate past this point and the A2A caller would
         # get a JSON-RPC -32603 with no `result` at all -- the reason legible
         # but nothing narrating it. The reply is a *reply*, and it says
-        # awaiting_approval.
+        # awaiting_approval (or refusal_unrecorded, when the ledger says otherwise).
         #
         # The honesty rule is unchanged: nothing here comes from model output.
         # `amount`, `currency` and `paymentId` are what the ledger recorded for
@@ -292,8 +300,9 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
         # attach it to if propose_payment itself was what got refused: no
         # payment id exists yet in that case, so there is no record to write.
         payment_id = proposed.get("paymentId")
+        recorded: dict | None = None
         if payment_id:
-            await _record_refusal(
+            recorded = await _record_refusal(
                 payments, payment_id, refused, narrative=result.output,
                 a2a_task_id=a2a_task_id,
             )
@@ -312,7 +321,12 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
         return {
             "amount": proposed.get("amount", amount),
             "currency": proposed.get("currency", currency),
-            "status": "awaiting_approval",
+            "status": (
+                "awaiting_approval"
+                if isinstance(recorded, dict)
+                and str(recorded.get("status", "")).lower() == "awaiting_approval"
+                else "refusal_unrecorded"
+            ),
             "paymentId": proposed.get("paymentId"),
             "narrative": result.output,
             "rule": refused.rule,

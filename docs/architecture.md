@@ -23,7 +23,7 @@
 > | Caller | Level | `execute_payment` is permitted |
 > |---|---|---|
 > | `settlement-agent` | `assisted` | never (limit €0) |
-> | `settlement-agent` | `autonomous` | up to €6,000 |
+> | `settlement-agent` | `autonomous` | up to €6,000, and only a payment the ledger shows `proposed` (else rule `settlement-agent.payment_not_proposed`) |
 > | `reviewer-ui` (in `HUMAN_APPROVERS`) | no level | only when payments-api shows the payment `awaiting_approval`, under rule `human-approved.execute` |
 > | any other caller | any | never (`unknown_caller`) |
 >
@@ -33,7 +33,11 @@
 > `rejected` (`POST /payments/{id}/reject`, final). `executed` and `rejected`
 > are terminal, and executing a rejected payment is a 409 whose
 > `northstar.payment.refusal_cause` is `rejected`. **The reviewer-ui is the only
-> path for a human approval**: nothing else is in `HUMAN_APPROVERS`, and the
+> path for a human approval**. The PDS reads the ledger status for every
+> `execute_payment` (agent and human; unreadable denies), so the maker cannot release
+> a payment it routed to a human. payments-api has no caller authentication, so the
+> reviewer-ui's egress to it is L7 (Cilium `rules.http`: list, get and reject only),
+> and a direct `POST .../execute` from that pod is refused by the proxy with 403: nothing else is in `HUMAN_APPROVERS`, and the
 > Kyverno keystone policy refuses an agent the verbs to run a pod as, or mint a
 > token for, that ServiceAccount.
 >

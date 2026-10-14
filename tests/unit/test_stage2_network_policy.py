@@ -238,3 +238,34 @@ def test_no_stray_core_networkpolicy_shadows_the_cilium_one(stray):
         "keep this file Cilium-only; a core NetworkPolicy alongside it changes "
         "the effective allowlist in a way none of the assertions above check"
     )
+
+
+# --- reviewer-ui's egress to payments-api is L7 (M8 review I1) --------------
+
+
+def test_reviewer_ui_may_reach_payments_api_only_for_list_get_and_reject():
+    """payments-api has no caller authentication, so an L4 allow would let the
+    reviewer-ui POST /payments/{id}/execute and skip the gateway and the PDS.
+    The rule must be L7 and must name exactly the routes ledger.py calls."""
+    policy = next(
+        d for d in _policies()
+        if d["metadata"]["name"] == "reviewer-ui-egress-allowlist"
+    )
+    to_payments = [
+        rule for rule in policy["spec"]["egress"]
+        if any(
+            e.get("matchLabels", {}).get("app") == "payments-api"
+            for e in rule.get("toEndpoints", [])
+        )
+    ]
+    assert len(to_payments) == 1, to_payments
+    ports = to_payments[0]["toPorts"]
+    assert len(ports) == 1 and ports[0]["ports"] == [{"port": "8080", "protocol": "TCP"}]
+    http = ports[0].get("rules", {}).get("http")
+    assert http, "the reviewer-ui's payments-api egress is L4 only: it could execute directly"
+    assert {(r["method"], r["path"]) for r in http} == {
+        ("GET", "/payments(\\?.*)?"),
+        ("GET", "/payments/PAY-[0-9]{6}"),
+        ("POST", "/payments/PAY-[0-9]{6}/reject"),
+    }
+    assert not any("execute" in r["path"] or "refuse" in r["path"] for r in http)

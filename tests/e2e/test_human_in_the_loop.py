@@ -122,3 +122,64 @@ def test_the_release_was_decided_under_the_human_rule(approved):
     outcome = _execute_as_reviewer_ui(approved["payment_id"])
     assert outcome.denial is not None, outcome
     assert outcome.denial.rule == "human-approved.execute"
+
+
+# --- the two bypasses the review found (M8 review I1 and I2) ----------------
+
+
+@pytest.fixture(scope="module")
+def waiting():
+    """A payment left awaiting approval and not decided, for the bypass tests.
+    Rejected at teardown so the ledger is not left holding a wait."""
+    run = _claim(AMOUNT)
+    assert run["reply"]["status"] == "awaiting_approval", run
+    payment_id = run["reply"]["paymentId"]
+    yield payment_id
+    try:
+        live.review(payment_id, "reject", REVIEWER)
+    except httpx.HTTPError:
+        pass
+
+
+_DIRECT = (
+    "import urllib.request, urllib.error\n"
+    "r = urllib.request.Request("
+    "'http://payments-api.northstar-systems.svc.cluster.local:8080/payments/{id}/execute',"
+    " method='POST', data=b'{{\"amount\": 5800, \"currency\": \"EUR\"}}',"
+    " headers={{'content-type': 'application/json'}})\n"
+    "try:\n"
+    "    print('STATUS', urllib.request.urlopen(r, timeout=10).status)\n"
+    "except urllib.error.HTTPError as e:\n"
+    "    print('STATUS', e.code, e.read()[:40])\n"
+)
+
+
+def test_reviewer_ui_cannot_execute_directly_against_payments_api(waiting):
+    """payments-api has no caller auth; only Cilium's L7 rule on the
+    reviewer-ui's egress stops a direct POST /execute that skips the gateway
+    and the PDS. The proxy answers 403 before the ledger sees it."""
+    result = live.kubectl(
+        "-n", "northstar-agents", "exec", "deploy/reviewer-ui", "--",
+        "python", "-c", _DIRECT.format(id=waiting), timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "STATUS 403" in result.stdout, result.stdout
+    assert "Access denied" in result.stdout, result.stdout
+    assert live.get_payment(waiting)["status"] == "awaiting_approval"
+
+
+def test_the_agent_cannot_release_a_payment_it_routed_to_a_human_even_at_autonomous(waiting):
+    """Maker-checker: the PDS reads the ledger for the agent's execute too, so
+    at `autonomous`, under the limit, a payment left waiting is still not the
+    agent's to release."""
+    with live.autonomy(contract.AUTONOMOUS):
+        with live.gateway_port_forward() as gateway_url:
+            token = live.mint_svid(live.GATEWAY_AUDIENCE)  # settlement-agent's own
+            outcome = live.call_tool_directly(
+                gateway_url, "execute_payment",
+                {"payment_id": waiting, "amount": AMOUNT, "currency": "EUR"},
+                {"authorization": f"Bearer {token}"},
+            )
+    assert outcome.denial is not None, outcome
+    assert outcome.denial.rule == "settlement-agent.payment_not_proposed", outcome.denial
+    assert live.get_payment(waiting)["status"] == "awaiting_approval"

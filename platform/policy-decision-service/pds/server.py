@@ -53,7 +53,14 @@ from pds.autonomy import (
 from pds.deny_text import format_deny
 from pds.identity import caller_spiffe_id
 from pds.ledger import payment_status
-from pds.rules import HUMAN_APPROVERS, LIMITED_TOOLS, Decision, PolicyInput, decide
+from pds.rules import (
+    HUMAN_APPROVERS,
+    LIMITED_TOOLS,
+    Decision,
+    PolicyInput,
+    decide,
+)
+from pds.rules import _KNOWN_CALLERS as KNOWN_CALLERS
 
 log = logging.getLogger("pds")
 
@@ -312,11 +319,15 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
             # params we cannot read is harmless.
             decision = _undecidable_method(request.method)
         else:
-            # The one ledger read the policy makes: only for a human approver
-            # releasing money (see rules.HUMAN_APPROVERS). A failed read is
-            # None, which `_human_approval` denies.
+            # The one ledger read the policy makes: for every execute_payment
+            # by a caller the policy knows (the settlement agent may execute
+            # only a `proposed` payment, the human only an `awaiting_approval`
+            # one). A failed read is None, which both branches deny. A caller
+            # no rule knows is denied without a read.
             ledger_status = None
-            if (caller or "") in HUMAN_APPROVERS and call.tool in LIMITED_TOOLS:
+            if call.tool in LIMITED_TOOLS and (
+                (caller or "") in HUMAN_APPROVERS or (caller or "") in KNOWN_CALLERS
+            ):
                 ledger_status = payment_status(call.payment_id)
                 span.set_attribute(telemetry.ATTR_LEDGER_STATUS,
                                    ledger_status or "unreadable")

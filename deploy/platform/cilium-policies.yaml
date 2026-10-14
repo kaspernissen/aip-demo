@@ -583,9 +583,10 @@ spec:
 #   * DNS (L3/L4 only -- no `rules.dns` block, because there is no `toFQDNs`
 #     rule below for it to feed; same reasoning as claims-agent-egress-
 #     allowlist's own rule 1).
-#   * payments-api:8080 in northstar-systems (ledger.py's GET
+#   * payments-api:8080 in northstar-systems, at L7 (ledger.py's GET
 #     /payments?status=awaiting_approval, GET /payments/{id} and POST
-#     /payments/{id}/reject -- direct REST calls that move no money).
+#     /payments/{id}/reject -- direct REST calls that move no money; execute
+#     is NOT among them and is refused by the proxy, see rule 2).
 #   * agentgateway:3000 in northstar-platform (gateway.py's execute_payment
 #     tool call: the release of an approved payment, under reviewer-ui's own
 #     JWT-SVID, decided by the Policy Decision Service like any other
@@ -633,8 +634,19 @@ spec:
             - port: "53"
               protocol: TCP
 
-    # 2. payments-api, directly -- ledger.py's reads and reject. Cross-namespace (northstar-systems), and still
-    # namespace-pinned for the reason every other rule in this file gives.
+    # 2. payments-api, directly -- ledger.py's reads and reject. Cross-namespace
+    # (northstar-systems), and still namespace-pinned for the reason every other
+    # rule in this file gives.
+    #
+    # L7, and the L7 is the point (M8 review I1). payments-api has no caller
+    # authentication, so an L4 allow to port 8080 would let this workload POST
+    # /payments/{id}/execute straight at the ledger, skipping the gateway and the
+    # PDS that are the only thing permitting a release. `rules.http` narrows the
+    # allowance to exactly what ledger.py calls: list (with its query string),
+    # get, and reject. Everything else, execute above all, is answered by the
+    # Cilium proxy with 403 "Access denied". The id shape is payments-api's own
+    # (`PAY-` and six digits, store.go), so the path cannot be made to mean
+    # something else. Cilium matches `path` as an anchored regex.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: northstar-systems
@@ -643,6 +655,14 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+          rules:
+            http:
+              - method: GET
+                path: "/payments(\\?.*)?"
+              - method: GET
+                path: "/payments/PAY-[0-9]{6}"
+              - method: POST
+                path: "/payments/PAY-[0-9]{6}/reject"
 
     # 3. agentgateway, on the MCP port -- gateway.py's one outbound peer for
     # the release of an approved payment.

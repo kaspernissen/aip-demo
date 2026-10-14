@@ -17,10 +17,17 @@ import (
 //	awaiting_approval -> executed   a human, through the PDS (execute)
 //	awaiting_approval -> rejected   a human, /reject
 //
-// executed and rejected are terminal. This service does not decide who may
-// execute: the PDS does, and for a human it reads this very status back
-// (GET /payments/{id}) before permitting the release. store.execute only
-// refuses a payment that can no longer be released (executed, rejected).
+// executed and rejected are terminal. WHAT IS ENFORCED, AND WHERE: this
+// service does not decide who may execute, and store.execute accepts a
+// `proposed` or an `awaiting_approval` payment from any caller; it refuses only
+// one that can no longer be released (executed, rejected). The PDS decides, and
+// it reads this status back (GET /payments/{id}) for EVERY execute_payment that
+// passes the gateway: the settlement agent may execute only a `proposed`
+// payment (and within its limit), the reviewer-ui only an `awaiting_approval`
+// one, and an unreadable status denies both. A caller that reaches this service
+// without the gateway is outside that guarantee, which is why the reviewer-ui's
+// egress to this service is restricted at L7 to list, get and reject
+// (deploy/platform/cilium-policies.yaml).
 const (
 	StatusProposed         = "proposed"
 	StatusAwaitingApproval = "awaiting_approval"

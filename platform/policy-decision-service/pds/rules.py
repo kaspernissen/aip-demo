@@ -25,17 +25,28 @@ EXECUTE_LIMITS: dict[tuple[str, str], float] = {
 # level: it may release exactly the payments the ledger shows waiting for a
 # human, and nothing else.
 #
-# `ledger_status` is an input that widens what this caller may do, which the
-# note above CALLER_SCOPED_TOOLS warns against. It is admissible for one
-# reason: the only way a payment reaches `awaiting_approval` is refuse_payment,
-# and CALLER_SCOPED_TOOLS lets only the settlement-agent call it. The caller
-# this widens for cannot write the fact that widens it. server.py reads the
-# status from payments-api (pds/ledger.py) and only for these callers.
+# `ledger_status` widens what the human may do, which the note above
+# CALLER_SCOPED_TOOLS warns against. It is admissible for one reason: the only
+# way a payment reaches `awaiting_approval` is refuse_payment, and
+# CALLER_SCOPED_TOOLS lets only the settlement-agent call it. The caller this
+# widens for cannot write the fact that widens it. For the agent it only
+# narrows (see PROPOSED below). server.py reads the status from payments-api
+# (pds/ledger.py) for every known caller of execute_payment.
 HUMAN_APPROVERS: frozenset[str] = frozenset({
     "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui",
 })
 AWAITING_APPROVAL = "awaiting_approval"
+PROPOSED = "proposed"
 HUMAN_APPROVAL_RULE = "human-approved.execute"
+AGENT_NOT_PROPOSED_RULE = "settlement-agent.payment_not_proposed"
+
+# The status is read for EVERY execute_payment, and each caller class may
+# execute from exactly one state: the settlement agent (the maker) only a
+# payment still `proposed`, and within its amount limit; the human (the
+# checker) only a payment `awaiting_approval`. So the maker cannot release a
+# payment it routed to a human, even at `autonomous` and under the limit, and
+# a payment that is `executed` or `rejected` is executable by nobody. An
+# unreadable ledger is None and denies for both.
 
 # EXECUTE_LIMITS is keyed by (caller, level), so a miss below is ambiguous
 # between "this caller has no row at all" and "this caller is known, but not
@@ -210,6 +221,18 @@ def decide(req: PolicyInput) -> Decision:
             f"{_money(limit, req.currency)} limit for this agent at autonomy "
             f"level {req.autonomy_level}",
             rule=f"settlement-agent.{req.autonomy_level}.execute_limit",
+            limit=limit,
+        )
+
+    # Everything the limit asks has passed; the last question is the ledger's.
+    # Placed last so every existing denial keeps its own rule name, and this
+    # one fires only for a payment the limit alone would have released.
+    if req.ledger_status != PROPOSED:
+        return Decision(
+            False,
+            "the settlement agent may only execute a payment it proposed and "
+            f"that is still proposed; the ledger shows {req.ledger_status!r}",
+            rule=AGENT_NOT_PROPOSED_RULE,
             limit=limit,
         )
 

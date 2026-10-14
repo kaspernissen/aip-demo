@@ -23,7 +23,7 @@ LEDGER_URL = os.environ.get(
 TIMEOUT_S = 2.0
 # payments-api's own id shape (store.go: fmt.Sprintf("PAY-%06d", ...)). Anything
 # else is never put into a URL.
-_PAYMENT_ID = re.compile(r"PAY-\d{6}")
+_PAYMENT_ID = re.compile(r"PAY-[0-9]{6}")
 
 
 def payment_status(payment_id: str | None, *, opener=urllib.request.urlopen) -> str | None:

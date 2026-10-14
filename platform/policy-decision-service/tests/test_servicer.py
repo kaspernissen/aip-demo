@@ -600,6 +600,16 @@ def test_the_servicer_answers_on_the_real_grpc_service_name(spans):
         server.stop(grace=None).wait()
 
 
+# --- the ledger is read for every execute_payment ----------------------------
+
+
+@pytest.fixture(autouse=True)
+def _ledger_says_proposed(monkeypatch):
+    """The agent may execute only a `proposed` payment, so the tests that expect
+    an agent permit need the ledger to say so; tests of other states override."""
+    monkeypatch.setattr(_pds_server_module, "payment_status", lambda pid: "proposed")
+
+
 # --- the human approval reads the ledger -------------------------------------
 
 REVIEWER = "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui"
@@ -631,13 +641,44 @@ def test_a_reviewer_execute_denies_when_the_ledger_is_unreadable(monkeypatch, sp
     assert span.attributes[telemetry.ATTR_LEDGER_STATUS] == "unreadable"
 
 
-def test_the_agent_never_triggers_a_ledger_read(monkeypatch, spans):
+def test_the_agent_execute_reads_the_ledger_too(monkeypatch, spans):
     calls = []
-    monkeypatch.setattr(_pds_server_module, "payment_status", lambda pid: calls.append(pid))
-    PolicyServicer().CheckRequest(_request(caller=AGENT, params=_execute_payment()), None)
-    assert calls == []
+    monkeypatch.setattr(_pds_server_module, "payment_status",
+                        lambda pid: calls.append(pid) or "proposed")
+    PolicyServicer().CheckRequest(_request(caller=AGENT, params=_execute_payment(amount=100.0)), None)
+    assert calls == ["PAY-000001"]
     span, = spans.get_finished_spans()
-    assert telemetry.ATTR_LEDGER_STATUS not in span.attributes
+    assert span.attributes[telemetry.ATTR_LEDGER_STATUS] == "proposed"
+
+
+def test_the_agent_is_denied_on_a_payment_awaiting_approval(monkeypatch, spans):
+    monkeypatch.setattr(
+        _pds_server_module, "_flag_client",
+        _FailClosedFlagClient(value="autonomous", reason="TARGETING_MATCH",
+                              error_code=None),
+    )
+    monkeypatch.setattr(_pds_server_module, "payment_status", lambda pid: "awaiting_approval")
+    result = PolicyServicer().CheckRequest(
+        _request(caller=AGENT, params=_execute_payment(amount=100.0)), None)
+    assert result.WhichOneof("result") == "error"
+    assert "rule=settlement-agent.payment_not_proposed" in result.error.reason
+    span, = spans.get_finished_spans()
+    assert span.attributes[telemetry.ATTR_LEDGER_STATUS] == "awaiting_approval"
+
+
+def test_the_agent_is_denied_when_the_ledger_is_unreadable(monkeypatch, spans):
+    monkeypatch.setattr(
+        _pds_server_module, "_flag_client",
+        _FailClosedFlagClient(value="autonomous", reason="TARGETING_MATCH",
+                              error_code=None),
+    )
+    monkeypatch.setattr(_pds_server_module, "payment_status", lambda pid: None)
+    result = PolicyServicer().CheckRequest(
+        _request(caller=AGENT, params=_execute_payment(amount=100.0)), None)
+    assert result.WhichOneof("result") == "error"
+    assert "rule=settlement-agent.payment_not_proposed" in result.error.reason
+    span, = spans.get_finished_spans()
+    assert span.attributes[telemetry.ATTR_LEDGER_STATUS] == "unreadable"
 
 
 def test_a_reviewer_tool_that_is_not_execute_triggers_no_ledger_read(monkeypatch, spans):

@@ -8,7 +8,7 @@ REVIEWER = "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui"
 
 def _input(**kw):
     base = dict(caller=AGENT, tool="execute_payment", amount=6200.0,
-                currency="EUR", autonomy_level="assisted", ledger_status=None)
+                currency="EUR", autonomy_level="assisted", ledger_status="proposed")
     base.update(kw)
     return PolicyInput(**base)
 
@@ -66,6 +66,29 @@ def test_a_human_approval_still_refuses_a_non_amount():
 def test_the_ledger_status_widens_nothing_for_the_agent():
     d = decide(_input(amount=5800.0, autonomy_level="assisted", ledger_status="awaiting_approval"))
     assert d.permit is False and d.rule == "settlement-agent.assisted.execute_limit"
+
+
+def test_the_agent_may_not_execute_a_payment_routed_to_a_human_even_at_autonomous():
+    d = decide(_input(amount=5800.0, autonomy_level="autonomous", ledger_status="awaiting_approval"))
+    assert d.permit is False
+    assert d.rule == "settlement-agent.payment_not_proposed"
+    assert d.limit == 6000.0
+
+
+def test_the_agent_may_execute_a_proposed_payment_within_its_limit():
+    d = decide(_input(amount=5800.0, autonomy_level="autonomous", ledger_status="proposed"))
+    assert d.permit is True and d.rule == "settlement-agent.autonomous.execute_limit"
+
+
+@pytest.mark.parametrize("status", [None, "executed", "rejected", "refused", ""])
+def test_the_agent_is_denied_when_the_ledger_is_unreadable_or_not_proposed(status):
+    d = decide(_input(amount=5800.0, autonomy_level="autonomous", ledger_status=status))
+    assert d.permit is False and d.rule == "settlement-agent.payment_not_proposed"
+
+
+def test_an_over_limit_amount_keeps_its_limit_rule_name_whatever_the_ledger_says():
+    d = decide(_input(amount=6200.0, autonomy_level="autonomous", ledger_status=None))
+    assert d.rule == "settlement-agent.autonomous.execute_limit" and d.permit is False
 
 
 def test_no_senior_identity_is_known_any_more():

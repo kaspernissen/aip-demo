@@ -73,3 +73,40 @@ async def test_a_json_rpc_error_is_gateway_unavailable(svid):
     client = gateway.GatewayClient("http://gw/mcp", transport=httpx.MockTransport(handler))
     with pytest.raises(gateway.GatewayUnavailable):
         await client.execute_payment("PAY-000001", 5800.0, "EUR")
+
+
+def _custom_transport(call_text: str):
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if payload["method"] == "initialize":
+            return httpx.Response(200, headers={"mcp-session-id": "s1", "content-type": "text/event-stream"},
+                                  text=_sse({"jsonrpc": "2.0", "id": payload["id"], "result": {}}))
+        if payload["method"] == "notifications/initialized":
+            return httpx.Response(202)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                              text=call_text.replace("__ID__", payload["id"]))
+    return httpx.MockTransport(handler)
+
+
+async def test_a_leading_notification_before_the_response_is_skipped(svid):
+    notification = _sse({"jsonrpc": "2.0", "method": "notifications/progress", "params": {"progress": 1}})
+    other = _sse({"jsonrpc": "2.0", "id": "someone-else", "result": {"isError": True, "content": []}})
+    answer = _sse({"jsonrpc": "2.0", "id": "__ID__", "result": {
+        "isError": False, "structuredContent": {"result": {"paymentId": "PAY-000001", "status": "executed"}}}})
+    client = gateway.GatewayClient("http://gw/mcp", transport=_custom_transport(notification + other + answer))
+    record = await client.execute_payment("PAY-000001", 5800.0, "EUR")
+    assert record["status"] == "executed"
+
+
+async def test_a_body_with_neither_result_nor_error_is_gateway_unavailable(svid):
+    client = gateway.GatewayClient("http://gw/mcp", transport=_custom_transport(
+        _sse({"jsonrpc": "2.0", "id": "__ID__"})))
+    with pytest.raises(gateway.GatewayUnavailable):
+        await client.execute_payment("PAY-000001", 5800.0, "EUR")
+
+
+async def test_a_stream_with_no_matching_id_is_gateway_unavailable(svid):
+    client = gateway.GatewayClient("http://gw/mcp", transport=_custom_transport(
+        _sse({"jsonrpc": "2.0", "id": "not-mine", "result": {"isError": False}})))
+    with pytest.raises(gateway.GatewayUnavailable):
+        await client.execute_payment("PAY-000001", 5800.0, "EUR")

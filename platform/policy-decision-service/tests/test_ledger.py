@@ -46,3 +46,10 @@ def test_a_payment_id_that_is_not_one_is_never_fetched():
     for bad in (None, "", "../admin", "PAY-1", "PAY-000053/execute", "PAY-000053?x=1"):
         assert payment_status(bad, opener=_opener({"status": "awaiting_approval"}, seen=seen)) is None
     assert seen == []
+
+
+def test_unicode_digits_never_pass_the_payment_id_shape():
+    called = []
+    assert payment_status("PAY-٠٠٠٠٠١",
+                          opener=lambda *a, **k: called.append(1)) is None
+    assert not called

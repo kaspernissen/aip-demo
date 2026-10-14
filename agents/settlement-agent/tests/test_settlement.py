@@ -431,7 +431,7 @@ async def test_a_refused_propose_is_reported_as_refused_too():
     result = await _run(CLAIM, payments, _obedient_model(narrative="I cannot open this payment."))
 
     assert [c[0] for c in payments.calls] == ["propose"]
-    assert result["status"] == "awaiting_approval"
+    assert result["status"] == "refusal_unrecorded"
     assert result["paymentId"] is None
     assert result["narrative"] == "I cannot open this payment."
 
@@ -520,9 +520,11 @@ async def test_a_failure_to_record_the_refusal_does_not_reach_the_claimant():
         _obedient_model(narrative="I am not authorised to pay this."),
     )
 
-    assert result["status"] == "awaiting_approval"
+    # No human is waiting on a payment the ledger does not show waiting.
+    assert result["status"] == "refusal_unrecorded"
     assert result["narrative"] == "I am not authorised to pay this."
     assert result["paymentId"] == "PAY-000001"
+    assert result["rule"] == _denial().rule
 
 
 async def test_a_refused_propose_records_no_refusal_since_no_payment_exists_yet():
@@ -534,7 +536,7 @@ async def test_a_refused_propose_records_no_refusal_since_no_payment_exists_yet(
     result = await _run(CLAIM, payments, _obedient_model(narrative="I cannot open this payment."))
 
     assert [c[0] for c in payments.calls] == ["propose"]
-    assert result["status"] == "awaiting_approval"
+    assert result["status"] == "refusal_unrecorded"
 
 
 async def test_a_transport_failure_still_propagates_rather_than_being_narrated():
