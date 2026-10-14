@@ -31,11 +31,11 @@
    (source origin x=89, y=2352). Magenta rings mark amount and status. */
 .x10-crop { margin: calc(2 * var(--baseline)) 0 0; width: 1000px; }
 .x10-crop-win { position: relative; width: 1000px; height: 480px; }
-.x10-crop-win img { position: absolute; width: 2604px !important; max-width: none; left: -125px; top: -3293px; }
+.x10-crop-win img { position: absolute; width: 3479px !important; max-width: none; left: -560px; top: -3449px; }
 .x10-hl { position: absolute; left: 34px; height: 60px; border-radius: var(--radius-md);
   box-shadow: 0 0 0 4px var(--color-accent-2); }
 .x10-hl-amt { top: 286px; width: 400px; }
-.x10-hl-st { top: 410px; width: 505px; }
+.x10-hl-st { top: 410px; width: 720px; }
 .x10-crop .shot-cap { font-size: var(--type-small); color: var(--color-text); margin-top: 30px; }
 
 /* 03 · portrait and the lineage of talks, set as type */

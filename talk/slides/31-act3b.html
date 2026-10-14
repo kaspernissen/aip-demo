@@ -58,11 +58,11 @@
     <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">execute_tool execute_payment</span><span class="v">ERROR</span></div>
     <div class="r i3"><span class="svc gw">agentgateway</span><span class="op">tools/call</span><span class="v"><span class="code m">jwt.sub=…/sa/settlement-agent</span> <span class="code m">http.status=200</span></span></div>
     <div class="r i4"><span class="svc gw">agentgateway</span><span class="op">Guardrail</span><span class="v"><span class="code">grpc.status=0</span></span></div>
-    <div class="r i4 hl"><span class="svc pds">policy-decision-service</span><span class="op">policy.decision</span><span class="flag deny">deny</span><span class="v">&euro;6,200 &gt; &euro;6,000</span></div>
+    <div class="r i4 hl"><span class="svc pds">policy-decision-service</span><span class="op">policy.decision</span><span class="flag deny">deny</span><span class="v">&euro;5,800 &gt; &euro;0</span></div>
     <div class="r i4 absent"><span class="svc">agentgateway</span><span class="op">tools/call payments-mcp_execute_payment</span><span class="x31-never">never attempted</span></div>
     <div class="r i5 absent"><span class="svc">payments-mcp</span><span class="op">tools/call execute_payment</span></div>
     <div class="r i5 absent"><span class="svc">payments-api</span><span class="op">POST /payments/{paymentId}/execute</span></div>
-    <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">chat claude-sonnet-5</span><span class="v">narrates the refusal, no retry</span></div>
+    <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">chat claude-sonnet-5</span><span class="v">narrates the wait, no retry</span></div>
     <div class="r i1"><span class="svc agent">settlement-agent</span><span class="op">MCP send tools/call refuse_payment</span><span class="flag ok">permit</span></div>
   </div>
   <p class="x31-tread"><b>Read it like this:</b> indented means called by the line above · struck through means it never happened</p>
@@ -81,7 +81,7 @@
     <div class="r i4"><span class="svc sys">payments-api</span><span class="op">POST /payments/{paymentId}/execute</span></div>
   </div>
   <div class="x31-adds rise"><span class="k">A refusal adds four keys:</span>
-    <span class="code m">error=true</span><span class="code m">otel.status_code=ERROR</span><span class="code m">reason=MCP</span><span class="code m">otel.status_description=&ldquo;mcp: mcpGuardrails rejected: requested 6200 EUR exceeds the 6000 EUR limit&hellip;&rdquo;</span></div>
+    <span class="code m">error=true</span><span class="code m">otel.status_code=ERROR</span><span class="code m">reason=MCP</span><span class="code m">otel.status_description=&ldquo;mcp: mcpGuardrails rejected: requested 5800 EUR exceeds the 0 EUR limit&hellip;&rdquo;</span></div>
 </section>
 
 <!-- 28 · NEW · HTTP 200 means no (Ch 6: Figure 6.15, the metrics Figure 6.24, Finding 7) -->
@@ -217,7 +217,7 @@ request.method != &quot;POST&quot;
     <div>
       <p class="x31-tw-k">Refuse and record</p>
       <p class="x31-tw-s">a decision service &middot; Northstar</p>
-      <p class="x31-tw-c"><span class="code">tools/list</span> shows all four tools, <span class="code">execute_payment</span> too. <b>&euro;6,200</b> depends on its arguments.</p>
+      <p class="x31-tw-c"><span class="code">tools/list</span> shows all four tools, <span class="code">execute_payment</span> too. <b>&euro;5,800</b> depends on its arguments.</p>
       <p class="x31-tw-flow"><span>proposed</span><i></i><span class="m">refused</span><i></i><span class="c">recorded</span><i></i><span class="c">explained</span></p>
       <p class="x31-tw-l"><span class="code c">policy.decision</span> deny &middot; rule, limit, amount, caller</p>
       <p class="x31-tw-f">Listed is not permitted: every call is decided</p>
@@ -319,21 +319,21 @@ request.method != &quot;POST&quot;
   <div class="x31-fb rise" style="grid-template-columns:780px 780px;gap:14px 72px;margin-top:calc(0.75 * var(--baseline))">
     <div>
       <figure class="shot x31-crop" style="width:780px;height:278px">
-        <img src="assets/shots/backstage-autonomy-assisted.png" alt="Backstage autonomy contract card: settlement-agent assisted" style="width:1733px;left:-303px;top:-485px">
+        <img src="assets/shots/backstage-autonomy-assisted.png" alt="Backstage autonomy contract card: settlement-agent assisted" style="width:1544px;left:-315px;top:-494px">
       </figure>
-      <div class="shot-cap">1 · Before: both identities assisted</div>
+      <div class="shot-cap">1 · Before: settlement-agent assisted</div>
     </div>
     <div>
       <figure class="shot x31-crop" style="width:780px;height:278px">
-        <img src="assets/shots/backstage-autonomy-flipped.png" alt="Backstage autonomy contract card after the flip: settlement-agent autonomous" style="width:1733px;left:-294px;top:-485px">
+        <img src="assets/shots/backstage-autonomy-flipped.png" alt="Backstage autonomy contract card after the flip: settlement-agent autonomous" style="width:1544px;left:-315px;top:-494px">
       </figure>
       <div class="shot-cap">2 · One click: settlement-agent autonomous</div>
     </div>
     <div>
       <figure class="shot x31-crop" style="width:780px;height:178px">
-        <img src="assets/shots/customer-ui-autonomous-executed.png" alt="Customer UI: the same 6,200 EUR claim CLM-1842 executed as PAY-000003" style="width:813px;left:-17px;top:-707px">
+        <img src="assets/shots/customer-ui-autonomous-executed.png" alt="Customer UI: the same 5,800 EUR claim CLM-1842, settled by the agent at autonomous" style="width:1086px;left:-153px;top:-710px">
       </figure>
-      <div class="shot-cap">3 · The same €6,200: executed</div>
+      <div class="shot-cap">3 · The same €5,800: settled, no human</div>
     </div>
     <div>
       <figure class="shot x31-crop" style="width:780px;height:210px">

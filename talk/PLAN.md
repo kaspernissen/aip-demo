@@ -61,7 +61,7 @@ ordinary slides now, outside the five-minute cut.
 | 02 | 10-open-act1 | W | 0:15 | 20 | When an agent acts | NEW | regulated domains: four sectors where an agent acts, one line on what it moves (Ch 10, Ch 14 "Who is in the room") |
 | 03 | 10-open-act1 | W | 0:35 | 60 | The auditor’s questions | NEW | the auditor's five questions, big type, each tagged with the requirement behind it (Ch 10; Ch 14 slide 35 table). The table itself comes at "From requirement to artifact". |
 | 04 | 10-open-act1 | W | 1:35 | 25 | Not an answer | NEW | the stakes, as type: Ch 14 slide 09's title line |
-| 05 | 10-open-act1 | W | 2:00 | 60 | This is a success | NEW | the puzzle: a crop of the customer UI outcome block, €6,200 refused |
+| 05 | 10-open-act1 | W | 2:00 | 60 | This is a success | NEW | the puzzle: a crop of the customer UI outcome block, €5,800 waiting for a person |
 | 06 | 10-open-act1 | W+K | 3:00 | 70 | Where this comes from | NEW | two earlier talks and William's OSFF 2026 demo feed this one; speaker portrait printed as plates; beginners welcome |
 | 07 | 10-open-act1 | W | 4:10 | 10 | Act 1 — Agents change the nature of complexity | NEW | Act 1 divider |
 | 08 | 10-open-act1 | W | 4:20 | 35 | The evolution of architectures | TAMING | evolution of architectures: book Figure 1.1, lifted; the FIXED row cut, the BROKE row and the crossing lines kept |
@@ -94,7 +94,7 @@ ordinary slides now, outside the five-minute cut.
 | 35 | 30-act3a | K | 21:35 | 60 | agentgateway: one choke point | NEW | agentgateway: the one choke point and its checks in order (deploy/platform/agentgateway/config.yaml; architecture.md "Hop 3") |
 | 36 | 30-act3a | K | 22:35 | 45 | What OpenFeature is | NEW | concept before the live policy: what OpenFeature is, in four layers, and why a flag carries a policy knob (pds/autonomy.py; requirements.txt openfeature-sdk, -provider-flagd, -hooks-opentelemetry; deploy/platform/openfeature/*) |
 | 37 | 30-act3a | K | 23:20 | 45 | The decision and the live policy | NEW | the decision and the live policy: pds/rules.py EXECUTE_LIMITS, pds/autonomy.py (flagd on localhost:8013), deploy/platform/openfeature/featureflag.yaml |
-| 38 | 30-act3a | K | 24:05 | 60 | The demo | NEW | the demo: five commands, about five minutes, one terminal (M7 design spec §7.1; docs/demo-runbook.md §5 "The five-minute flow"; measured timings 2026-10-12) |
+| 38 | 30-act3a | K | 24:05 | 60 | The demo | NEW | the demo: five steps, about five minutes (M8 design spec §4; docs/demo-runbook.md §5 "The five-minute flow"; measured timings 2026-10-12) |
 | 39 | 30-live | K | 25:05 | 50 | Step 1 — guard | BOUNDED | Step 1 live, demo guard: no identity → 401 at the gateway; around the gateway → dropped by Cilium (after William's reach beat); with settlement-agent's SVID → tools/list, all four tools (M7 design spec §7.1; runbook §5 Step 1) |
 | 40 | 30-live | K | — | 0 | Fallback — Step 1 | BOUNDED | Step 1 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-12 (scratchpad flow/1-guard.txt), typeset verbatim, elided with … only |
 | 41 | 30-live | K | 25:55 | 90 | Step 2 — a human signs | NEW | Step 2 live, a human signs: claim EUR 5,800 in the customer tab (Awaiting human approval, a timer), the reviewer tab shows rule, limit EUR 0 and the model's narrative, approve, the customer tab flips to Settled with no reload. Terminal fallback: demo claim 5800 then demo approve last (spec M8 §4; runbook §5 Step 2) |

@@ -382,8 +382,8 @@
       <p class="lab">The rule table, keyed by caller + level</p>
       <div class="rows">
         <p class="h">caller</p><p class="h">level</p><p class="h">may execute up to</p>
-        <p>settlement-agent</p><p class="lv">assisted</p><p class="amt">€6,000</p>
-        <p>settlement-agent</p><p class="lv">autonomous</p><p class="amt">€1,000,000</p>
+        <p>settlement-agent</p><p class="lv">assisted</p><p class="amt">€0</p>
+        <p>settlement-agent</p><p class="lv">autonomous</p><p class="amt">€6,000</p>
         <p class="dim">no row</p><p class="dim">any</p><p class="amt dim">deny</p>
       </div>
       <p class="out">Every answer becomes a <span class="code m">policy.decision</span> span: rule, limit, amount, caller, level.</p>
@@ -391,16 +391,16 @@
   </div>
 </section>
 
-<!-- 22f · NEW · the demo: five commands, about five minutes, one terminal (M7 design spec §7.1; docs/demo-runbook.md §5 "The five-minute flow"; measured timings 2026-10-12) -->
+<!-- 22f · NEW · the demo: five steps, about five minutes (M8 design spec §4; docs/demo-runbook.md §5 "The five-minute flow"; measured timings 2026-10-12) -->
 <section class="slide content" data-label="The demo">
-  <h2 class="slide-title">The demo: five commands, one terminal</h2>
+  <h2 class="slide-title">The demo: five steps, about five minutes</h2>
   <div class="x30-dm rise">
     <p class="h"></p><p class="h">Command</p><p class="h">What you&rsquo;ll see</p><p class="h">Ring</p>
     <p class="no">1</p><p class="cmd"><span class="code">demo guard</span></p><p class="see">no identity: 401 &middot; around the gateway: dropped &middot; its own identity: the tools</p><p class="rg">Core &middot; Identity<br>Ring 1 &middot; Reach</p>
-    <p class="no">2</p><p class="cmd"><span class="code">demo claim 6200</span></p><p class="see">the model asks to pay &euro;6,200; the platform <b class="m">refuses</b>, and the trace shows it</p><p class="rg">Ring 2 &middot; Capability</p>
-    <p class="no">3</p><p class="cmd"><span class="code">demo autonomy autonomous</span><span class="code">demo claim 6200</span><span class="code">demo autonomy assisted</span></p><p class="see">one live value: the same claim <b class="c">executes</b>, nothing restarts</p><p class="rg">the platform API is the resource</p>
+    <p class="no">2</p><p class="cmd"><span class="code">a claim for &euro;5,800</span><span class="code">a human approves</span></p><p class="see">the agent may pay nothing yet: the claim <b class="m">waits</b>, a person signs, and the trace shows both</p><p class="rg">Ring 2 &middot; Capability</p>
+    <p class="no">3</p><p class="cmd"><span class="code">demo autonomy autonomous</span><span class="code">demo claim 5800</span><span class="code">demo claim 6200</span></p><p class="see">one live value: &euro;5,800 <b class="c">settles</b> alone, &euro;6,200 still <b class="m">waits</b>, nothing restarts</p><p class="rg">the platform API is the resource</p>
     <p class="no">4</p><p class="cmd"><span class="code">demo keystone</span></p><p class="see">the agent edits its own limit: RBAC, then Kyverno, <b class="m">deny</b></p><p class="rg">Keystone</p>
-    <p class="no">5</p><p class="cmd"><span class="code">demo evidence</span></p><p class="see">both claims, read back: who decided, rule, limit, caller</p><p class="rg">Prove</p>
+    <p class="no">5</p><p class="cmd"><span class="code">demo evidence</span></p><p class="see">each claim, read back: who decided, the rule, who approved, how long the human took</p><p class="rg">Prove</p>
   </div>
-  <p class="x30-foot">About 55 s of commands, about 5 minutes with the talking. <b>The model is called in steps 2 and 3 only.</b></p>
+  <p class="x30-foot">About 5 minutes with the talking. <b>The model is called in steps 2 and 3 only.</b> Step 2 also runs from the terminal.</p>
 </section>
