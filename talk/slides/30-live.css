@@ -79,3 +79,23 @@
 /* the fallbacks: a real transcript under the title */
 .content > .x3l-term { margin-top: calc(0.75 * var(--baseline)); font-size: 17px; line-height: 1.3; padding: 18px 28px; }
 .x3l-ev + .x3l-foot { margin-top: calc(0.75 * var(--baseline)); }
+
+/* Step 2: three cards, left to right: customer tab, reviewer tab, customer tab */
+.x3l-hs { display: grid; grid-template-columns: 1fr 70px 1fr 70px 1fr; align-items: stretch; margin-top: calc(1.5 * var(--baseline)); }
+.x3l-hs .card { display: flex; flex-direction: column; gap: 14px; padding: 28px 30px; border-radius: var(--radius-md);
+  background: var(--color-neutral-200); }
+.x3l-hs .card p { margin: 0; }
+.x3l-hs .tab { font-size: var(--type-kicker); letter-spacing: 0.04em; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x3l-hs .big { font-family: var(--font-heading); font-weight: 700; font-size: 44px; line-height: 1.1; }
+.x3l-hs .big.m { color: var(--color-accent-2-700); }
+.x3l-hs .big.c { color: var(--color-accent-700); }
+.x3l-hs .sm { font-size: 27px; line-height: 1.3; }
+.x3l-hs .sm .code { font-size: 24px; }
+.x3l-hs .arr { align-self: center; height: 2px; background: var(--color-neutral-500); position: relative; }
+.x3l-hs .arr::after { content: ""; position: absolute; right: 0; top: -7px; border: 8px solid transparent;
+  border-left: 14px solid var(--color-neutral-500); border-right: 0; }
+
+/* Step 5: three claims side by side */
+.x3l-ev3 { grid-template-columns: 220px 1fr 1fr 1fr; font-size: 26px; }
+.x3l-ev3 p { padding-right: 24px; }
+.x3l-ev3 .code { font-size: 20px; }

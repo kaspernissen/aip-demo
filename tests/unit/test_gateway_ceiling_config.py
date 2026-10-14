@@ -37,3 +37,13 @@ def test_the_ceiling_is_above_every_published_agent_limit():
 
 def test_the_pds_hook_is_still_there():
     assert _route()["policies"]["mcpGuardrails"]["processors"][0]["failureMode"] == "failClosed"
+
+
+def test_the_deck_quotes_the_rule_the_config_carries():
+    """The 'Two ways to say no' slide shows the real rule: read from the same
+    file, never retyped."""
+    import html
+
+    slide = (CONFIG.parents[3] / "talk" / "slides" / "31-act3b.html").read_text()
+    shown = " ".join(html.unescape(re.sub(r"<[^>]+>", "", slide)).split())
+    assert RULE in shown, "talk/slides/31-act3b.html no longer quotes the config's ceiling rule"

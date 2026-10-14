@@ -46,65 +46,84 @@
 guard holds: no identity, no road, one way in.</pre>
 </section>
 
-<!-- L2 · NEW · Step 2 live, demo claim 6200: refused; the trace in the terminal: gateway tools/call HTTP 200 ERROR, Guardrail and policy.decision deny as siblings, propose and refuse payments-api spans present, the execute span absent (runbook §5 Step 2; flow timings assumptions 4–6) -->
-<section class="slide content" data-label="Step 2 — a refusal">
+<!-- L2 · NEW · Step 2 live, a human signs: claim EUR 5,800 in the customer tab (Awaiting human approval, a timer), the reviewer tab shows rule, limit EUR 0 and the model's narrative, approve, the customer tab flips to Settled with no reload. Terminal fallback: demo claim 5800 then demo approve last (spec M8 §4; runbook §5 Step 2) -->
+<section class="slide content" data-label="Step 2 — a human signs">
   <div class="beat"><span class="dot"></span>Live &middot; Step 2</div>
   <p class="ring">Ring 2 &middot; Capability</p>
-  <h2 class="slide-title">A refusal is a success</h2>
-  <p class="x3l-cmd rise"><span class="code">./scripts/demo claim 6200</span><span class="s">a real claim, a real model</span></p>
-  <div class="stree x3l-tree rise">
-    <div class="r"><span class="svc agent">settlement-agent</span><span class="op">execute_tool execute_payment</span><span class="v">the model asks</span></div>
-    <div class="r i1"><span class="svc gw">agentgateway</span><span class="op">tools/call execute_payment</span><span class="v"><span class="code m">HTTP 200</span> <span class="code m">ERROR</span></span></div>
-    <div class="r i2"><span class="svc gw">agentgateway</span><span class="op">Guardrail</span><span class="v">the gateway asks</span></div>
-    <div class="r i2 hl"><span class="svc pds">policy-decision-service</span><span class="op">policy.decision</span><span class="flag deny">deny</span><span class="v"><span class="code">settlement-agent.assisted.execute_limit</span> &middot; limit 6,000</span></div>
-    <div class="r x3l-gap"><span class="svc sys">payments-api</span><span class="op">POST /payments/propose</span><span class="v">present</span></div>
-    <div class="r"><span class="svc sys">payments-api</span><span class="op">POST /payments/{paymentId}/refuse</span><span class="v">present</span></div>
-    <div class="r absent"><span class="svc">payments-api</span><span class="op">POST /payments/{paymentId}/execute</span><span class="x3l-never">absent: money did not move</span></div>
+  <h2 class="slide-title">The agent did the work. A human signs.</h2>
+  <p class="x3l-cmd rise"><span class="code">claim &euro;5,800</span><span class="s">in the customer tab, then approve in the reviewer tab</span></p>
+  <div class="x3l-hs rise">
+    <div class="card">
+      <p class="tab">Customer tab</p>
+      <p class="big m">Awaiting human approval</p>
+      <p class="sm">a timer runs: <span class="code">0:19</span></p>
+      <p class="sm">Nothing was paid.</p>
+    </div>
+    <i class="arr" aria-hidden="true"></i>
+    <div class="card">
+      <p class="tab">Reviewer tab</p>
+      <p class="big">The reviewer sees four facts</p>
+      <p class="sm">the rule <span class="code">assisted</span> &middot; the limit <span class="code">&euro;0</span></p>
+      <p class="sm">the amount &middot; the model&rsquo;s own words</p>
+      <p class="sm"><b>Approve</b> or <b>Reject</b></p>
+    </div>
+    <i class="arr" aria-hidden="true"></i>
+    <div class="card">
+      <p class="tab">Customer tab</p>
+      <p class="big c">Settled</p>
+      <p class="sm">it flipped, with no reload</p>
+      <p class="sm">The trace says how long the human took.</p>
+    </div>
   </div>
-  <p class="x3l-foot">The no is <b>HTTP 200</b>, carrying JSON-RPC error <span class="code">-32001</span>.</p>
+  <p class="x3l-foot">The agent is the maker. <b>The reviewer is the checker.</b> They are two services with two identities.</p>
 </section>
 
-<!-- L2f · NEW · Step 2 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-12 (scratchpad flow/2-claim-refused.txt), typeset verbatim, elided with … only -->
+<!-- L2f · NEW · Step 2 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-15 (the flow transcript in the Task 5 report: claim 5800, approve last), typeset verbatim, elided with … only -->
 <section class="slide content" data-label="Fallback — Step 2">
   <div class="beat fallback"><span class="dot"></span>Fallback &middot; Step 2</div>
-  <h2 class="slide-title">A refusal is a success</h2>
-  <pre class="term x3l-term rise"><span class="p">$ ./scripts/demo claim 6200</span>
-<span class="h">CLAIM  CLM-DEMO-991645   EUR 6,200</span>
+  <h2 class="slide-title">The agent did the work. A human signs.</h2>
+  <pre class="term x3l-term rise"><span class="p">$ ./scripts/demo claim 5800</span>
+<span class="h">CLAIM  CLM-DEMO-656406   EUR 5,800</span>
 ----------------------------------
   autonomy level   assisted
   …
-  Outcome  <span class="m">REFUSED</span>  by the platform. Nothing was paid.
+  Outcome  <span class="m">WAITING</span>  awaiting human approval. Nothing was paid.
   The model's explanation to the claimant:
-    Your claim CLM-DEMO-991645 has been assessed as covered, and I was able to register the
+    Your claim CLM-DEMO-656406 has been assessed as covered, and I've recorded the settlement
     …
+  Approve with:  scripts/demo approve CLM-DEMO-656406   (or: scripts/demo approve last)
 <span class="h">The same event, as the trace saw it</span>
-<span class="p">  $ Jaeger  trace 3f874678...  (waiting for every service to land)</span>
-  trace 3f874678ced34f85956887e4401fe8bf
   settlement-agent  execute_tool execute_payment   the model asks
   +- agentgateway  tools/call execute_payment   HTTP 200  ERROR
-      jwt.sub  settlement-agent
-      HTTP 200: the answer is a JSON-RPC error. A no is not an HTTP failure.
+      HTTP 200: the no is a tool result marked isError, with the rule in its text.
     +- Guardrail   the gateway asks the decision service
     +- policy-decision-service  policy.decision  <span class="m">DENY</span>
           rule       settlement-agent.assisted.execute_limit
-          limit      6000  (requested 6200)
+          limit      0  (requested 5800)
           …
-    gateway: mcp: mcpGuardrails rejected: requested 6200 EUR exceeds the 6000 EUR limit for this
-    agent at autonomy level assisted
+    gateway: mcp: mcpGuardrails rejected: requested 5800 EUR exceeds the 0 EUR limit for this agent
+    at autonomy level assisted  (rule settlement-agent.assisted.execute_limit; limit EUR 0, asked
+    EUR 5,800)
   payments-api spans in this trace:
     present  POST /payments/propose   records the proposal; moves no money
     present  POST /payments/{paymentId}/refuse   records the refusal; moves no money
     <span class="m">ABSENT</span>   POST /payments/{paymentId}/execute   money did not move
   …
-A refusal is a success: the model asked, the platform said no, and the record shows both.</pre>
+The model asked. The platform sent it to a human. The record shows both.
+<span class="p">$ ./scripts/demo approve last</span>
+<span class="h">APPROVE  CLM-DEMO-656406   EUR 5,800</span>
+  A person decides. The reviewer-ui acts under its own identity, through the gateway.
+<span class="p">  $ reviewer-ui  POST /api/review/PAY-000026  decision=approve</span>
+  Outcome  <span class="c">SETTLED</span>  released by a human after 19s
+  The customer's claim was told: <span class="h">completed</span></pre>
 </section>
 
-<!-- L3 · NEW · Step 3 live, demo autonomy autonomous → demo claim 6200 → demo autonomy assisted: one value on one FeatureFlag, the same claim executes, no pod restarted (deploy/platform/openfeature/featureflag.yaml; runbook §5 Step 3; flow timings assumptions 7–8) -->
-<section class="slide content" data-label="Step 3 — one live value">
+<!-- L3 · NEW · Step 3 live, demo autonomy autonomous, claim 5800, claim 6200, autonomy assisted: one value on one FeatureFlag; EUR 5,800 settles with no human, EUR 6,200 still waits (limit 6,000), no pod restarted (deploy/platform/openfeature/featureflag.yaml; runbook §5 Step 3) -->
+<section class="slide content" data-label="Step 3 — one live dial">
   <div class="beat"><span class="dot"></span>Live &middot; Step 3</div>
   <p class="ring">Ring 2 &middot; Capability</p>
-  <h2 class="slide-title">One value changes what the platform may do</h2>
-  <p class="x3l-cmd rise"><span class="code">demo autonomy autonomous</span><span class="s">&rarr;</span><span class="code">demo claim 6200</span><span class="s">&rarr;</span><span class="code">demo autonomy assisted</span></p>
+  <h2 class="slide-title">One live dial: the band widens, the human stays</h2>
+  <p class="x3l-cmd rise"><span class="code">demo autonomy autonomous</span><span class="s">&rarr;</span><span class="code">demo claim 5800</span><span class="s">&rarr;</span><span class="code">demo claim 6200</span></p>
   <div class="x3l-b7 rise">
     <div>
       <p class="x3l-lab">FeatureFlag northstar-autonomy &middot; targeting</p>
@@ -117,48 +136,56 @@ A refusal is a success: the model asked, the platform said no, and the record sh
       </div>
     </div>
     <div class="x3l-amt">
-      <div class="eur">&euro;6,200</div>
-      <div class="r"><span class="k">assisted</span><span class="v no">refused</span></div>
-      <div class="r"><span class="k">autonomous</span><span class="v yes">executed</span></div>
+      <p class="x3l-lab">the agent&rsquo;s limit: &euro;6,000</p>
+      <div class="r"><span class="k">&euro;5,800</span><span class="v yes">settled by the agent</span></div>
+      <div class="r"><span class="k">&euro;6,200</span><span class="v no">waits for a human</span></div>
       <div class="r"><span class="k">pods restarted</span><span class="v">none</span></div>
     </div>
   </div>
-  <p class="x3l-line">Same amount, same agent, same code. <em>Only the value changed.</em></p>
+  <p class="x3l-line">More autonomy did not remove the human. <em>It moved the line.</em></p>
 </section>
 
-<!-- L3f · NEW · Step 3 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-12 (scratchpad flow/3-autonomy.txt), typeset verbatim, elided with … only -->
+<!-- L3f · NEW · Step 3 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-15 (the flow transcript in the Task 5 report: autonomy autonomous, claim 5800, claim 6200), typeset verbatim, elided with … only -->
 <section class="slide content" data-label="Fallback — Step 3">
   <div class="beat fallback"><span class="dot"></span>Fallback &middot; Step 3</div>
-  <h2 class="slide-title">One value changes what the platform may do</h2>
+  <h2 class="slide-title">One live dial: the band widens, the human stays</h2>
   <pre class="term x3l-term rise"><span class="p">$ ./scripts/demo autonomy autonomous</span>
 <span class="h">AUTONOMY  set the live value to autonomous</span>
 …
 <span class="p">  $ kubectl patch featureflag/northstar-autonomy --type=json  targeting.if[1] = autonomous</span>
-  -&gt; flagd resolves for settlement-agent: <span class="c">autonomous</span>   (0.2s to take effect)
-  Pods restarted: <span class="h">NONE</span>  (13 pods, same UIDs, same start times, same restart counts)
-<span class="p">$ ./scripts/demo claim 6200</span>
-<span class="h">CLAIM  CLM-DEMO-B0045F   EUR 6,200</span>
+  -&gt; flagd resolves for settlement-agent: <span class="c">autonomous</span>   (0.3s to take effect)
+  Pods restarted: <span class="h">NONE</span>  (12 pods, same UIDs, same start times, same restart counts)
+<span class="p">$ ./scripts/demo claim 5800</span>
+<span class="h">CLAIM  CLM-DEMO-7AC411   EUR 5,800</span>
 …
-  Outcome  <span class="c">EXECUTED</span>  by the platform. The payment was made.
+  Outcome  <span class="c">SETTLED</span>  by the agent, inside its band. The payment was made.
   …
-  settlement-agent  execute_tool execute_payment   the model asks
-  +- agentgateway  tools/call execute_payment   HTTP 200  OK
-      …
     +- policy-decision-service  policy.decision  <span class="c">PERMIT</span>
           rule       settlement-agent.autonomous.execute_limit
-          limit      1000000  (requested 6200)
+          limit      6000  (requested 5800)
           …
-  payments-api spans in this trace:
-    present  POST /payments/propose   records the proposal; moves no money
     <span class="c">PRESENT</span>  POST /payments/{paymentId}/execute   money moved
   …
-Same amount, same agent, same code. Only the value changed.
-<span class="p">$ ./scripts/demo autonomy assisted</span>
-<span class="h">AUTONOMY  set the live value to assisted</span>
+Settled by the agent, inside its band. Same code; only the value changed.
+<span class="p">$ ./scripts/demo claim 6200</span>
+<span class="h">CLAIM  CLM-DEMO-CC1273   EUR 6,200</span>
 …
-<span class="p">  $ kubectl patch featureflag/northstar-autonomy --type=json  targeting.if[1] = assisted</span>
-  -&gt; flagd resolves for settlement-agent: <span class="h">assisted</span>   (0.3s to take effect)
-  Pods restarted: <span class="h">NONE</span>  (13 pods, same UIDs, same start times, same restart counts)</pre>
+  Outcome  <span class="m">WAITING</span>  awaiting human approval. Nothing was paid.
+  …
+    +- policy-decision-service  policy.decision  <span class="m">DENY</span>
+          rule       settlement-agent.autonomous.execute_limit
+          limit      6000  (requested 6200)
+          …
+    gateway: mcp: mcpGuardrails rejected: requested 6200 EUR exceeds the 6000 EUR limit for this
+    agent at autonomy level autonomous  (rule settlement-agent.autonomous.execute_limit; limit EUR
+    6,000, asked EUR 6,200)
+    <span class="m">ABSENT</span>   POST /payments/{paymentId}/execute   money did not move
+  …
+The model asked. The platform sent it to a human. The record shows both.
+<span class="p">$ ./scripts/demo autonomy assisted</span>
+…
+  -&gt; flagd resolves for settlement-agent: <span class="h">assisted</span>   (0.2s to take effect)
+  Pods restarted: <span class="h">NONE</span>  (12 pods, same UIDs, same start times, same restart counts)</pre>
 </section>
 
 <!-- L4 · BOUNDED · Step 4 live, demo keystone: the keystone, after William's mic-drop beat. As settlement-agent, patch northstar-autonomy: RBAC Forbidden; a mistaken over-grant; the same patch: Kyverno ValidatingPolicy agents-cannot-edit-their-own-authority denies; over-grant removed; flag still assisted (deploy/platform/kyverno/keystone-policy.yaml; deploy/demo/keystone-overgrant.yaml; runbook §5 Step 4) -->
@@ -212,51 +239,54 @@ Same amount, same agent, same code. Only the value changed.
 The agent could not edit what constrains it, even with the grant.</pre>
 </section>
 
-<!-- L5 · NEW · Step 5 live, demo evidence: this run's two claims read back from OpenSearch: who decided, rule, limit, level, caller, outcome, human (none, by design) (runbook §5 Step 5; flow timings assumption 10) -->
+<!-- L5 · NEW · Step 5 live, demo evidence: this run's three claims read back from OpenSearch: who decided, rule, limit, who approved and how long the human took, outcome (runbook §5 Step 5) -->
 <section class="slide content" data-label="Step 5 — evidence">
   <div class="beat"><span class="dot"></span>Live &middot; Step 5</div>
   <h2 class="slide-title">Prove why each claim ended the way it did</h2>
   <p class="x3l-cmd rise"><span class="code">./scripts/demo evidence</span><span class="s">this run&rsquo;s claims, read back from OpenSearch</span></p>
-  <div class="x3l-ev rise">
-    <p class="h"></p><p class="h">&euro;6,200 &middot; assisted</p><p class="h">&euro;6,200 &middot; autonomous</p>
-    <p class="k">who decided</p><p>policy-decision-service <b class="m">DENY</b></p><p>policy-decision-service <b class="c">PERMIT</b></p>
-    <p class="k">rule</p><p><span class="code">settlement-agent.assisted.execute_limit</span></p><p><span class="code">settlement-agent.autonomous.execute_limit</span></p>
-    <p class="k">limit</p><p>6,000</p><p>1,000,000</p>
-    <p class="k">caller</p><p><span class="code">spiffe://&hellip;/sa/settlement-agent</span></p><p><span class="code">spiffe://&hellip;/sa/settlement-agent</span></p>
-    <p class="k">outcome</p><p><b class="m">REFUSED</b> no execute span</p><p><b class="c">EXECUTED</b></p>
-    <p class="k">human</p><p>none</p><p>none</p>
+  <div class="x3l-ev x3l-ev3 rise">
+    <p class="h"></p><p class="h">&euro;5,800 &middot; assisted</p><p class="h">&euro;5,800 &middot; autonomous</p><p class="h">&euro;6,200 &middot; autonomous</p>
+    <p class="k">who decided</p><p>decision service <b class="m">sent it to a human</b></p><p>decision service <b class="c">PERMIT</b></p><p>decision service <b class="m">sent it to a human</b></p>
+    <p class="k">rule</p><p><span class="code">&hellip;assisted.execute_limit</span></p><p><span class="code">&hellip;autonomous.execute_limit</span></p><p><span class="code">&hellip;autonomous.execute_limit</span></p>
+    <p class="k">limit</p><p>0</p><p>6,000</p><p>6,000</p>
+    <p class="k">approved by</p><p><b>a person</b>, after 19 s</p><p>none</p><p>none</p>
+    <p class="k">outcome</p><p><b class="c">SETTLED</b> by reviewer-ui</p><p><b class="c">SETTLED</b> by settlement-agent</p><p><b class="m">WAITING</b> nothing moved</p>
   </div>
   <p class="x3l-foot">Every line is a recorded span, read back. <b>Nothing is reconstructed.</b></p>
 </section>
 
-<!-- L5f · NEW · Step 5 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-12 (scratchpad flow/5-evidence.txt), typeset verbatim, elided with … only -->
+<!-- L5f · NEW · Step 5 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-15 (the flow transcript in the Task 5 report: evidence), typeset verbatim, elided with … only -->
 <section class="slide content" data-label="Fallback — Step 5">
   <div class="beat fallback"><span class="dot"></span>Fallback &middot; Step 5</div>
   <h2 class="slide-title">Prove why each claim ended the way it did</h2>
   <pre class="term x3l-term rise"><span class="p">$ ./scripts/demo evidence</span>
 <span class="h">EVIDENCE  can we prove why each claim ended the way it did?</span>
 -----------------------------------------------------------
-  From OpenSearch, for this run's 2 claim(s). Nothing older.
+  From OpenSearch, for this run's 3 claim(s). Nothing older.
 
-<span class="h">CLM-DEMO-991645   EUR 6,200</span>
-<span class="p">  $ OpenSearch  claim id -&gt; trace ids -&gt; every span in them  (CLM-DEMO-991645)</span>
-    who decided      policy-decision-service   <span class="m">DENY</span>
+<span class="h">CLM-DEMO-656406   EUR 5,800</span>
+    who decided      policy-decision-service   <span class="m">SENT TO A HUMAN</span>
     rule             settlement-agent.assisted.execute_limit
-    limit            6000   (requested 6200)
+    limit            0   (requested 5800)
     autonomy level   assisted
-    caller identity  spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
-    outcome          <span class="m">REFUSED</span> no payments-api execute span: nothing moved
-    human approval   none (no human was involved)
+    outcome          <span class="c">SETTLED</span> by reviewer-ui
+    approved by      kasper.on.stage, after 19 s
 
-<span class="h">CLM-DEMO-B0045F   EUR 6,200</span>
-<span class="p">  $ OpenSearch  claim id -&gt; trace ids -&gt; every span in them  (CLM-DEMO-B0045F)</span>
+<span class="h">CLM-DEMO-7AC411   EUR 5,800</span>
     who decided      policy-decision-service   <span class="c">PERMIT</span>
     rule             settlement-agent.autonomous.execute_limit
-    limit            1000000   (requested 6200)
+    limit            6000   (requested 5800)
     autonomy level   autonomous
-    caller identity  spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
-    outcome          <span class="c">EXECUTED</span> by settlement-agent
-    human approval   none (no human was involved)
+    outcome          <span class="c">SETTLED</span> by settlement-agent
+    approved by      none
+
+<span class="h">CLM-DEMO-CC1273   EUR 6,200</span>
+    who decided      policy-decision-service   <span class="m">SENT TO A HUMAN</span>
+    rule             settlement-agent.autonomous.execute_limit
+    limit            6000   (requested 6200)
+    autonomy level   autonomous
+    outcome          <span class="m">AWAITING HUMAN APPROVAL</span> no execute span: nothing moved
+    approved by      none
 
 Every line above is a recorded span, read back from OpenSearch. Nothing is reconstructed.</pre>
 </section>

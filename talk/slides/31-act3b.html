@@ -17,7 +17,7 @@
       <p class="x31-lab"><span class="x31-n">2</span>Same code, same rule, different caller</p>
       <div class="x31-rows">
         <div><div class="who">…/sa/<b>settlement-agent</b></div><div class="amt">€6,000</div></div>
-        <div><div class="who">…/sa/<b>senior-settlement-agent</b></div><div class="amt sen">€25,000</div></div>
+        <div><div class="who">…/sa/<b>reviewer-ui</b></div><div class="amt sen" style="font-size:var(--type-subtitle)">only a payment waiting for a human</div></div>
         <div><div class="who">anyone else</div><div class="amt none">no row: unknown_caller</div></div>
       </div>
     </div>
@@ -87,8 +87,8 @@
 <!-- 28 · NEW · HTTP 200 means no (Ch 6: Figure 6.15, the metrics Figure 6.24, Finding 7) -->
 <section class="slide hero" data-label="HTTP 200 means no">
   <div class="hero-num cmyk-num rise"><span class="paper">200</span><span class="plate plate-c" aria-hidden="true">200</span><span class="plate plate-m" aria-hidden="true">200</span><span class="plate plate-y" aria-hidden="true">200</span></div>
-  <p class="hero-caption"><b>HTTP 200 means no.</b> The status on a refused call. No metric counts permit versus deny, and zero agentgateway series reach Prometheus.</p>
-  <p class="x31-names">v1.5.0 still writes <span class="code">http.status</span>, not <span class="code">http.response.status_code</span></p>
+  <p class="hero-caption"><b>HTTP 200 means no.</b> The no is a tool result marked <span class="code">isError</span>, with the rule in its text. No metric counts permit versus deny, and zero agentgateway series reach Prometheus.</p>
+  <p class="x31-names">From v1.6.0 the span says <span class="code">http.response.status_code</span></p>
 </section>
 
 <!-- 28b · NEW · concept before the eight layers: defence in depth, as airport security -->
@@ -165,91 +165,46 @@
 <circle cx="96" cy="606" r="20" fill="#FFFFFF" stroke="#111111"/><text x="96" y="614" text-anchor="middle" font-size="22" font-weight="700" fill="#111111">8</text>
 <text x="136" y="615" font-size="28" font-weight="700" fill="#111111">Human override</text>
 <text x="610" y="615" font-size="25" fill="#212121">Overrides that go around policy</text>
-<text x="1090" y="615" font-size="25" fill="#212121">a 2nd policy.decision, senior ID</text>
+<text x="1090" y="615" font-size="25" fill="#212121">a 2nd policy.decision, reviewer-ui ID</text>
 </g></svg></figure>
 </section>
 
-<!-- 30 · NEW · CEL vs ExtMCP: CEL's blind spot beside the PDS decision ladder (Ch 7, Figures 7.5 and 7.6) -->
-<section class="slide content" data-label="Why not a CEL rule">
-  <h2 class="slide-title">Why an external decision, not a CEL rule</h2>
-  <div class="x31-cel rise">
-    <div class="left">
-      <p class="x31-lab"><span class="x31-n">1</span>CEL, inside the gateway</p>
-      <p class="big">Sees the tool, not the amount.</p>
-      <p>A deny looks like a typo:<br><span class="code">HTTP 400 · Unknown tool</span></p>
-      <p class="muted">No rule name.</p>
-    </div>
-    <div class="right">
-      <p class="x31-lab m"><span class="x31-n">2</span>ExtMCP asks a decision service. Read down: every exit is named</p>
-      <figure class="bfig" style="--fig-h:560px"><svg viewBox="0 12 860 432" role="img" aria-label="The PDS decision ladder: each check either falls through or exits to a named permit or deny">
-<defs><marker id="x31l" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#595959"/></marker></defs>
-<g font-family="Inter, sans-serif">
-<rect x="20" y="20" width="330" height="34" rx="6" fill="#DBD4F8" stroke="#9078F3"/>
-<text x="35" y="42" font-size="16" fill="#111111">method is tools/call?</text>
-<line x1="350" y1="37" x2="418" y2="37" stroke="#595959" stroke-width="1.5" marker-end="url(#x31l)"/>
-<text x="384" y="32" text-anchor="middle" font-size="15" font-family="Martian Mono, monospace" fill="#595959">no</text>
-<rect x="420" y="20" width="420" height="34" rx="17" fill="#FEF1F1" stroke="#F8494D"/>
-<text x="438" y="41" font-size="15" font-family="Martian Mono, monospace" fill="#212121">deny · undecidable_method</text>
-<line x1="185" y1="54" x2="185" y2="72" stroke="#595959" stroke-width="1.5" marker-end="url(#x31l)"/>
-<text x="193" y="68" font-size="15" font-family="Martian Mono, monospace" fill="#595959">yes</text>
-<rect x="20" y="74" width="330" height="34" rx="6" fill="#DBD4F8" stroke="#9078F3"/>
-<text x="35" y="96" font-size="16" fill="#111111">tool in UNLIMITED_TOOLS?</text>
-<line x1="350" y1="91" x2="418" y2="91" stroke="#595959" stroke-width="1.5" marker-end="url(#x31l)"/>
-<text x="384" y="86" text-anchor="middle" font-size="15" font-family="Martian Mono, monospace" fill="#595959">yes</text>
-<rect x="420" y="74" width="420" height="34" rx="17" fill="#A8FBBE" stroke="#18632F"/>
-<text x="438" y="95" font-size="15" font-family="Martian Mono, monospace" fill="#18632F">permit · unlimited_tool  (caller-scoped miss: deny)</text>
-<line x1="185" y1="108" x2="185" y2="126" stroke="#595959" stroke-width="1.5" marker-end="url(#x31l)"/>
-<text x="193" y="122" font-size="15" font-family="Martian Mono, monospace" fill="#595959">no</text>
-<rect x="20" y="128" width="330" height="34" rx="6" fill="#DBD4F8" stroke="#9078F3"/>
-<text x="35" y="150" font-size="16" fill="#111111">tool in LIMITED_TOOLS?</text>
-<line x1="350" y1="145" x2="418" y2="145" stroke="#595959" stroke-width="1.5" marker-end="url(#x31l)"/>
-<text x="384" y="140" text-anchor="middle" font-size="15" font-family="Martian Mono, monospace" fill="#595959">no</text>
-<rect x="420" y="128" width="420" height="34" rx="17" fill="#FEF1F1" stroke="#F8494D"/>
-<text x="438" y="149" font-size="15" font-family="Martian Mono, monospace" fill="#212121">deny · unknown_tool</text>
-<line x1="185" y1="162" x2="185" y2="180" stroke="#595959" stroke-width="1.5" marker-end="url(#x31l)"/>
-<text x="193" y="176" font-size="15" font-family="Martian Mono, monospace" fill="#595959">yes</text>
-<rect x="20" y="182" width="330" height="34" rx="6" fill="#DBD4F8" stroke="#9078F3"/>
-<text x="35" y="204" font-size="16" fill="#111111">row for (caller, autonomy level)?</text>
-<line x1="350" y1="199" x2="418" y2="199" stroke="#595959" stroke-width="1.5" marker-end="url(#x31l)"/>
-<text x="384" y="194" text-anchor="middle" font-size="15" font-family="Martian Mono, monospace" fill="#595959">no</text>
-<rect x="420" y="182" width="420" height="34" rx="17" fill="#FEF1F1" stroke="#F8494D"/>
-<text x="438" y="203" font-size="15" font-family="Martian Mono, monospace" fill="#212121">deny · unknown_caller / unknown_autonomy_level</text>
-<line x1="185" y1="216" x2="185" y2="234" stroke="#595959" stroke-width="1.5" marker-end="url(#x31l)"/>
-<text x="193" y="230" font-size="15" font-family="Martian Mono, monospace" fill="#595959">yes</text>
-<rect x="20" y="236" width="330" height="34" rx="6" fill="#DBD4F8" stroke="#9078F3"/>
-<text x="35" y="258" font-size="16" fill="#111111">amount present?</text>
-<line x1="350" y1="253" x2="418" y2="253" stroke="#595959" stroke-width="1.5" marker-end="url(#x31l)"/>
-<text x="384" y="248" text-anchor="middle" font-size="15" font-family="Martian Mono, monospace" fill="#595959">no</text>
-<rect x="420" y="236" width="420" height="34" rx="17" fill="#FEF1F1" stroke="#F8494D"/>
-<text x="438" y="257" font-size="15" font-family="Martian Mono, monospace" fill="#212121">deny · malformed_request</text>
-<line x1="185" y1="270" x2="185" y2="288" stroke="#595959" stroke-width="1.5" marker-end="url(#x31l)"/>
-<text x="193" y="284" font-size="15" font-family="Martian Mono, monospace" fill="#595959">yes</text>
-<rect x="20" y="290" width="330" height="34" rx="6" fill="#DBD4F8" stroke="#9078F3"/>
-<text x="35" y="312" font-size="16" fill="#111111">amount finite and above zero?</text>
-<line x1="350" y1="307" x2="418" y2="307" stroke="#595959" stroke-width="1.5" marker-end="url(#x31l)"/>
-<text x="384" y="302" text-anchor="middle" font-size="15" font-family="Martian Mono, monospace" fill="#595959">no</text>
-<rect x="420" y="290" width="420" height="34" rx="17" fill="#FEF1F1" stroke="#F8494D"/>
-<text x="438" y="311" font-size="15" font-family="Martian Mono, monospace" fill="#212121">deny · invalid_amount</text>
-<line x1="185" y1="324" x2="185" y2="342" stroke="#595959" stroke-width="1.5" marker-end="url(#x31l)"/>
-<text x="193" y="338" font-size="15" font-family="Martian Mono, monospace" fill="#595959">yes</text>
-<rect x="20" y="344" width="330" height="34" rx="6" fill="#DBD4F8" stroke="#9078F3"/>
-<text x="35" y="366" font-size="16" fill="#111111">amount at or below the limit?</text>
-<line x1="350" y1="361" x2="418" y2="361" stroke="#595959" stroke-width="1.5" marker-end="url(#x31l)"/>
-<text x="384" y="356" text-anchor="middle" font-size="15" font-family="Martian Mono, monospace" fill="#595959">no</text>
-<rect x="420" y="344" width="420" height="34" rx="17" fill="#FEF1F1" stroke="#F8494D"/>
-<text x="438" y="365" font-size="15" font-family="Martian Mono, monospace" fill="#212121">deny · settlement-agent.&lt;level&gt;.execute_limit</text>
-<line x1="185" y1="378" x2="185" y2="402" stroke="#595959" stroke-width="1.5" marker-end="url(#x31l)"/>
-<text x="193" y="392" font-size="15" font-family="Martian Mono, monospace" fill="#595959">yes</text>
-<rect x="20" y="404" width="370" height="34" rx="17" fill="#A8FBBE" stroke="#18632F"/>
-<text x="35" y="426" font-size="15" font-family="Martian Mono, monospace" fill="#18632F">permit · settlement-agent.&lt;level&gt;.execute_limit</text>
-</g></svg></figure>
-    </div>
-  </div>
-</section>
-
-<!-- 30a · BOUNDED · two ways to say no, as two layers: HIDE, a static CEL allowlist (William's OSFF demo: mcp.tool.name in [...], the tool never in tools/list, HTTP 400 Unknown tool) beside REFUSE AND RECORD, Northstar's decision service (all four tools listed to settlement-agent's SVID, measured 2026-10-12; the €6,200 call depends on its arguments). Credits William; not a disagreement (bounded-ai/README.md; M7 design spec §1) -->
+<!-- 30 · NEW · two ways to say no, measured: a gateway guardrail in CEL (config only; the real rule from deploy/platform/agentgateway/config.yaml) beside the decision service, the table from the M8 spec §5; the ceiling is on the deck, not in the live demo (tests/e2e/test_gateway_ceiling.py) -->
 <section class="slide content" data-label="Two ways to say no">
   <h2 class="slide-title">Two ways to say no</h2>
+  <div class="x31-cmp rise">
+    <p class="h"></p><p class="h">The gateway, with one CEL line</p><p class="h">The decision service</p>
+    <p class="k">Code to write</p><p>none</p><p>a service</p>
+    <p class="k">Sees tool arguments</p><p>yes, at route level, v1.6.0 and later</p><p>yes</p>
+    <p class="k">Changes live</p><p>config reload, about 0.36 s</p><p>flag flip, nothing reloads</p>
+    <p class="k">Says why</p><p><span class="code m">403 authorization failed</span></p><p>the rule, the limit, a reason the model can explain</p>
+    <p class="k">In the trace</p><p>the gateway span only</p><p><span class="code c">policy.decision</span> with the rule and the limit</p>
+  </div>
+  <pre class="x31-cel-rule rise"><span class="d">authorization allow, on the route:</span>
+request.method != &quot;POST&quot;
+  || mcp.methodName != &quot;tools/call&quot;
+  || mcp.tool.name != &quot;execute_payment&quot;
+  || (mcp.tool.arguments.amount &gt; 0 &amp;&amp; mcp.tool.arguments.amount &lt;= 50000)</pre>
+  <p class="x31-line">The gateway holds the hard ceiling. <em>The service makes the decision.</em></p>
+</section>
+
+<!-- 30g · NEW · what agentgateway v1.6.0 ships for model traffic: read from crates/agentgateway/src/llm/policy/ at the v1.6.0 tag (mod.rs RequestGuardKind, pii/, webhook.rs, moderation.rs, bedrock_guardrails.rs, azure_content_safety.rs, google_model_armor.rs). Northstar's model calls do not go through the gateway, so none of it is in the demo (M8 spec §5) -->
+<section class="slide content" data-label="Guardrails for model traffic">
+  <h2 class="slide-title">Guardrails for model traffic</h2>
+  <p class="x31-opt rise">What agentgateway v1.6.0 ships &middot; <span class="code">crates/agentgateway/src/llm/policy/</span></p>
+  <ul class="x31-gl rise">
+    <li><b>Regex rules</b> mask or reject text that matches</li>
+    <li><b>Personal data</b> is found and masked: card numbers, emails, phone numbers, national IDs</li>
+    <li><b>Moderation</b> asks a moderation model to judge the prompt</li>
+    <li><b>A webhook</b> lets your own service judge the prompt and the answer</li>
+    <li><b>Connectors</b> call Amazon Bedrock Guardrails, Azure Content Safety or Google Model Armor</li>
+  </ul>
+  <p class="x31-line">Northstar&rsquo;s model calls do not go through the gateway today. <em>None of these are in the demo.</em></p>
+</section>
+
+<!-- 30a · BOUNDED · hide or refuse, as two layers: HIDE, a static CEL allowlist (William's OSFF demo: mcp.tool.name in [...], the tool never in tools/list, HTTP 400 Unknown tool) beside REFUSE AND RECORD, Northstar's decision service (all four tools listed to settlement-agent's SVID, measured 2026-10-12; the €6,200 call depends on its arguments). Credits William; not a disagreement (bounded-ai/README.md; M7 design spec §1) -->
+<section class="slide content" data-label="Hide or refuse">
+  <h2 class="slide-title">Hide or refuse</h2>
   <div class="x31-tw rise">
     <div>
       <p class="x31-tw-k">Hide</p>
@@ -334,24 +289,27 @@
   <p class="x31-q">How does an approval, minutes later, join its refusal?</p>
 </section>
 
-<!-- 33 · NEW · a human can overturn it, not in the five-minute cut: reviewer-ui.png + jaeger-approval-link.png (Ch 8; runbook §5 Beat 4, the longer version) -->
-<section class="slide content" data-label="A human can overturn it">
-  <h2 class="slide-title">A human can overturn it, through the same door</h2>
-  <p class="x31-opt rise">Not in the five-minute cut &middot; the longer demo runs it live</p>
-  <div class="x31-fb rise" style="grid-template-columns:740px 1fr;align-items:start">
-    <div>
-      <figure class="shot x31-crop" style="width:740px;height:460px">
-        <img src="assets/shots/reviewer-ui.png" alt="Reviewer UI: refused payment PAY-000001, rule settlement-agent.assisted.execute_limit, limit 6000, requested 6200, with Approve and Reject" style="width:799px;left:-29px;top:-152px">
-      </figure>
-      <div class="shot-cap">Reviewer UI: rule, limit, amount, narrative</div>
+<!-- 33 · NEW · maker and checker: trace A (the agent did everything up to the money), trace B (a human released it, through the gateway), the span link between them, and how long humans take (northstar_approval_wait_duration_seconds, docs/telemetry-contract.md; runbook §5 Beat 4) -->
+<section class="slide content" data-label="Maker and checker">
+  <h2 class="slide-title">The agent makes it. A human checks it.</h2>
+  <div class="x31-mc rise">
+    <div class="tr a">
+      <p class="k">Trace A &middot; the maker</p>
+      <p class="b">The agent did everything up to the money</p>
+      <p class="s">claim &rarr; agents &rarr; <span class="code">policy.decision</span> <b class="m">deny</b></p>
+      <p class="s">The payment waits. Nothing moved.</p>
     </div>
-    <div>
-      <figure class="shot x31-crop" style="width:836px;height:302px">
-        <img src="assets/shots/jaeger-approval-link.png" alt="Jaeger: settlement.execute_approved with reviewer_id alex.mercer and one reference to a span in another trace" style="width:1370px;left:-534px;top:-171px">
-      </figure>
-      <div class="shot-cap">Jaeger: execute_approved links to the refused trace</div>
+    <div class="lnk"><span>span link</span><i></i></div>
+    <div class="tr b">
+      <p class="k">Trace B &middot; the checker</p>
+      <p class="b">A human released it, through the gateway</p>
+      <p class="s"><span class="code">review.decision</span> &rarr; <span class="code">execute_payment</span></p>
+      <p class="s">caller <span class="code">reviewer-ui</span> &middot; rule <span class="code">human-approved.execute</span> <b class="c">permit</b></p>
     </div>
   </div>
+  <p class="x31-mc-q rise"><span class="d">How long do humans take? Ask Prometheus, by autonomy level:</span>
+<span class="code">histogram_quantile(0.95, sum by (le, autonomy_level) (rate(northstar_approval_wait_duration_seconds_bucket[1h])))</span></p>
+  <p class="x31-line">A link, not a parent. <em>The human took minutes, in a process that no longer exists.</em></p>
 </section>
 
 <!-- 36 · NEW · optional: the same flip, with a UI: backstage-autonomy-assisted/flipped + customer-ui-autonomous-executed + jaeger-autonomy-change (runbook §5 Beat 7, the longer version) -->
@@ -361,7 +319,7 @@
   <div class="x31-fb rise" style="grid-template-columns:780px 780px;gap:14px 72px;margin-top:calc(0.75 * var(--baseline))">
     <div>
       <figure class="shot x31-crop" style="width:780px;height:278px">
-        <img src="assets/shots/backstage-autonomy-assisted.png" alt="Backstage autonomy contract card: settlement-agent assisted, senior-settlement-agent assisted" style="width:1733px;left:-303px;top:-485px">
+        <img src="assets/shots/backstage-autonomy-assisted.png" alt="Backstage autonomy contract card: settlement-agent assisted" style="width:1733px;left:-303px;top:-485px">
       </figure>
       <div class="shot-cap">1 · Before: both identities assisted</div>
     </div>

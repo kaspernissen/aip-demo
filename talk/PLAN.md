@@ -1,7 +1,7 @@
 # Slide plan: Verticalizing Platform Intelligence for Regulated Domains
 
 KubeCon + CloudNativeCon North America 2026, Salt Lake City. **Wed 11 Nov, 11:00–11:30, Salt Palace
-Level 2, 255 EF** (Platform Engineering, Advanced). The slot is 30 minutes. This is the **long cut, 49:15 of content**, built on purpose so Kasper can cut
+Level 2, 255 EF** (Platform Engineering, Advanced). The slot is 30 minutes. This is the **long cut, 50:00 of content**, built on purpose so Kasper can cut
 down to the slot himself (his call, 2026-09-28).
 
 **Speakers:** William Rizzo (Global Field CTO, Mirantis) and Kasper Borg Nissen (Principal Developer
@@ -46,10 +46,11 @@ building blocks, so the talk delivers what the CFP abstract promises.
 cyan = traced or permitted, magenta = governed, refused, or the gateway. Most diagrams are the book's own
 figures, lifted as inline SVG and recoloured by the `.bfig` layer in `build/talk-base-bs.css`.
 
-**The live demo** is five commands in one terminal (`./scripts/demo guard`, `claim 6200`,
-`autonomy`, `keystone`, `evidence`), about 55 s of commands and about 5 minutes with narration,
+**The live demo** is five steps (`./scripts/demo guard`; a claim a human approves, in two browser
+tabs or with `claim 5800` and `approve last`; `autonomy`, `claim 5800`, `claim 6200`; `keystone`;
+`evidence`), the live block's notes add up to 5:10 with narration (spec §4 says about 5:00),
 run against Northstar at stage 7 (runbook §5, "The five-minute flow"). Each step slide is followed by
-a hidden fallback, marked `fallback`: the real transcript of that step from the run of 2026-10-12,
+a hidden fallback, marked `fallback`: the real transcript of that step from a stage-7 run (2026-10-12 for guard and keystone, 2026-10-15 for the rest),
 typeset verbatim and shortened only with …. Skip it with → when the step works live. The longer
 demo's browser beats (human approval, the Backstage flip, the evidence dashboard, the scorer) are
 ordinary slides now, outside the five-minute cut.
@@ -96,50 +97,51 @@ ordinary slides now, outside the five-minute cut.
 | 38 | 30-act3a | K | 24:05 | 60 | The demo | NEW | the demo: five commands, about five minutes, one terminal (M7 design spec §7.1; docs/demo-runbook.md §5 "The five-minute flow"; measured timings 2026-10-12) |
 | 39 | 30-live | K | 25:05 | 50 | Step 1 — guard | BOUNDED | Step 1 live, demo guard: no identity → 401 at the gateway; around the gateway → dropped by Cilium (after William's reach beat); with settlement-agent's SVID → tools/list, all four tools (M7 design spec §7.1; runbook §5 Step 1) |
 | 40 | 30-live | K | — | 0 | Fallback — Step 1 | BOUNDED | Step 1 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-12 (scratchpad flow/1-guard.txt), typeset verbatim, elided with … only |
-| 41 | 30-live | K | 25:55 | 80 | Step 2 — a refusal | NEW | Step 2 live, demo claim 6200: refused; the trace in the terminal: gateway tools/call HTTP 200 ERROR, Guardrail and policy.decision deny as siblings, propose and refuse payments-api spans present, the execute span absent (runbook §5 Step 2; flow timings assumptions 4–6) |
-| 42 | 30-live | K | — | 0 | Fallback — Step 2 | NEW | Step 2 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-12 (scratchpad flow/2-claim-refused.txt), typeset verbatim, elided with … only |
-| 43 | 30-live | K | 27:15 | 70 | Step 3 — one live value | NEW | Step 3 live, demo autonomy autonomous → demo claim 6200 → demo autonomy assisted: one value on one FeatureFlag, the same claim executes, no pod restarted (deploy/platform/openfeature/featureflag.yaml; runbook §5 Step 3; flow timings assumptions 7–8) |
-| 44 | 30-live | K | — | 0 | Fallback — Step 3 | NEW | Step 3 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-12 (scratchpad flow/3-autonomy.txt), typeset verbatim, elided with … only |
-| 45 | 30-live | K | 28:25 | 50 | Step 4 — the keystone | BOUNDED | Step 4 live, demo keystone: the keystone, after William's mic-drop beat. As settlement-agent, patch northstar-autonomy: RBAC Forbidden; a mistaken over-grant; the same patch: Kyverno ValidatingPolicy agents-cannot-edit-their-own-authority denies; over-grant removed; flag still assisted (deploy/platform/kyverno/keystone-policy.yaml; deploy/demo/keystone-overgrant.yaml; runbook §5 Step 4) |
+| 41 | 30-live | K | 25:55 | 90 | Step 2 — a human signs | NEW | Step 2 live, a human signs: claim EUR 5,800 in the customer tab (Awaiting human approval, a timer), the reviewer tab shows rule, limit EUR 0 and the model's narrative, approve, the customer tab flips to Settled with no reload. Terminal fallback: demo claim 5800 then demo approve last (spec M8 §4; runbook §5 Step 2) |
+| 42 | 30-live | K | — | 0 | Fallback — Step 2 | NEW | Step 2 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-15 (the flow transcript in the Task 5 report: claim 5800, approve last), typeset verbatim, elided with … only |
+| 43 | 30-live | K | 27:25 | 75 | Step 3 — one live dial | NEW | Step 3 live, demo autonomy autonomous, claim 5800, claim 6200, autonomy assisted: one value on one FeatureFlag; EUR 5,800 settles with no human, EUR 6,200 still waits (limit 6,000), no pod restarted (deploy/platform/openfeature/featureflag.yaml; runbook §5 Step 3) |
+| 44 | 30-live | K | — | 0 | Fallback — Step 3 | NEW | Step 3 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-15 (the flow transcript in the Task 5 report: autonomy autonomous, claim 5800, claim 6200), typeset verbatim, elided with … only |
+| 45 | 30-live | K | 28:40 | 50 | Step 4 — the keystone | BOUNDED | Step 4 live, demo keystone: the keystone, after William's mic-drop beat. As settlement-agent, patch northstar-autonomy: RBAC Forbidden; a mistaken over-grant; the same patch: Kyverno ValidatingPolicy agents-cannot-edit-their-own-authority denies; over-grant removed; flag still assisted (deploy/platform/kyverno/keystone-policy.yaml; deploy/demo/keystone-overgrant.yaml; runbook §5 Step 4) |
 | 46 | 30-live | K | — | 0 | Fallback — Step 4 | BOUNDED | Step 4 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-12 (scratchpad flow/4-keystone.txt), typeset verbatim, elided with … only |
-| 47 | 30-live | K | 29:15 | 45 | Step 5 — evidence | NEW | Step 5 live, demo evidence: this run's two claims read back from OpenSearch: who decided, rule, limit, level, caller, outcome, human (none, by design) (runbook §5 Step 5; flow timings assumption 10) |
-| 48 | 30-live | K | — | 0 | Fallback — Step 5 | NEW | Step 5 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-12 (scratchpad flow/5-evidence.txt), typeset verbatim, elided with … only |
-| 49 | 31-act3b | K | 30:00 | 45 | Identity is an input | NEW | deep dive after step 1: five 401s, and the caller as half of the lookup key (Ch 7, Figures 7.3 and 7.4) |
-| 50 | 31-act3b | K | 30:45 | 45 | Reach has two layers | BOUNDED | optional: reach has two layers, after William's Linkerd reach beat, backed by the Linkerd spike's measured results (scratchpad linkerd-spike-report.md, 2026-10-12: criteria 1, 3, 4, 6, release channels). The demo runs Cilium only. |
-| 51 | 31-act3b | K | 31:30 | 45 | One trace, and the absence | NEW | deep dive after step 2: the full deny trace from the customer UI, after Ch 5 Figure 5.5 and Ch 6 Figure 6.13 (trace a4007e49…) |
-| 52 | 31-act3b | K | 32:15 | 45 | What agentgateway says about one governed call | NEW | the gateway's spans per governed call: Ch 6 Figure 6.7 tree with the measured key counts, plus Figure 6.15's four added keys |
-| 53 | 31-act3b | K | 33:00 | 45 | HTTP 200 means no | NEW | HTTP 200 means no (Ch 6: Figure 6.15, the metrics Figure 6.24, Finding 7) |
-| 54 | 31-act3b | K | 33:45 | 20 | Defence in depth | NEW | concept before the eight layers: defence in depth, as airport security |
-| 55 | 31-act3b | K | 34:05 | 60 | Limiting access to MCP | NEW | the eight layers between an agent and a payment (Ch 7, Figure 7.1, lifted and re-set: "how Northstar builds it" became "what it stops") |
-| 56 | 31-act3b | K | 35:05 | 30 | Why not a CEL rule | NEW | CEL vs ExtMCP: CEL's blind spot beside the PDS decision ladder (Ch 7, Figures 7.5 and 7.6) |
-| 57 | 31-act3b | K | 35:35 | 40 | Two ways to say no | BOUNDED | two ways to say no, as two layers: HIDE, a static CEL allowlist (William's OSFF demo: mcp.tool.name in [...], the tool never in tools/list, HTTP 400 Unknown tool) beside REFUSE AND RECORD, Northstar's decision service (all four tools listed to settlement-agent's SVID, measured 2026-10-12; the €6,200 call depends on its arguments). Credits William; not a disagreement (bounded-ai/README.md; M7 design spec §1) |
-| 58 | 31-act3b | K | 36:15 | 15 | Fail-closed vs fail-open | NEW | concept before fail-open: the door lock in a power cut |
-| 59 | 31-act3b | K | 36:30 | 20 | Fail-open is one word away | NEW | failureMode: failClosed, the real config line (deploy/platform/agentgateway/config.yaml) |
-| 60 | 31-act3b | K | 36:50 | 15 | A span link vs a parent edge | NEW | concept before the human approval: a span link vs a parent edge |
-| 61 | 31-act3b | K | 37:05 | 45 | A human can overturn it | NEW | a human can overturn it, not in the five-minute cut: reviewer-ui.png + jaeger-approval-link.png (Ch 8; runbook §5 Beat 4, the longer version) |
-| 62 | 31-act3b | K | 37:50 | 30 | The same flip, with a UI | NEW | optional: the same flip, with a UI: backstage-autonomy-assisted/flipped + customer-ui-autonomous-executed + jaeger-autonomy-change (runbook §5 Beat 7, the longer version) |
-| 63 | 31-act3b | K | 38:20 | 20 | The platform API is the resource | NEW | The platform API is the resource. Handover point (William Rizzo) |
-| 64 | 40-act4 | K | 38:40 | 10 | Act 4 — How you prove it | NEW | Act 4 divider. The act title is Ch 14's alternative subtitle. |
-| 65 | 40-act4 | K | 38:50 | 20 | Evidence vs logs | NEW | concept: evidence vs logs. A log line (Fig 3.1) against the five things the evidence view answers (Ch 9: who decided, rule, limit, human, ledger), all on spans, one join key |
-| 66 | 40-act4 | K | 39:10 | 45 | Which refusals the trace can see | BOUNDED | which refusals the trace can see: one row per ring, measured in M7 (gateway 401 spans; Cilium drop has no span, Hubble not installed; policy.decision in the claim trace; Kyverno denial as its own trace, no traceparent from kubectl) |
-| 67 | 40-act4 | K | 39:55 | 50 | The evidence view | NEW | The evidence view (longer-demo beat 5, as a slide): opensearch-evidence.png, cropped |
-| 68 | 40-act4 | K | 40:45 | 20 | What an evaluation is | NEW | concept: what an evaluation is. The gen_ai.evaluation.result fields (Ch 3 table, Fig 3.13), parented to the judged span |
-| 69 | 40-act4 | K | 41:05 | 45 | A score that can go to zero | NEW | A score that can go to zero (longer-demo beat 6, as a slide): 1.0 vs 0.0 (Fig 9.3) plus jaeger-eval-scores.png |
-| 70 | 40-act4 | K | 41:50 | 30 | And LLM-as-judge? | DID WHAT | "Enter LLM-as-judge", rebuilt as judge vs auditor on one output format (Ch 3 Fig 3.13, Ch 9 "What Northstar does not have") |
-| 71 | 40-act4 | K | 42:20 | 45 | Content capture, a matched pair | NEW | Content capture as a matched pair: Fig 9.5 lifted (three layers, keys vs content) |
-| 72 | 40-act4 | K | 43:05 | 30 | Never sample the decisions | TAMING | "More Telemetry ≠ Better Telemetry" (p.40), reworked: the 142 vs 139 defect |
-| 73 | 40-act4 | W | 43:35 | 60 | From requirement to artifact | NEW | Requirement → artifact, Ch 14's six-row table; walk two rows (Art. 86 / C-203/22 and DORA) |
-| 74 | 40-act4 | W | 44:35 | 30 | The deadline moved | NEW | The deadline moved: Fig 10.1 lifted (the Omnibus timeline), plus SR 26-2 |
-| 75 | 40-act4 | W | 45:05 | 30 | Sixteen findings, none filed | NEW | Sixteen findings: Fig 12.1 lifted (governance home × kind of gap); chips tinted from Fig 12.2 |
-| 76 | 40-act4 | W | 45:35 | 40 | Where AI observability stands | NEW | where AI observability stands: the L0–L5 ladder and the ecosystem's measured rung (Instrumenting AI Agents, Dash0 DevRel, Aug 2026, p. 10); replaces the old OTel-support maturity model, which has since changed |
-| 77 | 50-close | W | 46:15 | 60 | What this does not do | NEW | Honest limitations: Ch 14's list (Backstage line kept exact in the note) plus the two abstract blocks the demo does not have (Ch 11.3; dashed like the blueprint's missing layers, Fig 11.1) |
-| 78 | 50-close | W | 47:15 | 45 | Becoming a regulated-platform wizard | DID WHAT | "Becoming an AI observability wizard": the six steps as the book lists them (Ch 3 Fig 3.18), dimmed, plus Ch 14's three regulated ones |
-| 79 | 50-close | W | 48:00 | 45 | What to do on Monday | NEW | The call to action: Ch 14's five verbs, ending on "Sixteen gaps. Pick one." |
-| 80 | 50-close | W | 48:45 | 30 | Three things to remember | NEW | Three things to remember: Figure 14.4 (study ed.; 14.9 full ed.) lifted verbatim, plus the callback. No QR: the book isn't hosted yet. |
-| 81 | 90-thanks | W | — | 0 | Thank you |  |  |
-| 82 | 90-thanks | K | — | 0 | Appendix — Pre-flight | NEW | appendix (speaker-only, 0 s): pre-flight T-60…T-5 (aip-demo docs/demo-runbook.md §4), at stage 7 with the Kyverno and over-grant checks (M7 design spec §4) |
-| 83 | 90-thanks | K | — | 0 | Appendix — Reset between runs | NEW | appendix (speaker-only, 0 s): reset between runs (runbook §7: scripts/demo reset first), plus the over-grant check (M7 design spec §2.2) |
-| 84 | 90-thanks | K | — | 0 | Appendix — When it breaks | NEW | appendix (speaker-only, 0 s): live triage (runbook §8), plus Kyverno down (M7 design spec §2.1) |
+| 47 | 30-live | K | 29:30 | 45 | Step 5 — evidence | NEW | Step 5 live, demo evidence: this run's three claims read back from OpenSearch: who decided, rule, limit, who approved and how long the human took, outcome (runbook §5 Step 5) |
+| 48 | 30-live | K | — | 0 | Fallback — Step 5 | NEW | Step 5 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-15 (the flow transcript in the Task 5 report: evidence), typeset verbatim, elided with … only |
+| 49 | 31-act3b | K | 30:15 | 45 | Identity is an input | NEW | deep dive after step 1: five 401s, and the caller as half of the lookup key (Ch 7, Figures 7.3 and 7.4) |
+| 50 | 31-act3b | K | 31:00 | 45 | Reach has two layers | BOUNDED | optional: reach has two layers, after William's Linkerd reach beat, backed by the Linkerd spike's measured results (scratchpad linkerd-spike-report.md, 2026-10-12: criteria 1, 3, 4, 6, release channels). The demo runs Cilium only. |
+| 51 | 31-act3b | K | 31:45 | 45 | One trace, and the absence | NEW | deep dive after step 2: the full deny trace from the customer UI, after Ch 5 Figure 5.5 and Ch 6 Figure 6.13 (trace a4007e49…) |
+| 52 | 31-act3b | K | 32:30 | 45 | What agentgateway says about one governed call | NEW | the gateway's spans per governed call: Ch 6 Figure 6.7 tree with the measured key counts, plus Figure 6.15's four added keys |
+| 53 | 31-act3b | K | 33:15 | 45 | HTTP 200 means no | NEW | HTTP 200 means no (Ch 6: Figure 6.15, the metrics Figure 6.24, Finding 7) |
+| 54 | 31-act3b | K | 34:00 | 20 | Defence in depth | NEW | concept before the eight layers: defence in depth, as airport security |
+| 55 | 31-act3b | K | 34:20 | 60 | Limiting access to MCP | NEW | the eight layers between an agent and a payment (Ch 7, Figure 7.1, lifted and re-set: "how Northstar builds it" became "what it stops") |
+| 56 | 31-act3b | K | 35:20 | 40 | Two ways to say no | NEW | two ways to say no, measured: a gateway guardrail in CEL (config only; the real rule from deploy/platform/agentgateway/config.yaml) beside the decision service, the table from the M8 spec §5; the ceiling is on the deck, not in the live demo (tests/e2e/test_gateway_ceiling.py) |
+| 57 | 31-act3b | K | 36:00 | 20 | Guardrails for model traffic | NEW | what agentgateway v1.6.0 ships for model traffic: read from crates/agentgateway/src/llm/policy/ at the v1.6.0 tag (mod.rs RequestGuardKind, pii/, webhook.rs, moderation.rs, bedrock_guardrails.rs, azure_content_safety.rs, google_model_armor.rs). Northstar's model calls do not go through the gateway, so none of it is in the demo (M8 spec §5) |
+| 58 | 31-act3b | K | 36:20 | 40 | Hide or refuse | BOUNDED | hide or refuse, as two layers: HIDE, a static CEL allowlist (William's OSFF demo: mcp.tool.name in [...], the tool never in tools/list, HTTP 400 Unknown tool) beside REFUSE AND RECORD, Northstar's decision service (all four tools listed to settlement-agent's SVID, measured 2026-10-12; the €6,200 call depends on its arguments). Credits William; not a disagreement (bounded-ai/README.md; M7 design spec §1) |
+| 59 | 31-act3b | K | 37:00 | 15 | Fail-closed vs fail-open | NEW | concept before fail-open: the door lock in a power cut |
+| 60 | 31-act3b | K | 37:15 | 20 | Fail-open is one word away | NEW | failureMode: failClosed, the real config line (deploy/platform/agentgateway/config.yaml) |
+| 61 | 31-act3b | K | 37:35 | 15 | A span link vs a parent edge | NEW | concept before the human approval: a span link vs a parent edge |
+| 62 | 31-act3b | K | 37:50 | 45 | Maker and checker | NEW | maker and checker: trace A (the agent did everything up to the money), trace B (a human released it, through the gateway), the span link between them, and how long humans take (northstar_approval_wait_duration_seconds, docs/telemetry-contract.md; runbook §5 Beat 4) |
+| 63 | 31-act3b | K | 38:35 | 30 | The same flip, with a UI | NEW | optional: the same flip, with a UI: backstage-autonomy-assisted/flipped + customer-ui-autonomous-executed + jaeger-autonomy-change (runbook §5 Beat 7, the longer version) |
+| 64 | 31-act3b | K | 39:05 | 20 | The platform API is the resource | NEW | The platform API is the resource. Handover point (William Rizzo) |
+| 65 | 40-act4 | K | 39:25 | 10 | Act 4 — How you prove it | NEW | Act 4 divider. The act title is Ch 14's alternative subtitle. |
+| 66 | 40-act4 | K | 39:35 | 20 | Evidence vs logs | NEW | concept: evidence vs logs. A log line (Fig 3.1) against the five things the evidence view answers (Ch 9: who decided, rule, limit, human, ledger), all on spans, one join key |
+| 67 | 40-act4 | K | 39:55 | 45 | Which refusals the trace can see | BOUNDED | which refusals the trace can see: one row per ring, measured in M7 (gateway 401 spans; Cilium drop has no span, Hubble not installed; policy.decision in the claim trace; Kyverno denial as its own trace, no traceparent from kubectl) |
+| 68 | 40-act4 | K | 40:40 | 50 | The evidence view | NEW | The evidence view (longer-demo beat 5, as a slide): opensearch-evidence.png, cropped |
+| 69 | 40-act4 | K | 41:30 | 20 | What an evaluation is | NEW | concept: what an evaluation is. The gen_ai.evaluation.result fields (Ch 3 table, Fig 3.13), parented to the judged span |
+| 70 | 40-act4 | K | 41:50 | 45 | A score that can go to zero | NEW | A score that can go to zero (longer-demo beat 6, as a slide): 1.0 vs 0.0 (Fig 9.3) plus jaeger-eval-scores.png |
+| 71 | 40-act4 | K | 42:35 | 30 | And LLM-as-judge? | DID WHAT | "Enter LLM-as-judge", rebuilt as judge vs auditor on one output format (Ch 3 Fig 3.13, Ch 9 "What Northstar does not have") |
+| 72 | 40-act4 | K | 43:05 | 45 | Content capture, a matched pair | NEW | Content capture as a matched pair: Fig 9.5 lifted (three layers, keys vs content) |
+| 73 | 40-act4 | K | 43:50 | 30 | Never sample the decisions | TAMING | "More Telemetry ≠ Better Telemetry" (p.40), reworked: the 142 vs 139 defect |
+| 74 | 40-act4 | W | 44:20 | 60 | From requirement to artifact | NEW | Requirement → artifact, Ch 14's six-row table; walk two rows (Art. 86 / C-203/22 and DORA) |
+| 75 | 40-act4 | W | 45:20 | 30 | The deadline moved | NEW | The deadline moved: Fig 10.1 lifted (the Omnibus timeline), plus SR 26-2 |
+| 76 | 40-act4 | W | 45:50 | 30 | Sixteen findings, none filed | NEW | Sixteen findings: Fig 12.1 lifted (governance home × kind of gap); chips tinted from Fig 12.2 |
+| 77 | 40-act4 | W | 46:20 | 40 | Where AI observability stands | NEW | where AI observability stands: the L0–L5 ladder and the ecosystem's measured rung (Instrumenting AI Agents, Dash0 DevRel, Aug 2026, p. 10); replaces the old OTel-support maturity model, which has since changed |
+| 78 | 50-close | W | 47:00 | 60 | What this does not do | NEW | Honest limitations: Ch 14's list (Backstage line kept exact in the note) plus the two abstract blocks the demo does not have (Ch 11.3; dashed like the blueprint's missing layers, Fig 11.1) |
+| 79 | 50-close | W | 48:00 | 45 | Becoming a regulated-platform wizard | DID WHAT | "Becoming an AI observability wizard": the six steps as the book lists them (Ch 3 Fig 3.18), dimmed, plus Ch 14's three regulated ones |
+| 80 | 50-close | W | 48:45 | 45 | What to do on Monday | NEW | The call to action: Ch 14's five verbs, ending on "Sixteen gaps. Pick one." |
+| 81 | 50-close | W | 49:30 | 30 | Three things to remember | NEW | Three things to remember: Figure 14.4 (study ed.; 14.9 full ed.) lifted verbatim, plus the callback. No QR: the book isn't hosted yet. |
+| 82 | 90-thanks | W | — | 0 | Thank you |  |  |
+| 83 | 90-thanks | K | — | 0 | Appendix — Pre-flight | NEW | appendix (speaker-only, 0 s): pre-flight T-60…T-5 (aip-demo docs/demo-runbook.md §4), at stage 7 with the Kyverno and over-grant checks (M7 design spec §4) |
+| 84 | 90-thanks | K | — | 0 | Appendix — Reset between runs | NEW | appendix (speaker-only, 0 s): reset between runs (runbook §7: scripts/demo reset first), plus the over-grant check (M7 design spec §2.2) |
+| 85 | 90-thanks | K | — | 0 | Appendix — When it breaks | NEW | appendix (speaker-only, 0 s): live triage (runbook §8), plus Kyverno down (M7 design spec §2.1) |
 
 **Check before presenting:** every fast-moving fact on a slide carries a `[verify: …]` line in its
 speaker note. They map to Appendix B of the book.
