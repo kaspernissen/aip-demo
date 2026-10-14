@@ -9,6 +9,7 @@
     keystone              the agent tries to edit what constrains it
     evidence              who decided, rule, limit, identity, outcome, human
     reset                 flag assisted, over-grant absent, state cleared
+    ceiling               (off stage) the gateway's own CEL ceiling: a 403 before the PDS
 
 Design: docs/superpowers/specs/2026-10-12-northstar-m7-bounded-design.md, section 7.
 
@@ -762,6 +763,26 @@ def cmd_reset(_: argparse.Namespace) -> None:
     out(f"  run state    {word('CLEARED', 'info')}")
 
 
+# --- ceiling (off stage: not part of the five-minute flow) ---------------------
+
+
+def cmd_ceiling(_: argparse.Namespace) -> None:
+    title("CEILING  the gateway's own limit, before the policy service is asked")
+    over = live.ceiling_eur() + 10_000
+    say(f"No caller may execute a payment above EUR {live.ceiling_eur():,}. The gateway says so itself.")
+    with live.gateway_port_forward() as gateway:
+        token = live.mint_svid(live.GATEWAY_AUDIENCE)
+        doing(f"POST gateway/mcp  tools/call execute_payment   EUR {over:,}  (settlement-agent's SVID)")
+        called = live.call_tool_directly(
+            gateway, live.EXECUTE_TOOL,
+            {"payment_id": "PAY-999999", "amount": float(over), "currency": "EUR"},
+            gateway_headers(token),
+        )
+    if called.http_status != 403:
+        raise Fail(f"the gateway did not stop EUR {over:,}: {called!r}")
+    out(f"  -> HTTP {word('403', 'stop')}  {called.body.strip()}  -- the gateway said no, the PDS was never asked")
+
+
 # --- main -----------------------------------------------------------------------
 
 
@@ -782,6 +803,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("keystone", help="the agent tries to edit what constrains it").set_defaults(fn=cmd_keystone)
     sub.add_parser("evidence", help="who decided, and why, from OpenSearch").set_defaults(fn=cmd_evidence)
     sub.add_parser("reset", help="flag assisted, over-grant absent, state cleared").set_defaults(fn=cmd_reset)
+    sub.add_parser("ceiling", help="the gateway's own CEL ceiling (not in the five-minute flow)").set_defaults(fn=cmd_ceiling)
     args = parser.parse_args(argv)
     try:
         args.fn(args)

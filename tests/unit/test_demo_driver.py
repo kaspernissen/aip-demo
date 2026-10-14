@@ -101,7 +101,7 @@ def test_the_subcommands_are_exactly_the_five_minute_flow_plus_reset():
     assert result.returncode == 0, result.stderr
     match = re.search(r"\{([a-z,]+)\}", result.stdout)
     assert match, result.stdout
-    assert match.group(1).split(",") == ["guard", "claim", "autonomy", "keystone", "evidence", "reset"]
+    assert match.group(1).split(",") == ["guard", "claim", "autonomy", "keystone", "evidence", "reset", "ceiling"]
 
 
 def test_the_shim_is_executable_and_runs_under_the_repo_venv():

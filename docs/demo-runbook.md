@@ -1330,3 +1330,22 @@ If the audience remembers nothing else:
 | [`docs/upstream-findings.md`](upstream-findings.md) | filing-ready findings against upstream projects — **none of them filed** |
 | [`docs/superpowers/specs/`](superpowers/specs/) | the design behind each milestone, including what was deliberately dropped |
 | [`docs/superpowers/plans/`](superpowers/plans/) | the implementation plans |
+
+---
+
+## Appendix: off-stage commands
+
+### `scripts/demo ceiling`: the gateway's own limit (not in the five-minute flow)
+
+Mints settlement-agent's SVID and calls `execute_payment` through the gateway
+for an amount above the gateway's CEL ceiling. It prints
+`HTTP 403  authorization failed  -- the gateway said no, the PDS was never asked`
+and exits non-zero unless the answer was a 403. It changes no state and leaves
+no claim waiting. Use it only when a question asks "why not a CEL rule?"; the
+answer is the "Two ways to say no" table in `docs/architecture.md`.
+
+Before you point at the gateway log: the ceiling rule answers
+`403 authorization failed` to every `/mcp` request that carries no MCP method,
+not only to an over-limit payment. The agents' MCP client sends a `GET` and a
+`DELETE` on `/mcp` per session, and both show as 403 in the gateway's log. They
+are not payments, and nothing in the flow fails because of them.

@@ -15,7 +15,8 @@
 # The external `ExtMCP` gRPC hook is configured below, as `mcpGuardrails`,
 # pointed at the Policy Decision Service and set to `failureMode: failClosed`.
 # Native CEL `mcpAuthorization` is deliberately absent: the authorization
-# decision belongs to the PDS, not to this file.
+# decision belongs to the PDS, not to this file. The route-level `authorization`
+# ceiling (M8) is the one exception, and it only ever says no.
 #
 # Schema verified directly against the pinned image: `docker run --rm
 # cr.agentgateway.dev/agentgateway:v1.6.0 -f config.yaml --validate-only`
@@ -81,9 +82,10 @@ binds:
     #
     # `jwtAuth` is JWT *verification*, not authorization: on its own it decides
     # whether the caller is authenticated, never whether it may do what it
-    # asked. There is deliberately no `mcpAuthorization` and no `authorization`
-    # key here -- this block makes identity real and checkable and leaves the
-    # authorization decision to `mcpGuardrails` below.
+    # asked. There is deliberately no `mcpAuthorization` here -- this block
+    # makes identity real and checkable and leaves the authorization decision to
+    # `mcpGuardrails` below. The one `authorization` rule, at the end of this
+    # block, is a coarse ceiling, not a decision: see there.
     #
     # The absence of `mcpAuthorization` is deliberate; the absence of
     # authorization overall is not: the `mcpGuardrails` block in this same
@@ -297,6 +299,18 @@ binds:
               # reads a header.
               requestHeaders:
                 allowed: ["traceparent", "tracestate"]
+        # A hard ceiling, enforced by the gateway itself, before the PDS is
+        # asked: no caller may execute a payment above EUR 50,000, or of a
+        # non-positive amount. Written as an ALLOW rule on purpose: a `deny:`
+        # rule fails OPEN on a value it cannot evaluate (a string "60000"
+        # executed in the spike), while an allow rule that errors denies.
+        # v1.6.0+ only: on v1.5.0 this policy has no MCP context and denies
+        # every request. Measured: .demo/reports/cel-spike-report.md section 2.2
+        # and section 4. A denial is `403 text/plain "authorization failed"` and
+        # leaves no policy.decision span: the PDS is never asked.
+        authorization:
+          rules:
+          - allow: 'mcp.methodName != "tools/call" || mcp.tool.name != "execute_payment" || (mcp.tool.arguments.amount > 0 && mcp.tool.arguments.amount <= 50000)'
       backends:
       - mcp:
           targets:

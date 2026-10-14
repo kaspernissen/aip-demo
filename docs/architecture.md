@@ -1962,6 +1962,45 @@ fixed. `tests/e2e/test_keystone.py::test_the_denial_reaches_jaeger_as_a_standalo
 asserts the first two (and fails if the trace ever stops being standalone, so
 the claim cannot silently go stale).
 
+## Two ways to say no: the gateway's ceiling and the PDS (M8)
+
+The gateway can refuse a payment by itself. One CEL rule on the route, an
+`authorization` **allow** rule in `deploy/platform/agentgateway/config.yaml`,
+caps `execute_payment` at a fixed ceiling (read it from that file; it is not
+retyped here) for every caller, and refuses a zero or negative amount. It is
+tested and documented. It is **not** in the live five-minute demo; it lives on
+the deck. Off stage: `scripts/demo ceiling`.
+
+| | agentgateway CEL ceiling | Policy Decision Service |
+|---|---|---|
+| Code to write | none: one line of config | a service |
+| Sees tool arguments | yes, route level, v1.6.0 and later only | yes |
+| Changes live | config reload, about 0.36 s (file mode, measured in the spike) | flag flip, nothing reloads |
+| Says why | `403 text/plain "authorization failed"` and nothing else | rule, limit, a reason the model can explain |
+| In the trace | one gateway span, `POST /*`, `error.type=Authorization` | a `policy.decision` span with rule and limit |
+
+Sources: the spike in `.demo/reports/cel-spike-report.md` (git-ignored, local)
+for the reload time and the argument visibility, and
+`tests/e2e/test_gateway_ceiling.py` for the 403, the missing span and the
+string amount, all measured on the live cluster.
+
+What was measured, and how each result shaped the rule:
+
+- **It is an allow rule, on purpose.** A `deny:` rule fails open on a value it
+  cannot evaluate: in the spike a string amount `"60000"` went through and
+  executed. An allow rule that errors denies.
+  `test_a_string_amount_is_denied_not_waved_through` guards it.
+- **It must let everything else through.** The `mcp.methodName != "tools/call"`
+  guard keeps `initialize` and `tools/list` working for every caller.
+- **It only works on v1.6.0 and later.** On v1.5.0 the route policy has no MCP
+  context and the same rule denies everything.
+- **Its 403 leaves no `policy.decision` span**, because the PDS is never asked.
+  The refusal is visible, but it is one generic span with no rule and no limit.
+- **It also answers 403 to a request with no MCP method.** Measured live: a
+  JSON-RPC batch (an array) is now `403 authorization failed` at the gateway
+  instead of the `400` from the deserializer, and the GET and DELETE the MCP
+  client sends on `/mcp` are 403 as well (see `docs/demo-runbook.md`, appendix).
+
 ## What the system deliberately does not do
 
 **M3 sharpens this section for the fourth time rather than deleting it. The

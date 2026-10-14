@@ -1050,7 +1050,11 @@ def test_the_gateway_carries_only_the_reviewed_authorization_mechanism():
     offenders = []
     for where, node in _all_routes(config) + _all_listeners(config):
         policies = node.get("policies") or {}
-        present = [key for key in forbidden if key in policies]
+        # M8: a route-level `authorization` is permitted, and only because
+        # tests/unit/test_gateway_ceiling_config.py asserts its exact shape (one
+        # allow rule, the ceiling). Listeners and every other key stay forbidden.
+        allowed = ("authorization",) if where in {w for w, _ in _all_routes(config)} else ()
+        present = [key for key in forbidden if key in policies and key not in allowed]
         if present:
             offenders.append(f"{where}: {present}")
     frontend = config.get("frontendPolicies") or {}

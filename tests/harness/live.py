@@ -485,6 +485,21 @@ def _token_claims(headers: dict) -> dict:
     return {}
 
 
+GATEWAY_CONFIG = REPO_ROOT / "deploy" / "platform" / "agentgateway" / "config.yaml"
+
+
+def ceiling_eur() -> int:
+    """The gateway's hard ceiling on execute_payment, read from its config (the
+    CEL rule's `amount <= N`), never retyped."""
+    match = re.search(r"mcp\.tool\.arguments\.amount <= (\d+)", GATEWAY_CONFIG.read_text())
+    assert match, f"no execute_payment ceiling rule found in {GATEWAY_CONFIG}"
+    return int(match.group(1))
+
+
+def new_trace_id() -> str:
+    return uuid.uuid4().hex
+
+
 def call_tool_directly(
     gateway_url: str, tool: str, arguments: dict, headers: dict
 ) -> Outcome:
