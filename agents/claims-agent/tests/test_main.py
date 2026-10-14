@@ -67,3 +67,9 @@ def test_build_app_constructs_a_starlette_app_without_import_error():
     pin set and this venv is reinstalled clean."""
     app = main.build_app()
     assert type(app).__name__ == "Starlette"
+
+
+def test_the_card_declares_streaming():
+    import json
+    card = json.loads((REPO_ROOT / "contracts" / "agent-cards" / "claims-agent.json").read_text())
+    assert card["capabilities"]["streaming"] is True

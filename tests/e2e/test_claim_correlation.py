@@ -50,6 +50,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+from tests.harness import live
 from tests.harness.jaeger import JaegerClient, assert_attr_on_all_spans
 # --- Why this file is gated behind RUN_BROWSER_TESTS=1 -----------------------
 #
@@ -119,42 +120,16 @@ def correlated_trace(claim_id):
     span_id = uuid.uuid4().hex[:16]
     traceparent = f"00-{trace_id}-{span_id}-01"
 
-    payload = {
-        "jsonrpc": "2.0",
-        "id": uuid.uuid4().hex,
-        "method": "message/send",
-        "params": {
-            "message": {
-                "role": "user",
-                "messageId": uuid.uuid4().hex,
-                "parts": [
-                    {
-                        "kind": "text",
-                        "text": json.dumps(
-                            {
-                                "claimId": claim_id,
-                                "policyNumber": "POL-77120",
-                                "description": "Rear-end collision at a junction",
-                                "estimatedAmount": 6200,
-                            }
-                        ),
-                    }
-                ],
-            }
-        },
-    }
-    # 180s, matching every other call site that drives a settlement: this is
-    # three sequential model turns plus two MCP round trips, not one
-    # hardcoded function call. Observed latency is 2.6-7.9s, so the margin is
-    # for the Anthropic SDK's exponential backoff after a 429/529 on a slow
-    # uplink -- conference wifi. A timeout here raises inside a module-scoped
-    # fixture, which reports every test in the file as ERROR with a traceback
-    # rather than one named failure.
-    response = httpx.post(
-        f"{CLAIMS_URL}/", json=payload, headers={"traceparent": traceparent}, timeout=180
-    )
-    response.raise_for_status()
-    assert "error" not in response.json(), response.text
+    # `message/stream`, as the customer-ui files a claim: a blocking
+    # `message/send` would hang for the whole human wait. 180s, matching every
+    # other call site that drives a settlement: three sequential model turns
+    # plus two MCP round trips, with headroom for the Anthropic SDK's backoff.
+    # A timeout here raises inside a module-scoped fixture, which reports every
+    # test in the file as ERROR rather than one named failure.
+    run = live.submit_claim(claim_id, 6200, traceparent=traceparent, timeout=180)
+    assert run["state"] == "input-required", run
+    # Settle the wait before collecting the trace (see live.release_wait).
+    live.release_wait(run["reply"]["paymentId"])
 
     client = JaegerClient(JAEGER_URL)
     # Wait for the whole reachable chain to land and hold steady. All
@@ -238,12 +213,17 @@ def test_claim_id_reaches_claims_agents_own_spans_created_after_intake(correlate
             f"outbound A2A span missing/wrong {CLAIM_ID_KEY}: {span.attrs}"
         )
 
-    enqueue = trace.span(
+    # M8: the task, then its input-required update, are each an enqueue_event
+    # span in this trace (the completion is published under the human's decision,
+    # in the reviewer's trace). Every one of them carries the claim id.
+    enqueues = trace.spans_named(
         "a2a.server.events.event_queue.EventQueue.enqueue_event", service="claims-agent"
     )
-    assert enqueue.attrs.get(CLAIM_ID_KEY) == correlated_trace.claim_id, (
-        f"claims-agent's enqueue_event span missing/wrong {CLAIM_ID_KEY}: {enqueue.attrs}"
-    )
+    assert len(enqueues) >= 2, f"expected the task and its status update, got {len(enqueues)}"
+    for enqueue in enqueues:
+        assert enqueue.attrs.get(CLAIM_ID_KEY) == correlated_trace.claim_id, (
+            f"claims-agent's enqueue_event span missing/wrong {CLAIM_ID_KEY}: {enqueue.attrs}"
+        )
 
 
 def test_claim_id_value_is_correct(correlated_trace):
@@ -262,11 +242,16 @@ def test_trace_is_findable_by_claim_id(correlated_trace):
     test_claim_id_reaches_claims_agents_own_spans_created_after_intake), so a
     tag search against claims-agent finds this exact trace."""
     client = JaegerClient(JAEGER_URL)
-    found = client.find_trace(
+    found = client.find_traces(
         service="claims-agent", tags={CLAIM_ID_KEY: correlated_trace.claim_id}
     )
-    assert found is not None
-    assert found.trace_id == correlated_trace.trace.trace_id
+    # M8: the human's decision is a second trace (the reviewer's) and its
+    # claims-agent spans carry the claim id too, so a claim id now finds both,
+    # and the newest is not necessarily the claim's own.
+    assert correlated_trace.trace.trace_id in {t.trace_id for t in found}, (
+        f"claim id {correlated_trace.claim_id} did not find trace "
+        f"{correlated_trace.trace.trace_id}; found {[t.trace_id for t in found]}"
+    )
 
 
 def test_claim_id_is_on_every_mcp_hop_span(correlated_trace):

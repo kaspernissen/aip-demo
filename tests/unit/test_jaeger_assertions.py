@@ -314,3 +314,32 @@ def test_wait_for_trace_id_services_timeout_names_the_missing_service(monkeypatc
         client.wait_for_trace_id(
             "trace-x", timeout=5, interval=1, services={"svc-a", "svc-b"}
         )
+
+
+def test_wait_for_trace_id_ignores_polling_spans_when_deciding_the_trace_is_steady(monkeypatch):
+    """A claim waiting for a human gains an SDK polling span every 0.5 s. With
+    those named in `steady_ignoring` the trace is steady once everything else
+    is, and the returned trace still contains them (nothing is dropped)."""
+    clock = _install_fake_clock(monkeypatch)
+    client = JaegerClient("http://fake")
+    poll = "a2a.server.events.event_queue.EventQueue.dequeue_event"
+
+    def trace_with(n_polls):
+        spans = [
+            _raw_span("span1", "POST /", process_id="p1"),
+            _raw_span("span2", "POST /", parent_id="span1", process_id="p2"),
+        ] + [_raw_span(f"poll{i}", poll, parent_id="span1", process_id="p1") for i in range(n_polls)]
+        return _raw_trace(spans)
+
+    # One more polling span arrives every second, for the whole run.
+    _script_get_trace(monkeypatch, client, [(float(t), trace_with(t)) for t in range(0, 40)])
+
+    result = client.wait_for_trace_id(
+        "trace-x", timeout=60, interval=1, services={"svc-a", "svc-b"},
+        steady_ignoring=JaegerClient.WAIT_POLLING_SPANS,
+    )
+    assert any(s.operation == poll for s in result.spans)
+    assert clock.now < 20.0
+
+    with pytest.raises(AssertionError, match="never held steady"):
+        client.wait_for_trace_id("trace-x", timeout=30, interval=1, services={"svc-a", "svc-b"})

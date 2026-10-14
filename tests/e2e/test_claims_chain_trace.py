@@ -50,6 +50,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+from tests.harness import live
 from tests.harness.jaeger import JaegerClient
 
 
@@ -96,51 +97,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENT_CARD_CONTRACT = REPO_ROOT / "contracts" / "agent-cards" / "claims-agent.json"
 
 
-def send_message(text: str, traceparent: str | None = None) -> dict:
-    """Minimal A2A JSON-RPC message/send call.
-
-    Uses raw JSON-RPC rather than the SDK client so the test asserts the wire
-    contract, not the SDK's convenience layer.
-    """
-    payload = {
-        "jsonrpc": "2.0",
-        "id": uuid.uuid4().hex,
-        "method": "message/send",
-        "params": {
-            "message": {
-                "role": "user",
-                "messageId": uuid.uuid4().hex,
-                "parts": [{"kind": "text", "text": text}],
-            }
-        },
-    }
-    headers = {"traceparent": traceparent} if traceparent else None
-    # Aligned on the same reasoned timeout test_settlement_llm_trace.py and
-    # test_settlement_agent_trace.py both use, rather than a third, narrower
-    # value for the same underlying operation (settlement-agent's
-    # settlement, one extra A2A hop away from here) -- a settlement is three
-    # sequential model turns plus two MCP round trips, not one hardcoded
-    # function call, so a 529-triggered backoff on a slow uplink deserves
-    # real headroom. This call also runs
-    # inside a module-scoped fixture, so a timeout here would report all of
-    # this file's tests as ERROR rather than one named failure.
-    response = httpx.post(f"{CLAIMS_URL}/", json=payload, headers=headers, timeout=180)
-    response.raise_for_status()
-    return response.json()
-
-
 def file_claim(claim_id: str, amount: float, traceparent: str | None = None) -> dict:
-    return send_message(
-        json.dumps(
-            {
-                "claimId": claim_id,
-                "policyNumber": "POL-77120",
-                "description": "Rear-end collision at a junction",
-                "estimatedAmount": amount,
-            }
-        ),
-        traceparent=traceparent,
-    )
+    """File a claim the way the customer-ui does: `message/stream`, returning at
+    `input-required` or a terminal state. A blocking `message/send` would hang
+    for the whole human wait. Returns the stream snapshot (`reply`, `task_id`,
+    `state`, ...)."""
+    return live.submit_claim(claim_id, amount, traceparent=traceparent, timeout=180)
 
 
 def test_agent_card_is_served():
@@ -169,7 +131,11 @@ def chain_trace():
 
     claim_id = f"CLM-TEST-{uuid.uuid4().hex[:8]}"
     result = file_claim(claim_id, 6200, traceparent=traceparent)
-    assert "error" not in result, f"claims-agent call failed: {result}"
+    assert result["state"] == "input-required", f"claim was not routed to a human: {result}"
+    # Settle the wait before collecting the trace: a waiting claim keeps trace A
+    # open (see live.release_wait), so it would never hold steady and its
+    # children would read as orphans.
+    live.release_wait(result["reply"]["paymentId"])
 
     client = JaegerClient(JAEGER_URL)
     trace = client.wait_for_trace_id(trace_id, operation=ENTRY_SPAN, timeout=120)
@@ -282,7 +248,7 @@ def test_message_send_returns_the_settlement_json(chain_trace):
     the `narrative` the model wrote about the refusal. A refusal that arrived
     as a JSON-RPC error, or that lost a field crossing claims-agent, would fail
     this test — and should."""
-    payload = json.loads(chain_trace.result["result"]["parts"][0]["text"])
+    payload = chain_trace.result["reply"]
     assert payload["claimId"] == chain_trace.claim_id
     assert payload["policyNumber"] == "POL-77120"
     assert payload["paymentId"].startswith("PAY-")
@@ -397,17 +363,18 @@ def test_settlement_failure_reaches_the_caller_with_its_real_reason():
     raise ValueError("amount must not be negative"); a2a-sdk's request
     handler turns that unhandled exception into a JSON-RPC error carrying
     str(exc) (verified in settlement-agent's own request handling).
-    delegation.A2ADelegate.send()
-    re-raises that as RuntimeError("settlement-agent returned an error: ...");
-    executor.py does not catch it, so claims-agent's own a2a-sdk request
-    handler does the same thing one hop further out. This proves the whole
-    round trip, not just delegation.py's unit test."""
+    delegation.A2ADelegate.send() re-raises that as RuntimeError("settlement-agent
+    returned an error: ..."); claims-agent's executor reports it on the failed
+    task. This proves the whole round trip, not just delegation.py's unit test."""
     claim_id = f"CLM-TEST-{uuid.uuid4().hex[:8]}"
     result = file_claim(claim_id, -100)
-    assert "error" in result, f"expected a JSON-RPC error, got: {result}"
-    message = result["error"].get("message", "")
-    assert "amount must not be negative" in message, (
-        f"real failure reason was not preserved end to end: {message!r}"
+    # On `message/stream` the task already exists when the settlement fails, so
+    # the claims-agent fails the task and carries the reason in its message
+    # (claims-agent's executor catches it; an escaped exception would drop the
+    # HTTP stream mid-body).
+    assert result["state"] == "failed", f"expected a failed task, got: {result}"
+    assert "amount must not be negative" in result["reply"]["error"], (
+        f"real failure reason was not preserved end to end: {result['reply']}"
     )
 
 

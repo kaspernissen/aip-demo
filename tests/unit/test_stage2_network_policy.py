@@ -269,3 +269,34 @@ def test_reviewer_ui_may_reach_payments_api_only_for_list_get_and_reject():
         ("POST", "/payments/PAY-[0-9]{6}/reject"),
     }
     assert not any("execute" in r["path"] or "refuse" in r["path"] for r in http)
+
+
+# --- M8 Task 2: the two new egress rules -------------------------------------
+
+
+def _egress_to(policy_name, app):
+    policy = next(d for d in _policies() if d["metadata"]["name"] == policy_name)
+    return [
+        rule for rule in policy["spec"]["egress"]
+        if any(e.get("matchLabels", {}).get("app") == app for e in rule.get("toEndpoints", []))
+    ]
+
+
+def test_claims_agent_may_reach_payments_api_only_to_read_one_payment():
+    """The resume's ledger read. L4 would let claims-agent POST execute."""
+    rules = _egress_to("claims-agent-egress-allowlist", "payments-api")
+    assert len(rules) == 1, rules
+    to = rules[0]["toEndpoints"][0]["matchLabels"]
+    assert to[NAMESPACE_LABEL] == "northstar-systems"
+    ports = rules[0]["toPorts"]
+    assert len(ports) == 1 and ports[0]["ports"] == [{"port": "8080", "protocol": "TCP"}]
+    http = ports[0].get("rules", {}).get("http")
+    assert http, "claims-agent's payments-api egress is L4 only: it could execute directly"
+    assert {(r["method"], r["path"]) for r in http} == {("GET", "/payments/PAY-[0-9]{6}")}
+
+
+def test_reviewer_ui_may_reach_claims_agent_on_its_a2a_port_only():
+    rules = _egress_to("reviewer-ui-egress-allowlist", "claims-agent")
+    assert len(rules) == 1, rules
+    assert rules[0]["toEndpoints"][0]["matchLabels"][NAMESPACE_LABEL] == "northstar-agents"
+    assert rules[0]["toPorts"] == [{"ports": [{"port": "9001", "protocol": "TCP"}]}]

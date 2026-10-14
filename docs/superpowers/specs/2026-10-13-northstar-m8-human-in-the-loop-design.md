@@ -141,17 +141,22 @@ SDK's.
 
 ### 3.4 The trace: two traces, one link, one metric
 
-- **Trace A** (the claim) ends when the task goes to `input-required`. It
-  holds the `policy.decision` deny, with the rule and a limit of €0 or €6,000,
-  and **no** `POST /payments/{id}/execute` span.
+- **Trace A** (the claim): the customer's claim stream ends, and the browser's
+  `claim.submit` span ends, when the task goes to `input-required`. **Measured
+  (M8 Task 2): the a2a-sdk keeps one SERVER span open in trace A for the whole
+  wait**: `DefaultRequestHandler._run_event_stream` in the claims-agent lasts as
+  long as the parked `execute()`, so trace A is not finished until the human
+  decides (83.2 s for a 75 s wait; `POST /` itself ended at 9.1 s). It is
+  accepted, not dropped: dropping a span is loss. It holds the
+  `policy.decision` deny, with the rule and a limit of €0 or €6,000, and **no** `POST /payments/{id}/execute` span.
 - **Trace B** (the approval) is rooted at `review.decision`. Its spans are the
   reviewer-ui's `execute_payment` through the gateway (with its own
   `policy.decision` allow, rule `human-approved.execute`), the payments-api
   execute, and the resume message to the claims-agent.
 - **The link** stays an OpenTelemetry span link from `review.decision` to the
   refused span in trace A. That is OpenTelemetry's standard way to connect work
-  that pauses for a person. One trace held open for minutes would show as
-  unfinished in Jaeger.
+  that pauses for a person. The human's work stays out of trace A, which
+  carries only the SDK's one long span, above.
 - **The new metric** is one OpenTelemetry histogram,
   `northstar.approval.wait.duration` (seconds), recorded by the reviewer-ui at
   the decision. It measures the time from `awaitingSince` to the decision, with
@@ -164,6 +169,11 @@ SDK's.
   the claim's trace A, and its duration is **how long the customer waited**.
   The histogram above is **how long the human took**. The two differ by the
   time the payment itself takes, and the talk can show both.
+- **Measured (M8 Task 2): the 10-minute stream survives.** A probe endpoint in
+  the claims-agent pod, held from `curl` and from Chromium through the same
+  `kubectl port-forward` path the browser uses, delivered its final event after
+  600 s with 39 keep-alive pings and no timeout changed
+  (`agents/claims-agent/NOTES.md`). The original requirement follows.
 - **Measured before it is relied on:** a stream held open for 10 minutes
   survives every hop from the browser to the claims-agent (the customer-ui
   server, and agentgateway if that route goes through it), with no proxy idle

@@ -451,6 +451,25 @@ spec:
             - port: "9002"
               protocol: TCP
 
+    # 2b. payments-api, for one read (M8): ledger.py's GET /payments/{id}, made
+    # when a waiting task is resumed, so the customer is told what the ledger
+    # says and not what the resume message claims. L7 for the reason the
+    # reviewer-ui's rule gives: payments-api has no caller authentication, so
+    # an L4 allow would let this workload POST /payments/{id}/execute and skip
+    # the gateway and the PDS. Only the read is allowed.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: northstar-systems
+            app: payments-api
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+          rules:
+            http:
+              - method: GET
+                path: "/payments/PAY-[0-9]{6}"
+
     # 3. The OTLP collector. Same endpoint and the same silent-failure
     #    argument as settlement-agent's rule 3 --
     #    deploy/k8s/claims-agent.yaml:29-32. This service owns the entry span
@@ -663,6 +682,18 @@ spec:
                 path: "/payments/PAY-[0-9]{6}"
               - method: POST
                 path: "/payments/PAY-[0-9]{6}/reject"
+
+    # 2b. claims-agent, on its A2A port -- claims.py resumes the customer's
+    # waiting task (tasks/get, then message/send on the same task id) once the
+    # payment is decided. Namespace-pinned like its siblings.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: northstar-agents
+            app: claims-agent
+      toPorts:
+        - ports:
+            - port: "9001"
+              protocol: TCP
 
     # 3. agentgateway, on the MCP port -- gateway.py's one outbound peer for
     # the release of an approved payment.

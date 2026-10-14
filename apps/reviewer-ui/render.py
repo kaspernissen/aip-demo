@@ -228,6 +228,10 @@ class ResultView:
     executed: dict[str, Any] | None
     error: str | None
     rejected: dict[str, Any] | None = None
+    # Whether the customer's waiting claim was told (claims.py). Only said when
+    # the decision itself went through.
+    resumed_state: str | None = None
+    resume_error: str | None = None
 
 
 def result_page(outcome: ResultView) -> str:
@@ -264,6 +268,15 @@ def result_page(outcome: ResultView) -> str:
             f'<p class="error">Payment <span class="figure">{payment_id}</span> '
             f"was not changed: {escape(outcome.error or 'unknown error')}</p>"
         )
+
+    if outcome.error is None:
+        if outcome.resume_error is not None:
+            body += (
+                '<p class="error">The customer could not be told: '
+                f"{escape(outcome.resume_error)}</p>"
+            )
+        elif outcome.resumed_state is not None:
+            body += "<p>The customer has been told.</p>"
 
     body += f'<p><span class="label">Waited</span> {outcome.elapsed_ms} ms</p>'
     return _page("Review recorded", f'<div class="{tone}">{body}</div>')

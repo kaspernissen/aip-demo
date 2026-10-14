@@ -119,6 +119,18 @@ class JaegerClient:
         lookback: str = "1h",
         limit: int = 20,
     ) -> Trace | None:
+        found = self.find_traces(service, operation, tags, lookback, limit)
+        return found[0] if found else None
+
+    def find_traces(
+        self,
+        service: str,
+        operation: str | None = None,
+        tags: dict[str, str] | None = None,
+        lookback: str = "1h",
+        limit: int = 20,
+    ) -> list[Trace]:
+        """Every trace matching the search, newest first (Jaeger's order)."""
         params: dict[str, Any] = {"service": service, "lookback": lookback, "limit": limit}
         if operation:
             params["operation"] = operation
@@ -126,10 +138,7 @@ class JaegerClient:
             params["tags"] = json.dumps(tags)
         resp = requests.get(f"{self.base_url}/api/traces", params=params, timeout=15)
         resp.raise_for_status()
-        data = resp.json().get("data") or []
-        if not data:
-            return None
-        return Trace(data[0])
+        return [Trace(t) for t in (resp.json().get("data") or [])]
 
     def get_trace(self, trace_id: str) -> Trace:
         resp = requests.get(f"{self.base_url}/api/traces/{trace_id}", timeout=15)
@@ -179,6 +188,13 @@ class JaegerClient:
     # constant must move with it.
     QUIET_WINDOW_S = 10.0
 
+    # What a claim that is waiting for a human adds to its trace for as long as
+    # it waits: a2a-sdk's background consumer polls the task's event queue every
+    # 0.5 s and each poll is a SERVER span (measured, M8 Task 2). They are counted
+    # as spans (nothing is dropped from the trace) but not as *movement* when
+    # `wait_for_trace_id` decides the trace has stopped growing.
+    WAIT_POLLING_SPANS = frozenset({"a2a.server.events.event_queue.EventQueue.dequeue_event"})
+
     def wait_for_trace_id(
         self,
         trace_id: str,
@@ -186,6 +202,7 @@ class JaegerClient:
         timeout: float = 60.0,
         interval: float = 2.0,
         services: set[str] | None = None,
+        steady_ignoring: frozenset[str] = frozenset(),
     ) -> Trace:
         """Poll for a trace by an ID the caller already knows (e.g. one it minted
         itself and sent as a `traceparent` header), rather than searching for it
@@ -201,6 +218,10 @@ class JaegerClient:
         raises `AssertionError` naming exactly which services never showed
         up, rather than returning whatever trace was last fetched — a caller
         can only ever act on a trace this method itself judged complete.
+
+        `steady_ignoring` names operations that do not count towards "the span
+        count held steady" (use `WAIT_POLLING_SPANS` for a claim that is waiting
+        for a human). The returned trace still contains them.
         """
         deadline = time.time() + timeout
         last_error: Exception | None = None
@@ -223,7 +244,9 @@ class JaegerClient:
                         quiet_since = None
                     else:
                         now = time.time()
-                        span_count = len(trace.spans)
+                        span_count = sum(
+                            1 for sp in trace.spans if sp.operation not in steady_ignoring
+                        )
                         if last_span_count is None or span_count != last_span_count:
                             last_span_count = span_count
                             quiet_since = now

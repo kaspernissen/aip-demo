@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SpanContext } from "@opentelemetry/api";
-import { buildSendMessageRequest, sendClaim, type Claim } from "./a2a";
+import { awaitOutcome, buildStreamRequest, streamClaim, type Claim } from "./a2a";
 import { getTracer, initTelemetry } from "./telemetry";
 
 const claim: Claim = {
@@ -10,17 +10,17 @@ const claim: Claim = {
   estimatedAmount: 6200,
 };
 
-describe("buildSendMessageRequest", () => {
-  it("builds a JSON-RPC 2.0 message/send envelope", () => {
-    const request = buildSendMessageRequest(claim);
+describe("buildStreamRequest", () => {
+  it("builds a JSON-RPC 2.0 message/stream envelope", () => {
+    const request = buildStreamRequest(claim);
 
     expect(request.jsonrpc).toBe("2.0");
-    expect(request.method).toBe("message/send");
+    expect(request.method).toBe("message/stream");
     expect(request.id).toBeTruthy();
   });
 
   it("carries the claim as a JSON text part", () => {
-    const request = buildSendMessageRequest(claim);
+    const request = buildStreamRequest(claim);
     const part = request.params.message.parts[0];
 
     expect(part.kind).toBe("text");
@@ -28,77 +28,122 @@ describe("buildSendMessageRequest", () => {
   });
 
   it("sets the message role to user", () => {
-    expect(buildSendMessageRequest(claim).params.message.role).toBe("user");
+    expect(buildStreamRequest(claim).params.message.role).toBe("user");
   });
 });
 
-describe("sendClaim", () => {
-  it("posts to the agent base URL and returns the parsed result", async () => {
-    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
-      const body = JSON.parse(init.body as string);
-      return new Response(
-        JSON.stringify({
-          jsonrpc: "2.0",
-          id: body.id,
-          result: {
-            kind: "message",
-            role: "agent",
-            messageId: "m1",
-            parts: [
-              {
-                kind: "text",
-                text: JSON.stringify({
-                  claimId: "CLM-1842",
-                  paymentId: "PAY-000001",
-                  amount: 6200,
-                  currency: "EUR",
-                  status: "executed",
-                }),
-              },
-            ],
-          },
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      );
-    });
+
+function sseResponse(frames: object[], { ping = false } = {}): Response {
+  const text =
+    (ping ? ": ping\n\n" : "") +
+    frames.map((f) => `data: ${JSON.stringify({ jsonrpc: "2.0", id: "1", result: f })}\n\n`).join("");
+  return new Response(text, { status: 200, headers: { "content-type": "text/event-stream" } });
+}
+
+const task = (state: string, result?: object) => ({
+  kind: "task",
+  id: "t1",
+  contextId: "c1",
+  status: { state, message: result ? { parts: [{ kind: "text", text: JSON.stringify(result) }] } : undefined },
+});
+const update = (state: string, result: object) => ({
+  kind: "status-update",
+  taskId: "t1",
+  contextId: "c1",
+  final: false,
+  status: { state, message: { parts: [{ kind: "text", text: JSON.stringify(result) }] } },
+});
+
+describe("streamClaim", () => {
+  it("sends message/stream and returns at input-required with the reply", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      sseResponse([task("submitted"), update("input-required", { claimId: "C", status: "awaiting_approval" })], { ping: true }),
+    );
     vi.stubGlobal("fetch", fetchMock);
+    const snap = await streamClaim("http://agent", { claimId: "C", policyNumber: "P", description: "", estimatedAmount: 5800 }, () => {});
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).method).toBe("message/stream");
+    expect(snap).toMatchObject({ taskId: "t1", contextId: "c1", state: "input-required" });
+    expect(snap.result?.status).toBe("awaiting_approval");
+  });
 
-    const result = await sendClaim("http://localhost:19001", claim);
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:19001/");
-    expect(result.paymentId).toBe("PAY-000001");
-    expect(result.status).toBe("executed");
+  it("reads CRLF-terminated frames, which is what sse-starlette sends", async () => {
+    const crlf = sseResponse([task("submitted"), update("input-required", { claimId: "C", status: "awaiting_approval" })], { ping: true });
+    const text = (await crlf.text()).replace(/\n/g, "\r\n");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(text, { status: 200 })));
+    const snap = await streamClaim("http://agent", claim, () => {});
+    expect(snap.state).toBe("input-required");
+    expect(snap.result?.status).toBe("awaiting_approval");
   });
 
   it("throws when the agent returns a JSON-RPC error", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            id: "x",
-            error: { code: -32000, message: "intake rejected the claim" },
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-      ),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(`data: ${JSON.stringify({ jsonrpc: "2.0", id: "x", error: { code: -32000, message: "intake rejected the claim" } })}\n\n`, { status: 200 }),
+    ));
+    await expect(streamClaim("http://agent", claim, () => {})).rejects.toThrow("intake rejected the claim");
+  });
+});
 
-    await expect(sendClaim("http://localhost:19001", claim)).rejects.toThrow(
-      "intake rejected the claim",
-    );
+describe("awaitOutcome", () => {
+  it("ends when the resubscribe stream delivers a terminal state", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(sseResponse([update("completed", { claimId: "C", status: "executed" })])));
+    const snap = await awaitOutcome("http://agent", "t1", () => {});
+    expect(snap.state).toBe("completed");
+    expect(snap.result?.status).toBe("executed");
   });
 
-  it("injects the active span's traceparent into the outbound request, surviving sendClaim's own await boundary", async () => {
+  it("reads the task once after a drop and resubscribes", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(sseResponse([])) // the stream ends with no terminal state: a drop
+      .mockResolvedValueOnce(new Response(JSON.stringify({ jsonrpc: "2.0", id: "1", result: task("input-required") })))
+      .mockResolvedValueOnce(sseResponse([update("completed", { claimId: "C", status: "rejected" })]));
+    vi.stubGlobal("fetch", fetchMock);
+    const snap = await awaitOutcome("http://agent", "t1", () => {});
+    const methods = fetchMock.mock.calls.map((c) => JSON.parse(c[1].body).method);
+    expect(methods).toEqual(["tasks/resubscribe", "tasks/get", "tasks/resubscribe"]);
+    expect(snap.result?.status).toBe("rejected");
+  });
+
+  it("returns at once when the read after a drop is already terminal", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(sseResponse([]))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ jsonrpc: "2.0", id: "1", result: task("completed", { claimId: "C", status: "executed" }) })));
+    vi.stubGlobal("fetch", fetchMock);
+    const snap = await awaitOutcome("http://agent", "t1", () => {});
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(snap.state).toBe("completed");
+  });
+
+  it("gives up loudly after repeated drops with nothing in between", async () => {
+    const fetchMock = vi.fn().mockImplementation((_u: string, init: RequestInit) =>
+      Promise.resolve(
+        JSON.parse(String(init.body)).method === "tasks/get"
+          ? new Response(JSON.stringify({ jsonrpc: "2.0", id: "1", result: task("input-required") }))
+          : sseResponse([]),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(awaitOutcome("http://agent", "t1", () => {}, { maxEmptyDrops: 3 })).rejects.toThrow(/lost the claim's stream/);
+  });
+
+  it("surfaces a JSON-RPC error from resubscribe instead of retrying", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(`data: ${JSON.stringify({ jsonrpc: "2.0", id: "1", error: { code: -32001, message: "Task not found" } })}\n\n`, { status: 200 }),
+    ));
+    await expect(awaitOutcome("http://agent", "t1", () => {})).rejects.toThrow(/Task not found/);
+  });
+});
+
+describe("traceparent", () => {
+  it("injects the active span's traceparent into the outbound request, surviving streamClaim's own await boundary", async () => {
     // Under Zone.js's ZoneContextManager, native async/await bypasses Zone's
     // monkey-patched global Promise via realm-intrinsic continuation
     // scheduling: crossing any `await` before `injectContext` runs drops the
     // active span context, so the request that reaches claims-agent would
     // carry no traceparent header at all and the browser's root span would
     // never connect to anything downstream. `injectContext` is therefore
-    // imported statically (see a2a.ts) and called before sendClaim's own
+    // imported statically (see a2a.ts) and called before streamClaim's own
     // first await, so no context ever needs to survive crossing one. This
     // test asserts the actual header's substance (a real traceparent
     // carrying the active span's own trace and span IDs), not merely that no
@@ -107,19 +152,7 @@ describe("sendClaim", () => {
     initTelemetry();
 
     const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          jsonrpc: "2.0",
-          id: "x",
-          result: {
-            kind: "message",
-            role: "agent",
-            messageId: "m1",
-            parts: [{ kind: "text", text: JSON.stringify({ claimId: "CLM-1842" }) }],
-          },
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      ),
+      sseResponse([task("completed", { claimId: "CLM-1842", status: "executed" })]),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -127,7 +160,7 @@ describe("sendClaim", () => {
     await getTracer().startActiveSpan("claim.submit", async (span) => {
       spanContext = span.spanContext();
       try {
-        await sendClaim("http://localhost:19001", claim);
+        await streamClaim("http://localhost:19001", claim, () => {});
       } finally {
         span.end();
       }

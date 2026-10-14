@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SpanStatusCode } from "@opentelemetry/api";
-import { sendClaim, type Claim, type ClaimResult } from "../a2a";
+import { SpanStatusCode, type SpanContext } from "@opentelemetry/api";
+import { awaitOutcome, streamClaim, type Claim, type ClaimResult } from "../a2a";
+import { determinationView, formatElapsed } from "../view";
 import { getTracer, initTelemetry } from "../telemetry";
 
 const CLAIMS_AGENT_URL =
@@ -34,6 +35,8 @@ export default function Page() {
   const [log, setLog] = useState<string[]>([]);
   const [result, setResult] = useState<ClaimResult | null>(null);
   const [busy, setBusy] = useState(false);
+  // When the claim went to input-required: the clock the waiting view shows.
+  const [waitingSince, setWaitingSince] = useState<number | null>(null);
 
   useEffect(() => {
     initTelemetry();
@@ -49,15 +52,22 @@ export default function Page() {
 
     // The browser owns the root span. Everything downstream is its child.
     // startActiveSpan returns the callback's value, so awaiting it awaits the
-    // whole submission.
+    // whole submission. This span (trace A) ends when the claim stream first
+    // returns: either the claim is decided, or it is waiting for a person.
+    let waiting: { taskId: string; context: SpanContext } | null = null;
     await getTracer().startActiveSpan("claim.submit", async (span) => {
       span.setAttribute("northstar.claim.id", submitted.claimId);
       span.setAttribute("northstar.policy.number", submitted.policyNumber);
       try {
-        const settled = await sendClaim(CLAIMS_AGENT_URL, submitted);
-        setResult(settled);
-        setLog((entries) => [...entries, `Settled: ${settled.status}`]);
-        return settled;
+        const snap = await streamClaim(CLAIMS_AGENT_URL, submitted, (s) => s.result && setResult(s.result));
+        if (snap.result) setResult(snap.result);
+        if (snap.state === "input-required") {
+          waiting = { taskId: snap.taskId, context: span.spanContext() };
+          setWaitingSince(Date.now());
+          setLog((entries) => [...entries, "Waiting for a person to decide"]);
+        } else {
+          setLog((entries) => [...entries, `Settled: ${snap.result?.status ?? snap.state}`]);
+        }
       } catch (error) {
         span.setStatus({
           code: SpanStatusCode.ERROR,
@@ -67,12 +77,39 @@ export default function Page() {
           ...entries,
           `Failed: ${error instanceof Error ? error.message : String(error)}`,
         ]);
-        return null;
       } finally {
         span.end();
-        setBusy(false);
       }
     });
+
+    // The wait is a second root span (trace B) LINKED to the first, because the
+    // human decides minutes later and trace A has long since ended. One stream
+    // carries the whole wait: no polling.
+    if (waiting) {
+      const { taskId, context } = waiting as { taskId: string; context: SpanContext };
+      await getTracer().startActiveSpan(
+        "claim.wait",
+        { links: [{ context }], attributes: { "northstar.claim.id": submitted.claimId } },
+        async (wait) => {
+          try {
+            const final = await awaitOutcome(
+              CLAIMS_AGENT_URL,
+              taskId,
+              (s) => s.result && setResult(s.result),
+            );
+            if (final.result) setResult(final.result);
+            setLog((entries) => [...entries, `Decided: ${final.result?.status ?? final.state}`]);
+          } catch (error) {
+            wait.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
+            setLog((entries) => [...entries, `Failed: ${String(error)}`]);
+          } finally {
+            wait.end();
+          }
+        },
+      );
+    }
+    setWaitingSince(null);
+    setBusy(false);
   }
 
   return (
@@ -179,7 +216,7 @@ export default function Page() {
 
           {result && (
             <>
-              <Determination result={result} />
+              <Determination result={result} waitingSince={waitingSince} />
               {/* `<h2>Outcome</h2>` immediately followed by `<pre>` is a
                   contract two e2e suites depend on -- they locate the JSON by
                   the adjacent-sibling selector `h2:text-is('Outcome') + pre`,
@@ -201,22 +238,27 @@ export default function Page() {
   );
 }
 
-/* The result, said the way an insurer says it. A refusal is presented as a
- * determination in ochre rather than an error in red: the platform declining
- * to execute a payment above the agent's limit is it working correctly, and
- * the UI should not contradict that -- the `policy.decision` span is
- * deliberately not ERROR for the same reason. Red is kept for a genuine
- * fault, where the claim never got an answer at all. */
-function Determination({ result }: { result: ClaimResult }) {
-  const status = (result.status ?? "").toLowerCase();
-  const tone =
-    status === "refused" ? "is-refused" : status === "executed" ? "is-executed" : "is-other";
-  const heading =
-    status === "refused"
-      ? "Not settled automatically"
-      : status === "executed"
-        ? "Settled"
-        : "Recorded";
+/* The result, said the way an insurer says it. A claim waiting for a person is
+ * a determination in blue, and a decline in ochre rather than an error in red:
+ * the platform routing a payment above the agent's limit to a human is it
+ * working correctly, and the UI should not contradict that -- the
+ * `policy.decision` span is deliberately not ERROR for the same reason. Red is
+ * kept for a genuine fault, where the claim never got an answer at all. */
+function Determination({
+  result,
+  waitingSince,
+}: {
+  result: ClaimResult;
+  waitingSince: number | null;
+}) {
+  const { tone, heading } = determinationView(result);
+  const waiting = result.status === "awaiting_approval";
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [waiting]);
 
   return (
     <div className={`determination ${tone}`}>
@@ -238,6 +280,19 @@ function Determination({ result }: { result: ClaimResult }) {
           </>
         )}
         {result.narrative && <>&ldquo;{result.narrative}&rdquo;</>}
+        {waiting && (
+          <p className="waiting">
+            A person at Northstar is reviewing this payment.
+            {waitingSince !== null && <> Waiting {formatElapsed(now - waitingSince)}.</>}
+            {result.rule && result.limit !== null && result.limit !== undefined && (
+              <>
+                {" "}
+                The agent&rsquo;s limit here is{" "}
+                <span className="figure">&euro;{result.limit}</span>.
+              </>
+            )}
+          </p>
+        )}
       </div>
     </div>
   );

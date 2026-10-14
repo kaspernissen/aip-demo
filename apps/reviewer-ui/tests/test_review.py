@@ -21,6 +21,7 @@ from opentelemetry.trace import SpanKind, StatusCode
 
 import review
 from gateway import ExecutionRefused
+from claims import ResumeFailed
 from review import PaymentNotAwaitingReview, decide
 
 AWAITING_PAYMENT = {
@@ -88,6 +89,18 @@ class FakeGateway:
         return self._result
 
 
+class FakeClaims:
+    def __init__(self, error=None):
+        self.calls: list[tuple] = []
+        self._error = error
+
+    async def resume(self, task_id, payload):
+        self.calls.append((task_id, payload))
+        if self._error is not None:
+            raise self._error
+        return "input-required"
+
+
 @pytest.fixture
 def traced(monkeypatch):
     exporter = InMemorySpanExporter()
@@ -105,7 +118,7 @@ async def test_approve_releases_with_the_ledgers_amount_and_currency(traced):
     result = await decide(
         "PAY-000053", "alex.mercer", "approve",
         ledger=ledger, gateway=gateway,
-        reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
+        claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
     )
 
     # Every figure traces to AWAITING_PAYMENT above, never to a value this
@@ -124,7 +137,7 @@ async def test_reject_calls_the_ledger_and_never_the_gateway(traced):
     result = await decide(
         "PAY-000053", "alex.mercer", "reject",
         ledger=ledger, gateway=gateway,
-        reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
+        claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
     )
 
     assert gateway.calls == []
@@ -138,7 +151,7 @@ async def test_the_autonomy_level_is_read_off_the_refusals_rule(traced):
     result = await decide(
         "PAY-000053", "alex.mercer", "reject",
         ledger=FakeLedger(), gateway=FakeGateway(),
-        reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
+        claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
     )
     assert result.autonomy_level == "assisted"
 
@@ -148,7 +161,7 @@ async def test_the_review_decision_span_carries_exactly_the_spec_attributes(trac
     await decide(
         "PAY-000053", "alex.mercer", "approve",
         ledger=FakeLedger(), gateway=FakeGateway(),
-        reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
+        claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
     )
 
     spans = exporter.get_finished_spans()
@@ -177,7 +190,7 @@ async def test_elapsed_ms_is_measured_from_the_ledgers_awaitingsince_not_a_page_
     result = await decide(
         "PAY-000053", "alex.mercer", "reject",
         ledger=FakeLedger(), gateway=FakeGateway(),
-        reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
+        claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
     )
     assert result.elapsed_ms == 5000
 
@@ -187,7 +200,7 @@ async def test_a_reject_decision_still_gets_a_span_with_review_decision_reject(t
     await decide(
         "PAY-000053", "alex.mercer", "reject",
         ledger=FakeLedger(), gateway=FakeGateway(),
-        reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
+        claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
     )
     span = exporter.get_finished_spans()[0]
     assert span.attributes["review.decision"] == "reject"
@@ -205,7 +218,7 @@ async def test_a_release_the_platform_refuses_is_reported_not_hidden(traced):
     result = await decide(
         "PAY-000053", "alex.mercer", "approve",
         ledger=FakeLedger(), gateway=gateway,
-        reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
+        claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
     )
 
     assert result.executed is None
@@ -235,7 +248,7 @@ async def test_a_payment_not_awaiting_review_ends_the_span_error_and_never_relea
         await decide(
             "PAY-000053", "alex.mercer", "approve",
             ledger=ledger, gateway=gateway,
-            reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
+            claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
         )
 
     assert gateway.calls == []
@@ -267,7 +280,7 @@ async def test_the_ledger_read_happens_inside_the_review_decision_span(traced):
     await decide(
         "PAY-000053", "alex.mercer", "approve",
         ledger=ledger, gateway=FakeGateway(),
-        reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
+        claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
     )
 
     span = traced.get_finished_spans()[0]
@@ -286,7 +299,7 @@ async def test_an_unknown_decision_value_is_rejected_before_any_ledger_call(trac
         await decide(
             "PAY-000053", "alex.mercer", "maybe",
             ledger=ledger, gateway=FakeGateway(),
-            reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
+            claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
         )
     assert ledger.calls == []
 
@@ -297,7 +310,7 @@ async def test_an_empty_reviewer_id_is_rejected_before_any_ledger_call(traced):
         await decide(
             "PAY-000053", "  ", "approve",
             ledger=ledger, gateway=FakeGateway(),
-            reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
+            claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
         )
     assert ledger.calls == []
 
@@ -312,10 +325,64 @@ async def test_a_ledger_lookup_failure_propagates_and_ends_the_span_error(traced
         await decide(
             "PAY-999999", "alex.mercer", "approve",
             ledger=ledger, gateway=FakeGateway(),
-            reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
+            claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
         )
     spans = traced.get_finished_spans()
     assert len(spans) == 1
     assert spans[0].name == "review.decision"
     assert spans[0].status.status_code == StatusCode.ERROR
     assert "review.elapsed_ms" not in spans[0].attributes
+
+
+async def test_approve_resumes_the_customers_task_with_the_ledgers_task_id(traced):
+    claims = FakeClaims()
+    result = await decide("PAY-000053", "alex.mercer", "approve", ledger=FakeLedger(),
+                          gateway=FakeGateway(), claims=claims,
+                          reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW)
+    assert claims.calls == [("task-1", {"decision": "approved", "paymentId": "PAY-000053",
+                                        "reviewerId": "alex.mercer"})]
+    assert result.resumed_state == "input-required" and result.resume_error is None
+
+
+async def test_reject_resumes_the_customers_task_once(traced):
+    claims = FakeClaims()
+    result = await decide("PAY-000053", "alex.mercer", "reject", ledger=FakeLedger(),
+                          gateway=FakeGateway(), claims=claims,
+                          reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW)
+    assert [c[1]["decision"] for c in claims.calls] == ["rejected"]
+    assert result.resumed_state is not None
+
+
+async def test_a_failed_release_does_not_resume_the_task(traced):
+    claims = FakeClaims()
+    result = await decide("PAY-000053", "alex.mercer", "approve", ledger=FakeLedger(),
+                          gateway=FakeGateway(error=ExecutionRefused("denied")), claims=claims,
+                          reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW)
+    assert result.error and claims.calls == []
+
+
+async def test_a_failed_reject_does_not_resume_the_task(traced):
+    claims = FakeClaims()
+    result = await decide("PAY-000053", "alex.mercer", "reject",
+                          ledger=FakeLedger(reject_error=RuntimeError("down")),
+                          gateway=FakeGateway(), claims=claims,
+                          reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW)
+    assert result.error and claims.calls == []
+
+
+async def test_a_resume_failure_is_reported_and_leaves_the_decision_standing(traced):
+    result = await decide("PAY-000053", "alex.mercer", "approve", ledger=FakeLedger(),
+                          gateway=FakeGateway(), claims=FakeClaims(error=ResumeFailed("task gone")),
+                          reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW)
+    assert result.executed is not None and result.error is None
+    assert result.resume_error == "task gone" and result.resumed_state is None
+
+
+async def test_a_payment_with_no_task_id_resumes_nothing(traced):
+    claims = FakeClaims()
+    record = {**AWAITING_PAYMENT}
+    record.pop("a2aTaskId")
+    result = await decide("PAY-000053", "alex.mercer", "approve", ledger=FakeLedger(record=record),
+                          gateway=FakeGateway(), claims=claims,
+                          reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW)
+    assert claims.calls == [] and result.resumed_state is None

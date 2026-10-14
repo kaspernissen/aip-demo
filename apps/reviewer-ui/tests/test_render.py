@@ -144,3 +144,22 @@ def test_result_page_for_a_rejection_records_no_execution():
     assert "Review recorded" in html
     assert "reject" in html.lower()
     assert "executed" not in html.lower()
+
+
+def _decided(**kw):
+    return render.ResultView(payment_id="PAY-000053", decision="reject", reviewer_id="alex",
+                             elapsed_ms=1, executed=None, error=None, **kw)
+
+
+def test_the_result_page_says_the_customer_has_been_told():
+    assert "The customer has been told" in render.result_page(_decided(resumed_state="input-required"))
+
+
+def test_the_result_page_says_when_the_customer_could_not_be_told():
+    html = render.result_page(_decided(resume_error="task gone <b>"))
+    assert "The customer could not be told: task gone &lt;b&gt;" in html
+
+
+def test_the_result_page_says_nothing_about_the_customer_when_there_was_no_task():
+    html = render.result_page(_decided())
+    assert "customer" not in html.lower()

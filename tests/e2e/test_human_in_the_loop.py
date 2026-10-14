@@ -18,6 +18,8 @@ when the cluster is absent.
 from __future__ import annotations
 
 import os
+import threading
+import time
 import uuid
 
 import httpx
@@ -41,8 +43,12 @@ AMOUNT = 5800.0
 
 
 def _claim(amount: float) -> dict:
-    claim_id = f"CLM-HITL-{uuid.uuid4().hex[:8]}"
     contract.assert_assisted("before a maker-checker claim")
+    return _claim_at_current_level(amount)
+
+
+def _claim_at_current_level(amount: float) -> dict:
+    claim_id = f"CLM-HITL-{uuid.uuid4().hex[:8]}"
     with live.claims_agent_route() as url:
         run = live.submit_claim(claim_id, amount, claims_agent_url=url)
     return {"claim_id": claim_id, **run}
@@ -67,12 +73,72 @@ def rejected():
 
 
 def test_assisted_5800_waits_with_rule_and_a_zero_limit(approved):
-    # Read from the ledger, which keeps the refusal beside the payment: the
-    # claims-agent reply carries neither the rule nor the limit.
+    # The ledger keeps the refusal beside the payment; the task's own reply
+    # carries the same rule and limit for the customer.
+    assert approved["reply"]["rule"] == "settlement-agent.assisted.execute_limit", approved["reply"]
+    assert approved["reply"]["limit"] == 0.0, approved["reply"]
     refusal = live.get_payment(approved["payment_id"])["refusal"]
     assert refusal["rule"] == "settlement-agent.assisted.execute_limit", refusal
     assert refusal["limit"] == 0.0, refusal
     assert refusal["requested"] == AMOUNT, refusal
+
+
+def test_assisted_5800_is_input_required_then_approve_completes_it(approved):
+    assert approved["state"] == "input-required"
+    assert approved["review"]["resumedState"] is not None, approved["review"]
+    with live.claims_agent_route():
+        task = live.get_task(approved["task_id"])
+    assert task["state"] == "completed"
+    assert task["reply"]["status"] == "executed" and task["reply"]["decision"] == "approved"
+
+
+def test_reject_completes_the_task_declined(rejected):
+    assert rejected["review"]["resumedState"] is not None, rejected["review"]
+    with live.claims_agent_route():
+        task = live.get_task(rejected["task_id"])
+    assert task["state"] == "completed" and task["reply"]["status"] == "rejected"
+    assert task["reply"]["decision"] == "rejected"
+
+
+def test_autonomous_5800_completes_with_no_wait_and_6200_waits():
+    with live.autonomy(contract.AUTONOMOUS):
+        settled = _claim_at_current_level(5800.0)
+        waits = _claim_at_current_level(6200.0)
+        try:
+            assert settled["state"] == "completed" and settled["reply"]["status"] == "executed"
+            assert waits["state"] == "input-required"
+            assert waits["reply"]["rule"] == "settlement-agent.autonomous.execute_limit"
+            assert waits["reply"]["limit"] == 6000.0
+        finally:
+            live.review(waits["reply"]["paymentId"], "reject", "demo-cleanup")
+
+
+def test_a_resubscribe_held_open_ten_minutes_delivers_completed():
+    run = _claim(AMOUNT)
+    result = {}
+    with live.claims_agent_route():
+        listener = threading.Thread(target=lambda: result.update(
+            live.resubscribe(run["task_id"], timeout=900)))
+        listener.start()
+        time.sleep(600)
+        still_open = listener.is_alive()
+        live.review(run["reply"]["paymentId"], "approve", REVIEWER)
+        listener.join(timeout=60)
+    assert still_open, f"the stream ended before the decision: {result}"
+    assert result.get("state") == "completed", result
+    assert result["reply"]["status"] == "executed"
+
+
+def test_a_dropped_stream_reconnects_and_still_sees_the_outcome():
+    run = _claim(AMOUNT)
+    with live.claims_agent_route():
+        first = live.resubscribe(run["task_id"], timeout=60, drop_after=3)
+        assert first.get("dropped"), first
+        live.review(run["reply"]["paymentId"], "reject", REVIEWER)
+        once = live.get_task(run["task_id"])          # the one read after a drop
+        if once["state"] not in live.TERMINAL_STATES:
+            once = live.resubscribe(run["task_id"], timeout=60)
+    assert once["state"] == "completed" and once["reply"]["status"] == "rejected"
 
 
 def test_the_ledger_shows_the_wait_before_the_human_acts(approved):

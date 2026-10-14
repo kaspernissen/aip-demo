@@ -49,6 +49,10 @@ spec:
             # runtime.
             - name: NORTHSTAR_ALLOWED_AGENTS
               value: settlement-agent=http://settlement-agent.northstar-agents.svc.cluster.local:9002
+            # The one read of the ledger, when a waiting task is resumed
+            # (ledger.py). GET /payments/{id} only; moves no money.
+            - name: PAYMENTS_API_URL
+              value: http://payments-api.northstar-systems.svc.cluster.local:8080
             - name: CORS_ALLOWED_ORIGINS
               value: http://localhost:8080
             - name: AGENT_CARD_PATH

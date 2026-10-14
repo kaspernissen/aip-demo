@@ -329,6 +329,9 @@ pre:empty::before {
 .determination.is-refused .status { color: var(--refused); }
 .determination.is-executed { border-color: #b3ddcc; background: var(--executed-bg); color: #0b4c38; }
 .determination.is-executed .status { color: var(--executed); }
+.determination.is-waiting { border-color: var(--blue-200); background: var(--blue-050); color: var(--navy-700); }
+.determination.is-waiting .status { color: var(--blue-600); }
+.determination .waiting { margin: 0.5rem 0 0; }
 .determination.is-other    { border-color: var(--blue-200); background: var(--blue-050); color: var(--navy-700); }
 .determination.is-other .status { color: var(--blue-600); }
 

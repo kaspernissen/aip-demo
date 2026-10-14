@@ -463,26 +463,21 @@ def cmd_claim(args: argparse.Namespace) -> None:
     out()
     say("A claimant files the claim. claims-agent hands it to settlement-agent.")
     say("The model decides what to propose. The platform decides what happens.")
-    doing(f"A2A message/send  claims-agent  claim {claim_id}  EUR {amount:,.0f}")
+    doing(f"A2A message/stream  claims-agent  claim {claim_id}  EUR {amount:,.0f}")
     started = time.monotonic()
     with live.claims_agent_route() as url:
         run = live.submit_claim(claim_id, amount, claims_agent_url=url, timeout=170)
     reply = run["reply"]
     took = time.monotonic() - started
     status = reply.get("status")
-    if status == "awaiting_approval":
-        # M8: a refusal now leaves the payment waiting for a human. This driver
-        # still tells the refused/executed story; the human-in-the-loop flow is
-        # M8's demo task (Task 5).
-        status = "refused"
     out(f"  -> {took:0.0f}s")
     out()
-    if status == "refused":
-        out(f"  Outcome  {word('REFUSED', 'stop')}  by the platform. Nothing was paid.")
+    if status == "awaiting_approval":
+        out(f"  Outcome  {word('WAITING', 'stop')}  for a human. Nothing was paid.")
     elif status == "executed":
         out(f"  Outcome  {word('EXECUTED', 'go')}  by the platform. The payment was made.")
     else:
-        raise Fail(f"the claim ended {status!r}, neither refused nor executed: {reply}")
+        raise Fail(f"the claim ended {status!r}, neither waiting for a human nor executed: {reply}")
     out()
     out(paint("  The model's explanation to the claimant:", "dim"))
     for para in str(reply.get("narrative", "")).split("\n"):
@@ -501,6 +496,8 @@ def cmd_claim(args: argparse.Namespace) -> None:
         run["trace_id"],
         services={"agentgateway", live.PDS_SERVICE, live.PAYMENTS_API},
         timeout=TRACE_WAIT_S,
+        # A claim waiting for a human keeps adding SDK polling spans to its trace.
+        steady_ignoring=JaegerClient.WAIT_POLLING_SPANS,
     )
     facts = render_span_tree(trace, executed_expected=(status == "executed"))
     out()
@@ -510,7 +507,7 @@ def cmd_claim(args: argparse.Namespace) -> None:
     problems = []
     if args.expect and status != args.expect:
         problems.append(f"expected the claim to end {args.expect!r}, it ended {status!r}")
-    expected_verdict = {"refused": "deny", "executed": "permit"}[status]
+    expected_verdict = {"awaiting_approval": "deny", "executed": "permit"}[status]
     if facts["verdict"] != expected_verdict:
         problems.append(
             f"the reply says {status!r} but the policy decision says {facts['verdict']!r}"
@@ -524,7 +521,7 @@ def cmd_claim(args: argparse.Namespace) -> None:
         problems.append(
             f"the flag read {level_before!r} before the claim but the decision ran under {facts['level']!r}"
         )
-    if status == "refused" and not (
+    if status == "awaiting_approval" and not (
         facts["limit"] is not None and facts["requested"] is not None
         and facts["requested"] > facts["limit"]
     ):
@@ -532,7 +529,7 @@ def cmd_claim(args: argparse.Namespace) -> None:
     if problems:
         raise Fail("; ".join(problems))
     out()
-    if status == "refused":
+    if status == "awaiting_approval":
         out(paint("A refusal is a success: the model asked, the platform said no, and the record shows both.", "bold"))
     else:
         out(paint("Same amount, same agent, same code. Only the value changed.", "bold"))
@@ -771,7 +768,7 @@ def main(argv: list[str] | None = None) -> int:
     claim = sub.add_parser("claim", help="a real claim through the agents and the model")
     claim.add_argument("amount", type=float)
     claim.add_argument(
-        "--expect", choices=["refused", "executed"],
+        "--expect", choices=["awaiting_approval", "executed"],
         help="exit non-zero unless the claim ends this way",
     )
     claim.set_defaults(fn=cmd_claim)

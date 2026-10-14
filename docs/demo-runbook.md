@@ -394,7 +394,7 @@ it proves the API key, the whole A2A chain, the gateway, the PDS, flagd and
 the ledger, in one action.
 
 For the five-minute flow the rehearsal is the flow itself:
-`scripts/demo claim 6200 --expect refused` (it exits non-zero unless the claim
+`scripts/demo claim 6200 --expect awaiting_approval` (it exits non-zero unless the claim
 is refused), then `scripts/demo reset`.
 
 Then **reset the ledger** before the audience sees anything — see §7.
@@ -518,7 +518,7 @@ is this output.
 
 #### Step 2 — `scripts/demo claim 6200` · Ring 2 · Capability · "a refusal is a success"
 
-**DO** — `scripts/demo claim 6200` (add `--expect refused` when rehearsing, so a
+**DO** — `scripts/demo claim 6200` (add `--expect awaiting_approval` when rehearsing, so a
 cluster left `autonomous` fails loudly instead of quietly executing).
 
 **SHOW**

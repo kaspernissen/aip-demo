@@ -660,6 +660,50 @@ independent positive control for the collector→Prometheus hop). See
 [`docs/telemetry-contract.md`](telemetry-contract.md)'s "SPIRE
 instrumentation, as measured".
 
+## The waiting claim — A2A's own task lifecycle (M8)
+
+The Hop 1 description below is the M1 shape (a blocking `message/send`) and is
+kept as dated history. Since M8 the customer-ui submits a claim with
+`message/stream`, and the claim is an A2A task with real states:
+`submitted → input-required → completed` when a payment is routed to a human,
+or `submitted → completed` when the settlement agent settles it.
+
+- **The claim stream** returns at `input-required` (or at a terminal state) and
+  the browser closes it. Its first event carries the task id. The status message
+  is one JSON text part with `claimId`, `policyNumber`, `paymentId`, `amount`,
+  `currency`, `status`, `narrative`, `rule`, `limit` and `decision`.
+- **The wait is one stream.** The browser sends `tasks/resubscribe` and holds it
+  until the task is `completed`. sse-starlette sends a `: ping` every 15 s. If
+  the stream drops, the customer-ui reads the task once with `tasks/get` and
+  resubscribes. That is a reconnect, not polling. A 10-minute hold was measured
+  across the real path (`agents/claims-agent/NOTES.md`).
+- **The first `execute()` stays running.** The claims-agent parks it on an
+  in-process future while the task is `input-required`. The SDK removes a
+  task's event queue when `execute()` returns, and `tasks/resubscribe` needs
+  that queue, so the parked call is what makes the resubscribe possible. The
+  price is that a claims-agent restart loses the waiting claims.
+- **Both status updates are `final=False`.** The SDK's event consumer closes the
+  root queue immediately on a final update. The stream ends instead when the
+  parked `execute()` returns and the SDK drains the queue. Clients end on the
+  task state.
+- **The reviewer-ui resumes the same task id** with `tasks/get` and then a
+  non-blocking `message/send` carrying the decision. The claims-agent does not
+  trust that message. It reads the payment from payments-api (one
+  `GET /payments/{id}`, allowed by an L7 Cilium rule) and reports what the
+  ledger says: `executed` is "Settled", `rejected` is "Declined by a reviewer".
+  A resume the ledger does not back is refused and the task keeps waiting.
+- **A decline is `completed`, not A2A's `rejected`.** In A2A `rejected` means
+  the agent refused the task. Here the agent did the work and a person declined
+  the payment.
+- **`refusal_unrecorded`** (the settlement agent could not record the refusal on
+  the ledger) completes the task at once with a message that the claim could not
+  be routed for review. Nobody could find that payment, so waiting would be for
+  nobody.
+- **Trace A keeps one long span.** The SDK's `_run_event_stream` SERVER span
+  lasts as long as the parked `execute()`, so it is open in trace A for the whole
+  wait (measured 83.2 s for a 75 s wait; the `POST /` span itself ended when the
+  customer closed the claim stream). See `docs/telemetry-contract.md`.
+
 ## Hop 1 — browser → claims-agent: A2A over JSON-RPC 2.0
 
 The browser is an A2A client. `apps/customer-ui/src/a2a.ts` builds a

@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
+import claims
 import gateway
 import identity
 import ledger
@@ -40,6 +41,13 @@ gateway_client = gateway.GatewayClient(
     os.environ.get(
         "AGENTGATEWAY_MCP_URL",
         "http://agentgateway.northstar-platform.svc.cluster.local:3000/mcp",
+    )
+)
+
+claims_client = claims.ClaimsClient(
+    os.environ.get(
+        "CLAIMS_AGENT_URL",
+        "http://claims-agent.northstar-agents.svc.cluster.local:9001",
     )
 )
 
@@ -105,6 +113,7 @@ async def _decide(payment_id: str, reviewer_id: str, decision: str):
             decision,
             ledger=ledger_client,
             gateway=gateway_client,
+            claims=claims_client,
             reviewer_spiffe_id=reviewer_spiffe_id,
         )
     except ValueError as exc:
@@ -135,6 +144,8 @@ async def submit_review(
         executed=result.executed,
         error=result.error,
         rejected=result.rejected,
+        resumed_state=result.resumed_state,
+        resume_error=result.resume_error,
     )
     return HTMLResponse(render.result_page(outcome))
 
@@ -173,6 +184,8 @@ async def api_review(payment_id: str, body: ReviewRequest):
         "executed": result.executed,
         "rejected": result.rejected,
         "error": result.error,
+        "resumedState": result.resumed_state,
+        "resumeError": result.resume_error,
     }
 
 

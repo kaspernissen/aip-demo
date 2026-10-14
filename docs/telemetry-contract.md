@@ -49,6 +49,31 @@ PDS read from payments-api for that payment (`awaiting_approval` for a permit).
 The approver is also a different `service.name`, so the "same service name for
 both settlement Deployments" caveats below no longer apply.
 
+**M8 Task 2, MEASURED: trace A keeps one SDK span open for the whole wait.** The
+claims-agent parks the first `execute()` while a task is `input-required`
+(`agents/claims-agent/executor.py`), and a2a-sdk 0.3.7's `DefaultRequestHandler`
+is `@trace_class(kind=SERVER)`, which wraps `_run_event_stream`. So in trace A
+the claims-agent's SERVER span
+`a2a.server.request_handlers.default_request_handler.DefaultRequestHandler._run_event_stream`
+lasts as long as the wait: **83.2 s** for a 75 s wait (claim `CLM-M8T2-001`, trace
+`41f75218242b4029ba2435b62bc72de1`), and `..._cleanup_producer` 74.1 s. The
+claim's own `POST /` span ended at 9.1 s, when the customer closed the claim
+stream at `input-required`. This was accepted, not worked around: the span is not
+dropped (never sample) and the wait is not polled. Wherever this document says
+trace A "ends" at `input-required`, that is the browser's `claim.submit` span and
+the claim stream, not every span in the trace.
+
+Two consequences, both measured. While a claim waits, the spans created under that
+open span read as **orphans** in Jaeger (their parent has not been exported yet),
+and the SDK's background consumer adds an
+`a2a.server.events.event_queue.EventQueue.dequeue_event` SERVER span about every
+0.5 s (it polls the task's queue with a 0.5 s timeout after the customer closes the
+stream), so trace A **keeps growing for the whole wait**: 313 spans for the 83 s
+claim above. Both stop when the human decides. So a test that asserts on a settled
+trace decides the claim first (`tests/harness/live.py::release_wait`), and
+`JaegerClient.wait_for_trace_id(..., steady_ignoring=WAIT_POLLING_SPANS)` does not
+count those polling spans as movement (it still returns them).
+
 ## The governing rule
 
 Use the telemetry the frameworks actually emit. Verify per component. Instrument
@@ -468,7 +493,11 @@ run on its own against the live stage-7 cluster, 7 passed in 55.8s, which is not
 the gate having run.
 
 Bare-suite row, derived from that same collection: 504 collected − 85 gated −
-**0** xfailed = `419 passed, 85 skipped, 0 xfailed`. (M8 Task 1's fix round 1 added
+**0** xfailed = `422 passed, 90 skipped, 0 xfailed`. (M8 Task 2 took the collection
+from 504 to 512: five gated live tests in `test_human_in_the_loop.py` (task states, the
+autonomous wait, the 10-minute resubscribe, the dropped-stream reconnect), so the gated
+figure is 90, and two Cilium config tests in `test_stage2_network_policy.py` and one harness test in
+`test_jaeger_assertions.py`.) (M8 Task 1's fix round 1 added
 two gated live bypass tests to `test_human_in_the_loop.py`, so the
 gated figure is 85, and one config test in `test_stage2_network_policy.py`.) (M8 Task 1 took the
 collection from 507 to 501: `tests/e2e/test_supervised.py` (6 gated) was deleted
@@ -492,13 +521,13 @@ test) is `tests/unit`-only and carries no `skipif`, so it adds none, and the
 internal-platform pass's eight new `tests/unit` tests, the mermaid pass's eight
 and the page-banner pass's eight `tests/unit` tests carry none either; the
 page-banner pass's own e2e file adds exactly **one** — and
-reports 85 of 504, with the per-module spread and the browser split both
+reports 90 of 512, with the per-module spread and the browser split both
 moving for the first time this milestone. Full spread:
 `test_settlement_llm_trace.py` 9,
 `test_prometheus_metrics_ingest.py` 10, `test_browser_root_span.py` 8,
 `test_settlement_agent_trace.py` 8, `test_claims_chain_trace.py` 7,
 `test_claim_correlation.py` 6, `test_gateway_trace.py` 6,
-`test_human_in_the_loop.py` 8, `test_policy_scores.py` 5,
+`test_human_in_the_loop.py` 13, `test_policy_scores.py` 5,
 `test_demo_flow.py` 7, `test_evidence_view.py` 4, `test_policy_denial.py` 4,
 `test_backstage_page_bands.py` 1, `test_golden_path.py` 1,
 `test_progressive_autonomy.py` 1. **The browser split changes twice this
@@ -514,8 +543,13 @@ starting none, until the demo-flow file made it a fifteenth that starts none:
 `test_supervised.py` for `test_human_in_the_loop.py`, neither of which launches one,
 and the browser count had been miscounted as 4 since the demo-flow file).
 
-Gate row: **PREDICTED, NOT MEASURED** — M8 Task 1 predicts `503 passed, 1 xfailed`
-(504 collected): it changes the PDS, payments-api, the settlement agent, the reviewer-ui,
+Gate row: **PREDICTED, NOT MEASURED** — M8 Task 2 predicts `511 passed, 1 xfailed`
+(512 collected): it changes the claims-agent, the reviewer-ui, the customer-ui, the
+harness, the driver, the manifests and the e2e suite, all `GATE_PATHS`, so no gate
+row describes this tree; what has to happen to make it MEASURED is one
+`./scripts/smoke-test.sh` at the end of M8. Its own files were run against the live
+stage-7 cluster, which is not the gate having run. Before it, M8 Task 1 predicted
+`503 passed, 1 xfailed` (504 collected): it changes the PDS, payments-api, the settlement agent, the reviewer-ui,
 the eval-scorer, the manifests and the e2e suite, all `GATE_PATHS`, so the row below
 describes a tree this branch has since altered; what has to happen to make it MEASURED is
 one `./scripts/smoke-test.sh` at the end of M8. Task 1's own files were run against the
@@ -2190,9 +2224,14 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (all nine run by `smoke-test.sh`, before any e2e test):
-claims-agent 16, settlement-agent 99, payments-mcp 16, payments-api (Go) 39,
-customer-ui (vitest) 6, policy-decision-service 157,
-reviewer-ui 73, eval-scorer 165, backstage (jest) 37 — all passing.
+claims-agent 30, settlement-agent 99, payments-mcp 16, payments-api (Go) 39,
+customer-ui (vitest) 18, policy-decision-service 157,
+reviewer-ui 87, eval-scorer 165, backstage (jest) 37 — all passing.
+(**2026-10-14, M8 Task 2 (the waiting claim): claims-agent 16 → 30, reviewer-ui 73 → 87,
+customer-ui 6 → 18.** The claims-agent gains `tests/test_task_lifecycle.py` (13) and the
+card's streaming pin (1); the reviewer-ui gains `tests/test_claims.py` (5), six resume tests
+in `test_review.py` and three in `test_render.py`; the customer-ui's `a2a.test.ts` is
+rewritten around `message/stream` and `tasks/resubscribe` and `view.test.ts` is new.)
 (**2026-10-13, M8 Task 0 (agentgateway v1.6.0): settlement-agent 114 → 119,
 policy-decision-service 129 → 134.** The deny now travels as tagged text in an
 `isError` tool result: the PDS gains `tests/test_deny_text.py` (4) and one

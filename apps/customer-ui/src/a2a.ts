@@ -14,6 +14,9 @@ export type ClaimResult = {
   currency?: string;
   status?: string;
   narrative?: string;
+  rule?: string | null;
+  limit?: number | null;
+  decision?: string | null;
 };
 
 type TextPart = { kind: "text"; text: string };
@@ -21,7 +24,7 @@ type TextPart = { kind: "text"; text: string };
 export type JsonRpcRequest = {
   jsonrpc: "2.0";
   id: string;
-  method: "message/send";
+  method: "message/stream";
   params: {
     message: {
       role: "user";
@@ -35,11 +38,11 @@ function newId(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
 
-export function buildSendMessageRequest(claim: Claim): JsonRpcRequest {
+export function buildStreamRequest(claim: Claim): JsonRpcRequest {
   return {
     jsonrpc: "2.0",
     id: newId(),
-    method: "message/send",
+    method: "message/stream",
     params: {
       message: {
         role: "user",
@@ -50,49 +53,155 @@ export function buildSendMessageRequest(claim: Claim): JsonRpcRequest {
   };
 }
 
-function extractJsonResult(result: unknown): ClaimResult {
-  const container = result as { parts?: TextPart[]; status?: { message?: { parts?: TextPart[] } } };
-  const parts = container.parts ?? container.status?.message?.parts ?? [];
+export type TaskSnapshot = {
+  taskId: string;
+  contextId: string;
+  state: string;
+  result: ClaimResult | null;
+};
+export const TERMINAL_STATES = new Set(["completed", "failed", "canceled", "rejected"]);
+
+type Frame = { result?: any; error?: { message: string } };
+
+function snapshotOf(event: any, prev: TaskSnapshot | null): TaskSnapshot | null {
+  const taskId = event?.id ?? event?.taskId ?? prev?.taskId;
+  const contextId = event?.contextId ?? prev?.contextId;
+  const state = event?.status?.state;
+  if (!taskId || !state) return prev;
+  const parts = event?.status?.message?.parts ?? [];
+  let result = prev?.result ?? null;
   for (const part of [...parts].reverse()) {
     if (part.kind !== "text" || !part.text) continue;
     try {
-      return JSON.parse(part.text) as ClaimResult;
+      result = JSON.parse(part.text) as ClaimResult;
+      break;
     } catch {
-      // Progress updates are plain prose, not JSON. Keep looking.
+      // not JSON; keep looking
     }
   }
-  throw new Error("agent returned no JSON payload");
+  return { taskId, contextId, state, result };
 }
 
-export async function sendClaim(baseUrl: string, claim: Claim): Promise<ClaimResult> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  // `injectContext` must be imported statically (above) and called before
-  // `sendClaim`'s own first `await` — crossing any `await` first drops the
-  // active span context. Root cause: Zone.js's ZoneContextManager cannot
-  // intercept a *native* async function's await-continuation scheduling —
-  // V8's `await` resumes via the realm's intrinsic %Promise%, captured once
-  // at realm creation, not the mutable global `Promise` binding Zone.js
-  // monkey-patches — so the active span context is gone the instant any
-  // awaited value resolves, and `propagation.inject` silently writes
-  // nothing. A dynamic `await import("./telemetry")` here would reproduce
-  // that exact failure: the claims-agent request would carry no
-  // `traceparent` header at all, and the browser's claim.submit span would
-  // never connect to anything downstream. See `a2a.test.ts`'s "injects the
-  // active span's traceparent into the outbound request, surviving
-  // sendClaim's own await boundary" test for the regression coverage.
+/** Reads SSE `data:` frames from a fetch body; ignores `: ping` comments. */
+async function* frames(response: Response): AsyncGenerator<Frame> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      // sse-starlette ends every line with CRLF, so frames end with a blank
+      // CRLF line. Normalise before looking for the blank line.
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      let cut: number;
+      while ((cut = buffer.indexOf("\n\n")) >= 0) {
+        const block = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        const data = block
+          .split("\n")
+          .filter((l) => l.startsWith("data:"))
+          .map((l) => l.slice(5).trim())
+          .join("\n");
+        if (data) yield JSON.parse(data) as Frame;
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+}
+
+async function post(baseUrl: string, body: object, headers: Record<string, string>): Promise<Response> {
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/`, {
     method: "POST",
-    headers: injectContext(headers),
-    body: JSON.stringify(buildSendMessageRequest(claim)),
+    headers,
+    body: JSON.stringify(body),
   });
+  if (!response.ok) throw new Error(`claims-agent returned HTTP ${response.status}`);
+  return response;
+}
 
-  if (!response.ok) {
-    throw new Error(`claims-agent returned HTTP ${response.status}`);
-  }
+// Every function below builds its headers (`injectContext`) BEFORE its first
+// `await`: crossing any `await` first drops the active span context. Root
+// cause: Zone.js's ZoneContextManager cannot intercept a *native* async
+// function's await-continuation scheduling -- V8's `await` resumes via the
+// realm's intrinsic %Promise%, not the mutable global `Promise` binding
+// Zone.js patches -- so `propagation.inject` would silently write nothing and
+// the browser's span would never connect to anything downstream. See
+// `a2a.test.ts`'s traceparent test for the regression coverage.
 
-  const body = (await response.json()) as { error?: { message: string }; result?: unknown };
-  if (body.error) {
-    throw new Error(body.error.message);
+/** Submits the claim on one stream; returns at input-required or a terminal state. */
+export async function streamClaim(
+  baseUrl: string,
+  claim: Claim,
+  onEvent: (s: TaskSnapshot) => void,
+): Promise<TaskSnapshot> {
+  const headers = injectContext({ "content-type": "application/json", accept: "text/event-stream" });
+  const response = await post(baseUrl, buildStreamRequest(claim), headers);
+  let snap: TaskSnapshot | null = null;
+  for await (const frame of frames(response)) {
+    if (frame.error) throw new Error(frame.error.message);
+    snap = snapshotOf(frame.result, snap);
+    if (!snap) continue;
+    onEvent(snap);
+    if (snap.state === "input-required" || TERMINAL_STATES.has(snap.state)) return snap;
   }
-  return extractJsonResult(body.result);
+  throw new Error("the claim stream ended before the claim was decided");
+}
+
+/** One tasks/resubscribe. Null when the stream ended with no terminal state (a drop). */
+export async function resubscribe(
+  baseUrl: string,
+  taskId: string,
+  onEvent: (s: TaskSnapshot) => void,
+): Promise<TaskSnapshot | null> {
+  const headers = injectContext({ "content-type": "application/json", accept: "text/event-stream" });
+  const response = await post(
+    baseUrl,
+    { jsonrpc: "2.0", id: newId(), method: "tasks/resubscribe", params: { id: taskId } },
+    headers,
+  );
+  let snap: TaskSnapshot | null = null;
+  for await (const frame of frames(response)) {
+    if (frame.error) throw new Error(frame.error.message);
+    snap = snapshotOf(frame.result, snap);
+    if (snap) onEvent(snap);
+    if (snap && TERMINAL_STATES.has(snap.state)) return snap;
+  }
+  return null;
+}
+
+export async function getTask(baseUrl: string, taskId: string): Promise<TaskSnapshot> {
+  const headers = injectContext({ "content-type": "application/json" });
+  const response = await post(
+    baseUrl,
+    { jsonrpc: "2.0", id: newId(), method: "tasks/get", params: { id: taskId } },
+    headers,
+  );
+  const body = (await response.json()) as Frame;
+  if (body.error) throw new Error(body.error.message);
+  const snap = snapshotOf(body.result, null);
+  if (!snap) throw new Error(`tasks/get returned no task state for ${taskId}`);
+  return snap;
+}
+
+/** Waits on one stream; on a drop, reads the task once and resubscribes. Not a polling loop. */
+export async function awaitOutcome(
+  baseUrl: string,
+  taskId: string,
+  onEvent: (s: TaskSnapshot) => void,
+  { maxEmptyDrops = 5 }: { maxEmptyDrops?: number } = {},
+): Promise<TaskSnapshot> {
+  let emptyDrops = 0;
+  for (;;) {
+    const done = await resubscribe(baseUrl, taskId, onEvent);
+    if (done) return done;
+    const now = await getTask(baseUrl, taskId);
+    onEvent(now);
+    if (TERMINAL_STATES.has(now.state)) return now;
+    emptyDrops += 1;
+    if (emptyDrops >= maxEmptyDrops) {
+      throw new Error(`lost the claim's stream ${emptyDrops} times in a row; reload the page`);
+    }
+  }
 }

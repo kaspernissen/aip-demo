@@ -54,6 +54,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.harness import live
 from tests.harness.jaeger import JaegerClient, assert_no_orphans, assert_single_root
 
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
@@ -96,7 +97,10 @@ def browser_trace():
             if request.method == "POST" and request.url.rstrip("/") == CLAIMS_AGENT_URL.rstrip(
                 "/"
             ):
-                captured["traceparent"] = request.headers.get("traceparent", "")
+                # The FIRST POST is the claim stream (trace A). The page then
+                # opens tasks/resubscribe under a second, linked root span
+                # (trace B), which must not overwrite it.
+                captured.setdefault("traceparent", request.headers.get("traceparent", ""))
 
         page.on("request", on_request)
 
@@ -143,6 +147,15 @@ def browser_trace():
     assert match, f"traceparent header {traceparent!r} does not match the W3C format"
     trace_id, span_id = match.group(1), match.group(2)
 
+    # A claim routed to a human is waiting, and a waiting claim keeps its trace
+    # open (a2a-sdk's `_run_event_stream` span and a 0.5 s polling span last as
+    # long as the wait), so the trace would never hold steady. Decide it first;
+    # `ledger_record` is what the ledger said while it waited.
+    reply = json.loads(outcome["raw"])
+    ledger_record = (
+        live.release_wait(reply["paymentId"]) if reply.get("status") == "awaiting_approval" else None
+    )
+
     client = JaegerClient(JAEGER_URL)
     # Waits for the whole chain to land and hold steady, not merely for one
     # span to appear, across all five services: settlement-agent's MCP
@@ -162,10 +175,9 @@ def browser_trace():
         },
     )
 
-    reply = json.loads(outcome["raw"])
-
     return SimpleNamespace(
-        trace=trace, trace_id=trace_id, span_id=span_id, claim_id=claim_id, reply=reply
+        trace=trace, trace_id=trace_id, span_id=span_id, claim_id=claim_id, reply=reply,
+        ledger_record=ledger_record,
     )
 
 

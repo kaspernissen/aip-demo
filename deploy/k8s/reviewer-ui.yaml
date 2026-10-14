@@ -77,6 +77,10 @@ spec:
             # own JWT-SVID (apps/reviewer-ui/gateway.py).
             - name: AGENTGATEWAY_MCP_URL
               value: http://agentgateway.northstar-platform.svc.cluster.local:3000/mcp
+            # The customer's waiting task is resumed here once a payment is
+            # decided (apps/reviewer-ui/claims.py).
+            - name: CLAIMS_AGENT_URL
+              value: http://claims-agent.northstar-agents.svc.cluster.local:9001
             - name: NORTHSTAR_GATEWAY_AUDIENCE
               value: spiffe://northstar.local/ns/northstar-platform/sa/agentgateway
             - name: PORT

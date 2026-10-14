@@ -203,8 +203,8 @@ def test_1_guard_no_identity_is_401_the_direct_road_is_dropped_and_the_svid_list
 
 def test_2_claim_5800_under_assisted_is_refused_and_no_money_moved(flow):
     flow.require("guard")
-    out = flow.ok("claim-refused", "claim", str(AMOUNT), "--expect", "refused")
-    assert "[REFUSED]" in out, out
+    out = flow.ok("claim-refused", "claim", str(AMOUNT), "--expect", "awaiting_approval")
+    assert "[WAITING]" in out, out
     assert "[DENY]" in out, out
     assert "settlement-agent.assisted.execute_limit" in out, out
     assert "limit      0  (requested 5800)" in out, out

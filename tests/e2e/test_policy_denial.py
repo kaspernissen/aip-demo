@@ -328,7 +328,10 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
             if request.method == "POST" and request.url.rstrip(
                 "/"
             ) == CLAIMS_AGENT_URL.rstrip("/"):
-                captured["traceparent"] = request.headers.get("traceparent", "")
+                # The FIRST POST is the claim stream (trace A). The page then
+                # opens tasks/resubscribe under a second, linked root span
+                # (trace B), which must not overwrite it.
+                captured.setdefault("traceparent", request.headers.get("traceparent", ""))
 
         page.on("request", on_request)
 
@@ -347,6 +350,10 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
         # positionally, so a future <pre> earlier on the page cannot silently
         # redirect this read.
         outcome["raw"] = page.locator("h2:text-is('Outcome') + pre").inner_text()
+        # A claim the platform routes to a human is a waiting claim, said so on
+        # the page; not a failure and not a settlement.
+        if json.loads(outcome["raw"]).get("status") == "awaiting_approval":
+            page.wait_for_selector("text=Awaiting human approval", timeout=30_000)
 
         traceparent = captured.get("traceparent")
         assert traceparent, (
@@ -378,6 +385,15 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
         f"browser reported CORS errors; traceparent is being rejected: {cors_errors}"
     )
 
+    # A claim routed to a human is waiting, and a waiting claim keeps its trace
+    # open (a2a-sdk's `_run_event_stream` span and a 0.5 s polling span last as
+    # long as the wait), so the trace would never hold steady. Decide it first;
+    # `ledger_record` is what the ledger said while it waited.
+    reply = json.loads(outcome["raw"])
+    ledger_record = (
+        live.release_wait(reply["paymentId"]) if reply.get("status") == "awaiting_approval" else None
+    )
+
     # Wait for the whole chain to land *and hold steady* past the 5s
     # BatchSpanProcessor delay, not merely for one span to appear.
     trace = client.wait_for_trace_id(
@@ -392,7 +408,8 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
         trace_id=trace_id,
         span_id=span_id,
         claim_id=claim_id,
-        reply=json.loads(outcome["raw"]),
+        reply=reply,
+        ledger_record=ledger_record,
     )
 
 
@@ -609,14 +626,11 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
     # And nothing executed. The ledger first, read straight from the service
     # that owns it: the proposal was refused, not paid.
     payment_id = reply["paymentId"]
-    read_back = requests.get(f"{PAYMENTS_API_URL}/payments/{payment_id}", timeout=10)
-    assert read_back.status_code == 200, (
-        f"could not read payment {payment_id} back from the ledger at "
-        f"{PAYMENTS_API_URL} (HTTP {read_back.status_code}); this criterion's "
-        "primary evidence is the record's own status, so an unreadable ledger "
-        f"is a failure, not a pass: {read_back.text[:300]}"
-    )
-    record = read_back.json()
+    # Read from the ledger while the claim was waiting (`release_wait` returns
+    # it just before rejecting, so the trace can settle); this criterion is
+    # about the wait, not about its later outcome.
+    record = denial_run.ledger_record
+    assert record is not None, f"the claim was not waiting for a human: {reply}"
     assert record.get("status") == "awaiting_approval", (
         "payments-api's own record for "
         f"{payment_id} reads {record.get('status')!r}, not 'awaiting_approval'. The "

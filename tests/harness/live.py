@@ -164,58 +164,146 @@ def claims_agent_route(url: str = CLAIMS_AGENT_URL_DEFAULT):
             proc.kill()
 
 
+TERMINAL_STATES = {"completed", "failed", "canceled", "rejected"}
+
+
+def _sse_results(response: httpx.Response):
+    for line in response.iter_lines():
+        if line.startswith("data:"):
+            frame = json.loads(line[len("data:"):].strip())
+            if "error" in frame:
+                raise AssertionError(f"claims-agent stream error: {frame['error']}")
+            yield frame["result"]
+
+
+def _snapshot(event: dict, prev: dict) -> dict:
+    status = event.get("status") or {}
+    snap = dict(prev)
+    snap["task_id"] = event.get("id") or event.get("taskId") or prev.get("task_id")
+    snap["context_id"] = event.get("contextId") or prev.get("context_id")
+    if status.get("state"):
+        snap["state"] = status["state"]
+    for part in reversed((status.get("message") or {}).get("parts") or []):
+        if part.get("kind") == "text":
+            try:
+                snap["reply"] = json.loads(part["text"])
+                break
+            except (KeyError, json.JSONDecodeError):
+                continue
+    return snap
+
+
+def _jsonrpc(method: str, params: dict) -> dict:
+    return {"jsonrpc": "2.0", "id": uuid.uuid4().hex, "method": method, "params": params}
+
+
 def submit_claim(
     claim_id: str,
     amount: float,
     *,
     claims_agent_url: str = CLAIMS_AGENT_URL_DEFAULT,
     timeout: float = SETTLEMENT_TIMEOUT_S,
+    traceparent: str | None = None,
 ) -> dict:
-    """One settlement, submitted to claims-agent over A2A, no browser.
+    """One claim, submitted to claims-agent over A2A `message/stream`, no browser.
 
     The caller originates the request, so it mints its own trace id and sends it
-    as a `traceparent` rather than searching for a plausible trace afterwards.
-    Returns `{"trace_id", "reply"}`; `reply` is the claim outcome claims-agent
-    hands back (`status`, `paymentId`, `narrative`, ...).
+    as a `traceparent` (or is handed one) rather than searching for a plausible
+    trace afterwards. Returns at the first of `input-required` or a terminal
+    state -- and closes the stream there, as the customer-ui does:
+    `{"trace_id", "task_id", "context_id", "state", "reply"}`. `reply` is the
+    claim outcome claims-agent hands back (`status`, `paymentId`, `rule`,
+    `limit`, `narrative`, ...).
+
+    A claim is never sent with a blocking `message/send`: one routed to a human
+    would block for the whole wait.
     """
-    trace_id = uuid.uuid4().hex
-    traceparent = f"00-{trace_id}-{uuid.uuid4().hex[:16]}-01"
-    response = httpx.post(
-        f"{claims_agent_url}/",
-        json={
-            "jsonrpc": "2.0",
-            "id": uuid.uuid4().hex,
-            "method": "message/send",
-            "params": {
-                "message": {
-                    "role": "user",
-                    "messageId": uuid.uuid4().hex,
-                    "parts": [
-                        {
-                            "kind": "text",
-                            "text": json.dumps(
-                                {
-                                    "claimId": claim_id,
-                                    "policyNumber": "POL-77120",
-                                    "description": "Rear-end collision at a junction",
-                                    "estimatedAmount": amount,
-                                }
-                            ),
-                        }
-                    ],
-                }
-            },
-        },
-        headers={"traceparent": traceparent},
-        timeout=timeout,
-    )
+    if traceparent is None:
+        traceparent = f"00-{uuid.uuid4().hex}-{uuid.uuid4().hex[:16]}-01"
+    trace_id = traceparent.split("-")[1]
+    request = _jsonrpc("message/stream", {"message": {
+        "role": "user", "messageId": uuid.uuid4().hex,
+        "parts": [{"kind": "text", "text": json.dumps({
+            "claimId": claim_id, "policyNumber": "POL-77120",
+            "description": "Rear-end collision at a junction", "estimatedAmount": amount})}]}})
+    snap: dict = {"trace_id": trace_id}
+    with httpx.stream(
+        "POST", f"{claims_agent_url}/", json=request,
+        headers={"traceparent": traceparent, "accept": "text/event-stream"},
+        timeout=httpx.Timeout(timeout, read=timeout),
+    ) as response:
+        response.raise_for_status()
+        for event in _sse_results(response):
+            snap = _snapshot(event, snap)
+            if snap.get("state") == "input-required" or snap.get("state") in TERMINAL_STATES:
+                break
+    assert snap.get("state"), f"claims-agent streamed no task state for claim {claim_id!r}"
+    assert snap.get("reply") is not None, f"claims-agent streamed no reply for claim {claim_id!r}: {snap}"
+    return snap
+
+
+def resubscribe(
+    task_id: str,
+    *,
+    timeout: float,
+    drop_after: float | None = None,
+    claims_agent_url: str = CLAIMS_AGENT_URL_DEFAULT,
+) -> dict:
+    """tasks/resubscribe: hold one stream until the task reaches a terminal state.
+
+    Returns `{"state", "reply", "events", "ended_without_terminal"}`. If
+    `drop_after` seconds pass first the stream is closed and the result carries
+    `dropped=True`, the way a lost connection looks to the customer-ui.
+    """
+    request = _jsonrpc("tasks/resubscribe", {"id": task_id})
+    snap: dict = {"events": 0}
+    # `drop_after` is a quiet period: the stream's own first event arrives at
+    # once, then nothing until the decision, so a read timeout of that length
+    # closes the stream the way a lost connection would.
+    read = drop_after if drop_after else timeout
+    try:
+        with httpx.stream(
+            "POST", f"{claims_agent_url}/", json=request,
+            headers={"accept": "text/event-stream"},
+            timeout=httpx.Timeout(timeout, read=read),
+        ) as response:
+            response.raise_for_status()
+            for event in _sse_results(response):
+                snap = {**_snapshot(event, snap), "events": snap["events"] + 1}
+                if snap.get("state") in TERMINAL_STATES:
+                    return {**snap, "ended_without_terminal": False}
+    except httpx.ReadTimeout:
+        if not drop_after:
+            raise
+        return {**snap, "dropped": True, "ended_without_terminal": True}
+    return {**snap, "ended_without_terminal": True}
+
+
+def get_task(task_id: str, *, claims_agent_url: str = CLAIMS_AGENT_URL_DEFAULT) -> dict:
+    """tasks/get: the task's state and the last reply it carried."""
+    response = httpx.post(f"{claims_agent_url}/", json=_jsonrpc("tasks/get", {"id": task_id}), timeout=30)
     response.raise_for_status()
     body = response.json()
-    assert "error" not in body, (
-        f"claims-agent refused claim {claim_id!r}: {response.text[:500]}"
-    )
-    reply = json.loads(body["result"]["parts"][0]["text"])
-    return {"trace_id": trace_id, "reply": reply}
+    assert "error" not in body, f"tasks/get {task_id}: {body['error']}"
+    snap = _snapshot(body["result"], {})
+    return {"state": snap.get("state"), "reply": snap.get("reply"), "context_id": snap.get("context_id")}
+
+
+def release_wait(payment_id: str, reviewer_id: str = "demo-cleanup") -> dict:
+    """Decide a claim that is waiting for a human (reject it) and return the
+    ledger record as it was *while waiting*.
+
+    A waiting claim keeps its trace open: a2a-sdk's `_run_event_stream` SERVER
+    span lasts as long as the parked `execute()` and the SDK's background
+    consumer adds an `EventQueue.dequeue_event` span every 0.5 s, so trace A
+    never settles and its children read as orphans until the wait ends
+    (docs/telemetry-contract.md). A fixture that asserts on a settled trace
+    calls this first; the pre-decision ledger record it returns is the evidence
+    for what the wait looked like.
+    """
+    before = get_payment(payment_id)
+    review(payment_id, "reject", reviewer_id)
+    return before
 
 
 @contextlib.contextmanager
@@ -705,32 +793,40 @@ def spans_in_traces(trace_ids: list[str], window_start_ms: int) -> list[dict]:
     """
     if not trace_ids:
         return []
-    result = search(
-        {
-            "size": SPAN_PAGE_SIZE,
-            "query": {
-                "bool": {
-                    "filter": [
-                        {"terms": {"traceId": trace_ids}},
-                        window_filter(window_start_ms),
-                    ]
-                }
-            },
-            "sort": [{"startTime": "asc"}],
-            "track_total_hits": True,
+    # Paginated with `search_after`, because a claim that waited for a human has a
+    # long trace: a2a-sdk adds a polling span every 0.5 s for as long as it waits
+    # (docs/telemetry-contract.md, M8), so ten minutes is over a thousand spans.
+    # Sorted by (startTime, spanId) so the pages neither overlap nor skip.
+    query = {
+        "bool": {
+            "filter": [
+                {"terms": {"traceId": trace_ids}},
+                window_filter(window_start_ms),
+            ]
         }
-    )["hits"]
-    hits = result["hits"]
-    # `track_total_hits` is set because OpenSearch caps the reported total at
-    # 10,000 by default, which would make this comparison itself lie.
-    total = (result.get("total") or {}).get("value", len(hits))
-    assert len(hits) == total, (
-        f"the trace-id join returned {len(hits)} of {total} matching documents "
-        f"-- `size` is {SPAN_PAGE_SIZE} and these traces no longer fit in one "
-        "page, so the evidence row is built from a truncated span set. Raise "
-        "SPAN_PAGE_SIZE or paginate; do not read the short list."
+    }
+    sort = [{"startTime": "asc"}, {"spanId.keyword": "asc"}]
+    collected: list[dict] = []
+    after = None
+    while True:
+        body = {"size": SPAN_PAGE_SIZE, "query": query, "sort": sort, "track_total_hits": True}
+        if after is not None:
+            body["search_after"] = after
+        result = search(body)["hits"]
+        hits = result["hits"]
+        collected += [hit["_source"] for hit in hits]
+        # `track_total_hits` is set because OpenSearch caps the reported total at
+        # 10,000 by default, which would make the comparison below itself lie.
+        total = (result.get("total") or {}).get("value", len(collected))
+        if len(hits) < SPAN_PAGE_SIZE or len(collected) >= total:
+            break
+        after = hits[-1]["sort"]
+    assert len(collected) == total, (
+        f"the trace-id join returned {len(collected)} of {total} matching documents "
+        "after paginating, so the evidence row would be built from a truncated span "
+        "set; do not read the short list."
     )
-    return [hit["_source"] for hit in hits]
+    return collected
 
 
 def evidence_for(claim_id: str, window_start_ms: int) -> dict:

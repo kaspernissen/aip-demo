@@ -723,3 +723,95 @@ receiving it — cannot achieve that for its own pre-intake/consumer-task
 spans. `tests/e2e/test_claim_correlation.py` asserts this real, capture-verified
 boundary precisely rather than the brief's original blanket "every span in
 every service" assertion (a plan defect per A19 — see `task-7-report.md`).
+
+## M8 Task 2 measurements (2026-10-14): the waiting claim
+
+Everything here was read from a2a-sdk 0.3.7's installed source and then measured.
+Python 3.12.12 (the venv) and 3.13.5 (the image) gave the same results.
+
+### Step 1: a stream held open for 10 minutes on every hop the browser uses
+
+A throwaway SSE endpoint ran **inside the running claims-agent pod** (same image,
+same uvicorn 0.34.0, same sse-starlette 3.4.11, with the claims-agent's CORS
+origin), reached through `kubectl port-forward pod/... 19099:9099`. The endpoint
+sleeps 600 s, then sends `done-after-600s`.
+
+| Client | Result |
+|---|---|
+| `curl -sN --max-time 700` from the host | exit 0, final event received, **39** `: ping` comments. Wall time 664.6 s (the endpoint sleeps 600 s; the extra 64 s was not explained, the final event arrived). |
+| Chromium (Playwright, headless) on `http://localhost:8080`, `fetch()` plus `getReader()` | **600.012 s**, final event received, **39** pings. |
+
+Hops covered: browser, `kubectl port-forward`, kubelet stream, the pod's uvicorn,
+sse-starlette. The 15 s `: ping` comment is sse-starlette's default
+(`DEFAULT_PING_INTERVAL`). No hop's timeout had to be changed. `CORSMiddleware`'s
+`allow_headers` was not widened: `Accept` is CORS-safelisted. Nothing in this
+path goes through agentgateway or a Next server route.
+
+### Step 2: the SDK's resubscribe and completion behaviour
+
+Measured by `tests/test_task_lifecycle.py`, driving the real `DefaultRequestHandler`.
+
+(a) `tasks/resubscribe` on a parked `input-required` task stays open, then
+receives `completed` when the resume arrives. The resubscribe stream carries only
+the events published after it attached (one event, the `completed` update). The
+customer-ui already holds the earlier state from its claim stream.
+
+(b) After `execute()` has returned, a resubscribe to the finished task is
+refused with `InvalidParams: Task ... is in terminal state: completed`, not
+`TaskNotFound`. A task the store never held (a restarted claims-agent) is
+`TaskNotFound`. Both are JSON-RPC errors; the customer-ui falls back to `tasks/get`.
+
+(c) **The SDK keeps a SERVER span open in trace A for the whole wait.** Measured
+live, claim `CLM-M8T2-001`, trace `41f75218242b4029ba2435b62bc72de1`, a 75 s wait
+(decision at 75 s, the task completed at 83 s):
+
+| Span (claims-agent, kind SERVER) | Starts | Duration |
+|---|---|---|
+| `POST /` (the ASGI span of the claim stream) | +0.0 s | 9.1 s (ends when the customer closes the stream at `input-required`) |
+| `DefaultRequestHandler._run_event_stream` | +0.0 s | **83.2 s**, the wait |
+| `DefaultRequestHandler._cleanup_producer` | +9.1 s | 74.1 s |
+
+`DefaultRequestHandler` is `@trace_class(kind=SERVER)`, which wraps every
+non-dunder method, so `_run_event_stream` lives as long as the parked
+`execute()`. In-process the same span measured 3.01 s for a 3 s wait.
+
+**Ruling (controller, binding):** accepted. The span is not dropped (never-sample
+rule: dropping is loss) and polling is not used. The telemetry contract and spec
+§3.4 say what was measured.
+
+### Mutation findings
+
+- Mutating the completion to `final=True` stayed GREEN in-process on 3.12 and
+  3.13, even with a client still attached to the first stream and a second
+  resubscribed. The SDK's immediate close of the root queue (read in
+  `EventConsumer.consume_all`) did not lose the resubscriber's event in any
+  ordering tried. `final=False` is kept as the conservative choice, and a test
+  pins the flag (`completed[-1].final is False`) so the mutation is RED. The
+  hazard the plan feared was **not reproduced**; it is a design pin, not a
+  measured defect.
+- Mutating `decision = OUTCOMES.get(...)` to `"approved"` goes RED (three tests).
+- Resuming a task whose ledger status is still `awaiting_approval` is refused:
+  `on_message_send` raises the executor's `RuntimeError` to the caller (so the
+  reviewer-ui records it as `resume_error`) and the task keeps waiting; a later
+  valid resume still completes it
+  (`test_a_refused_resume_leaves_the_task_able_to_complete_on_a_real_decision`).
+- A resume's own `_cleanup_producer` logs `NoTaskQueue` at ERROR when it races the
+  parked producer's cleanup of the same queue. Noise, not a failure.
+- **A defect only the live browser found:** sse-starlette ends every SSE line with
+  CRLF, so a frame ends with a blank CRLF line, not `\n\n`. The customer-ui's first
+  frame reader looked for `\n\n`, passed every vitest case (written with `\n`) and
+  never saw an event in Chromium. `frames()` now normalises CRLF, and a vitest case
+  feeds CRLF frames (mutating the normalisation is RED). The Python harness was not
+  affected (httpx `iter_lines` handles CRLF).
+- **The wait also costs trace A a polling span every 0.5 s.** After the customer
+  closes the claim stream the SDK starts `background_consume`
+  (`default_request_handler.py`, on `CancelledError`/`GeneratorExit`), which runs
+  `consume_all` with a 0.5 s dequeue timeout, and each dequeue is an
+  `EventQueue.dequeue_event` SERVER span: 313 spans for an 83 s wait, still growing
+  while the claim waits. Accepted under the same ruling (never drop an SDK span).
+  The harness settles a claim before asserting on its trace.
+- **A settlement failure used to be a JSON-RPC error; on a stream it would drop the
+  connection.** The task already exists when the delegation fails, so an exception out
+  of `execute()` aborted the HTTP body ("incomplete chunked read", found by
+  `test_settlement_failure_reaches_the_caller_with_its_real_reason`). The executor
+  now fails the task and puts the real reason in the message's `error`.

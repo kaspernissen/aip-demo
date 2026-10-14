@@ -72,6 +72,10 @@ class GatewayLike(Protocol):
     ) -> dict[str, Any]: ...
 
 
+class ClaimsLike(Protocol):
+    async def resume(self, task_id: str, payload: dict[str, Any]) -> str: ...
+
+
 @dataclass
 class ReviewResult:
     payment_id: str
@@ -91,6 +95,11 @@ class ReviewResult:
     # Set when the release or the reject did not happen: the platform's refusal
     # text as it came back, or the failure.
     error: str | None = None
+    # The customer's task after the resume was accepted (claims.py), or why it
+    # could not be resumed. The money decision stands either way; these only
+    # say whether the customer was told.
+    resumed_state: str | None = None
+    resume_error: str | None = None
 
 
 def _elapsed_ms(awaiting_since: str, now: datetime) -> int:
@@ -122,6 +131,7 @@ async def decide(
     *,
     ledger: LedgerLike,
     gateway: GatewayLike,
+    claims: ClaimsLike,
     reviewer_spiffe_id: str,
     now: datetime | None = None,
 ) -> ReviewResult:
@@ -217,5 +227,15 @@ async def decide(
             span.set_status(Status(StatusCode.ERROR, str(exc)))
             span.record_exception(exc)
             result.error = str(exc)
+
+        # Tell the customer, only after the money decision went through. The
+        # claims-agent does not trust this message: it reads the ledger.
+        if result.error is None and record.get("a2aTaskId"):
+            try:
+                result.resumed_state = await claims.resume(record["a2aTaskId"], {
+                    "decision": "approved" if decision == "approve" else "rejected",
+                    "paymentId": payment_id, "reviewerId": reviewer_id})
+            except Exception as exc:  # noqa: BLE001 -- the money decision stands; say so
+                result.resume_error = str(exc)
 
         return result
