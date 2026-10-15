@@ -287,6 +287,25 @@ def resubscribe(
     return {**snap, "ended_without_terminal": True}
 
 
+UPSTREAM_MODEL_FAILURE = re.compile(r"ModelAPIError|Connection error|Name or service not known", re.I)
+
+
+def is_upstream_model_failure(run: dict) -> bool:
+    """True when a claim's task FAILED before any payment existed because the
+    settlement agent could not reach the model provider (a connection or DNS
+    failure on the way to api.anthropic.com), which no test of ours is about.
+
+    Deliberately narrow: a failed task with a payment id, or with any other
+    error text, is a real failure and is never retried on this ground.
+    """
+    reply = run.get("reply") or {}
+    return (
+        run.get("state") == "failed"
+        and not reply.get("paymentId")
+        and bool(UPSTREAM_MODEL_FAILURE.search(json.dumps(reply)))
+    )
+
+
 def get_task(task_id: str, *, claims_agent_url: str = CLAIMS_AGENT_URL_DEFAULT) -> dict:
     """tasks/get: the task's state and the last reply it carried."""
     response = httpx.post(f"{claims_agent_url}/", json=_jsonrpc("tasks/get", {"id": task_id}), timeout=30)

@@ -58,10 +58,20 @@ def _claim(amount: float) -> dict:
 
 
 def _claim_at_current_level(amount: float) -> dict:
-    claim_id = f"CLM-HITL-{uuid.uuid4().hex[:8]}"
-    with live.claims_agent_route() as url:
-        run = live.submit_claim(claim_id, amount, claims_agent_url=url)
-    return {"claim_id": claim_id, **run}
+    """File a claim; once, and only when the model provider was unreachable.
+
+    M8 gate run 4: one claim's task failed with no payment because settlement-
+    agent's DNS lookup of api.anthropic.com failed (three spans, ~1.5 s, one
+    claim in the whole run). That is outside this repo and these tests are not
+    about it, so a task that failed that way is filed again under a new id. Any
+    other failure is returned as it is and fails the test that asked.
+    """
+    for attempt in (1, 2):
+        claim_id = f"CLM-HITL-{uuid.uuid4().hex[:8]}"
+        with live.claims_agent_route() as url:
+            run = live.submit_claim(claim_id, amount, claims_agent_url=url)
+        if attempt == 2 or not live.is_upstream_model_failure(run):
+            return {"claim_id": claim_id, **run}
 
 
 @pytest.fixture(scope="module")

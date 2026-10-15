@@ -265,7 +265,7 @@ class JaegerClient:
         timeout: float = 60.0,
         interval: float = 2.0,
         services: set[str] | None = None,
-        steady_ignoring: frozenset[str] = frozenset(),
+        steady_ignoring: frozenset[str] | None = None,
     ) -> Trace:
         """Poll for a trace by an ID the caller already knows (e.g. one it minted
         itself and sent as a `traceparent` header), rather than searching for it
@@ -283,18 +283,28 @@ class JaegerClient:
         can only ever act on a trace this method itself judged complete.
 
         `steady_ignoring` names operations that do not count towards "the span
-        count held steady" (use `WAIT_POLLING_SPANS` for a claim that is waiting
-        for a human). The returned trace still contains them.
+        count held steady". The default is `WAIT_POLLING_SPANS` for EVERY caller,
+        not an opt-in: any claim can park for a human at `assisted`, and a
+        per-call opt-in was found missing one gate run at a time (M8 gate run 4,
+        `_drive_browser`). Pass `frozenset()` to count every span. The returned
+        trace still contains all of them.
         """
+        if steady_ignoring is None:
+            steady_ignoring = self.WAIT_POLLING_SPANS
         deadline = time.time() + timeout
         last_error: Exception | None = None
         last_trace: Trace | None = None
         last_span_count: int | None = None
         quiet_since: float | None = None
+        # What each poll saw, so a "never held steady" failure says whether the
+        # count kept moving or the reads themselves kept failing.
+        history: list[str] = []
+        started = time.time()
         while time.time() < deadline:
             try:
                 trace = self.get_trace(trace_id)
                 last_trace = trace
+                history.append(f"{time.time() - started:.0f}s:{len(trace.spans)}")
                 if operation is not None and not trace.has_span(operation):
                     last_span_count = None
                     quiet_since = None
@@ -317,6 +327,7 @@ class JaegerClient:
                             return trace
             except (requests.RequestException, AssertionError) as exc:
                 last_error = exc
+                history.append(f"{time.time() - started:.0f}s:ERR")
             time.sleep(interval)
         if last_trace is not None:
             if operation is not None and not last_trace.has_span(operation):
@@ -336,7 +347,9 @@ class JaegerClient:
                 raise AssertionError(
                     f"trace {trace_id!r} had all of {sorted(services)} but its "
                     f"span count never held steady for {self.QUIET_WINDOW_S}s "
-                    f"within {timeout}s total (last count: {len(last_trace.spans)})"
+                    f"within {timeout}s total (last count: {len(last_trace.spans)}; "
+                    f"last read error: {last_error}; polls, first 15 and last 15 of "
+                    f"{len(history)}: {history[:15]} ... {history[-15:]})"
                 )
         detail = f" (last error: {last_error})" if last_error else ""
         raise AssertionError(f"trace {trace_id!r} not found within {timeout}s{detail}")

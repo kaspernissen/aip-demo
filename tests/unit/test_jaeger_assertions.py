@@ -334,15 +334,17 @@ def test_wait_for_trace_id_ignores_polling_spans_when_deciding_the_trace_is_stea
     # One more polling span arrives every second, for the whole run.
     _script_get_trace(monkeypatch, client, [(float(t), trace_with(t)) for t in range(0, 40)])
 
+    # The default ignores them: no caller has to remember to opt in.
     result = client.wait_for_trace_id(
         "trace-x", timeout=60, interval=1, services={"svc-a", "svc-b"},
-        steady_ignoring=JaegerClient.WAIT_POLLING_SPANS,
     )
     assert any(s.operation == poll for s in result.spans)
     assert clock.now < 20.0
 
+    # Counting every span is the explicit choice, and it never settles here.
     with pytest.raises(AssertionError, match="never held steady"):
-        client.wait_for_trace_id("trace-x", timeout=30, interval=1, services={"svc-a", "svc-b"})
+        client.wait_for_trace_id("trace-x", timeout=30, interval=1, services={"svc-a", "svc-b"},
+                                 steady_ignoring=frozenset())
 
 
 # --- span links, the root, and wait_for_operation (M8 Task 3) ----------------
@@ -405,3 +407,18 @@ def test_wait_for_operation_links_to_skips_traces_that_link_elsewhere(monkeypatc
     monkeypatch.setattr(client, "get_trace", lambda tid: fetched.append(tid) or Trace(_linked_raw_trace()))
     client.wait_for_operation("svc-a", "review.decision", timeout=1, links_to="aaaa")
     assert fetched == ["test-trace"]
+
+
+# --- the model-provider retry predicate (M8 gate run 4) ----------------------
+
+
+def test_only_a_payment_less_model_connection_failure_counts_as_upstream():
+    from tests.harness import live
+    down = {"state": "failed", "reply": {"paymentId": None,
+            "error": "settlement-agent returned an error: ModelAPIError: Connection error."}}
+    assert live.is_upstream_model_failure(down)
+    assert not live.is_upstream_model_failure({**down, "state": "input-required"})
+    assert not live.is_upstream_model_failure(
+        {"state": "failed", "reply": {"paymentId": "PAY-000001", "error": "Connection error"}})
+    assert not live.is_upstream_model_failure(
+        {"state": "failed", "reply": {"paymentId": None, "error": "amount must not be negative"}})
