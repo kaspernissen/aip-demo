@@ -285,6 +285,10 @@ def start_run(state: dict, window_start_ms: int | None = None) -> dict:
         state = {
             "run_id": uuid.uuid4().hex[:8],
             "window_start_ms": window_start_ms or live.window_start_ms_now(),
+            # When the run really began. The window opens a clock-skew margin
+            # earlier (so the run's own first spans are not cut), and a claim
+            # the previous test file filed in that margin is not this run's.
+            "run_started_ms": window_start_ms or int(time.time() * 1000),
             "claims": state.get("claims") or [],
         }
     return state
@@ -910,7 +914,8 @@ def _settled(claim: dict, window_start_ms: int) -> dict:
         time.sleep(4)
 
 
-def _claims_seen_in_opensearch(known: list[dict], window_start_ms: int) -> list[dict]:
+def _claims_seen_in_opensearch(known: list[dict], window_start_ms: int,
+                               filed_after_ms: int | None = None) -> list[dict]:
     """Claims this run did not file through `scripts/demo claim` (a human used the
     customer-ui), found by the claim id on their spans since the run began.
 
@@ -920,7 +925,7 @@ def _claims_seen_in_opensearch(known: list[dict], window_start_ms: int) -> list[
     """
     have = {c["id"] for c in known}
     found = []
-    for claim_id in live.claim_ids_since(window_start_ms):
+    for claim_id in live.claim_ids_since(window_start_ms, filed_after_ms=filed_after_ms):
         if claim_id in have:
             continue
         row = live.evidence_for(claim_id, window_start_ms)
@@ -943,7 +948,8 @@ def cmd_evidence(_: argparse.Namespace) -> None:
     claims = list(state.get("claims") or [])
     window = state.get("window_start_ms")
     if window is not None:
-        claims += _claims_seen_in_opensearch(claims, window)
+        claims += _claims_seen_in_opensearch(
+            claims, window, filed_after_ms=state.get("run_started_ms", window))
     if not claims:
         raise Fail("no claims in this run yet: run `scripts/demo claim <amount>` first")
     say(f"From OpenSearch, for this run's {len(claims)} claim(s). Nothing older.")

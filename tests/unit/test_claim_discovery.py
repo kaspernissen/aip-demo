@@ -57,3 +57,23 @@ def test_a_claim_whose_first_span_is_exactly_the_window_start_is_included(monkey
 def test_no_spans_in_the_window_is_no_claims(monkeypatch):
     monkeypatch.setattr(live, "search", _fake_search([{"claim": "CLM-OLD", "t": 10}]))
     assert live.claim_ids_since(1000) == []
+
+
+def test_a_claim_filed_in_the_skew_margin_is_excluded_when_the_run_started_later(monkeypatch):
+    spans = [{"claim": "CLM-PREV-FILE", "t": 1200}, {"claim": "CLM-MINE", "t": 1800}]
+    monkeypatch.setattr(live, "search", _fake_search(spans))
+    assert live.claim_ids_since(1000) == ["CLM-PREV-FILE", "CLM-MINE"]
+    assert live.claim_ids_since(1000, filed_after_ms=1500) == ["CLM-MINE"]
+
+
+def test_every_e2e_file_that_runs_the_driver_gives_it_its_own_state_dir():
+    """A test's driver state must never be the default `.demo`, which an
+    operator's rehearsal and every other test file share."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1] / "e2e"
+    drivers = [f for f in root.glob("test_*.py") if '"scripts" / "demo"' in f.read_text()]
+    assert drivers, "no e2e file runs scripts/demo: the guard has gone blind"
+    for f in drivers:
+        text = f.read_text()
+        assert "DEMO_STATE_DIR" in text and "tmp_path" in text, (
+            f"{f.name} runs scripts/demo without a per-test DEMO_STATE_DIR")

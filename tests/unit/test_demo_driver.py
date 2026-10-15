@@ -361,7 +361,7 @@ def test_a_409_from_the_reviewer_ui_is_a_failed_run_not_a_traceback(monkeypatch,
 def test_evidence_also_reports_claims_a_human_filed_in_the_browser(monkeypatch, tmp_path, capsys):
     demo = _isolated(monkeypatch, tmp_path)
     demo.save_state({"run_id": "r", "window_start_ms": 7, "claims": []})
-    monkeypatch.setattr(demo.live, "claim_ids_since", lambda window: ["CLM-BROWSER-1", "CLM-BROWSER-FAILED"])
+    monkeypatch.setattr(demo.live, "claim_ids_since", lambda window, **kw: ["CLM-BROWSER-1", "CLM-BROWSER-FAILED"])
     row = {
         "policy_decision": "deny", "rule": "settlement-agent.assisted.execute_limit", "limit": 0.0,
         "requested": 5800.0, "autonomy_level": "assisted", "caller_identity": "spiffe://x/settlement-agent",
@@ -463,3 +463,19 @@ def test_untold_payments_keeps_only_decided_payments_whose_task_still_waits(monk
     monkeypatch.setattr(demo.live, "list_payments", lambda status: ledger[status])
     monkeypatch.setattr(demo.live, "get_task", lambda task_id: {"state": states[task_id]})
     assert [p["paymentId"] for p in demo.untold_payments()] == ["PAY-000004", "PAY-000003"]
+
+
+def test_a_claim_filed_in_the_skew_margin_before_the_run_is_not_this_runs(monkeypatch, tmp_path):
+    """The window opens 30 s early; discovery must still start at the real run
+    start, or the previous test file's claims join `evidence`."""
+    demo = _isolated(monkeypatch, tmp_path)
+    state = demo.start_run({})
+    assert state["window_start_ms"] <= state["run_started_ms"] - 29_000
+    seen = {}
+    monkeypatch.setattr(demo.live, "claim_ids_since",
+                        lambda window, filed_after_ms=None: seen.update(w=window, f=filed_after_ms) or [])
+    demo.save_state(state)
+    demo.main(["evidence"])  # no claims: exits 1, after having asked
+    assert seen == {"w": state["window_start_ms"], "f": state["run_started_ms"]}
+    adopted = demo.start_run({}, 5_000)
+    assert adopted["run_started_ms"] == adopted["window_start_ms"] == 5_000

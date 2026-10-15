@@ -807,7 +807,7 @@ def claim_first_seen_ms(claim_id: str) -> int | None:
     return int(value) if value is not None else None
 
 
-def claim_ids_since(window_start_ms: int) -> list[str]:
+def claim_ids_since(window_start_ms: int, filed_after_ms: int | None = None) -> list[str]:
     """Every claim FILED since the window opened, oldest first: how
     `demo evidence` finds the claims a human filed in the browser.
 
@@ -816,7 +816,13 @@ def claim_ids_since(window_start_ms: int) -> list[str]:
     A claim carried over from before the run (left waiting by an earlier
     test, declined by `demo reset` inside this window) has later spans in the
     window and must not be reported as this run's.
+
+    `filed_after_ms` is where "filed in this run" begins when that is later than
+    the window: the window opens `WINDOW_SKEW_S` before the run so its own first
+    spans are not cut, and a claim an earlier test file filed inside that margin
+    would otherwise pass the first-span test. Defaults to the window start.
     """
+    filed_after_ms = window_start_ms if filed_after_ms is None else filed_after_ms
     in_window = [
         b["key"]
         for b in search({
@@ -843,7 +849,7 @@ def claim_ids_since(window_start_ms: int) -> list[str]:
             "aggs": {"first": {"min": {"field": "startTime"}}},
         }},
     })["aggregations"]["claims"]["buckets"]
-    filed = [b for b in buckets if b["first"]["value"] >= window_start_ms]
+    filed = [b for b in buckets if b["first"]["value"] >= filed_after_ms]
     return [b["key"] for b in sorted(filed, key=lambda b: b["first"]["value"])]
 
 
