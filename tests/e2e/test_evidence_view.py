@@ -252,8 +252,13 @@ def evidence_for(claim_id: str) -> dict:
     return live.evidence_for(claim_id, _WINDOW_START_MS)
 
 
-def _settled_evidence(claim_id: str, required: tuple[str, ...]) -> dict:
+def _settled_evidence(
+    claim_id: str, required: tuple[str, ...], hops: tuple[str, ...] = ()
+) -> dict:
     """Poll `evidence_for` until `required` are all populated, then return it.
+
+    `hops` are money hops that must ALL be in `money_hops` too: a non-empty list
+    only says the first hop landed.
 
     Never settles for a partial row. A timeout here is a real failure -- that
     is what a dropped span or a broken rename looks like -- and the message
@@ -264,10 +269,14 @@ def _settled_evidence(claim_id: str, required: tuple[str, ...]) -> dict:
     row: dict = {}
     while time.time() < deadline:
         row = evidence_for(claim_id)
-        if all(row.get(field) for field in required):
+        if all(row.get(field) for field in required) and all(
+            hop in (row.get("money_hops") or []) for hop in hops
+        ):
             return row
         time.sleep(3)
-    missing = [field for field in required if not row.get(field)]
+    missing = [field for field in required if not row.get(field)] + [
+        f"money_hops[{hop}]" for hop in hops if hop not in (row.get("money_hops") or [])
+    ]
     raise AssertionError(
         f"the evidence for claim {claim_id!r} never became complete within "
         f"{EVIDENCE_SETTLE_TIMEOUT_S:.0f}s: {missing} are still empty.\n"
@@ -453,6 +462,7 @@ def denied_claim(claims_agent_route):
     row = _settled_evidence(
         DENIED_CLAIM_ID,
         ("policy_decision", "rule", "reviewer", "executing_identity", "money_hops"),
+        hops=(PROPOSE_HOP, EXECUTE_HOP),
     )
     return SimpleNamespace(
         claim_id=DENIED_CLAIM_ID,
@@ -481,8 +491,13 @@ def permitted_claim_id(claims_agent_route) -> str:
         f"€{PERMITTED_AMOUNT:.0f} is below the €6,000 autonomous execute "
         f"allowance and should have been paid straight through: {reply}"
     )
+    # `money_hops` is truthy as soon as the PROPOSE hop lands; the execute hop
+    # arrives later (payments-api's Go span processor exports on a 5 s schedule,
+    # measured lag 4.76 s). A one-hop list is a partial row, so settle until
+    # both hops are there.
     _settled_evidence(
-        claim_id, ("policy_decision", "rule", "executing_identity", "money_hops")
+        claim_id, ("policy_decision", "rule", "executing_identity", "money_hops"),
+        hops=(PROPOSE_HOP, EXECUTE_HOP),
     )
     return claim_id
 

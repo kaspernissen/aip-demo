@@ -356,7 +356,17 @@ _DEBUG_LOGS_SUMMARY_RE = re.compile(
 )
 
 
-def _collector_accepted_log_records(since_seconds: int) -> int:
+def _debug_line_epoch(line: str) -> float | None:
+    """The collector's own timestamp on a log line (`2026-10-15T01:43:04.156Z\t...`)."""
+    stamp = line.split("\t", 1)[0]
+    try:
+        return datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%S.%fZ").replace(
+            tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        return None
+
+
+def _collector_accepted_log_records(since_seconds: int, since_epoch: float) -> int:
     """How many log records the collector's `debug` exporter reports having
     received, summed across every export in the window.
 
@@ -364,7 +374,13 @@ def _collector_accepted_log_records(since_seconds: int) -> int:
     this repo has lost every `policy.decision` span exactly this way before,
     reading a 200-line tail of a much longer log and reporting 'no errors'.
     `--since` is sized
-    from the instant this file's driven call began, with generous padding.
+    from the instant this file's driven call began, with generous padding, and is
+    only the READ window: each export is counted by its own line timestamp being
+    at or after `since_epoch`, the same instant and the same clock
+    (`observedTimestamp`, set when the collector received the record) the
+    OpenSearch side counts by. `--since` alone would open 2-3 s before
+    `since_epoch` and count a record from the preceding test file that
+    OpenSearch's window excludes.
     """
     result = _kubectl(
         "-n", OBSERVABILITY_NAMESPACE, "logs", COLLECTOR_DEPLOYMENT,
@@ -373,14 +389,17 @@ def _collector_accepted_log_records(since_seconds: int) -> int:
     assert result.returncode == 0, (
         f"could not read the collector log:\nstderr:\n{result.stderr}"
     )
-    return sum(
-        int(match.group(1))
-        for match in _DEBUG_LOGS_SUMMARY_RE.finditer(result.stdout)
-    )
+    total = 0
+    for line in result.stdout.splitlines():
+        stamp = _debug_line_epoch(line)
+        match = _DEBUG_LOGS_SUMMARY_RE.search(line)
+        if match and stamp is not None and stamp >= since_epoch:
+            total += int(match.group(1))
+    return total
 
 
 def _opensearch_log_count_since(since_epoch: float) -> int:
-    """Every document the logs index holds with `@timestamp` at or after
+    """Every document the logs index holds with `observedTimestamp` at or after
     `since_epoch` (a Unix timestamp) -- regardless of trace.
 
     The parity test needs a count taken from the SAME window on both sides,
@@ -391,9 +410,11 @@ def _opensearch_log_count_since(since_epoch: float) -> int:
     windowed, not trace-scoped: both sides count everything since the
     instant this file's call began, which is bounded on the collector side by
     `--since=<n>s` (measured against "now") and here by an explicit
-    `@timestamp` lower bound -- the two are computed from the same
-    `since_epoch` so neither window can drift wider than the other by
-    construction.
+    `observedTimestamp` lower bound. Both sides now count by the instant the
+    collector received the record (measured: a debug line's timestamp and the
+    document's `observedTimestamp` agree to within ~10 ms; the event's own
+    `@timestamp` is 0.1-2 s earlier and is NOT that instant, which is what let a
+    record from the previous test file be counted by one side only).
     """
     since_iso = (
         datetime.fromtimestamp(since_epoch, tz=timezone.utc)
@@ -401,7 +422,7 @@ def _opensearch_log_count_since(since_epoch: float) -> int:
     )
     return _opensearch(
         f"/{LOGS_INDEX}/_count",
-        {"query": {"range": {"@timestamp": {"gte": since_iso}}}},
+        {"query": {"range": {"observedTimestamp": {"gte": since_iso}}}},
     ).get("count", 0)
 
 
@@ -458,7 +479,7 @@ def test_flag_evaluation_events_reach_opensearch_without_loss(driven_claim):
     collector_count = opensearch_count = -1
     while time.time() < deadline:
         age_seconds = max(int(time.time() - since_epoch) + 2, 5)
-        collector_count = _collector_accepted_log_records(age_seconds)
+        collector_count = _collector_accepted_log_records(age_seconds, since_epoch)
         opensearch_count = _opensearch_log_count_since(since_epoch)
         if collector_count == opensearch_count:
             break
