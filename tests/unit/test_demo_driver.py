@@ -27,12 +27,16 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = REPO_ROOT / "scripts"
 
 
-def _driver():
+def _driver(stub_untold: bool = True):
     """The driver module, imported by path (it is a script, not a package)."""
     spec = importlib.util.spec_from_file_location("northstar_demo_driver", SCRIPTS / "demo.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
+    # No unit test reaches the ledger: a decided-but-untold scan answers "none"
+    # unless the test says otherwise.
+    if stub_untold:
+        module.untold_payments = lambda: []
     return module
 
 
@@ -394,3 +398,68 @@ def test_guard_stamps_the_run_before_it_touches_the_cluster(monkeypatch, tmp_pat
         demo.main(["guard"])
     state = demo.load_state()
     assert state["claims"] == [] and state["window_start_ms"] > 0
+
+
+# --- a decided claim whose customer was never told -----------------------------
+
+UNTOLD = {**BROWSER_CLAIM, "paymentId": "PAY-000021", "claimId": "CLM-BROWSER-LOST",
+          "a2aTaskId": "task-lost", "status": "executed"}
+
+
+def test_approve_last_heals_a_claim_decided_in_the_browser_whose_resume_was_lost(monkeypatch, tmp_path):
+    demo = _isolated(monkeypatch, tmp_path)
+    monkeypatch.setattr(demo, "awaiting_payments", lambda: [])
+    monkeypatch.setattr(demo, "untold_payments", lambda: [UNTOLD])
+    monkeypatch.setattr(demo.live, "claim_first_seen_ms", lambda claim_id: None)
+    sent = _decided(monkeypatch, demo, resentOnly=True)
+    assert demo.main(["approve", "last"]) == 0
+    assert sent == [("PAY-000021", "approve", demo.STAGE_REVIEWER)]
+    (claim,) = demo.load_state()["claims"]
+    assert claim["id"] == "CLM-BROWSER-LOST" and claim["status"] == "executed"
+    assert claim["task_id"] == "task-lost"
+
+
+def test_approve_by_claim_id_finds_a_decided_untold_claim(monkeypatch, tmp_path):
+    demo = _isolated(monkeypatch, tmp_path)
+    monkeypatch.setattr(demo, "awaiting_payments", lambda: [])
+    monkeypatch.setattr(demo, "untold_payments", lambda: [UNTOLD])
+    monkeypatch.setattr(demo.live, "claim_first_seen_ms", lambda claim_id: None)
+    sent = _decided(monkeypatch, demo, resentOnly=True)
+    assert demo.main(["approve", "CLM-BROWSER-LOST"]) == 0
+    assert sent == [("PAY-000021", "approve", demo.STAGE_REVIEWER)]
+
+
+def test_only_the_decision_the_ledger_holds_can_be_resent(monkeypatch, tmp_path, capsys):
+    """Rejecting an executed payment would be a 409 at best; the driver says
+    which decision the ledger holds instead of asking the reviewer-ui."""
+    demo = _isolated(monkeypatch, tmp_path)
+    monkeypatch.setattr(demo, "awaiting_payments", lambda: [])
+    monkeypatch.setattr(demo, "untold_payments", lambda: [UNTOLD])
+    monkeypatch.setattr(demo.live, "claim_first_seen_ms", lambda claim_id: None)
+    sent = _decided(monkeypatch, demo)
+    assert demo.main(["reject", "last"]) == 1
+    assert sent == []
+    assert "already executed on the ledger" in capsys.readouterr().err
+
+
+def test_a_waiting_claim_in_the_queue_wins_over_a_decided_untold_one(monkeypatch, tmp_path):
+    demo = _isolated(monkeypatch, tmp_path)
+    monkeypatch.setattr(demo, "awaiting_payments", lambda: [BROWSER_CLAIM])
+    monkeypatch.setattr(demo, "untold_payments", lambda: [UNTOLD])
+    monkeypatch.setattr(demo.live, "claim_first_seen_ms", lambda claim_id: None)
+    sent = _decided(monkeypatch, demo)
+    assert demo.main(["approve", "last"]) == 0
+    assert sent[0][0] == "PAY-000011"
+
+
+def test_untold_payments_keeps_only_decided_payments_whose_task_still_waits(monkeypatch):
+    demo = _driver(stub_untold=False)
+    ledger = {"executed": [
+        {"paymentId": "PAY-000003", "a2aTaskId": "t3", "status": "executed"},
+        {"paymentId": "PAY-000002", "status": "executed"},                       # no A2A task
+        {"paymentId": "PAY-000001", "a2aTaskId": "t1", "status": "executed"}],
+        "rejected": [{"paymentId": "PAY-000004", "a2aTaskId": "t4", "status": "rejected"}]}
+    states = {"t1": "completed", "t3": "input-required", "t4": "input-required"}
+    monkeypatch.setattr(demo.live, "list_payments", lambda status: ledger[status])
+    monkeypatch.setattr(demo.live, "get_task", lambda task_id: {"state": states[task_id]})
+    assert [p["paymentId"] for p in demo.untold_payments()] == ["PAY-000004", "PAY-000003"]

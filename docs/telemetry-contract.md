@@ -493,8 +493,8 @@ tree this change has since altered. What has to happen to make it MEASURED: one
 run on its own against the live stage-7 cluster, 7 passed in 55.8s, which is not
 the gate having run.
 
-Bare-suite row, derived from that same collection: 552 collected − 98 gated −
-**0** xfailed = `454 passed, 98 skipped, 0 xfailed`. (The final-review fix wave took the collection from 539 to 552 (the last two are the deck guard, `test_talk_deck_is_not_m7.py`, ungated): the additions are nine driver unit tests in `test_demo_driver.py`, one gated live test in `test_demo_flow.py` (a claim filed in the browser is approved and evidenced), one gated live test in `test_gateway_ceiling.py` (a claim over the ceiling fails and nobody is asked), so the gated figure is 98.) (M8 Task 5 took the collection from 529 to 539: eight driver unit tests net in `test_demo_driver.py`, one deck-quotes-the-rule test in `test_gateway_ceiling_config.py`, one non-gated live test in `test_gateway_ceiling.py` (a session's GET and DELETE are not stopped by the ceiling), and one gated live test in `test_demo_flow.py` (the human approves and the customer's task completes), so the gated figure is 96.) (M8 Task 4 took the collection from 522 to 529: three config tests in `test_gateway_ceiling_config.py` and four live tests in `test_gateway_ceiling.py`, none gated, because they spend no model call, so the gated figure stays 95.) (M8 Task 3 took the collection from 512 to 522: four gated live tests in `test_human_in_the_loop.py` (trace B and its link, trace A's deny, the histogram, and the release's rule split from the repeat-execute check) and one gated Prometheus control in `test_prometheus_metrics_ingest.py`, so the gated figure is 95, plus five harness tests in `test_jaeger_assertions.py`.) (M8 Task 2 took the collection
+Bare-suite row, derived from that same collection: 562 collected − 100 gated −
+**0** xfailed = `462 passed, 100 skipped, 0 xfailed`. (The M8 gate-fix wave took the collection from 552 to 562: three unit tests for claim discovery in `test_claim_discovery.py`, five driver unit tests in `test_demo_driver.py` for a decided-but-untold claim, and two gated live tests in the new `test_decided_but_untold_triage.py`, so the gated figure is 100; the egress inventory fix and the leak fix in `test_settlement_agent_trace.py` add none.) (The final-review fix wave took the collection from 539 to 552 (the last two are the deck guard, `test_talk_deck_is_not_m7.py`, ungated): the additions are nine driver unit tests in `test_demo_driver.py`, one gated live test in `test_demo_flow.py` (a claim filed in the browser is approved and evidenced), one gated live test in `test_gateway_ceiling.py` (a claim over the ceiling fails and nobody is asked), so the gated figure is 98.) (M8 Task 5 took the collection from 529 to 539: eight driver unit tests net in `test_demo_driver.py`, one deck-quotes-the-rule test in `test_gateway_ceiling_config.py`, one non-gated live test in `test_gateway_ceiling.py` (a session's GET and DELETE are not stopped by the ceiling), and one gated live test in `test_demo_flow.py` (the human approves and the customer's task completes), so the gated figure is 96.) (M8 Task 4 took the collection from 522 to 529: three config tests in `test_gateway_ceiling_config.py` and four live tests in `test_gateway_ceiling.py`, none gated, because they spend no model call, so the gated figure stays 95.) (M8 Task 3 took the collection from 512 to 522: four gated live tests in `test_human_in_the_loop.py` (trace B and its link, trace A's deny, the histogram, and the release's rule split from the repeat-execute check) and one gated Prometheus control in `test_prometheus_metrics_ingest.py`, so the gated figure is 95, plus five harness tests in `test_jaeger_assertions.py`.) (M8 Task 2 took the collection
 from 504 to 512: five gated live tests in `test_human_in_the_loop.py` (task states, the
 autonomous wait, the 10-minute resubscribe, the dropped-stream reconnect), so the gated
 figure is 90, and two Cilium config tests in `test_stage2_network_policy.py` and one harness test in
@@ -522,7 +522,7 @@ test) is `tests/unit`-only and carries no `skipif`, so it adds none, and the
 internal-platform pass's eight new `tests/unit` tests, the mermaid pass's eight
 and the page-banner pass's eight `tests/unit` tests carry none either; the
 page-banner pass's own e2e file adds exactly **one** — and
-reports 98 of 552, with the per-module spread and the browser split both
+reports 100 of 562, with the per-module spread and the browser split both
 moving for the first time this milestone. Full spread:
 `test_settlement_llm_trace.py` 9,
 `test_prometheus_metrics_ingest.py` 11, `test_browser_root_span.py` 8,
@@ -531,7 +531,7 @@ moving for the first time this milestone. Full spread:
 `test_human_in_the_loop.py` 17, `test_policy_scores.py` 5,
 `test_demo_flow.py` 9, `test_gateway_ceiling.py` 1, `test_evidence_view.py` 4, `test_policy_denial.py` 4,
 `test_backstage_page_bands.py` 1, `test_golden_path.py` 1,
-`test_progressive_autonomy.py` 1. **The browser split changes twice this
+`test_progressive_autonomy.py` 1, `test_decided_but_untold_triage.py` 2. **The browser split changes twice this
 milestone, having not moved since M4 Task 5.** First a thirteenth gated module
 joined without launching its own browser (`tests/e2e/test_golden_path.py`
 imports `_drive_browser` from `test_policy_denial.py` rather than calling
@@ -540,11 +540,14 @@ never one of the three either). Then the page-banner pass added a fourteenth
 that *does* call `chromium.launch(` — it has no page to drive, only pages to
 look at — so the split was 4 of the 14 launching a browser and 10 of the 14
 starting none, until the demo-flow file made it a fifteenth that starts none:
-**3 of the 16 launch a browser** and **13 of the 16 start no browser** (the fix wave's gated ceiling test made `test_gateway_ceiling.py` a sixteenth module, starting none) (M8 Task 1 swapped
+**3 of the 17 launch a browser** and **14 of the 17 start no browser** (the gate-fix wave's `test_decided_but_untold_triage.py` made it a seventeenth, starting none) (the fix wave's gated ceiling test made `test_gateway_ceiling.py` a sixteenth module, starting none) (M8 Task 1 swapped
 `test_supervised.py` for `test_human_in_the_loop.py`, neither of which launches one,
 and the browser count had been miscounted as 4 since the demo-flow file).
 
-Gate row: **PREDICTED, NOT MEASURED** — the M8 final-review fix wave predicts `551 passed, 1 xfailed`
+M8 gate run 1: **MEASURED-FAILED** (2026-10-15, at `cbfb670`, `./scripts/smoke-test.sh` against the stage-7 cluster): `2 failed, 549 passed, 1 xfailed, 0 skipped`, in 1360.59 s. The two failures, fixed in the gate-fix wave below: `tests/e2e/test_egress_policy.py::test_the_datapath_egress_allowlist_is_exactly_the_measured_inventory[claims-agent]` (M8 Task 2's L7 claims-agent to payments-api rule was in the datapath and not in the inventory), and `tests/e2e/test_demo_flow.py::test_5_evidence_names_who_decided_and_who_approved_for_each_claim` (`demo evidence` reported 4 claims for 3: `claim_ids_since` returned a claim filed by an earlier file, `CLM-TEST-fab59233`, whose last spans fell in the run's window; it now returns only claims whose first span ever is inside the window).
+
+Gate row: **PREDICTED, NOT MEASURED** — the M8 gate-fix wave predicts `561 passed, 1 xfailed`
+(562 collected): it changes the harness, the driver, the e2e suite and the docs, `GATE_PATHS` and docs the guards read, so the failed run above describes a tree this has since altered; the controller's second `./scripts/smoke-test.sh` follows. Before it, the M8 final-review fix wave predicted `551 passed, 1 xfailed`
 (552 collected): it changes the PDS, the reviewer-ui, the claims-agent, the driver, the harness and the e2e suite, all `GATE_PATHS`, so no gate row describes this tree; the controller's one `./scripts/smoke-test.sh` follows. Before it,
 M8 Task 5 predicted `538 passed, 1 xfailed`
 (539 collected): it changes the gateway config's CEL rule, the driver, the customer-ui's log words, the e2e suite and the docs, all `GATE_PATHS` or docs the guards read, so no gate row describes this tree; the controller's whole-branch review and one `./scripts/smoke-test.sh` follow. Before it,

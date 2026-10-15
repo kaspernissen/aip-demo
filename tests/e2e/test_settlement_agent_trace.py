@@ -77,6 +77,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+from tests.harness import live
 from tests.harness.jaeger import JaegerClient
 
 
@@ -193,6 +194,15 @@ def settlement_trace():
         traceparent=traceparent,
     )
     assert "error" not in result, f"A2A call failed: {result}"
+    # At the resting level (`assisted`) this claim is sent to a human and the
+    # payment sits `awaiting_approval` on the ledger. A test must leave no claim
+    # waiting: an open approval is what a later file's `demo reset` declines,
+    # and its decline spans fall in that file's evidence window. The reply is
+    # already back (no parked task here), so deciding it now adds nothing to
+    # the trace under test beyond the reviewer's own, separate trace.
+    reply = json.loads(result["result"]["parts"][0]["text"])
+    if reply.get("status") == "awaiting_approval":
+        live.release_wait(reply["paymentId"])
 
     client = JaegerClient(JAEGER_URL)
     # Because settlement-agent's MCP client injects params._meta, payments-mcp

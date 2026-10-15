@@ -133,6 +133,10 @@ EXPECTED_WORKLOAD_EGRESS = {
         ("k8s:k8s-app=kube-dns", "53/TCP"),
         ("k8s:k8s-app=kube-dns", "53/UDP"),
         ("k8s:app=settlement-agent", "9002/TCP"),
+        # M8: the ledger read on resume (L7, GET /payments/{id} only); the
+        # datapath shows the L4 pair, the method restriction is asserted by
+        # the policy tests.
+        ("k8s:app=payments-api", "8080/TCP"),
         ("k8s:app=otel-collector", "4318/TCP"),
     },
     "customer-ui": {

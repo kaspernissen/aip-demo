@@ -594,6 +594,31 @@ def awaiting_payments() -> list[dict]:
     return response.json()
 
 
+# How many of the newest decided payments the driver asks the claims-agent about.
+# A decided-but-untold claim is the one just decided, so the newest few are enough
+# and the scan stays a handful of `tasks/get` calls however long the ledger is.
+UNTOLD_SCAN = 10
+LEDGER_STATUS_OF = {"approve": "executed", "reject": "rejected"}
+
+
+def untold_payments() -> list[dict]:
+    """Decided on the ledger, but the customer's task is still `input-required`.
+
+    A claim whose decision was taken (the release or the reject went through) but
+    whose resume was lost leaves /api/awaiting and has no button on the reviewer
+    page; the customer's page stays "Awaiting human approval". The ledger holds
+    the decision and the claims-agent holds the task, so the driver reads both:
+    the newest executed and rejected payments that carry an A2A task id, kept
+    when `tasks/get` says that task is still waiting. Newest first. Each item is
+    the ledger record plus `ledgerStatus`.
+    """
+    decided = [p for status in LEDGER_STATUS_OF.values() for p in live.list_payments(status)
+               if p.get("a2aTaskId")]
+    decided.sort(key=lambda p: p["paymentId"], reverse=True)
+    return [p for p in decided[:UNTOLD_SCAN]
+            if live.get_task(p["a2aTaskId"])["state"] == "input-required"]
+
+
 _LEVELS = importlib.util.spec_from_file_location(
     "reviewer_levels", ROOT / "apps" / "reviewer-ui" / "levels.py")
 _levels = importlib.util.module_from_spec(_LEVELS)
@@ -626,6 +651,19 @@ def _adopt(item: dict) -> dict:
     return claim
 
 
+def _adopt_untold(item: dict) -> dict:
+    """A decided claim whose customer was never told, adopted like a waiting one:
+    its status stays `awaiting_approval` (the driver's word for "the customer's
+    task is still waiting"), and `ledger_status` records the decision the ledger
+    holds, which is the only one that can be re-sent."""
+    claim = _adopt(item)
+    claim["ledger_status"] = item["status"]
+    state = load_state()
+    state["claims"] = [claim if c["id"] == claim["id"] else c for c in state["claims"]]
+    save_state(state)
+    return claim
+
+
 def _claim_from_state(ref: str) -> dict:
     """The claim a human is about to decide: this run's notes first, then what
     the reviewer-ui says is waiting (a claim filed in the customer-ui)."""
@@ -643,13 +681,22 @@ def _claim_from_state(ref: str) -> dict:
         untold = [c for c in claims if c.get("status") == "awaiting_approval"]
         if untold:
             return untold[-1]
-        raise Fail("no claim is waiting for a human (the reviewer-ui's queue is empty)")
+        # A claim filed and decided in the browsers, whose resume was lost: it left
+        # the queue and was never in this run's notes, but its task is still waiting.
+        decided = untold_payments()
+        if decided:
+            return _adopt_untold(decided[0])
+        raise Fail("no claim is waiting for a human (the reviewer-ui's queue is empty, and no "
+                   "decided claim is still waiting to be told)")
     for claim in claims:
         if claim["id"] == ref:
             return claim
     for item in queue.values():
         if item.get("claimId") == ref:
             return _adopt(item)
+    for item in untold_payments():
+        if item.get("claimId") == ref:
+            return _adopt_untold(item)
     raise Fail(f"{ref!r} is neither a claim in this run {[c['id'] for c in claims]} "
                f"nor waiting in the reviewer-ui {[p.get('claimId') for p in queue.values()]}")
 
@@ -658,6 +705,11 @@ def _decide(args: argparse.Namespace, decision: str) -> None:
     claim = _claim_from_state(args.claim)
     if claim.get("status") != "awaiting_approval":
         raise Fail(f"{claim['id']} is not waiting for a human (it is {claim.get('status')!r})")
+    held = claim.get("ledger_status")
+    if held and held != LEDGER_STATUS_OF[decision]:
+        raise Fail(f"{claim['id']} is already {held} on the ledger; its customer has not been told. "
+                   f"Only that decision can be re-sent: run `scripts/demo "
+                   f"{'approve' if held == 'executed' else 'reject'} {claim['id']}`.")
     verb = "APPROVE" if decision == "approve" else "REJECT"
     title(f"{verb}  {claim['id']}   EUR {claim['amount']:,.0f}")
     say("A person decides. The reviewer-ui acts under its own identity, through the gateway.")

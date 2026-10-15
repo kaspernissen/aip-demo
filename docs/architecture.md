@@ -1428,7 +1428,7 @@ directions, with `CiliumNetworkPolicy` on a Cilium 1.20.1 dataplane
 | Direction | Policy | What it makes impossible |
 |---|---|---|
 | **Ingress** (`d17309c`) | `payments-mcp` admits agentgateway and the kubelet probe, nothing else | A workload reaching the tool without crossing the policy hook. Measured before it existed: `claims-agent` POSTed an MCP `initialize` at `payments-mcp:8000` and got **HTTP 200** |
-| **Egress** (`50fac07`) | one document per workload in `northstar-agents` — `settlement-agent` may reach DNS, agentgateway:3000, the collector:4318 and `api.anthropic.com:443` by name; `claims-agent` may reach DNS, settlement-agent:9002 and the collector; `customer-ui` may reach DNS only | An agent reaching the model provider, the ledger, the tool or the PDS directly. Two of the three workloads had unrestricted outbound egress before this, including to the model provider — measured, which is why the policy covers the namespace rather than the one agent the criterion names |
+| **Egress** (`50fac07`) | one document per workload in `northstar-agents` — `settlement-agent` may reach DNS, agentgateway:3000, the collector:4318 and `api.anthropic.com:443` by name; `claims-agent` may reach DNS, settlement-agent:9002, the collector and, from M8, payments-api:8080 for one L7 read (`GET /payments/{id}`, the ledger read on resume); `customer-ui` may reach DNS only | An agent reaching the model provider, the ledger, the tool or the PDS directly. Two of the three workloads had unrestricted outbound egress before this, including to the model provider — measured, which is why the policy covers the namespace rather than the one agent the criterion names |
 
 Four things about that table are measurements and not design intent:
 

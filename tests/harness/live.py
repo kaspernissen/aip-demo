@@ -349,6 +349,17 @@ def get_payment(payment_id: str) -> dict:
     return response.json()
 
 
+def list_payments(status: str) -> list[dict]:
+    """Every ledger payment in `status`, as payments-api lists them
+    (`GET /payments?status=`)."""
+    response = httpx.get(f"{PAYMENTS_API_URL}/payments", params={"status": status}, timeout=10)
+    assert response.status_code == 200, (
+        f"could not list {status!r} payments from the ledger at {PAYMENTS_API_URL} "
+        f"(HTTP {response.status_code}): {response.text[:300]}"
+    )
+    return response.json()
+
+
 REVIEWER_UI_URL = os.environ.get("REVIEWER_UI_URL", "http://localhost:8081")
 REVIEWER_UI_SPIFFE_ID = (
     "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui"
@@ -797,20 +808,43 @@ def claim_first_seen_ms(claim_id: str) -> int | None:
 
 
 def claim_ids_since(window_start_ms: int) -> list[str]:
-    """Every claim id any span carries since the window opened, oldest first:
-    how `demo evidence` finds the claims a human filed in the browser."""
+    """Every claim FILED since the window opened, oldest first: how
+    `demo evidence` finds the claims a human filed in the browser.
+
+    "Filed" means the claim's first span ever -- the minimum `startTime` over
+    all time, not just inside the window -- is at or after the window start.
+    A claim carried over from before the run (left waiting by an earlier
+    test, declined by `demo reset` inside this window) has later spans in the
+    window and must not be reported as this run's.
+    """
+    in_window = [
+        b["key"]
+        for b in search({
+            "size": 0,
+            "query": {"bool": {"filter": [
+                {"exists": {"field": f"attributes.{ATTR_CLAIM_ID}.keyword"}},
+                window_filter(window_start_ms),
+            ]}},
+            "aggs": {"claims": {
+                "terms": {"field": f"attributes.{ATTR_CLAIM_ID}.keyword", "size": 100},
+            }},
+        })["aggregations"]["claims"]["buckets"]
+    ]
+    if not in_window:
+        return []
+    # No window filter here: the first span EVER is the question.
     buckets = search({
         "size": 0,
         "query": {"bool": {"filter": [
-            {"exists": {"field": f"attributes.{ATTR_CLAIM_ID}.keyword"}},
-            window_filter(window_start_ms),
+            {"terms": {f"attributes.{ATTR_CLAIM_ID}.keyword": in_window}},
         ]}},
         "aggs": {"claims": {
             "terms": {"field": f"attributes.{ATTR_CLAIM_ID}.keyword", "size": 100},
             "aggs": {"first": {"min": {"field": "startTime"}}},
         }},
     })["aggregations"]["claims"]["buckets"]
-    return [b["key"] for b in sorted(buckets, key=lambda b: b["first"]["value"])]
+    filed = [b for b in buckets if b["first"]["value"] >= window_start_ms]
+    return [b["key"] for b in sorted(filed, key=lambda b: b["first"]["value"])]
 
 
 def trace_ids_for_claim(claim_id: str, window_start_ms: int) -> list[str]:
