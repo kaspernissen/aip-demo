@@ -190,7 +190,7 @@ moved above a current one would therefore be checked in its place. Keep the
 current run first.
 
 **2026-09-15 (M5 whole-branch review, fix wave Parts A+B) — the current
-figures, and the gate row is PREDICTED, NOT MEASURED.**
+figures, and the gate row is MEASURED (M8 gate run 5, `66d5932`).**
 The whole-branch review
 (`.superpowers/sdd/2026-09-14-m5-progressive-autonomy/whole-branch-review.md`)
 returned READY AFTER FIXES against the Task 6 gate commit `ae29785`. Part A
@@ -483,7 +483,7 @@ shared helpers (`_submit_claim`, `mint_svid`, `call_tool_directly`,
 `gateway_url`, `evidence_for`, `_kubectl`, `_opensearch`) moved into
 `tests/harness/live.py` so the tests and the driver run the same code.
 
-**The gate row below is PREDICTED, NOT MEASURED again, as expected.** It was
+**The gate row below was PREDICTED, NOT MEASURED at this point in M7, as expected; M8's gate run 5 has since measured it.** It was
 MEASURED at `a9a99a5`; this change touches `scripts/` (the driver, the shared
 reach probe `scripts/reach-probe.py`, and `scripts/beat-reach.sh`, which now
 reads that probe) and `tests/`, both `GATE_PATHS` entries, so the row describes a
@@ -552,8 +552,7 @@ M8 gate run 3: **MEASURED-FAILED** (2026-10-15, at `5a71392`, fresh images, warm
 
 M8 gate run 4: **MEASURED-FAILED** (2026-10-15, at `6ccaa55`, fresh images, warmed Backstage): `2 failed, 562 passed, 1 xfailed, 0 skipped`, in 1423.96 s. (1) `tests/e2e/test_human_in_the_loop.py::test_a_dropped_stream_reconnects_and_still_sees_the_outcome`: the claim's task FAILED with no payment because settlement-agent's lookup of `api.anthropic.com` failed (`ConnectError: [Errno -2] Name or service not known`, three attempts in about 1.5 s, spans `chat claude-sonnet-5` / `ModelAPIError: Connection error.` in OpenSearch for `CLM-HITL-807a5c0d`; the only such failure in the run, nothing in the collector, nothing before or after). Outside this repo; the claim helper now files again once, and only for that failure (`live.is_upstream_model_failure`). (2) `tests/e2e/test_progressive_autonomy.py::test_the_same_claim_refuses_then_settles_when_only_the_contract_changes`: `_drive_browser`'s `wait_for_trace_id` reported the span count never steady within 180 s (last count 170). **Cause not proven**: OpenSearch and Jaeger both hold exactly 170 spans, the last ending 12 s after the trace began, so the count had stopped moving long before the timeout; the test passed 8 of 8 reruns on the old code. What was fixed is the audited gap, not a proven cause: `_drive_browser` did not pass `steady_ignoring`, so `steady_ignoring` now defaults to the a2a polling span for every caller, and a timeout reports the poll history and last read error so the next occurrence names itself. Dash0 export retries (`Exporting failed`, 02:29:32Z, external endpoint) coincide with the window and are a residual suspect that was not shown to matter.
 
-Gate row: **PREDICTED, NOT MEASURED** — the M8 gate-fix wave predicts `565 passed, 1 xfailed`
-(566 collected): it changes the harness, the driver, the e2e suite and the docs, `GATE_PATHS` and docs the guards read, so the failed runs above describe a tree this has since altered; the controller's third `./scripts/smoke-test.sh` follows. Before it, the first gate-fix wave predicted `561 passed, 1 xfailed` (562 collected). Before that, the M8 final-review fix wave predicted `551 passed, 1 xfailed`
+Gate row: **MEASURED** — M8's gate run was at commit `66d5932` (the fifth run of M8), `./scripts/smoke-test.sh` (which sets `RUN_BROWSER_TESTS=1` itself), run by the orchestrator on 2026-10-15 (started 05:13, finished 05:37 local) against the `kind-northstar` stage-7 cluster on agentgateway v1.6.0, with every image rebuilt by `./scripts/setup-kind.sh --stage 7` from that clean tree (exit 0), Backstage rebuilt from that clean tree and warmed in headless Chromium (home and `/autonomy-contract`), `/api/awaiting` empty and `demo reset` before the run, exit **0**: `565 passed, 1 xfailed in 1400.29s (0:23:20)`, zero skips (`grep -c SKIPPED` over the full output, kept at `.demo/m8-gate-run5.log`, returns 0). 565 + 1 = 566, the collection this document publishes. This run exercised every gated module including `test_human_in_the_loop.py`, `test_demo_flow.py`, `test_decided_but_untold_triage.py` and `test_gateway_ceiling.py`, so the M8 rows below that were labelled predicted (Tasks 1 to 5, the final-review fix wave and the gate-fix waves) are measured by it; nothing the gate does not run is upgraded. The earlier M8 runs stay as the dated MEASURED-FAILED lines above: `cbfb670` (2 failed), `90926e8` (1 failed), `5a71392` (2 failed), `6ccaa55` (2 failed). The predictions that preceded this row, kept as the record the collection was checked against: the gate-fix wave `565 passed, 1 xfailed` (566 collected), the first gate-fix wave `561 passed, 1 xfailed` (562 collected), and the M8 final-review fix wave `551 passed, 1 xfailed`
 (552 collected): it changes the PDS, the reviewer-ui, the claims-agent, the driver, the harness and the e2e suite, all `GATE_PATHS`, so no gate row describes this tree; the controller's one `./scripts/smoke-test.sh` follows. Before it,
 M8 Task 5 predicted `538 passed, 1 xfailed`
 (539 collected): it changes the gateway config's CEL rule, the driver, the customer-ui's log words, the e2e suite and the docs, all `GATE_PATHS` or docs the guards read, so no gate row describes this tree; the controller's whole-branch review and one `./scripts/smoke-test.sh` follow. Before it,
