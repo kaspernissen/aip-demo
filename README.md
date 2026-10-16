@@ -12,6 +12,12 @@ A2A and MCP for the agents, SPIFFE/SPIRE for identity, agentgateway for
 enforcement, OpenFeature for the autonomy setting, OpenTelemetry for the
 evidence, and Backstage as the view.
 
+The point of the demo: everything the agents do is **secured and
+instrumented**. Guardrails around them mean they **cannot change anything
+they are not allowed to**, including their own limits. Rules written by the
+platform give them **a measured amount of autonomy**, and above it a human
+decides.
+
 **Running the demo?** Start at [`docs/demo-runbook.md`](docs/demo-runbook.md).
 It has the pre-flight checks, the demo beat by beat with what to say at each,
 the reset between runs, and live triage. This file explains what the system
@@ -27,7 +33,8 @@ is; the runbook is the script.
 - **A refusal is a success.** The autonomy dial is a maker-checker policy: at
   `assisted` the agent may release nothing (€0), at `autonomous` up to €6,000.
   A payment over the agent's limit is proposed, refused and recorded as
-  awaiting approval. The model explains the refusal to the claimant instead of
+  awaiting approval, and the customer's claim waits for a human, as an A2A
+  task the customer UI streams. The model explains the refusal instead of
   retrying.
 - **A human releases the money.** The awaiting payment appears in the reviewer
   UI. When a reviewer approves it, the reviewer UI itself calls
@@ -130,7 +137,9 @@ keystone idea comes from. Each ring answers one question:
 
 Northstar differs from that demo in two places, on purpose: SPIRE rather than
 Linkerd for identity, and a decision service rather than a static CEL
-allowlist for capability. The keystone uses Kyverno's current
+allowlist for capability. The gateway also carries a CEL rule of its own, a
+€50,000 ceiling on `execute_payment`, to show a guardrail built from
+agentgateway config alone; it is off the live demo (`scripts/demo ceiling`). The keystone uses Kyverno's current
 `ValidatingPolicy` type rather than the deprecated `ClusterPolicy`.
 
 ## Stages
@@ -179,27 +188,31 @@ actually answers. Then open:
 | Prometheus | http://localhost:9090 |
 | Backstage | http://localhost:7007 |
 
-Submit the pre-filled €6,200 claim, watch it come back refused, then approve
-it in the reviewer UI. Both the click and the approved payment show up in
-Jaeger, linked to the refused trace.
+File a claim for €5,800 in the customer UI. It shows "Awaiting human
+approval" with a timer. Approve it in the reviewer UI, and the customer tab
+flips to "Settled" without a reload. The approval is its own trace in Jaeger,
+linked to the claim's, and records how long the human took.
 
-**The five-minute demo** is five commands in one terminal, driven by
-`scripts/demo` (it runs under the repo's `.venv`):
+**The five-minute demo** is five steps: two browser tabs (the customer UI and
+the reviewer UI) and `scripts/demo` in one terminal (it runs under the repo's
+`.venv`). The terminal can do all of it:
 
 ```bash
 scripts/demo guard                # no identity: 401. Around the gateway: dropped. With SPIRE's identity: the tools
-scripts/demo claim 6200           # a real claim: refused by the platform, then the trace
+scripts/demo claim 5800           # assisted: the agent may release nothing, so the claim WAITS for a human ...
+scripts/demo approve last         # ... a human releases it, through the same gateway
 scripts/demo autonomy autonomous  # one live value, nothing redeployed ...
-scripts/demo claim 6200           # ... the same claim, executed
+scripts/demo claim 5800           # ... inside the agent's €6,000 band: settled by the agent
+scripts/demo claim 6200           # ... outside it: still waits for a human
 scripts/demo autonomy assisted    # ... and back
 scripts/demo keystone             # the agent cannot edit what constrains it
-scripts/demo evidence             # who decided, under which rule, for which identity
-scripts/demo reset                # flag assisted, over-grant absent, run state cleared
+scripts/demo evidence             # who decided, the rule, who approved, how long the human took
+scripts/demo reset                # open approvals rejected, flag assisted, over-grant absent
 ```
 
 Each command exits non-zero when the expected outcome does not happen.
 [`docs/demo-runbook.md`](docs/demo-runbook.md) §5 has what to say at each step.
-The two claims call the model; `guard`, `keystone` and `evidence` do not.
+The claims call the model; `guard`, `approve`, `keystone` and `evidence` do not.
 
 Two short scripts show the outer rings and the keystone, with no model call
 (`scripts/demo guard` and `scripts/demo keystone` run the same checks):
