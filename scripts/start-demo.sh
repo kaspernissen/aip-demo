@@ -336,6 +336,17 @@ fi
 # follows the 1xxxx offset convention of the tool ports.
 WEAVER_PID=""
 if [[ -n "$WEAVER_AVAILABLE" ]]; then
+  # Live-check keeps every sample it receives in memory (measured 2026-10-17:
+  # about 220 MiB/hour on an idle demo cluster, docs/telemetry-contract.md) and
+  # is never reset between gates unless the gate runs. Starting a demo session
+  # with an empty one bounds the growth to the session; the pod's 4Gi limit
+  # covers about 17 hours between two start-demo runs. A failure here is only a
+  # warning: weaver is the gate's, and the gate restarts it itself.
+  echo "  - weaver live-check: restarting the pod so the session starts with an empty report"
+  if ! kubectl -n observability rollout restart deployment/weaver-live-check >/dev/null 2>&1 \
+     || ! kubectl -n observability rollout status deployment/weaver-live-check --timeout=120s >/dev/null 2>&1; then
+    echo -e "${YELLOW}  - weaver live-check: the restart did not complete in 120s; continuing (the gate restarts it itself).${NC}"
+  fi
   echo "  - weaver live-check  (18400 -> 4320)"
   kubectl -n observability port-forward svc/weaver-live-check 18400:4320 >/dev/null 2>&1 &
   WEAVER_PID=$!
@@ -428,8 +439,19 @@ if [[ -n "$EVAL_SCORER_PID" ]]; then
 fi
 if [[ -n "$WEAVER_PID" ]]; then
   # `/health` is Weaver's own admin liveness route (the Deployment's readiness
-  # probe uses it too).
-  verify_owned_forward 18400 "${WEAVER_PID}" weaver-live-check "/health"
+  # probe uses it too). Weaver is the gate's, not a demo surface (the gate opens
+  # its own forward), so a forward that cannot bind or carries nothing is a
+  # yellow warning here and never fails start-demo: verify_owned_forward would
+  # exit 1 before the flagd and Backstage checks and the URL summary.
+  if ! lsof -nP -iTCP:18400 -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $2}' | grep -x "${WEAVER_PID}" >/dev/null \
+     && ! curl -s -o /dev/null -m 5 "http://localhost:18400/health"; then
+    echo -e "${YELLOW}  - weaver live-check: the 18400 forward never bound and whatever holds 18400 does not answer. Not a demo surface (the gate opens its own forward), so continuing. Check: lsof -nP -iTCP:18400 -sTCP:LISTEN${NC}"
+    kill "${WEAVER_PID}" 2>/dev/null || true
+    WEAVER_PID=""
+  elif ! curl -s -o /dev/null -m 5 "http://localhost:18400/health"; then
+    echo -e "${YELLOW}  - weaver live-check: port 18400 is listening but carries no request (a dead forward, or the pod was replaced). Not a demo surface, so continuing; the gate opens its own forward.${NC}"
+    WEAVER_PID=""
+  fi
 fi
 if [[ -n "$FLAGD_METRICS_PID" ]]; then
   # `/healthz`, not `/metrics`: flagd's management port serves both, and
