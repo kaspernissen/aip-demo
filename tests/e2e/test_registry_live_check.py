@@ -77,6 +77,17 @@ def test_the_two_spans_the_registry_is_about_were_seen(report):
         )
 
 
+def test_no_service_still_emits_a_legacy_span_name(report):
+    """Live-check judges attributes and metrics, not span names, so a service that went back
+    to an un-prefixed span name raises no finding. This is the check for span names."""
+    legacy = livecheck.legacy_span_names(report)
+    assert legacy == [], (
+        f"{len(legacy)} span name(s) from the retired un-prefixed namespaces reached "
+        f"live-check (every owned span is `northstar.*` since M9): {legacy}. "
+        f"Fix the emitter; live-check itself does not flag span names."
+    )
+
+
 def test_there_are_no_owned_violations(report):
     violations = livecheck.owned_violations(report)
     top = livecheck.top_foreign_findings(report)

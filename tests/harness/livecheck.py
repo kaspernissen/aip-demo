@@ -55,6 +55,13 @@ STATE_PATH = Path(__file__).resolve().parents[2] / ".demo" / "m9-live-check-stat
 # longer emit. This mirrors the `sample_names` of the violation override in
 # telemetry/live-check.toml; tests/unit/test_live_check_config.py pins the two
 # together so they cannot drift.
+#
+# The old histogram attribute keys (decision, autonomy.level) are NOT listed here:
+# a bare `decision` is a plausible attribute key of a framework we do not own
+# (Kyverno, Cilium, agentgateway), and listing it would turn that framework's
+# `information` findings into gate failures. The rename is guarded in source by
+# tests/unit/test_no_legacy_names.py::test_approval_histogram_uses_registry_label_keys
+# and live by the e2e series assertions in tests/e2e/test_human_in_the_loop.py.
 OWNED_PREFIXES = ("northstar.", "policy.", "review.", "claim.", "settlement.")
 
 
@@ -303,6 +310,17 @@ def owned_violations(report_: dict[str, Any]) -> list[dict[str, Any]]:
 
 def span_names(report_: dict[str, Any]) -> set[str]:
     return {s["span"]["name"] for s in report_.get("samples", []) if "span" in s}
+
+
+# Span-name prefixes of the retired un-prefixed namespaces. Live-check judges
+# attributes and metric names but not span names, so a service still emitting
+# an un-prefixed span name raises no finding; this is the only check.
+LEGACY_SPAN_PREFIXES = ("policy.", "review.", "claim.", "settlement.")
+
+
+def legacy_span_names(report_: dict[str, Any]) -> list[str]:
+    """Span names in the report that still use a retired un-prefixed namespace."""
+    return sorted(n for n in span_names(report_) if n.startswith(LEGACY_SPAN_PREFIXES))
 
 
 def top_foreign_findings(report_: dict[str, Any], limit: int = 5) -> list[tuple[str, int]]:

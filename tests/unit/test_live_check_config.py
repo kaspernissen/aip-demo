@@ -243,3 +243,30 @@ def test_a_silent_kubectl_fails_the_forward_instead_of_hanging(monkeypatch):
         with livecheck._forward():
             pass
     assert time.monotonic() - started < 10
+
+
+def _span_report(*names: str) -> dict:
+    return {"samples": [{"span": {"name": n}} for n in names]}
+
+
+def test_legacy_span_names_lists_only_the_retired_namespaces():
+    report = _span_report(
+        "northstar.policy.decision", "northstar.review.decision", "GET /health",
+        "policy" + ".decision", "review" + ".queue", "claim" + ".submit", "settlement" + ".execute",
+    )
+    assert livecheck.legacy_span_names(report) == [
+        "claim" + ".submit", "policy" + ".decision", "review" + ".queue", "settlement" + ".execute",
+    ]
+
+
+def test_legacy_span_names_is_empty_for_a_clean_report():
+    assert livecheck.legacy_span_names(_span_report("northstar.policy.decision", "kyverno.x")) == []
+
+
+def test_the_weaver_limit_covers_a_measured_idle_day_between_recycles():
+    """Idle growth was measured at about 220 MiB/hour (see the manifest comment);
+    the pod is recycled at every start-demo and every gate, so the limit must
+    cover well over the 8 hours of a demo day, not the old 768Mi (about 3.5 h)."""
+    deployment = next(d for d in yaml.safe_load_all(MANIFEST.read_text()) if d["kind"] == "Deployment")
+    limit = deployment["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"]["memory"]
+    assert limit.endswith("Gi") and int(limit[:-2]) * 1024 >= 220 * 12, limit
