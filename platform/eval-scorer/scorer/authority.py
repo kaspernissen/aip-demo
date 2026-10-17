@@ -7,8 +7,8 @@ duplication as drift waiting to happen.**
 allowed to move that much. There are two ways to answer it, and only one of
 them is an audit.
 
-The cheap way reads `policy.limit.amount` off the very same
-`policy.decision` span and checks the amount against it. That scores 1.0
+The cheap way reads `northstar.policy.limit.amount` off the very same
+`northstar.policy.decision` span and checks the amount against it. That scores 1.0
 whenever the Policy Decision Service was internally consistent -- including
 when the PDS permits EUR 50,000 under a rule it labels "the EUR 6,000 limit",
 because the span would then carry `limit: 50000` and the check would agree

@@ -13,7 +13,7 @@
 # HUMAN_APPROVERS). Because of that it is named in-tree as a ClusterSPIFFEID
 # (deploy/platform/spire/registration.yaml, northstar-reviewer-ui) rather than
 # left to the chart's fallback. The CSI volume below mounts the Workload API
-# socket for both uses: its own X.509 SPIFFE ID for the `review.decision` span,
+# socket for both uses: its own X.509 SPIFFE ID for the `northstar.review.decision` span,
 # and the JWT-SVID it presents to the gateway. Its egress is allow-listed to
 # payments-api (read, reject) and agentgateway (release)
 # (deploy/platform/cilium-policies.yaml, reviewer-ui-egress-allowlist).

@@ -48,24 +48,19 @@ processors:
 
   # BEGIN stage-4-only
   # See collector-config.yaml's own comment on this processor for the full
-  # explanation and for why exactly one attribute key is rewritten. This file
+  # explanation and for why only third-party keys are rewritten. This file
   # must carry the identical block -- tests/unit/test_collector_configs_in_sync.py
   # requires the two files' `processors` sections to be equal.
   #
   # This is a *processor in the OpenSearch branch* rather than a change to
   # what the services emit: in THIS file, `otlp_grpc/dash0` exports from the
   # main `traces` pipeline, upstream of the `forward/opensearch` tee, so
-  # Dash0 receives the canonical `policy.decision.retryable` exactly as
+  # Dash0 receives every canonical key exactly as
   # Jaeger does. The `traces/opensearch` pipeline below deliberately does NOT
   # list `otlp_grpc/dash0`, which is the one documented exception to this
   # repo's "every pipeline gets the Dash0 exporter too" rule.
   attributes/opensearch-compat:
     actions:
-      - key: policy.decision_retryable
-        from_attribute: policy.decision.retryable
-        action: insert
-      - key: policy.decision.retryable
-        action: delete
       # Kyverno's admission spans (stage 7) emit `admission.request.kind` -- an
       # empty string -- next to `admission.request.kind.{group,kind,version}`,
       # which OpenSearch would have to map as an object. The keys are

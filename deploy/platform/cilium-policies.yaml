@@ -613,7 +613,7 @@ spec:
 #     payments-mcp-gateway-only ingress policy above still holds.
 #   * the OTLP collector:4318 -- same "silent, not fatal" argument as every
 #     other workload's own rule 3 in this file: dropping it would not break
-#     the demo, it would just make `review.decision` (and every CLIENT span
+#     the demo, it would just make `northstar.review.decision` (and every CLIENT span
 #     this process emits) vanish from the trace no one would notice missing.
 #
 # Deliberately absent: payments-mcp:8000, policy-decision-service:9100 and

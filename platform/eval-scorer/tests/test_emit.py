@@ -152,7 +152,7 @@ def test_every_score_lands_with_its_value_label_and_explanation(score_spans):
             == result.explanation[:500]
         )
         # The claim id is put back on deliberately: Gap 4 keeps it off every
-        # `policy.decision` span these scores were computed from, so without
+        # `northstar.policy.decision` span these scores were computed from, so without
         # this the scores would be unfindable by the one key an operator has.
         assert span.attributes[ATTR_CLAIM_ID] == trajectory.claim_id
 

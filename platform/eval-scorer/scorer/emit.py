@@ -162,7 +162,7 @@ def emit(trajectory: Trajectory, scores: dict[str, Score]) -> str | None:
             # Carried through verbatim by the SDK, with no prefix added
             # (`score.py`: "Keys are used as-is"). The claim id is put back on
             # deliberately: it is the key an operator has, and it is the one
-            # thing Gap 4 keeps off every `policy.decision` span these scores
+            # thing Gap 4 keeps off every `northstar.policy.decision` span these scores
             # were computed from -- so a score span is findable by the filter
             # the spans it judges are not.
             attributes={ATTR_CLAIM_ID: trajectory.claim_id},

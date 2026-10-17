@@ -19,7 +19,7 @@ from scorer.trajectory import (
     parse_rfc3339_nanos,
 )
 
-# Copied verbatim out of `_source` for one `policy.decision` document,
+# Copied verbatim out of `_source` for one `northstar.policy.decision` document,
 # retrieved from `ss4o_traces-default-namespace` on this cluster 2026-09-13.
 # Nothing about it has been tidied -- `data_stream` and the empty
 # `traceState`/`instrumentationScope.version` are exactly what came back.
@@ -30,17 +30,17 @@ CAPTURED_DOCUMENT = {
             "namespace": "namespace",
             "type": "span",
         },
-        "policy.autonomy.level": "autonomous",
-        "policy.caller.spiffe_id": (
+        "northstar.policy.autonomy.level": "autonomous",
+        "northstar.policy.caller.spiffe_id": (
             "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
         ),
-        "policy.decision": "permit",
-        "policy.decision_retryable": False,
-        "policy.limit.amount": 6000,
-        "policy.request.amount": 5800,
-        "policy.request.currency": "EUR",
-        "policy.rule": "settlement-agent.autonomous.execute_limit",
-        "policy.tool.name": "execute_payment",
+        "northstar.policy.decision": "permit",
+        "northstar.policy.retryable": False,
+        "northstar.policy.limit.amount": 6000,
+        "northstar.policy.request.amount": 5800,
+        "northstar.policy.request.currency": "EUR",
+        "northstar.policy.rule": "settlement-agent.autonomous.execute_limit",
+        "northstar.policy.tool.name": "execute_payment",
     },
     "droppedAttributesCount": 0,
     "endTime": "2026-09-13T18:01:42.475287464Z",
@@ -50,7 +50,7 @@ CAPTURED_DOCUMENT = {
         "version": "",
     },
     "kind": "Server",
-    "name": "policy.decision",
+    "name": "northstar.policy.decision",
     "parentSpanId": "c962ce9a2686600c",
     "resource": {
         "service.instance.id": "2e1cd2cd-1df9-4374-8f4f-4171369b87ce",

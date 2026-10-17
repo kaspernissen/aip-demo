@@ -76,7 +76,7 @@ spec:
           imagePullPolicy: Always
           env:
             # The same three OTLP variables every other service here sets, so
-            # the `policy.decision` span reaches the same collector and lands
+            # the `northstar.policy.decision` span reaches the same collector and lands
             # in the same trace as the gateway's `tools/call` and the model's
             # reasoning. pds/telemetry.py reads them through the standard
             # `OTEL_EXPORTER_OTLP_*` names rather than any of our own, so this

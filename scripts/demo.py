@@ -430,7 +430,7 @@ def render_span_tree(trace: Trace, executed_expected: bool) -> dict:
     gateway = gateway_spans[0]
     kids = _children(trace)
     # MEASURED: `Guardrail` (the gateway's own span for its hook call) and the
-    # PDS's `policy.decision` are SIBLINGS under the gateway's tools/call span,
+    # PDS's `northstar.policy.decision` are SIBLINGS under the gateway's tools/call span,
     # not parent and child -- the PDS parents to the gateway span it was called
     # from, via the traceparent the gateway forwards on the hook.
     children = kids.get(gateway.span_id, [])
@@ -442,7 +442,7 @@ def render_span_tree(trace: Trace, executed_expected: bool) -> dict:
     if len(decisions) != 1 or not has_guardrail:
         raise Fail(
             "expected the gateway's tools/call to hold one Guardrail span and one "
-            f"policy.decision span, found guardrail={has_guardrail}, decisions={len(decisions)}"
+            f"northstar.policy.decision span, found guardrail={has_guardrail}, decisions={len(decisions)}"
         )
     decision = decisions[0]
     a = decision.attrs
@@ -465,7 +465,7 @@ def render_span_tree(trace: Trace, executed_expected: bool) -> dict:
         out(paint("      HTTP 200: the no is a tool result marked isError, with the rule in its text.", "dim"))
     out(f"    +- {GUARDRAIL_SPAN}   the gateway asks the decision service")
     mark = word("DENY", "stop") if denied else word("PERMIT", "go")
-    out(f"    +- {live.PDS_SERVICE}  {paint('policy.decision', 'bold')}  {mark}")
+    out(f"    +- {live.PDS_SERVICE}  {paint('northstar.policy.decision', 'bold')}  {mark}")
     kv("rule", str(a.get(live.ATTR_POLICY_RULE)), indent=10, key_width=11)
     if a.get(live.ATTR_POLICY_LIMIT) is not None:
         kv("limit", f"{a.get(live.ATTR_POLICY_LIMIT)}  (requested {a.get(live.ATTR_POLICY_AMOUNT)})", indent=10, key_width=11)

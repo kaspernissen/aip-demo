@@ -92,7 +92,7 @@ def test_step_two_filters_on_trace_ids_and_never_on_the_claim_id():
     """GAP 4 -- DO NOT COLLAPSE THE TWO STEPS INTO ONE FILTER.
 
     `northstar.claim.id` does not cross the MCP boundary, so a claim-id filter
-    here would drop every `policy.decision` span -- which is every span these
+    here would drop every `northstar.policy.decision` span -- which is every span these
     scorers read. The service would then score an empty trajectory and report
     five compliant `not-applicable`s for a settlement that really happened.
     """

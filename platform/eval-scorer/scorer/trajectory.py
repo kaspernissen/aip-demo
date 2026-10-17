@@ -17,7 +17,7 @@ that settles, and that a reader would otherwise guess wrong:
     Deployments while two existed (retired in M8); the human approver is now
     a different service (`reviewer-ui`). The only place an identity is
     reliably named is
-    `policy.caller.spiffe_id` on the `policy.decision` span -- which is why
+    `northstar.policy.caller.spiffe_id` on the `northstar.policy.decision` span -- which is why
     every scorer that cares about identity reads that attribute and nothing
     else.
   * `startTime` is an RFC 3339 string with **nanosecond** precision
@@ -25,7 +25,7 @@ that settles, and that a reader would otherwise guess wrong:
     6 fractional digits, not 9, so `parse_rfc3339_nanos` below does the
     parsing itself rather than failing on every real document.
   * `attributes` keys arrive FLAT and dotted in `_source`
-    (`attributes["policy.tool.name"]`), while OpenSearch expands them into
+    (`attributes["northstar.policy.tool.name"]`), while OpenSearch expands them into
     objects for the *mapping* -- so a Python lookup is the dotted string and a
     query path is the dotted path. Same shape `tests/e2e/test_evidence_view.py`
     reads.
@@ -42,30 +42,26 @@ from typing import Any, Mapping, Sequence
 # The Policy Decision Service's own span: one per `tools/call` the gateway's
 # guardrail forwards, permit or deny. This is the spine of a trajectory --
 # every platform-mediated tool call in this system produces exactly one.
-DECISION_SPAN = "policy.decision"
+DECISION_SPAN = "northstar.policy.decision"
 # reviewer-ui's own span, the root of the approval trace.
-REVIEW_SPAN = "review.decision"
-# settlement-agent's own span around a human-approved execution.
-EXECUTE_APPROVED_SPAN = "settlement.execute_approved"
+REVIEW_SPAN = "northstar.review.decision"
 
 # --- attribute keys, measured ----------------------------------------------
 #
-# The `policy.*` set is `platform/policy-decision-service/pds/telemetry.py`'s
-# own ATTRIBUTES tuple, minus `policy.decision.retryable`, which nothing here
-# reads. That one key, and no other, is spelled differently in OpenSearch:
-# `policy.decision_retryable`, because `policy.decision` is both a leaf and a
-# prefix and the index cannot hold both. Every other key below is identical
-# in OpenSearch, Jaeger and Dash0.
-ATTR_DECISION = "policy.decision"
-ATTR_TOOL = "policy.tool.name"
-ATTR_CALLER = "policy.caller.spiffe_id"
-ATTR_AMOUNT = "policy.request.amount"
-ATTR_CURRENCY = "policy.request.currency"
-ATTR_LIMIT = "policy.limit.amount"
-ATTR_AUTONOMY = "policy.autonomy.level"
-ATTR_RULE = "policy.rule"
+# The `northstar.policy.*` set is the registry's (telemetry/registry/policy.yaml)
+# and `platform/policy-decision-service/pds/telemetry.py`'s ATTR_* constants,
+# minus `northstar.policy.retryable`, which nothing here reads. Every key below
+# is spelled identically in OpenSearch, Jaeger and Dash0.
+ATTR_DECISION = "northstar.policy.decision"
+ATTR_TOOL = "northstar.policy.tool.name"
+ATTR_CALLER = "northstar.policy.caller.spiffe_id"
+ATTR_AMOUNT = "northstar.policy.request.amount"
+ATTR_CURRENCY = "northstar.policy.request.currency"
+ATTR_LIMIT = "northstar.policy.limit.amount"
+ATTR_AUTONOMY = "northstar.policy.autonomy.level"
+ATTR_RULE = "northstar.policy.rule"
 # The ruleset version the PDS resolved this decision under, read off the
-# SAME `policy.decision` span this module already reads -- not from
+# SAME `northstar.policy.decision` span this module already reads -- not from
 # OpenSearch's `feature_flag.evaluation` log event, which would make the
 # score's correctness depend on the logs pipeline rather than just its
 # evidence. Measured: absent on every live decision today
@@ -76,8 +72,8 @@ ATTR_RULE = "policy.rule"
 # `ATTR_AMOUNT` and `ATTR_LIMIT` do below, not `""`.
 ATTR_FLAG_VERSION = "feature_flag.version"
 
-ATTR_REVIEW_DECISION = "review.decision"
-ATTR_REVIEW_REVIEWER = "review.reviewer.id"
+ATTR_REVIEW_DECISION = "northstar.review.decision"
+ATTR_REVIEW_REVIEWER = "northstar.review.reviewer.id"
 
 ATTR_CLAIM_ID = "northstar.claim.id"
 
@@ -178,7 +174,7 @@ class Span:
 
 @dataclass(frozen=True)
 class Decision:
-    """A `policy.decision` span, read for the six fields a scorer cares about.
+    """A `northstar.policy.decision` span, read for the six fields a scorer cares about.
 
     A view over a `Span`, not a replacement for it: `span` is kept so an
     explanation can name the trace and span the judgment was made from, which
@@ -194,7 +190,7 @@ class Decision:
     limit: float | None
     autonomy: str | None
     version: str | None
-    # `policy.rule`, the rule that fired. Defaulted last so a human approver's
+    # `northstar.policy.rule`, the rule that fired. Defaulted last so a human approver's
     # decision can be checked against the one rule it may be permitted under.
     rule: str | None = None
 
@@ -221,7 +217,7 @@ class Decision:
             limit=None if limit is None else float(limit),
             # No `or ""` here -- and none for `version` below either:
             # collapsing an ABSENT
-            # `policy.autonomy.level` into `""` made "no level recorded" and
+            # `northstar.policy.autonomy.level` into `""` made "no level recorded" and
             # "the empty-string level" the same value. `""` is falsy, so
             # `scores.py`'s mismatch check (`execution.autonomy and
             # execution.autonomy != level`) read a missing attribute as "the
@@ -231,7 +227,7 @@ class Decision:
             # against, reintroduced by the very guard meant to close it.
             # `caller`, `decision` and `tool` above keep their `or ""`
             # deliberately: those are measured to always be present on a
-            # real `policy.decision` span, so an absence there is a parsing
+            # real `northstar.policy.decision` span, so an absence there is a parsing
             # bug, not a signal `scores.py` needs to act on.
             autonomy=attributes.get(ATTR_AUTONOMY),
             # `feature_flag.version` is measured to be ABSENT on every live
@@ -252,13 +248,13 @@ class Trajectory:
     **Across every trace, and that is the whole difficulty.** A supervised
     settlement is two traces: the refusal (rooted at customer-ui or at the
     caller that submitted the claim) and, minutes later, the human's approval
-    (rooted at reviewer-ui's own `review.decision` span). They are joined by
-    the claim id, which `settlement.execute_approved` re-attaches from the
-    ledger record -- see `agents/settlement-agent/settlement.py`. Nothing here
+    (rooted at reviewer-ui's own `northstar.review.decision` span). They are joined by
+    the claim id, which the reviewer-ui's decision span re-attaches from the
+    ledger record -- see `apps/reviewer-ui/review.py`. Nothing here
     performs that join; `scorer/opensearch.py` does, by the same two-step
     query `tests/e2e/test_evidence_view.py` documents at length (Gap 4: the
     claim id does not cross the MCP boundary, so a single claim-id filter
-    would silently drop every `policy.decision` span and every money hop --
+    would silently drop every `northstar.policy.decision` span and every money hop --
     which is to say, every span these scorers read).
     """
 
@@ -291,7 +287,7 @@ class Trajectory:
     # --- the spine ---------------------------------------------------------
 
     def decisions(self) -> tuple[Decision, ...]:
-        """Every `policy.decision` span, in start order.
+        """Every `northstar.policy.decision` span, in start order.
 
         Not filtered by tool or outcome: a scorer that wants only executions
         says so itself, and one that needs "what happened after this refusal,

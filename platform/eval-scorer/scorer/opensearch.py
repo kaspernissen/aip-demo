@@ -13,7 +13,7 @@ Step 2 must not also filter on the claim id. That reads like harmless
 belt-and-braces narrowing and is in fact the whole defect: `northstar.claim.id`
 travels as W3C baggage and is copied onto spans only inside the processes that
 hold it, and it does not cross the MCP boundary (Gap 4,
-`docs/telemetry-contract.md`). So `policy.decision` spans -- every span these
+`docs/telemetry-contract.md`). So `northstar.policy.decision` spans -- every span these
 scorers read -- carry no claim id at all. Collapsing the join into one filter
 would leave this service scoring an empty trajectory and reporting it as
 compliant.

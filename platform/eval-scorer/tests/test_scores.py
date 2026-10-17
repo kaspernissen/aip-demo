@@ -475,7 +475,7 @@ def test_identity_had_authority_fails_when_the_stated_limit_is_not_the_published
 
 def test_identity_had_authority_fails_when_the_span_claims_a_level_the_contract_disagrees_with():
     """The vacuity hole this scorer must not have: reading
-    `policy.autonomy.level` off the very span it is judging and looking the
+    `northstar.policy.autonomy.level` off the very span it is judging and looking the
     published allowance up under THAT label would let a PDS (or an attacker
     who reached the span) claiming "autonomous" send this scorer to the
     published row for that level and have it agree all the way down. The
@@ -581,7 +581,7 @@ def test_identity_had_authority_fails_when_the_decision_span_records_no_autonomy
     parses an absent attribute as `""`: `execution.autonomy and
     execution.autonomy != level` is falsy for `""`, so the mismatch check
     would skip entirely and the money check alone would score this 1.0
-    compliant -- not by lying in `policy.autonomy.level`, which the guard
+    compliant -- not by lying in `northstar.policy.autonomy.level`, which the guard
     above catches, but by OMITTING it. `Decision.autonomy` is `str | None`
     with no `or ""`, and an absent level is its own finding,
     `no-level-recorded`, checked before the money check rather than folded

@@ -72,24 +72,24 @@ SETTLEMENT_TIMEOUT_S = 180
 OBSERVABILITY_NAMESPACE = "observability"
 OPENSEARCH_SERVICE = "opensearch-cluster-master"
 TRACE_INDEX = "ss4o_traces-default-namespace"
-DECISION_SPAN = "policy.decision"
+DECISION_SPAN = "northstar.policy.decision"
 PDS_SERVICE = "policy-decision-service"
 PAYMENTS_API = "payments-api"
 EXECUTE_TOOL = "execute_payment"
 
-ATTR_DECISION = "policy.decision"
-ATTR_POLICY_TOOL = "policy.tool.name"
-ATTR_POLICY_RULE = "policy.rule"
-ATTR_POLICY_CALLER = "policy.caller.spiffe_id"
-ATTR_POLICY_LIMIT = "policy.limit.amount"
-ATTR_POLICY_AMOUNT = "policy.request.amount"
-ATTR_AUTONOMY = "policy.autonomy.level"
+ATTR_DECISION = "northstar.policy.decision"
+ATTR_POLICY_TOOL = "northstar.policy.tool.name"
+ATTR_POLICY_RULE = "northstar.policy.rule"
+ATTR_POLICY_CALLER = "northstar.policy.caller.spiffe_id"
+ATTR_POLICY_LIMIT = "northstar.policy.limit.amount"
+ATTR_POLICY_AMOUNT = "northstar.policy.request.amount"
+ATTR_AUTONOMY = "northstar.policy.autonomy.level"
 ATTR_FLAG_VERSION = "feature_flag.version"
 ATTR_CLAIM_ID = "northstar.claim.id"
-ATTR_REVIEW_REVIEWER = "review.reviewer.id"
-ATTR_REVIEW_DECISION = "review.decision"
-ATTR_REVIEW_ELAPSED_MS = "review.elapsed_ms"
-REVIEW_DECISION_SPAN = "review.decision"
+ATTR_REVIEW_REVIEWER = "northstar.review.reviewer.id"
+ATTR_REVIEW_DECISION = "northstar.review.decision"
+ATTR_REVIEW_WAIT_S = "northstar.review.wait.duration"  # double, seconds
+REVIEW_DECISION_SPAN = "northstar.review.decision"
 
 # One page is enough for a claim's whole story; `spans_in_traces` asserts it.
 SPAN_PAGE_SIZE = 1000
@@ -882,7 +882,7 @@ def trace_ids_for_claim(claim_id: str, window_start_ms: int) -> list[str]:
     (customer-ui, claims-agent, settlement-agent). It does not cross the MCP
     boundary, so payments-mcp and payments-api spans never carry it, and the
     policy decision service is reached over the gateway's guardrail hop, which
-    carries no baggage either, so `policy.decision` spans never carry it. **The
+    carries no baggage either, so `northstar.policy.decision` spans never carry it. **The
     trace id is the join.** See `tests/e2e/test_evidence_view.py`, which asserts
     this so nobody can collapse the join.
 
@@ -1004,16 +1004,16 @@ def evidence_for(claim_id: str, window_start_ms: int) -> dict:
     reviews = [span for span in spans if span.get("name") == REVIEW_DECISION_SPAN]
     review = reviews[-1] if reviews else {}
     # The review that released the money: who approved, and how long the human
-    # took (the span's own `review.elapsed_ms`, read off the ledger's
+    # took (the span's own `northstar.review.wait.duration`, in seconds, read off the ledger's
     # awaitingSince). Both None when no human approved.
-    # A resume-only decision (`review.resume_only`: the ledger already held the
-    # decision and the call only told the customer again) carries no elapsed time
+    # A resume-only decision (`northstar.review.resume_only`: the ledger already held the
+    # decision and the call only told the customer again) carries no wait duration
     # and is not the approval.
     approving = [r for r in reviews
                  if attrs(r).get(ATTR_REVIEW_DECISION) == "approve"
-                 and attrs(r).get(ATTR_REVIEW_ELAPSED_MS) is not None]
+                 and attrs(r).get(ATTR_REVIEW_WAIT_S) is not None]
     approval = approving[-1] if approving else {}
-    elapsed_ms = attrs(approval).get(ATTR_REVIEW_ELAPSED_MS)
+    wait_s = attrs(approval).get(ATTR_REVIEW_WAIT_S)
 
     money = [
         span
@@ -1032,7 +1032,7 @@ def evidence_for(claim_id: str, window_start_ms: int) -> dict:
         "contract_version": attrs(first_decision).get(ATTR_FLAG_VERSION),
         "reviewer": attrs(review).get(ATTR_REVIEW_REVIEWER),
         "approved_by": attrs(approval).get(ATTR_REVIEW_REVIEWER),
-        "human_wait_s": elapsed_ms / 1000 if elapsed_ms is not None else None,
+        "human_wait_s": wait_s,
         "review_decision": attrs(review).get(ATTR_REVIEW_DECISION),
         # Who asked, on the agent's own first attempt -- the identity the
         # gateway verified and the decision was made about. Distinct from

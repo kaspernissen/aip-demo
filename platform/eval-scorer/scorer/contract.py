@@ -2,14 +2,14 @@
 
 **Why this is a second copy, on purpose, and why it must not trust the span.**
 `score_identity_had_authority` (`scorer/scores.py`) must not read
-`policy.autonomy.level` off the very `policy.decision` span it is judging and
+`northstar.policy.autonomy.level` off the very `northstar.policy.decision` span it is judging and
 look the published allowance up under whatever label that span carries. A
 PDS claiming "autonomous" -- whether by bug or because an attacker reached the
 span -- would send the audit to the EUR 1,000,000 row and the audit would
 agree all the way down. A score that cannot disagree with the thing it
 scores is decoration, exactly the argument `scorer/authority.py` already
 makes for holding the execute-limit table independently rather than reading
-`policy.limit.amount` off the same span. This module applies that argument
+`northstar.policy.limit.amount` off the same span. This module applies that argument
 to the LEVEL: it holds its own, independent answer to "what does the
 contract actually say", checked at build time against
 `deploy/platform/openfeature/featureflag.yaml` (`tests/test_contract.py`,

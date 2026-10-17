@@ -265,7 +265,7 @@ binds:
               # is exhaustive rather than additive. So
               # `pds/telemetry.context_from_headers` finds no trace context,
               # `extract` returns an empty context, and every
-              # `policy.decision` span starts A NEW ROOT TRACE OF ITS OWN. In
+              # `northstar.policy.decision` span starts A NEW ROOT TRACE OF ITS OWN. In
               # Jaeger that reads as the policy working perfectly while the
               # observability claim -- that the decision appears in the same
               # trace as the gateway's `tools/call` and the model's reasoning
@@ -307,7 +307,7 @@ binds:
         # v1.6.0+ only: on v1.5.0 this policy has no MCP context and denies
         # every request. Measured: .demo/reports/cel-spike-report.md section 2.2
         # and section 4. A denial is `403 text/plain "authorization failed"` and
-        # leaves no policy.decision span: the PDS is never asked.
+        # leaves no northstar.policy.decision span: the PDS is never asked.
         authorization:
           rules:
           - allow: 'request.method != "POST" || mcp.methodName != "tools/call" || mcp.tool.name != "execute_payment" || (mcp.tool.arguments.amount > 0 && mcp.tool.arguments.amount <= 50000)'

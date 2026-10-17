@@ -161,7 +161,7 @@ def test_no_flag_declares_metadata_while_the_contract_has_no_version():
         )
     assert not fixtures.featureflag_flag_declares_metadata(), (
         f"{fixtures.FEATUREFLAG} now declares a flag `metadata` block while "
-        "CURRENT_CONTRACT_VERSION is still None. Every policy.decision span "
+        "CURRENT_CONTRACT_VERSION is still None. Every northstar.policy.decision span "
         "would carry a feature_flag.version this contract has nothing to "
         "compare it against, and contract_level_at would refuse every "
         "trajectory. Update CURRENT_CONTRACT_VERSION (route 1, see this "

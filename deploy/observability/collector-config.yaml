@@ -47,21 +47,23 @@ processors:
     override: false
 
   # BEGIN stage-4-only
-  # WHAT BREAKS WITHOUT IT: the `policy.decision` span sets BOTH
-  # `policy.decision` (a string) and `policy.decision.retryable` (a bool) --
-  # ATTR_DECISION and ATTR_RETRYABLE in
-  # platform/policy-decision-service/pds/telemetry.py -- cited by NAME rather
-  # than by line, the one form that survives an edit to the file above them.
-  # OpenSearch expands dotted keys into objects at index time, so one document
-  # would need `attributes.policy.decision` to be a scalar and an object at
-  # once. It refuses the bulk item permanently, per document, forever:
+  # WHAT BREAKS WITHOUT IT: OpenSearch expands dotted keys into objects at
+  # index time, so a span that carries a scalar attribute AND a dotted
+  # extension of it (`a.b` and `a.b.c`) needs one path to be a scalar and an
+  # object at once. OpenSearch refuses that bulk item permanently, per
+  # document, forever:
   #   kubectl -n observability logs deploy/otel-collector --since=48h \
   #     | grep "Exporting failed"
-  #   -> "can't merge a non object mapping [attributes.policy.decision] with an
-  #       object mapping"
-  # A rejection here is permanent rather than retried, so a trace driven
-  # without this processor in the path keeps missing exactly its
-  # `policy.decision` spans in OpenSearch.
+  #   -> "can't merge a non object mapping [attributes.x] with an object
+  #       mapping"
+  # The rejection is not retried, so a trace driven without this processor in
+  # the path keeps missing the spans that carry the pair in OpenSearch.
+  #
+  # NONE OF THE KEYS THIS PROJECT OWNS COLLIDES. The M9 rename moved the
+  # decision span's retryable flag to `northstar.policy.retryable`, which is
+  # no longer a dotted extension of `northstar.policy.decision`, so the
+  # rewrite that used to live here is gone. Every collision below is a
+  # third-party key this project cannot rename.
   #
   # WHY A RENAME AND NOT AN INDEX TEMPLATE. Against OpenSearch 3.8.0 on this
   # cluster: `subobjects: false` is rejected outright ("unsupported
@@ -70,30 +72,18 @@ processors:
   # rejected; only `"type": "flat_object"` on the whole `attributes` subtree
   # indexes the document, and it costs more than it buys -- `_field_caps` then
   # reports `attributes` as one non-aggregatable field with NO subfields (so
-  # the Dashboards index pattern would not list `attributes.policy.decision`
-  # at all), a terms aggregation returns `java.lang.Object@...` buckets, and
-  # ranges become lexical ("42" > "100" matches).
+  # the Dashboards index pattern would not list the attributes at all), a
+  # terms aggregation returns `java.lang.Object@...` buckets, and ranges
+  # become lexical ("42" > "100" matches).
   #
   # WHY ONLY HERE. This processor runs in the `traces/opensearch` pipeline
   # only. Jaeger and Dash0 are exported from the main `traces` pipeline,
-  # upstream of the `forward/opensearch` tee, so they keep the canonical
-  # `policy.decision.retryable` the telemetry contract defines. An evidence
-  # view whose field names differ from the trace an operator reads in Jaeger
-  # is worse than none -- so exactly one key is rewritten, the collider, and
-  # never the `policy.decision` key itself.
-  # tests/e2e/test_opensearch_trace_ingest.py asserts both halves of that
-  # against the live cluster.
+  # upstream of the `forward/opensearch` tee, so they keep the canonical key.
+  # An evidence view whose field names differ from the trace an operator reads
+  # in Jaeger is worse than none -- so only the colliding third-party keys are
+  # rewritten, never a key this project owns.
   #
-  # TWO families, because two are all that collide: enumerating every
-  # attribute key Jaeger holds across all thirteen services at stage 7
-  # (/api/traces per service, 2026-10-12) turns up 168 distinct span
-  # attribute keys, and the only pairs where one key is a dotted prefix of
-  # another are `policy.decision` -> `policy.decision.retryable` (ours) and
-  # `admission.request.kind` -> `admission.request.kind.{group,kind,version}`
-  # (Kyverno's, stage 7 only). No resource attribute and no span-event
-  # attribute collides at all.
-  #
-  # WHAT PINS THAT, stated precisely -- the mapping is index-wide, so the two
+  # WHAT PINS IT, stated precisely -- the mapping is index-wide, so two
   # colliding keys need not be on the same span or even come from the same
   # service:
   #   * tests/unit/test_stage4_config.py scans EVERY first-party service's
@@ -111,16 +101,8 @@ processors:
   # introduces a collider on a service the driven trace does not reach
   # (settlement-agent's model spans, reviewer-ui, customer-ui) would be caught
   # by the log assertion on the gate run, not before it.
-  #
-  # `insert` rather than `upsert` so a future real `policy.decision_retryable`
-  # attribute would win over this copy rather than be silently overwritten.
   attributes/opensearch-compat:
     actions:
-      - key: policy.decision_retryable
-        from_attribute: policy.decision.retryable
-        action: insert
-      - key: policy.decision.retryable
-        action: delete
       # Kyverno's admission spans (stage 7) emit `admission.request.kind` -- an
       # empty string -- next to `admission.request.kind.{group,kind,version}`,
       # which OpenSearch would have to map as an object. The keys are
@@ -173,7 +155,7 @@ exporters:
   # `attributes/opensearch-compat` processor above fixes; read that comment
   # before changing anything here. Verified on this cluster: for one driven
   # trace, Jaeger and OpenSearch hold the SAME span-id set -- equal counts and
-  # an empty symmetric difference, the `policy.decision` spans included --
+  # an empty symmetric difference, the `northstar.policy.decision` spans included --
   # and the collector logs zero `Exporting failed` events over its full log
   # window (a short tail of a long-running log can miss those events).
   #
@@ -202,9 +184,8 @@ exporters:
   # strips by marker, not by exporter name.
   #
   # No `attributes/opensearch-compat`-style rename needed here: that
-  # processor exists solely because `policy.decision`/`policy.decision.
-  # retryable` collide as a scalar-vs-object OpenSearch mapping (one key a
-  # dotted prefix of the other) on the SAME span. The `feature_flag.*`
+  # processor exists solely because some keys collide as a scalar-vs-object
+  # OpenSearch mapping (one key a dotted prefix of the other). The `feature_flag.*`
   # attributes `pds/autonomy.py`'s `emit_evaluation_event` writes have no such
   # pair -- checked: none of `feature_flag.key`, `.provider.name`,
   # `.result.variant`, `.result.reason`, `.result.value`, `.context.id`,
