@@ -2,7 +2,7 @@
 
 `docs/telemetry-contract.md` records this as Gap 3: no OpenTelemetry semantic
 convention exists for a policy or autonomy decision, so these names are ours to
-define. They are prefixed `policy.` and `northstar.` to make that provenance
+define. They are prefixed `northstar.policy.` to make that provenance
 obvious next to the `gen_ai.*` and `mcp.*` attributes emitted by frameworks --
 a reader must be able to tell at a glance which attributes we invented.
 

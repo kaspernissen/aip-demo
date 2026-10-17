@@ -69,7 +69,7 @@ async def healthz():
 # framework's method-and-route: `northstar.claim.submit` (customer-ui),
 # `northstar.policy.decision` (the PDS), `northstar.review.decision` (review.py), and the
 # telemetry contract's "Domain attributes we own" table is keyed by that
-# prefix. `northstar.review.queue` is the same shape under the same `review.` domain
+# prefix. `northstar.review.queue` is the same shape under the same `northstar.review.` domain
 # this service already owns: the reviewer's queue of payments awaiting a
 # decision, which is exactly what this handler produces. It is deliberately
 # NOT `GET /` (that is the framework's name for a route, and this service

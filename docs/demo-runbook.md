@@ -1381,6 +1381,7 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 
 | Symptom | Most likely cause | Fix, in order |
 |---|---|---|
+| `otlp_grpc/weaver` `Exporting failed` lines in the collector log | the weaver live-check pod was restarted or is starting (a gate run, `start-demo.sh`, a manual `report()`), so the collector's exporter to it retries in a burst for up to about a minute. **Live-check's, not demo telemetry loss**: Jaeger, Prometheus and OpenSearch get their own copies through separate exporters and are unaffected | wait a minute; `kubectl -n observability get pods -l app=weaver-live-check`. If it stays failing, the pod is not Ready: `kubectl -n observability logs deploy/weaver-live-check`. Every weaver start clones the semconv dependency from github.com (measured: not cached, a new checkout each start), so a pod that never gets Ready usually has no egress to github.com |
 | First claim submission errors | `ANTHROPIC_API_KEY` empty | it is a **model call**. Check `.env`, restart the agent deployments |
 | A surface at 5601 / 9090 / 7007 does not answer | dead port-forward (a dead forward **keeps its socket bound** and still looks healthy to `lsof`) | Ctrl+C and re-run `./scripts/start-demo.sh` |
 | `Backstage: SKIPPED` in start-demo output | cluster is below stage 6 | `./scripts/setup-kind.sh --stage 7` — no recreate needed from stage 3+ |
@@ -1430,9 +1431,11 @@ live-check checks, and what it does not":
   The behaviour tests pin the required attributes instead:
   `tests/e2e/test_policy_denial.py`, `tests/e2e/test_human_in_the_loop.py` and
   `tests/e2e/test_demo_flow.py`.
-- **Span names are not judged**, so `northstar.claim.submit`, `northstar.claim.wait`
-  and `northstar.autonomy_contract.change` are unchecked. The live-check test pins
-  only `northstar.policy.decision` and `northstar.review.decision`.
+- **Span names are not judged by live-check**, so the live-check test checks them:
+  it fails on any span name in the report that starts with a retired un-prefixed
+  prefix. A misspelled `northstar.claim.submit`, `northstar.claim.wait` or
+  `northstar.autonomy_contract.change` is still unchecked; the test pins only
+  `northstar.policy.decision` and `northstar.review.decision` as seen.
 - **Standard names show as "does not exist in the registry"** at `information`
   level: our use of semconv names is not validated, only our own names.
 - **Re-running the live-check test alone** (`tests/e2e/test_registry_live_check.py`)
