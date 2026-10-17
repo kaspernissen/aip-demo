@@ -216,10 +216,10 @@ def test_a_refused_claim_that_executes_would_fail_the_run():
         "spans": [
             span("g", None, "agentgateway", "tools/call", **{"gen_ai.tool.name": "execute_payment", "http.response.status_code": 200}),
             span("r", "g", "agentgateway", "Guardrail"),
-            span("d", "g", "policy-decision-service", "policy.decision", **{
-                "policy.tool.name": "execute_payment", "policy.decision": "deny",
-                "policy.rule": "x", "policy.limit.amount": 6000, "policy.request.amount": 6200,
-                "policy.autonomy.level": "assisted"}),
+            span("d", "g", "policy-decision-service", "northstar.policy.decision", **{
+                "northstar.policy.tool.name": "execute_payment", "northstar.policy.decision": "deny",
+                "northstar.policy.rule": "x", "northstar.policy.limit.amount": 6000, "northstar.policy.request.amount": 6200,
+                "northstar.policy.autonomy.level": "assisted"}),
             span("e", "g", "payments-api", "POST /payments/{paymentId}/execute"),
         ],
     }

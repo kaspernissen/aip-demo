@@ -669,10 +669,10 @@ _SKIP_DIR_NAMES = {
 # can only ever ADD a pair to the collision set, so the failure mode is a red
 # test with a named pair a human can read -- never a silent hole.
 #
-# The figure worth publishing is the collision count, and the test below
-# asserts it rather than this comment stating it: there is exactly one
-# collision (`policy.decision` / `policy.decision.retryable`) and the
-# `attributes/opensearch-compat` processor must rename it.
+# Since the M9 rename there is no first-party collision: the decision span's
+# `northstar.policy.decision` and `northstar.policy.retryable` are siblings,
+# not a prefix and its extension. The test below asserts that any collision
+# that does appear is renamed by the `attributes/opensearch-compat` processor.
 #
 # The scan's file and key totals are deliberately NOT written down here: they
 # change whenever any service gains a source file, so no assertion could
@@ -735,9 +735,8 @@ def _collisions(keys: set[str]) -> set[tuple[str, str]]:
     """Pairs where one key is a strict dotted prefix of another.
 
     This is the shape OpenSearch cannot index: it expands dotted keys into
-    nested objects, so `policy.decision` and `policy.decision.retryable` in the
-    same document need `attributes.policy.decision` to be a scalar and an
-    object at once.
+    nested objects, so `a.b` and `a.b.c` in the same document need
+    `attributes.a.b` to be a scalar and an object at once.
     """
     return {
         (shorter, longer)
@@ -750,9 +749,10 @@ def _collisions(keys: set[str]) -> set[tuple[str, str]]:
 def test_the_opensearch_compat_processor_covers_every_colliding_attribute():
     """The rename must cover every collider, not just today's one.
 
-    The shipped ingest path rejected 100% of `policy.decision` spans because
-    the span sets both `policy.decision` and `policy.decision.retryable`. A
-    second collider added later would reintroduce the defect silently -- the
+    An earlier ingest path rejected 100% of the decision spans because the
+    span set a decision key and a dotted extension of it as the retryable flag
+    (the M9 rename removed that pair). A collider added later would reintroduce the
+    defect silently -- the
     export fails permanently, per document, and only the collector log says
     so.
 
@@ -761,13 +761,13 @@ def test_the_opensearch_compat_processor_covers_every_colliding_attribute():
     one service's span and an object-valued `x.y.z` on another's is enough
     for the second to be rejected -- and a collider added anywhere but the
     PDS, or added to the PDS as an inline
-    `set_attribute("policy.decision.reason", ...)` rather than as an `ATTR_*`
+    `set_attribute("northstar.policy.decision.reason", ...)` rather than as an `ATTR_*`
     constant, would fail no unit test at all. So this scans every first-party
     service's source; `_first_party_attribute_keys` documents exactly what
     that can and cannot see, and the e2e file covers the rest against live
     data.
 
-    Add `policy.decision.reason` in any service tomorrow and this goes red
+    Add `northstar.policy.decision.reason` in any service tomorrow and this goes red
     here, in a unit test, rather than in a bulk request nobody is watching.
     """
     keys_by_file = _first_party_attribute_keys()
@@ -784,14 +784,6 @@ def test_the_opensearch_compat_processor_covers_every_colliding_attribute():
     )
 
     collisions = _collisions(set(keys_by_file))
-    assert collisions, (
-        "no dotted-prefix collision found in any first-party service's "
-        "source. If the collision was genuinely removed at the source -- e.g. "
-        "policy.decision.retryable was renamed in pds/telemetry.py -- then the "
-        "attributes/opensearch-compat processor and this test can both go, in "
-        "the same commit, with the telemetry contract updated to match. Do not "
-        "delete only the test."
-    )
     for config in COLLECTOR_CONFIGS:
         parsed = yaml.safe_load(config.read_text())
         actions = parsed["processors"]["attributes/opensearch-compat"]["actions"]

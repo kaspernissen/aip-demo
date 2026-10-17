@@ -454,7 +454,7 @@ def _score(
         f"{expected_decisions} platform-mediated decisions within "
         f"{SPAN_SETTLE_TIMEOUT_S:.0f}s -- a maker-checker settlement is the "
         "refusal trace plus the approval trace, joined by the claim id "
-        "`review.decision` carries from the ledger, and it "
+        "`northstar.review.decision` carries from the ledger, and it "
         "makes four decisions across the two. Scoring a trajectory short of "
         "either reads HIGHER than the truth -- a retry that has not arrived "
         "yet is indistinguishable from having stopped -- so this fails rather "
@@ -804,7 +804,7 @@ def test_the_scores_are_findable_by_the_claim_id_their_evidence_is_not(
     """Gap 4, turned around.
 
     `northstar.claim.id` does not cross the MCP boundary, so not one
-    `policy.decision` span -- the spans every score is computed from -- can be
+    `northstar.policy.decision` span -- the spans every score is computed from -- can be
     found by a claim-id filter. The score spans deliberately carry it anyway
     (`scorer/emit.py` passes it through the SDK's `attributes=`), so the one
     key an operator actually has reaches the judgment even where it cannot

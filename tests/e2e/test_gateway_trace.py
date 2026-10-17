@@ -136,7 +136,7 @@ def gateway_settlement():
 
     **`policy-decision-service` is omitted for the same reason**, since
     `test_gateway_span_names_kinds_and_parentage_are_as_measured` asserts
-    the PDS's `policy.decision` span as a child of the gateway's `tools/call`
+    the PDS's `northstar.policy.decision` span as a child of the gateway's `tools/call`
     SERVER span. Naming the PDS here would turn a missing decision span into a
     fixture `ERROR` shared by all six tests; leaving it out means that one
     test fails by name, with a message that says which of the three expected
@@ -356,7 +356,7 @@ def test_gateway_span_names_kinds_and_parentage_are_as_measured(gateway_settleme
 
     **The forward span is not the SERVER span's only child.** The
     `mcpGuardrails` policy interposes an `agentgateway` `Guardrail` CLIENT
-    span and the PDS's own `policy.decision` SERVER span as its siblings.
+    span and the PDS's own `northstar.policy.decision` SERVER span as its siblings.
     The full measured child set is asserted below, with the reasoning
     inline.
 
@@ -404,16 +404,16 @@ def test_gateway_span_names_kinds_and_parentage_are_as_measured(gateway_settleme
         #
         #   agentgateway `tools/call` (SERVER)
         #     |- agentgateway `Guardrail` (CLIENT)          -- the hook call
-        #     |- policy-decision-service `policy.decision` (SERVER)
+        #     |- policy-decision-service `northstar.policy.decision` (SERVER)
         #     `- agentgateway `tools/call payments-mcp_<tool>` (CLIENT)
         #
-        # `policy.decision` is a *sibling* of `Guardrail`, not its child, and
+        # `northstar.policy.decision` is a *sibling* of `Guardrail`, not its child, and
         # that is the interesting part: agentgateway propagates the context it
         # received on the inbound request to the hook, not the context of its
         # own `Guardrail` CLIENT span. So the PDS's server span attaches to the
         # gateway's SERVER span, one level above the client span that actually
         # made the call. Asserted as measured — inventing a
-        # `Guardrail -> policy.decision` edge would be inventing telemetry for
+        # `Guardrail -> northstar.policy.decision` edge would be inventing telemetry for
         # a third-party tool.
         #
         # Asserted as a sorted list of (service, operation, kind) triples, not
@@ -430,7 +430,7 @@ def test_gateway_span_names_kinds_and_parentage_are_as_measured(gateway_settleme
         expected = sorted(
             [
                 ("agentgateway", "Guardrail", "client"),
-                ("policy-decision-service", "policy.decision", "server"),
+                ("policy-decision-service", "northstar.policy.decision", "server"),
                 ("agentgateway", f"tools/call payments-mcp_{tool}", "client"),
             ]
         )
@@ -441,7 +441,7 @@ def test_gateway_span_names_kinds_and_parentage_are_as_measured(gateway_settleme
             "A missing `tools/call payments-mcp_<tool>` forward means the call "
             "was denied and never forwarded -- at EUR "
             f"{REQUESTED_AMOUNT} it must be permitted, so check the PDS's "
-            "allowance. A missing `policy.decision` means either the "
+            "allowance. A missing `northstar.policy.decision` means either the "
             "mcpGuardrails hook is no longer on this route, or the PDS's own "
             "spans had not landed when the fixture judged the trace complete. "
             "A missing `Guardrail` means the gateway is not calling the hook "

@@ -529,7 +529,7 @@ def test_driving_the_cards_write_over_http_flips_a_refused_settlement_to_execute
         assert refused.reply.get("status") == "awaiting_approval", refused.reply
         refused_decisions = _decisions(refused.trace, EXECUTE_TOOL)
         assert len(refused_decisions) == 1, (
-            f"expected exactly one policy.decision span for {EXECUTE_TOOL}, "
+            f"expected exactly one northstar.policy.decision span for {EXECUTE_TOOL}, "
             f"got {len(refused_decisions)}"
         )
         refused_decision = refused_decisions[0]
@@ -567,7 +567,7 @@ def test_driving_the_cards_write_over_http_flips_a_refused_settlement_to_execute
         assert settled.reply.get("status") == "executed", settled.reply
         settled_decisions = _decisions(settled.trace, EXECUTE_TOOL)
         assert len(settled_decisions) == 1, (
-            f"expected exactly one policy.decision span for {EXECUTE_TOOL}, "
+            f"expected exactly one northstar.policy.decision span for {EXECUTE_TOOL}, "
             f"got {len(settled_decisions)}"
         )
         settled_decision = settled_decisions[0]
@@ -670,7 +670,7 @@ def _opensearch_contract_change_spans(new_variant: str, not_before: str) -> list
 
 def test_the_contract_change_span_lands_in_opensearch(backstage_url, auth_headers):
     """Asserts that the span lands, the
-    way `test_opensearch_trace_ingest.py` already does for `policy.decision`
+    way `test_opensearch_trace_ingest.py` already does for `northstar.policy.decision`
     -- nothing else in this suite does for this span.
 
     This system emits three independent signals for a contract change; two
@@ -684,7 +684,7 @@ def test_the_contract_change_span_lands_in_opensearch(backstage_url, auth_header
     a point-in-time fact about who wrote a field *last*, not a history worth
     pinning. What none of them prove is that the THIRD signal -- the only
     durable one of the three -- actually reaches the collector and is
-    queryable, the same standard this suite already holds `policy.decision` to.
+    queryable, the same standard this suite already holds `northstar.policy.decision` to.
     """
     if not _opensearch_is_installed():
         pytest.skip(

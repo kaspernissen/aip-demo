@@ -122,7 +122,7 @@ def browser_trace():
         outcome["raw"] = page.locator("h2:text-is('Outcome') + pre").inner_text()
         # The browser's own WebTracerProvider uses a BatchSpanProcessor with
         # the OTel SDK's default 5s scheduled export delay (telemetry.ts sets
-        # no override, same as every other service). The claim.submit span
+        # no override, same as every other service). The northstar.claim.submit span
         # ends the instant sendClaim's promise settles, well before that
         # timer next fires. Closing the browser tab immediately after
         # "Outcome" appears tears the page down before the export ever
@@ -164,7 +164,7 @@ def browser_trace():
     # correctly — see test_all_five_services_are_in_one_trace below).
     trace = client.wait_for_trace_id(
         trace_id,
-        operation="claim.submit",
+        operation="northstar.claim.submit",
         timeout=150,
         services={
             "customer-ui",
@@ -182,18 +182,18 @@ def browser_trace():
 
 
 def test_browser_emits_the_claim_submit_span(browser_trace):
-    """The fixture's own wait_for_trace_id(..., operation="claim.submit")
+    """The fixture's own wait_for_trace_id(..., operation="northstar.claim.submit")
     already requires this span to exist before it returns, so this
     assertion can only ever restate what the fixture enforced. Kept anyway,
     same reasoning as
     test_claims_agent_and_settlement_agent_join_the_browsers_trace below: a
     named, specific failure if this ever regresses, not just a fixture-setup
     error shared across the whole file."""
-    assert browser_trace.trace.has_span("claim.submit")
+    assert browser_trace.trace.has_span("northstar.claim.submit")
 
 
 def test_root_span_belongs_to_the_browser(browser_trace):
-    """This root is real — the browser's own claim.submit span genuinely
+    """This root is real — the browser's own northstar.claim.submit span genuinely
     lands in Jaeger, unlike a synthetic injected root — so it must be the
     trace's one and only root, and it must be the exact span whose ID was
     observed on the wire."""
@@ -201,7 +201,7 @@ def test_root_span_belongs_to_the_browser(browser_trace):
     roots = trace.roots()
     assert len(roots) == 1, f"expected one root, got {[(r.service, r.operation) for r in roots]}"
     assert roots[0].service == "customer-ui"
-    assert roots[0].operation == "claim.submit"
+    assert roots[0].operation == "northstar.claim.submit"
     assert roots[0].span_id == browser_trace.span_id, (
         "the trace's root span id does not match the traceparent observed on "
         "the wire — Jaeger returned some other span's trace, not this request's"
@@ -227,7 +227,7 @@ def test_claims_agent_and_settlement_agent_join_the_browsers_trace(browser_trace
 
 
 def test_root_span_carries_the_policy_number(browser_trace):
-    """northstar.policy.number is documented in
+    """northstar.claim.policy_number is documented in
     docs/telemetry-contract.md's owned-attribute table and set at
     apps/customer-ui/src/app/page.tsx:39; northstar.claim.id is asserted five
     ways elsewhere in this suite, this attribute otherwise zero. The
@@ -235,7 +235,7 @@ def test_root_span_carries_the_policy_number(browser_trace):
     leaving the policy number at its DEFAULT_CLAIM default, so this asserts
     the exact known value rather than merely "is present"."""
     root = browser_trace.trace.roots()[0]
-    assert root.attrs.get("northstar.policy.number") == "POL-77120"
+    assert root.attrs.get("northstar.claim.policy_number") == "POL-77120"
 
 
 def test_trace_has_no_orphans(browser_trace):
@@ -253,7 +253,7 @@ def test_all_five_services_are_in_one_trace(browser_trace):
     the lower-level ClientSession.send_request() API, so all five services
     — customer-ui, claims-agent, settlement-agent, payments-mcp,
     payments-api — land in the one trace rooted at the browser's own
-    claim.submit span.
+    northstar.claim.submit span.
 
     The fixture's own wait_for_trace_id(..., services={...}) already blocks
     until this exact five-service set is present, so — like
@@ -301,7 +301,7 @@ def test_the_browser_path_settles_the_expected_amount(browser_trace):
 
     Deliberately *not* asserted here: why it was refused. This test owns the
     browser-visible outcome and nothing more. The decision itself — the PDS's
-    own `policy.decision` span, the rule name, the allowance and the requested
+    own `northstar.policy.decision` span, the rule name, the allowance and the requested
     amount on it, and the absence of any execute span at payments-api — is
     asserted from the platform's own telemetry by
     `tests/e2e/test_policy_denial.py::test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes`,

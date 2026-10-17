@@ -11,7 +11,7 @@ count is.
 **Two records are emitted per evaluation.** `pds/autonomy.py`'s
 `resolve_autonomy` already carries the `openfeature-hooks-opentelemetry`
 `TracingHook` (installed on `pds.server`'s module-scope client), which puts a
-`feature_flag.evaluation` SPAN EVENT on the active `policy.decision` span --
+`feature_flag.evaluation` SPAN EVENT on the active `northstar.policy.decision` span --
 verified independently by `tests/test_autonomy.py::
 test_the_tracing_hook_puts_a_feature_flag_evaluation_event_on_the_active_span`.
 That is signal #1 and this file does not re-prove it. Signal #2 is
@@ -36,10 +36,10 @@ attributes=...)` call, which is what `_collector_accepted_log_records` and
 fabricated_version_or_set_id`). Per this repo's standing rule that a missing
 value is absent, never zero or invented, `emit_evaluation_event` OMITS both
 attributes entirely rather than writing `null` or `""` -- matching the
-`policy.decision` span's own convention for the same field
+`northstar.policy.decision` span's own convention for the same field
 (`server.py`: `if resolution.version is not None: span.set_attribute(...)`).
 The eval-scorer routes around this: it reads `feature_flag.version` off the
-`policy.decision` SPAN (also absent, same reason) and resolves the *current*
+`northstar.policy.decision` SPAN (also absent, same reason) and resolves the *current*
 contract version from flagd directly, so its correctness does not depend on
 this logs pipeline. This log event stays the human-readable record and the
 parity target here, not a dependency of any score.
@@ -333,7 +333,7 @@ def driven_claim(gateway_url, svid):
         "paymentId"
     )
     assert payment_id, (
-        "the proposal did not return a paymentId, so no policy.decision was "
+        "the proposal did not return a paymentId, so no northstar.policy.decision was "
         f"reached and no feature_flag.evaluation could have been emitted: "
         f"{proposed.text[:300]!r}"
     )
@@ -371,7 +371,7 @@ def _collector_accepted_log_records(since_seconds: int, since_epoch: float) -> i
     received, summed across every export in the window.
 
     Read over the WHOLE window (`--since=<n>s`), never a `--tail` of it --
-    this repo has lost every `policy.decision` span exactly this way before,
+    this repo has lost every `northstar.policy.decision` span exactly this way before,
     reading a 200-line tail of a much longer log and reporting 'no errors'.
     `--since` is sized
     from the instant this file's driven call began, with generous padding, and is
@@ -528,7 +528,7 @@ def test_the_live_event_is_the_semconv_event_with_the_hooks_two_gaps_filled(
     assert document["resource"]["service.name"] == "policy-decision-service", document
     assert document["spanId"], (
         "the log record carries no span id -- Logger.emit() should pick up "
-        "the ambient policy.decision span's context automatically"
+        "the ambient northstar.policy.decision span's context automatically"
     )
 
     attributes = document["attributes"]

@@ -435,7 +435,7 @@ def test_all_four_backend_services_are_in_one_trace(chain_trace):
 # **What supersedes it.** `tests/e2e/test_policy_denial.py`, which asserts the
 # true behaviour at both ends of the same one rule: criterion 1, that
 # €6,200 is denied and no payment executes (the exact absences listed above,
-# read off the platform's own `policy.decision` span rather than off prose),
+# read off the platform's own `northstar.policy.decision` span rather than off prose),
 # and criterion 6, that €5,800 still executes end to end under that same rule
 # name. Between them they cover everything this test covered and the thing it
 # structurally could not: that the platform is deciding, rather than either

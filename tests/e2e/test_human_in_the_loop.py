@@ -45,7 +45,7 @@ REVIEWER = "alex.mercer"
 
 def _reviewer_id() -> str:
     """One reviewer id per decision. Payment ids restart when the ledger does, so a
-    Jaeger lookup by `review.payment.id` can find an older run's trace B; a uuid
+    Jaeger lookup by `northstar.review.payment.id` can find an older run's trace B; a uuid
     reviewer id cannot (test_evidence_view.py does the same)."""
     return f"{REVIEWER}-{uuid.uuid4().hex[:8]}"
 REVIEWER_UI_SPIFFE_ID = live.REVIEWER_UI_SPIFFE_ID
@@ -168,7 +168,7 @@ def test_a_dropped_stream_reconnects_and_still_sees_the_outcome():
 
 def test_the_ledger_keeps_the_wait_after_the_human_has_acted(approved):
     # Read after the fixture released it: the record keeps when the wait began,
-    # which is the clock `review.elapsed_ms` was measured from.
+    # which is the clock `northstar.review.wait.duration` was measured from.
     record = live.get_payment(approved["payment_id"])
     assert record["awaitingSince"], record
     assert record["status"] == "executed", record
@@ -214,11 +214,11 @@ def test_the_release_was_decided_under_the_human_rule(approved):
     # The decision that PERMITTED the release, read off trace B, names the human
     # rule and the ledger status it was decided on.
     trace_b = JaegerClient(JAEGER_URL).wait_for_operation(
-        "reviewer-ui", "review.decision",
-        attrs={"review.reviewer.id": approved["reviewer"]}, timeout=90)
+        "reviewer-ui", "northstar.review.decision",
+        attrs={"northstar.review.reviewer.id": approved["reviewer"]}, timeout=90)
     permits = [s for s in trace_b.spans
-               if s.operation == "policy.decision" and s.attrs.get("policy.decision") == "permit"]
-    assert [p.attrs["policy.rule"] for p in permits] == ["human-approved.execute"], permits
+               if s.operation == "northstar.policy.decision" and s.attrs.get("northstar.policy.decision") == "permit"]
+    assert [p.attrs["northstar.policy.rule"] for p in permits] == ["human-approved.execute"], permits
 
 
 def test_executing_the_released_payment_again_is_refused(approved):
@@ -230,14 +230,14 @@ def test_executing_the_released_payment_again_is_refused(approved):
 
 def test_trace_b_is_rooted_at_review_decision_and_links_to_trace_a(approved):
     trace_b = JaegerClient(JAEGER_URL).wait_for_operation(
-        "reviewer-ui", "review.decision",
-        attrs={"review.reviewer.id": approved["reviewer"]}, timeout=90)
+        "reviewer-ui", "northstar.review.decision",
+        attrs={"northstar.review.reviewer.id": approved["reviewer"]}, timeout=90)
     root = trace_b.root()
-    assert root.operation == "review.decision"
+    assert root.operation == "northstar.review.decision"
     assert any(link.trace_id == approved["trace_id"] for link in root.links), root.links
-    decisions = [s for s in trace_b.spans if s.operation == "policy.decision"]
-    assert [d.attrs["policy.rule"] for d in decisions] == ["human-approved.execute"]
-    assert decisions[0].attrs["policy.ledger.status"] == "awaiting_approval"
+    decisions = [s for s in trace_b.spans if s.operation == "northstar.policy.decision"]
+    assert [d.attrs["northstar.policy.rule"] for d in decisions] == ["human-approved.execute"]
+    assert decisions[0].attrs["northstar.policy.ledger.status"] == "awaiting_approval"
     ops = {s.operation for s in trace_b.spans}
     assert "POST /payments/{paymentId}/execute" in ops, sorted(ops)
 
@@ -247,15 +247,19 @@ def test_trace_a_holds_the_deny_and_no_execute(approved):
         approved["trace_id"], services={"policy-decision-service"}, timeout=90,
         steady_ignoring=JaegerClient.WAIT_POLLING_SPANS)
     denies = [s for s in trace_a.spans
-              if s.operation == "policy.decision" and s.attrs.get("policy.decision") == "deny"]
-    assert denies and denies[0].attrs["policy.limit.amount"] == 0.0
+              if s.operation == "northstar.policy.decision" and s.attrs.get("northstar.policy.decision") == "deny"]
+    assert denies and denies[0].attrs["northstar.policy.limit.amount"] == 0.0
     assert "POST /payments/{paymentId}/execute" not in {s.operation for s in trace_a.spans}
 
 
-# Read off the running Prometheus on 2026-10-14, never predicted; see
-# docs/telemetry-contract.md.
+# The series name was read off the running Prometheus on 2026-10-14. The label
+# key is that Prometheus's own dot-to-underscore rendering of the M9 attribute
+# `northstar.review.decision`, whose value is the registry's `approve`; it has
+# not been read off a running cluster since the rename (Task 3 does that).
 APPROVAL_WAIT_SERIES = "northstar_approval_wait_duration_seconds"
-APPROVED_WAIT_COUNT = f'{APPROVAL_WAIT_SERIES}_count{{job="reviewer-ui",decision="approved"}}'
+APPROVED_WAIT_COUNT = (
+    f'{APPROVAL_WAIT_SERIES}_count{{job="reviewer-ui",northstar_review_decision="approve"}}'
+)
 
 
 def test_the_histogram_has_a_sample_for_the_approval(approved):

@@ -43,7 +43,7 @@ exchange.
 constant, so the index accumulates one set of traces per run of it forever;
 a long-running cluster's history for `CLM-1842` can span many traces across
 hours, some from before OpenSearch trace ingest existed at all and
-therefore carrying no `policy.decision` span, and the total can grow past
+therefore carrying no `northstar.policy.decision` span, and the total can grow past
 the 1,000-document page `_spans_in_traces` reads and trip its own
 truncation guard — so the bound is what keeps these queries answerable at
 all, not only what keeps them correct. Every query below is bounded to the
@@ -120,7 +120,7 @@ from tests.harness.kube import absent_or_fail
 from tests.harness.collector import pipeline_exporters
 
 REVIEWER_NAME_PREFIX = "alex.mercer"
-REVIEW_DECISION_SPAN = "review.decision"
+REVIEW_DECISION_SPAN = "northstar.review.decision"
 # The rule a human release is decided under (pds/rules.py, HUMAN_APPROVAL_RULE).
 HUMAN_APPROVAL_RULE = "human-approved.execute"
 REVIEWER_UI_SPIFFE_SUFFIX = "/sa/reviewer-ui"
@@ -137,18 +137,18 @@ OPENSEARCH_TEE_ID = "forward/opensearch"
 # attribute that reaches settlement-agent's spans at all. Canonical name from
 # agents/settlement-agent/correlation.py:23.
 ATTR_CLAIM_ID = "northstar.claim.id"
-# The two keys the evidence view reads off reviewer-ui's `review.decision`
-# span, from docs/telemetry-contract.md's "Attributes on the `review.decision`
+# The two keys the evidence view reads off reviewer-ui's `northstar.review.decision`
+# span, from docs/telemetry-contract.md's "Attributes on the `northstar.review.decision`
 # span" table. Every other attribute name this file uses -- the `policy.*` set
 # and the span name -- is imported above rather than restated, so the two files
 # cannot disagree about what the decision span carries.
-ATTR_REVIEW_REVIEWER = "review.reviewer.id"
+ATTR_REVIEW_REVIEWER = "northstar.review.reviewer.id"
 # The only payments-api hops whose spans may carry the claim id on their own.
 CLAIM_ID_TAGGED_PAYMENTS_HOPS = frozenset({
     "GET /payments/{paymentId}",
     "POST /payments/{paymentId}/reject",
 })
-ATTR_REVIEW_DECISION = "review.decision"
+ATTR_REVIEW_DECISION = "northstar.review.decision"
 
 # The rule this demo's evidence story turns on: it fires for both claims,
 # and decides them differently. Not a constant this file chose -- read off
@@ -425,9 +425,9 @@ def denied_claim(claims_agent_route):
     The reviewer id is unique per run (`REVIEWER_NAME_PREFIX` plus a uuid),
     matching the precedent the human-in-the-loop suite sets, for the same
     reason: payments-api's payment ids are sequential only within one
-    process lifetime, so `review.payment.id` alone is not a unique key -- a
+    process lifetime, so `northstar.review.payment.id` alone is not a unique key -- a
     shared reviewer name across concurrent runs can read a stale
-    `review.decision` trace from an unrelated earlier test. Nothing here
+    `northstar.review.decision` trace from an unrelated earlier test. Nothing here
     searches by that key -- the claim-id join finds the approval trace --
     but a shared reviewer name across concurrent runs would still make
     `reviewer` ambiguous in the row below.

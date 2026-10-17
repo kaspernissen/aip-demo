@@ -325,7 +325,7 @@ def test_the_guardrail_forwards_trace_context_to_the_pds():
     perfectly -- the €6,200 is refused, the reason reaches the caller, the PDS
     logs the denial -- and `traceparent` never reaches the hook, so
     `pds/telemetry.context_from_headers` extracts an empty context and every
-    `policy.decision` span becomes **a new root trace of its own**. Nothing
+    `northstar.policy.decision` span becomes **a new root trace of its own**. Nothing
     logs an error. Jaeger lists the service. The only symptom is that the
     observability claim -- the decision in the same trace as the gateway's
     `tools/call` and the model's reasoning -- is false.
@@ -346,7 +346,7 @@ def test_the_guardrail_forwards_trace_context_to_the_pds():
         assert "traceparent" in lowered, (
             f"{where}.requestHeaders.allowed is {allowed!r} and omits "
             "`traceparent`. This list is EXHAUSTIVE, not additive: without it "
-            "the PDS receives no trace context and every policy.decision span "
+            "the PDS receives no trace context and every northstar.policy.decision span "
             "becomes an orphan root -- while the policy itself keeps working "
             "perfectly, which is what makes this worth a guard."
         )
@@ -505,7 +505,7 @@ def test_the_container_port_the_service_and_the_guardrail_all_name_one_port():
 
 
 def test_the_pds_exports_its_span_to_the_same_collector_as_everything_else():
-    """The `policy.decision` span has to land in the *same trace* as the
+    """The `northstar.policy.decision` span has to land in the *same trace* as the
     gateway's `tools/call` and the model's reasoning -- that is the milestone's
     observability claim, and it is the only reason a reader can tell a policy
     refusal from an outage. `pds/telemetry.py` reads the standard

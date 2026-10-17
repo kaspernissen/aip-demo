@@ -351,7 +351,7 @@ def test_wait_for_trace_id_ignores_polling_spans_when_deciding_the_trace_is_stea
 
 
 def _linked_raw_trace():
-    root = _raw_span("b1", "review.decision")
+    root = _raw_span("b1", "northstar.review.decision")
     root["traceID"] = "bbbb"
     root["duration"] = 2_500_000
     root["references"] = [{"refType": "FOLLOWS_FROM", "traceID": "aaaa", "spanID": "a1"}]
@@ -362,7 +362,7 @@ def _linked_raw_trace():
 def test_a_span_link_is_read_as_a_link_and_not_as_a_parent():
     trace = Trace(_linked_raw_trace())
     root = trace.root()
-    assert root.operation == "review.decision" and root.parent_id is None
+    assert root.operation == "northstar.review.decision" and root.parent_id is None
     assert [(l.trace_id, l.span_id) for l in root.links] == [("aaaa", "a1")]
     assert root.duration_s == 2.5
 
@@ -382,11 +382,11 @@ def test_wait_for_operation_returns_the_whole_trace_by_id(monkeypatch):
 
     monkeypatch.setattr(client, "find_traces", fake_find)
     monkeypatch.setattr(client, "get_trace", lambda tid: Trace(_linked_raw_trace()))
-    trace = client.wait_for_operation("reviewer-ui", "review.decision",
-                                      attrs={"review.payment.id": "PAY-1"}, timeout=1)
-    assert trace.root().operation == "review.decision"
-    assert seen == {"service": "reviewer-ui", "operation": "review.decision",
-                    "tags": {"review.payment.id": "PAY-1"}}
+    trace = client.wait_for_operation("reviewer-ui", "northstar.review.decision",
+                                      attrs={"northstar.review.payment.id": "PAY-1"}, timeout=1)
+    assert trace.root().operation == "northstar.review.decision"
+    assert seen == {"service": "reviewer-ui", "operation": "northstar.review.decision",
+                    "tags": {"northstar.review.payment.id": "PAY-1"}}
 
 
 def test_wait_for_operation_fails_when_nothing_matches(monkeypatch):
@@ -394,7 +394,7 @@ def test_wait_for_operation_fails_when_nothing_matches(monkeypatch):
     monkeypatch.setattr(client, "find_traces", lambda *a, **k: [])
     _install_fake_clock(monkeypatch)
     with pytest.raises(AssertionError, match="no trace with"):
-        client.wait_for_operation("reviewer-ui", "review.decision", timeout=3)
+        client.wait_for_operation("reviewer-ui", "northstar.review.decision", timeout=3)
 
 
 def test_wait_for_operation_links_to_skips_traces_that_link_elsewhere(monkeypatch):
@@ -405,7 +405,7 @@ def test_wait_for_operation_links_to_skips_traces_that_link_elsewhere(monkeypatc
     monkeypatch.setattr(client, "find_traces", lambda *a, **k: [Trace(other), Trace(_linked_raw_trace())])
     fetched = []
     monkeypatch.setattr(client, "get_trace", lambda tid: fetched.append(tid) or Trace(_linked_raw_trace()))
-    client.wait_for_operation("svc-a", "review.decision", timeout=1, links_to="aaaa")
+    client.wait_for_operation("svc-a", "northstar.review.decision", timeout=1, links_to="aaaa")
     assert fetched == ["test-trace"]
 
 

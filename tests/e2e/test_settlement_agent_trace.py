@@ -416,7 +416,7 @@ def test_mcp_tool_calls_are_present(settlement_trace):
 
     What stopped it, and where, is asserted from the platform's own telemetry
     by `tests/e2e/test_policy_denial.py` — the gateway's `tools/call` SERVER
-    span, the PDS's `policy.decision` span with the rule and the two amounts on
+    span, the PDS's `northstar.policy.decision` span with the rule and the two amounts on
     it, and the absent forward and payments-api execute spans. This test stays
     a statement about the MCP hop's span vocabulary, which is what it was
     written to be."""

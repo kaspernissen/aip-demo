@@ -146,7 +146,7 @@ ALL_SERVICES = {
 }
 
 # Span and attribute names. Every one of these is emitted by somebody else's
-# code — agentgateway's, PydanticAI's, the a2a-sdk's — except `policy.decision`
+# code — agentgateway's, PydanticAI's, the a2a-sdk's — except `northstar.policy.decision`
 # and its `policy.*` attributes, which are the PDS's own
 # (platform/policy-decision-service/pds/telemetry.py). Nothing here is invented
 # for a third-party tool; these are the names those tools were measured
@@ -156,14 +156,14 @@ GATEWAY_TOOLS_CALL = "tools/call"          # the gateway's SERVER span
 GATEWAY_FORWARD = "tools/call payments-mcp_{tool}"  # its CLIENT span, if it forwards
 GUARDRAIL = "Guardrail"                    # the gateway's CLIENT span for the hook
 PDS = "policy-decision-service"
-DECISION_SPAN = "policy.decision"
+DECISION_SPAN = "northstar.policy.decision"
 ATTR_GEN_AI_TOOL = "gen_ai.tool.name"
-ATTR_DECISION = "policy.decision"
-ATTR_POLICY_TOOL = "policy.tool.name"
-ATTR_POLICY_RULE = "policy.rule"
-ATTR_POLICY_CALLER = "policy.caller.spiffe_id"
-ATTR_POLICY_LIMIT = "policy.limit.amount"
-ATTR_POLICY_AMOUNT = "policy.request.amount"
+ATTR_DECISION = "northstar.policy.decision"
+ATTR_POLICY_TOOL = "northstar.policy.tool.name"
+ATTR_POLICY_RULE = "northstar.policy.rule"
+ATTR_POLICY_CALLER = "northstar.policy.caller.spiffe_id"
+ATTR_POLICY_LIMIT = "northstar.policy.limit.amount"
+ATTR_POLICY_AMOUNT = "northstar.policy.request.amount"
 # The contract's own two signals on this span. `ATTR_AUTONOMY` is set
 # unconditionally (`pds/server.py`); `ATTR_FLAG_VERSION` is set only when
 # flagd's response actually carries a version, which measurably never
@@ -171,7 +171,7 @@ ATTR_POLICY_AMOUNT = "policy.request.amount"
 # `metadata`) -- reproduced here, not imported from `pds/telemetry.py`, per
 # this file's own "read off what the PDS was measured emitting" rule for
 # every attribute above it.
-ATTR_AUTONOMY = "policy.autonomy.level"
+ATTR_AUTONOMY = "northstar.policy.autonomy.level"
 ATTR_FLAG_VERSION = "feature_flag.version"
 
 EXECUTE_TOOL = "execute_payment"
@@ -270,7 +270,7 @@ def _wait_for_browser_root(client: JaegerClient, trace_id: str, timeout: float) 
     **Trap A, handled by observation rather than by hope.** The browser's
     `WebTracerProvider` uses a `BatchSpanProcessor` at the OTel SDK's default 5s
     scheduled export delay (`apps/customer-ui/src/telemetry.ts` sets no
-    override). `claim.submit` ends the instant the submission resolves, well
+    override). `northstar.claim.submit` ends the instant the submission resolves, well
     before that timer next fires, so closing the page as soon as "Outcome"
     appears kills the exporter mid-batch: the trace then contains the whole
     backend chain and **no `customer-ui` root span at all**, and a query
@@ -364,7 +364,7 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
             # span that merely opened and closed.
             time.sleep(HUMAN_TAKES_S)
             # A human decides, with the page still open: the customer's wait
-            # (`claim.wait`) ends, and is exported, only while the page lives.
+            # (`northstar.claim.wait`) ends, and is exported, only while the page lives.
             waiting_payment = json.loads(outcome["raw"])["paymentId"]
             ledger_record = live.get_payment(waiting_payment)
             live.review(waiting_payment, "approve", "alex.mercer")
@@ -383,7 +383,7 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
         # The sampling caveat, asserted rather than assumed. An unsampled
         # (`-00`) traceparent is correct OTel behaviour and means the PDS
         # exports no decision span at all -- so a criterion-3 failure would
-        # read as a missing `policy.decision` span and point at the PDS, which
+        # read as a missing `northstar.policy.decision` span and point at the PDS, which
         # would be the wrong place to look. Fail here instead, with the reason.
         assert int(flags, 16) & 0x01, (
             f"the browser sampled this trace out (traceparent flags {flags!r}); "
@@ -400,9 +400,9 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
             # The claim id is reused across runs (CLM-1842), so the submit is
             # the trace this run observed on the wire, and the wait is the one
             # that links to it.
-            submit = client.get_trace(trace_id).span("claim.submit", "customer-ui")
+            submit = client.get_trace(trace_id).span("northstar.claim.submit", "customer-ui")
             wait = client.wait_for_operation(
-                "customer-ui", "claim.wait", attrs={"northstar.claim.id": claim_id},
+                "customer-ui", "northstar.claim.wait", attrs={"northstar.claim.id": claim_id},
                 timeout=90, links_to=trace_id).root()
             assert wait.trace_id != submit.trace_id          # the wait is its own trace
             assert [l.trace_id for l in wait.links] == [submit.trace_id], wait.links
@@ -431,7 +431,7 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
     # BatchSpanProcessor delay, not merely for one span to appear.
     trace = client.wait_for_trace_id(
         trace_id,
-        operation="claim.submit",
+        operation="northstar.claim.submit",
         timeout=180,
         services=ALL_SERVICES,
     )
@@ -642,7 +642,7 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
     # The platform denied it, and the PDS's own span says so.
     decisions = _decisions(trace, EXECUTE_TOOL)
     assert len(decisions) == 1, (
-        f"expected exactly one policy.decision span for {EXECUTE_TOOL}, got "
+        f"expected exactly one northstar.policy.decision span for {EXECUTE_TOOL}, got "
         f"{len(decisions)}"
     )
     decision = decisions[0]
@@ -859,15 +859,15 @@ def test_criterion_3_one_trace_one_browser_root_zero_orphans_with_all_four_parts
       span, in error.
     * *the gateway* -- its `tools/call` SERVER span for `execute_payment` and
       the `Guardrail` CLIENT span for the hook call it made.
-    * *the PDS's decision span* -- `policy.decision`, SERVER, from
+    * *the PDS's decision span* -- `northstar.policy.decision`, SERVER, from
       `policy-decision-service`.
 
     **What is deliberately not asserted about the last two: their relationship
-    to each other.** `policy.decision` and `Guardrail` are *siblings*, both
+    to each other.** `northstar.policy.decision` and `Guardrail` are *siblings*, both
     children of the gateway's `tools/call` SERVER span (measured, both reference
     traces). agentgateway propagates the context it *received* to the hook, not
     the context of its own `Guardrail` client span, so asserting
-    `Guardrail -> policy.decision` parentage would be asserting a shape the
+    `Guardrail -> northstar.policy.decision` parentage would be asserting a shape the
     gateway does not produce -- and inventing telemetry for a third-party tool
     is exactly what this project forbids. The sibling relationship is asserted
     instead, because that is what is real.
@@ -888,7 +888,7 @@ def test_criterion_3_one_trace_one_browser_root_zero_orphans_with_all_four_parts
         f"the root span belongs to {root.service!r}, not the browser: "
         f"{root.operation!r}"
     )
-    assert root.operation == "claim.submit", root
+    assert root.operation == "northstar.claim.submit", root
     assert root.span_id == denial_run.span_id, (
         "the trace's root span id is not the span id observed in the browser's "
         "own traceparent header -- Jaeger returned some other request's trace"
@@ -971,11 +971,11 @@ def test_criterion_3_one_trace_one_browser_root_zero_orphans_with_all_four_parts
     decision = _decisions(trace, EXECUTE_TOOL)[0]
     assert decision.kind == "server", decision
     assert decision.parent_id == gateway_span.span_id, (
-        "policy.decision is not a child of the gateway's tools/call span; the "
+        "northstar.policy.decision is not a child of the gateway's tools/call span; the "
         "gateway's traceparent forwarding to the hook is broken"
     )
     assert decision.parent_id == guardrails[0].parent_id, (
-        "policy.decision and Guardrail are documented siblings under the "
+        "northstar.policy.decision and Guardrail are documented siblings under the "
         "gateway's tools/call span; they no longer share a parent"
     )
     assert decision.attrs.get(ATTR_DECISION) == "deny", decision.attrs
@@ -1695,7 +1695,7 @@ def test_criterion_6_a_payment_below_the_threshold_still_executes_end_to_end(
     # The same rule, permitting.
     decisions = _decisions(trace, EXECUTE_TOOL)
     assert len(decisions) == 1, (
-        f"expected one policy.decision for {EXECUTE_TOOL}, got {len(decisions)}"
+        f"expected one northstar.policy.decision for {EXECUTE_TOOL}, got {len(decisions)}"
     )
     decision = decisions[0]
     assert decision.attrs.get(ATTR_DECISION) == "permit", decision.attrs
@@ -1733,7 +1733,7 @@ def test_criterion_6_a_payment_below_the_threshold_still_executes_end_to_end(
     assert_single_root(trace)
     assert_no_orphans(trace)
     root = trace.roots()[0]
-    assert (root.service, root.operation) == ("customer-ui", "claim.submit"), root
+    assert (root.service, root.operation) == ("customer-ui", "northstar.claim.submit"), root
     assert root.span_id == permit_run.span_id, (
         "the trace's root span id is not the one observed in the browser's own "
         "traceparent header"

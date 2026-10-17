@@ -81,7 +81,7 @@ def test_dash0_config_exporters_are_the_base_exporters_plus_dash0_only():
 #
 # `traces/opensearch` is the OpenSearch-only branch the `forward/opensearch`
 # connector tees off the main traces pipeline. It runs
-# `attributes/opensearch-compat`, which rewrites `policy.decision.retryable`
+# `attributes/opensearch-compat`, which rewrites `northstar.policy.retryable`
 # to a non-colliding key so OpenSearch can index the decision span at all.
 # Dash0 and Jaeger receive the canonical names instead -- they export from
 # the main `traces` pipeline, upstream of the tee. Adding `otlp_grpc/dash0`

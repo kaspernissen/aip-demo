@@ -1,12 +1,15 @@
 """The guard against silent span loss between Jaeger and OpenSearch.
 
 **Why this file exists at all.** A real ingestion defect was measured here:
-`policy.decision` spans set both `policy.decision` (a string) and
-`policy.decision.retryable` (a bool); OpenSearch expands dotted keys into
+decision spans set a string decision key and a bool retryable key that
+extended it with a dotted suffix; OpenSearch expands dotted keys into
 objects at index time, so one document needed `attributes.policy.decision` to
 be a scalar and an object at once, and OpenSearch answered `can't merge a non
-object mapping [attributes.policy.decision] with an object mapping` -- once per
+object mapping [attributes.<decision key>] with an object mapping` -- once per
 document, permanently, with the only evidence in a collector log nobody reads.
+(The M9 rename to `northstar.policy.decision` / `northstar.policy.retryable`
+removed that pair; the guards below stay because third-party keys still
+collide.)
 Jaeger held 142 spans for the reference trace and OpenSearch 139; the three
 missing ones were exactly the three decision spans, and 0 of the index's 1,723
 documents came from the policy decision service. **A green unit suite saw
@@ -20,16 +23,17 @@ published in docs/telemetry-contract.md, where a guard checks it against
 1. every span Jaeger holds for one driven trace is in OpenSearch, compared as
    span-ID *sets* rather than counts, because "139 of 142" is a count that
    survived and a set difference names what did not;
-2. the `policy.decision` span is in OpenSearch by name, by service, and with
+2. the `northstar.policy.decision` span is in OpenSearch by name, by service, and with
    its decision attribute readable -- that single span is what the evidence
    view and the eval-scorer's policy-adherence scoring exist to query;
 3. no attribute key the driven trace actually carries collides uncovered --
    the unit guard reads this repo's own sources, and this reads what Jaeger
    holds, which is the only end that sees third-party library keys;
-4. Jaeger still receives the canonical attribute names: the OpenSearch-compat
-   rewrite lives in the `traces/opensearch` branch only, and an evidence view
-   whose field names differ from the trace an operator reads in Jaeger is
-   worse than no evidence view;
+4. Jaeger still receives the canonical attribute names, and OpenSearch holds
+   the very same ones for the keys we own: the OpenSearch-compat rewrite lives
+   in the `traces/opensearch` branch only and touches third-party keys, and
+   an evidence view whose field names differ from the trace an operator reads
+   in Jaeger is worse than no evidence view;
 5. the collector logged no export rejection during the run -- read over the
    **whole** window since the run began, never a `--tail` of it. A
    `--tail=200` against a much longer log has reported "no errors at any
@@ -42,8 +46,8 @@ MCP to the gateway directly with a SPIRE-minted JWT-SVID, following
 `_json_body` it imports rather than reimplements), so it needs no model call
 and no browser: one `propose_payment` that is permitted and one
 `execute_payment` above the €6,000 allowance that is denied. Both produce a
-`policy.decision` span, one of each outcome, which is the point -- the bug
-rejected permits and denials alike, because `policy.decision.retryable` is set
+`northstar.policy.decision` span, one of each outcome, which is the point -- the bug
+rejected permits and denials alike, because `northstar.policy.retryable` is set
 on every decision span (`pds/server.py:277`).
 
 **It supplies its own `traceparent`** so the trace id is known before the call
@@ -130,15 +134,13 @@ OPENSEARCH_TEE_ID = "forward/opensearch"
 # `_cat/indices` on this cluster.
 TRACE_INDEX = "ss4o_traces-default-namespace"
 
-DECISION_SPAN = "policy.decision"
+DECISION_SPAN = "northstar.policy.decision"
 PDS_SERVICE = "policy-decision-service"
 
-# The collider, and its OpenSearch-branch-only replacement. Canonical name from
-# platform/policy-decision-service/pds/telemetry.py:40; the replacement from
-# the `attributes/opensearch-compat` processor in both collector configs.
-ATTR_RETRYABLE_CANONICAL = "policy.decision.retryable"
-ATTR_RETRYABLE_OPENSEARCH = "policy.decision_retryable"
-ATTR_DECISION = "policy.decision"
+# The decision span's retryable flag, which used to be a dotted extension of
+# the decision key. Spelled the same in Jaeger and OpenSearch since M9.
+ATTR_RETRYABLE_CANONICAL = "northstar.policy.retryable"
+ATTR_DECISION = "northstar.policy.decision"
 
 # €6,200 against settlement-agent's assisted execute allowance (€0 since M8; it was €6,000) -- the
 # same numbers `test_policy_denial.py`'s denial scenario uses, so this file
@@ -492,12 +494,11 @@ def test_the_policy_decision_span_is_queryable_out_of_opensearch(ingest_run):
     assert len(decisions) == expected, (
         f"Jaeger has {expected} {DECISION_SPAN} spans for trace "
         f"{ingest_run.trace_id} and OpenSearch has {len(decisions)}. This is "
-        "the exact shape of the shipped defect: the decision span carries both "
-        f"{ATTR_DECISION!r} and {ATTR_RETRYABLE_CANONICAL!r}, OpenSearch "
-        "expands dotted keys into objects, and it refuses the document with "
-        "`can't merge a non object mapping [attributes.policy.decision] with "
-        "an object mapping`. The `attributes/opensearch-compat` processor in "
-        "deploy/observability/collector-config*.yaml is what prevents it."
+        "the shape of an earlier defect: a span carrying a key and a dotted "
+        "extension of it is refused by OpenSearch (`can't merge a non object "
+        "mapping`). Check the collector log for `Exporting failed`, and the "
+        "`attributes/opensearch-compat` processor in "
+        "deploy/observability/collector-config*.yaml."
     )
 
     for document in decisions:
@@ -507,16 +508,9 @@ def test_the_policy_decision_span_is_queryable_out_of_opensearch(ingest_run):
             f"the decision span indexed without a readable {ATTR_DECISION!r}: "
             f"{attributes!r}"
         )
-        assert isinstance(attributes.get(ATTR_RETRYABLE_OPENSEARCH), bool), (
-            f"{ATTR_RETRYABLE_OPENSEARCH!r} is missing or is not a boolean on "
-            f"the indexed decision span, so the OpenSearch-compat rename in "
-            f"the `traces/opensearch` pipeline is not doing what it claims: "
-            f"{attributes!r}"
-        )
-        assert ATTR_RETRYABLE_CANONICAL not in attributes, (
-            f"the indexed document still carries {ATTR_RETRYABLE_CANONICAL!r}, "
-            "which is the key that collides -- the rename did not run, and "
-            "indexing only succeeded by accident"
+        assert isinstance(attributes.get(ATTR_RETRYABLE_CANONICAL), bool), (
+            f"{ATTR_RETRYABLE_CANONICAL!r} is missing or is not a boolean on "
+            f"the indexed decision span: {attributes!r}"
         )
 
     assert {document["attributes"][ATTR_DECISION] for document in decisions} == {
@@ -572,8 +566,8 @@ def test_no_attribute_key_in_the_driven_trace_collides_uncovered(ingest_run):
         for longer in keys
         if longer != shorter and longer.startswith(shorter + ".")
     }
-    # The keys the OpenSearch branch already renames away.
-    covered = {ATTR_RETRYABLE_CANONICAL, "error.type"}
+    # The keys the OpenSearch branch already renames away (third-party only).
+    covered = {"error.type"}
     uncovered = {(s, l) for s, l in collisions if l not in covered}
     assert not uncovered, (
         f"trace {ingest_run.trace_id} carries {len(uncovered)} attribute-key "
@@ -587,11 +581,10 @@ def test_no_attribute_key_in_the_driven_trace_collides_uncovered(ingest_run):
         "`covered` here. Note the mapping is index-wide: the two keys need "
         "not be on the same span."
     )
-    assert (ATTR_DECISION, ATTR_RETRYABLE_CANONICAL) in collisions, (
-        "the known collision is no longer present in a driven trace. If "
-        f"{ATTR_RETRYABLE_CANONICAL!r} was renamed at the source, the compat "
-        "processor and this `covered` set should go in the same commit -- but "
-        "do not quietly shrink `covered` while the processor still renames it."
+    assert (ATTR_DECISION, ATTR_RETRYABLE_CANONICAL) not in collisions, (
+        f"{ATTR_RETRYABLE_CANONICAL!r} is a dotted extension of "
+        f"{ATTR_DECISION!r} again: the M9 rename made them siblings so that "
+        "no rewrite is needed for keys this project owns."
     )
 
 
@@ -613,13 +606,6 @@ def test_jaeger_still_receives_the_canonical_attribute_names(ingest_run):
             f"Jaeger's {DECISION_SPAN} span has lost the canonical "
             f"{ATTR_RETRYABLE_CANONICAL!r} attribute the telemetry contract "
             f"defines: {sorted(decision.attrs)}"
-        )
-        assert ATTR_RETRYABLE_OPENSEARCH not in decision.attrs, (
-            f"Jaeger's {DECISION_SPAN} span carries the OpenSearch-only name "
-            f"{ATTR_RETRYABLE_OPENSEARCH!r}. The `attributes/opensearch-compat` "
-            "processor has leaked out of the `traces/opensearch` branch into "
-            "what Jaeger and Dash0 receive, which this repo's telemetry "
-            "contract forbids."
         )
         assert decision.attrs.get(ATTR_DECISION) in {"permit", "deny"}, (
             f"Jaeger's {DECISION_SPAN} span has no readable {ATTR_DECISION!r}: "

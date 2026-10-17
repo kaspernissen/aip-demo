@@ -189,7 +189,7 @@ def test_the_same_claim_refuses_then_settles_when_only_the_contract_changes(
     claim twice, under the junior identity, with nothing between the two runs
     but a live contract flip.
 
-    Both halves assert against the PDS's own `policy.decision` span (not
+    Both halves assert against the PDS's own `northstar.policy.decision` span (not
     against `.reply`, which carries no `rule` -- `claimId`/`status`/`amount`/
     `paymentId`/`narrative` only, measured by grepping every existing
     `reply.get(...)` call in this suite), the same source
@@ -201,7 +201,7 @@ def test_the_same_claim_refuses_then_settles_when_only_the_contract_changes(
         assert refused.reply.get("status") == "awaiting_approval", refused.reply
         refused_decisions = _decisions(refused.trace, EXECUTE_TOOL)
         assert len(refused_decisions) == 1, (
-            f"expected exactly one policy.decision span for {EXECUTE_TOOL}, "
+            f"expected exactly one northstar.policy.decision span for {EXECUTE_TOOL}, "
             f"got {len(refused_decisions)}"
         )
         refused_decision = refused_decisions[0]
@@ -219,7 +219,7 @@ def test_the_same_claim_refuses_then_settles_when_only_the_contract_changes(
         assert settled.reply.get("status") == "executed", settled.reply
         settled_decisions = _decisions(settled.trace, EXECUTE_TOOL)
         assert len(settled_decisions) == 1, (
-            f"expected exactly one policy.decision span for {EXECUTE_TOOL}, "
+            f"expected exactly one northstar.policy.decision span for {EXECUTE_TOOL}, "
             f"got {len(settled_decisions)}"
         )
         settled_decision = settled_decisions[0]

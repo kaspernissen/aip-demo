@@ -36,7 +36,7 @@ def test_the_403_leaves_no_policy_decision_span(gateway):
                             {**headers, "traceparent": f"00-{trace_id}-{'1' * 16}-01"})
     trace = JaegerClient(JAEGER_API).wait_for_trace_id(trace_id, services={"agentgateway"}, timeout=60)
     assert trace.spans, "the gateway recorded no span for the denied call"
-    assert not [s for s in trace.spans if s.operation == "policy.decision"], trace.spans
+    assert not [s for s in trace.spans if s.operation == "northstar.policy.decision"], trace.spans
 
 
 def test_initialize_and_tools_list_still_pass(gateway):
@@ -81,7 +81,7 @@ def test_a_claim_over_the_ceiling_fails_and_nobody_is_asked(gateway):
     """The behaviour the ceiling carries, pinned (docs/demo-runbook.md appendix):
     above the ceiling the agent's execute is a 403 from the gateway, not a deny
     from the PDS, so the task ends `failed`, the payment stays `proposed`, no
-    reviewer ever sees it and no `policy.decision` span exists for the execute.
+    reviewer ever sees it and no `northstar.policy.decision` span exists for the execute.
     By design nobody, a human included, may release it through this gateway.
     """
     claim_id = f"CLM-CEIL-{uuid.uuid4().hex[:8]}"

@@ -469,7 +469,7 @@ BATCH_REJECTED_BY_CEILING = 403
 BATCH_REJECTED_BODY = "authorization failed"
 
 # Over `settlement-agent`'s assisted allowance (0 since M8), so a batch that DID
-# reach the guardrail would produce a `policy.decision` span -- and one that
+# reach the guardrail would produce a `northstar.policy.decision` span -- and one that
 # bypassed it would execute a real over-limit payment. The probe cannot
 # produce a false negative by asking for something that was never decidable.
 BATCH_PROBE_AMOUNT = 6200.0
@@ -521,7 +521,7 @@ def test_a_jsonrpc_batch_is_rejected_before_the_policy_hook_and_changes_nothing(
        variant of untagged enum JsonRpcMessage`), one layer above the point
        where a method name exists to be matched against `methods:
        {"tools/call": request}`.
-    2. **No decision spans.** Zero `policy.decision` spans in the trace the
+    2. **No decision spans.** Zero `northstar.policy.decision` spans in the trace the
        request carries, read from Jaeger by an id this test mints itself, so
        there is no search and no ambiguity. A rejection that still consulted
        the policy would be a different (and much more interesting) finding.
@@ -642,7 +642,7 @@ def test_a_jsonrpc_batch_is_rejected_before_the_policy_hook_and_changes_nothing(
     # 2. No decision spans. The trace may be empty (Jaeger 404s on an id it
     # has never seen) or may hold the gateway's single `POST /*` span; both
     # are consistent with "the guardrail never ran", and only a
-    # `policy.decision` span would contradict it. Waiting out one full
+    # `northstar.policy.decision` span would contradict it. Waiting out one full
     # BatchSpanProcessor cycle first, so "absent" is not merely "not exported
     # yet" -- the PDS uses the SDK default 5s schedule delay.
     time.sleep(JaegerClient.QUIET_WINDOW_S)
@@ -651,9 +651,9 @@ def test_a_jsonrpc_batch_is_rejected_before_the_policy_hook_and_changes_nothing(
     except AssertionError:
         decisions = []
     else:
-        decisions = trace.spans_named("policy.decision")
+        decisions = trace.spans_named("northstar.policy.decision")
     assert decisions == [], (
-        "the batched request produced policy.decision span(s), so the "
+        "the batched request produced northstar.policy.decision span(s), so the "
         "guardrail DID see the array -- OQ-U1's measured answer ('rejected at "
         "deserialization, before the hook runs') no longer holds: "
         f"{[(s.service, s.attrs) for s in decisions]}"
