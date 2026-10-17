@@ -493,8 +493,8 @@ tree this change has since altered. What has to happen to make it MEASURED: one
 run on its own against the live stage-7 cluster, 7 passed in 55.8s, which is not
 the gate having run.
 
-Bare-suite row, derived from that same collection: 566 collected − 100 gated −
-**0** xfailed = `466 passed, 100 skipped, 0 xfailed`. (Gate run 4's fix added one unit test, the model-provider retry predicate in `test_jaeger_assertions.py`, so 565 became 566 and the gated figure stays 100.) (Gate run 2's fix added three unit tests, two in `test_claim_discovery.py` and one in `test_demo_driver.py`, so 562 became 565 and the gated figure stays 100.) (The M8 gate-fix wave took the collection from 552 to 562: three unit tests for claim discovery in `test_claim_discovery.py`, five driver unit tests in `test_demo_driver.py` for a decided-but-untold claim, and two gated live tests in the new `test_decided_but_untold_triage.py`, so the gated figure is 100; the egress inventory fix and the leak fix in `test_settlement_agent_trace.py` add none.) (The final-review fix wave took the collection from 539 to 552 (the last two are the deck guard, `test_talk_deck_is_not_m7.py`, ungated): the additions are nine driver unit tests in `test_demo_driver.py`, one gated live test in `test_demo_flow.py` (a claim filed in the browser is approved and evidenced), one gated live test in `test_gateway_ceiling.py` (a claim over the ceiling fails and nobody is asked), so the gated figure is 98.) (M8 Task 5 took the collection from 529 to 539: eight driver unit tests net in `test_demo_driver.py`, one deck-quotes-the-rule test in `test_gateway_ceiling_config.py`, one non-gated live test in `test_gateway_ceiling.py` (a session's GET and DELETE are not stopped by the ceiling), and one gated live test in `test_demo_flow.py` (the human approves and the customer's task completes), so the gated figure is 96.) (M8 Task 4 took the collection from 522 to 529: three config tests in `test_gateway_ceiling_config.py` and four live tests in `test_gateway_ceiling.py`, none gated, because they spend no model call, so the gated figure stays 95.) (M8 Task 3 took the collection from 512 to 522: four gated live tests in `test_human_in_the_loop.py` (trace B and its link, trace A's deny, the histogram, and the release's rule split from the repeat-execute check) and one gated Prometheus control in `test_prometheus_metrics_ingest.py`, so the gated figure is 95, plus five harness tests in `test_jaeger_assertions.py`.) (M8 Task 2 took the collection
+Bare-suite row, derived from that same collection: 571 collected − 100 gated −
+**0** xfailed = `471 passed, 100 skipped, 0 xfailed`. (M9 Task 1 added five ungated unit tests, `test_registry_layout.py`, so 566 became 571 and the gated figure stays 100.) (Gate run 4's fix added one unit test, the model-provider retry predicate in `test_jaeger_assertions.py`, so 565 became 566 and the gated figure stays 100.) (Gate run 2's fix added three unit tests, two in `test_claim_discovery.py` and one in `test_demo_driver.py`, so 562 became 565 and the gated figure stays 100.) (The M8 gate-fix wave took the collection from 552 to 562: three unit tests for claim discovery in `test_claim_discovery.py`, five driver unit tests in `test_demo_driver.py` for a decided-but-untold claim, and two gated live tests in the new `test_decided_but_untold_triage.py`, so the gated figure is 100; the egress inventory fix and the leak fix in `test_settlement_agent_trace.py` add none.) (The final-review fix wave took the collection from 539 to 552 (the last two are the deck guard, `test_talk_deck_is_not_m7.py`, ungated): the additions are nine driver unit tests in `test_demo_driver.py`, one gated live test in `test_demo_flow.py` (a claim filed in the browser is approved and evidenced), one gated live test in `test_gateway_ceiling.py` (a claim over the ceiling fails and nobody is asked), so the gated figure is 98.) (M8 Task 5 took the collection from 529 to 539: eight driver unit tests net in `test_demo_driver.py`, one deck-quotes-the-rule test in `test_gateway_ceiling_config.py`, one non-gated live test in `test_gateway_ceiling.py` (a session's GET and DELETE are not stopped by the ceiling), and one gated live test in `test_demo_flow.py` (the human approves and the customer's task completes), so the gated figure is 96.) (M8 Task 4 took the collection from 522 to 529: three config tests in `test_gateway_ceiling_config.py` and four live tests in `test_gateway_ceiling.py`, none gated, because they spend no model call, so the gated figure stays 95.) (M8 Task 3 took the collection from 512 to 522: four gated live tests in `test_human_in_the_loop.py` (trace B and its link, trace A's deny, the histogram, and the release's rule split from the repeat-execute check) and one gated Prometheus control in `test_prometheus_metrics_ingest.py`, so the gated figure is 95, plus five harness tests in `test_jaeger_assertions.py`.) (M8 Task 2 took the collection
 from 504 to 512: five gated live tests in `test_human_in_the_loop.py` (task states, the
 autonomous wait, the 10-minute resubscribe, the dropped-stream reconnect), so the gated
 figure is 90, and two Cilium config tests in `test_stage2_network_policy.py` and one harness test in
@@ -522,7 +522,7 @@ test) is `tests/unit`-only and carries no `skipif`, so it adds none, and the
 internal-platform pass's eight new `tests/unit` tests, the mermaid pass's eight
 and the page-banner pass's eight `tests/unit` tests carry none either; the
 page-banner pass's own e2e file adds exactly **one** — and
-reports 100 of 566, with the per-module spread and the browser split both
+reports 100 of 571, with the per-module spread and the browser split both
 moving for the first time this milestone. Full spread:
 `test_settlement_llm_trace.py` 9,
 `test_prometheus_metrics_ingest.py` 11, `test_browser_root_span.py` 8,
@@ -552,7 +552,7 @@ M8 gate run 3: **MEASURED-FAILED** (2026-10-15, at `5a71392`, fresh images, warm
 
 M8 gate run 4: **MEASURED-FAILED** (2026-10-15, at `6ccaa55`, fresh images, warmed Backstage): `2 failed, 562 passed, 1 xfailed, 0 skipped`, in 1423.96 s. (1) `tests/e2e/test_human_in_the_loop.py::test_a_dropped_stream_reconnects_and_still_sees_the_outcome`: the claim's task FAILED with no payment because settlement-agent's lookup of `api.anthropic.com` failed (`ConnectError: [Errno -2] Name or service not known`, three attempts in about 1.5 s, spans `chat claude-sonnet-5` / `ModelAPIError: Connection error.` in OpenSearch for `CLM-HITL-807a5c0d`; the only such failure in the run, nothing in the collector, nothing before or after). Outside this repo; the claim helper now files again once, and only for that failure (`live.is_upstream_model_failure`). (2) `tests/e2e/test_progressive_autonomy.py::test_the_same_claim_refuses_then_settles_when_only_the_contract_changes`: `_drive_browser`'s `wait_for_trace_id` reported the span count never steady within 180 s (last count 170). **Cause not proven**: OpenSearch and Jaeger both hold exactly 170 spans, the last ending 12 s after the trace began, so the count had stopped moving long before the timeout; the test passed 8 of 8 reruns on the old code. What was fixed is the audited gap, not a proven cause: `_drive_browser` did not pass `steady_ignoring`, so `steady_ignoring` now defaults to the a2a polling span for every caller, and a timeout reports the poll history and last read error so the next occurrence names itself. Dash0 export retries (`Exporting failed`, 02:29:32Z, external endpoint) coincide with the window and are a residual suspect that was not shown to matter.
 
-Gate row: **MEASURED** — M8's gate run was at commit `66d5932` (the fifth run of M8), `./scripts/smoke-test.sh` (which sets `RUN_BROWSER_TESTS=1` itself), run by the orchestrator on 2026-10-15 (started 05:13, finished 05:37 local) against the `kind-northstar` stage-7 cluster on agentgateway v1.6.0, with every image rebuilt by `./scripts/setup-kind.sh --stage 7` from that clean tree (exit 0), Backstage rebuilt from that clean tree and warmed in headless Chromium (home and `/autonomy-contract`), `/api/awaiting` empty and `demo reset` before the run, exit **0**: `565 passed, 1 xfailed in 1400.29s (0:23:20)`, zero skips (`grep -c SKIPPED` over the full output, kept at `.demo/m8-gate-run5.log`, returns 0). 565 + 1 = 566, the collection this document publishes. This run exercised every gated module including `test_human_in_the_loop.py`, `test_demo_flow.py`, `test_decided_but_untold_triage.py` and `test_gateway_ceiling.py`, so the M8 rows below that were labelled predicted (Tasks 1 to 5, the final-review fix wave and the gate-fix waves) are measured by it; nothing the gate does not run is upgraded. The earlier M8 runs stay as the dated MEASURED-FAILED lines above: `cbfb670` (2 failed), `90926e8` (1 failed), `5a71392` (2 failed), `6ccaa55` (2 failed). The predictions that preceded this row, kept as the record the collection was checked against: the gate-fix wave `565 passed, 1 xfailed` (566 collected), the first gate-fix wave `561 passed, 1 xfailed` (562 collected), and the M8 final-review fix wave `551 passed, 1 xfailed`
+Gate row: **PREDICTED, NOT MEASURED** — M9 Task 1 changed gate paths after the last gate run (`scripts/check-registry.sh` and the registry layout test); the figure for today's tree is the prediction `570 passed, 1 xfailed` (571 collected), and the M8 measurement below is not a run of it; M9's gate run replaces the prediction before merge. M8's gate run was at commit `66d5932` (the fifth run of M8), `./scripts/smoke-test.sh` (which sets `RUN_BROWSER_TESTS=1` itself), run by the orchestrator on 2026-10-15 (started 05:13, finished 05:37 local) against the `kind-northstar` stage-7 cluster on agentgateway v1.6.0, with every image rebuilt by `./scripts/setup-kind.sh --stage 7` from that clean tree (exit 0), Backstage rebuilt from that clean tree and warmed in headless Chromium (home and `/autonomy-contract`), `/api/awaiting` empty and `demo reset` before the run, exit **0**: `565 passed, 1 xfailed in 1400.29s (0:23:20)`, zero skips (`grep -c SKIPPED` over the full output, kept at `.demo/m8-gate-run5.log`, returns 0). 565 + 1 = 566, the collection this document publishes. This run exercised every gated module including `test_human_in_the_loop.py`, `test_demo_flow.py`, `test_decided_but_untold_triage.py` and `test_gateway_ceiling.py`, so the M8 rows below that were labelled predicted (Tasks 1 to 5, the final-review fix wave and the gate-fix waves) are measured by it; nothing the gate does not run is upgraded. The earlier M8 runs stay as the dated MEASURED-FAILED lines above: `cbfb670` (2 failed), `90926e8` (1 failed), `5a71392` (2 failed), `6ccaa55` (2 failed). The predictions that preceded this row, kept as the record the collection was checked against: the gate-fix wave `565 passed, 1 xfailed` (566 collected), the first gate-fix wave `561 passed, 1 xfailed` (562 collected), and the M8 final-review fix wave `551 passed, 1 xfailed`
 (552 collected): it changes the PDS, the reviewer-ui, the claims-agent, the driver, the harness and the e2e suite, all `GATE_PATHS`, so no gate row describes this tree; the controller's one `./scripts/smoke-test.sh` follows. Before it,
 M8 Task 5 predicted `538 passed, 1 xfailed`
 (539 collected): it changes the gateway config's CEL rule, the driver, the customer-ui's log words, the e2e suite and the docs, all `GATE_PATHS` or docs the guards read, so no gate row describes this tree; the controller's whole-branch review and one `./scripts/smoke-test.sh` follow. Before it,
@@ -5113,6 +5113,74 @@ fails if a future task ever starts enriching third-party infrastructure
 telemetry, so that becomes a deliberate decision instead of a quiet one. (The
 test also asserts gateway spans exist first, so it cannot pass vacuously on a
 trace where the gateway dropped out of the path — verified by mutation.)
+
+## Registry-defined attributes (generated)
+
+The attributes below are generated from the OpenTelemetry Weaver registry in
+`telemetry/registry/`, which is the checked definition of every name this
+project owns. Do not edit between the markers: `scripts/check-registry.sh`
+regenerates the region and fails when the committed text differs. The hand-written
+sections above and below still describe the names as emitted before the M9
+rename wave.
+
+<!-- BEGIN weaver-generated -->
+
+### `northstar.claim`
+
+The insurance claim a trace is about, and the A2A task that carries it.
+
+| Attribute | Type | Stability | Description | Examples / values |
+|---|---|---|---|---|
+| `northstar.a2a.task.id` | string | development | The A2A task id of a claim being processed by claims-agent. | `f2d33c09-7ffb-406b-8491-7fc94b9c6693` |
+| `northstar.a2a.task.state` | enum | development | The A2A task state claims-agent reported on its span. | `failed`, `completed`, `input-required` |
+| `northstar.claim.id` | string | development | The claim a span belongs to. Travels as W3C baggage; the span processors copy it onto spans. | `CLM-1842` |
+| `northstar.claim.policy_number` | string | development | The insurance policy number the claim is made under (not the authorization policy). | `POL-77120` |
+| `northstar.payment.refusal_cause` | enum | development | Why payments-api refused a request with 409. Absent on a request it did not refuse. | `amount_mismatch`, `already_executed`, `rejected` |
+
+### `northstar.contract`
+
+A change to the autonomy contract, made through Backstage.
+
+| Attribute | Type | Stability | Description | Examples / values |
+|---|---|---|---|---|
+| `northstar.contract.actor` | string | development | Who made the change. | `backstage-autonomy-card` |
+| `northstar.contract.field_manager` | string | development | The Kubernetes field manager the change was applied as. | `backstage-autonomy-card` |
+| `northstar.contract.flag.name` | string | development | The name of the flag resource the change was made to. The k8s semantic conventions have no generic resource-name attribute. | `northstar-autonomy` |
+| `northstar.contract.new_variant` | enum | development | The autonomy variant after the change. | `assisted`, `autonomous` |
+| `northstar.contract.previous_variant` | enum | development | The autonomy variant before the change. | `assisted`, `autonomous` |
+
+### `northstar.policy`
+
+A policy decision the platform made about one MCP tools/call.
+
+| Attribute | Type | Stability | Description | Examples / values |
+|---|---|---|---|---|
+| `northstar.policy.autonomy.level` | enum | development | The autonomy level in effect, resolved from the autonomy-contract flag at decision time. | `assisted`, `autonomous` |
+| `northstar.policy.autonomy.reason` | string | development | The OpenFeature reason the autonomy level came back with. | `TARGETING_MATCH`, `STATIC`, `DEFAULT`, `ERROR` |
+| `northstar.policy.caller.spiffe_id` | string | development | The SPIFFE ID of the workload the decision was made about. | `spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent` |
+| `northstar.policy.decision` | enum | development | What the policy-decision-service decided. | `permit`, `deny` |
+| `northstar.policy.ledger.status` | enum | development | What the ledger showed for the payment an execute_payment call asked about. | `proposed`, `awaiting_approval`, `executed`, `rejected`, `unreadable` |
+| `northstar.policy.limit.amount` | double | development | The limit in EUR the rule applied. Absent when the rule has no limit. | `6000.0` |
+| `northstar.policy.request.amount` | double | development | The payment amount the tool call asked for. | `6800.0` |
+| `northstar.policy.request.currency` | string | development | The currency of the requested amount. | `EUR` |
+| `northstar.policy.retryable` | boolean | development | Whether the caller may retry the same call and expect a different answer. |  |
+| `northstar.policy.rule` | string | development | The rule that decided, e.g. settlement-agent.assisted.execute_limit. | `settlement-agent.assisted.execute_limit`, `human-approved.execute` |
+| `northstar.policy.tool.name` | string | development | The MCP tool the call asked for. gen_ai.tool.name moved out of the core registry in semantic-conventions v1.44.0, so it cannot be referenced. | `propose_payment`, `execute_payment` |
+
+### `northstar.review`
+
+A human's decision about one payment that policy refused to let an agent execute.
+
+| Attribute | Type | Stability | Description | Examples / values |
+|---|---|---|---|---|
+| `northstar.review.decision` | enum | development | What the human reviewer decided. | `approve`, `reject` |
+| `northstar.review.payment.id` | string | development | The ledger id of the payment under review. | `PAY-000043` |
+| `northstar.review.resume_only` | boolean | development | True when the decision was already on the ledger and the call only re-sent the resume to the claim. |  |
+| `northstar.review.reviewer.id` | string | development | The id the reviewer signed the decision with. | `kasper.nissen` |
+| `northstar.review.reviewer.spiffe_id` | string | development | The SPIFFE ID of the reviewer-ui workload that took the decision. Absent when the workload cannot prove its identity. | `spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui` |
+| `northstar.review.wait.duration` | double | development | Seconds from the payment awaiting approval to the human's decision. Absent on a resume-only call. | `10.931` |
+
+<!-- END weaver-generated -->
 
 ## Content capture
 

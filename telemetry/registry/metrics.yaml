@@ -1,0 +1,11 @@
+groups:
+  - id: metric.northstar.approval.wait.duration
+    type: metric
+    metric_name: northstar.approval.wait.duration
+    instrument: histogram
+    unit: s
+    stability: development
+    brief: How long a human took, from the payment awaiting approval to the decision.
+    attributes:
+      - {ref: northstar.review.decision, requirement_level: required}
+      - {ref: northstar.policy.autonomy.level, requirement_level: required}

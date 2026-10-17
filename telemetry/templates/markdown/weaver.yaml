@@ -1,0 +1,7 @@
+# Renders Northstar's own attribute tables for docs/telemetry-contract.md.
+# The jq filter keeps only the attribute groups this registry defines; the
+# semantic-convention dependency is not rendered.
+templates:
+  - pattern: attributes.md.j2
+    filter: '{groups: [.groups[] | select(.type == "attribute_group" and (.id | startswith("registry.northstar.")))]}'
+    application_mode: single

@@ -1,0 +1,60 @@
+groups:
+  - id: registry.northstar.review
+    type: attribute_group
+    stability: development
+    brief: A human's decision about one payment that policy refused to let an agent execute.
+    attributes:
+      - id: northstar.review.decision
+        type:
+          members:
+            - {id: approve, value: approve, stability: development, brief: The reviewer approved the payment; it is executed.}
+            - {id: reject, value: reject, stability: development, brief: The reviewer rejected the payment; no money moves.}
+        stability: development
+        brief: What the human reviewer decided.
+      - id: northstar.review.payment.id
+        type: string
+        stability: development
+        brief: The ledger id of the payment under review.
+        examples: [PAY-000043]
+      - id: northstar.review.reviewer.id
+        type: string
+        stability: development
+        brief: The id the reviewer signed the decision with.
+        examples: [kasper.nissen]
+      - id: northstar.review.reviewer.spiffe_id
+        type: string
+        stability: development
+        brief: The SPIFFE ID of the reviewer-ui workload that took the decision. Absent when the workload cannot prove its identity.
+        examples: [spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui]
+      - id: northstar.review.wait.duration
+        type: double
+        stability: development
+        brief: Seconds from the payment awaiting approval to the human's decision. Absent on a resume-only call.
+        examples: [10.931]
+      - id: northstar.review.resume_only
+        type: boolean
+        stability: development
+        brief: True when the decision was already on the ledger and the call only re-sent the resume to the claim.
+  - id: span.northstar.review.decision
+    type: span
+    span_kind: server
+    stability: development
+    name: northstar.review.decision
+    brief: One human decision. Links back to the span where policy refused the payment.
+    attributes:
+      - {ref: northstar.review.decision, requirement_level: required}
+      - {ref: northstar.review.payment.id, requirement_level: required}
+      - {ref: northstar.review.reviewer.id, requirement_level: required}
+      - {ref: northstar.review.reviewer.spiffe_id, requirement_level: recommended}
+      - ref: northstar.review.wait.duration
+        requirement_level: {conditionally_required: when money moves, not on a resume-only call}
+      - ref: northstar.review.resume_only
+        requirement_level: {conditionally_required: when the decision was already on the ledger}
+      - {ref: northstar.claim.id, requirement_level: recommended}
+  - id: span.northstar.review.queue
+    type: span
+    span_kind: server
+    stability: development
+    name: northstar.review.queue
+    brief: The reviewer's queue of payments awaiting a decision. Carries no attributes of its own.
+    attributes: []

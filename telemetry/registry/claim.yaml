@@ -1,0 +1,54 @@
+groups:
+  - id: registry.northstar.claim
+    type: attribute_group
+    stability: development
+    brief: The insurance claim a trace is about, and the A2A task that carries it.
+    attributes:
+      - id: northstar.claim.id
+        type: string
+        stability: development
+        brief: The claim a span belongs to. Travels as W3C baggage; the span processors copy it onto spans.
+        examples: [CLM-1842]
+      - id: northstar.claim.policy_number
+        type: string
+        stability: development
+        brief: The insurance policy number the claim is made under (not the authorization policy).
+        examples: [POL-77120]
+      - id: northstar.payment.refusal_cause
+        type:
+          members:
+            - {id: amount_mismatch, value: amount_mismatch, stability: development, brief: The stated amount or currency did not confirm the recorded proposal.}
+            - {id: already_executed, value: already_executed, stability: development, brief: The payment had already been executed.}
+            - {id: rejected, value: rejected, stability: development, brief: A reviewer rejected the payment.}
+        stability: development
+        brief: Why payments-api refused a request with 409. Absent on a request it did not refuse.
+      - id: northstar.a2a.task.id
+        type: string
+        stability: development
+        brief: The A2A task id of a claim being processed by claims-agent.
+        examples: [f2d33c09-7ffb-406b-8491-7fc94b9c6693]
+      - id: northstar.a2a.task.state
+        type:
+          members:
+            - {id: failed, value: failed, stability: development, brief: The task failed.}
+            - {id: completed, value: completed, stability: development, brief: The task completed.}
+            - {id: input_required, value: input-required, stability: development, brief: The task waits for a human.}
+        stability: development
+        brief: The A2A task state claims-agent reported on its span.
+  - id: span.northstar.claim.submit
+    type: span
+    span_kind: internal
+    stability: development
+    name: northstar.claim.submit
+    brief: The customer submits a claim. Root of the claim's first trace.
+    attributes:
+      - {ref: northstar.claim.id, requirement_level: required}
+      - {ref: northstar.claim.policy_number, requirement_level: required}
+  - id: span.northstar.claim.wait
+    type: span
+    span_kind: internal
+    stability: development
+    name: northstar.claim.wait
+    brief: The customer waits for a human decision. Its own trace, linked to the submit span.
+    attributes:
+      - {ref: northstar.claim.id, requirement_level: required}

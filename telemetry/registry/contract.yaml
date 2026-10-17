@@ -1,0 +1,48 @@
+groups:
+  - id: registry.northstar.contract
+    type: attribute_group
+    stability: development
+    brief: A change to the autonomy contract, made through Backstage.
+    attributes:
+      - id: northstar.contract.previous_variant
+        type:
+          members:
+            - {id: assisted, value: assisted, stability: development, brief: Assisted autonomy.}
+            - {id: autonomous, value: autonomous, stability: development, brief: Autonomous autonomy.}
+        stability: development
+        brief: The autonomy variant before the change.
+      - id: northstar.contract.new_variant
+        type:
+          members:
+            - {id: assisted, value: assisted, stability: development, brief: Assisted autonomy.}
+            - {id: autonomous, value: autonomous, stability: development, brief: Autonomous autonomy.}
+        stability: development
+        brief: The autonomy variant after the change.
+      - id: northstar.contract.field_manager
+        type: string
+        stability: development
+        brief: The Kubernetes field manager the change was applied as.
+        examples: [backstage-autonomy-card]
+      - id: northstar.contract.actor
+        type: string
+        stability: development
+        brief: Who made the change.
+        examples: [backstage-autonomy-card]
+      - id: northstar.contract.flag.name
+        type: string
+        stability: development
+        brief: The name of the flag resource the change was made to. The k8s semantic conventions have no generic resource-name attribute.
+        examples: [northstar-autonomy]
+  - id: span.northstar.autonomy_contract.change
+    type: span
+    span_kind: internal
+    stability: development
+    name: northstar.autonomy_contract.change
+    brief: One flip of the autonomy contract. Starts and ends in the same instant.
+    attributes:
+      - {ref: northstar.contract.previous_variant, requirement_level: required}
+      - {ref: northstar.contract.new_variant, requirement_level: required}
+      - {ref: northstar.contract.field_manager, requirement_level: required}
+      - {ref: northstar.contract.actor, requirement_level: required}
+      - {ref: k8s.namespace.name, requirement_level: recommended}
+      - {ref: northstar.contract.flag.name, requirement_level: recommended}

@@ -1,0 +1,16 @@
+{%- macro cell(text) -%}{{ text | replace("|", "\\|") | replace("\n", " ") | trim }}{%- endmacro -%}
+{%- macro type_of(attr) -%}
+{%- if attr.type is mapping and attr.type.members is defined -%}enum
+{%- else -%}{{ attr.type }}{%- endif -%}
+{%- endmacro -%}
+{%- for group in ctx.groups | sort(attribute="id") -%}
+### `{{ group.id | replace("registry.", "") }}`
+
+{{ cell(group.brief) }}
+
+| Attribute | Type | Stability | Description | Examples / values |
+|---|---|---|---|---|
+{% for attr in group.attributes | sort(attribute="name") -%}
+| `{{ attr.name }}` | {{ type_of(attr) }} | {{ attr.stability }} | {{ cell(attr.brief) }} | {% if attr.type is mapping and attr.type.members is defined %}{% for m in attr.type.members %}`{{ m.value }}`{% if not loop.last %}, {% endif %}{% endfor %}{% elif attr.examples is defined %}{% for e in attr.examples %}`{{ e }}`{% if not loop.last %}, {% endif %}{% endfor %}{% endif %} |
+{% endfor %}
+{% endfor -%}

@@ -1,0 +1,90 @@
+groups:
+  - id: registry.northstar.policy
+    type: attribute_group
+    stability: development
+    brief: A policy decision the platform made about one MCP tools/call.
+    attributes:
+      - id: northstar.policy.decision
+        type:
+          members:
+            - {id: permit, value: permit, stability: development, brief: The call may proceed.}
+            - {id: deny, value: deny, stability: development, brief: The call is refused; the rule and limit say why.}
+        stability: development
+        brief: What the policy-decision-service decided.
+      - id: northstar.policy.rule
+        type: string
+        stability: development
+        brief: The rule that decided, e.g. settlement-agent.assisted.execute_limit.
+        examples: [settlement-agent.assisted.execute_limit, human-approved.execute]
+      - id: northstar.policy.limit.amount
+        type: double
+        stability: development
+        brief: The limit in EUR the rule applied. Absent when the rule has no limit.
+        examples: [6000.0]
+      - id: northstar.policy.retryable
+        type: boolean
+        stability: development
+        brief: Whether the caller may retry the same call and expect a different answer.
+      - id: northstar.policy.caller.spiffe_id
+        type: string
+        stability: development
+        brief: The SPIFFE ID of the workload the decision was made about.
+        examples: [spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent]
+      - id: northstar.policy.request.amount
+        type: double
+        stability: development
+        brief: The payment amount the tool call asked for.
+        examples: [6800.0]
+      - id: northstar.policy.request.currency
+        type: string
+        stability: development
+        brief: The currency of the requested amount.
+        examples: [EUR]
+      - id: northstar.policy.autonomy.level
+        type:
+          members:
+            - {id: assisted, value: assisted, stability: development, brief: A human approves any payment above the agent's limit.}
+            - {id: autonomous, value: autonomous, stability: development, brief: The agent may execute payments up to the autonomous limit on its own.}
+        stability: development
+        brief: The autonomy level in effect, resolved from the autonomy-contract flag at decision time.
+      - id: northstar.policy.autonomy.reason
+        type: string
+        stability: development
+        brief: The OpenFeature reason the autonomy level came back with.
+        examples: [TARGETING_MATCH, STATIC, DEFAULT, ERROR]
+      - id: northstar.policy.tool.name
+        type: string
+        stability: development
+        brief: The MCP tool the call asked for. gen_ai.tool.name moved out of the core registry in semantic-conventions v1.44.0, so it cannot be referenced.
+        examples: [propose_payment, execute_payment]
+      - id: northstar.policy.ledger.status
+        type:
+          members:
+            - {id: proposed, value: proposed, stability: development, brief: The payment is proposed and not yet decided.}
+            - {id: awaiting_approval, value: awaiting_approval, stability: development, brief: The payment is refused by policy and waits for a human.}
+            - {id: executed, value: executed, stability: development, brief: The payment has been executed.}
+            - {id: rejected, value: rejected, stability: development, brief: A reviewer rejected the payment.}
+            - {id: unreadable, value: unreadable, stability: development, brief: "The ledger could not be read, so the decision fails closed."}
+        stability: development
+        brief: What the ledger showed for the payment an execute_payment call asked about.
+  - id: span.northstar.policy.decision
+    type: span
+    span_kind: server
+    stability: development
+    name: northstar.policy.decision
+    brief: One decision, a child of the gateway's tools/call span.
+    attributes:
+      - {ref: northstar.policy.decision, requirement_level: required}
+      - {ref: northstar.policy.rule, requirement_level: required}
+      - ref: northstar.policy.limit.amount
+        requirement_level: {conditionally_required: when the rule has a limit}
+      - {ref: northstar.policy.retryable, requirement_level: recommended}
+      - {ref: northstar.policy.caller.spiffe_id, requirement_level: recommended}
+      - {ref: northstar.policy.request.amount, requirement_level: recommended}
+      - {ref: northstar.policy.request.currency, requirement_level: recommended}
+      - {ref: northstar.policy.autonomy.level, requirement_level: recommended}
+      - {ref: northstar.policy.autonomy.reason, requirement_level: recommended}
+      - ref: northstar.policy.ledger.status
+        requirement_level: {conditionally_required: when the call is an execute_payment by a caller a rule knows}
+      - {ref: northstar.policy.tool.name, requirement_level: recommended}
+      - {ref: feature_flag.version, requirement_level: recommended}
