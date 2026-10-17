@@ -8,13 +8,13 @@ requirements.txt, and none applied here). Every other service that wraps a
 Starlette-based ASGI app auto-instruments it so the framework's own entry
 span becomes the trace root; this service instead follows
 apps/customer-ui's pattern of hand-created root spans that a reader can find
-by name in the telemetry contract (`claim.submit` there; `review.decision`
-and `review.queue` here, in review.py and main.py), rather than unnamed
+by name in the telemetry contract (`northstar.claim.submit` there; `northstar.review.decision`
+and `northstar.review.queue` here, in review.py and main.py), rather than unnamed
 framework-generated entry spans with the owned span nested one level inside
 them.
 
 **`GET /healthz` produces no spans; `GET /` produces one.** `index()` opens
-an explicit `review.queue` parent span before its ledger read, because
+an explicit `northstar.review.queue` parent span before its ledger read, because
 `HTTPXClientInstrumentor`'s CLIENT span for that read has no parent
 otherwise and roots a trace of its own. `GET /healthz` really does produce
 nothing -- it makes no outbound call and owns no domain event.
@@ -25,7 +25,7 @@ agentgateway respectively), and -- the property that actually
 matters for the demo -- it is what injects the `traceparent` header on every
 one of them while one of this service's own spans is current, which is how
 the gateway's, the PDS's and payments-mcp's spans for the release, and
-payments-api's own server spans for the ledger reads, end up in `review.decision`'s / `review.queue`'s trace
+payments-api's own server spans for the ledger reads, end up in `northstar.review.decision`'s / `northstar.review.queue`'s trace
 rather than starting unrelated ones.
 
 This service registers the stock upstream `TraceContextTextMapPropagator`

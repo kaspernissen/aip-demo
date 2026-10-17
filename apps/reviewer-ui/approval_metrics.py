@@ -1,8 +1,8 @@
 """How long humans take: one OpenTelemetry histogram, recorded at the decision.
 
 northstar.approval.wait.duration, seconds, from the ledger's awaitingSince to the
-moment the reviewer's decision took effect. Attributes: decision and
-autonomy.level. The reviewer's id is deliberately absent: one series per person
+moment the reviewer's decision took effect. Attributes: `northstar.review.decision`
+(approve | reject, the registry's enum) and `northstar.policy.autonomy.level`. The reviewer's id is deliberately absent: one series per person
 would make the metric high-cardinality. Not sampled; the default aggregation is
 kept (bootstrap.py installs the provider, with no views).
 """
@@ -24,4 +24,7 @@ def use_meter(meter) -> None:
 
 
 def record_wait(seconds: float, *, decision: str, autonomy_level: str) -> None:
-    _histogram.record(seconds, {"decision": decision, "autonomy.level": autonomy_level})
+    _histogram.record(seconds, {
+        "northstar.review.decision": decision,
+        "northstar.policy.autonomy.level": autonomy_level,
+    })

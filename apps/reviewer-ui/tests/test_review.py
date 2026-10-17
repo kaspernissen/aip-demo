@@ -1,8 +1,8 @@
-"""review.py: the reviewer's decision, and the review.decision span.
+"""review.py: the reviewer's decision, and the northstar.review.decision span.
 
 Every figure that reaches the span or the release call is read back from
 the ledger at decision time -- never from whatever the listing page rendered
-earlier, and never recomputed. In particular `review.elapsed_ms` is derived
+earlier, and never recomputed. In particular `northstar.review.wait.duration` is derived
 from the ledger's own `awaitingSince`, measured against a `now` this test controls
 -- not from a timer this process happened to start when a page loaded (the
 spec's own words, and the property a implementer could most easily get wrong
@@ -167,15 +167,14 @@ async def test_the_review_decision_span_carries_exactly_the_spec_attributes(trac
     spans = exporter.get_finished_spans()
     assert len(spans) == 1
     span = spans[0]
-    assert span.name == "review.decision"
+    assert span.name == "northstar.review.decision"
     assert span.kind == SpanKind.SERVER
     assert dict(span.attributes) == {
-        "review.payment.id": "PAY-000053",
-        "review.decision": "approve",
-        "review.reviewer.id": "alex.mercer",
-        "review.reviewer.spiffe_id": REVIEWER_SPIFFE_ID,
-        "review.refused.trace_id": "331edba8cb21223e9de2f244360c42ef",
-        "review.elapsed_ms": 5000,
+        "northstar.review.payment.id": "PAY-000053",
+        "northstar.review.decision": "approve",
+        "northstar.review.reviewer.id": "alex.mercer",
+        "northstar.review.reviewer.spiffe_id": REVIEWER_SPIFFE_ID,
+        "northstar.review.wait.duration": 5.0,
         # Not in the spec's list: the join key the evidence view and
         # eval-scorer read a claim's trajectory by, which the retired
         # settlement.execute_approved span used to carry into trace B.
@@ -195,6 +194,33 @@ async def test_elapsed_ms_is_measured_from_the_ledgers_awaitingsince_not_a_page_
     assert result.elapsed_ms == 5000
 
 
+async def test_the_wait_duration_is_a_double_in_seconds_not_integer_milliseconds(traced):
+    """840 ms on the ledger's clock is recorded as 0.84 (registry: double, s)."""
+    exporter = traced
+    await decide(
+        "PAY-000053", "alex.mercer", "approve",
+        ledger=FakeLedger(), gateway=FakeGateway(),
+        claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID,
+        now=datetime(2026, 9, 10, 10, 0, 0, 840000, tzinfo=timezone.utc),
+    )
+    (span,) = exporter.get_finished_spans()
+    value = span.attributes["northstar.review.wait.duration"]
+    assert value == 0.84 and isinstance(value, float)
+
+
+async def test_the_refusal_is_a_span_link_not_a_trace_id_attribute(traced):
+    exporter = traced
+    await decide(
+        "PAY-000053", "alex.mercer", "approve",
+        ledger=FakeLedger(), gateway=FakeGateway(),
+        claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
+    )
+    (span,) = exporter.get_finished_spans()
+    (link,) = span.links
+    assert format(link.context.trace_id, "032x") == "331edba8cb21223e9de2f244360c42ef"
+    assert not any("refused" in key for key in span.attributes)
+
+
 async def test_a_reject_decision_still_gets_a_span_with_review_decision_reject(traced):
     exporter = traced
     await decide(
@@ -203,7 +229,7 @@ async def test_a_reject_decision_still_gets_a_span_with_review_decision_reject(t
         claims=FakeClaims(), reviewer_spiffe_id=REVIEWER_SPIFFE_ID, now=NOW,
     )
     span = exporter.get_finished_spans()[0]
-    assert span.attributes["review.decision"] == "reject"
+    assert span.attributes["northstar.review.decision"] == "reject"
 
 
 async def test_a_release_the_platform_refuses_is_reported_not_hidden(traced):
@@ -228,14 +254,14 @@ async def test_a_release_the_platform_refuses_is_reported_not_hidden(traced):
     assert span.status.status_code == StatusCode.ERROR
     # The decision itself is still what the reviewer chose, regardless of
     # whether the release they asked for actually happened.
-    assert span.attributes["review.decision"] == "approve"
+    assert span.attributes["northstar.review.decision"] == "approve"
 
 
 async def test_a_payment_not_awaiting_review_ends_the_span_error_and_never_releases(traced):
     """Racing another reviewer, or a stale link to an already-executed
     payment.
 
-    A `review.decision` span exists and ends ERROR carrying the exception,
+    A `northstar.review.decision` span exists and ends ERROR carrying the exception,
     which is a more honest record than silence: a reviewer clicked, and
     nothing could be recorded otherwise. The gateway is never called, and
     the two ledger-derived attributes are absent, because there was no
@@ -255,19 +281,19 @@ async def test_a_payment_not_awaiting_review_ends_the_span_error_and_never_relea
     spans = traced.get_finished_spans()
     assert len(spans) == 1
     span = spans[0]
-    assert span.name == "review.decision"
+    assert span.name == "northstar.review.decision"
     assert span.status.status_code == StatusCode.ERROR
     assert dict(span.attributes) == {
-        "review.payment.id": "PAY-000053",
-        "review.decision": "approve",
-        "review.reviewer.id": "alex.mercer",
-        "review.reviewer.spiffe_id": REVIEWER_SPIFFE_ID,
+        "northstar.review.payment.id": "PAY-000053",
+        "northstar.review.decision": "approve",
+        "northstar.review.reviewer.id": "alex.mercer",
+        "northstar.review.reviewer.spiffe_id": REVIEWER_SPIFFE_ID,
     }
 
 
 async def test_the_ledger_read_happens_inside_the_review_decision_span(traced):
     """The property that matters, asserted where it actually lives:
-    `ledger.get` must run with `review.decision` current.
+    `ledger.get` must run with `northstar.review.decision` current.
 
     That span context is exactly what `HTTPXClientInstrumentor` parents its
     CLIENT span off and what it writes into the injected `traceparent`, so
@@ -284,7 +310,7 @@ async def test_the_ledger_read_happens_inside_the_review_decision_span(traced):
     )
 
     span = traced.get_finished_spans()[0]
-    assert span.name == "review.decision"
+    assert span.name == "northstar.review.decision"
     assert ledger.span_context_at_get is not None
     assert ledger.span_context_at_get.is_valid, (
         "ledger.get ran with no valid span current, so its outbound CLIENT "
@@ -317,7 +343,7 @@ async def test_an_empty_reviewer_id_is_rejected_before_any_ledger_call(traced):
 
 async def test_a_ledger_lookup_failure_propagates_and_ends_the_span_error(traced):
     """The exception propagates unchanged, which is what main.py maps to a
-    404/502, and it also lands on a `review.decision` span rather than
+    404/502, and it also lands on a `northstar.review.decision` span rather than
     vanishing -- for the same reason the not-awaiting-review test above
     records."""
     ledger = FakeLedger(get_error=RuntimeError("payment not found"))
@@ -329,9 +355,9 @@ async def test_a_ledger_lookup_failure_propagates_and_ends_the_span_error(traced
         )
     spans = traced.get_finished_spans()
     assert len(spans) == 1
-    assert spans[0].name == "review.decision"
+    assert spans[0].name == "northstar.review.decision"
     assert spans[0].status.status_code == StatusCode.ERROR
-    assert "review.elapsed_ms" not in spans[0].attributes
+    assert "northstar.review.wait.duration" not in spans[0].attributes
 
 
 async def test_approve_resumes_the_customers_task_with_the_ledgers_task_id(traced):
@@ -460,13 +486,19 @@ async def test_one_histogram_sample_per_successful_approval(traced, waits):
     await _go("approve")
     (point,) = waits()
     assert point.count == 1 and point.sum == 5.0
-    assert dict(point.attributes) == {"decision": "approved", "autonomy.level": "assisted"}
+    assert dict(point.attributes) == {
+        "northstar.review.decision": "approve",
+        "northstar.policy.autonomy.level": "assisted",
+    }
 
 
 async def test_a_reject_records_decision_rejected(traced, waits):
     await _go("reject")
     (point,) = waits()
-    assert dict(point.attributes) == {"decision": "rejected", "autonomy.level": "assisted"}
+    assert dict(point.attributes) == {
+        "northstar.review.decision": "reject",
+        "northstar.policy.autonomy.level": "assisted",
+    }
 
 
 async def test_a_refused_execute_records_no_sample(traced, waits):
@@ -495,8 +527,8 @@ async def test_a_decision_already_on_the_ledger_resends_the_resume_and_moves_no_
     assert result.resumed_state == "input-required"
     assert waits() == [], "no second wait sample: the human's wait was measured by the first decision"
     span, = traced.get_finished_spans()
-    assert span.attributes["review.resume_only"] is True
-    assert "review.elapsed_ms" not in span.attributes
+    assert span.attributes["northstar.review.resume_only"] is True
+    assert "northstar.review.wait.duration" not in span.attributes
 
 
 async def test_a_reject_already_on_the_ledger_resends_the_resume_too(traced):

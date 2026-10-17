@@ -58,23 +58,23 @@ async def healthz():
 
 
 # The reviewer's queue: every payment the ledger is currently holding for a
-# human. One owned span, `review.queue`, wraps the ledger read for the same
-# reason `review.decision` does -- without a current span,
+# human. One owned span, `northstar.review.queue`, wraps the ledger read for the same
+# reason `northstar.review.decision` does -- without a current span,
 # `HTTPXClientInstrumentor`'s CLIENT span for `list_awaiting()` would be the
 # root of a trace of its own, and payments-api's server span for the read
 # would land in yet another.
 #
 # **How the name was chosen, since an authored span name is a claim.** This
 # repo's owned spans are `<domain>.<the thing this span is>`, never a
-# framework's method-and-route: `claim.submit` (customer-ui),
-# `policy.decision` (the PDS), `review.decision` (review.py), and the
+# framework's method-and-route: `northstar.claim.submit` (customer-ui),
+# `northstar.policy.decision` (the PDS), `northstar.review.decision` (review.py), and the
 # telemetry contract's "Domain attributes we own" table is keyed by that
-# prefix. `review.queue` is the same shape under the same `review.` domain
+# prefix. `northstar.review.queue` is the same shape under the same `review.` domain
 # this service already owns: the reviewer's queue of payments awaiting a
 # decision, which is exactly what this handler produces. It is deliberately
 # NOT `GET /` (that is the framework's name for a route, and this service
 # applies no framework instrumentation on purpose -- bootstrap.py) and not
-# `review.list` (which names the HTTP verb's shape rather than the domain
+# `northstar.review.list` (which names the HTTP verb's shape rather than the domain
 # object).
 #
 # It carries **no attributes**, also deliberately. Every figure on this page
@@ -85,7 +85,7 @@ async def healthz():
 @app.get("/", response_class=HTMLResponse)
 async def index():
     tracer = trace.get_tracer(__name__)
-    with tracer.start_as_current_span("review.queue", kind=SpanKind.SERVER) as span:
+    with tracer.start_as_current_span("northstar.review.queue", kind=SpanKind.SERVER) as span:
         try:
             payments = await ledger_client.list_awaiting()
         except ledger.LedgerUnavailable as exc:
@@ -155,7 +155,7 @@ async def submit_review(
 @app.get("/api/awaiting")
 async def api_awaiting():
     tracer = trace.get_tracer(__name__)
-    with tracer.start_as_current_span("review.queue", kind=SpanKind.SERVER) as span:
+    with tracer.start_as_current_span("northstar.review.queue", kind=SpanKind.SERVER) as span:
         try:
             return await ledger_client.list_awaiting()
         except ledger.LedgerUnavailable as exc:

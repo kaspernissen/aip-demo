@@ -2,7 +2,7 @@
 
 Two things are fetched from the SPIFFE Workload API, both for the same
 attested identity. The workload's *X.509* SVID is read back for one fact:
-`review.decision`'s `review.reviewer.spiffe_id` attribute needs this process's
+`northstar.review.decision`'s `northstar.review.reviewer.spiffe_id` attribute needs this process's
 real SPIFFE ID. And a *JWT*-SVID scoped to an *audience* (`fetch_jwt_svid`,
 the same shape as agents/settlement-agent/svid.py) is what the reviewer-ui
 presents to agentgateway to release an approved payment: the PDS permits that
@@ -50,8 +50,8 @@ class IdentityUnavailable(RuntimeError):
     Wraps every transport-level failure the same way svid.py's
     SvidUnavailable does -- a missing socket, a connection refused, a gRPC
     deadline -- because to the caller they are one condition: this workload
-    cannot currently prove its own identity, and `review.decision`'s
-    `review.reviewer.spiffe_id` attribute must not be filled with a guess.
+    cannot currently prove its own identity, and `northstar.review.decision`'s
+    `northstar.review.reviewer.spiffe_id` attribute must not be filled with a guess.
     """
 
 

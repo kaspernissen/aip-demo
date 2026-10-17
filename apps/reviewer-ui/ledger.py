@@ -73,7 +73,7 @@ class LedgerClient:
     async def get(self, payment_id: str) -> dict[str, Any]:
         """GET /payments/{id} -- read back what the ledger actually
         recorded. Used at decision time (review.py's `decide`) so
-        `review.elapsed_ms` and the release call are built from the
+        `northstar.review.wait.duration` and the release call are built from the
         current ledger state, not from whatever the listing page rendered
         when it loaded."""
         async with httpx.AsyncClient(

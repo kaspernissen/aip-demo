@@ -150,7 +150,7 @@ async def test_index_makes_its_ledger_read_inside_an_owned_review_queue_span(
     assert response.status_code == 200
 
     spans = traced.get_finished_spans()
-    assert [s.name for s in spans] == ["review.queue"]
+    assert [s.name for s in spans] == ["northstar.review.queue"]
     span = spans[0]
     assert span.kind == SpanKind.SERVER
     # No attributes, deliberately -- see main.py's own comment on the name.
@@ -161,7 +161,7 @@ async def test_index_makes_its_ledger_read_inside_an_owned_review_queue_span(
         "CLIENT span would root a trace of its own"
     )
     assert ledger.span_context_at_list.span_id == span.context.span_id, (
-        "the ledger listing did not run inside the review.queue span"
+        "the ledger listing did not run inside the northstar.review.queue span"
     )
 
 
@@ -180,7 +180,7 @@ async def test_a_ledger_outage_ends_the_review_queue_span_error(monkeypatch, tra
     assert response.status_code == 502
 
     span = traced.get_finished_spans()[0]
-    assert span.name == "review.queue"
+    assert span.name == "northstar.review.queue"
     assert span.status.status_code == StatusCode.ERROR
     assert "connection refused" in (span.status.description or "")
     assert [event.name for event in span.events] == ["exception"]

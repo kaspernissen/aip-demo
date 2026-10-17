@@ -12,7 +12,7 @@ tests below say so.
 The cross-service half of the proof is not here and cannot be: that
 payments-api *accepts* what this service sends is asserted on the live
 cluster by `tests/e2e/test_supervised.py`'s criterion 5, which checks real
-parentage across the `review.decision` -> reviewer-ui CLIENT `GET` ->
+parentage across the `northstar.review.decision` -> reviewer-ui CLIENT `GET` ->
 payments-api `GET /payments/{paymentId}` hop.
 """
 from __future__ import annotations

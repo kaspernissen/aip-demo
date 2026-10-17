@@ -1,7 +1,7 @@
 """identity.py: reviewer-ui's own workload identity.
 
 Two seams, both replaced here: `_fetch_from_workload_api` (the X.509 SPIFFE
-ID that `review.decision` reports) and `_fetch_jwt_from_workload_api` (the
+ID that `northstar.review.decision` reports) and `_fetch_jwt_from_workload_api` (the
 JWT-SVID, scoped to an audience, that the reviewer-ui presents to
 agentgateway to release an approved payment). Same technique as
 agents/settlement-agent/tests/test_svid.py. No cluster, no network.

@@ -13,7 +13,7 @@ uses, rather than a new dependency on the `mcp` SDK. agentgateway answers as
 
 `traceparent` is injected by HTTPXClientInstrumentor (bootstrap.py) and also
 put into `params._meta` (SEP-414), exactly as the settlement-agent does, so the
-gateway, the PDS and payments-mcp join review.decision's trace.
+gateway, the PDS and payments-mcp join northstar.review.decision's trace.
 """
 from __future__ import annotations
 

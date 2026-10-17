@@ -1,4 +1,4 @@
-"""The reviewer's decision, and the `review.decision` span.
+"""The reviewer's decision, and the `northstar.review.decision` span.
 
 `decide()` is this service's one piece of real logic; main.py's job is only
 to parse the HTTP form and render whatever this returns. Every figure that
@@ -7,13 +7,13 @@ decision time (`ledger.get(payment_id)`, called fresh here rather than
 trusting anything the listing page rendered earlier or anything a form field
 might carry) -- amounts, currency, the rule, the limit, the refusal's trace
 and span ids, and above all `awaitingSince`, the one clock this function is
-allowed to compute `review.elapsed_ms` from. There is deliberately no
+allowed to compute `northstar.review.wait.duration` from. There is deliberately no
 "page load" timestamp anywhere in this module: the spec's own words are that
 elapsed time measures how long the *human* took, not how long a browser tab
 was open, and a timer started when `GET /` was handled would measure the
 latter.
 
-**The `review.decision` span opens BEFORE the ledger read.** With no span
+**The `northstar.review.decision` span opens BEFORE the ledger read.** With no span
 current, `HTTPXClientInstrumentor`'s CLIENT span for `ledger.get` would be
 the root of a trace of its own, and the `traceparent` it injects would name
 that root -- so payments-api's server span for the read would land in a
@@ -21,12 +21,13 @@ second, unrelated trace instead of joining the reviewer's own. This project's
 whole product is the single correlated trace, so every ledger read a human
 decision depends on has to be part of it.
 
-`ledger.get` therefore runs *inside* `review.decision`, and the consequence
+`ledger.get` therefore runs *inside* `northstar.review.decision`, and the consequence
 is stated rather than hidden: a stale link, a race with another reviewer, or
-an unknown payment id **does** produce a `review.decision` span. It carries
+an unknown payment id **does** produce a `northstar.review.decision` span. It carries
 the four attributes that are known before the read (payment id, decision,
-reviewer id, reviewer SPIFFE ID) and not the two that are read off the record
-(`review.refused.trace_id`, `review.elapsed_ms`), and
+reviewer id, reviewer SPIFFE ID) and not the one that is read off the record
+(`northstar.review.wait.duration`; the refusal's trace is the span link, added
+after the read too), and
 `start_as_current_span`'s own default `set_status_on_exception`/
 `record_exception` mark it ERROR with the exception on it. That is a more
 honest record than silence -- a reviewer clicked, and nothing was recorded --
@@ -58,10 +59,10 @@ class PaymentNotAwaitingReview(RuntimeError):
     """The ledger's own record for this payment is not `status:
     "awaiting_approval"` -- already executed, rejected, only proposed, or
     already reviewed by someone else in the meantime. There is nothing
-    coherent to record a decision about: a real `awaitingSince` may not even exist, so `review.elapsed_ms` could not be
+    coherent to record a decision about: a real `awaitingSince` may not even exist, so `northstar.review.wait.duration` could not be
     computed honestly, and this function raises without ever setting it.
 
-    This raises *inside* the `review.decision` span, which ends ERROR
+    This raises *inside* the `northstar.review.decision` span, which ends ERROR
     carrying this exception -- see the module docstring for why the span
     must already be open when this happens."""
 
@@ -154,7 +155,7 @@ async def decide(
     Raises whatever `ledger.get` raises (ledger.PaymentNotFound,
     ledger.LedgerUnavailable) unchanged, and PaymentNotAwaitingReview if the
     ledger's record for this payment is not `status: "awaiting_approval"` -- in both
-    cases from *inside* the `review.decision` span, which ends ERROR carrying
+    cases from *inside* the `northstar.review.decision` span, which ends ERROR carrying
     the exception (see the module docstring).
     """
     reviewer_id = reviewer_id.strip()
@@ -167,18 +168,17 @@ async def decide(
 
     tracer = trace.get_tracer(__name__)
     # The four attributes below are everything that is known before the ledger
-    # is read. The other two (`review.refused.trace_id`, `review.elapsed_ms`)
-    # are set after it, because they are read off the record -- the honesty
-    # rule this module exists for: no figure on this span comes from the HTTP
-    # request.
+    # is read. The wait duration and the span link to the refusal are set after
+    # it, because they are read off the record -- the honesty rule this module
+    # exists for: no figure on this span comes from the HTTP request.
     with tracer.start_as_current_span(
-        "review.decision",
+        "northstar.review.decision",
         kind=SpanKind.SERVER,
         attributes={
-            "review.payment.id": payment_id,
-            "review.decision": decision,
-            "review.reviewer.id": reviewer_id,
-            "review.reviewer.spiffe_id": reviewer_spiffe_id,
+            "northstar.review.payment.id": payment_id,
+            "northstar.review.decision": decision,
+            "northstar.review.reviewer.id": reviewer_id,
+            "northstar.review.reviewer.spiffe_id": reviewer_spiffe_id,
         },
     ) as span:
         # Inside the span deliberately: this is the call whose
@@ -210,10 +210,8 @@ async def decide(
         elapsed_ms = _elapsed_ms(
             record.get("awaitingSince", ""), now or datetime.now(timezone.utc)
         )
-        span.set_attribute(
-            "review.refused.trace_id", refusal.get("refusedTraceId") or ""
-        )
-        span.set_attribute("review.elapsed_ms", elapsed_ms)
+        # Seconds, as a double: the registry's unit rule (no units in names).
+        span.set_attribute("northstar.review.wait.duration", round(elapsed_ms / 1000, 3))
         # The join key the evidence view and eval-scorer read a claim's whole
         # trajectory by: this decision happens minutes after, and in a
         # different trace from, the refusal, and the claim id is what ties the
@@ -278,7 +276,7 @@ async def decide(
             if result.error is None:
                 approval_metrics.record_wait(
                     elapsed_ms / 1000.0,
-                    decision="approved" if decision == "approve" else "rejected",
+                    decision=decision,
                     autonomy_level=result.autonomy_level)
         finally:
             if claim_token is not None:
@@ -293,12 +291,12 @@ async def _resend_resume(
 ) -> ReviewResult:
     """Tell the customer's still-waiting task about a decision the ledger holds.
 
-    No money moves and no `review.elapsed_ms` is set: the human's wait was
+    No money moves and no `northstar.review.wait.duration` is set: the human's wait was
     measured by the call that took the decision, and a second figure read off
     `awaitingSince` now would be a wrong one, so the span says what it is
-    (`review.resume_only`) and the histogram records nothing.
+    (`northstar.review.resume_only`) and the histogram records nothing.
     """
-    span.set_attribute("review.resume_only", True)
+    span.set_attribute("northstar.review.resume_only", True)
     claim_token = None
     if record.get("claimId"):
         span.set_attribute("northstar.claim.id", record["claimId"])

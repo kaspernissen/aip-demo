@@ -31,7 +31,7 @@ opentelemetry-sdk==1.44.0
 opentelemetry-exporter-otlp-proto-http==1.44.0
 opentelemetry-instrumentation-httpx==0.65b0
 # SPIFFE Workload API client. Two uses: the workload's own X.509 SVID, so the
-# `review.decision` span's `review.reviewer.spiffe_id` attribute is a real,
+# `northstar.review.decision` span's `northstar.review.reviewer.spiffe_id` attribute is a real,
 # measured identity; and a JWT-SVID for the gateway audience, which
 # reviewer-ui presents to agentgateway to release an approved payment
 # (identity.py). Version matches settlement-agent's pin (identical Workload
