@@ -19,10 +19,11 @@ from scorer.trajectory import (
     parse_rfc3339_nanos,
 )
 
-# Copied verbatim out of `_source` for one `northstar.policy.decision` document,
-# retrieved from `ss4o_traces-default-namespace` on this cluster 2026-09-13.
-# Nothing about it has been tidied -- `data_stream` and the empty
-# `traceState`/`instrumentationScope.version` are exactly what came back.
+# Copied out of `_source` for one decision-span document, retrieved from
+# `ss4o_traces-default-namespace` on this cluster 2026-09-13, then its attribute
+# keys were renamed for M9 (the capture predates the `northstar.` prefix and the
+# retired OpenSearch retryable rewrite). Nothing else was tidied -- `data_stream`
+# and the empty `traceState`/`instrumentationScope.version` are as they came back.
 CAPTURED_DOCUMENT = {
     "attributes": {
         "data_stream": {

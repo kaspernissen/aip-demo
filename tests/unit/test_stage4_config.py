@@ -746,6 +746,15 @@ def _collisions(keys: set[str]) -> set[tuple[str, str]]:
     }
 
 
+def test_the_collision_detector_finds_a_prefix_and_ignores_siblings():
+    """Keeps `_collisions` honest: a.b with a.b.c collides, a.b with a.c does not,
+    and a key is not a prefix of one that merely shares leading characters."""
+    assert _collisions({"a.b", "a.b.c"}) == {("a.b", "a.b.c")}
+    assert _collisions({"a.b", "a.c"}) == set()
+    assert _collisions({"a.b", "a.bc"}) == set()
+    assert _collisions({"northstar.policy.decision", "northstar.policy.retryable"}) == set()
+
+
 def test_the_opensearch_compat_processor_covers_every_colliding_attribute():
     """The rename must cover every collider, not just today's one.
 

@@ -43,13 +43,12 @@ def test_no_source_writes_a_legacy_name():
     assert out == "", out
 
 
-def test_backstage_plugin_no_longer_writes_k8s_resource_name():
+def test_nothing_still_uses_k8s_resource_name_for_the_contract_flag():
     # The autonomy-contract span names the flag with northstar.contract.flag.name;
     # `k8s.resource.name` was a semconv name carrying a non-Kubernetes meaning.
-    out = _grep(
-        r"""['"`]k8s\.resource\.name['"`]""",
-        ["platform/backstage/packages/backend/src/plugins/autonomyContract"],
-    )
+    # Searched across every path, tests included, so a reader that still asserts
+    # the old key (tests/e2e/test_golden_path.py did) is caught too.
+    out = _grep(r"""['"`]k8s\.resource\.name['"`]""", PATHS)
     assert out == "", out
 
 

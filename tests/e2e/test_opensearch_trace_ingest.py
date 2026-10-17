@@ -46,9 +46,9 @@ MCP to the gateway directly with a SPIRE-minted JWT-SVID, following
 `_json_body` it imports rather than reimplements), so it needs no model call
 and no browser: one `propose_payment` that is permitted and one
 `execute_payment` above the €6,000 allowance that is denied. Both produce a
-`northstar.policy.decision` span, one of each outcome, which is the point -- the bug
-rejected permits and denials alike, because `northstar.policy.retryable` is set
-on every decision span (`pds/server.py:277`).
+`northstar.policy.decision` span, one of each outcome, which is the point -- the
+historical bug rejected permits and denials alike, because the retryable flag
+(then a dotted extension of the decision key) was set on every decision span.
 
 **It supplies its own `traceparent`** so the trace id is known before the call
 is made, rather than searched for afterwards. Measured: agentgateway
@@ -581,10 +581,12 @@ def test_no_attribute_key_in_the_driven_trace_collides_uncovered(ingest_run):
         "`covered` here. Note the mapping is index-wide: the two keys need "
         "not be on the same span."
     )
-    assert (ATTR_DECISION, ATTR_RETRYABLE_CANONICAL) not in collisions, (
-        f"{ATTR_RETRYABLE_CANONICAL!r} is a dotted extension of "
-        f"{ATTR_DECISION!r} again: the M9 rename made them siblings so that "
-        "no rewrite is needed for keys this project owns."
+    owned = {k for k in keys if k.startswith("northstar.")}
+    owned_collisions = {(s, l) for s, l in collisions if s in owned or l in owned}
+    assert not owned_collisions, (
+        f"keys this project owns collide in the driven trace: "
+        f"{sorted(owned_collisions)}. The M9 registry keeps them siblings so "
+        "that no OpenSearch rewrite is needed for an owned key."
     )
 
 

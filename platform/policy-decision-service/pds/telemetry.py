@@ -38,7 +38,8 @@ from opentelemetry.semconv._incubating.attributes.feature_flag_attributes import
 
 SPAN_NAME = "northstar.policy.decision"
 
-# Attribute keys, defined here so the guard test and the contract cite one source.
+# Attribute keys. The registry (telemetry/registry/policy.yaml) is the contract;
+# these constants are the code's spelling of it.
 ATTR_DECISION = "northstar.policy.decision"           # "permit" | "deny"
 ATTR_RULE = "northstar.policy.rule"                   # the rule that fired
 ATTR_CALLER = "northstar.policy.caller.spiffe_id"     # the attested caller
@@ -60,7 +61,7 @@ ATTR_RETRYABLE = "northstar.policy.retryable"
 ATTR_LEDGER_STATUS = "northstar.policy.ledger.status"
 
 # The one attribute on this span that is NOT ours to name. Unlike
-# ATTR_AUTONOMY and its `policy.`/`northstar.`-prefixed siblings -- which
+# ATTR_AUTONOMY and its `northstar.policy.*` siblings -- which
 # Gap 3 (module docstring) documents as invented because no convention exists
 # for a policy decision itself -- a feature flag's ruleset version already
 # has one: `feature_flag.version`, read from

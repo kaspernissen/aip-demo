@@ -45,6 +45,7 @@ groups:
           members:
             - {id: assisted, value: assisted, stability: development, brief: A human approves any payment above the agent's limit.}
             - {id: autonomous, value: autonomous, stability: development, brief: The agent may execute payments up to the autonomous limit on its own.}
+            - {id: unknown, value: unknown, stability: development, brief: The reviewer-ui could not resolve the level from the refusal's rule; only the approval histogram carries it.}
         stability: development
         brief: The autonomy level in effect, resolved from the autonomy-contract flag at decision time.
       - id: northstar.policy.autonomy.reason

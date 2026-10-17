@@ -733,7 +733,7 @@ def test_the_contract_change_span_lands_in_opensearch(backstage_url, auth_header
         assert attrs.get(ATTR_FIELD_MANAGER) == FIELD_MANAGER, attrs
         assert attrs.get(ATTR_ACTOR) == FIELD_MANAGER, attrs
         assert attrs.get("k8s.namespace.name") == PLATFORM_NAMESPACE, attrs
-        assert attrs.get("k8s.resource.name") == "northstar-autonomy", attrs
+        assert attrs.get("northstar.contract.flag.name") == "northstar-autonomy", attrs
     finally:
         revert = requests.post(
             f"{backstage_url}/api/autonomy-contract/variant",
