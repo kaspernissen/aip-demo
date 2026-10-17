@@ -71,7 +71,16 @@ def _search(service: str, *, operation: str | None = None, tags: dict[str, str] 
         params["tags"] = json.dumps(tags)
     resp = requests.get(f"{_client().base_url}/api/traces", params=params, timeout=15)
     resp.raise_for_status()
-    return [t["traceID"] for t in (resp.json().get("data") or [])]
+    found = [t["traceID"] for t in (resp.json().get("data") or [])]
+    # Jaeger returns at most `limit` traces and says nothing when it cut the list
+    # short. A silently truncated search would drop claims from the evidence, so a
+    # full page is a failure, not a result.
+    assert len(found) < SEARCH_LIMIT, (
+        f"Jaeger returned {len(found)} traces for {service!r} {operation or tags or ''}: the "
+        f"search limit ({SEARCH_LIMIT}) was reached, so the list may be truncated and the "
+        "evidence incomplete. Narrow the window (reset starts a new run) or raise SEARCH_LIMIT."
+    )
+    return found
 
 
 def _claim_traces(claim_id: str, since_ms: int | None, lookback_s: int = 24 * 3600) -> list[Trace]:

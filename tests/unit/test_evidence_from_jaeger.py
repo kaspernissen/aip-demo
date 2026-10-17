@@ -100,3 +100,18 @@ def test_the_driver_never_mentions_opensearch():
     from pathlib import Path
     driver = (Path(__file__).resolve().parents[2] / "scripts" / "demo.py").read_text()
     assert "opensearch" not in driver.lower()
+
+
+def test_a_full_search_page_fails_loudly_instead_of_dropping_claims(monkeypatch):
+    import pytest
+
+    class Resp:
+        def __init__(self, n): self.n = n
+        def raise_for_status(self): pass
+        def json(self): return {"data": [{"traceID": f"{i:032x}"} for i in range(self.n)]}
+
+    monkeypatch.setattr(evidence.requests, "get", lambda *a, **k: Resp(evidence.SEARCH_LIMIT))
+    with pytest.raises(AssertionError, match="search limit"):
+        evidence._search("policy-decision-service", operation=evidence.DECISION_SPAN, since_ms=0)
+    monkeypatch.setattr(evidence.requests, "get", lambda *a, **k: Resp(evidence.SEARCH_LIMIT - 1))
+    assert len(evidence._search("policy-decision-service", since_ms=0)) == evidence.SEARCH_LIMIT - 1

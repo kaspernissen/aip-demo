@@ -2307,7 +2307,7 @@ system:
 
 **Measured after the mask was removed**, one live listing request:
 trace `eacff63cc15a0868cee60332b1728735`, three spans —
-`reviewer-ui northstar.review.queue` (root, SERVER, `e40bafb90b4a5483`) →
+`reviewer-ui review.queue` (root, SERVER, `e40bafb90b4a5483`; measured under that name, `northstar.review.queue` since M9) →
 `reviewer-ui GET` (CLIENT, `9280bc1b88bb4120`, `http.url`
 `…/payments?status=refused`) → `payments-api GET /payments` (SERVER,
 `a418e6258a9c1bac`). The pre-bump capture of the same shape, reached through

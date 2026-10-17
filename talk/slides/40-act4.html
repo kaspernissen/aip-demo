@@ -75,7 +75,7 @@
       - ref: northstar.policy.limit.amount
         requirement_level: {conditionally_required: when the rule has a limit}
 &hellip;</pre>
-      <div class="shot-cap">The schema: a Weaver registry, checked in CI and against the running cluster</div>
+      <div class="shot-cap">The schema: a Weaver registry. The gate checks it, and live-check compares the running cluster&rsquo;s names, types and enum values with it. <em>Required</em> is pinned by the behaviour tests, not by live-check.</div>
     </div>
     <div>
       <figure class="shot x40-rs-shot"><img src="assets/shots/jaeger-policy-decision-m9.png" alt="Jaeger: the northstar.policy.decision span of a denied EUR 5,800 execute: northstar.policy.decision deny, northstar.policy.rule settlement-agent.assisted.execute_limit, northstar.policy.limit.amount 0, northstar.policy.request.amount 5800"></figure>

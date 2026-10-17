@@ -1,5 +1,7 @@
 # customer-ui — verified SDK surfaces and emitted telemetry
 
+*M9 note: the records below are as measured. The span was `claim.submit` and the policy-number attribute `northstar.policy.number` then; they are `northstar.claim.submit` and `northstar.claim.policy_number` since M9.*
+
 Evidence for an upstream-contribution workstream (A8). Every gap between what the
 pinned browser OTel SDK actually emits and the OTel semantic conventions define is
 recorded here, verbatim, rather than silently patched with an invented attribute
@@ -51,7 +53,7 @@ comment "The dynamic import keeps `a2a.test.ts` runnable outside a browser."
 
 **What is actually true, found by capture against the real deployed pod (Chromium,
 via Playwright, console-instrumented):** with that exact code, `getTracer()
-.startActiveSpan("northstar.claim.submit", async (span) => { ... })`'s callback correctly saw
+.startActiveSpan("claim.submit", async (span) => { ... })`'s callback correctly saw
 the active span (`trace.getSpan(context.active())` returned a real span context)
 right up to the point it called `sendClaim(...)`. Inside `sendClaim`, immediately
 after `await import("./telemetry")` resolved, `trace.getSpan(context.active())` was
@@ -59,7 +61,7 @@ after `await import("./telemetry")` resolved, `trace.getSpan(context.active())` 
 (inside `injectContext`) had nothing to inject, and the actual POST request that
 reached claims-agent carried **no `traceparent` header at all** (confirmed via
 Playwright's `page.on("request")` capture: `headers.get("traceparent")` was
-empty). The browser's `northstar.claim.submit` span and the whole backend chain ended up in
+empty). The browser's `claim.submit` span and the whole backend chain ended up in
 two separate traces — silently, with zero console errors and a fully successful
 claim submission (the UI has no way to detect this).
 
@@ -137,14 +139,14 @@ submission against the deployed pod:
 
 ```json
 {
-  "operation": "northstar.claim.submit",
+  "operation": "claim.submit",
   "service": "customer-ui",
   "kind": "internal",
   "parent_id": null,
   "attrs": {
     "internal.span.format": "otlp",
     "northstar.claim.id": "CLM-TEST-3f9b3b96",
-    "northstar.claim.policy_number": "POL-77120",
+    "northstar.policy.number": "POL-77120",
     "otel.scope.name": "customer-ui",
     "span.kind": "internal"
   }
@@ -168,7 +170,7 @@ predates the A21 OTel bump (§6) and the `new Resource(...)` call it names no
 longer exists — `@opentelemetry/resources` 2.x removed the constructable
 class. Re-captured post-bump (see §6a): the same three `telemetry.sdk.*`
 attributes are present, now reading `telemetry.sdk.version: "2.8.0"`,
-alongside the identical `northstar.claim.submit` span shape, 1 root, 0 orphans, and —
+alongside the identical `claim.submit` span shape, 1 root, 0 orphans, and —
 **as of fix round 1, before Task 7 added the MCP hop's client-side
 propagation** — the same three services in one trace. The gaps table below
 (§3, "Comparison against OTel conventions") is unaffected by the bump —
@@ -187,10 +189,10 @@ service-count claim in this paragraph was stale.
 
 | Convention / expectation | Emitted? | Verdict |
 |---|---|---|
-| A `CLIENT`-kind HTTP span for the outbound `fetch` to claims-agent (`http.request.method`, `server.address`, etc., per the HTTP client semconv) | **Absent** | **GAP** — `@opentelemetry/instrumentation-fetch` was never added (not in the brief's Step 1 pin list); only the hand-written `northstar.claim.submit` INTERNAL span exists. The trace shows the browser→claims-agent hop only via the parent/child link on claims-agent's own server span, not via any client-side span of our own. |
+| A `CLIENT`-kind HTTP span for the outbound `fetch` to claims-agent (`http.request.method`, `server.address`, etc., per the HTTP client semconv) | **Absent** | **GAP** — `@opentelemetry/instrumentation-fetch` was never added (not in the brief's Step 1 pin list); only the hand-written `claim.submit` INTERNAL span exists. The trace shows the browser→claims-agent hop only via the parent/child link on claims-agent's own server span, not via any client-side span of our own. |
 | Browser resource attributes (`browser.brand`, `browser.platform`, `browser.mobile`, per the browser resource semconv) | **Absent** | **GAP** — only the manual `Resource({ service.name })` was supplied; no browser resource detector (e.g. `@opentelemetry/resource-detector-browser` or similar) was in the brief's pin list, so nothing besides `telemetry.sdk.*` and `service.name` is present. |
 | `user_agent.original` on any customer-ui span | Absent | **GAP** — same root cause as the row above: no HTTP client instrumentation, so nothing captures it browser-side (claims-agent's own server span does carry `user_agent.original`, but that is claims-agent's instrumentation, not customer-ui's). |
-| Meaningful custom span/attribute naming (`northstar.claim.submit`, `northstar.claim.id`, `northstar.claim.policy_number`) | Present | Not a semconv gap — these are intentionally domain-specific, not conventions this project claims to follow; recorded for completeness only. |
+| Meaningful custom span/attribute naming (`claim.submit`, `northstar.claim.id`, `northstar.policy.number`) | Present | Not a semconv gap — these are intentionally domain-specific, not conventions this project claims to follow; recorded for completeness only. |
 
 None of these gaps were filled with an invented attribute. They are the direct,
 predictable consequence of the brief's minimal SDK pin list (no fetch
@@ -241,7 +243,7 @@ complete chain formed ONE trace with ONE root and NO orphans, for the
 reachable four-fifths of it (customer-ui, claims-agent, settlement-agent —
 payments-mcp/payments-api remained a separate, detached trace of their own).
 Verified directly against a real captured trace (`trace_id` redacted per-run,
-reproducible on demand): `roots() == [customer-ui: northstar.claim.submit]`,
+reproducible on demand): `roots() == [customer-ui: claim.submit]`,
 `orphans() == []`, `services() == {customer-ui, claims-agent,
 settlement-agent}`. That was the M1.1 claim as it stood after this task: sound
 and complete for the A2A hops, with the MCP hop as the one deliberate,
@@ -251,7 +253,7 @@ already-known gap.
 final-review.md): the chain is five services, not three.** Task 7's MCP
 client fix (above) closes the gap this section originally described.
 `test_all_five_services_are_in_one_trace` now asserts, and passes against, a
-real captured trace: `roots() == [customer-ui: northstar.claim.submit]`,
+real captured trace: `roots() == [customer-ui: claim.submit]`,
 `orphans() == []`, `services() == {customer-ui, claims-agent,
 settlement-agent, payments-mcp, payments-api}` — one trace, one root, zero
 orphans, all five services. **This is the M1.1 claim, stated plainly, as it
@@ -405,7 +407,7 @@ ID. That capture, post-fix, showed:
 
 - `span_count: 56`, `services: ['claims-agent', 'customer-ui', 'settlement-agent']`
   — unchanged from the pre-bump shape.
-- `roots: [('customer-ui', 'northstar.claim.submit', <span_id matching the observed
+- `roots: [('customer-ui', 'claim.submit', <span_id matching the observed
   traceparent>)]` — 1 root, unchanged.
 - `orphans: []` — 0 orphans, unchanged.
 - `customer-ui resource tags: {'telemetry.sdk.language': 'webjs',
