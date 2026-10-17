@@ -36,6 +36,11 @@ FORBIDDEN = {
         r"|review\.(?:decision|payment|reviewer|elapsed_ms|resume_only|refused|queue)"
         r"|claim\.(?:submit|wait)|k8s\.resource\.name|northstar\.policy\.number)"
         r"(?![A-Za-z0-9_])"),
+    # M9 renamed the histogram's Prometheus labels; a query on the old ones returns nothing.
+    "a pre-M9 Prometheus label (autonomy_level without northstar_policy_)":
+        re.compile(r"(?<!northstar_policy_)\bautonomy_level\b"),
+    'the pre-M9 histogram label decision="approved"': re.compile(r'decision="approved"'),
+    'the pre-M9 histogram label decision="rejected"': re.compile(r'decision="rejected"'),
 }
 
 

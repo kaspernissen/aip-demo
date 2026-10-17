@@ -308,7 +308,7 @@ request.method != &quot;POST&quot;
     </div>
   </div>
   <p class="x31-mc-q rise"><span class="d">How long do humans take? Ask Prometheus, by autonomy level:</span>
-<span class="code">histogram_quantile(0.95, sum by (le, autonomy_level) (rate(northstar_approval_wait_duration_seconds_bucket[1h])))</span></p>
+<span class="code">histogram_quantile(0.95, sum by (le, northstar_policy_autonomy_level) (rate(northstar_approval_wait_duration_seconds_bucket[1h])))</span></p>
   <p class="x31-line">A link, not a parent. <em>The human took minutes, in a process that no longer exists.</em></p>
 </section>
 

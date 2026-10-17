@@ -1473,7 +1473,7 @@ request.method != &quot;POST&quot;
     </div>
   </div>
   <p class="x31-mc-q rise"><span class="d">How long do humans take? Ask Prometheus, by autonomy level:</span>
-<span class="code">histogram_quantile(0.95, sum by (le, autonomy_level) (rate(northstar_approval_wait_duration_seconds_bucket[1h])))</span></p>
+<span class="code">histogram_quantile(0.95, sum by (le, northstar_policy_autonomy_level) (rate(northstar_approval_wait_duration_seconds_bucket[1h])))</span></p>
   <p class="x31-line">A link, not a parent. <em>The human took minutes, in a process that no longer exists.</em></p>
 </section>
 <section class="slide content" data-label="The same flip, with a UI">
@@ -1642,7 +1642,7 @@ request.method != &quot;POST&quot;
     </div>
     <figure class="x40-scshot">
       <div class="shot"><img src="assets/shots/jaeger-eval-scores.png" alt="Jaeger: five eval-scorer evaluation spans inside the judged trace; stopped_when_refused reads 0, retry-after-refusal"></div>
-      <figcaption class="shot-cap">Each score is a span in the trace it judges.</figcaption>
+      <figcaption class="shot-cap">Each score is a span in the trace it judges. (Captured before M9: the root span now reads <span class="code">northstar.claim.submit</span>.)</figcaption>
     </figure>
   </div>
 </section>
