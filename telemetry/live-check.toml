@@ -19,11 +19,28 @@ grpc_address = "0.0.0.0"
 grpc_port = 4317
 admin_port = 4320
 
-# Names we own, plus the retired namespaces. `undefined_enum_variant` is
-# `information` by default; for our names an enum value outside the registry's
-# set is a real defect, so it is raised.
+# Names we own, plus the retired namespaces. The override matches on the name of
+# the thing being judged: the attribute key for an attribute finding, the metric
+# name for a metric one (measured live: a foreign attribute on an owned span stays
+# `information`; a misspelled owned attribute on any span is a violation).
+#
+# The ids are the real ones from weaver v0.28.0. `undefined_enum_variant` is
+# `information` by default; for our names an enum value outside the registry's set
+# is a real defect, so it is raised. `missing_attribute`, `missing_namespace`,
+# `not_stable` and `extends_namespace` are the findings a real report holds for
+# foreign names; only the first is a violation for ours (everything we define is
+# stability: development, so `not_stable` stays information).
 [[live-check.finding_level_overrides]]
-ids = ["missing_attribute", "undefined_enum_variant", "type_mismatch"]
+ids = [
+  "missing_attribute",
+  "missing_metric",
+  "missing_event",
+  "type_mismatch",
+  "undefined_enum_variant",
+  "unit_mismatch",
+  "unexpected_instrument",
+  "kind_mismatch",
+]
 level = "violation"
 sample_names = ["northstar.*", "policy.*", "review.*", "claim.*", "settlement.*"]
 

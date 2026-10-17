@@ -328,10 +328,12 @@ else
   echo -e "${YELLOW}  - eval-scorer: SKIPPED, svc/eval-scorer does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 7)${NC}"
 fi
 
-# Weaver live-check's admin port (M9): the gate reads the registry-conformance
-# report from here (tests/harness/livecheck.py talks to localhost:18400).
-# Stage 4 and up, on the same `service_exists` guard as the other stage-gated
-# surfaces. 18400 -> 4320 follows the 1xxxx offset convention of the tool ports.
+# Weaver live-check's admin port (M9): the operator's door to the registry
+# conformance report (`curl localhost:18400/report` after POST /stop). The gate
+# does NOT use this forward -- a restart of the pod kills it, so
+# tests/harness/livecheck.py opens its own. Stage 4 and up, on the same
+# `service_exists` guard as the other stage-gated surfaces. 18400 -> 4320
+# follows the 1xxxx offset convention of the tool ports.
 WEAVER_PID=""
 if [[ -n "$WEAVER_AVAILABLE" ]]; then
   echo "  - weaver live-check  (18400 -> 4320)"

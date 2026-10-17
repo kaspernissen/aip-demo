@@ -248,6 +248,18 @@ exporters:
   otlp_grpc/weaver:
     endpoint: weaver-live-check.observability.svc.cluster.local:4317
     tls: {insecure: true}
+    # Weaver's OTLP receiver does not accept gzip (measured: `Unimplemented:
+    # Content is compressed with `gzip` which isn't supported`, every batch
+    # dropped as a permanent error), and the exporter's default is gzip.
+    compression: none
+    # The pod behind this endpoint is replaced by the gate (a rollout), and the
+    # old connection can be black-holed rather than reset. Without pings the
+    # exporter keeps writing to it until the TCP timeout, minutes later; with
+    # them it notices in ~15s and reconnects to the new pod.
+    keepalive:
+      time: 10s
+      timeout: 5s
+      permit_without_stream: true
     sending_queue: {enabled: true}
     retry_on_failure: {enabled: true}
   # END stage-4-only

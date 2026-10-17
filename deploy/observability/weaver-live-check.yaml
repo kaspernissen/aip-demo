@@ -30,6 +30,11 @@ spec:
       labels:
         app: weaver-live-check
     spec:
+      # Weaver runs as PID 1 and ignores SIGTERM, so a replaced pod lingers for
+      # the default 30s grace period, still accepting the collector's connection
+      # (and, once stopped, answering "the OTLP receiver has stopped"). It holds
+      # no state worth a grace period: the gate wants it gone.
+      terminationGracePeriodSeconds: 1
       containers:
         - name: weaver
           image: otel/weaver:v0.28.0

@@ -318,14 +318,15 @@ echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included 
 # Weaver live-check (M9) is emptied HERE, after the unit suites and the two
 # beat scripts and before the e2e run, so its report covers exactly the traffic
 # Step 2 drives: every span, metric and log the collector copies to it. The
-# restart is `POST /shutdown` through the forward start-demo.sh owns (the
-# kubelet restarts the container in the same pod, so the forward keeps
-# working -- see tests/harness/livecheck.py for why not `rollout restart`).
-# An unreachable live-check fails the gate.
+# restart is `kubectl rollout restart` plus a wait for Ready, done by the
+# harness, which also opens its own port-forward to read the admin API -- a
+# rollout kills the operator forward on localhost:18400, and this file creates
+# no port-forwards (tests/harness/livecheck.py says why). An unreachable
+# live-check fails the gate.
 echo -e "${YELLOW}weaver live-check: restarting for an empty report${NC}"
 PYTHONPATH="$ROOT" "$ROOT/.venv/bin/python" -m tests.harness.livecheck restart || {
   echo -e "${RED}Error: weaver live-check is unreachable or did not restart.${NC}" >&2
-  echo "It needs deploy/weaver-live-check Ready in the observability namespace and its forward (localhost:18400): ./scripts/start-demo.sh" >&2
+  echo "It needs deploy/weaver-live-check in the observability namespace: kubectl -n observability get pods -l app=weaver-live-check (or ./scripts/setup-kind.sh --stage 7)." >&2
   exit 1
 }
 # This system's headline claim is that ONE trace spans the browser down
