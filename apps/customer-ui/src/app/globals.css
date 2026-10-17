@@ -7,7 +7,7 @@
  *
  * ON THE DETERMINATION COLOURS. A refusal is rendered in OCHRE, never red.
  * This is the demo's central sentence made visual: a refused payment is the
- * platform working, not an error, and the `policy.decision` span is
+ * platform working, not an error, and the `northstar.policy.decision` span is
  * deliberately not ERROR for exactly the same reason. Red is reserved for a
  * genuine fault -- the model call failing, the agent unreachable -- where
  * something really did go wrong.

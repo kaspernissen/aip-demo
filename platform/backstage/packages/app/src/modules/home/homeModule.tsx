@@ -62,7 +62,7 @@ the **autonomy contract** (an OpenFeature flag that ships refusing),
 the **network** (the agent plane cannot reach the policy service at all).
 
 A refusal is the platform working. Both UIs render one in ochre, never red,
-and the \`policy.decision\` span is deliberately not an error.
+and the \`northstar.policy.decision\` span is deliberately not an error.
 
 → **[Read the solution documentation](/docs/default/system/northstar)** —
 architecture, the demo runbook, and the telemetry contract.

@@ -172,7 +172,7 @@ describe("traceparent", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     let spanContext: SpanContext | undefined;
-    await getTracer().startActiveSpan("claim.submit", async (span) => {
+    await getTracer().startActiveSpan("northstar.claim.submit", async (span) => {
       spanContext = span.spanContext();
       try {
         await streamClaim("http://localhost:19001", claim, () => {});

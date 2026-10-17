@@ -89,7 +89,7 @@ export function buildOtlpTracePayload(
                   attr('northstar.contract.field_manager', event.fieldManager),
                   attr('northstar.contract.actor', 'backstage-autonomy-card'),
                   attr('k8s.namespace.name', event.flagNamespace),
-                  attr('k8s.resource.name', event.flagName),
+                  attr('northstar.contract.flag.name', event.flagName),
                 ],
                 status: { code: 1 }, // STATUS_CODE_OK
               },

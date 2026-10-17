@@ -55,9 +55,9 @@ export default function Page() {
     // whole submission. This span (trace A) ends when the claim stream first
     // returns: either the claim is decided, or it is waiting for a person.
     let waiting: { taskId: string; context: SpanContext } | null = null;
-    await getTracer().startActiveSpan("claim.submit", async (span) => {
+    await getTracer().startActiveSpan("northstar.claim.submit", async (span) => {
       span.setAttribute("northstar.claim.id", submitted.claimId);
-      span.setAttribute("northstar.policy.number", submitted.policyNumber);
+      span.setAttribute("northstar.claim.policy_number", submitted.policyNumber);
       try {
         const snap = await streamClaim(CLAIMS_AGENT_URL, submitted, (s) => s.result && setResult(s.result));
         if (snap.result) setResult(snap.result);
@@ -88,7 +88,7 @@ export default function Page() {
     if (waiting) {
       const { taskId, context } = waiting as { taskId: string; context: SpanContext };
       await getTracer().startActiveSpan(
-        "claim.wait",
+        "northstar.claim.wait",
         { links: [{ context }], attributes: { "northstar.claim.id": submitted.claimId } },
         async (wait) => {
           try {
@@ -242,7 +242,7 @@ export default function Page() {
  * a determination in blue, and a decline in ochre rather than an error in red:
  * the platform routing a payment above the agent's limit to a human is it
  * working correctly, and the UI should not contradict that -- the
- * `policy.decision` span is deliberately not ERROR for the same reason. Red is
+ * `northstar.policy.decision` span is deliberately not ERROR for the same reason. Red is
  * kept for a genuine fault, where the claim never got an answer at all. */
 function Determination({
   result,

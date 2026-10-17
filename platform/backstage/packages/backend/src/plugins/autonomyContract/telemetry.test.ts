@@ -20,7 +20,7 @@ describe('buildOtlpTracePayload', () => {
     expect(attrs['northstar.contract.new_variant']).toBe('autonomous');
     expect(attrs['northstar.contract.field_manager']).toBe('backstage-autonomy-card');
     expect(attrs['k8s.namespace.name']).toBe('northstar-platform');
-    expect(attrs['k8s.resource.name']).toBe('northstar-autonomy');
+    expect(attrs['northstar.contract.flag.name']).toBe('northstar-autonomy');
     const serviceName = payload.resourceSpans[0].resource.attributes.find(
       (a: any) => a.key === 'service.name',
     );
