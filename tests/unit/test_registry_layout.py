@@ -59,3 +59,17 @@ def test_every_enum_member_is_snake_case():
     ]
     assert members, "no enum members defined"
     assert all(snake.match(m) for m in members), [m for m in members if not snake.match(m)]
+
+
+def test_every_owned_signal_and_group_name_is_prefixed():
+    """Span names, metric names and group ids are names too (naming rule 2)."""
+    bad = []
+    for g in _groups():
+        gid = g["id"]
+        if not gid.startswith(("registry.northstar.", "span.northstar.", "metric.northstar.")):
+            bad.append(("group id", gid))
+        if g.get("type") == "span" and not g.get("name", "").startswith("northstar."):
+            bad.append(("span name", g.get("name")))
+        if g.get("type") == "metric" and not g.get("metric_name", "").startswith("northstar."):
+            bad.append(("metric_name", g.get("metric_name")))
+    assert not bad, bad

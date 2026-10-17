@@ -1,4 +1,4 @@
-# Northstar Architecture — M8 (Human in the loop), on M7's Bounded
+# Northstar Architecture — M9 (Weaver registry, in progress), on M8's Human in the loop
 
 > **M8 change, read this first.** `senior-settlement-agent` was **retired in
 > M8**. Wherever this document, written milestone by milestone, describes it,
@@ -60,7 +60,7 @@
 >   `awaitingSince` to the decision. It is not sampled, and it reaches Prometheus as
 >   `northstar_approval_wait_duration_seconds_*` (measured; see the contract).
 
-Status: **M8 (Human in the loop)**, on branch `m8-human-in-the-loop`, on top of **M7 (Bounded)**, which sat on **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
+Status: **M9 (Weaver registry)**, in progress on branch `m9-weaver-registry`: the registry is built, the rename, live-check and Jaeger evidence are not done yet, so this document still shows the pre-M9 names. Before it **M8 (Human in the loop)**, on branch `m8-human-in-the-loop`, on top of **M7 (Bounded)**, which sat on **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
 autonomy) merged 2026-09-15 at `e62238f`, tagged `m5-verified`** -- read that
 tag's own message before trusting it, it claims less than its predecessors.
 Bumped in M6's first commit rather than left to a doc pass: this line went
