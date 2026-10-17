@@ -46,7 +46,7 @@ The service's own `.venv` is the canonical runner: bare `python3` here is
 |------|-----------|
 | `pds/rules.py` | the policy. Pure: it never learns what a wire is. |
 | `pds/identity.py` | the caller's SPIFFE ID, out of `metadata_context` |
-| `pds/telemetry.py` | the `policy.decision` span and its attribute keys |
+| `pds/telemetry.py` | the `northstar.policy.decision` span and its attribute keys |
 | `pds/server.py` | the ExtMCP servicer, and `python -m pds.server` |
 
 ## Two things that look like bugs and are not
@@ -57,13 +57,13 @@ rule `internal_error`. A gRPC error would instead be routed by the gateway's
 *outage*, which is a different sentence from a policy refusal, both on stage and
 in a trace.
 
-**A deny is not an error span.** `policy.decision` leaves its status UNSET on a
+**A deny is not an error span.** `northstar.policy.decision` leaves its status UNSET on a
 refusal. Refusing is this service working; the decision is carried by the
-`policy.decision` attribute, not by the span status.
+`northstar.policy.decision` attribute, not by the span status.
 
 ## Telemetry
 
-`policy.decision` is Gap 3 in `docs/telemetry-contract.md`: no OpenTelemetry
+`northstar.policy.decision` is Gap 3 in `docs/telemetry-contract.md`: no OpenTelemetry
 semantic convention exists for a policy or autonomy decision, so its nine
 attribute names are ours. They are listed once, in `pds/telemetry.py`, and are
 prefixed `policy.` / `northstar.` so a reader can tell at a glance which

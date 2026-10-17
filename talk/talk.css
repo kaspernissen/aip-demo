@@ -1648,6 +1648,12 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x40-w .code { font-size: 23px; }
 .x40-th { margin: calc(1.5 * var(--baseline)) 0 0; font-size: var(--type-subtitle); line-height: 1.2; }
 
+/* 39r · the registry excerpt beside the Jaeger span */
+.x40-rs { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: start; margin-top: calc(0.75 * var(--baseline)); }
+.x40-reg { font-size: 21px; line-height: 1.45; margin: 0; white-space: pre; overflow: hidden; }
+.x40-rs-shot { position: relative; overflow: hidden; height: 470px; margin: 0; }
+.x40-rs-shot img { position: absolute; max-width: none; width: 900px; left: -5px; top: -62px; }
+
 /* ===== 50-close.css ===== */
 /* 50-close: slides 48-51, Broadsheet. Everything is x50-* so no other fragment collides. */
 

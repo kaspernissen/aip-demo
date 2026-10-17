@@ -5,7 +5,7 @@ of the policy — which is the only reason its scores are worth anything.
 
 ## The anti-vacuity argument
 
-An auditor that re-reads the `policy.decision` span's own claim and agrees with
+An auditor that re-reads the `northstar.policy.decision` span's own claim and agrees with
 it has proved nothing. So this service keeps:
 
 - `scorer/authority.py` — a second, independent copy of the execute-limit table

@@ -1,7 +1,7 @@
 # Slide plan: Verticalizing Platform Intelligence for Regulated Domains
 
 KubeCon + CloudNativeCon North America 2026, Salt Lake City. **Wed 11 Nov, 11:00–11:30, Salt Palace
-Level 2, 255 EF** (Platform Engineering, Advanced). The slot is 30 minutes. This is the **long cut, 50:00 of content**, built on purpose so Kasper can cut
+Level 2, 255 EF** (Platform Engineering, Advanced). The slot is 30 minutes. This is the **long cut, 50:30 of content**, built on purpose so Kasper can cut
 down to the slot himself (his call, 2026-09-28).
 
 **Speakers:** William Rizzo (Global Field CTO, Mirantis) and Kasper Borg Nissen (Principal Developer
@@ -103,8 +103,8 @@ ordinary slides now, outside the five-minute cut.
 | 44 | 30-live | K | — | 0 | Fallback — Step 3 | NEW | Step 3 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-15 (the flow transcript in the Task 5 report: autonomy autonomous, claim 5800, claim 6200), typeset verbatim, elided with … only |
 | 45 | 30-live | K | 28:40 | 50 | Step 4 — the keystone | BOUNDED | Step 4 live, demo keystone: the keystone, after William's mic-drop beat. As settlement-agent, patch northstar-autonomy: RBAC Forbidden; a mistaken over-grant; the same patch: Kyverno ValidatingPolicy agents-cannot-edit-their-own-authority denies; over-grant removed; flag still assisted (deploy/platform/kyverno/keystone-policy.yaml; deploy/demo/keystone-overgrant.yaml; runbook §5 Step 4) |
 | 46 | 30-live | K | — | 0 | Fallback — Step 4 | BOUNDED | Step 4 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-12 (scratchpad flow/4-keystone.txt), typeset verbatim, elided with … only |
-| 47 | 30-live | K | 29:30 | 45 | Step 5 — evidence | NEW | Step 5 live, demo evidence: this run's three claims read back from OpenSearch: who decided, rule, limit, who approved and how long the human took, outcome (runbook §5 Step 5) |
-| 48 | 30-live | K | — | 0 | Fallback — Step 5 | NEW | Step 5 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-15 (the flow transcript in the Task 5 report: evidence), typeset verbatim, elided with … only |
+| 47 | 30-live | K | 29:30 | 45 | Step 5 — evidence | NEW | Step 5 live, demo evidence: this run's three claims read back from Jaeger: who decided, rule, limit, who approved and how long the human took, outcome (runbook §5 Step 5) |
+| 48 | 30-live | K | — | 0 | Fallback — Step 5 | NEW | Step 5 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-17 (M9 Task 4: evidence, read from Jaeger), typeset verbatim, elided with … only |
 | 49 | 31-act3b | K | 30:15 | 45 | Identity is an input | NEW | deep dive after step 1: five 401s, and the caller as half of the lookup key (Ch 7, Figures 7.3 and 7.4) |
 | 50 | 31-act3b | K | 31:00 | 45 | Reach has two layers | BOUNDED | optional: reach has two layers, after William's Linkerd reach beat, backed by the Linkerd spike's measured results (scratchpad linkerd-spike-report.md, 2026-10-12: criteria 1, 3, 4, 6, release channels). The demo runs Cilium only. |
 | 51 | 31-act3b | K | 31:45 | 45 | One trace, and the absence | NEW | deep dive after step 2: the full deny trace from the customer UI, after Ch 5 Figure 5.5 and Ch 6 Figure 6.13 (trace a4007e49…) |
@@ -123,25 +123,26 @@ ordinary slides now, outside the five-minute cut.
 | 64 | 31-act3b | K | 39:05 | 20 | The platform API is the resource | NEW | The platform API is the resource. Handover point (William Rizzo) |
 | 65 | 40-act4 | K | 39:25 | 10 | Act 4 — How you prove it | NEW | Act 4 divider. The act title is Ch 14's alternative subtitle. |
 | 66 | 40-act4 | K | 39:35 | 20 | Evidence vs logs | NEW | concept: evidence vs logs. A log line (Fig 3.1) against the five things the evidence view answers (Ch 9: who decided, rule, limit, human, ledger), all on spans, one join key |
-| 67 | 40-act4 | K | 39:55 | 45 | Which refusals the trace can see | BOUNDED | which refusals the trace can see: one row per ring, measured in M7 (gateway 401 spans; Cilium drop has no span, Hubble not installed; policy.decision in the claim trace; Kyverno denial as its own trace, no traceparent from kubectl) |
+| 67 | 40-act4 | K | 39:55 | 45 | Which refusals the trace can see | BOUNDED | which refusals the trace can see: one row per ring, measured in M7 (gateway 401 spans; Cilium drop has no span, Hubble not installed; northstar.policy.decision in the claim trace; Kyverno denial as its own trace, no traceparent from kubectl) |
 | 68 | 40-act4 | K | 40:40 | 50 | The evidence view | NEW | The evidence view (longer-demo beat 5, as a slide): opensearch-evidence.png, cropped |
-| 69 | 40-act4 | K | 41:30 | 20 | What an evaluation is | NEW | concept: what an evaluation is. The gen_ai.evaluation.result fields (Ch 3 table, Fig 3.13), parented to the judged span |
-| 70 | 40-act4 | K | 41:50 | 45 | A score that can go to zero | NEW | A score that can go to zero (longer-demo beat 6, as a slide): 1.0 vs 0.0 (Fig 9.3) plus jaeger-eval-scores.png |
-| 71 | 40-act4 | K | 42:35 | 30 | And LLM-as-judge? | DID WHAT | "Enter LLM-as-judge", rebuilt as judge vs auditor on one output format (Ch 3 Fig 3.13, Ch 9 "What Northstar does not have") |
-| 72 | 40-act4 | K | 43:05 | 45 | Content capture, a matched pair | NEW | Content capture as a matched pair: Fig 9.5 lifted (three layers, keys vs content) |
-| 73 | 40-act4 | K | 43:50 | 30 | Never sample the decisions | TAMING | "More Telemetry ≠ Better Telemetry" (p.40), reworked: the 142 vs 139 defect |
-| 74 | 40-act4 | W | 44:20 | 60 | From requirement to artifact | NEW | Requirement → artifact, Ch 14's six-row table; walk two rows (Art. 86 / C-203/22 and DORA) |
-| 75 | 40-act4 | W | 45:20 | 30 | The deadline moved | NEW | The deadline moved: Fig 10.1 lifted (the Omnibus timeline), plus SR 26-2 |
-| 76 | 40-act4 | W | 45:50 | 30 | Sixteen findings, none filed | NEW | Sixteen findings: Fig 12.1 lifted (governance home × kind of gap); chips tinted from Fig 12.2 |
-| 77 | 40-act4 | W | 46:20 | 40 | Where AI observability stands | NEW | where AI observability stands: the L0–L5 ladder and the ecosystem's measured rung (Instrumenting AI Agents, Dash0 DevRel, Aug 2026, p. 10); replaces the old OTel-support maturity model, which has since changed |
-| 78 | 50-close | W | 47:00 | 60 | What this does not do | NEW | Honest limitations: Ch 14's list (Backstage line kept exact in the note) plus the two abstract blocks the demo does not have (Ch 11.3; dashed like the blueprint's missing layers, Fig 11.1) |
-| 79 | 50-close | W | 48:00 | 45 | Becoming a regulated-platform wizard | DID WHAT | "Becoming an AI observability wizard": the six steps as the book lists them (Ch 3 Fig 3.18), dimmed, plus Ch 14's three regulated ones |
-| 80 | 50-close | W | 48:45 | 45 | What to do on Monday | NEW | The call to action: Ch 14's five verbs, ending on "Sixteen gaps. Pick one." |
-| 81 | 50-close | W | 49:30 | 30 | Three things to remember | NEW | Three things to remember: Figure 14.4 (study ed.; 14.9 full ed.) lifted verbatim, plus the callback. No QR: the book isn't hosted yet. |
-| 82 | 90-thanks | W | — | 0 | Thank you |  |  |
-| 83 | 90-thanks | K | — | 0 | Appendix — Pre-flight | NEW | appendix (speaker-only, 0 s): pre-flight T-60…T-5 (aip-demo docs/demo-runbook.md §4), at stage 7 with the Kyverno and over-grant checks (M7 design spec §4) |
-| 84 | 90-thanks | K | — | 0 | Appendix — Reset between runs | NEW | appendix (speaker-only, 0 s): reset between runs (runbook §7: scripts/demo reset first), plus the over-grant check (M7 design spec §2.2) |
-| 85 | 90-thanks | K | — | 0 | Appendix — When it breaks | NEW | appendix (speaker-only, 0 s): live triage (runbook §8), plus Kyverno down (M7 design spec §2.1) |
+| 69 | 40-act4 | K | 41:30 | 30 | The decision contract is a published schema | NEW | The decision contract is a published schema (M9): a real excerpt of telemetry/registry/policy.yaml beside a real Jaeger screenshot of the same northstar.policy.decision span (jaeger-policy-decision-m9.png, 2026-10-17). Outside the live block. |
+| 70 | 40-act4 | K | 42:00 | 20 | What an evaluation is | NEW | concept: what an evaluation is. The gen_ai.evaluation.result fields (Ch 3 table, Fig 3.13), parented to the judged span |
+| 71 | 40-act4 | K | 42:20 | 45 | A score that can go to zero | NEW | A score that can go to zero (longer-demo beat 6, as a slide): 1.0 vs 0.0 (Fig 9.3) plus jaeger-eval-scores.png |
+| 72 | 40-act4 | K | 43:05 | 30 | And LLM-as-judge? | DID WHAT | "Enter LLM-as-judge", rebuilt as judge vs auditor on one output format (Ch 3 Fig 3.13, Ch 9 "What Northstar does not have") |
+| 73 | 40-act4 | K | 43:35 | 45 | Content capture, a matched pair | NEW | Content capture as a matched pair: Fig 9.5 lifted (three layers, keys vs content) |
+| 74 | 40-act4 | K | 44:20 | 30 | Never sample the decisions | TAMING | "More Telemetry ≠ Better Telemetry" (p.40), reworked: the 142 vs 139 defect |
+| 75 | 40-act4 | W | 44:50 | 60 | From requirement to artifact | NEW | Requirement → artifact, Ch 14's six-row table; walk two rows (Art. 86 / C-203/22 and DORA) |
+| 76 | 40-act4 | W | 45:50 | 30 | The deadline moved | NEW | The deadline moved: Fig 10.1 lifted (the Omnibus timeline), plus SR 26-2 |
+| 77 | 40-act4 | W | 46:20 | 30 | Sixteen findings, none filed | NEW | Sixteen findings: Fig 12.1 lifted (governance home × kind of gap); chips tinted from Fig 12.2 |
+| 78 | 40-act4 | W | 46:50 | 40 | Where AI observability stands | NEW | where AI observability stands: the L0–L5 ladder and the ecosystem's measured rung (Instrumenting AI Agents, Dash0 DevRel, Aug 2026, p. 10); replaces the old OTel-support maturity model, which has since changed |
+| 79 | 50-close | W | 47:30 | 60 | What this does not do | NEW | Honest limitations: Ch 14's list (Backstage line kept exact in the note) plus the two abstract blocks the demo does not have (Ch 11.3; dashed like the blueprint's missing layers, Fig 11.1) |
+| 80 | 50-close | W | 48:30 | 45 | Becoming a regulated-platform wizard | DID WHAT | "Becoming an AI observability wizard": the six steps as the book lists them (Ch 3 Fig 3.18), dimmed, plus Ch 14's three regulated ones |
+| 81 | 50-close | W | 49:15 | 45 | What to do on Monday | NEW | The call to action: Ch 14's five verbs, ending on "Sixteen gaps. Pick one." |
+| 82 | 50-close | W | 50:00 | 30 | Three things to remember | NEW | Three things to remember: Figure 14.4 (study ed.; 14.9 full ed.) lifted verbatim, plus the callback. No QR: the book isn't hosted yet. |
+| 83 | 90-thanks | W | — | 0 | Thank you |  |  |
+| 84 | 90-thanks | K | — | 0 | Appendix — Pre-flight | NEW | appendix (speaker-only, 0 s): pre-flight T-60…T-5 (aip-demo docs/demo-runbook.md §4), at stage 7 with the Kyverno and over-grant checks (M7 design spec §4) |
+| 85 | 90-thanks | K | — | 0 | Appendix — Reset between runs | NEW | appendix (speaker-only, 0 s): reset between runs (runbook §7: scripts/demo reset first), plus the over-grant check (M7 design spec §2.2) |
+| 86 | 90-thanks | K | — | 0 | Appendix — When it breaks | NEW | appendix (speaker-only, 0 s): live triage (runbook §8), plus Kyverno down (M7 design spec §2.1) |
 
 **Check before presenting:** every fast-moving fact on a slide carries a `[verify: …]` line in its
 speaker note. They map to Appendix B of the book.

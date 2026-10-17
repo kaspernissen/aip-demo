@@ -76,7 +76,7 @@ clearly rather than to look like a failure:
 - the gateway's own span reports `grpc.status = 0` on a refusal — the *call*
   succeeded, the deny is in the payload, which is how "policy said no" stays
   distinguishable from "policy service was down";
-- the `policy.decision` span is deliberately **not** `ERROR` on a denial;
+- the `northstar.policy.decision` span is deliberately **not** `ERROR` on a denial;
   marking it an error would page an on-call engineer for correct behaviour;
 - both demo UIs render a refusal in **ochre, never red**.
 

@@ -97,7 +97,7 @@ guard holds: no identity, no road, one way in.</pre>
   +- agentgateway  tools/call execute_payment   HTTP 200  ERROR
       HTTP 200: the no is a tool result marked isError, with the rule in its text.
     +- Guardrail   the gateway asks the decision service
-    +- policy-decision-service  policy.decision  <span class="m">DENY</span>
+    +- policy-decision-service  northstar.policy.decision  <span class="m">DENY</span>
           rule       settlement-agent.assisted.execute_limit
           limit      0  (requested 5800)
           …
@@ -160,7 +160,7 @@ The model asked. The platform sent it to a human. The record shows both.
 …
   Outcome  <span class="c">SETTLED</span>  by the agent, inside its band. The payment was made.
   …
-    +- policy-decision-service  policy.decision  <span class="c">PERMIT</span>
+    +- policy-decision-service  northstar.policy.decision  <span class="c">PERMIT</span>
           rule       settlement-agent.autonomous.execute_limit
           limit      6000  (requested 5800)
           …
@@ -172,7 +172,7 @@ Settled by the agent, inside its band. Same code; only the value changed.
 …
   Outcome  <span class="m">WAITING</span>  awaiting human approval. Nothing was paid.
   …
-    +- policy-decision-service  policy.decision  <span class="m">DENY</span>
+    +- policy-decision-service  northstar.policy.decision  <span class="m">DENY</span>
           rule       settlement-agent.autonomous.execute_limit
           limit      6000  (requested 6200)
           …
@@ -239,54 +239,60 @@ The model asked. The platform sent it to a human. The record shows both.
 The agent could not edit what constrains it, even with the grant.</pre>
 </section>
 
-<!-- L5 · NEW · Step 5 live, demo evidence: this run's three claims read back from OpenSearch: who decided, rule, limit, who approved and how long the human took, outcome (runbook §5 Step 5) -->
+<!-- L5 · NEW · Step 5 live, demo evidence: this run's three claims read back from Jaeger: who decided, rule, limit, who approved and how long the human took, outcome (runbook §5 Step 5) -->
 <section class="slide content" data-label="Step 5 — evidence">
   <div class="beat"><span class="dot"></span>Live &middot; Step 5</div>
   <h2 class="slide-title">Prove why each claim ended the way it did</h2>
-  <p class="x3l-cmd rise"><span class="code">./scripts/demo evidence</span><span class="s">this run&rsquo;s claims, read back from OpenSearch</span></p>
+  <p class="x3l-cmd rise"><span class="code">./scripts/demo evidence</span><span class="s">this run&rsquo;s claims, read back from Jaeger</span></p>
   <div class="x3l-ev x3l-ev3 rise">
     <p class="h"></p><p class="h">&euro;5,800 &middot; assisted</p><p class="h">&euro;5,800 &middot; autonomous</p><p class="h">&euro;6,200 &middot; autonomous</p>
     <p class="k">who decided</p><p>decision service <b class="m">sent it to a human</b></p><p>decision service <b class="c">PERMIT</b></p><p>decision service <b class="m">sent it to a human</b></p>
     <p class="k">rule</p><p><span class="code">&hellip;assisted.execute_limit</span></p><p><span class="code">&hellip;autonomous.execute_limit</span></p><p><span class="code">&hellip;autonomous.execute_limit</span></p>
     <p class="k">limit</p><p>0</p><p>6,000</p><p>6,000</p>
-    <p class="k">approved by</p><p><b>a person</b>, after 19 s</p><p>none</p><p>none</p>
+    <p class="k">approved by</p><p><b>a person</b>, after 17 s</p><p>none</p><p>none</p>
     <p class="k">outcome</p><p><b class="c">SETTLED</b> by reviewer-ui</p><p><b class="c">SETTLED</b> by settlement-agent</p><p><b class="m">WAITING</b> nothing moved</p>
   </div>
   <p class="x3l-foot">Every line is a recorded span, read back. <b>Nothing is reconstructed.</b></p>
 </section>
 
-<!-- L5f · NEW · Step 5 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-15 (the flow transcript in the Task 5 report: evidence), typeset verbatim, elided with … only -->
+<!-- L5f · NEW · Step 5 fallback: the real ./scripts/demo transcript from the stage-7 run of 2026-10-17 (M9 Task 4: evidence, read from Jaeger), typeset verbatim, elided with … only -->
 <section class="slide content" data-label="Fallback — Step 5">
   <div class="beat fallback"><span class="dot"></span>Fallback &middot; Step 5</div>
   <h2 class="slide-title">Prove why each claim ended the way it did</h2>
   <pre class="term x3l-term rise"><span class="p">$ ./scripts/demo evidence</span>
 <span class="h">EVIDENCE  can we prove why each claim ended the way it did?</span>
 -----------------------------------------------------------
-  From OpenSearch, for this run's 3 claim(s). Nothing older.
+  From Jaeger, for this run's 3 claim(s). Nothing older.
 
-<span class="h">CLM-DEMO-656406   EUR 5,800</span>
+<span class="h">CLM-DEMO-1813EA   EUR 5,800</span>
+    …
     who decided      policy-decision-service   <span class="m">SENT TO A HUMAN</span>
     rule             settlement-agent.assisted.execute_limit
     limit            0   (requested 5800)
     autonomy level   assisted
     outcome          <span class="c">SETTLED</span> by reviewer-ui
-    approved by      kasper.on.stage, after 19 s
+    approved by      kasper.on.stage, after 17 s
+    trace            http://localhost:16686/trace/dab4155d36d9122b6e7b8ec23bcf888d
 
-<span class="h">CLM-DEMO-7AC411   EUR 5,800</span>
+<span class="h">CLM-DEMO-396B0F   EUR 5,800</span>
+    …
     who decided      policy-decision-service   <span class="c">PERMIT</span>
     rule             settlement-agent.autonomous.execute_limit
     limit            6000   (requested 5800)
     autonomy level   autonomous
     outcome          <span class="c">SETTLED</span> by settlement-agent
     approved by      none
+    trace            http://localhost:16686/trace/e9bdb5753ff245fbb908e7c1562a8102
 
-<span class="h">CLM-DEMO-CC1273   EUR 6,200</span>
+<span class="h">CLM-DEMO-203115   EUR 6,200</span>
+    …
     who decided      policy-decision-service   <span class="m">SENT TO A HUMAN</span>
     rule             settlement-agent.autonomous.execute_limit
     limit            6000   (requested 6200)
     autonomy level   autonomous
     outcome          <span class="m">AWAITING HUMAN APPROVAL</span> no execute span: nothing moved
     approved by      none
+    trace            http://localhost:16686/trace/7ad45ad5aa1542519bdcea94721fadb6
 
-Every line above is a recorded span, read back from OpenSearch. Nothing is reconstructed.</pre>
+Every line above is a recorded span, read back from Jaeger. Nothing is reconstructed.</pre>
 </section>

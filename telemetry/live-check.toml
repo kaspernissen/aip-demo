@@ -34,9 +34,10 @@ admin_port = 4320
 # `required_attribute_not_present` is listed but NOT observed to fire: with the
 # registry's `required` `northstar.policy.rule` dropped from the decision span
 # (mutation, 2026-10-17), live-check v0.28.0 reported no finding at all. A missing
-# required attribute is therefore not caught by this gate; see the Task 3 fix-round
-# report. Listed so that a weaver release that starts checking it is not
-# silently lowered by the catch-all.
+# required attribute is therefore not caught by this gate; see
+# docs/telemetry-contract.md, "What live-check checks, and what it does not".
+# Listed so that a weaver release that starts checking it is not silently
+# lowered by the catch-all.
 [[live-check.finding_level_overrides]]
 ids = [
   "missing_attribute",

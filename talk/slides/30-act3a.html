@@ -88,7 +88,7 @@
     <p class="l">Golden path</p><i class="ar"></i><p class="r m">A declared contract per agent</p><p class="n"><span class="code">FeatureFlag</span></p>
     <p class="l">Guardrails, admission policy</p><i class="ar"></i><p class="r m">A decision at the tool gateway</p><p class="n"><span class="code">agentgateway → PDS</span></p>
     <p class="l">Service identity, mTLS</p><i class="ar"></i><p class="r m">One SPIFFE identity per agent</p><p class="n"><span class="code">JWT-SVID</span></p>
-    <p class="l">Observability stack</p><i class="ar"></i><p class="r c">GenAI traces plus decision spans</p><p class="n"><span class="code">policy.decision</span></p>
+    <p class="l">Observability stack</p><i class="ar"></i><p class="r c">GenAI traces plus decision spans</p><p class="n"><span class="code">northstar.policy.decision</span></p>
     <p class="l">Feature flags</p><i class="ar"></i><p class="r m">Autonomy level as a live value</p><p class="n"><span class="code">flagd</span></p>
     <p class="l">Service catalog</p><i class="ar"></i><p class="r">Backstage as the view</p><p class="n"><span class="code">autonomy card</span></p>
   </div>
@@ -161,7 +161,7 @@
 <!-- row 2 -->
 <rect x="392" y="176" width="104" height="52" rx="6" fill="#FFFFFF" stroke="#9078F3" stroke-width="2"/>
 <text x="444" y="198" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">PDS + flagd</text>
-<text x="444" y="214" font-size="11.5" fill="#595959" text-anchor="middle">policy.decision</text>
+<text x="444" y="214" font-size="11.5" fill="#595959" text-anchor="middle">northstar.policy.decision</text>
 <rect x="506" y="176" width="90" height="52" rx="6" fill="#FFFFFF" stroke="#9078F3"/>
 <text x="551" y="198" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">FeatureFlag</text>
 <text x="551" y="214" font-size="11.5" fill="#595959" text-anchor="middle">the contract</text>
@@ -386,7 +386,7 @@
         <p>settlement-agent</p><p class="lv">autonomous</p><p class="amt">€6,000</p>
         <p class="dim">no row</p><p class="dim">any</p><p class="amt dim">deny</p>
       </div>
-      <p class="out">Every answer becomes a <span class="code m">policy.decision</span> span: rule, limit, amount, caller, level.</p>
+      <p class="out">Every answer becomes a <span class="code m">northstar.policy.decision</span> span: rule, limit, amount, caller, level.</p>
     </div>
   </div>
 </section>

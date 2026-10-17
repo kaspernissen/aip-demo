@@ -13,7 +13,7 @@ prepares every payment, and above its band a human decides.
   tool call through agentgateway, under this workload's own SPIFFE ID.
 - Accept a rejection and record it on the ledger (`POST /payments/{id}/reject`).
   No money moves.
-- Emit the `review.decision` span.
+- Emit the `northstar.review.decision` span.
 - Offer the same queue and decision as JSON (`GET /api/awaiting`,
   `POST /api/review/{id}`) for the demo driver and the tests.
 
@@ -38,7 +38,7 @@ skip, so the platform makes it.
 
 - **One human, one click, once.** No second approver, no timeout, no expiry.
 - **The reviewer is not authenticated.** The reviewer id is a string the form
-  supplies. The span's `review.reviewer.spiffe_id` is *reviewer-ui's own*
+  supplies. The span's `northstar.review.reviewer.spiffe_id` is *reviewer-ui's own*
   identity, not the person's, so between them the span records an unverified
   claim and the deployment that accepted it, never which person approved.
 - **It can release only what is waiting.** It has no spending limit, and no

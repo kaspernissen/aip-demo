@@ -29,13 +29,13 @@
     <div>
       <p class="a2-k"><b>2</b>One trace</p>
       <div class="stree a2-tree">
-        <div class="r"><span class="op">claim.submit</span><span class="svc">customer-ui</span></div>
+        <div class="r"><span class="op">northstar.claim.submit</span><span class="svc">customer-ui</span></div>
         <div class="r i1"><span class="op">POST /</span><span class="svc">claims-agent</span></div>
         <div class="r i2"><span class="op">invoke_agent</span><span class="v">settlement_agent</span></div>
         <div class="r i3"><span class="op">chat</span><span class="v">the model thinks</span></div>
         <div class="r i3"><span class="op">execute_tool</span><span class="v">propose_payment</span></div>
         <div class="r i4"><span class="op">tools/call</span><span class="svc gw">agentgateway</span></div>
-        <div class="r i5"><span class="op">policy.decision</span><span class="svc pds">PDS</span></div>
+        <div class="r i5"><span class="op">northstar.policy.decision</span><span class="svc pds">PDS</span></div>
       </div>
       <p class="a2-sp-cap muted">every span with the same trace id; indent = who caused whom</p>
     </div>

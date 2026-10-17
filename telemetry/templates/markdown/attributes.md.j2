@@ -14,3 +14,26 @@
 | `{{ attr.name }}` | {{ type_of(attr) }} | {{ attr.stability }} | {{ cell(attr.brief) }} | {% if attr.type is mapping and attr.type.members is defined %}{% for m in attr.type.members %}`{{ m.value }}`{% if not loop.last %}, {% endif %}{% endfor %}{% elif attr.examples is defined %}{% for e in attr.examples %}`{{ e }}`{% if not loop.last %}, {% endif %}{% endfor %}{% endif %} |
 {% endfor %}
 {% endfor -%}
+{%- macro level(attr) -%}
+{%- if attr.requirement_level is mapping -%}
+{%- if attr.requirement_level.conditionally_required is defined -%}conditionally required: {{ cell(attr.requirement_level.conditionally_required) }}
+{%- elif attr.requirement_level.recommended is defined -%}recommended: {{ cell(attr.requirement_level.recommended) }}
+{%- else -%}{{ attr.requirement_level }}{%- endif -%}
+{%- else -%}{{ attr.requirement_level | default("recommended") | replace("_", " ") }}{%- endif -%}
+{%- endmacro %}
+
+### Spans
+
+| Span | Kind | Brief | Attributes (requirement level) |
+|---|---|---|---|
+{% for group in ctx.spans | sort(attribute="id") -%}
+| `{{ group.name }}` | {{ group.span_kind }} | {{ cell(group.brief) }} | {% for attr in group.attributes %}`{{ attr.name }}` ({{ level(attr) }}){% if not loop.last %}; {% endif %}{% endfor %} |
+{% endfor %}
+
+### Metrics
+
+| Metric | Instrument | Unit | Brief | Attributes (requirement level) |
+|---|---|---|---|---|
+{% for group in ctx.metrics | sort(attribute="id") -%}
+| `{{ group.metric_name }}` | {{ group.instrument }} | `{{ group.unit }}` | {{ cell(group.brief) }} | {% for attr in group.attributes %}`{{ attr.name }}` ({{ level(attr) }}){% if not loop.last %}; {% endif %}{% endfor %} |
+{% endfor %}

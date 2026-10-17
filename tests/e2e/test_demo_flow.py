@@ -33,9 +33,11 @@ drift from the cluster without this file going red:
   the decision span carries is 6000.
 * `keystone` -- RBAC `Forbidden`, then Kyverno `DENIED` naming the policy, the
   over-grant gone, the flag still `assisted`.
-* `evidence` -- for this run's three claims, from OpenSearch: who decided, the
-  rule, who approved (the stage reviewer for the first, none for the other
-  two), and the human wait in seconds for the approved one.
+* `evidence` -- for this run's three claims, from Jaeger (no OpenSearch: the
+  command is run with OPENSEARCH_URL pointing at a dead port and must still
+  succeed): who decided, the rule, who approved (the stage reviewer for the
+  first, none for the other two), the human wait in seconds for the approved
+  one, and a Jaeger trace link per claim.
 * `reset` -- the resting state: flag `assisted`, over-grant absent, and no
   approval open (the EUR 6,200 claim was rejected as `demo-reset`).
 
@@ -73,9 +75,12 @@ import httpx
 import pytest
 
 from tests.harness import contract, live
+from tests.harness.jaeger import JaegerClient
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEMO = REPO_ROOT / "scripts" / "demo"
+
+live_jaeger = JaegerClient()
 
 AMOUNT = 5800
 OVER_AUTONOMOUS = 6200
@@ -320,8 +325,11 @@ def test_4_keystone_rbac_forbids_then_kyverno_denies_and_the_grant_is_gone(flow)
 
 def test_5_evidence_names_who_decided_and_who_approved_for_each_claim(flow):
     flow.require("claim-waiting", "claim-settled", "claim-over", "keystone")
+    # No request to OpenSearch: a dead address must change nothing.
+    flow.env["OPENSEARCH_URL"] = "http://127.0.0.1:9"
     out = flow.ok("evidence", "evidence")
     assert "for this run's 3 claim(s)" in out, out
+    assert "OpenSearch" not in out, out
     ids = [c["id"] for c in flow.claims()]
     assert len(ids) == 3, ids
     # One section per claim, in the order they were made: a section starts at
@@ -332,6 +340,7 @@ def test_5_evidence_names_who_decided_and_who_approved_for_each_claim(flow):
     approved, settled, waiting = sections
     for section in sections:
         assert "policy-decision-service" in section, section
+        assert re.search(r"^\s*trace\s+http://localhost:16686/trace/[0-9a-f]{32}\s*$", section, re.M), section
         assert "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent" in section, section
     # 1: agent asked, a human approved.
     assert "[SENT TO A HUMAN]" in approved and "[SETTLED]" in approved, approved
@@ -339,6 +348,11 @@ def test_5_evidence_names_who_decided_and_who_approved_for_each_claim(flow):
     assert "autonomy level   assisted" in approved, approved
     assert re.search(r"approved by\s+kasper\.on\.stage, after \d+ s", approved), approved
     assert re.search(r"limit\s+0\s", approved), approved
+    # The approval's own trace is the one linked: it holds the review span.
+    link = re.search(r"trace\s+http://localhost:16686/trace/([0-9a-f]{32})", approved).group(1)
+    review = live_jaeger.get_trace(link).spans_named("northstar.review.decision", "reviewer-ui")
+    assert review and review[0].attrs["northstar.review.reviewer.id"] == "kasper.on.stage", link
+    assert review[0].attrs["northstar.review.wait.duration"] > 0, review[0].attrs
     # 2: the agent settled it alone, inside the widened band.
     assert "[PERMIT]" in settled and "[SETTLED]" in settled, settled
     assert "settlement-agent.autonomous.execute_limit" in settled, settled

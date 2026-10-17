@@ -238,7 +238,7 @@ def test_evidence_waits_for_ingest_lag_then_settles_and_never_returns_a_partial_
         "policy_decision": "deny", "rule": "r", "caller_identity": "c", "money_hops": ["h"],
     }
     rows = iter([{}, {"policy_decision": "deny"}, complete])
-    monkeypatch.setattr(driver.live, "evidence_for", lambda claim_id, window: next(rows))
+    monkeypatch.setattr(driver.evidence, "evidence_for", lambda claim_id, window: next(rows))
     monkeypatch.setattr(driver.time, "sleep", lambda s: None)
     row = driver._settled({"id": "CLM-X", "status": "awaiting_approval"}, 0)
     assert row == complete
@@ -247,7 +247,7 @@ def test_evidence_waits_for_ingest_lag_then_settles_and_never_returns_a_partial_
 def test_evidence_that_never_arrives_is_a_failure_naming_what_is_missing(monkeypatch):
     driver = _driver()
     monkeypatch.setattr(driver, "EVIDENCE_WAIT_S", 0.0)
-    monkeypatch.setattr(driver.live, "evidence_for", lambda claim_id, window: {"policy_decision": "deny"})
+    monkeypatch.setattr(driver.evidence, "evidence_for", lambda claim_id, window: {"policy_decision": "deny"})
     monkeypatch.setattr(driver.time, "sleep", lambda s: None)
     try:
         driver._settled({"id": "CLM-X", "status": "awaiting_approval"}, 0)
@@ -285,7 +285,7 @@ def _decided(monkeypatch, demo, **extra):
 def test_approve_last_finds_a_claim_the_customer_ui_filed_and_remembers_it(monkeypatch, tmp_path):
     demo = _isolated(monkeypatch, tmp_path)
     monkeypatch.setattr(demo, "awaiting_payments", lambda: [BROWSER_CLAIM])
-    monkeypatch.setattr(demo.live, "claim_first_seen_ms", lambda claim_id: 1_700_000_000_000)
+    monkeypatch.setattr(demo.evidence, "claim_first_seen_ms", lambda claim_id: 1_700_000_000_000)
     sent = _decided(monkeypatch, demo)
     assert demo.main(["approve", "last"]) == 0
     assert sent == [("PAY-000011", "approve", demo.STAGE_REVIEWER)]
@@ -300,7 +300,7 @@ def test_approve_last_finds_a_claim_the_customer_ui_filed_and_remembers_it(monke
 def test_approve_by_claim_id_finds_it_in_the_reviewer_uis_queue(monkeypatch, tmp_path):
     demo = _isolated(monkeypatch, tmp_path)
     monkeypatch.setattr(demo, "awaiting_payments", lambda: [BROWSER_CLAIM])
-    monkeypatch.setattr(demo.live, "claim_first_seen_ms", lambda claim_id: None)
+    monkeypatch.setattr(demo.evidence, "claim_first_seen_ms", lambda claim_id: None)
     sent = _decided(monkeypatch, demo)
     assert demo.main(["reject", "CLM-BROWSER-1"]) == 0
     assert sent == [("PAY-000011", "reject", demo.STAGE_REVIEWER)]
@@ -348,7 +348,7 @@ def test_a_decision_whose_customer_was_not_told_can_be_run_again_and_tells_them(
 def test_a_409_from_the_reviewer_ui_is_a_failed_run_not_a_traceback(monkeypatch, tmp_path, capsys):
     demo = _isolated(monkeypatch, tmp_path)
     monkeypatch.setattr(demo, "awaiting_payments", lambda: [BROWSER_CLAIM])
-    monkeypatch.setattr(demo.live, "claim_first_seen_ms", lambda claim_id: None)
+    monkeypatch.setattr(demo.evidence, "claim_first_seen_ms", lambda claim_id: None)
 
     def conflict(*a):
         request = demo.httpx.Request("POST", "http://reviewer-ui/api/review/PAY-000011")
@@ -361,20 +361,27 @@ def test_a_409_from_the_reviewer_ui_is_a_failed_run_not_a_traceback(monkeypatch,
 def test_evidence_also_reports_claims_a_human_filed_in_the_browser(monkeypatch, tmp_path, capsys):
     demo = _isolated(monkeypatch, tmp_path)
     demo.save_state({"run_id": "r", "window_start_ms": 7, "claims": []})
-    monkeypatch.setattr(demo.live, "claim_ids_since", lambda window, **kw: ["CLM-BROWSER-1", "CLM-BROWSER-FAILED"])
+    monkeypatch.setattr(demo.evidence, "claim_ids_since", lambda window, **kw: ["CLM-BROWSER-1", "CLM-BROWSER-FAILED"])
     row = {
         "policy_decision": "deny", "rule": "settlement-agent.assisted.execute_limit", "limit": 0.0,
         "requested": 5800.0, "autonomy_level": "assisted", "caller_identity": "spiffe://x/settlement-agent",
         "money_hops": [demo.PROPOSE_HOP, demo.EXECUTE_HOP], "executing_identity": "spiffe://x/reviewer-ui",
         "reviewer": "kasper.on.stage", "approved_by": "kasper.on.stage", "human_wait_s": 41.0,
     }
-    monkeypatch.setattr(demo.live, "evidence_for",
+    monkeypatch.setattr(demo.evidence, "evidence_for",
                         lambda cid, window: row if cid == "CLM-BROWSER-1" else {"policy_decision": None})
+    def no_opensearch(*a, **k):
+        raise AssertionError("`evidence` asked OpenSearch; the demo reads Jaeger")
+    monkeypatch.setattr(demo.live, "opensearch", no_opensearch)
+    monkeypatch.setattr(demo.live, "search", no_opensearch)
+    row["link_trace_id"] = "c" * 32
     assert demo.main(["evidence"]) == 0
     printed = capsys.readouterr().out
     assert "CLM-BROWSER-1" in printed and "CLM-BROWSER-FAILED" not in printed
+    assert f"/trace/{'c' * 32}" in printed
+    assert "OpenSearch" not in printed and "waiting for Jaeger" not in printed
     assert "approved by" in printed and "kasper.on.stage, after 41 s" in printed
-    claims = demo._claims_seen_in_opensearch([], 7)
+    claims = demo._claims_seen_in_jaeger([], 7)
     assert claims[0]["status"] == "executed" and claims[0]["decision"] == "approve"
 
 
@@ -410,7 +417,7 @@ def test_approve_last_heals_a_claim_decided_in_the_browser_whose_resume_was_lost
     demo = _isolated(monkeypatch, tmp_path)
     monkeypatch.setattr(demo, "awaiting_payments", lambda: [])
     monkeypatch.setattr(demo, "untold_payments", lambda: [UNTOLD])
-    monkeypatch.setattr(demo.live, "claim_first_seen_ms", lambda claim_id: None)
+    monkeypatch.setattr(demo.evidence, "claim_first_seen_ms", lambda claim_id: None)
     sent = _decided(monkeypatch, demo, resentOnly=True)
     assert demo.main(["approve", "last"]) == 0
     assert sent == [("PAY-000021", "approve", demo.STAGE_REVIEWER)]
@@ -423,7 +430,7 @@ def test_approve_by_claim_id_finds_a_decided_untold_claim(monkeypatch, tmp_path)
     demo = _isolated(monkeypatch, tmp_path)
     monkeypatch.setattr(demo, "awaiting_payments", lambda: [])
     monkeypatch.setattr(demo, "untold_payments", lambda: [UNTOLD])
-    monkeypatch.setattr(demo.live, "claim_first_seen_ms", lambda claim_id: None)
+    monkeypatch.setattr(demo.evidence, "claim_first_seen_ms", lambda claim_id: None)
     sent = _decided(monkeypatch, demo, resentOnly=True)
     assert demo.main(["approve", "CLM-BROWSER-LOST"]) == 0
     assert sent == [("PAY-000021", "approve", demo.STAGE_REVIEWER)]
@@ -435,7 +442,7 @@ def test_only_the_decision_the_ledger_holds_can_be_resent(monkeypatch, tmp_path,
     demo = _isolated(monkeypatch, tmp_path)
     monkeypatch.setattr(demo, "awaiting_payments", lambda: [])
     monkeypatch.setattr(demo, "untold_payments", lambda: [UNTOLD])
-    monkeypatch.setattr(demo.live, "claim_first_seen_ms", lambda claim_id: None)
+    monkeypatch.setattr(demo.evidence, "claim_first_seen_ms", lambda claim_id: None)
     sent = _decided(monkeypatch, demo)
     assert demo.main(["reject", "last"]) == 1
     assert sent == []
@@ -446,7 +453,7 @@ def test_a_waiting_claim_in_the_queue_wins_over_a_decided_untold_one(monkeypatch
     demo = _isolated(monkeypatch, tmp_path)
     monkeypatch.setattr(demo, "awaiting_payments", lambda: [BROWSER_CLAIM])
     monkeypatch.setattr(demo, "untold_payments", lambda: [UNTOLD])
-    monkeypatch.setattr(demo.live, "claim_first_seen_ms", lambda claim_id: None)
+    monkeypatch.setattr(demo.evidence, "claim_first_seen_ms", lambda claim_id: None)
     sent = _decided(monkeypatch, demo)
     assert demo.main(["approve", "last"]) == 0
     assert sent[0][0] == "PAY-000011"
@@ -472,7 +479,7 @@ def test_a_claim_filed_in_the_skew_margin_before_the_run_is_not_this_runs(monkey
     state = demo.start_run({})
     assert state["window_start_ms"] <= state["run_started_ms"] - 29_000
     seen = {}
-    monkeypatch.setattr(demo.live, "claim_ids_since",
+    monkeypatch.setattr(demo.evidence, "claim_ids_since",
                         lambda window, filed_after_ms=None: seen.update(w=window, f=filed_after_ms) or [])
     demo.save_state(state)
     demo.main(["evidence"])  # no claims: exits 1, after having asked

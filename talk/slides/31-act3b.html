@@ -52,13 +52,13 @@
   <p class="ring">Ring 2 &middot; Capability</p>
   <h2 class="slide-title">One trace, and the absence that proves it</h2>
   <div class="stree rise" style="margin-top:calc(1.5 * var(--baseline))">
-    <div class="r"><span class="svc sys">customer-ui</span><span class="op">claim.submit</span><span class="v">root &middot; <span class="code c">northstar.claim.id=CLM-1842</span></span></div>
+    <div class="r"><span class="svc sys">customer-ui</span><span class="op">northstar.claim.submit</span><span class="v">root &middot; <span class="code c">northstar.claim.id=CLM-1842</span></span></div>
     <div class="r i1"><span class="svc agent">settlement-agent</span><span class="op">invoke_agent settlement_agent</span></div>
     <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">execute_tool propose_payment</span><span class="flag ok">permit</span></div>
     <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">execute_tool execute_payment</span><span class="v">ERROR</span></div>
     <div class="r i3"><span class="svc gw">agentgateway</span><span class="op">tools/call</span><span class="v"><span class="code m">jwt.sub=…/sa/settlement-agent</span> <span class="code m">http.status=200</span></span></div>
     <div class="r i4"><span class="svc gw">agentgateway</span><span class="op">Guardrail</span><span class="v"><span class="code">grpc.status=0</span></span></div>
-    <div class="r i4 hl"><span class="svc pds">policy-decision-service</span><span class="op">policy.decision</span><span class="flag deny">deny</span><span class="v">&euro;5,800 &gt; &euro;0</span></div>
+    <div class="r i4 hl"><span class="svc pds">policy-decision-service</span><span class="op">northstar.policy.decision</span><span class="flag deny">deny</span><span class="v">&euro;5,800 &gt; &euro;0</span></div>
     <div class="r i4 absent"><span class="svc">agentgateway</span><span class="op">tools/call payments-mcp_execute_payment</span><span class="x31-never">never attempted</span></div>
     <div class="r i5 absent"><span class="svc">payments-mcp</span><span class="op">tools/call execute_payment</span></div>
     <div class="r i5 absent"><span class="svc">payments-api</span><span class="op">POST /payments/{paymentId}/execute</span></div>
@@ -75,7 +75,7 @@
     <div class="r"><span class="svc agent">settlement-agent</span><span class="op">POST</span><span class="v">carries the JWT-SVID</span></div>
     <div class="r i1 hl"><span class="x31-sn">1</span><span class="svc gw">agentgateway</span><span class="op">tools/call</span><span class="v"><b>22 keys</b> &middot; <span class="code m">jwt.sub=spiffe://…/sa/settlement-agent</span> <span class="code m">gen_ai.tool.name=execute_payment</span></span></div>
     <div class="r i2"><span class="x31-sn">2</span><span class="svc gw">agentgateway</span><span class="op">Guardrail</span><span class="v"><b>9 keys</b> &middot; <span class="code">grpc.status=0</span> the call, not the verdict</span></div>
-    <div class="r i2"><span class="x31-sn">3</span><span class="svc pds">policy-decision-service</span><span class="op">policy.decision</span><span class="v"><b>10 policy.* keys</b> &middot; the why: rule, limit, amount</span></div>
+    <div class="r i2"><span class="x31-sn">3</span><span class="svc pds">policy-decision-service</span><span class="op">northstar.policy.decision</span><span class="v"><b>10 policy.* keys</b> &middot; the why: rule, limit, amount</span></div>
     <div class="r i2"><span class="x31-sn">4</span><span class="svc gw">agentgateway</span><span class="op">tools/call payments-mcp_execute_payment</span><span class="v"><b>6 keys</b> &middot; no jwt.sub</span></div>
     <div class="r i3"><span class="svc tool">payments-mcp</span><span class="op">tools/call execute_payment</span></div>
     <div class="r i4"><span class="svc sys">payments-api</span><span class="op">POST /payments/{paymentId}/execute</span></div>
@@ -129,7 +129,7 @@
 <circle cx="96" cy="150" r="20" fill="#FFFFFF" stroke="#111111"/><text x="96" y="158" text-anchor="middle" font-size="22" font-weight="700" fill="#111111">2</text>
 <text x="136" y="159" font-size="28" font-weight="700" fill="#111111">Workload identity</text>
 <text x="610" y="159" font-size="25" fill="#212121">Forgeable or reused identities</text>
-<text x="1090" y="159" font-size="25" fill="#212121">jwt.sub · policy.caller.spiffe_id</text>
+<text x="1090" y="159" font-size="25" fill="#212121">jwt.sub · northstar.policy.caller.spiffe_id</text>
 <!-- band 3 -->
 <rect x="56" y="192" width="1576" height="68" rx="8" fill="#DCEBFF"/>
 <circle cx="96" cy="226" r="20" fill="#FFFFFF" stroke="#111111"/><text x="96" y="234" text-anchor="middle" font-size="22" font-weight="700" fill="#111111">3</text>
@@ -141,7 +141,7 @@
 <circle cx="96" cy="302" r="20" fill="#FFFFFF" stroke="#111111"/><text x="96" y="310" text-anchor="middle" font-size="22" font-weight="700" fill="#111111">4</text>
 <text x="136" y="311" font-size="28" font-weight="700" fill="#111111">Tool authorization</text>
 <text x="610" y="311" font-size="25" fill="#212121">A known caller, a forbidden call</text>
-<text x="1090" y="311" font-size="25" fill="#212121">Guardrail span + policy.decision</text>
+<text x="1090" y="311" font-size="25" fill="#212121">Guardrail span + northstar.policy.decision</text>
 <!-- band 5 -->
 <rect x="56" y="344" width="1576" height="68" rx="8" fill="#FEF1F1"/>
 <circle cx="96" cy="378" r="20" fill="#FFFFFF" stroke="#111111"/><text x="96" y="386" text-anchor="middle" font-size="22" font-weight="700" fill="#111111">5</text>
@@ -165,7 +165,7 @@
 <circle cx="96" cy="606" r="20" fill="#FFFFFF" stroke="#111111"/><text x="96" y="614" text-anchor="middle" font-size="22" font-weight="700" fill="#111111">8</text>
 <text x="136" y="615" font-size="28" font-weight="700" fill="#111111">Human override</text>
 <text x="610" y="615" font-size="25" fill="#212121">Overrides that go around policy</text>
-<text x="1090" y="615" font-size="25" fill="#212121">a 2nd policy.decision, reviewer-ui ID</text>
+<text x="1090" y="615" font-size="25" fill="#212121">a 2nd northstar.policy.decision, reviewer-ui ID</text>
 </g></svg></figure>
 </section>
 
@@ -178,7 +178,7 @@
     <p class="k">Sees tool arguments</p><p>yes, at route level, v1.6.0 and later</p><p>yes</p>
     <p class="k">Changes live</p><p>config reload, about 0.36 s</p><p>flag flip, nothing reloads</p>
     <p class="k">Says why</p><p><span class="code m">403 authorization failed</span></p><p>the rule, the limit, a reason the model can explain</p>
-    <p class="k">In the trace</p><p>the gateway span only</p><p><span class="code c">policy.decision</span> with the rule and the limit</p>
+    <p class="k">In the trace</p><p>the gateway span only</p><p><span class="code c">northstar.policy.decision</span> with the rule and the limit</p>
   </div>
   <pre class="x31-cel-rule rise"><span class="d">authorization allow, on the route:</span>
 request.method != &quot;POST&quot;
@@ -219,7 +219,7 @@ request.method != &quot;POST&quot;
       <p class="x31-tw-s">a decision service &middot; Northstar</p>
       <p class="x31-tw-c"><span class="code">tools/list</span> shows all four tools, <span class="code">execute_payment</span> too. <b>&euro;5,800</b> depends on its arguments.</p>
       <p class="x31-tw-flow"><span>proposed</span><i></i><span class="m">refused</span><i></i><span class="c">recorded</span><i></i><span class="c">explained</span></p>
-      <p class="x31-tw-l"><span class="code c">policy.decision</span> deny &middot; rule, limit, amount, caller</p>
+      <p class="x31-tw-l"><span class="code c">northstar.policy.decision</span> deny &middot; rule, limit, amount, caller</p>
       <p class="x31-tw-f">Listed is not permitted: every call is decided</p>
     </div>
   </div>
@@ -296,14 +296,14 @@ request.method != &quot;POST&quot;
     <div class="tr a">
       <p class="k">Trace A &middot; the maker</p>
       <p class="b">The agent did everything up to the money</p>
-      <p class="s">claim &rarr; agents &rarr; <span class="code">policy.decision</span> <b class="m">deny</b></p>
+      <p class="s">claim &rarr; agents &rarr; <span class="code">northstar.policy.decision</span> <b class="m">deny</b></p>
       <p class="s">The payment waits. Nothing moved.</p>
     </div>
     <div class="lnk"><span>span link</span><i></i></div>
     <div class="tr b">
       <p class="k">Trace B &middot; the checker</p>
       <p class="b">A human released it, through the gateway</p>
-      <p class="s"><span class="code">review.decision</span> &rarr; <span class="code">execute_payment</span></p>
+      <p class="s"><span class="code">northstar.review.decision</span> &rarr; <span class="code">execute_payment</span></p>
       <p class="s">caller <span class="code">reviewer-ui</span> &middot; rule <span class="code">human-approved.execute</span> <b class="c">permit</b></p>
     </div>
   </div>
@@ -337,7 +337,7 @@ request.method != &quot;POST&quot;
     </div>
     <div>
       <figure class="shot x31-crop" style="width:780px;height:210px">
-        <img src="assets/shots/jaeger-autonomy-change.png" alt="Jaeger: northstar.autonomy_contract.change span, previous_variant assisted, new_variant autonomous, actor backstage-autonomy-card" style="width:1279px;left:-499px;top:-160px">
+        <img src="assets/shots/jaeger-autonomy-change.png" alt="Jaeger: northstar.autonomy_contract.change span, previous_variant assisted, new_variant autonomous, actor backstage-autonomy-card" style="width:1279px;left:-323px;top:-342px">
       </figure>
       <div class="shot-cap">4 · The audit span: assisted → autonomous</div>
     </div>

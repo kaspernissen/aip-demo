@@ -521,7 +521,8 @@ _KEY_VALUE_LINE_RE = re.compile(r"^[a-z][a-z0-9_.]*\s+\S")
 # Each marker is checked for ambiguity against every current heading before
 # being added, which is what the len(matched) > 1 branch below demands: none
 # of the markers below is a substring of any other, and in particular
-# "`review.decision`" does not collide with the existing "`policy.decision`"
+# "`northstar.review.decision`" does not collide with the existing
+# "`northstar.policy.decision`"
 # marker.
 REQUIRED_ATTRIBUTE_SECTIONS = (
     "on the `tools/call` SERVER span",
@@ -529,14 +530,14 @@ REQUIRED_ATTRIBUTE_SECTIONS = (
     "refused",
     "`Guardrail`",
     "policy-denied",
-    "`policy.decision`",
+    "`northstar.policy.decision`",
     # The approved execution, and the span carrying the link back to the
     # refusal.
     "`settlement.execute_approved`",
     # The human's click. Between them these two are what closes Gap 2 (see
     # docs/telemetry-contract.md), so a deletion here would un-close a gap
     # this document declares closed.
-    "`review.decision`",
+    "`northstar.review.decision`",
     # The policy-adherence score span. Checked for ambiguity against every
     # current heading before being added, which is what the len(matched) > 1
     # branch below demands: "score span" is a substring of no other

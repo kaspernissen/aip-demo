@@ -83,7 +83,7 @@ cd platform/eval-scorer && .venv/bin/python -m pytest tests -q
 **The join is two steps and must stay two steps.** `northstar.claim.id` does
 not cross the MCP boundary (Gap 4, `docs/telemetry-contract.md`), so a single
 claim-id filter returns settlement-agent's and claims-agent's spans and
-nothing else — not one `policy.decision` span, which is every span these
+nothing else — not one `northstar.policy.decision` span, which is every span these
 scorers read. `tests/test_opensearch.py` asserts on the query bodies so the
 narrowing cannot come back.
 

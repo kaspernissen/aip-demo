@@ -27,7 +27,7 @@ Design: docs/superpowers/specs/2026-10-13-northstar-m8-human-in-the-loop-design.
 **No new mechanism.** Everything here is code the tests already prove, imported
 from `tests/harness/` (`live.py`, `contract.py`, `jaeger.py`) -- claim submission
 over A2A, server-side SVID minting, direct MCP calls through the gateway, the
-flag patch with propagation verified, the OpenSearch evidence join. The reach
+flag patch with propagation verified, the Jaeger evidence join. The reach
 probe is `scripts/reach-probe.py`, the very file `scripts/beat-reach.sh` runs.
 So the stage path and the tested path are the same code, and
 `tests/e2e/test_demo_flow.py` runs these commands, not a re-implementation.
@@ -47,7 +47,7 @@ that is open. Every network call and subprocess carries a timeout.
 State: `.demo/state.json` (git-ignored; `DEMO_STATE_DIR` moves it) remembers when the run
 started and the claims it knows, so `evidence` reports this run's claims and nothing older.
 A claim filed in the customer-ui is not in it: `approve`/`reject` adopt it from the
-reviewer-ui's queue, and `evidence` also reads every claim id OpenSearch has seen since
+reviewer-ui's queue, and `evidence` also reads every claim id Jaeger has seen since
 the run started.
 """
 from __future__ import annotations
@@ -71,7 +71,7 @@ sys.path.insert(0, str(ROOT))
 import httpx  # noqa: E402
 import requests  # noqa: E402
 
-from tests.harness import contract, live  # noqa: E402
+from tests.harness import contract, evidence, live  # noqa: E402
 from tests.harness.jaeger import JaegerClient, Trace  # noqa: E402
 
 # --- what the demo knows about the platform -----------------------------------
@@ -120,8 +120,8 @@ PROPOSE_HOP = "POST /payments/propose"
 REFUSE_HOP = "POST /payments/{paymentId}/refuse"
 REJECT_HOP = "POST /payments/{paymentId}/reject"
 
-# OpenSearch is near-real-time and the collector batches on a 1s timeout;
-# bounded, and exceeding it is a failure (that is what a dropped span looks like).
+# Jaeger lags the collector's batch (1s timeout) and each service's span
+# processor (5s); bounded, and exceeding it is a failure (that is what a dropped span looks like).
 EVIDENCE_WAIT_S = 90.0
 TRACE_WAIT_S = 90.0
 WIDTH = 100
@@ -634,7 +634,7 @@ def _adopt(item: dict) -> dict:
     into this run's state so `evidence` and a later `approve` know it.
 
     The window opens where the record says the claim began (its first span in
-    OpenSearch, less one second), not at a guess and not with the host-clock skew
+    Jaeger, less one second), not at a guess and not with the host-clock skew
     margin: both clocks here are the record's own, and a wider margin would pull
     the previous claim's last spans into this run.
     """
@@ -648,7 +648,7 @@ def _adopt(item: dict) -> dict:
     }
     state = load_state()
     if "window_start_ms" not in state:
-        first = live.claim_first_seen_ms(claim["id"])
+        first = evidence.claim_first_seen_ms(claim["id"])
         state = start_run(state, (first - 1000) if first else None)
     state["claims"] = [c for c in state.get("claims", []) if c["id"] != claim["id"]] + [claim]
     save_state(state)
@@ -900,21 +900,21 @@ def _settled(claim: dict, window_start_ms: int) -> dict:
     deadline = time.time() + EVIDENCE_WAIT_S
     row: dict = {}
     while True:
-        row = live.evidence_for(claim["id"], window_start_ms)
+        row = evidence.evidence_for(claim["id"], window_start_ms)
         missing = [f for f in required if not row.get(f)]
         if not missing:
             return row
         if time.time() > deadline:
             raise Fail(
-                f"the evidence for {claim['id']} never became complete in OpenSearch within "
+                f"the evidence for {claim['id']} never became complete in Jaeger within "
                 f"{EVIDENCE_WAIT_S:.0f}s: {missing} are still empty. Row as it stood: "
                 f"{json.dumps(row)}"
             )
-        out(paint(f"  ... waiting for OpenSearch ({', '.join(missing)})", "dim"))
+        out(paint(f"  ... waiting for Jaeger ({', '.join(missing)})", "dim"))
         time.sleep(4)
 
 
-def _claims_seen_in_opensearch(known: list[dict], window_start_ms: int,
+def _claims_seen_in_jaeger(known: list[dict], window_start_ms: int,
                                filed_after_ms: int | None = None) -> list[dict]:
     """Claims this run did not file through `scripts/demo claim` (a human used the
     customer-ui), found by the claim id on their spans since the run began.
@@ -925,10 +925,10 @@ def _claims_seen_in_opensearch(known: list[dict], window_start_ms: int,
     """
     have = {c["id"] for c in known}
     found = []
-    for claim_id in live.claim_ids_since(window_start_ms, filed_after_ms=filed_after_ms):
+    for claim_id in evidence.claim_ids_since(window_start_ms, filed_after_ms=filed_after_ms):
         if claim_id in have:
             continue
-        row = live.evidence_for(claim_id, window_start_ms)
+        row = evidence.evidence_for(claim_id, window_start_ms)
         if not row["policy_decision"]:
             continue
         hops = row["money_hops"]
@@ -948,16 +948,16 @@ def cmd_evidence(_: argparse.Namespace) -> None:
     claims = list(state.get("claims") or [])
     window = state.get("window_start_ms")
     if window is not None:
-        claims += _claims_seen_in_opensearch(
+        claims += _claims_seen_in_jaeger(
             claims, window, filed_after_ms=state.get("run_started_ms", window))
     if not claims:
         raise Fail("no claims in this run yet: run `scripts/demo claim <amount>` first")
-    say(f"From OpenSearch, for this run's {len(claims)} claim(s). Nothing older.")
+    say(f"From Jaeger, for this run's {len(claims)} claim(s). Nothing older.")
     problems = []
     for claim in claims:
         out()
         out(paint(f"{claim['id']}   EUR {claim['amount']:,.0f}", "bold"))
-        doing(f"OpenSearch  claim id -> trace ids -> every span in them  ({claim['id']})")
+        doing(f"Jaeger  claim id -> traces -> the decision and review spans  ({claim['id']})")
         row = _settled(claim, window)
         denied = row["policy_decision"] == "deny"
         outcome_executed = EXECUTE_HOP in row["money_hops"]
@@ -978,9 +978,11 @@ def cmd_evidence(_: argparse.Namespace) -> None:
             kv("approved by", f"none ({row['reviewer']} declined)")
         else:
             kv("approved by", "none")
+        if row.get("link_trace_id"):
+            kv("trace", f"{JAEGER_UI}/trace/{row['link_trace_id']}")
         # The record must agree with what the run saw at the time.
         if (claim["status"] == "executed") != outcome_executed:
-            problems.append(f"{claim['id']}: the run saw {claim['status']!r} but OpenSearch says executed={outcome_executed}")
+            problems.append(f"{claim['id']}: the run saw {claim['status']!r} but Jaeger says executed={outcome_executed}")
         if (claim["status"] == "executed" and row["executing_identity"] != row["caller_identity"]
                 and not row.get("approved_by")):
             problems.append(f"{claim['id']}: executed by someone other than the caller and no human approved it")
@@ -989,7 +991,7 @@ def cmd_evidence(_: argparse.Namespace) -> None:
     if problems:
         raise Fail("; ".join(problems))
     out()
-    out(paint("Every line above is a recorded span, read back from OpenSearch. Nothing is reconstructed.", "bold"))
+    out(paint("Every line above is a recorded span, read back from Jaeger. Nothing is reconstructed.", "bold"))
 
 
 # --- reset ----------------------------------------------------------------------
@@ -1065,7 +1067,7 @@ def main(argv: list[str] | None = None) -> int:
         decide.add_argument("claim", help="a claim id from this run, or 'last'")
         decide.set_defaults(fn=cmd_approve if name == "approve" else cmd_reject)
     sub.add_parser("keystone", help="the agent tries to edit what constrains it").set_defaults(fn=cmd_keystone)
-    sub.add_parser("evidence", help="who decided, and why, from OpenSearch").set_defaults(fn=cmd_evidence)
+    sub.add_parser("evidence", help="who decided, and why, from Jaeger").set_defaults(fn=cmd_evidence)
     sub.add_parser("reset", help="reject open approvals, flag assisted, over-grant absent, state cleared").set_defaults(fn=cmd_reset)
     sub.add_parser("ceiling", help="the gateway's own CEL ceiling (not in the five-minute flow)").set_defaults(fn=cmd_ceiling)
     args = parser.parse_args(argv)

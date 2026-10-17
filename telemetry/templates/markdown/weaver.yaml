@@ -1,7 +1,7 @@
-# Renders Northstar's own attribute tables for docs/telemetry-contract.md.
-# The jq filter keeps only the attribute groups this registry defines; the
-# semantic-convention dependency is not rendered.
+# Renders Northstar's own attribute, span and metric tables for
+# docs/telemetry-contract.md. The jq filter keeps only what this registry
+# defines; the semantic-convention dependency is not rendered.
 templates:
   - pattern: attributes.md.j2
-    filter: '{groups: [.groups[] | select(.type == "attribute_group" and (.id | startswith("registry.northstar.")))]}'
+    filter: '{groups: [.groups[] | select(.type == "attribute_group" and (.id | startswith("registry.northstar.")))], spans: [.groups[] | select(.type == "span" and (.id | startswith("span.northstar.")))], metrics: [.groups[] | select(.type == "metric" and (.id | startswith("metric.northstar.")))]}'
     application_mode: single

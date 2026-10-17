@@ -47,11 +47,15 @@ is; the runbook is the script.
   read by the policy service through a flagd sidecar. Flipping it from
   `assisted` to `autonomous` lets the agent execute a claim up to €6,000
   without a human, with nothing redeployed.
-- **Why a payment happened can be proven.** Traces go to Jaeger and
-  OpenSearch. The evidence view in OpenSearch Dashboards rebuilds a claim's
-  audit trail from spans the system already emits: who decided, under which
-  rule and limit, who approved, and which identity executed it. `eval-scorer`
-  writes policy-adherence scores back into the trace they judge.
+- **Why a payment happened can be proven.** The proof is traces and span
+  attributes. `scripts/demo evidence` reads Jaeger and prints, per claim, who
+  decided, under which rule and limit, who approved and how long the human
+  took, with a link to the trace; every one of those is an attribute on a span
+  the system already emits. The names of those attributes (all `northstar.*`)
+  are defined in a Weaver registry, `telemetry/registry/`, and the cluster's
+  telemetry is checked against it by Weaver live-check. OpenSearch Dashboards
+  and `eval-scorer` (policy-adherence scores written back into the trace they
+  judge) stay in the stack for the longer slot.
 - **An agent can never edit what constrains it.** Kyverno denies an agent
   ServiceAccount any write to the autonomy flag, the gateway's config, the
   Cilium policy, RBAC or its own policy, even when an over-broad RBAC grant
@@ -87,7 +91,7 @@ flowchart LR
 </pre>
 
 A refused claim and its later approval are two traces, joined by a span link
-from `review.decision` (the root of trace B) back to the refusal span in trace A,
+from `northstar.review.decision` (the root of trace B) back to the refusal span in trace A,
 rather than a parent-child edge, because the human decides minutes later in a
 different process:
 
@@ -97,7 +101,7 @@ flowchart LR
         a1["browser → ... → settlement-agent"] --> a2["deny"]
     end
     subgraph B["trace B — approved"]
-        b1["review.decision"] --> b2["execute_payment via the gateway"]
+        b1["northstar.review.decision"] --> b2["execute_payment via the gateway"]
     end
     b1 -.->|"span link"| a1
 </pre>

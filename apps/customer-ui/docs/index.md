@@ -6,9 +6,9 @@ component in the system a customer touches directly.
 ## Responsibilities
 
 - Present the claim form (pre-filled: `CLM-1842`, `POL-77120`, €6,200).
-- Start the `claim.submit` span, which is the root of the whole distributed
+- Start the `northstar.claim.submit` span, which is the root of the whole distributed
   trace. It has no parent, and its two attributes
-  (`northstar.claim.id`, `northstar.policy.number`) are set here in the
+  (`northstar.claim.id`, `northstar.claim.policy_number`) are set here in the
   browser, propagated from nowhere.
 - Submit over A2A to `claims-agent` and render the determination.
 
@@ -18,7 +18,7 @@ A determination, the way an insurer writes back — not a toast:
 
 | Status | Rendered as | Why |
 |---|---|---|
-| `refused` | **ochre**, not red | A refusal is the platform working. Colouring it as an error would contradict the system's own design, where `policy.decision` is deliberately not an ERROR span. |
+| `refused` | **ochre**, not red | A refusal is the platform working. Colouring it as an error would contradict the system's own design, where `northstar.policy.decision` is deliberately not an ERROR span. |
 | `executed` | green | Settled, no human involved |
 
 ## Build and serving

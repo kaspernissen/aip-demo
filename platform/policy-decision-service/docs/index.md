@@ -16,7 +16,7 @@ either of them.
   SPIFFE ID plus the requested amount.
 - Resolve the **autonomy level** per request from the `northstar-autonomy`
   `FeatureFlag`, through the flagd sidecar — never from a compiled-in constant.
-- Emit the `policy.decision` span that carries the verdict, the rule, the
+- Emit the `northstar.policy.decision` span that carries the verdict, the rule, the
   amount requested and the limit applied.
 
 ### What it explicitly does not do
@@ -70,12 +70,12 @@ The settlement agent is held to the ledger too: after its limit passes, it may
 execute only a payment still `proposed`. Any other status is a deny under the
 rule `settlement-agent.payment_not_proposed`, or `settlement-agent.ledger_unreadable`
 when the ledger could not be read at all. So both kinds of `execute_payment`
-decision span carry `policy.ledger.status`, the status the PDS read.
+decision span carry `northstar.policy.ledger.status`, the status the PDS read.
 
 ## Telemetry
 
-The `policy.decision` span carries `policy.decision`, `policy.rule`,
-`policy.request.amount`, `policy.limit.amount` and `policy.caller.spiffe_id`.
+The `northstar.policy.decision` span carries `northstar.policy.decision`, `northstar.policy.rule`,
+`northstar.policy.request.amount`, `northstar.policy.limit.amount` and `northstar.policy.caller.spiffe_id`.
 
 **Its status is deliberately not ERROR on a denial.** A refusal is the platform
 working; marking it an error would page an on-call engineer for correct

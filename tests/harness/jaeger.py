@@ -24,6 +24,7 @@ class Span:
     attrs: dict[str, Any]
     trace_id: str = ""
     duration_s: float = 0.0
+    start_us: int = 0
     # Span links, as the trace ids they point at (Jaeger renders a link as a
     # FOLLOWS_FROM reference; a parent is a CHILD_OF one).
     links: tuple["Link", ...] = field(default_factory=tuple)
@@ -62,6 +63,7 @@ class Trace:
                     attrs=attrs,
                     trace_id=raw_span.get("traceID", raw.get("traceID", "")),
                     duration_s=raw_span.get("duration", 0) / 1_000_000,
+                    start_us=int(raw_span.get("startTime", 0)),
                     links=tuple(links),
                 )
             )

@@ -400,7 +400,7 @@ components:
               type: string
               description: >
                 The settlement-agent span active when the refusal was
-                recorded -- not the PDS's own `policy.decision` span. A span
+                recorded -- not the PDS's own `northstar.policy.decision` span. A span
                 link needs a real span id: one built with `span_id=0` is
                 silently dropped by the OpenTelemetry SDK before any exporter
                 sees it, which is why this travels alongside the trace id

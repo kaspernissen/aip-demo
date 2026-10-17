@@ -10,10 +10,10 @@ Deliberate scope, recorded so a reader can judge it:
   * `telemetry/` is not searched: the registry names retired names in its
     `deprecated`/note fields where it must.
   * this file is excluded (it names the patterns).
-  * tests/unit/test_telemetry_contract_attribute_counts.py is excluded: its
-    REQUIRED_ATTRIBUTE_SECTIONS markers must equal the headings in
-    docs/telemetry-contract.md, whose prose is rewritten by M9 Task 4. Task 4
-    changes the headings and the markers together and removes this exclusion.
+  * nothing else: tests/unit/test_telemetry_contract_attribute_counts.py used
+    to be excluded because its REQUIRED_ATTRIBUTE_SECTIONS markers must equal
+    the headings in docs/telemetry-contract.md; M9 Task 4 renamed the headings
+    and the markers together and removed the exclusion.
 """
 import re
 import subprocess
@@ -27,8 +27,7 @@ LEGACY = re.compile(
     r"""|['"`]northstar\.policy\.number['"`]"""
 )
 PATHS = ["agents", "apps", "platform", "tools", "systems", "scripts", "deploy", "tests"]
-EXCLUDES = [":!**/node_modules/**", ":!*.md", ":!tests/unit/test_no_legacy_names.py",
-            ":!tests/unit/test_telemetry_contract_attribute_counts.py"]
+EXCLUDES = [":!**/node_modules/**", ":!*.md", ":!tests/unit/test_no_legacy_names.py"]
 
 
 def _grep(pattern, paths):

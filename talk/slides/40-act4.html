@@ -22,11 +22,11 @@
     <div>
       <p class="x40-k spot-2">Evidence</p>
       <dl class="x40-ev">
-        <dt>What was decided?</dt><dd><span class="code m">policy.decision</span></dd>
-        <dt>Under which rule?</dt><dd><span class="code m">policy.rule</span></dd>
-        <dt>At which limit?</dt><dd><span class="code m">policy.limit.amount</span></dd>
-        <dt>Who asked?</dt><dd><span class="code m">policy.caller.spiffe_id</span></dd>
-        <dt>Was a human involved?</dt><dd><span class="code m">review.decision</span></dd>
+        <dt>What was decided?</dt><dd><span class="code m">northstar.policy.decision</span></dd>
+        <dt>Under which rule?</dt><dd><span class="code m">northstar.policy.rule</span></dd>
+        <dt>At which limit?</dt><dd><span class="code m">northstar.policy.limit.amount</span></dd>
+        <dt>Who asked?</dt><dd><span class="code m">northstar.policy.caller.spiffe_id</span></dd>
+        <dt>Was a human involved?</dt><dd><span class="code m">northstar.review.decision</span></dd>
         <dt>What reached the ledger?</dt><dd><span class="code">payments-api</span> spans</dd>
       </dl>
       <p class="x40-sub muted">one span field each, joined by one trace id</p>
@@ -34,14 +34,14 @@
   </div>
 </section>
 
-<!-- 38b · BOUNDED · which refusals the trace can see: one row per ring, measured in M7 (gateway 401 spans; Cilium drop has no span, Hubble not installed; policy.decision in the claim trace; Kyverno denial as its own trace, no traceparent from kubectl) -->
+<!-- 38b · BOUNDED · which refusals the trace can see: one row per ring, measured in M7 (gateway 401 spans; Cilium drop has no span, Hubble not installed; northstar.policy.decision in the claim trace; Kyverno denial as its own trace, no traceparent from kubectl) -->
 <section class="slide content" data-label="Which refusals the trace can see">
   <h2 class="slide-title">Which refusals the trace can see</h2>
   <div class="x40-rt rise">
     <p class="x40-rh">Ring</p><p class="x40-rh">The refusal</p><p class="x40-rh">In the trace?</p><p class="x40-rh">Where</p>
     <p class="x40-rg">Core &middot; Identity</p><p>agentgateway 401</p><p class="x40-y">yes</p><p class="x40-w">gateway span &middot; <span class="code">401</span> &middot; <span class="code">reason=JwtAuth</span></p>
     <p class="x40-rg">Ring 1 &middot; Reach</p><p>Cilium drop</p><p class="x40-n0">no</p><p class="x40-w">a drop leaves no span: Hubble is not installed</p>
-    <p class="x40-rg">Ring 2 &middot; Capability</p><p>policy deny</p><p class="x40-y">yes</p><p class="x40-w">inside the claim&rsquo;s trace &middot; <span class="code m">policy.decision</span></p>
+    <p class="x40-rg">Ring 2 &middot; Capability</p><p>policy deny</p><p class="x40-y">yes</p><p class="x40-w">inside the claim&rsquo;s trace &middot; <span class="code m">northstar.policy.decision</span></p>
     <p class="x40-rg">Keystone</p><p>Kyverno denial</p><p class="x40-y">yes, alone</p><p class="x40-w">its own trace &middot; <span class="code m">allowed=false</span> &middot; no <span class="code">traceparent</span></p>
   </div>
   <p class="x40-th">Traced everywhere except where a packet is dropped. <span class="spot-2">The gap is named, not hidden.</span></p>
@@ -55,6 +55,33 @@
     <p class="note">Four panels from spans already emitted, joined on <span class="code c">traceId</span>, because the claim id stops at MCP.</p>
   </div>
   <figure class="split-figure shot x40-crop"><img src="assets/shots/opensearch-evidence.png" alt="OpenSearch Dashboards: the northstar-evidence view, readme panel and panel 1, claims to trace ids"></figure>
+</section>
+
+<!-- 39r · NEW · The decision contract is a published schema (M9): a real excerpt of telemetry/registry/policy.yaml beside a real Jaeger screenshot of the same northstar.policy.decision span (jaeger-policy-decision-m9.png, 2026-10-17). Outside the live block. -->
+<section class="slide content" data-label="The decision contract is a published schema">
+  <h2 class="slide-title">The decision contract is a published schema</h2>
+  <div class="x40-rs rise">
+    <div>
+      <pre class="term x40-reg"><span class="p">telemetry/registry/policy.yaml</span>
+  - id: span.northstar.policy.decision
+    type: span
+    span_kind: server
+    stability: development
+    name: northstar.policy.decision
+    brief: One decision, a child of the gateway's tools/call span.
+    attributes:
+      - {ref: northstar.policy.decision, requirement_level: required}
+      - {ref: northstar.policy.rule, requirement_level: required}
+      - ref: northstar.policy.limit.amount
+        requirement_level: {conditionally_required: when the rule has a limit}
+&hellip;</pre>
+      <div class="shot-cap">The schema: a Weaver registry, checked in CI and against the running cluster</div>
+    </div>
+    <div>
+      <figure class="shot x40-rs-shot"><img src="assets/shots/jaeger-policy-decision-m9.png" alt="Jaeger: the northstar.policy.decision span of a denied EUR 5,800 execute: northstar.policy.decision deny, northstar.policy.rule settlement-agent.assisted.execute_limit, northstar.policy.limit.amount 0, northstar.policy.request.amount 5800"></figure>
+      <div class="shot-cap">The span: the same names, on a real denial</div>
+    </div>
+  </div>
 </section>
 
 <!-- 39a · NEW · concept: what an evaluation is. The gen_ai.evaluation.result fields (Ch 3 table, Fig 3.13), parented to the judged span -->
@@ -176,10 +203,10 @@
   <table class="x40-tbl rise">
     <thead><tr><th>Requirement</th><th>What it asks for</th><th>Northstar artifact</th></tr></thead>
     <tbody>
-      <tr><td>EU AI Act Art. 12, 19, 26(6)</td><td>Automatic logs over the system&rsquo;s lifetime, kept at least six months</td><td>One trace per claim; <span class="code">policy.decision</span> per tool call; <span class="spot-2">no retention tier yet</span></td></tr>
+      <tr><td>EU AI Act Art. 12, 19, 26(6)</td><td>Automatic logs over the system&rsquo;s lifetime, kept at least six months</td><td>One trace per claim; <span class="code">northstar.policy.decision</span> per tool call; <span class="spot-2">no retention tier yet</span></td></tr>
       <tr><td>EU AI Act Art. 14</td><td>Humans can override, reverse, stop</td><td>Reviewer approval via a governed identity; the autonomy contract&rsquo;s refusing resting state</td></tr>
       <tr class="hi"><td><b>1</b>EU AI Act Art. 86; GDPR (C-203/22)</td><td>Per-decision explanation of the procedure actually applied</td><td>Rule name, limit, amount and caller on the decision span; evidence view</td></tr>
-      <tr><td>FINRA 2026 report</td><td>Prompt and output logs, model version, agent action tracking, human in the loop</td><td>GenAI spans (capture ON), <span class="code">gen_ai.request.model</span>, gateway spans, <span class="code">review.decision</span></td></tr>
+      <tr><td>FINRA 2026 report</td><td>Prompt and output logs, model version, agent action tracking, human in the loop</td><td>GenAI spans (capture ON), <span class="code">gen_ai.request.model</span>, gateway spans, <span class="code">northstar.review.decision</span></td></tr>
       <tr class="hi"><td><b>2</b>DORA RTS Art. 12</td><td>Logging procedures, tamper protection, detect logging failure</td><td>Span-count parity guard between Jaeger and OpenSearch; <span class="spot-2">no tamper protection</span></td></tr>
       <tr><td>ISO/IEC 24970 (FDIS)</td><td>An information model for AI event logs</td><td><span class="spot-2">Nothing yet:</span> the OTel GenAI &rarr; 24970 mapping is unwritten</td></tr>
     </tbody>

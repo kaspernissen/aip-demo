@@ -124,13 +124,13 @@ closed, each in the milestone it said it would be**:
   escalation or human-interrupt step inside an agent trajectory — re-checked
   for M3 rather than assumed — so this was never an upstream defect either; it
   was this project's own attribute vocabulary to define. M3 defined it and
-  measured it: a `review.decision` span carrying six `review.*` attributes,
+  measured it: a `northstar.review.decision` span carrying six `review.*` attributes,
   emitted by this project's own `reviewer-ui`, and a
   `settlement.execute_approved` span carrying two `northstar.*` attributes and
   this project's first span **link**, back to the span that recorded the
   refusal. The measured inventories are in
   [`docs/telemetry-contract.md`](telemetry-contract.md)'s "reviewer-ui's own
-  instrumentation: `review.decision` (M3 Task 4)" and "settlement-agent's own
+  instrumentation: `northstar.review.decision` (M3 Task 4)" and "settlement-agent's own
   instrumentation: `execute_approved` (M3 Task 3)", and the closure argument —
   including what it deliberately does not cover — is at that document's Gap 2.
   It stays listed here for the same reason Gap 3 does: a reader checking this
@@ -140,7 +140,7 @@ closed, each in the milestone it said it would be**:
   closed the way it said it would be.** No OTel convention exists for a
   policy/autonomy decision span, so this was never an upstream defect; it was
   this project's own attribute vocabulary to define. M2.2 defined it and
-  measured it: a `policy.decision` span carrying ten `policy.*` attributes,
+  measured it: a `northstar.policy.decision` span carrying ten `policy.*` attributes,
   emitted by this project's own Policy Decision Service, with the keys owned
   by one module (`platform/policy-decision-service/pds/telemetry.py`) rather
   than typed into a document. The measured inventory is in
@@ -2057,7 +2057,7 @@ really sends: `get_global_textmap()._propagators` is
 `['TraceContextTextMapPropagator', 'W3CBaggagePropagator']`, injecting
 `00-4fd1495b2de7214c10469a745ba986aa-cdb290f086f73d06-03`. And end to end,
 one live `GET /` against reviewer-ui — trace
-`eacff63cc15a0868cee60332b1728735`: `review.queue` SERVER
+`eacff63cc15a0868cee60332b1728735`: `northstar.review.queue` SERVER
 `e40bafb90b4a5483` (root) → reviewer-ui `GET` CLIENT `9280bc1b88bb4120` →
 payments-api `GET /payments` SERVER `a418e6258a9c1bac`.
 
@@ -2939,7 +2939,7 @@ the part worth keeping.
 agentgateway v1.5.0 **rejects a JSON-RPC array outright, before the
 `mcpGuardrails` hook runs at all.** It answers `HTTP 400` with a `text/plain`
 body, `mcp: fail to deserialize request body: data did not match any variant
-of untagged enum JsonRpcMessage`. Zero `policy.decision` spans are emitted,
+of untagged enum JsonRpcMessage`. Zero `northstar.policy.decision` spans are emitted,
 `payments-mcp` records nothing, and the ledger is untouched. That is the third
 of the three outcomes this entry predicted ("A rejected batch closes it a
 third way"), and it means **there is no batch bypass on this transport in this
@@ -2974,7 +2974,7 @@ reusing `tests/e2e/test_caller_identity.py`'s port-forward and
 | `content-type` | `text/plain` |
 | body | `mcp: fail to deserialize request body: data did not match any variant of untagged enum JsonRpcMessage` |
 | spans in the trace | **1** — `agentgateway`, operation `POST /*`, SpanKind SERVER |
-| `policy.decision` spans | **0** |
+| `northstar.policy.decision` spans | **0** |
 | `payments-mcp` spans | **0** (no `tools/call execute_payment`, and no `initialize` either) |
 | ledger, read back afterwards | `PAY-000024` still `status: proposed` |
 
@@ -2993,10 +2993,10 @@ alone.
 A `400` could equally mean "this probe built a malformed request". So the same
 two messages were sent **singly**, on the same session, with the same token:
 
-| Sent | Result | `policy.decision` spans |
+| Sent | Result | `northstar.policy.decision` spans |
 |---|---|---|
 | message 1 alone (`propose_payment`, €6,200) | `HTTP 200`, `PAY-000025` recorded `proposed`; `payments-mcp` and `payments-api` both in the trace | **1** — `permit`, rule `unlimited_tool` |
-| message 2 alone (`execute_payment`, €6,200) | `HTTP 200` carrying JSON-RPC error `-32001`, the PDS's own refusal text and `data.decision: "deny"`; no `payments-mcp` span | **1** — `deny`, rule `settlement-agent.assisted.execute_limit`, `policy.limit.amount` 6000, `policy.request.amount` 6200 |
+| message 2 alone (`execute_payment`, €6,200) | `HTTP 200` carrying JSON-RPC error `-32001`, the PDS's own refusal text and `data.decision: "deny"`; no `payments-mcp` span | **1** — `deny`, rule `settlement-agent.assisted.execute_limit`, `northstar.policy.limit.amount` 6000, `northstar.policy.request.amount` 6200 |
 | a **one-element** array holding message 1's exact shape | `HTTP 400`, byte-identical `text/plain` body, one `POST /*` span | **0** |
 
 So both messages are well-formed and individually decidable — one is permitted
@@ -3024,7 +3024,7 @@ throughout, and stdio was never probed.
 > prose. It now has one. `tests/e2e/test_caller_identity.py::test_a_jsonrpc_batch_is_rejected_before_the_policy_hook_and_changes_nothing`
 > re-runs the probe above on every gate run and asserts exactly the three
 > things that were measured, and nothing more: `HTTP 400`, **zero**
-> `policy.decision` spans in a trace fetched by an id the test mints itself,
+> `northstar.policy.decision` spans in a trace fetched by an id the test mints itself,
 > and the bait payment still `proposed` in the ledger afterwards. It carries
 > the same control the probe did — the single `propose_payment` that creates
 > the bait must first succeed on that same session with that same token — so a
@@ -3044,7 +3044,7 @@ throughout, and stdio was never probed.
 > removed, and it has not been re-measured on v1.6.0. The test pins the 403 and its
 > body exactly (`BATCH_REJECTED_BY_CEILING`), so the day either layer changes, the
 > test goes red and this question is asked again on purpose. Still no bypass: the
-> bait payment stays `proposed` and there are zero `policy.decision` spans.
+> bait payment stays `proposed` and there are zero `northstar.policy.decision` spans.
 
 **Status: nothing filed, nothing asked upstream, and nothing to file.** No
 issue, comment, pull request or discussion post exists anywhere for this, and
@@ -3105,7 +3105,7 @@ which costs no model tokens: POST a JSON-RPC **array** of two `tools/call`
 messages — a `propose_payment` first, then an over-limit `execute_payment` —
 with a minted JWT-SVID, using the same direct-at-the-gateway machinery
 `tests/e2e/test_caller_identity.py` already has, and then count two things in
-the resulting trace: how many `policy.decision` spans the PDS emitted, and
+the resulting trace: how many `northstar.policy.decision` spans the PDS emitted, and
 whether `payments-mcp` recorded a `tools/call execute_payment`. Two decisions
 and no tool span means per-message evaluation and no bypass. One decision plus
 a tool span is the bypass, and at that point it is a finding with evidence

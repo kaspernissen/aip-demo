@@ -16,7 +16,7 @@
 >   through agentgateway with its own JWT-SVID (`northstar-reviewer-ui`
 >   `ClusterSPIFFEID`). The PDS permits it under rule
 >   `human-approved.execute`, and only when it reads `awaiting_approval` from
->   payments-api itself (span attribute `policy.ledger.status`). A ledger it
+>   payments-api itself (span attribute `northstar.policy.ledger.status`). A ledger it
 >   cannot read is a deny.
 > The policy, as `pds/rules.py` enforces it:
 >
@@ -46,21 +46,22 @@
 >   `service.name` (`reviewer-ui`), so the "same service name, tell them apart
 >   by SPIFFE ID" caveat below no longer applies.
 > - **Trace B is the approval, and the span link now sits on its root.**
->   `review.decision` (reviewer-ui, SERVER) is the root of trace B. Under it:
+>   `northstar.review.decision` (reviewer-ui, SERVER) is the root of trace B. Under it:
 >   the ledger read, the MCP calls through agentgateway, the PDS's
->   `policy.decision` (rule `human-approved.execute`, `policy.ledger.status` =
+>   `northstar.policy.decision` (rule `human-approved.execute`, `northstar.policy.ledger.status` =
 >   `awaiting_approval`), payments-mcp and payments-api's execute, and the
 >   claims-agent resume. It carries one **span link** to the refusal span in trace A
 >   (ids from the ledger's `refusal.refusedTraceId` and `refusedSpanId`), and
 >   the claim id as both an attribute and baggage. Wherever the text below says
 >   the link sits on `settlement.execute_approved`, that is dated M3 to M7 history.
 > - **How long humans take is a metric.** reviewer-ui records the OpenTelemetry
->   histogram `northstar.approval.wait.duration` (seconds, attributes `decision`
->   and `autonomy.level`, never the reviewer) at each decision that took effect:
+>   histogram `northstar.approval.wait.duration` (seconds, attributes
+>   `northstar.review.decision` (`approve`/`reject`) and `northstar.policy.autonomy.level`
+>   (`assisted`/`autonomous`/`unknown`), never the reviewer) at each decision that took effect:
 >   `awaitingSince` to the decision. It is not sampled, and it reaches Prometheus as
 >   `northstar_approval_wait_duration_seconds_*` (measured; see the contract).
 
-Status: **M9 (Weaver registry)**, in progress on branch `m9-weaver-registry`: the registry is built, the rename, live-check and Jaeger evidence are not done yet, so this document still shows the pre-M9 names. Before it **M8 (Human in the loop)**, on branch `m8-human-in-the-loop`, on top of **M7 (Bounded)**, which sat on **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
+Status: **M9 (Weaver registry)**, in progress on branch `m9-weaver-registry`: the registry in `telemetry/registry/` defines every owned telemetry name (all of them `northstar.*`, renamed everywhere at once), Weaver live-check checks the cluster's telemetry against it, and the demo reads Jaeger. This document uses the new names; the generated tables in `docs/telemetry-contract.md` are the attribute, span and metric inventory. Before it came **M8 (Human in the loop)**, on branch `m8-human-in-the-loop`, on top of **M7 (Bounded)**, which sat on **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
 autonomy) merged 2026-09-15 at `e62238f`, tagged `m5-verified`** -- read that
 tag's own message before trusting it, it claims less than its predecessors.
 Bumped in M6's first commit rather than left to a doc pass: this line went
@@ -196,10 +197,10 @@ prose: a sentence true when written, falsified by an edit two lines below it.)
    published and asserted, is trace **shape** — service, operation, kind,
    parent.
 3. *That the refusal is a red span.* It is not, and that is a decision rather
-   than an omission. The `policy.decision` span's status stays `Unset` on a
+   than an omission. The `northstar.policy.decision` span's status stays `Unset` on a
    deny: a refusal is the platform working correctly, and an ERROR span for
    the one thing this milestone exists to do would read as a fault. The
-   refusal is legible from the attributes (`policy.decision=deny`, the rule
+   refusal is legible from the attributes (`northstar.policy.decision=deny`, the rule
    that fired, the amount and the limit) and from agentgateway's own
    `otel.status_description` one span up — where agentgateway *does* set
    ERROR, because from its point of view the proxied call failed.
@@ -207,7 +208,7 @@ prose: a sentence true when written, falsified by an edit two lines below it.)
    fourth item this list has needed.** It is not, and that is the design: the
    human acts minutes later, from a different browser tab, in a process that
    did not exist when the refusal happened. There are **two traces**, joined
-   by a span **link** (M8: from `review.decision`; M3 to M7: from `settlement.execute_approved`) back to the span that
+   by a span **link** (M8: from `northstar.review.decision`; M3 to M7: from `settlement.execute_approved`) back to the span that
    recorded the refusal — which is why the ledger's `refusal` object persists
    a trace id *and* a span id. A reader looking for one trace that contains
    both the deny and the approved execution will not find it, and should not:
@@ -305,7 +306,7 @@ below rather than left as a note outside it.
    identity".
 3. **Task 4 — the human.** `reviewer-ui`, a FastAPI page with no build step,
    reading refusals straight from payments-api's REST API and POSTing an
-   approval to the senior agent over A2A. It emits the `review.decision` span
+   approval to the senior agent over A2A. It emits the `northstar.review.decision` span
    and mounts the Workload API socket only to read its own SPIFFE ID. See
    "The components" and "See it yourself".
 4. **Task 5A — the seven exit criteria**, as `tests/e2e/test_supervised.py`,
@@ -393,7 +394,7 @@ Every `tools/call` the PDS decides makes this lookup once, before Hop 3p's
 verdict — `pds/autonomy.py::resolve_autonomy` asks flagd for the
 `autonomy-level` variant, keyed on the caller's SPIFFE ID from the same
 evaluation context Hop 3p already carries, and the answer becomes
-`policy.autonomy.level` on the `policy.decision` span. This is also the one
+`northstar.policy.autonomy.level` on the `northstar.policy.decision` span. This is also the one
 hop in the whole chain that changes behaviour without a code deploy: the
 `northstar-autonomy` `FeatureFlag` object can be patched live (`kubectl patch
 featureflag/northstar-autonomy -n northstar-platform ...`), and flagd's
@@ -449,7 +450,7 @@ doesn't attempt.
 chain, deliberately, and the trace agrees.** The decision is not a hop the
 claim travels through — it is a question the gateway asks and a verdict it
 acts on. In Jaeger both the gateway's `Guardrail` CLIENT span and the PDS's
-`policy.decision` SERVER span are **children of the gateway's `tools/call`
+`northstar.policy.decision` SERVER span are **children of the gateway's `tools/call`
 SERVER span**, siblings of each other, and the onward
 `tools/call payments-mcp_<tool>` CLIENT span is their sibling too — present
 on a permit, absent on a deny. Measured; see
@@ -507,7 +508,7 @@ Namespaces, ports, and service DNS names below are read directly from
 | `settlement-agent` | Python 3.13, `a2a-sdk[telemetry]==0.3.7` + Starlette + `mcp==2.2.0` client (2026-09-11; was `1.28.1`, and `1.9.4` before that) + `pydantic-ai-slim==2.42.0` (M1.2; 2.41.0 until 2026-09-11) | `northstar-agents` | `settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` | A2A server; MCP client. As of M1.2, the settlement decision itself is a real model call (see "The decision logic" below) — the model chooses whether and how to propose and execute the payment via payments-mcp. |
 | `payments-mcp` | Python 3.13, FastMCP 4.0.3 | `northstar-tools` | `payments-mcp.northstar-tools.svc.cluster.local:8000`, MCP endpoint at `/mcp` | `localhost:5001/northstar/payments-mcp:dev` | MCP server exposing **four** tools as of M3 — `propose_payment` and `execute_payment` since M1.1, plus `refuse_payment` and `get_payment` from M3 Task 3 (this row said "two tools" until M3 Task 5B, and `contracts/mcp/payments-mcp.json` still listed only two, which is what made the gate red). An adapter over payments-api — it owns no state of its own (`server.py`'s own docstring: "This is an adapter over payments-api, not a system of record."). |
 | `payments-api` | Go 1.27.1, `otelhttp v0.71.0` / otel core `v1.46.0` (**2026-09-11 (M3): was Go 1.24, `otelhttp v0.66.0` / otel core `v1.41.0`** — see Finding 11) | `northstar-systems` | `payments-api.northstar-systems.svc.cluster.local:8080` | `localhost:5001/northstar/payments-api:dev` | The system of record for payments. In-memory store, sequential IDs, no persistence. As of M3 it also records **why** a payout did not happen (`POST /refuse`) and lists them (`GET /payments`) — a record, not a gate. |
-| `reviewer-ui` **(M3 Task 4)** | Python 3.13, FastAPI 0.141.1 + uvicorn, server-rendered HTML strings — **no frontend toolchain and no build step**, deliberately unlike `customer-ui` | `northstar-agents` | `reviewer-ui.northstar-agents.svc.cluster.local:8080`, exposed as a `NodePort` (30081) mapped to host `8081` by `deploy/kind/stage3.yaml` | `localhost:5001/northstar/reviewer-ui:dev` | The page a human reads and clicks. Lists refusals straight from payments-api's REST API (never through the MCP path), and POSTs an approval to `senior-settlement-agent` over A2A. Emits the `review.decision` span. |
+| `reviewer-ui` **(M3 Task 4)** | Python 3.13, FastAPI 0.141.1 + uvicorn, server-rendered HTML strings — **no frontend toolchain and no build step**, deliberately unlike `customer-ui` | `northstar-agents` | `reviewer-ui.northstar-agents.svc.cluster.local:8080`, exposed as a `NodePort` (30081) mapped to host `8081` by `deploy/kind/stage3.yaml` | `localhost:5001/northstar/reviewer-ui:dev` | The page a human reads and clicks. Lists refusals straight from payments-api's REST API (never through the MCP path), and POSTs an approval to `senior-settlement-agent` over A2A. Emits the `northstar.review.decision` span. |
 | `senior-settlement-agent` **(M3 Task 3; retired in M8)** | **No image and no code of its own** — the `settlement-agent` image, byte-identical, in a second Deployment under a second ServiceAccount | `northstar-agents` | `senior-settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` (the same mutable `:dev` tag settlement-agent runs) | Executes what a human approved, under an identity the Policy Decision Service grants a higher limit. "Senior" is an *identity*, not a different program — which is the entire point, and the reason this row's Image cell repeats another row's. |
 
 **Namespace note, worth stating plainly:** `customer-ui` deploys into
@@ -602,7 +603,7 @@ What each component is explicitly **not** responsible for:
   `settlement-agent`, the same as the junior's (read from
   `deploy/k8s/senior-settlement-agent.yaml`), so **its spans arrive under
   `service.name=settlement-agent`**. The two are told apart in the trace by
-  `jwt.sub` on the gateway's span and by `policy.caller.spiffe_id` on the
+  `jwt.sub` on the gateway's span and by `northstar.policy.caller.spiffe_id` on the
   PDS's decision, not by service name. That is a consistent choice rather than an
   oversight — the service is the same service — but it is the one place where
   "senior is only an identity" makes the telemetry read oddly.
@@ -632,8 +633,8 @@ the six SPIRE sub-images, including the one carrying the hazard recorded under
 | Component | What it is | Version / image | Role in this system |
 |---|---|---|---|
 | `agentgateway` | Rust MCP/A2A/LLM proxy. A **Linux Foundation** project — **not** CNCF | `cr.agentgateway.dev/agentgateway:v1.5.0` (note the leading `v`; the tag `1.5.0` does not exist on that registry, though the binary reports `1.5.0` as its internal version) | Interposed on the MCP hop. Verifies the caller's JWT-SVID (`jwtAuth`), asks the Policy Decision Service about every `tools/call` (`mcpGuardrails`), and forwards to `payments-mcp` **only** if the answer is permit. |
-| `policy-decision-service` | **This project's own code** (Python 3.13, `grpcio`), not third-party — listed here because it is platform machinery rather than an application component. Serves agentgateway's `agentgateway.dev.ext_mcp.ExtMcp` contract, from a proto vendored verbatim at v1.5.0 (`platform/policy-decision-service/proto/ext_mcp.proto`, `d459d88`) | `localhost:5001/northstar/policy-decision-service:dev`, `policy-decision-service.northstar-platform.svc.cluster.local:9100` | Answers permit or deny on caller identity plus amount. Holds the milestone's one rule and emits the `policy.decision` span. Makes no Kubernetes API calls and holds no RBAC; nothing in `northstar-agents` can reach it. |
-| `eval-scorer` **(M4; row added M5 Task 6)** | **This project's own code** (Python 3.13, standard library only — no web framework, no third-party OTel SDK dependency beyond what `platform/eval-scorer/requirements.txt` pins), not third-party — the same reason `policy-decision-service` has a row here rather than in the application table | `localhost:5001/northstar/eval-scorer:dev`, `eval-scorer.northstar-platform.svc.cluster.local:8300` | Scores a settled trajectory's identity authority against its own independent copy of the policy table (`scorer/authority.py`) and its own independent copy of the contract's currently-published autonomy level (`scorer/contract.py`'s `CURRENT_LEVEL`), never by re-reading the `policy.decision` span's own claim — the anti-vacuity argument `scorer/contract.py`'s own module docstring makes at length. `CURRENT_LEVEL` is a static constant checked at build time against the committed `deploy/platform/openfeature/featureflag.yaml`, deliberately blind to a live `kubectl patch` against the deployed `FeatureFlag` object (M5-R29/M5-R31) — the two are independent by design, not by oversight, which is exactly what let Task 6 flip the live contract without touching this service or its tests. |
+| `policy-decision-service` | **This project's own code** (Python 3.13, `grpcio`), not third-party — listed here because it is platform machinery rather than an application component. Serves agentgateway's `agentgateway.dev.ext_mcp.ExtMcp` contract, from a proto vendored verbatim at v1.5.0 (`platform/policy-decision-service/proto/ext_mcp.proto`, `d459d88`) | `localhost:5001/northstar/policy-decision-service:dev`, `policy-decision-service.northstar-platform.svc.cluster.local:9100` | Answers permit or deny on caller identity plus amount. Holds the milestone's one rule and emits the `northstar.policy.decision` span. Makes no Kubernetes API calls and holds no RBAC; nothing in `northstar-agents` can reach it. |
+| `eval-scorer` **(M4; row added M5 Task 6)** | **This project's own code** (Python 3.13, standard library only — no web framework, no third-party OTel SDK dependency beyond what `platform/eval-scorer/requirements.txt` pins), not third-party — the same reason `policy-decision-service` has a row here rather than in the application table | `localhost:5001/northstar/eval-scorer:dev`, `eval-scorer.northstar-platform.svc.cluster.local:8300` | Scores a settled trajectory's identity authority against its own independent copy of the policy table (`scorer/authority.py`) and its own independent copy of the contract's currently-published autonomy level (`scorer/contract.py`'s `CURRENT_LEVEL`), never by re-reading the `northstar.policy.decision` span's own claim — the anti-vacuity argument `scorer/contract.py`'s own module docstring makes at length. `CURRENT_LEVEL` is a static constant checked at build time against the committed `deploy/platform/openfeature/featureflag.yaml`, deliberately blind to a live `kubectl patch` against the deployed `FeatureFlag` object (M5-R29/M5-R31) — the two are independent by design, not by oversight, which is exactly what let Task 6 flip the live contract without touching this service or its tests. |
 | Kyverno **(M7)** | Kyverno, chart `kyverno/kyverno` **3.9.1**, installed in the `kyverno` namespace by `setup-kind.sh --stage 7` with `deploy/platform/kyverno/values.yaml` (OTLP tracing on the admission controller; read-only RBAC on the kinds the policy matches) | appVersion **v1.19.1**; one `ValidatingPolicy` (`policies.kyverno.io/v1`, CEL), `deploy/platform/kyverno/keystone-policy.yaml`, named `agents-cannot-edit-their-own-authority` | The keystone: refuses an agent identity's create, update or delete of the objects that define its own authority. See "The rings, and the keystone" below. `failurePolicy: Fail`. |
 | `backstage` **(M6)** | Backstage backend, `@backstage/backend-defaults@^0.17.7` and siblings — third-party framework, plus **this project's own code** in one plugin: `platform/backstage/packages/backend/src/plugins/autonomyContract/` (router, k8s client, evaluator, telemetry), the same reason `policy-decision-service` and `eval-scorer` have rows here rather than in the application table, scaled down to one plugin rather than a whole service | `localhost:5001/northstar/backstage:dev`, `backstage.northstar-platform.svc.cluster.local:7007` | Serves the software catalog (nine `Component` entities: the eight in the tree plus Backstage itself, derived from `catalog-info.yaml` files staged into the image at build time — see "Known limitations" below) and the autonomy-contract card, the one UI in this system with a write path of its own: `POST /api/autonomy-contract/variant` flips `northstar-autonomy`'s `targeting.if[1]` through a second, narrower ServiceAccount (`backstage-autonomy-writer`) than the one the Kubernetes plugin reads with. |
 | SPIRE server / agent | SPIFFE runtime, chart `spiffe/spire` 0.30.2 from the hardened repo | appVersion SPIRE **1.15.3**; `ghcr.io/spiffe/spire-server:1.15.3`, `spire-agent:1.15.3` | Issues the JWT-SVID. Trust domain `northstar.local`, cluster name `northstar`. |
@@ -808,7 +809,7 @@ CORS: claims-agent's `CORSMiddleware` (`main.py`) allows origin
 the `traceparent`, `tracestate`, and `baggage` headers — without that
 allow-list entry the browser's preflight would strip them and the root span
 would detach from everything downstream (`apps/customer-ui/NOTES.md` §4).
-Separately, the browser's own OTLP export (the `claim.submit` span itself,
+Separately, the browser's own OTLP export (the `northstar.claim.submit` span itself,
 not the claims-agent call) goes to the OTel Collector at
 `http://localhost:4318/v1/traces`, which needs its own, independent CORS
 entry for `http://localhost:8080` (`deploy/observability/collector-config.yaml`)
@@ -926,7 +927,7 @@ flowchart TD
       SERVER`"]
     s4["`agentgateway · **Guardrail**
       CLIENT — M2.2`"]
-    s5["`policy-decision-service · **policy.decision**
+    s5["`policy-decision-service · **northstar.policy.decision**
       SERVER — M2.2`"]
     s6["`agentgateway · **tools/call payments-mcp_#60;tool#62;**
       CLIENT`"]
@@ -954,7 +955,7 @@ attribute.
 
 **Read the indentation carefully, because it is the M2.2 measurement that was
 easiest to get wrong.** The three M2.2-marked spans are **siblings**, all three
-children of the gateway's `tools/call` SERVER span. `policy.decision` is *not*
+children of the gateway's `tools/call` SERVER span. `northstar.policy.decision` is *not*
 a child of `Guardrail`, even though `Guardrail` is the span for the gRPC call
 that produced it: agentgateway propagates the context it *received* to the
 guardrail hook rather than its own client span's context. Measured on six
@@ -1256,7 +1257,7 @@ A reader watching this trace in Jaeger sees the same two real network calls
 (one model turn each: propose, execute, final narrative), and two
 `execute_tool` spans, all nested inside the same request
 (`docs/telemetry-contract.md`'s "PydanticAI instrumentation, as measured"
-section has the full attribute inventory). Where M1.1's narrative was a
+section has the full attribute inventory; for the attributes this project owns, the registry in `telemetry/registry/` and its generated tables in that document are the inventory). Where M1.1's narrative was a
 fixed string and this document had to say so plainly, M1.2's narrative is
 genuinely the model's own words about a decision the model itself made —
 the trajectory a reader follows in Jaeger now really did happen the way it
@@ -1549,7 +1550,7 @@ volume — that is the entire mechanism by which the "senior" identity is real
 rather than a label, since the socket answers with whatever ID the calling
 pod attests to. `reviewer-ui` also mounts the socket, but for a narrower
 purpose and never as a credential: it reads its *own* ID back for the
-`review.decision` span's `review.reviewer.spiffe_id` attribute
+`northstar.review.decision` span's `northstar.review.reviewer.spiffe_id` attribute
 (`apps/reviewer-ui/identity.py`) and presents it to nothing. None of
 agentgateway, the Policy Decision Service and `eval-scorer` has a
 `csi.spiffe.io` mount, and none presents an SVID to anything. The gateway's
@@ -1978,7 +1979,7 @@ the deck. Off stage: `scripts/demo ceiling`.
 | Sees tool arguments | yes, route level, v1.6.0 and later only | yes |
 | Changes live | config reload, about 0.36 s (file mode, measured in the spike) | flag flip, nothing reloads |
 | Says why | `403 text/plain "authorization failed"` and nothing else | rule, limit, a reason the model can explain |
-| In the trace | one gateway span, `POST /*`, `error.type=Authorization` | a `policy.decision` span with rule and limit |
+| In the trace | one gateway span, `POST /*`, `error.type=Authorization` | a `northstar.policy.decision` span with rule and limit |
 
 Sources: the spike in `.demo/reports/cel-spike-report.md` (git-ignored, local)
 for the reload time and the argument visibility, and
@@ -1999,7 +2000,7 @@ What was measured, and how each result shaped the rule:
   `DELETE`; `tests/e2e/test_gateway_ceiling.py` guards it.
 - **It only works on v1.6.0 and later.** On v1.5.0 the route policy has no MCP
   context and the same rule denies everything.
-- **Its 403 leaves no `policy.decision` span**, because the PDS is never asked.
+- **Its 403 leaves no `northstar.policy.decision` span**, because the PDS is never asked.
   The refusal is visible, but it is one generic span with no rule and no limit.
 - **A JSON-RPC batch is still refused.** A batch (an array) is a `POST` with no
   `mcp.methodName`, so the allow rule errors and denies: `403 authorization
@@ -2009,7 +2010,7 @@ What was measured, and how each result shaped the rule:
   agent's `execute_payment` with a `403`, not with a "no" tool result, so the
   agent's tool client fails the call: the claim's task ends `failed`, the payment
   stays `proposed` (never `awaiting_approval`, so it is not in the reviewer-ui's
-  queue) and no `policy.decision` span exists for the execute. **By design nobody,
+  queue) and no `northstar.policy.decision` span exists for the execute. **By design nobody,
   a human included, may release it through this gateway:** the reviewer-ui's
   release is the same call on the same route. Pinned by
   `test_a_claim_over_the_ceiling_fails_and_nobody_is_asked`; the operator's
@@ -2125,12 +2126,12 @@ live spans:
   no second approver, no quorum, no timeout or expiry on a pending refusal,
   no re-proposal path back to the original agent, and **no authenticated
   human**. `reject` is accepted (`_VALID_DECISIONS = ("approve", "reject")`)
-  but it is inert by design: it records a `review.decision` span with
-  `review.decision=reject` and writes nothing to the ledger and tells nobody,
+  but it is inert by design: it records a `northstar.review.decision` span with
+  `northstar.review.decision=reject` and writes nothing to the ledger and tells nobody,
   so the payment simply stays `refused` — which is what it already was. And
   the identity of the person is not established anywhere:
-  `review.reviewer.id` is a string the request supplies, and
-  `review.reviewer.spiffe_id` is `reviewer-ui`'s **own** SPIFFE ID, so between
+  `northstar.review.reviewer.id` is a string the request supplies, and
+  `northstar.review.reviewer.spiffe_id` is `reviewer-ui`'s **own** SPIFFE ID, so between
   them the span records an unverified claim and the deployment that accepted
   it, never *which person* approved. There is no login, no session and no
   Keycloak — which the stage table above still lists as part of this stage,
@@ -2246,14 +2247,14 @@ propagation table itself is current.
 | settlement-agent (inbound) | Same ASGI/Starlette instrumentation as claims-agent | Yes | Yes — extracted at the ASGI boundary, before any of settlement-agent's internal tasks spawn, so it reaches every subsequent span in that process |
 | settlement-agent → agentgateway (**Hop 3a**, M2.1) | **Two independent carriers, both present, neither redundant.** (i) JSON-RPC `params._meta` (SEP-414, unprefixed `traceparent`/`tracestate`/`baggage`): on `mcp==1.9.4` (this project's original pin), the high-level client's `ClientSession.call_tool()` had no way to set `_meta` at all, so `mcp_tools.py` (Task 7) drops to `ClientSession.send_request()` and hand-builds the request, injecting via `opentelemetry.propagate.inject(carrier)`. **The pin is now `mcp==2.2.0`** (2026-09-11; it was `1.28.1`, which cleared four pip-audit advisories — `docs/telemetry-contract.md`'s Gap 6). Two things changed at 2.x and both are recorded rather than acted on: `call_tool()` has had a `meta=` kwarg since `modelcontextprotocol/python-sdk#1231`, and 2.x's dispatcher now injects trace context into `params._meta` **by itself**, unconditionally, on every request. `mcp_tools.py`'s hand-built `send_request()` path is therefore still what runs and is now also redundant — the SDK overwrites its `_meta` with a strictly deeper parent in the same trace. Removing it is open, deliberately-unbundled work (`docs/upstream-findings.md` Finding 4). (ii) An HTTP `traceparent` **header**, auto-injected by the httpx instrumentation because the transport is httpx-based — `HTTPX2ClientInstrumentor` since the 2.x bump, because `mcp` 2.x's transport is built on `httpx2` rather than `httpx` | Yes, twice over | Yes in `_meta`; yes in the `baggage` header |
 | agentgateway (inbound) | **The HTTP header, and only that.** `TraceParent::from_request` (v1.5.0, `crates/agentgateway/src/telemetry/trc.rs:690-696`) reads the `traceparent` header and never inspects the request body. It does **not** read `params._meta` — Finding 6. With no header it would mint a new trace root | Yes (via the header) | Not consumed as baggage — the gateway has no baggage concept and its spans carry no `northstar.claim.id`, which is the intended enrichment boundary and is asserted as a negative in `tests/e2e/test_gateway_trace.py` |
-| agentgateway → policy-decision-service (**Hop 3p**, M2.2) | The HTTP `traceparent` header on the gRPC `CheckRequest`, forwarded by the gateway to the guardrail hook and extracted by the PDS's own `CompositePropagator` from the ExtMCP `headers` field. **Measured that it is forwarded** (M2.2 Task 1, run C: ten headers reached the hook with `requestHeaders` removed entirely, `traceparent` among them) — exit criterion 3 depends on it, so it was checked rather than assumed. The context forwarded is the one the gateway *received*, not its own client span's, which is why `policy.decision` is a sibling of `Guardrail` rather than its child | Yes | **No.** `baggage` was not among those ten headers, and the PDS is not one of the three services running `ClaimIdSpanProcessor`. Its span carries no `northstar.claim.id`, and is correlated to the claim by trace id — the same boundary agentgateway's own spans sit on |
+| agentgateway → policy-decision-service (**Hop 3p**, M2.2) | The HTTP `traceparent` header on the gRPC `CheckRequest`, forwarded by the gateway to the guardrail hook and extracted by the PDS's own `CompositePropagator` from the ExtMCP `headers` field. **Measured that it is forwarded** (M2.2 Task 1, run C: ten headers reached the hook with `requestHeaders` removed entirely, `traceparent` among them) — exit criterion 3 depends on it, so it was checked rather than assumed. The context forwarded is the one the gateway *received*, not its own client span's, which is why `northstar.policy.decision` is a sibling of `Guardrail` rather than its child | Yes | **No.** `baggage` was not among those ten headers, and the PDS is not one of the three services running `ClaimIdSpanProcessor`. Its span carries no `northstar.claim.id`, and is correlated to the claim by trace id — the same boundary agentgateway's own spans sit on |
 | agentgateway → payments-mcp (**Hop 3b**, M2.1) | The gateway starts its own outbound CLIENT span, injects that span into the outbound **headers**, and then copies the three W3C keys from those headers into `params._meta` (`crates/agentgateway/src/mcp/upstream/mod.rs:146` then `:110-122`). So `_meta` reaching payments-mcp names the *gateway's* span, not settlement-agent's — which is why payments-mcp parents under the gateway and not under the agent | Yes (re-stamped) | The `baggage` key is copied too, if the header is present |
 | payments-mcp (inbound) | FastMCP 4.0.3's own `extract_trace_context()` (`fastmcp/telemetry.py`) reads `traceparent`/`tracestate` out of `params._meta` | Yes | **No — FastMCP never reads the `baggage` key out of `_meta` at all.** This is the one place `northstar.claim.id` stops, and interposing the gateway did not change that. |
 | payments-mcp → payments-api | Ordinary HTTP header, via `HTTPXClientInstrumentor` | Yes | No — nothing to propagate; baggage never entered this process's ambient context |
 | payments-api (inbound) | `otelhttp` (Go), standard W3C header extraction | Yes | No, for the same reason |
-| **browser → reviewer-ui (M3)** | Nothing. A plain HTML form POST from a page reviewer-ui itself rendered, with no JavaScript and no instrumentation — deliberately unlike `customer-ui`, which hand-mints a root span in `telemetry.ts`. So `review.decision` is a **trace root**, and the reviewer's trace begins at the server rather than in the browser | No | No |
-| **reviewer-ui → payments-api (M3)** | `HTTPXClientInstrumentor`, on the direct REST reads (`GET /payments?status=refused`, `GET /payments/{id}`) — each now made inside one of this service's **own** spans (`review.queue`, `review.decision`), so the CLIENT span has a parent to inject. **2026-09-11 (M3): this cell used to continue "— **plus** a trace-flags mask on injection (`apps/reviewer-ui/bootstrap.py`'s `_Level1CompatibleTraceContextPropagator`)".** There is no mask any more: payments-api moved to otel-go v1.46.0, which accepts the Level 2 `-03` flag byte its predecessor discarded, so this hop is now plain stock W3C propagation like every other hop in this table. Note which hop this is *not*: it never crosses agentgateway, payments-mcp or the PDS | Yes — **but this cell said "Yes" for a whole task while it was measurably "No"; see the correction under this table** | No — reviewer-ui runs no `ClaimIdSpanProcessor` and never sees the claim id as baggage; it knows the payment id, which is what it renders |
-| **reviewer-ui → senior-settlement-agent (M3)** | `HTTPXClientInstrumentor` again, on the raw A2A JSON-RPC POST (`approval.py`, the same technique as `delegation.py`), so the senior agent's spans are children of `review.decision`'s trace. **The join back to the refused trace is carried in the request body, not in a header**: `refusedTraceId` and `refusedSpanId` travel as ordinary JSON fields and become a `Link` on `settlement.execute_approved` | Yes | No |
+| **browser → reviewer-ui (M3)** | Nothing. A plain HTML form POST from a page reviewer-ui itself rendered, with no JavaScript and no instrumentation — deliberately unlike `customer-ui`, which hand-mints a root span in `telemetry.ts`. So `northstar.review.decision` is a **trace root**, and the reviewer's trace begins at the server rather than in the browser | No | No |
+| **reviewer-ui → payments-api (M3)** | `HTTPXClientInstrumentor`, on the direct REST reads (`GET /payments?status=refused`, `GET /payments/{id}`) — each now made inside one of this service's **own** spans (`northstar.review.queue`, `northstar.review.decision`), so the CLIENT span has a parent to inject. **2026-09-11 (M3): this cell used to continue "— **plus** a trace-flags mask on injection (`apps/reviewer-ui/bootstrap.py`'s `_Level1CompatibleTraceContextPropagator`)".** There is no mask any more: payments-api moved to otel-go v1.46.0, which accepts the Level 2 `-03` flag byte its predecessor discarded, so this hop is now plain stock W3C propagation like every other hop in this table. Note which hop this is *not*: it never crosses agentgateway, payments-mcp or the PDS | Yes — **but this cell said "Yes" for a whole task while it was measurably "No"; see the correction under this table** | No — reviewer-ui runs no `ClaimIdSpanProcessor` and never sees the claim id as baggage; it knows the payment id, which is what it renders |
+| **reviewer-ui → senior-settlement-agent (M3)** | `HTTPXClientInstrumentor` again, on the raw A2A JSON-RPC POST (`approval.py`, the same technique as `delegation.py`), so the senior agent's spans are children of `northstar.review.decision`'s trace. **The join back to the refused trace is carried in the request body, not in a header**: `refusedTraceId` and `refusedSpanId` travel as ordinary JSON fields and become a `Link` on `settlement.execute_approved` | Yes | No |
 | **senior-settlement-agent → agentgateway (M3)** | Identical to Hop 3a above, because it is the same code in the same image. The only difference on the wire is the `Authorization` bearer token, which carries this pod's own SPIFFE ID | Yes, twice over | Yes — and **the claim id is re-minted here rather than propagated**, which is the one genuinely new thing in this column. The approval arrives from reviewer-ui carrying no baggage (reviewer-ui never had any), so `execute_approved` reads `claimId` off the ledger record it just fetched and calls `set_claim_id` itself. That is why `settlement.execute_approved` and everything below it carry `northstar.claim.id` in a trace whose root never saw one |
 
 **Correction, M3 final-review fix round 2026-09-11 (controller ruling R36) —
@@ -2271,7 +2272,7 @@ system:
    of each shape: reviewer-ui's outbound `GET` spans and payments-api's
    `GET /payments` spans shared **zero** trace ids, and a 67-span approval
    trace contained no reviewer-ui ledger read at all. `index()` now opens
-   `review.queue` and `decide()` opens `review.decision` before reading.
+   `northstar.review.queue` and `decide()` opens `northstar.review.decision` before reading.
 2. **A flag byte neither end is wrong about.** With (1) fixed, payments-api
    *still* minted a fresh root. `opentelemetry-sdk==1.44.0` sets W3C Trace
    Context **Level 2**'s `RANDOM_TRACE_ID` bit alongside `SAMPLED`, emitting
@@ -2306,13 +2307,13 @@ system:
 
 **Measured after the mask was removed**, one live listing request:
 trace `eacff63cc15a0868cee60332b1728735`, three spans —
-`reviewer-ui review.queue` (root, SERVER, `e40bafb90b4a5483`) →
+`reviewer-ui northstar.review.queue` (root, SERVER, `e40bafb90b4a5483`) →
 `reviewer-ui GET` (CLIENT, `9280bc1b88bb4120`, `http.url`
 `…/payments?status=refused`) → `payments-api GET /payments` (SERVER,
 `a418e6258a9c1bac`). The pre-bump capture of the same shape, reached through
 the mask, was trace `c05d71f98aecafddaaf0fa4e3901213c`.
 `tests/e2e/test_supervised.py`'s criterion 5 asserts the
-decision-path equivalent (`review.decision` → reviewer-ui CLIENT `GET` →
+decision-path equivalent (`northstar.review.decision` → reviewer-ui CLIENT `GET` →
 payments-api `GET /payments/{paymentId}`), identified by parentage rather
 than by name because the approved-execution trace contains a second
 payments-api `GET /payments/{paymentId}` from the `get_payment` MCP call.
@@ -2378,15 +2379,15 @@ mentions in comments and docstrings, and a looser file filter returns
 `a2a.test.ts`. A command published as evidence has to be the command that was
 run.) On 2026-09-14 it returns **five** call sites, one span each:
 
-  * `apps/customer-ui/src/app/page.tsx:37` — **`claim.submit`**, the trace root.
+  * `apps/customer-ui/src/app/page.tsx:37` — **`northstar.claim.submit`**, the trace root.
     Necessary: nothing upstream of the browser could have created it.
   * `agents/settlement-agent/settlement.py:378` —
     **`settlement.execute_approved`**, the approved execution M3 added, and the
     span the reviewer-ui link joins to the refused trace.
-  * `apps/reviewer-ui/main.py:79` — **`review.queue`**.
-  * `apps/reviewer-ui/review.py:163` — **`review.decision`**.
+  * `apps/reviewer-ui/main.py:79` — **`northstar.review.queue`**.
+  * `apps/reviewer-ui/review.py:163` — **`northstar.review.decision`**.
   * `platform/policy-decision-service/pds/server.py:230` —
-    **`policy.decision`** (the name is `telemetry.SPAN_NAME`, which is why a
+    **`northstar.policy.decision`** (the name is `telemetry.SPAN_NAME`, which is why a
     grep for the literal string does not find it). This is the span every
     scorer in M4 reads and the evidence view's second panel renders.
 
@@ -2464,7 +2465,7 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
    **Then change the amount to `5800` and submit again**: the same claim shape
    comes back `"status": "executed"`. Seeing both is the point — a platform
    that refused everything would look identical on the first run alone.
-2. In Jaeger: service `customer-ui`, operation `claim.submit`, "Find Traces."
+2. In Jaeger: service `customer-ui`, operation `northstar.claim.submit`, "Find Traces."
    The single result is your submission (Jaeger's `total` field in its own
    API response is often `0` even when traces are returned — a documented
    API quirk, not a sign nothing came back; check `data`, not `total`).
@@ -2481,9 +2482,9 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
    this project's own e2e test suite injecting synthetic trace IDs to test
    the harness itself, not components of the running system.
 5. Spans worth clicking into, and what each demonstrates:
-   - **`customer-ui`'s `claim.submit`** — the trace root. Note it has no
+   - **`customer-ui`'s `northstar.claim.submit`** — the trace root. Note it has no
      parent, and its own two attributes (`northstar.claim.id`,
-     `northstar.policy.number`) are set directly in `page.tsx`, not
+     `northstar.claim.policy_number`) are set directly in `page.tsx`, not
      propagated from anywhere.
    - **`claims-agent`'s outbound `POST` (client span, target
      `settlement-agent...:9002`)** — this is the entire mechanism by which
@@ -2521,21 +2522,21 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
      its child CLIENT span, `tools/call payments-mcp_<tool>`, and note
      `jwt.sub` is **absent** there — the gateway strips the credential on
      the outbound leg, so there is no verified token to attribute.
-   - **`policy-decision-service`'s `policy.decision`** — new in M2.2, and the
+   - **`policy-decision-service`'s `northstar.policy.decision`** — new in M2.2, and the
      span the whole milestone exists to produce. There are two per settlement,
      one per tool call (**N5, whole-branch review: this is the M2.2-era
-     count, pre-`refuse_payment` — M3 added a third `policy.decision`-bearing
+     count, pre-`refuse_payment` — M3 added a third `northstar.policy.decision`-bearing
      call, so a refused settlement can carry three; see
-     `docs/telemetry-contract.md`'s "two or three `policy.decision` spans
+     `docs/telemetry-contract.md`'s "two or three `northstar.policy.decision` spans
      appear per settlement" for the current figure**). On the
      `execute_payment` one in a €6,200 run:
-     `policy.decision = deny`, `policy.rule =
-     settlement-agent.assisted.execute_limit`, `policy.request.amount = 6200`,
-     `policy.limit.amount = 6000`, and `policy.caller.spiffe_id` naming the
+     `northstar.policy.decision = deny`, `northstar.policy.rule =
+     settlement-agent.assisted.execute_limit`, `northstar.policy.request.amount = 6200`,
+     `northstar.policy.limit.amount = 6000`, and `northstar.policy.caller.spiffe_id` naming the
      attested caller the limit was looked up by. Note the span's status is
      **not** ERROR: a refusal is the platform working. Compare it with the
      `propose_payment` one in the same trace, which is a `permit` under the
-     rule `unlimited_tool` and carries no `policy.limit.amount` at all.
+     rule `unlimited_tool` and carries no `northstar.policy.limit.amount` at all.
    - **agentgateway's `Guardrail` (CLIENT)** — its sibling, and the gateway's
      own view of the same hop. `http.path` is literally the ExtMCP gRPC
      method, and `grpc.status = 0` says the *call* succeeded — the deny is in
@@ -2600,7 +2601,7 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
    The page lists every payment whose status is `refused`, each showing the
    rule that fired, the limit the caller held, the amount
    requested, and the model's own narrative — the same four facts the
-   `policy.decision` span carries, read back out of the ledger rather than out
+   `northstar.policy.decision` span carries, read back out of the ledger rather than out
    of the trace. **That distinction is worth pausing on**: the human's
    information path is the ledger, not telemetry. Turn `NORTHSTAR_CAPTURE_CONTENT`
    off and this page is unchanged.
@@ -2608,19 +2609,19 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
    Type any reviewer id (the field is required but unverified — the
    placeholder is `alex.mercer`) and click **Approve**. There is also a
    **Reject** button, and it is honest about doing nothing: it records a
-   `review.decision` span with `review.decision=reject` and leaves the payment
+   `northstar.review.decision` span with `northstar.review.decision=reject` and leaves the payment
    exactly as refused. Within a second or two Approve shows the payment
    executed. What just happened, and what to look for:
 
    - In Jaeger, search service **`reviewer-ui`**, operation
-     **`review.decision`**. That span is a **trace root** — reviewer-ui does
+     **`northstar.review.decision`**. That span is a **trace root** — reviewer-ui does
      not instrument FastAPI at all, so there is no framework entry span above
      it, and the browser sends a plain HTML form with no trace context. Its
-     attributes: `review.payment.id`, `review.decision` (`approve`),
-     `review.reviewer.id` (the string you typed — unverified, by design),
-     `review.reviewer.spiffe_id` (**reviewer-ui's own** ID, read from the
-     Workload API, not the person's), `review.refused.trace_id`, and
-     `review.elapsed_ms` — the gap between the ledger's `refusedAt` stamp and
+     attributes: `northstar.review.payment.id`, `northstar.review.decision` (`approve`),
+     `northstar.review.reviewer.id` (the string you typed — unverified, by design),
+     `northstar.review.reviewer.spiffe_id` (**reviewer-ui's own** ID, read from the
+     Workload API, not the person's), and
+     `northstar.review.wait.duration` — seconds between the ledger's `refusedAt` stamp and
      now, so it is measured on the ledger's clock rather than the reviewer's.
    - Its descendant **`settlement.execute_approved`** carries a **span
      link**, not a parent edge, pointing at the span that recorded the
@@ -2629,16 +2630,16 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
      deliberate: the human took minutes, in a process that no longer exists,
      so a parent-child edge would misstate both the duration and what was
      executing.
-   - Compare the **`policy.decision`** span in *this* trace with the one from
+   - Compare the **`northstar.policy.decision`** span in *this* trace with the one from
      step 1. Same rule shape, same service, same code path —
-     `policy.caller.spiffe_id` now reads
+     `northstar.policy.caller.spiffe_id` now reads
      `.../ns/northstar-agents/sa/senior-settlement-agent` (retired in M8),
-     `policy.limit.amount` reads `25000`, and the verdict is `permit`. Nothing
+     `northstar.policy.limit.amount` reads `25000`, and the verdict is `permit`. Nothing
      was overridden; a different caller was asked about.
    - One thing that will look wrong and is not: **the senior agent's spans
      arrive under `service.name=settlement-agent`**, because its
      `OTEL_SERVICE_NAME` is deliberately the same. Tell the two apart by
-     `jwt.sub` / `policy.caller.spiffe_id`, never by service name.
+     `jwt.sub` / `northstar.policy.caller.spiffe_id`, never by service name.
 
 8. **See M3's own refusals, also without spending a model call:**
 
@@ -2825,7 +2826,7 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
       survives both the object being reverted and the pod being recycled.
       `tests/e2e/test_golden_path.py::test_the_contract_change_span_lands_in_opensearch`
       asserts it reaches OpenSearch too, the same standard M4-R6 already
-      holds `policy.decision` to.
+      holds `northstar.policy.decision` to.
 
 **Known limitations, stated plainly (design §10).** An audience of platform
 engineers will notice these; naming them first is better than letting them

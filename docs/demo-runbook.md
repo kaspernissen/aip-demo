@@ -1,6 +1,6 @@
-# Northstar — Demo Runbook (M8, Human in the loop)
+# Northstar — Demo Runbook (M9, Weaver registry, on M8's Human in the loop)
 
-Status: M8 (Human in the loop), on top of M7's Bounded. This is the **operator's** document: how the demo is
+Status: M9 (Weaver registry), on top of M8 (Human in the loop). The five-minute flow reads Jaeger, and every telemetry name this runbook quotes is `northstar.*`, defined in `telemetry/registry/`. This is the **operator's** document: how the demo is
 brought up, how it is run in front of an audience, what to say at each beat,
 and what to say when something breaks.
 
@@ -477,7 +477,9 @@ open for the whole wait. Both were measured and are kept: nothing is sampled or
 filtered out of the data. So: **open trace A in Jaeger after the decision, not
 during the wait** (it is a long, noisy trace until then), and use the terminal
 driver's trace view on stage, which prints only the road the money would take
-and leaves those polling spans out.
+and leaves those polling spans out. Step 5's `trace` link for an approved claim
+is the other way round: it opens the approval's own trace (trace B), which is
+short, rooted at `northstar.review.decision`, and holds no polling spans.
 
 ---
 
@@ -575,7 +577,7 @@ The same event, as the trace saw it
   +- agentgateway  tools/call execute_payment   HTTP 200  ERROR
       HTTP 200: the no is a tool result marked isError, with the rule in its text.
     +- Guardrail   the gateway asks the decision service
-    +- policy-decision-service  policy.decision  [DENY]
+    +- policy-decision-service  northstar.policy.decision  [DENY]
           rule       settlement-agent.assisted.execute_limit
           limit      0  (requested 5800)
     gateway: mcp: mcpGuardrails rejected: requested 5800 EUR exceeds the 0 EUR limit ...
@@ -625,7 +627,7 @@ then, for EUR 5,800:
 
 ```text
   Outcome  [SETTLED]  by the agent, inside its band. The payment was made.
-    +- policy-decision-service  policy.decision  [PERMIT]
+    +- policy-decision-service  northstar.policy.decision  [PERMIT]
           rule       settlement-agent.autonomous.execute_limit
           limit      6000  (requested 5800)
     [PRESENT]  POST /payments/{paymentId}/execute   money moved
@@ -635,7 +637,7 @@ and for EUR 6,200:
 
 ```text
   Outcome  [WAITING]  awaiting human approval. Nothing was paid.
-    +- policy-decision-service  policy.decision  [DENY]
+    +- policy-decision-service  northstar.policy.decision  [DENY]
           rule       settlement-agent.autonomous.execute_limit
           limit      6000  (requested 6200)
     [ABSENT]   POST /payments/{paymentId}/execute   money did not move
@@ -718,53 +720,86 @@ Kyverno rows. Fallback: the transcript slide (Beat K's, which is this output).
 
 **DO** — `scripts/demo evidence`
 
-**SHOW** (one block per claim of **this run**, nothing older; three, in order)
+**SHOW** (one block per claim of **this run**, nothing older; three, in order).
+This is the output of a real run (claim 5800 and approve last; autonomy
+autonomous; claim 5800; claim 6200; autonomy assisted; evidence; reset), pasted
+as printed, not retyped. Ids, durations and trace links differ every run:
 
 ```text
-CLM-DEMO-656406   EUR 5,800
+EVIDENCE  can we prove why each claim ended the way it did?
+-----------------------------------------------------------
+  From Jaeger, for this run's 3 claim(s). Nothing older.
+
+CLM-DEMO-1813EA   EUR 5,800
+  $ Jaeger  claim id -> traces -> the decision and review spans  (CLM-DEMO-1813EA)
     who decided      policy-decision-service   [SENT TO A HUMAN]
     rule             settlement-agent.assisted.execute_limit
     limit            0   (requested 5800)
     autonomy level   assisted
+    caller identity  spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
     outcome          [SETTLED] by reviewer-ui
-    approved by      kasper.on.stage, after 19 s
+    approved by      kasper.on.stage, after 17 s
+    trace            http://localhost:16686/trace/dab4155d36d9122b6e7b8ec23bcf888d
 
-CLM-DEMO-7AC411   EUR 5,800
+CLM-DEMO-396B0F   EUR 5,800
+  $ Jaeger  claim id -> traces -> the decision and review spans  (CLM-DEMO-396B0F)
     who decided      policy-decision-service   [PERMIT]
     rule             settlement-agent.autonomous.execute_limit
     limit            6000   (requested 5800)
+    autonomy level   autonomous
+    caller identity  spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
     outcome          [SETTLED] by settlement-agent
     approved by      none
+    trace            http://localhost:16686/trace/e9bdb5753ff245fbb908e7c1562a8102
 
-CLM-DEMO-CC1273   EUR 6,200
+CLM-DEMO-203115   EUR 6,200
+  $ Jaeger  claim id -> traces -> the decision and review spans  (CLM-DEMO-203115)
     who decided      policy-decision-service   [SENT TO A HUMAN]
     rule             settlement-agent.autonomous.execute_limit
     limit            6000   (requested 6200)
+    autonomy level   autonomous
+    caller identity  spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
     outcome          [AWAITING HUMAN APPROVAL] no execute span: nothing moved
     approved by      none
+    trace            http://localhost:16686/trace/7ad45ad5aa1542519bdcea94721fadb6
+
+Every line above is a recorded span, read back from Jaeger. Nothing is reconstructed.
 ```
+
+Then open one `trace` link (the first claim's, which is the approval's own
+trace) and click the `northstar.review.decision` span: its attributes are the
+`approved by` and `after N s` lines above. The same span in Jaeger is the
+proof; the terminal only reads it back.
 
 **SAY**
 
 > "For each claim: who decided, the rule, who approved, how long the human
 > took."
 
-> "Every line here is a recorded span read back from OpenSearch, not something
-> I told you. The policy service decided, not the model. The first claim was
+> "Every line here is a span attribute read back from Jaeger, not something I
+> told you. The policy service decided, not the model. The first claim was
 > approved by a person, and the record says who and after how many seconds. The
 > second the agent settled alone. The third is still waiting, and the record
-> says so."
+> says so. And the names of those attributes are not mine to change on a
+> whim: they are defined in a published schema, a Weaver registry, and the
+> cluster is checked against it."
 
 **Land:** "who approved" and "how long" come from the reviewer-ui's own span
-(`review.decision`, with `review.elapsed_ms`), not from the model or the
-driver.
+(`northstar.review.decision`, with `northstar.review.reviewer.id` and
+`northstar.review.wait.duration`, in seconds), not from the model or the
+driver. The rule, the limit and the autonomy level are attributes of the
+`northstar.policy.decision` span (`northstar.policy.rule`,
+`northstar.policy.limit.amount`, `northstar.policy.autonomy.level`).
+OpenSearch is not part of this step: `evidence` makes no request to it. It stays
+in the stack for the eval-scorer and the longer slot.
 
-**If it fails** — it waits for OpenSearch, bounded (90s), printing `waiting for
-OpenSearch (...)`, then fails naming the fields that never arrived: read the
+**If it fails** — it waits for Jaeger, bounded (90s), printing `waiting for
+Jaeger (...)`, then fails naming the fields that never arrived: read the
 collector log (`kubectl -n observability logs deploy/otel-collector | grep
-'Exporting failed'`). `FAIL ... no claims in this run yet`: you ran `reset`
-between the claims and this; run the claims again. Fallback: the transcript
-slide, or Beat 5's dashboard.
+'Exporting failed'`) and check the `jaeger` pod. `FAIL ... no claims in this
+run yet`: you ran `reset` between the claims and this; run the claims again.
+Fallback: the transcript slide, or open the claim's trace in Jaeger by hand
+(service `policy-decision-service`, operation `northstar.policy.decision`).
 
 ---
 
@@ -854,7 +889,7 @@ autonomous`), change the amount to **5800**, submit again. It comes back
 ### Beat 2 — one trace, and the absence that proves it · ~4 min
 
 **DO** — http://localhost:16686. Service `customer-ui`, operation
-`claim.submit`, **Find Traces**.
+`northstar.claim.submit`, **Find Traces**.
 
 > Jaeger's `total` field is often `0` even when traces come back. It is a
 > known API quirk. Read `data`, not `total`. Ignore any `harness-probe*`
@@ -864,14 +899,14 @@ autonomous`), change the amount to **5800**, submit again. It comes back
 
 | Span | Service | What it proves |
 |---|---|---|
-| `claim.submit` | customer-ui | the trace **root** — no parent, attributes set in the browser |
+| `northstar.claim.submit` | customer-ui | the trace **root** — no parent, attributes set in the browser |
 | `tools/call` (SERVER) | agentgateway | `jwt.sub` = the caller's **attested** SPIFFE ID, set by the gateway from the token it verified |
-| `policy.decision` | policy-decision-service | `policy.decision=deny`, `policy.rule=settlement-agent.assisted.execute_limit`, `policy.request.amount=6200`, `policy.limit.amount=0` (the agent's limit at `assisted`) |
+| `northstar.policy.decision` | policy-decision-service | `northstar.policy.decision=deny`, `northstar.policy.rule=settlement-agent.assisted.execute_limit`, `northstar.policy.request.amount=6200`, `northstar.policy.limit.amount=0` (the agent's limit at `assisted`) |
 | `Guardrail` (CLIENT) | agentgateway | `grpc.status = 0` — the *call* succeeded, the **deny is in the payload** |
 
 **SAY**
 
-> "Look at the status on the policy.decision span. It is **not** ERROR. A
+> "Look at the status on the northstar.policy.decision span. It is **not** ERROR. A
 > refusal is the platform working, and it must not be an error, or every
 > dashboard you own will page you for correct behaviour."
 
@@ -982,7 +1017,7 @@ Type a reviewer id (the form supplies it; the stage uses `kasper.on.stage`)
 > a timeout, an expiry, or a login. The reviewer id is a string the form
 > supplies. That is written down as a limitation rather than hidden."
 
-**SHOW** — Jaeger, service `reviewer-ui`, operation `review.decision`:
+**SHOW** — Jaeger, service `reviewer-ui`, operation `northstar.review.decision`:
 
 <pre class="mermaid">
 flowchart LR
@@ -990,7 +1025,7 @@ flowchart LR
         a1["customer-ui → claims-agent → settlement-agent"] --> a2["deny: awaiting_approval"]
     end
     subgraph B["trace B — a human released it"]
-        b1["review.decision"] --> b2["execute_payment through the gateway"]
+        b1["northstar.review.decision"] --> b2["execute_payment through the gateway"]
     end
     b1 -.->|"span LINK"| a1
 </pre>
@@ -1001,18 +1036,19 @@ flowchart LR
 > process that no longer exists. A parent edge would have misstated both the
 > duration and what was executing."
 
-> "Now compare the policy.decision span in *this* trace with the one in trace
+> "Now compare the northstar.policy.decision span in *this* trace with the one in trace
 > A. Same service, same code path, but the caller is now `reviewer-ui`, the
 > rule is `human-approved.execute`, the decision service has read
 > `awaiting_approval` from the ledger, and the verdict is permit. **Nothing
 > was overridden. A different caller was asked about.**"
 
 > "And how long humans take is a metric:
-> `northstar_approval_wait_duration_seconds`, by autonomy level and decision.
+> `northstar_approval_wait_duration_seconds`, by `northstar_policy_autonomy_level`
+> and `northstar_review_decision` (`approve` or `reject`).
 > Ask Prometheus for the 95th percentile."
 
 > The approver is a different service, so `service.name` tells you who
-> called. `policy.caller.spiffe_id` is still the attested answer.
+> called. `northstar.policy.caller.spiffe_id` is still the attested answer.
 
 ---
 
@@ -1362,7 +1398,7 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 | The money moved but the customer tab is stuck on "Awaiting human approval" (`demo approve` printed `the customer's claim could not be told`) | the decision is on the ledger, but the message to claims-agent was lost (a dropped answer, claims-agent unreachable for a moment) | **run the same command again**: `scripts/demo approve last` (or `reject last`; there is no button for a claim that has left the queue). `demo approve|reject <claim|last>` finds it even though it is no longer in `/api/awaiting`: it reads the ledger's executed and rejected payments and keeps the one whose task is still `input-required`. The reviewer-ui sees the decision is already on the ledger, takes no new money decision and tells the claim again. It only answers 409 if the claim is no longer waiting |
 | `scripts/demo` prints `FAIL` | the expected outcome did not happen: that is the command doing its job | read the line: it names what was expected. `scripts/demo reset`, then re-run the one step |
 | `scripts/demo claim` hangs after the model's explanation | it is waiting (up to 90s) for every service's spans to reach Jaeger, so that an *absent* span is a real absence | give it a few seconds; the explanation is already on screen. If it times out, the Jaeger UI at http://localhost:16686 is the fallback |
-| EUR 5,800 waits at `autonomous` | the flag did not take, or the caller identity is wrong | check the card; check `policy.caller.spiffe_id` on the span |
+| EUR 5,800 waits at `autonomous` | the flag did not take, or the caller identity is wrong | check the card; check `northstar.policy.caller.spiffe_id` on the span |
 | Backstage card shows the old value | it reads live — so this means the write failed | check the response, then `kubectl get featureflag` as an independent witness |
 | Jaeger shows two disconnected traces | trace context broken at a hop | expected only for the **human approval**, which is a link by design (beat 4) |
 | Trace A is huge and still growing while a claim waits | a2a-sdk adds an `EventQueue.dequeue_event` span about every 0.5 s for the wait | expected and kept (nothing is sampled). Open it after the decision, or use the terminal driver's trace view |
@@ -1378,6 +1414,35 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 - **Do not run `./scripts/smoke-test.sh`** as a health check. It is the full
   gate — it spends model tokens, drives browsers, and takes ~10 minutes. Use
   the §4 T-10 checks instead.
+
+---
+
+### Weaver live-check: what it covers, and how to run it
+
+The gate checks the cluster's telemetry against the registry in
+`telemetry/registry/` (Weaver live-check, in-cluster). Read a green result for
+what it says; the measured limits are in `docs/telemetry-contract.md`, "What
+live-check checks, and what it does not":
+
+- **A missing required attribute is not caught.** Live-check v0.28.0 with a v1
+  registry reported no finding when `northstar.policy.rule` was dropped from the
+  decision span (measured; four decision spans, no `required_attribute_not_present`).
+  The behaviour tests pin the required attributes instead:
+  `tests/e2e/test_policy_denial.py`, `tests/e2e/test_human_in_the_loop.py` and
+  `tests/e2e/test_demo_flow.py`.
+- **Span names are not judged**, so `northstar.claim.submit`, `northstar.claim.wait`
+  and `northstar.autonomy_contract.change` are unchecked. The live-check test pins
+  only `northstar.policy.decision` and `northstar.review.decision`.
+- **Standard names show as "does not exist in the registry"** at `information`
+  level: our use of semconv names is not validated, only our own names.
+- **Re-running the live-check test alone** (`tests/e2e/test_registry_live_check.py`)
+  needs a restart of the live-check pod and fresh traffic first, or it fails with
+  "live-check received nothing":
+  `PYTHONPATH=. .venv/bin/python -m tests.harness.livecheck restart`.
+- **The collector-log loss guards go red** if they run within about 60 seconds of
+  a manual `report()`: reading the report restarts the weaver pod and the
+  collector's exporter retries in a burst. Wait a minute. The gate's order
+  (restart, the rest of `tests/`, then the live-check file) avoids both.
 
 ---
 
@@ -1437,7 +1502,7 @@ read from `deploy/platform/agentgateway/config.yaml`) and this happens:
 1. The settlement agent proposes the payment. The ledger records it `proposed`.
 2. The agent's `execute_payment` is answered by the gateway with `HTTP 403
    authorization failed`. The PDS is never asked, so there is no
-   `policy.decision` span for the execute and no refusal is recorded.
+   `northstar.policy.decision` span for the execute and no refusal is recorded.
 3. The agent's tool client treats a 403 as a failed call, not as a "no" tool
    result, so the claim's task ends `failed` ("could not be processed").
 4. The payment stays `proposed`. It is **not** `awaiting_approval`, so it is not
