@@ -92,7 +92,7 @@ type rejection struct {
 // What this field actually carries is the settlement-agent span active in
 // `decide_settlement` when the refusal was recorded -- settlement-agent's
 // own A2A server span, by the time `settlement_agent.run()` has returned --
-// not the Policy Decision Service's `policy.decision` span, and not the
+// not the Policy Decision Service's `northstar.policy.decision` span, and not the
 // denied `execute_payment` client span.
 //
 // Narrative is the one field on this whole struct that is model output, not

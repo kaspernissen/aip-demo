@@ -124,7 +124,7 @@ func confirmsPayment(payment Payment, statedAmount float64, statedCurrency strin
 //
 // What it deliberately is NOT: a rename or a supplement of anything
 // agentgateway or the PDS emits. The PDS's own refusal is already legible in
-// its `policy.decision` span (`policy.decision=deny` plus `policy.rule`), and
+// its `northstar.policy.decision` span (`northstar.policy.decision=deny` plus `northstar.policy.rule`), and
 // the gateway's spans are recorded exactly as they appear. This attribute is
 // only about the three causes that belong to this service, which is our own
 // code, and it is set nowhere else.
