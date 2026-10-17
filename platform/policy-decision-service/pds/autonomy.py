@@ -185,7 +185,7 @@ def resolve_autonomy(caller: str | None, client) -> AutonomyResolution:
 # standing rule that a missing value is absent, never zero or invented (see
 # `test_a_missing_value_is_absent_from_the_span_not_zero`), both are OMITTED
 # from the attribute dict below when `None` -- exactly the convention
-# `server.py` already applies to `ATTR_FLAG_VERSION` on the `policy.decision`
+# `server.py` already applies to `ATTR_FLAG_VERSION` on the `northstar.policy.decision`
 # span (`if resolution.version is not None: span.set_attribute(...)`). The
 # same applies to `variant` and `provider_name`, which can also be `None` (an
 # unreachable-provider resolution has neither), matching the hook's own
@@ -194,7 +194,7 @@ def resolve_autonomy(caller: str | None, client) -> AutonomyResolution:
 # WHAT A READER OF THIS LOG EVENT MUST KNOW: reading `feature_flag.version`
 # off THIS log event will find it absent for every real evaluation today,
 # same as the span. `scorer/contract.py` already routes the audit's
-# *correctness* around this -- the scorer reads `policy.decision`'s own
+# *correctness* around this -- the scorer reads `northstar.policy.decision`'s own
 # `feature_flag.version` span attribute (also absent, same reason) and
 # resolves the CURRENT contract version from flagd directly; this log event
 # is the human-readable record and the parity target, not a dependency of

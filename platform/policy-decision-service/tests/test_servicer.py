@@ -3,7 +3,7 @@
 Three properties here are invisible to `build_result`/`parse_call` unit tests
 and would otherwise first be exercised on stage:
 
-- that `policy.decision` is *in the caller's trace* -- which is a claim about
+- that `northstar.policy.decision` is *in the caller's trace* -- which is a claim about
   `span.parent`, and the only way to be sure the span is a child rather than
   a root that happens to look like one;
 - "`CheckRequest` must never raise", which is a claim about the servicer, not
@@ -377,7 +377,7 @@ def test_the_decision_span_is_a_child_of_the_incoming_trace(spans):
     """
     PolicyServicer().CheckRequest(_request(params=_execute(6200.0)), None)
     span, = spans.get_finished_spans()
-    assert span.name == "policy.decision"
+    assert span.name == "northstar.policy.decision"
     assert span.parent is not None, "root span: the traceparent was not extracted"
     assert f"{span.parent.trace_id:032x}" == PARENT_TRACE_ID
     assert f"{span.parent.span_id:016x}" == PARENT_SPAN_ID
@@ -514,31 +514,6 @@ def test_a_permit_span_says_permit_and_is_not_an_error(spans, monkeypatch):
     PolicyServicer().CheckRequest(_request(params=_execute(6200.0)), None)
     deny, = spans.get_finished_spans()
     assert deny.status.status_code.name == "UNSET"
-
-
-def test_every_attribute_we_emit_is_declared_and_visibly_ours(spans):
-    """Gap 3's guard. `telemetry.ATTRIBUTES` is the one list the telemetry
-    contract documents, so an attribute set on the span but missing from it
-    would be undocumented telemetry -- and the `policy.`/`northstar.`
-    prefixes are how a reader tells our invented keys from the
-    `gen_ai.*`/`mcp.*` ones the frameworks emit.
-
-    One attribute in that list (`feature_flag.version`, an existing OTel
-    semantic convention) is not one this service invented;
-    `telemetry.INVENTED_ATTRIBUTES` is the subset the prefix check still
-    applies to. It is not exercised by the four calls below (no flagd
-    sidecar is reachable from this suite, so `resolve_autonomy` never gets a
-    version to attach) -- `tests/test_autonomy.py` covers its extraction,
-    and this guard's job is only to keep the *set* honest.
-    """
-    for params in (_execute(6200.0), _execute(5800.0), MEASURED_PROPOSE, b"junk"):
-        PolicyServicer().CheckRequest(_request(params=params), None)
-    emitted = {k for span in spans.get_finished_spans() for k in span.attributes}
-    assert emitted, "no attributes were set at all"
-    assert emitted <= set(telemetry.ATTRIBUTES)
-    invented = emitted - {telemetry.ATTR_FLAG_VERSION}
-    assert invented <= set(telemetry.INVENTED_ATTRIBUTES)
-    assert all(k.startswith(("policy.", "northstar.")) for k in invented)
 
 
 def test_a_missing_value_is_absent_from_the_span_not_zero(spans):

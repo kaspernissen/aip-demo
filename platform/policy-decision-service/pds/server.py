@@ -85,7 +85,7 @@ log = logging.getLogger("pds")
 #
 # `TracingHook()` puts a `feature_flag.evaluation` event on whatever span is
 # active when the flag is resolved -- `_decide` below resolves inside the
-# `policy.decision` span, so that event lands there. `emit_evaluation_event`
+# `northstar.policy.decision` span, so that event lands there. `emit_evaluation_event`
 # (see `pds/autonomy.py`) sends a separate log record with the fields the
 # hook does not.
 api.set_provider(FlagdProvider(host=FLAGD_HOST, port=FLAGD_PORT))
@@ -264,7 +264,7 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
             # hop show up as one hop rather than two halves.
             #
             # Note this span is a SIBLING of `Guardrail`, not its child --
-            # `Guardrail` (CLIENT) and `policy.decision` (SERVER) carry the
+            # `Guardrail` (CLIENT) and `northstar.policy.decision` (SERVER) carry the
             # *same* parent span id, the gateway's `tools/call`. The gateway
             # propagates the context it received rather than the context of
             # its own client span, so the parent here is `tools/call`.
@@ -302,7 +302,7 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
         call = parse_call(request.mcp_request if request.HasField("mcp_request")
                           else None)
 
-        # Resolved unconditionally: every `policy.decision` span carries the
+        # Resolved unconditionally: every `northstar.policy.decision` span carries the
         # level in effect, even on the `_undecidable_method` path below.
         resolution = resolve_autonomy(caller, _flag_client)
         # The second of "two records per evaluation" -- a log record

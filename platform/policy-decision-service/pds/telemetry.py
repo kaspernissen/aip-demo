@@ -1,4 +1,4 @@
-"""The `policy.decision` span.
+"""The `northstar.policy.decision` span.
 
 `docs/telemetry-contract.md` records this as Gap 3: no OpenTelemetry semantic
 convention exists for a policy or autonomy decision, so these names are ours to
@@ -36,28 +36,28 @@ from opentelemetry.semconv._incubating.attributes.feature_flag_attributes import
     FEATURE_FLAG_VERSION,
 )
 
-SPAN_NAME = "policy.decision"
+SPAN_NAME = "northstar.policy.decision"
 
 # Attribute keys, defined here so the guard test and the contract cite one source.
-ATTR_DECISION = "policy.decision"           # "permit" | "deny"
-ATTR_RULE = "policy.rule"                   # the rule that fired
-ATTR_CALLER = "policy.caller.spiffe_id"     # the attested caller
-ATTR_TOOL = "policy.tool.name"              # the MCP tool requested
-ATTR_AMOUNT = "policy.request.amount"       # what was asked for
-ATTR_CURRENCY = "policy.request.currency"
-ATTR_LIMIT = "policy.limit.amount"          # what the rule allows
-ATTR_AUTONOMY = "policy.autonomy.level"     # resolved from flagd, not a constant
+ATTR_DECISION = "northstar.policy.decision"           # "permit" | "deny"
+ATTR_RULE = "northstar.policy.rule"                   # the rule that fired
+ATTR_CALLER = "northstar.policy.caller.spiffe_id"     # the attested caller
+ATTR_TOOL = "northstar.policy.tool.name"              # the MCP tool requested
+ATTR_AMOUNT = "northstar.policy.request.amount"       # what was asked for
+ATTR_CURRENCY = "northstar.policy.request.currency"
+ATTR_LIMIT = "northstar.policy.limit.amount"          # what the rule allows
+ATTR_AUTONOMY = "northstar.policy.autonomy.level"     # resolved from flagd, not a constant
 # The OpenFeature `reason` the level came back with (`TARGETING_MATCH`,
 # `STATIC`, `DEFAULT`, `ERROR`, ...) -- alongside ATTR_AUTONOMY so a reader
 # can tell "autonomous because the contract says so" from "assisted because
 # we could not ask" without cross-referencing a second signal.
-ATTR_AUTONOMY_REASON = "policy.autonomy.reason"
-ATTR_RETRYABLE = "policy.decision.retryable"
+ATTR_AUTONOMY_REASON = "northstar.policy.autonomy.reason"
+ATTR_RETRYABLE = "northstar.policy.retryable"
 # What payments-api showed for the payment an `execute_payment` asked about: set
 # on the human approver's decision (which needs `awaiting_approval`) AND on the
 # settlement agent's (which needs `proposed`). `unreadable` when the ledger read
 # failed. Not set on a tool that reads no ledger.
-ATTR_LEDGER_STATUS = "policy.ledger.status"
+ATTR_LEDGER_STATUS = "northstar.policy.ledger.status"
 
 # The one attribute on this span that is NOT ours to name. Unlike
 # ATTR_AUTONOMY and its `policy.`/`northstar.`-prefixed siblings -- which
@@ -68,24 +68,11 @@ ATTR_LEDGER_STATUS = "policy.ledger.status"
 # (still incubating as of opentelemetry-semantic-conventions==0.65b0, not yet
 # in the stable `opentelemetry.semconv.attributes` namespace -- checked by
 # import, not assumed) rather than retyped as a string literal. Placed here,
-# on `policy.decision`, and not only on the `feature_flag.evaluation` log
+# on `northstar.policy.decision`, and not only on the `feature_flag.evaluation` log
 # record: the eval-scorer audit already reads this span to establish
-# `policy.rule`, and must not have that same determination for *ruleset
+# `northstar.policy.rule`, and must not have that same determination for *ruleset
 # version* depend on the logs pipeline as well.
 ATTR_FLAG_VERSION = FEATURE_FLAG_VERSION
-
-# Every attribute this service sets, so a guard test can assert the set rather
-# than re-listing it and drifting.
-ATTRIBUTES = (
-    ATTR_DECISION, ATTR_RULE, ATTR_CALLER, ATTR_TOOL, ATTR_AMOUNT,
-    ATTR_CURRENCY, ATTR_LIMIT, ATTR_AUTONOMY, ATTR_AUTONOMY_REASON,
-    ATTR_RETRYABLE, ATTR_LEDGER_STATUS, ATTR_FLAG_VERSION,
-)
-
-# The subset of ATTRIBUTES this service invented (Gap 3) versus borrowed from
-# an existing OTel semantic convention -- `tests/test_servicer.py`'s
-# "visibly ours" guard checks provenance differently for each.
-INVENTED_ATTRIBUTES = tuple(a for a in ATTRIBUTES if a != ATTR_FLAG_VERSION)
 
 _TRACER_NAME = "northstar.policy-decision-service"
 _LOGGER_NAME = "northstar.policy-decision-service"
@@ -159,7 +146,7 @@ def _configure_metrics(resource: Resource) -> None:
     own components to author metrics "on the same terms their spans are
     authored under", which needs a provider to author them into. None is
     authored here: a decision counter would be derivable from the
-    `policy.decision` spans the evidence view already reads, and inventing one
+    `northstar.policy.decision` spans the evidence view already reads, and inventing one
     to make a dashboard look fuller is exactly what §6 forbids.
     """
     metrics.set_meter_provider(

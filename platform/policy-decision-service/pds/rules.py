@@ -220,7 +220,7 @@ def decide(req: PolicyInput) -> Decision:
 
     # `rule` composes only the autonomy segment, `settlement-agent.<level>.
     # execute_limit`, so it never mislabels the one settlement identity at
-    # either level: `policy.rule` on the `policy.decision` span is what a
+    # either level: `northstar.policy.rule` on the `northstar.policy.decision` span is what a
     # reader on stage reads off the trace. The reviewer-ui is not here at all:
     # it was answered above by `_human_approval`, under its own rule name.
     if req.amount > limit:

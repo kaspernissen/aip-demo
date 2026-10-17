@@ -253,7 +253,7 @@ def test_the_tracing_hook_puts_a_feature_flag_evaluation_event_on_the_active_spa
     client = api.get_client(domain=domain)
     client.add_hooks([TracingHook()])
 
-    with tracer.start_as_current_span("policy.decision"):
+    with tracer.start_as_current_span("northstar.policy.decision"):
         resolve_autonomy(SETTLEMENT_AGENT, client=client)
 
     span, = exporter.get_finished_spans()
