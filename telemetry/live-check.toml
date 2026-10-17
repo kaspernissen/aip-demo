@@ -30,6 +30,13 @@ admin_port = 4320
 # `not_stable` and `extends_namespace` are the findings a real report holds for
 # foreign names; only the first is a violation for ours (everything we define is
 # stability: development, so `not_stable` stays information).
+#
+# `required_attribute_not_present` is listed but NOT observed to fire: with the
+# registry's `required` `northstar.policy.rule` dropped from the decision span
+# (mutation, 2026-10-17), live-check v0.28.0 reported no finding at all. A missing
+# required attribute is therefore not caught by this gate; see the Task 3 fix-round
+# report. Listed so that a weaver release that starts checking it is not
+# silently lowered by the catch-all.
 [[live-check.finding_level_overrides]]
 ids = [
   "missing_attribute",
@@ -40,6 +47,7 @@ ids = [
   "unit_mismatch",
   "unexpected_instrument",
   "kind_mismatch",
+  "required_attribute_not_present",
 ]
 level = "violation"
 sample_names = ["northstar.*", "policy.*", "review.*", "claim.*", "settlement.*"]

@@ -549,6 +549,9 @@ if (( STAGE >= 4 )); then
     --from-file=live-check.toml="$ROOT/telemetry/live-check.toml" \
     --dry-run=client -o yaml | kubectl apply -f -
   kubectl apply -f "$ROOT/deploy/observability/weaver-live-check.yaml"
+  # ConfigMap changes do not reach a running pod's process: restart it so a
+  # rebuild loads the registry and policy in this checkout.
+  kubectl -n observability rollout restart deployment/weaver-live-check
 fi
 
 kubectl apply -f "$ROOT/deploy/observability/jaeger.yaml"

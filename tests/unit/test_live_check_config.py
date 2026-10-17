@@ -98,6 +98,7 @@ def test_the_manifest_pins_weaver_and_probes_the_admin_port():
     deployment = next(d for d in docs if d["kind"] == "Deployment")
     container = deployment["spec"]["template"]["spec"]["containers"][0]
     assert container["image"] == "otel/weaver:v0.28.0"
+    assert container["resources"]["requests"]["memory"] and container["resources"]["limits"]["memory"]
     assert container["readinessProbe"]["httpGet"] == {"path": "/health", "port": 4320}
     args = container["args"]
     assert args[args.index("--output") + 1] == "http"
@@ -115,6 +116,11 @@ def test_setup_kind_builds_both_configmaps_from_the_repo_at_stage_4_and_up():
     assert "weaver-live-check.yaml" in setup
 
 
+# Built, not written out, so tests/unit/test_no_legacy_names.py (which searches
+# tests too) does not read the retired name as a use of it.
+LEGACY_RULE = ".".join(("policy", "rule"))
+
+
 def _finding(level: str, signal_name: str, **context: str) -> dict:
     return {"id": "missing_attribute", "level": level, "signal_name": signal_name,
             "signal_type": "span", "message": "m", "context": context}
@@ -127,12 +133,12 @@ def test_owned_violations_judges_the_attribute_key_not_the_span_it_sits_on():
         {"live_check_result": {"all_advice": [
             _finding("violation", "northstar.policy.decision", attribute_key="northstar.policy.rulee"),
             _finding("violation", "northstar.policy.decision", attribute_key="kyverno.thing"),
-            _finding("violation", "GET", attribute_key="policy.rule"),
+            _finding("violation", "GET", attribute_key=LEGACY_RULE),
             _finding("violation", "kyverno.admission", attribute_key="admission.request.kind"),
             _finding("information", "northstar.policy.decision", attribute_key="northstar.policy.rule"),
         ]}}]}}]}
     owned = livecheck.owned_violations(report)
-    assert [f["context"]["attribute_key"] for f in owned] == ["northstar.policy.rulee", "policy.rule"]
+    assert [f["context"]["attribute_key"] for f in owned] == ["northstar.policy.rulee", LEGACY_RULE]
 
 
 def test_a_metric_finding_is_judged_by_the_signal_name():
@@ -164,3 +170,76 @@ def test_the_gate_restarts_live_check_before_the_e2e_run_and_judges_it_after():
     assert registry < restart < main_run < verdict
     assert '--ignore="$ROOT/tests/e2e/test_registry_live_check.py"' in gate
     assert "m9-live-check-report.json" in gate
+
+
+# --- the harness's report() and restart detection, with kubectl and HTTP faked ---
+
+
+def _fake_cluster(monkeypatch, tmp_path, identity):
+    import contextlib
+
+    calls: list[tuple[str, str]] = []
+
+    @contextlib.contextmanager
+    def fake_forward():
+        yield "http://fake"
+
+    def fake_request(base, method, path, timeout=30.0):
+        calls.append((method, path))
+        if (method, path) == ("GET", "/report"):
+            return 200, b'{"samples": [], "statistics": {}}'
+        return 200, b"{}"
+
+    monkeypatch.setattr(livecheck, "_forward", fake_forward)
+    monkeypatch.setattr(livecheck, "_request", fake_request)
+    monkeypatch.setattr(livecheck, "_pod_identity", lambda: dict(identity))
+    monkeypatch.setattr(livecheck, "STATE_PATH", tmp_path / "state.json")
+    monkeypatch.setattr(livecheck, "healthy", lambda: True)
+    monkeypatch.setattr(livecheck.time, "sleep", lambda s: None)
+    return calls
+
+
+def test_report_stops_reads_then_shuts_down_in_that_order(monkeypatch, tmp_path):
+    """A stopped receiver left running makes the collector log `Exporting failed`
+    for every batch, which other e2e guards count as loss."""
+    import json
+
+    identity = {"uid": "u1", "restartCount": 0}
+    calls = _fake_cluster(monkeypatch, tmp_path, identity)
+    (tmp_path / "state.json").write_text(json.dumps(identity))
+    livecheck.report()
+    assert calls == [("POST", "/stop"), ("GET", "/report"), ("POST", "/shutdown")]
+
+
+def test_report_fails_when_the_pod_restarted_since_restart(monkeypatch, tmp_path):
+    import json
+
+    calls = _fake_cluster(monkeypatch, tmp_path, {"uid": "u1", "restartCount": 1})
+    (tmp_path / "state.json").write_text(json.dumps({"uid": "u1", "restartCount": 0}))
+    with pytest.raises(AssertionError, match="restarted during the run"):
+        livecheck.report()
+    assert calls == []
+
+
+def test_report_fails_when_restart_never_recorded_the_pod(monkeypatch, tmp_path):
+    _fake_cluster(monkeypatch, tmp_path, {"uid": "u1", "restartCount": 0})
+    with pytest.raises(AssertionError, match="never recorded the pod"):
+        livecheck.report()
+
+
+def test_a_silent_kubectl_fails_the_forward_instead_of_hanging(monkeypatch):
+    import subprocess as sp
+    import time
+
+    real_popen = sp.Popen
+
+    def silent(cmd, **kwargs):
+        return real_popen(["sleep", "60"], **kwargs)
+
+    monkeypatch.setattr(livecheck.subprocess, "Popen", silent)
+    monkeypatch.setattr(livecheck, "FORWARD_TIMEOUT_S", 1.0)
+    started = time.monotonic()
+    with pytest.raises(RuntimeError, match="unreachable"):
+        with livecheck._forward():
+            pass
+    assert time.monotonic() - started < 10

@@ -235,6 +235,11 @@ def test_trace_b_is_rooted_at_review_decision_and_links_to_trace_a(approved):
     root = trace_b.root()
     assert root.operation == "northstar.review.decision"
     assert any(link.trace_id == approved["trace_id"] for link in root.links), root.links
+    # The root lands first; payments-api's execute span arrives up to ~5 s later
+    # (its batch processor). Wait for it, bounded, rather than assert on the
+    # first read.
+    trace_b = JaegerClient(JAEGER_URL).wait_for_trace_id(
+        trace_b.trace_id, operation="POST /payments/{paymentId}/execute", timeout=30)
     decisions = [s for s in trace_b.spans if s.operation == "northstar.policy.decision"]
     assert [d.attrs["northstar.policy.rule"] for d in decisions] == ["human-approved.execute"]
     assert decisions[0].attrs["northstar.policy.ledger.status"] == "awaiting_approval"
