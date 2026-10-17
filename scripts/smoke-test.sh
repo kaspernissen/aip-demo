@@ -220,6 +220,12 @@ done
 echo ""
 echo -e "${BLUE}--- Step 1/2: Unit tests ---${NC}"
 
+# The telemetry registry (M9): `weaver registry check`, plus the generated docs
+# region in docs/telemetry-contract.md being current. Needs docker and the
+# network (Weaver resolves the semconv dependency), like the live-check pod.
+echo -e "${YELLOW}telemetry registry (weaver registry check)${NC}"
+"$ROOT/scripts/check-registry.sh"
+
 # Generate the ExtMCP gRPC stubs FIRST, before any suite runs. Two suites below
 # need them and neither says so today:
 #   * platform/policy-decision-service/tests/ refuses to import without them
@@ -309,6 +315,19 @@ echo -e "${BLUE}--- Stage 7: the two beat scripts, exactly as an operator runs t
 
 echo ""
 echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included ---${NC}"
+# Weaver live-check (M9) is emptied HERE, after the unit suites and the two
+# beat scripts and before the e2e run, so its report covers exactly the traffic
+# Step 2 drives: every span, metric and log the collector copies to it. The
+# restart is `POST /shutdown` through the forward start-demo.sh owns (the
+# kubelet restarts the container in the same pod, so the forward keeps
+# working -- see tests/harness/livecheck.py for why not `rollout restart`).
+# An unreachable live-check fails the gate.
+echo -e "${YELLOW}weaver live-check: restarting for an empty report${NC}"
+PYTHONPATH="$ROOT" "$ROOT/.venv/bin/python" -m tests.harness.livecheck restart || {
+  echo -e "${RED}Error: weaver live-check is unreachable or did not restart.${NC}" >&2
+  echo "It needs deploy/weaver-live-check Ready in the observability namespace and its forward (localhost:18400): ./scripts/start-demo.sh" >&2
+  exit 1
+}
 # This system's headline claim is that ONE trace spans the browser down
 # to payments-api. The default pytest run skips tests/e2e/test_browser_root_span.py
 # entirely (it is gated behind RUN_BROWSER_TESTS=1, since it needs a real
@@ -343,12 +362,41 @@ echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included 
 SKIP_LOG="$(mktemp -t northstar-gate-XXXXXX)"
 trap 'rm -f "$SKIP_LOG"' EXIT
 set +e
-RUN_BROWSER_TESTS=1 "$ROOT/.venv/bin/python" -m pytest "$ROOT/tests" -v 2>&1 | tee "$SKIP_LOG"
+# tests/e2e/test_registry_live_check.py is NOT in this run (`--ignore`): it reads
+# the report of everything this run emitted, so it runs as its own step after it.
+RUN_BROWSER_TESTS=1 "$ROOT/.venv/bin/python" -m pytest "$ROOT/tests" -v \
+  --ignore="$ROOT/tests/e2e/test_registry_live_check.py" 2>&1 | tee "$SKIP_LOG"
 PYTEST_STATUS=${PIPESTATUS[0]}
 set -e
 if [[ $PYTEST_STATUS -ne 0 ]]; then
   echo -e "${RED}The gate's test run failed (exit $PYTEST_STATUS).${NC}" >&2
   exit "$PYTEST_STATUS"
+fi
+
+# The live-check verdict, AFTER everything above has emitted its telemetry. Its
+# own pytest run, with its own skip accounting: a skipped live-check is a
+# failure here, like every other skip in this gate. The test saves the report it
+# read to .demo/m9-live-check-report.json; the gate fails if that file is missing.
+LIVE_CHECK_REPORT="$ROOT/.demo/m9-live-check-report.json"
+rm -f "$LIVE_CHECK_REPORT"
+LIVE_CHECK_LOG="$(mktemp -t northstar-live-check-XXXXXX)"
+trap 'rm -f "$SKIP_LOG" "$LIVE_CHECK_LOG"' EXIT
+set +e
+RUN_BROWSER_TESTS=1 "$ROOT/.venv/bin/python" -m pytest "$ROOT/tests/e2e/test_registry_live_check.py" -v 2>&1 | tee "$LIVE_CHECK_LOG"
+LIVE_CHECK_STATUS=${PIPESTATUS[0]}
+set -e
+if [[ $LIVE_CHECK_STATUS -ne 0 ]]; then
+  echo -e "${RED}The registry live-check failed (exit $LIVE_CHECK_STATUS): the platform emitted telemetry the registry does not describe.${NC}" >&2
+  echo "The findings are printed above; the full report is $LIVE_CHECK_REPORT" >&2
+  exit "$LIVE_CHECK_STATUS"
+fi
+if [[ ! -s "$LIVE_CHECK_REPORT" ]]; then
+  echo -e "${RED}The live-check test passed but $LIVE_CHECK_REPORT was not written.${NC}" >&2
+  exit 1
+fi
+if grep -qE "[0-9]+ skipped" "$LIVE_CHECK_LOG"; then
+  echo -e "${RED}The registry live-check was skipped, which is a failure.${NC}" >&2
+  exit 1
 fi
 
 # Counted off pytest's own summary line ("N skipped"), not by grepping for

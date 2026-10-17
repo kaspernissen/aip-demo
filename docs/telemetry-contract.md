@@ -2919,13 +2919,15 @@ are not symmetric**:
 
 | Pipeline | Exporters |
 |---|---|
-| `traces` | `otlp_grpc/jaeger`, `forward/opensearch`, `otlp_grpc/dash0`, `debug` |
+| `traces` | `otlp_grpc/jaeger`, `forward/opensearch`, `otlp_grpc/weaver` (stage 4 only), `otlp_grpc/dash0`, `debug` |
 | `traces/opensearch` (stage 4 only) | `opensearch/trace` |
-| `metrics` | `otlp_http/prometheus` (stage 4 only), `otlp_grpc/dash0`, `debug` |
-| `logs` | `opensearch/logs` (stage 4 only), `otlp_grpc/dash0`, `debug` |
+| `metrics` | `otlp_http/prometheus` (stage 4 only), `otlp_grpc/weaver` (stage 4 only), `otlp_grpc/dash0`, `debug` |
+| `logs` | `opensearch/logs` (stage 4 only), `otlp_grpc/weaver` (stage 4 only), `otlp_grpc/dash0`, `debug` |
 
 **Traces go to Jaeger, OpenSearch and Dash0; metrics go to Prometheus and
-Dash0; logs go to OpenSearch and Dash0.** Jaeger is a traces-only backend by design, so
+Dash0; logs go to OpenSearch and Dash0.** Every signal also goes, as a copy and never a sample, to
+Weaver live-check (`otlp_grpc/weaver`), which checks it against the registry
+(M9). Jaeger is a traces-only backend by design, so
 it was never a candidate for the other two signals — this is not an oversight,
 it is what "traces to a vendor-neutral OSS backend, everything else to whichever
 vendor is configured" looks like when the OSS backend genuinely can't carry

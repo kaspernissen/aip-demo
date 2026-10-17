@@ -173,6 +173,16 @@ exporters:
       insecure: true
   # END stage-4-only
 
+  # BEGIN stage-4-only
+  # A COPY of everything for Weaver live-check (M9). Never a sample: the
+  # registry is checked against the same traffic every backend receives.
+  otlp_grpc/weaver:
+    endpoint: weaver-live-check.observability.svc.cluster.local:4317
+    tls: {insecure: true}
+    sending_queue: {enabled: true}
+    retry_on_failure: {enabled: true}
+  # END stage-4-only
+
 # BEGIN stage-4-only
 # The `forward/` connector tee. Identical to collector-config.yaml's; see
 # that file for why.
@@ -192,6 +202,7 @@ service:
         - otlp_grpc/jaeger
         # BEGIN stage-4-only
         - forward/opensearch
+        - otlp_grpc/weaver
         # END stage-4-only
         - otlp_grpc/dash0
         - debug
@@ -218,6 +229,7 @@ service:
       exporters:
         # BEGIN stage-4-only
         - otlp_http/prometheus
+        - otlp_grpc/weaver
         # END stage-4-only
         - otlp_grpc/dash0
         - debug
@@ -229,6 +241,7 @@ service:
       exporters:
         # BEGIN stage-4-only
         - opensearch/logs
+        - otlp_grpc/weaver
         # END stage-4-only
         - otlp_grpc/dash0
         - debug

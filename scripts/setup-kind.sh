@@ -524,13 +524,32 @@ if [[ "${STAGE}" -lt 4 ]]; then
   COLLECTOR_CONFIG_APPLIED="$(mktemp -t collector-config.XXXXXX)"
   trap 'rm -f "$COLLECTOR_CONFIG_APPLIED"' EXIT
   sed "$STAGE4_ONLY_STRIP" "$COLLECTOR_CONFIG" > "$COLLECTOR_CONFIG_APPLIED"
-  echo -e "${YELLOW}Stage ${STAGE}: dropping every stage-4-only region from the collector config -- the OpenSearch trace branch and the Prometheus metrics exporter (both backends are installed at stage 4 only).${NC}"
+  echo -e "${YELLOW}Stage ${STAGE}: dropping every stage-4-only region from the collector config -- the OpenSearch trace branch, the Prometheus metrics exporter and the Weaver live-check copy (all three backends are installed at stage 4 only).${NC}"
 fi
 
 kubectl create configmap otel-collector-config \
   --namespace observability \
   --from-file=collector-config.yaml="$COLLECTOR_CONFIG_APPLIED" \
   --dry-run=client -o yaml | kubectl apply -f -
+
+# Weaver live-check (M9) is applied BEFORE the collector, at stage 4 and up, the
+# stages whose collector config carries the `otlp_grpc/weaver` exporter. Both
+# ConfigMaps come from the repo, so the registry the pod checks against is the
+# one in this checkout.
+# (Written `(( ))`, not `[[ ]]`, on purpose: tests/unit/test_stage4_config.py
+# reads the ONE `[[ "${STAGE}" -ge 4 ]]` block below to learn what stage 4
+# installs, and this is not part of it.)
+if (( STAGE >= 4 )); then
+  kubectl create configmap weaver-registry \
+    --namespace observability \
+    --from-file="$ROOT/telemetry/registry" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  kubectl create configmap weaver-live-check-config \
+    --namespace observability \
+    --from-file=live-check.toml="$ROOT/telemetry/live-check.toml" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  kubectl apply -f "$ROOT/deploy/observability/weaver-live-check.yaml"
+fi
 
 kubectl apply -f "$ROOT/deploy/observability/jaeger.yaml"
 kubectl apply -f "$ROOT/deploy/observability/collector.yaml"

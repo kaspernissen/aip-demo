@@ -1,0 +1,97 @@
+# Weaver live-check (M9): checks the telemetry the platform really emits
+# against telemetry/registry. The collector sends it a COPY of every span,
+# metric and log (exporter `otlp_grpc/weaver`, stage-4-only); nothing is
+# sampled and nothing is dropped.
+#
+# Two ConfigMaps, both built by scripts/setup-kind.sh from the repo:
+#   weaver-registry           <- telemetry/registry
+#   weaver-live-check-config  <- telemetry/live-check.toml
+#
+# The semconv v1.44.0 dependency (telemetry/registry/manifest.yaml) is fetched
+# from GitHub when the pod starts, so the pod needs egress to github.com. No
+# Cilium policy selects this pod, so its egress is unrestricted; if one is ever
+# added, github.com:443 must be allowed or the pod never gets Ready.
+#
+# Admin port 4320 (not the OTLP port): GET /health, POST /stop, GET /report
+# (409 while still receiving), POST /shutdown. The gate restarts the pod
+# (kubectl rollout restart) to start from an empty report.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weaver-live-check
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: weaver-live-check
+  template:
+    metadata:
+      labels:
+        app: weaver-live-check
+    spec:
+      containers:
+        - name: weaver
+          image: otel/weaver:v0.28.0
+          args:
+            - registry
+            - live-check
+            - -r
+            - /registry
+            - --config
+            - /config/live-check.toml
+            - --input-source
+            - otlp
+            - --output
+            - http
+            - --format
+            - json
+          env:
+            # Weaver caches the semconv checkout under $HOME.
+            - name: HOME
+              value: /tmp
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: admin
+              containerPort: 4320
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4320
+            periodSeconds: 3
+            failureThreshold: 60
+          volumeMounts:
+            - name: registry
+              mountPath: /registry
+              readOnly: true
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: registry
+          configMap:
+            name: weaver-registry
+        - name: config
+          configMap:
+            name: weaver-live-check-config
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: weaver-live-check
+  namespace: observability
+spec:
+  selector:
+    app: weaver-live-check
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+    - name: admin
+      port: 4320
+      targetPort: 4320

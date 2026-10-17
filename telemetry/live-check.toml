@@ -1,0 +1,32 @@
+# Weaver live-check findings policy (M9). Read by the weaver-live-check pod in
+# the observability namespace (deploy/observability/weaver-live-check.yaml); the
+# flags are on that Deployment, this file holds what flags cannot.
+#
+# Why overrides rather than a clean registry-wide check: live-check judges every
+# signal the collector copies to it, and most of that traffic is OpenTelemetry
+# semantic conventions, Kyverno, Cilium, SPIRE and agentgateway names that this
+# repo does not own. Those must not fail the gate. The names we own, and the
+# retired un-prefixed namespaces we must no longer emit, must.
+#
+# Overrides are FIRST MATCH WINS and globs have no negation, so the specific
+# override comes first and the catch-all last (measured on weaver v0.28.0).
+
+[live-check]
+fail_on = "violation"
+
+[live-check.otlp]
+grpc_address = "0.0.0.0"
+grpc_port = 4317
+admin_port = 4320
+
+# Names we own, plus the retired namespaces. `undefined_enum_variant` is
+# `information` by default; for our names an enum value outside the registry's
+# set is a real defect, so it is raised.
+[[live-check.finding_level_overrides]]
+ids = ["missing_attribute", "undefined_enum_variant", "type_mismatch"]
+level = "violation"
+sample_names = ["northstar.*", "policy.*", "review.*", "claim.*", "settlement.*"]
+
+# Everything else is information. Must stay last.
+[[live-check.finding_level_overrides]]
+level = "information"
