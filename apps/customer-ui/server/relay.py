@@ -5,6 +5,12 @@ claims-agent in its push config, sent back by the SDK as
 X-A2A-Notification-Token. The first push binds the token to its task id. A
 waiter blocks on an asyncio.Event, never on a clock: the relay has no loop.
 Bounded: the oldest token is forgotten past MAX_CLAIMS.
+
+Known limits, acceptable for this demo: issuing a token (/claims/push-config)
+is unauthenticated, so anyone who can reach the server can mint tokens, and
+MAX_CLAIMS calls evict every live claim (its browser then gets a 401 on the
+events stream and falls back to one tasks/get). State is in memory and
+single-replica: a restart forgets all tokens.
 """
 from __future__ import annotations
 
@@ -40,12 +46,22 @@ class Relay:
     def _find(self, token: str | None) -> _Claim | None:
         if not token:
             return None
+        try:
+            # Bytes: compare_digest raises TypeError on a non-ASCII str, and
+            # Starlette decodes header values as latin-1.
+            candidate = token.encode("latin-1")
+        except UnicodeEncodeError:
+            return None
         found = None
         for known, claim in self._claims.items():
             # No early exit: every known token is compared, constant-time each.
-            if hmac.compare_digest(known, token):
+            if hmac.compare_digest(known.encode("ascii"), candidate):
                 found = claim
         return found
+
+    def claim_for(self, token: str | None) -> _Claim | None:
+        """Resolve a token once; hand the result to follow()."""
+        return self._find(token)
 
     def push(self, token: str | None, task: dict) -> int:
         claim = self._find(token)
@@ -62,9 +78,12 @@ class Relay:
     def known(self, token: str | None) -> bool:
         return self._find(token) is not None
 
-    async def follow(self, token: str):
-        """Yield every snapshot for this token, in order, until a terminal one."""
-        claim = self._find(token)
+    async def follow(self, claim: _Claim):
+        """Yield every snapshot of this claim, in order, until a terminal one.
+
+        Takes the claim itself, not the token: an eviction after the caller
+        checked the token must not leave a stream with nothing to follow.
+        """
         sent = 0
         while True:
             while sent < len(claim.snapshots):

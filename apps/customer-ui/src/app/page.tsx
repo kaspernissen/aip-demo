@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SpanStatusCode, type SpanContext } from "@opentelemetry/api";
+import { SpanStatusCode, context, trace, type SpanContext } from "@opentelemetry/api";
 import { awaitOutcome, getPushConfig, streamClaim, type Claim, type ClaimResult } from "../a2a";
 import { determinationView, formatElapsed, outcomeWord } from "../view";
 import { getTracer, initTelemetry } from "../telemetry";
@@ -62,7 +62,11 @@ export default function Page() {
         // This server's own origin: it issues the push token and relays the push.
         const uiBase = window.location.origin;
         const push = await getPushConfig(uiBase);
-        const snap = await streamClaim(CLAIMS_AGENT_URL, submitted, (s) => s.result && setResult(s.result), push);
+        // The await above dropped the active context (Zone.js); re-enter this
+        // span's so streamClaim's traceparent is trace A's, not nothing.
+        const snap = await context.with(trace.setSpan(context.active(), span), () =>
+          streamClaim(CLAIMS_AGENT_URL, submitted, (s) => s.result && setResult(s.result), push),
+        );
         if (snap.result) setResult(snap.result);
         if (snap.state === "input-required") {
           waiting = { taskId: snap.taskId, context: span.spanContext(), token: push.token };
@@ -90,10 +94,10 @@ export default function Page() {
     // one read of this server's events stream, fed by the claims-agent's push:
     // no polling.
     if (waiting) {
-      const { taskId, context, token } = waiting as { taskId: string; context: SpanContext; token: string };
+      const { taskId, context: submitContext, token } = waiting as { taskId: string; context: SpanContext; token: string };
       await getTracer().startActiveSpan(
         "northstar.claim.wait",
-        { links: [{ context }], attributes: { "northstar.claim.id": submitted.claimId } },
+        { links: [{ context: submitContext }], attributes: { "northstar.claim.id": submitted.claimId } },
         async (wait) => {
           try {
             const final = await awaitOutcome(

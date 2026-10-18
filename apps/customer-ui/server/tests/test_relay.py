@@ -88,6 +88,21 @@ def test_a_token_in_the_query_string_is_not_accepted(client):
     assert client.get(f"/claims/events?token={tok}").status_code == 401
 
 
+def test_a_non_ascii_token_is_a_401_not_a_500(client):
+    # Starlette decodes header values as latin-1; "\xe9" would crash compare_digest as str.
+    assert client.get("/claims/events", headers={"x-claim-token": b"caf\xe9"}).status_code == 401
+    assert client.post("/a2a/push", json=TASK, headers={"x-a2a-notification-token": b"caf\xe9"}).status_code == 401
+
+
+async def test_an_eviction_after_the_check_does_not_break_an_open_stream():
+    r = Relay(max_claims=1)
+    tok = r.issue()
+    claim = r.claim_for(tok)
+    r.push(tok, _task("completed"))
+    r.issue()  # evicts tok
+    assert [s["status"]["state"] async for s in r.follow(claim)] == ["completed"]
+
+
 def test_healthz(client):
     assert client.get("/healthz").status_code == 200
 

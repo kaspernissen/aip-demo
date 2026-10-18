@@ -167,6 +167,13 @@ export async function streamClaim(
   return snap;
 }
 
+/** The server refused the events stream (401: it no longer knows the token). Not a drop. */
+class EventsRefused extends Error {
+  constructor(status: number) {
+    super(`events returned HTTP ${status}`);
+  }
+}
+
 /**
  * One read of the server's events stream for this claim. Null when it ended
  * with no terminal state (a drop). The token goes in a header, never a URL.
@@ -175,10 +182,11 @@ async function followEvents(
   uiBase: string,
   token: string,
   onEvent: (s: TaskSnapshot) => void,
+  carrier: Record<string, string>,
 ): Promise<TaskSnapshot | null> {
-  const headers = injectContext({ "x-claim-token": token, accept: "text/event-stream" });
+  const headers = { ...carrier, "x-claim-token": token, accept: "text/event-stream" };
   const response = await fetch(`${uiBase.replace(/\/$/, "")}/claims/events`, { headers });
-  if (!response.ok) throw new Error(`events returned HTTP ${response.status}`);
+  if (!response.ok) throw new EventsRefused(response.status);
   let snap: TaskSnapshot | null = null;
   for await (const task of frames(response)) {
     snap = snapshotOf(task, snap);
@@ -188,8 +196,13 @@ async function followEvents(
   return null;
 }
 
-export async function getTask(baseUrl: string, taskId: string): Promise<TaskSnapshot> {
-  const headers = injectContext({ "content-type": "application/json" });
+export async function getTask(
+  baseUrl: string,
+  taskId: string,
+  carrier?: Record<string, string>,
+): Promise<TaskSnapshot> {
+  // `carrier`: trace headers a caller built before its own first await.
+  const headers = { ...(carrier ?? injectContext({})), "content-type": "application/json" };
   const response = await post(
     baseUrl,
     { jsonrpc: "2.0", id: newId(), method: "tasks/get", params: { id: taskId } },
@@ -214,16 +227,39 @@ export async function awaitOutcome(
   onEvent: (s: TaskSnapshot) => void,
   { maxEmptyDrops = 5 }: { maxEmptyDrops?: number } = {},
 ): Promise<TaskSnapshot> {
+  // Built before the first await: every request below, including the reopens
+  // after a drop, carries the wait span's context.
+  const carrier = injectContext({});
   let emptyDrops = 0;
-  for (;;) {
-    const done = await followEvents(uiBase, token, onEvent);
-    if (done) return done;
-    const now = await getTask(baseUrl, taskId);
-    onEvent(now);
-    if (TERMINAL_STATES.has(now.state)) return now;
+  const drop = () => {
     emptyDrops += 1;
     if (emptyDrops >= maxEmptyDrops) {
       throw new Error(`lost the claim's stream ${emptyDrops} times in a row; reload the page`);
     }
+  };
+  for (;;) {
+    let done: TaskSnapshot | null;
+    try {
+      done = await followEvents(uiBase, token, onEvent, carrier);
+    } catch (err) {
+      // A refused stream (a customer-ui restart forgot the token) or a broken
+      // one: read the task once. Terminal is the outcome.
+      let snap: TaskSnapshot | null = null;
+      try {
+        snap = await getTask(baseUrl, taskId, carrier);
+      } catch {
+        throw err;
+      }
+      onEvent(snap);
+      if (TERMINAL_STATES.has(snap.state)) return snap;
+      if (err instanceof EventsRefused) throw err; // reopening would be refused again
+      drop(); // a network error counts as a drop
+      continue;
+    }
+    if (done) return done;
+    const now = await getTask(baseUrl, taskId, carrier);
+    onEvent(now);
+    if (TERMINAL_STATES.has(now.state)) return now;
+    drop();
   }
 }

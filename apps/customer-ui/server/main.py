@@ -51,11 +51,12 @@ def create_app(relay: Relay | None = None, static_dir: str = STATIC_DIR) -> Star
 
     async def events(request: Request) -> Response:
         token = request.headers.get("x-claim-token")
-        if not relay.known(token):
+        claim = relay.claim_for(token)
+        if claim is None:
             return Response(status_code=401)
 
         async def frames():
-            async for snapshot in relay.follow(token):
+            async for snapshot in relay.follow(claim):
                 yield f"data: {json.dumps(snapshot)}\n\n"
 
         return StreamingResponse(

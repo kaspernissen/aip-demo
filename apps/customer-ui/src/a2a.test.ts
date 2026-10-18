@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SpanContext } from "@opentelemetry/api";
+import { context, trace, type SpanContext } from "@opentelemetry/api";
 import { awaitOutcome, buildStreamRequest, getPushConfig, streamClaim, type Claim } from "./a2a";
 import { getTracer, initTelemetry } from "./telemetry";
 
@@ -172,9 +172,53 @@ describe("awaitOutcome", () => {
     await expect(run(() => {}, { maxEmptyDrops: 3 })).rejects.toThrow(/lost the claim's stream/);
   });
 
-  it("surfaces an events refusal rather than looping", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 401 })));
+  it("falls back to one tasks/get when the events stream is refused, and resolves if terminal", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("", { status: 401 }))
+      .mockResolvedValueOnce(getResponse("completed", { claimId: "C", status: "executed" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const snap = await run();
+    expect(snap.state).toBe("completed");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces a refusal, without looping, when the task is not terminal", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("", { status: 401 }))
+      .mockResolvedValueOnce(getResponse("input-required"));
+    vi.stubGlobal("fetch", fetchMock);
     await expect(run()).rejects.toThrow(/HTTP 401/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats a network error on the events stream as a drop: tasks/get, then reopen", async () => {
+    const broken = new Response(
+      new ReadableStream({ start: (c) => c.error(new TypeError("network error")) }),
+      { status: 200 },
+    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(broken)
+      .mockResolvedValueOnce(getResponse("input-required"))
+      .mockResolvedValueOnce(eventsResponse([taskJson("completed", { claimId: "C", status: "executed" })]));
+    vi.stubGlobal("fetch", fetchMock);
+    const snap = await run();
+    expect(snap.state).toBe("completed");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("bounds repeated network errors by maxEmptyDrops", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) =>
+      Promise.resolve(
+        String(url).endsWith("/claims/events")
+          ? new Response(new ReadableStream({ start: (c) => c.error(new TypeError("network error")) }), { status: 200 })
+          : getResponse("input-required"),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(run(() => {}, { maxEmptyDrops: 3 })).rejects.toThrow(/lost the claim's stream/);
   });
 
   it("never puts the token in a URL", async () => {
@@ -227,5 +271,57 @@ describe("traceparent", () => {
     expect(match, `traceparent ${traceparent} does not match the W3C format`).toBeTruthy();
     expect(match![1]).toBe(spanContext!.traceId);
     expect(match![2]).toBe(spanContext!.spanId);
+  });
+  it("keeps trace A's traceparent on message/stream after getPushConfig's await, as page.tsx calls them", async () => {
+    initTelemetry();
+    const fetchMock = vi.fn(async (url: string) =>
+      String(url).endsWith("/claims/push-config")
+        ? new Response(JSON.stringify({ url: "http://ui/a2a/push", token: "t" }))
+        : sseResponse([task("completed", { claimId: "CLM-1842", status: "executed" })]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    let spanContext: SpanContext | undefined;
+    await getTracer().startActiveSpan("northstar.claim.submit", async (span) => {
+      spanContext = span.spanContext();
+      try {
+        const push = await getPushConfig("http://ui");
+        await context.with(trace.setSpan(context.active(), span), () =>
+          streamClaim("http://localhost:19001", claim, () => {}, push),
+        );
+      } finally {
+        span.end();
+      }
+    });
+
+    const call = fetchMock.mock.calls.find((c) => String(c[0]) === "http://localhost:19001/") as any[];
+    const traceparent = (call[1].headers as Record<string, string>).traceparent;
+    expect(traceparent, "message/stream carried no traceparent").toBeTruthy();
+    expect(traceparent).toContain(spanContext!.traceId);
+    expect(traceparent).toContain(spanContext!.spanId);
+  });
+
+  it("keeps the wait span's traceparent on the events reopen and tasks/get after a drop", async () => {
+    initTelemetry();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("", { status: 200 })) // events: ends, no terminal
+      .mockResolvedValueOnce(new Response(JSON.stringify({ jsonrpc: "2.0", id: "1", result: task("input-required") })))
+      .mockResolvedValueOnce(new Response(`data: ${JSON.stringify(task("completed", { claimId: "C", status: "executed" }))}\n\n`));
+    vi.stubGlobal("fetch", fetchMock);
+    let spanContext: SpanContext | undefined;
+    await getTracer().startActiveSpan("northstar.claim.wait", async (span) => {
+      spanContext = span.spanContext();
+      try {
+        await awaitOutcome("http://agent", "http://ui", "t1", "tok", () => {});
+      } finally {
+        span.end();
+      }
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const c of fetchMock.mock.calls as any[][]) {
+      const tp = (c[1].headers as Record<string, string>).traceparent;
+      expect(tp, `no traceparent on ${c[0]}`).toContain(spanContext!.traceId);
+    }
   });
 });

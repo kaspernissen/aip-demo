@@ -2,8 +2,27 @@ from __future__ import annotations
 
 import os
 
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+
+class _Sink(BaseHTTPRequestHandler):
+    """A collector that accepts everything: exports succeed, nothing is logged."""
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("content-length", 0)))
+        self.send_response(200)
+        self.send_header("content-length", "0")
+        self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+_sink = HTTPServer(("127.0.0.1", 0), _Sink)
+threading.Thread(target=_sink.serve_forever, daemon=True).start()
 # Before bootstrap is imported: nothing here may reach a real collector.
-os.environ.setdefault("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9")
+os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"http://127.0.0.1:{_sink.server_address[1]}"
 
 import httpx
 import pytest
