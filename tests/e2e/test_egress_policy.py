@@ -640,10 +640,29 @@ def test_claims_agent_cannot_read_anything_else_on_the_push_receiver(policy_pres
 
 
 def test_claims_agent_cannot_reach_another_customer_ui_port(policy_present):
-    result = _probe("claims-agent", PUSH_HOST, 9090)
-    assert not result["reached"], (
-        "claims-agent reached a customer-ui port other than 8080; the push "
-        "rule is wider than one port"
+    """A port other than 8080 on the customer-ui POD is dropped, not refused.
+
+    The Service exposes only 8080, so a probe through the Service name would
+    fail with or without the policy and prove nothing. This probes the pod IP.
+    Nothing on the pod listens on 9090, so the kernel would answer a SYN with a
+    RST (ConnectionRefusedError) if the packet reached it. With the Reach rule
+    admitting only 8080, Cilium drops the SYN at claims-agent's egress, and the
+    connect TIMES OUT. A timeout therefore says the policy dropped it; a refusal
+    says the rule is wider than one port. The datapath inventory test carries
+    the same "one port" fact from the BPF map.
+    """
+    proc = _kubectl(
+        "-n", AGENT_NS, "get", "pod", "-l", "app=customer-ui",
+        "-o", "jsonpath={.items[0].status.podIP}",
+    )
+    pod_ip = proc.stdout.strip()
+    assert pod_ip, f"could not read the customer-ui pod IP: {proc.stderr.strip()}"
+    result = _probe("claims-agent", pod_ip, 9090)
+    assert not result["reached"], "claims-agent connected to customer-ui:9090"
+    assert result["error"] in ("TimeoutError", "timeout"), (
+        f"connect to customer-ui pod {pod_ip}:9090 ended {result['error']!r}, not a "
+        "timeout: a refusal means the SYN reached the pod, so Cilium did not drop it "
+        "and the push rule is wider than one port"
     )
 
 

@@ -332,7 +332,7 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
                 "/"
             ) == CLAIMS_AGENT_URL.rstrip("/"):
                 # The FIRST POST is the claim stream (trace A). The page then
-                # opens tasks/resubscribe under a second, linked root span
+                # opens the customer-ui events stream under a second, linked root span
                 # (trace B), which must not overwrite it.
                 captured.setdefault("traceparent", request.headers.get("traceparent", ""))
 

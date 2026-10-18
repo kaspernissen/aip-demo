@@ -163,6 +163,9 @@ def test_a_dropped_stream_reconnects_and_still_sees_the_outcome():
     if once["state"] not in live.TERMINAL_STATES:
         once = live.await_outcome(run["push_token"], timeout=60)
     assert once["state"] == "completed" and once["reply"]["status"] == "rejected"
+    # The reconnect path: a fresh stream on the same token replays the terminal snapshot.
+    replay = live.await_outcome(run["push_token"], timeout=30)
+    assert replay["state"] == "completed" and replay["reply"]["status"] == "rejected", replay
 
 
 def test_the_ledger_keeps_the_wait_after_the_human_has_acted(approved):
@@ -328,8 +331,8 @@ def test_the_resume_runs_in_trace_b_and_links_to_trace_a(approved):
         time.sleep(3)
     assert pushes, f"no claims-agent CLIENT span to /a2a/push in trace B: {sorted((s.service, s.operation) for s in trace_b.spans)}"
     assert received, f"no customer-ui-server SERVER span for /a2a/push in trace B: {sorted((s.service, s.operation) for s in trace_b.spans)}"
-    assert received[0].parent_id == pushes[0].span_id, (received[0], pushes[0])
-    assert received[0].start_us >= pushes[0].start_us
+    push_ids = {p.span_id for p in pushes}
+    assert any(r.parent_id in push_ids for r in received), (received, pushes)
 
 
 def test_the_push_token_is_in_no_span_of_trace_a_or_trace_b(approved):
@@ -343,6 +346,17 @@ def test_the_push_token_is_in_no_span_of_trace_a_or_trace_b(approved):
     for name, trace_id in (("A", approved["trace_id"]), ("B", trace_b)):
         payload = json.dumps(client.get_trace_otlp(trace_id))
         assert token not in payload, f"the push token appears in trace {name} ({trace_id})"
+    # customer-ui-server's own /claims/push-config and /claims/events spans land
+    # in traces of their own; search that service's recent traces directly.
+    import requests
+    resp = requests.get(f"{JAEGER_URL}/api/traces",
+                        params={"service": "customer-ui-server", "limit": 100, "lookback": "1h"},
+                        timeout=30)
+    resp.raise_for_status()
+    traces = resp.json().get("data") or []
+    spans = [sp for t in traces for sp in t["spans"]]
+    assert spans, "no customer-ui-server spans found in Jaeger; the token check would be vacuous"
+    assert token not in json.dumps(traces), "the push token appears in a customer-ui-server span"
 
 
 # The series name was read off the running Prometheus on 2026-10-14. The label

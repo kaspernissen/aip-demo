@@ -258,6 +258,16 @@ def submit_claim(
         timeout=httpx.Timeout(timeout, read=timeout),
     ) as response:
         response.raise_for_status()
+        if "text/event-stream" not in response.headers.get("content-type", ""):
+            # A JSON-RPC error answers as a plain JSON body (e.g. -32602, push URL refused).
+            body = response.read()
+            try:
+                error = json.loads(body).get("error")
+            except (ValueError, AttributeError):
+                error = None
+            raise AssertionError(
+                f"claims-agent refused claim {claim_id!r}: "
+                f"{(error or {}).get('message') if error else body[:300]!r}")
         for event in _sse_results(response):
             snap = _snapshot(event, snap)
     assert snap.get("state"), f"claims-agent streamed no task state for claim {claim_id!r}"
