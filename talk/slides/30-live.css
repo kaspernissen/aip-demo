@@ -78,6 +78,8 @@
 
 /* the fallbacks: a real transcript under the title */
 .content > .x3l-term { margin-top: calc(0.75 * var(--baseline)); font-size: 17px; line-height: 1.3; padding: 18px 28px; }
+/* the long transcripts (steps 2, 3, 5, 34-39 lines) must fit above the folio */
+.content > .x3l-term.x3l-fit { font-size: 14px; line-height: 1.18; padding: 14px 28px; }
 .x3l-ev + .x3l-foot { margin-top: calc(0.75 * var(--baseline)); }
 
 /* Step 2: three cards, left to right: customer tab, reviewer tab, customer tab */

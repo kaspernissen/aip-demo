@@ -56,7 +56,7 @@
     <div class="r i1"><span class="svc agent">settlement-agent</span><span class="op">invoke_agent settlement_agent</span></div>
     <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">execute_tool propose_payment</span><span class="flag ok">permit</span></div>
     <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">execute_tool execute_payment</span><span class="v">ERROR</span></div>
-    <div class="r i3"><span class="svc gw">agentgateway</span><span class="op">tools/call</span><span class="v"><span class="code m">jwt.sub=…/sa/settlement-agent</span> <span class="code m">http.status=200</span></span></div>
+    <div class="r i3"><span class="svc gw">agentgateway</span><span class="op">tools/call</span><span class="v"><span class="code m">jwt.sub=…/sa/settlement-agent</span> <span class="code m">http.response.status_code=200</span></span></div>
     <div class="r i4"><span class="svc gw">agentgateway</span><span class="op">Guardrail</span><span class="v"><span class="code">grpc.status=0</span></span></div>
     <div class="r i4 hl"><span class="svc pds">policy-decision-service</span><span class="op">northstar.policy.decision</span><span class="flag deny">deny</span><span class="v">&euro;5,800 &gt; &euro;0</span></div>
     <div class="r i4 absent"><span class="svc">agentgateway</span><span class="op">tools/call payments-mcp_execute_payment</span><span class="x31-never">never attempted</span></div>
@@ -75,7 +75,7 @@
     <div class="r"><span class="svc agent">settlement-agent</span><span class="op">POST</span><span class="v">carries the JWT-SVID</span></div>
     <div class="r i1 hl"><span class="x31-sn">1</span><span class="svc gw">agentgateway</span><span class="op">tools/call</span><span class="v"><b>22 keys</b> &middot; <span class="code m">jwt.sub=spiffe://…/sa/settlement-agent</span> <span class="code m">gen_ai.tool.name=execute_payment</span></span></div>
     <div class="r i2"><span class="x31-sn">2</span><span class="svc gw">agentgateway</span><span class="op">Guardrail</span><span class="v"><b>9 keys</b> &middot; <span class="code">grpc.status=0</span> the call, not the verdict</span></div>
-    <div class="r i2"><span class="x31-sn">3</span><span class="svc pds">policy-decision-service</span><span class="op">northstar.policy.decision</span><span class="v"><b>10 policy.* keys</b> &middot; the why: rule, limit, amount</span></div>
+    <div class="r i2"><span class="x31-sn">3</span><span class="svc pds">policy-decision-service</span><span class="op">northstar.policy.decision</span><span class="v"><b>11 northstar.policy.* keys</b> &middot; the why: rule, limit, amount</span></div>
     <div class="r i2"><span class="x31-sn">4</span><span class="svc gw">agentgateway</span><span class="op">tools/call payments-mcp_execute_payment</span><span class="v"><b>6 keys</b> &middot; no jwt.sub</span></div>
     <div class="r i3"><span class="svc tool">payments-mcp</span><span class="op">tools/call execute_payment</span></div>
     <div class="r i4"><span class="svc sys">payments-api</span><span class="op">POST /payments/{paymentId}/execute</span></div>
@@ -358,7 +358,7 @@ request.method != &quot;POST&quot;
     </div>
     <div>
       <h3>The record</h3>
-      <p class="t"><span class="d">one span per Backstage flip</span><br><span class="code c">autonomy_contract.change</span></p>
+      <p class="t"><span class="d">one span per Backstage flip</span><br><span class="code c">northstar.autonomy_contract.change</span></p>
     </div>
   </div>
   <div class="x31-keep rise">

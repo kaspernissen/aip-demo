@@ -13,7 +13,7 @@
   },
   {
     "secs": 45,
-    "note": "KASPER\n\nNow we read what the bouncer writes down, for one permitted payment. Follow the numbers. One: tools/call, the request as it arrived. Twenty-two keys. jwt.sub is who asked, and gen_ai.tool.name is the only place the tool is named. Two: Guardrail, nine keys: the gateway phoning the policy service. grpc.status zero means the call worked, not what the answer was. Three: the policy service's span holds the why: rule, limit, amount. Four: the outbound call, six keys, and no jwt.sub, because the token was stripped. At the bottom: the four keys a refusal adds to span one. On a deny, span four doesn't exist.\n\n[verify: check for agentgateway v1.6.0 GA and re-run test_gateway_trace.py before November; the key sets may change, Appendix B]\n\nSource: Ch 6 (Figures 6.7, 6.9 to 6.12, 6.15)."
+    "note": "KASPER\n\nNow we read what the bouncer writes down, for one permitted payment. Follow the numbers. One: tools/call, the request as it arrived. Twenty-two keys. jwt.sub is who asked, and gen_ai.tool.name is the only place the tool is named. Two: Guardrail, nine keys: the gateway phoning the policy service. grpc.status zero means the call worked, not what the answer was. Three: the policy service's span holds the why: rule, limit, amount. Four: the outbound call, six keys, and no jwt.sub, because the token was stripped. At the bottom: the four keys a refusal adds to span one. On a deny, span four doesn't exist.\n\n[verify: re-run test_gateway_trace.py at slide freeze (the key sets were last measured on agentgateway v1.6.0, 2026-10-13), Appendix B]\n\nSource: Ch 6 (Figures 6.7, 6.9 to 6.12, 6.15)."
   },
   {
     "secs": 45,

@@ -13,7 +13,7 @@
   },
   {
     "secs": 30,
-    "note": "KASPER\n\nThis is the label: the W3C traceparent header. Version, always zero zero. The trace id, the tracking number, the same on every span. The parent id, replaced at every hop, like a depot stamp. The flags: zero one means sampled.\n\nThe news: since the July twenty-eighth MCP spec, SEP-414 puts the same label inside the message, in params underscore meta. So context survives transports with no headers, like stdio. Northstar sends both copies. The gateway reads only the header.\n\n[verify: exact params._meta key names against the 2026-07-28 MCP spec; the slide's JSON is illustrative, not a captured request]\n[verify: agentgateway v1.5.0 reads trace context from HTTP headers only (Finding 6); 1.6 may add _meta extraction]\n\nSource: Ch 2, Ch 3"
+    "note": "KASPER\n\nThis is the label: the W3C traceparent header. Version, always zero zero. The trace id, the tracking number, the same on every span. The parent id, replaced at every hop, like a depot stamp. The flags: zero one means sampled.\n\nThe news: since the July twenty-eighth MCP spec, SEP-414 puts the same label inside the message, in params underscore meta. So context survives transports with no headers, like stdio. Northstar sends both copies. The gateway reads only the header.\n\n[verify: exact params._meta key names against the 2026-07-28 MCP spec; the slide's JSON is illustrative, not a captured request]\n[verify: agentgateway reading trace context from HTTP headers only was established on v1.5.0 (Finding 6; test_gateway_trace.py cites the v1.5.0 source). The pin is now v1.6.0 and this was not re-measured there: re-check it, since v1.6.0 may read _meta]\n\nSource: Ch 2, Ch 3"
   },
   {
     "secs": 40,

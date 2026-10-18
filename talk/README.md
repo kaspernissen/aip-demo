@@ -8,7 +8,7 @@ follower, and a folio with the speaker's handles.
 - 86 slides, 50:30 of content: the **long cut**, for a 30-minute slot (Wed 11 Nov, 11:00–11:30). Kasper cuts
   it down himself. The live demo is five commands in one terminal (`./scripts/demo`, about 5 minutes with
   narration) against Northstar at stage 7, in its own fragment, `slides/30-live.html`. Each step has a hidden
-  fallback that typesets the real transcript of a live run (2026-10-12 for guard and keystone, 2026-10-15 for the rest). Three speaker-only appendix slides
+  fallback that typesets the real transcript of a live run (2026-10-12 for guard and keystone, 2026-10-15 for steps 2 and 3, 2026-10-17 for evidence). Three speaker-only appendix slides
   sit after "Thank you": pre-flight, reset, triage.
 - "Decide" is defined by William's *Bounded Agent Autonomy* (OSFF 2026): the platform enforces an agent's
   authority limits, in four rings (Core · Identity, Ring 1 · Reach, Ring 2 · Capability, Keystone). Slides
@@ -57,7 +57,7 @@ python3 build/build.py --only slides/30-act3a.html   # preview one fragment -> p
 | `build/head.html`, `chrome.js` | Page head (Broadsheet CSS, Phosphor icons, deck-stage) and the folio / `?slide=N` handling. |
 | `deck-stage.js`, `notes.html` | Deck engine and speaker-notes follower, copied unchanged from the reference deck. |
 | `reports/` | The sources the deck cites: *If You Can't Trace It*, full edition (303 pp) and study edition (154 pp), and *Instrumenting AI Agents* (Dash0 DevRel, Aug 2026, 53 pp; the notes cite its printed page numbers, one lower than the PDF index). |
-| `assets/shots/` | Screenshots from a live Northstar run on 2026-09-28 (stage 6, commit `0af552f`). |
+| `assets/shots/` | Screenshots from live Northstar runs: 2026-09-28 (stage 6, `0af552f`; the evidence dashboard and the eval scores, both pre-M8), 2026-10-15 (stage 7, M8: the Backstage and customer UI shots) and 2026-10-17 (M9 names: the two Jaeger shots). The other 16 files in the folder are 2026-09-28 originals no slide uses. |
 
 **Lifting a book figure:** paste the book's inline `<svg>` inside `<figure class="bfig">`. The `.bfig` rules
 map the book's fills and strokes to Broadsheet tokens. Crop the viewBox, delete what the slide doesn't need, and
