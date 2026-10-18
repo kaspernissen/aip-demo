@@ -139,9 +139,13 @@ Decisions made by Kasper (2026-10-18):
   without or with the wrong token is rejected by the customer-ui; the claims-agent
   cannot reach any customer-ui port but 8080 (dataplane test, Reach style).
 - `tests/harness/jaeger.py`: `steady_ignoring` goes. In its place,
-  `test_human_in_the_loop` asserts **zero** `EventQueue.dequeue_event` spans in
-  trace A after a wait of at least 10 s, and that trace A's span count does not
-  change across that wait (the parity guard that the old behaviour stays gone).
+  `test_human_in_the_loop` asserts that **no span in trace A starts after the
+  hand-off** (the `input-required` status) plus a 2 s grace, and that trace A's
+  span count does not change across a wait of at least 10 s (the parity guard that
+  the old behaviour stays gone). Zero `dequeue_event` spans overall is not the
+  claim: a2a-sdk wraps every queue read in a span, so the live stream has a few;
+  what goes is the polling *during the wait*. (Corrected while planning,
+  2026-10-18.)
 - The e2e HITL test follows the claim from trace A through the link into trace B
   and asserts the completion and the push are in trace B.
 - customer-ui vitest: the events-stream path, the drop-then-`tasks/get` path,
