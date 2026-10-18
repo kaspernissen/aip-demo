@@ -1656,6 +1656,21 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x40-rs-shot { position: relative; overflow: hidden; height: 470px; margin: 0; }
 .x40-rs-shot img { position: absolute; max-width: none; width: 900px; left: -5px; top: -62px; }
 
+/* 39b: how the auditor works — four steps in a row, the last one tinted */
+.x40-loop { list-style: none; margin: calc(2.5 * var(--baseline)) 0 0; padding: 0;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; }
+.x40-loop li { display: flex; flex-direction: column; gap: 14px; padding: 28px 26px 30px;
+  border-radius: var(--radius-sm); background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.x40-loop li.hot { background: var(--color-accent-2-100); }
+.x40-loop i { font-style: normal; font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  font-size: 56px; line-height: 1; color: var(--color-accent-700); }
+.x40-loop li.hot i { color: var(--color-accent-2-700); }
+.x40-loop b { font-size: var(--type-subtitle); font-weight: 600; line-height: 1.15; }
+.x40-loop span { font-size: var(--type-small); line-height: 1.35; }
+.x40-loop span .code { font-size: 0.92em; }
+.x40-loop + .x40-same { margin-top: calc(1.5 * var(--baseline)); }
+.x40-loop li.hot { background: color-mix(in srgb, var(--color-accent-2) 16%, transparent); }
+
 /* ===== 50-close.css ===== */
 /* 50-close: slides 48-51, Broadsheet. Everything is x50-* so no other fragment collides. */
 
