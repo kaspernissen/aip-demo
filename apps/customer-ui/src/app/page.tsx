@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { SpanStatusCode, type SpanContext } from "@opentelemetry/api";
-import { awaitOutcome, streamClaim, type Claim, type ClaimResult } from "../a2a";
+import { awaitOutcome, getPushConfig, streamClaim, type Claim, type ClaimResult } from "../a2a";
 import { determinationView, formatElapsed, outcomeWord } from "../view";
 import { getTracer, initTelemetry } from "../telemetry";
 
@@ -54,15 +54,18 @@ export default function Page() {
     // startActiveSpan returns the callback's value, so awaiting it awaits the
     // whole submission. This span (trace A) ends when the claim stream first
     // returns: either the claim is decided, or it is waiting for a person.
-    let waiting: { taskId: string; context: SpanContext } | null = null;
+    let waiting: { taskId: string; context: SpanContext; token: string } | null = null;
     await getTracer().startActiveSpan("northstar.claim.submit", async (span) => {
       span.setAttribute("northstar.claim.id", submitted.claimId);
       span.setAttribute("northstar.claim.policy_number", submitted.policyNumber);
       try {
-        const snap = await streamClaim(CLAIMS_AGENT_URL, submitted, (s) => s.result && setResult(s.result));
+        // This server's own origin: it issues the push token and relays the push.
+        const uiBase = window.location.origin;
+        const push = await getPushConfig(uiBase);
+        const snap = await streamClaim(CLAIMS_AGENT_URL, submitted, (s) => s.result && setResult(s.result), push);
         if (snap.result) setResult(snap.result);
         if (snap.state === "input-required") {
-          waiting = { taskId: snap.taskId, context: span.spanContext() };
+          waiting = { taskId: snap.taskId, context: span.spanContext(), token: push.token };
           setWaitingSince(Date.now());
           setLog((entries) => [...entries, "Waiting for a person to decide"]);
         } else {
@@ -83,10 +86,11 @@ export default function Page() {
     });
 
     // The wait is a second root span, its own trace, LINKED to the first, because the
-    // human decides minutes later and trace A has long since ended. One stream
-    // carries the whole wait: no polling.
+    // human decides minutes later and trace A has long since ended. The wait is
+    // one read of this server's events stream, fed by the claims-agent's push:
+    // no polling.
     if (waiting) {
-      const { taskId, context } = waiting as { taskId: string; context: SpanContext };
+      const { taskId, context, token } = waiting as { taskId: string; context: SpanContext; token: string };
       await getTracer().startActiveSpan(
         "northstar.claim.wait",
         { links: [{ context }], attributes: { "northstar.claim.id": submitted.claimId } },
@@ -94,7 +98,9 @@ export default function Page() {
           try {
             const final = await awaitOutcome(
               CLAIMS_AGENT_URL,
+              window.location.origin,
               taskId,
+              token,
               (s) => s.result && setResult(s.result),
             );
             if (final.result) setResult(final.result);

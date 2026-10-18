@@ -9,7 +9,13 @@ ENV NEXT_PUBLIC_CLAIMS_AGENT_URL=$NEXT_PUBLIC_CLAIMS_AGENT_URL
 ENV NEXT_PUBLIC_OTLP_ENDPOINT=$NEXT_PUBLIC_OTLP_ENDPOINT
 RUN npm run build
 
-FROM nginx:1.27-alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/out /usr/share/nginx/html
+FROM python:3.13-slim
+WORKDIR /app
+COPY server/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY server/bootstrap.py server/relay.py server/main.py ./
+COPY --from=build /app/out /app/static
+RUN useradd --create-home --uid 10001 app && chown -R app /app
+USER app
 EXPOSE 8080
+CMD ["python", "main.py"]

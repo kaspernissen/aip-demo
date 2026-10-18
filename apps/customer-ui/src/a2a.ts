@@ -21,11 +21,15 @@ export type ClaimResult = {
 
 type TextPart = { kind: "text"; text: string };
 
+/** Where the claims-agent pushes task snapshots, and the token that proves they are ours. */
+export type PushConfig = { url: string; token: string };
+
 export type JsonRpcRequest = {
   jsonrpc: "2.0";
   id: string;
   method: "message/stream";
   params: {
+    configuration?: { pushNotificationConfig: PushConfig };
     message: {
       role: "user";
       messageId: string;
@@ -38,7 +42,7 @@ function newId(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
 
-export function buildStreamRequest(claim: Claim): JsonRpcRequest {
+export function buildStreamRequest(claim: Claim, push?: PushConfig): JsonRpcRequest {
   return {
     jsonrpc: "2.0",
     id: newId(),
@@ -49,6 +53,7 @@ export function buildStreamRequest(claim: Claim): JsonRpcRequest {
         messageId: newId(),
         parts: [{ kind: "text", text: JSON.stringify(claim) }],
       },
+      ...(push ? { configuration: { pushNotificationConfig: push } } : {}),
     },
   };
 }
@@ -62,6 +67,8 @@ export type TaskSnapshot = {
 export const TERMINAL_STATES = new Set(["completed", "failed", "canceled", "rejected"]);
 
 type Frame = { result?: any; error?: { message: string } };
+// The events stream carries bare A2A Task JSON (as the claims-agent pushed it), not JSON-RPC.
+type RawFrame = any;
 
 function snapshotOf(event: any, prev: TaskSnapshot | null): TaskSnapshot | null {
   const taskId = event?.id ?? event?.taskId ?? prev?.taskId;
@@ -83,7 +90,7 @@ function snapshotOf(event: any, prev: TaskSnapshot | null): TaskSnapshot | null 
 }
 
 /** Reads SSE `data:` frames from a fetch body; ignores `: ping` comments. */
-async function* frames(response: Response): AsyncGenerator<Frame> {
+async function* frames(response: Response): AsyncGenerator<RawFrame> {
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -103,7 +110,7 @@ async function* frames(response: Response): AsyncGenerator<Frame> {
           .filter((l) => l.startsWith("data:"))
           .map((l) => l.slice(5).trim())
           .join("\n");
-        if (data) yield JSON.parse(data) as Frame;
+        if (data) yield JSON.parse(data);
       }
     }
   } finally {
@@ -130,41 +137,51 @@ async function post(baseUrl: string, body: object, headers: Record<string, strin
 // the browser's span would never connect to anything downstream. See
 // `a2a.test.ts`'s traceparent test for the regression coverage.
 
-/** Submits the claim on one stream; returns at input-required or a terminal state. */
+/** Asks this page's own server for a push URL and a fresh token (same origin). */
+export async function getPushConfig(uiBase: string): Promise<PushConfig> {
+  const headers = injectContext({});
+  const response = await fetch(`${uiBase.replace(/\/$/, "")}/claims/push-config`, { method: "POST", headers });
+  if (!response.ok) throw new Error(`push-config returned HTTP ${response.status}`);
+  return (await response.json()) as PushConfig;
+}
+
+/**
+ * Submits the claim on one stream and reads it to its end: the claims-agent
+ * closes it at input-required or a terminal state. Returns the last snapshot.
+ */
 export async function streamClaim(
   baseUrl: string,
   claim: Claim,
   onEvent: (s: TaskSnapshot) => void,
+  push?: PushConfig,
 ): Promise<TaskSnapshot> {
   const headers = injectContext({ "content-type": "application/json", accept: "text/event-stream" });
-  const response = await post(baseUrl, buildStreamRequest(claim), headers);
+  const response = await post(baseUrl, buildStreamRequest(claim, push), headers);
   let snap: TaskSnapshot | null = null;
   for await (const frame of frames(response)) {
     if (frame.error) throw new Error(frame.error.message);
     snap = snapshotOf(frame.result, snap);
-    if (!snap) continue;
-    onEvent(snap);
-    if (snap.state === "input-required" || TERMINAL_STATES.has(snap.state)) return snap;
+    if (snap) onEvent(snap);
   }
-  throw new Error("the claim stream ended before the claim was decided");
+  if (!snap) throw new Error("the claim stream ended before the claim was decided");
+  return snap;
 }
 
-/** One tasks/resubscribe. Null when the stream ended with no terminal state (a drop). */
-export async function resubscribe(
-  baseUrl: string,
-  taskId: string,
+/**
+ * One read of the server's events stream for this claim. Null when it ended
+ * with no terminal state (a drop). The token goes in a header, never a URL.
+ */
+async function followEvents(
+  uiBase: string,
+  token: string,
   onEvent: (s: TaskSnapshot) => void,
 ): Promise<TaskSnapshot | null> {
-  const headers = injectContext({ "content-type": "application/json", accept: "text/event-stream" });
-  const response = await post(
-    baseUrl,
-    { jsonrpc: "2.0", id: newId(), method: "tasks/resubscribe", params: { id: taskId } },
-    headers,
-  );
+  const headers = injectContext({ "x-claim-token": token, accept: "text/event-stream" });
+  const response = await fetch(`${uiBase.replace(/\/$/, "")}/claims/events`, { headers });
+  if (!response.ok) throw new Error(`events returned HTTP ${response.status}`);
   let snap: TaskSnapshot | null = null;
-  for await (const frame of frames(response)) {
-    if (frame.error) throw new Error(frame.error.message);
-    snap = snapshotOf(frame.result, snap);
+  for await (const task of frames(response)) {
+    snap = snapshotOf(task, snap);
     if (snap) onEvent(snap);
     if (snap && TERMINAL_STATES.has(snap.state)) return snap;
   }
@@ -185,31 +202,21 @@ export async function getTask(baseUrl: string, taskId: string): Promise<TaskSnap
   return snap;
 }
 
-/** Waits on one stream; on a drop, reads the task once and resubscribes. Not a polling loop. */
+/**
+ * Waits for the outcome on the server's events stream, which the claims-agent's
+ * push feeds. On a drop, reads the task once and reopens. Not a polling loop.
+ */
 export async function awaitOutcome(
   baseUrl: string,
+  uiBase: string,
   taskId: string,
+  token: string,
   onEvent: (s: TaskSnapshot) => void,
   { maxEmptyDrops = 5 }: { maxEmptyDrops?: number } = {},
 ): Promise<TaskSnapshot> {
   let emptyDrops = 0;
   for (;;) {
-    let done: TaskSnapshot | null;
-    try {
-      done = await resubscribe(baseUrl, taskId, onEvent);
-    } catch (err) {
-      // The decision can land before the resubscribe: the SDK then refuses with
-      // "is in terminal state". Read the task once; a terminal snapshot is the outcome.
-      let snap: TaskSnapshot | null = null;
-      try {
-        snap = await getTask(baseUrl, taskId);
-      } catch {
-        throw err;
-      }
-      if (!TERMINAL_STATES.has(snap.state)) throw err;
-      onEvent(snap);
-      return snap;
-    }
+    const done = await followEvents(uiBase, token, onEvent);
     if (done) return done;
     const now = await getTask(baseUrl, taskId);
     onEvent(now);

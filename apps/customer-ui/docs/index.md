@@ -24,7 +24,9 @@ A determination, the way an insurer writes back — not a toast:
 ## Build and serving
 
 TypeScript, Next.js with `output: "export"` — a **static** export served by
-nginx. There is no Node process in the running pod.
+a small Python Starlette server (`server/main.py`), which also receives the
+claims-agent's A2A push and relays it to the browser (`/claims/push-config`,
+`/a2a/push`, `/claims/events`). There is no Node process in the running pod.
 
 Reached on host port `8080`, a kind `extraPortMapping` onto a NodePort, so it
 needs no `kubectl port-forward` and survives a redeploy.

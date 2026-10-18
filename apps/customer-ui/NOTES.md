@@ -334,7 +334,7 @@ fixed:** see §3's fix-round note and §6a.
 
 A21: "bump what the advisory names and nothing else." `npm audit` (post-bump)
 still reports 8 vulnerabilities, all confirmed dev-only or transitive — none of
-these are shipped in the built static export (`out/`) or the nginx runtime image,
+these are shipped in the built static export (`out/`) or the server runtime image,
 only in the `node_modules` used to run `next build` and `vitest` locally:
 
 | Package | Severity | Advisory / advisories | Why untouched |
@@ -348,7 +348,7 @@ only in the `node_modules` used to run `next build` and `vitest` locally:
 | `sharp` | high | GHSA-f88m-g3jw-g9cj (inherited libvips CVEs) | `next`'s own optional transitive dependency (server-side image optimization); irrelevant here since this app is `output: "export"` with no Image Optimization API in use. |
 
 This is a conference-demo app with no auth and no untrusted server-side rendering
-(static `output: "export"`, served by plain nginx) — the dev-only tools above never
+(static `output: "export"`, served by a small Python server) — the dev-only tools above never
 run in the deployed container, and the two transitive `next` deps (`postcss`,
 `sharp`) are exercised only by a build feature (`next/image`'s optimizer) this app
 does not use. Recorded here per A21's instruction to note, not silently fix, what
