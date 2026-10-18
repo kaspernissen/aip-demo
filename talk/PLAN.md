@@ -127,22 +127,23 @@ ordinary slides now, outside the five-minute cut.
 | 68 | 40-act4 | K | 40:40 | 50 | The evidence view | NEW | The evidence view (longer-demo beat 5, as a slide): opensearch-evidence.png, cropped |
 | 69 | 40-act4 | K | 41:30 | 30 | The decision contract is a published schema | NEW | The decision contract is a published schema (M9): a real excerpt of telemetry/registry/policy.yaml beside a real Jaeger screenshot of the same northstar.policy.decision span (jaeger-policy-decision-m9.png, 2026-10-17). Outside the live block. |
 | 70 | 40-act4 | K | 42:00 | 20 | What an evaluation is | NEW | concept: what an evaluation is. The gen_ai.evaluation.result fields (Ch 3 table, Fig 3.13), parented to the judged span |
-| 71 | 40-act4 | K | 42:20 | 45 | A score that can go to zero | NEW | A score that can go to zero (longer-demo beat 6, as a slide): 1.0 vs 0.0 (Fig 9.3) plus jaeger-eval-scores.png |
-| 72 | 40-act4 | K | 43:05 | 30 | And LLM-as-judge? | DID WHAT | "Enter LLM-as-judge", rebuilt as judge vs auditor on one output format (Ch 3 Fig 3.13, Ch 9 "What Northstar does not have") |
-| 73 | 40-act4 | K | 43:35 | 45 | Content capture, a matched pair | NEW | Content capture as a matched pair: Fig 9.5 lifted (three layers, keys vs content) |
-| 74 | 40-act4 | K | 44:20 | 30 | Never sample the decisions | TAMING | "More Telemetry ≠ Better Telemetry" (p.40), reworked: the 142 vs 139 defect |
-| 75 | 40-act4 | W | 44:50 | 60 | From requirement to artifact | NEW | Requirement → artifact, Ch 14's six-row table; walk two rows (Art. 86 / C-203/22 and DORA) |
-| 76 | 40-act4 | W | 45:50 | 30 | The deadline moved | NEW | The deadline moved: Fig 10.1 lifted (the Omnibus timeline), plus SR 26-2 |
-| 77 | 40-act4 | W | 46:20 | 30 | Seventeen findings, none filed | NEW | Seventeen findings: Fig 12.1 lifted (governance home × kind of gap), plus F17 (agentgateway v1.6.0 deny as isError, docs/upstream-findings.md, after the book); chips tinted from Fig 12.2 |
-| 78 | 40-act4 | W | 46:50 | 40 | Where AI observability stands | NEW | where AI observability stands: the L0–L5 ladder and the ecosystem's measured rung (Instrumenting AI Agents, Dash0 DevRel, Aug 2026, p. 10); replaces the old OTel-support maturity model, which has since changed |
-| 79 | 50-close | W | 47:30 | 60 | What this does not do | NEW | Honest limitations: Ch 14's list (Backstage line kept exact in the note) plus the two abstract blocks the demo does not have (Ch 11.3; dashed like the blueprint's missing layers, Fig 11.1) |
-| 80 | 50-close | W | 48:30 | 45 | Becoming a regulated-platform wizard | DID WHAT | "Becoming an AI observability wizard": the six steps as the book lists them (Ch 3 Fig 3.18), dimmed, plus Ch 14's three regulated ones |
-| 81 | 50-close | W | 49:15 | 45 | What to do on Monday | NEW | The call to action: Ch 14's five verbs, ending on "Seventeen findings. Pick one." |
-| 82 | 50-close | W | 50:00 | 30 | Three things to remember | NEW | Three things to remember: the layout of Figure 14.4 (study ed.; 14.9 full ed.), its text reworded after M8 for the talk's spine (guardrails, instrumented decisions, upstream projects), plus the callback. No QR: the book isn't hosted yet. |
-| 83 | 90-thanks | W | — | 0 | Thank you |  |  |
-| 84 | 90-thanks | K | — | 0 | Appendix — Pre-flight | NEW | appendix (speaker-only, 0 s): pre-flight T-60…T-5 (aip-demo docs/demo-runbook.md §4), at stage 7 with the Kyverno and over-grant checks (M7 design spec §4) |
-| 85 | 90-thanks | K | — | 0 | Appendix — Reset between runs | NEW | appendix (speaker-only, 0 s): reset between runs (runbook §7: scripts/demo reset first), plus the over-grant check (M7 design spec §2.2) |
-| 86 | 90-thanks | K | — | 0 | Appendix — When it breaks | NEW | appendix (speaker-only, 0 s): live triage (runbook §8), plus Kyverno down (M7 design spec §2.1) |
+| 71 | 40-act4 | K | 42:20 | 50 | How the auditor works | NEW | How the auditor works: eval-scorer's loop, OpenTelemetry in and OpenTelemetry out (platform/eval-scorer/README.md; scorer/emit.py; scorer/opensearch.py TrajectoryTruncated; M4 design spec §5) |
+| 72 | 40-act4 | K | 43:10 | 45 | A score that can go to zero | NEW | A score that can go to zero (longer-demo beat 6, as a slide): 1.0 vs 0.0 (Fig 9.3) plus jaeger-eval-scores.png |
+| 73 | 40-act4 | K | 43:55 | 30 | And LLM-as-judge? | DID WHAT | "Enter LLM-as-judge", rebuilt as judge vs auditor on one output format (Ch 3 Fig 3.13, Ch 9 "What Northstar does not have") |
+| 74 | 40-act4 | K | 44:25 | 45 | Content capture, a matched pair | NEW | Content capture as a matched pair: Fig 9.5 lifted (three layers, keys vs content) |
+| 75 | 40-act4 | K | 45:10 | 30 | Never sample the decisions | TAMING | "More Telemetry ≠ Better Telemetry" (p.40), reworked: the 142 vs 139 defect |
+| 76 | 40-act4 | W | 45:40 | 60 | From requirement to artifact | NEW | Requirement → artifact, Ch 14's six-row table; walk two rows (Art. 86 / C-203/22 and DORA) |
+| 77 | 40-act4 | W | 46:40 | 30 | The deadline moved | NEW | The deadline moved: Fig 10.1 lifted (the Omnibus timeline), plus SR 26-2 |
+| 78 | 40-act4 | W | 47:10 | 30 | Seventeen findings, none filed | NEW | Seventeen findings: Fig 12.1 lifted (governance home × kind of gap), plus F17 (agentgateway v1.6.0 deny as isError, docs/upstream-findings.md, after the book); chips tinted from Fig 12.2 |
+| 79 | 40-act4 | W | 47:40 | 40 | Where AI observability stands | NEW | where AI observability stands: the L0–L5 ladder and the ecosystem's measured rung (Instrumenting AI Agents, Dash0 DevRel, Aug 2026, p. 10); replaces the old OTel-support maturity model, which has since changed |
+| 80 | 50-close | W | 48:20 | 60 | What this does not do | NEW | Honest limitations: Ch 14's list (Backstage line kept exact in the note) plus the two abstract blocks the demo does not have (Ch 11.3; dashed like the blueprint's missing layers, Fig 11.1) |
+| 81 | 50-close | W | 49:20 | 45 | Becoming a regulated-platform wizard | DID WHAT | "Becoming an AI observability wizard": the six steps as the book lists them (Ch 3 Fig 3.18), dimmed, plus Ch 14's three regulated ones |
+| 82 | 50-close | W | 50:05 | 45 | What to do on Monday | NEW | The call to action: Ch 14's five verbs, ending on "Seventeen findings. Pick one." |
+| 83 | 50-close | W | 50:50 | 30 | Three things to remember | NEW | Three things to remember: the layout of Figure 14.4 (study ed.; 14.9 full ed.), its text reworded after M8 for the talk's spine (guardrails, instrumented decisions, upstream projects), plus the callback. No QR: the book isn't hosted yet. |
+| 84 | 90-thanks | W | — | 0 | Thank you |  |  |
+| 85 | 90-thanks | K | — | 0 | Appendix — Pre-flight | NEW | appendix (speaker-only, 0 s): pre-flight T-60…T-5 (aip-demo docs/demo-runbook.md §4), at stage 7 with the Kyverno and over-grant checks (M7 design spec §4) |
+| 86 | 90-thanks | K | — | 0 | Appendix — Reset between runs | NEW | appendix (speaker-only, 0 s): reset between runs (runbook §7: scripts/demo reset first), plus the over-grant check (M7 design spec §2.2) |
+| 87 | 90-thanks | K | — | 0 | Appendix — When it breaks | NEW | appendix (speaker-only, 0 s): live triage (runbook §8), plus Kyverno down (M7 design spec §2.1) |
 
 **Check before presenting:** every fast-moving fact on a slide carries a `[verify: …]` line in its
 speaker note. They map to Appendix B of the book.

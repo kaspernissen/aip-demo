@@ -108,6 +108,18 @@
   </div>
 </section>
 
+<!-- 39b · NEW · How the auditor works: eval-scorer's loop, OpenTelemetry in and OpenTelemetry out (platform/eval-scorer/README.md; scorer/emit.py; scorer/opensearch.py TrajectoryTruncated; M4 design spec §5) -->
+<section class="slide content" data-label="How the auditor works">
+  <h2 class="slide-title">How the auditor works</h2>
+  <ol class="x40-loop rise">
+    <li><i>1</i><b>Spans land</b><span>every service &rarr; OTel Collector &rarr; OpenSearch, the same copy Jaeger gets</span></li>
+    <li><i>2</i><b>Read back</b><span><span class="code">POST /score</span> one claim; a truncated trajectory is refused, never scored</span></li>
+    <li><i>3</i><b>Five checks, plain code</b><span>proposed first &middot; stopped when refused &middot; narrated it &middot; amount matches &middot; identity had authority</span></li>
+    <li class="hot"><i>4</i><b>Written back</b><span>one span per score, <span class="code m">gen_ai.evaluation.*</span>, parented into the trace it judged</span></li>
+  </ol>
+  <p class="x40-same rise">OpenTelemetry in, OpenTelemetry out. <span class="muted">No second pipeline, no second store.</span></p>
+</section>
+
 <!-- 40 · NEW · A score that can go to zero (longer-demo beat 6, as a slide): 1.0 vs 0.0 (Fig 9.3) plus jaeger-eval-scores.png -->
 <section class="slide content" data-label="A score that can go to zero">
   <div class="beat x40-asslide"><span class="dot"></span>Longer demo &middot; shown as slide</div>
