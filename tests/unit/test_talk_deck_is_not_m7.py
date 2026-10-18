@@ -36,6 +36,12 @@ FORBIDDEN = {
         r"|review\.(?:decision|payment|reviewer|elapsed_ms|resume_only|refused|queue)"
         r"|claim\.(?:submit|wait)|k8s\.resource\.name|northstar\.policy\.number)"
         r"(?![A-Za-z0-9_])"),
+    "a pre-registry wildcard (policy.* / review.* without the northstar. prefix)":
+        re.compile(r"(?<![A-Za-z0-9_.\-/])(?:policy|review)\.\*"),
+    "the truncated span name autonomy_contract.change (the span is northstar.autonomy_contract.change)":
+        re.compile(r"(?<![A-Za-z0-9_.\-/])autonomy_contract\.change"),
+    # agentgateway v1.6.0 moved the SERVER span to http.response.status_code.
+    "the pre-v1.6.0 gateway attribute http.status": re.compile(r"(?<![A-Za-z0-9_.])http\.status(?![A-Za-z0-9_])"),
     # M9 renamed the histogram's Prometheus labels; a query on the old ones returns nothing.
     "a pre-M9 Prometheus label (autonomy_level without northstar_policy_)":
         re.compile(r"(?<!northstar_policy_)\bautonomy_level\b"),
