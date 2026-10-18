@@ -133,11 +133,11 @@ ordinary slides now, outside the five-minute cut.
 | 74 | 40-act4 | K | 44:20 | 30 | Never sample the decisions | TAMING | "More Telemetry ≠ Better Telemetry" (p.40), reworked: the 142 vs 139 defect |
 | 75 | 40-act4 | W | 44:50 | 60 | From requirement to artifact | NEW | Requirement → artifact, Ch 14's six-row table; walk two rows (Art. 86 / C-203/22 and DORA) |
 | 76 | 40-act4 | W | 45:50 | 30 | The deadline moved | NEW | The deadline moved: Fig 10.1 lifted (the Omnibus timeline), plus SR 26-2 |
-| 77 | 40-act4 | W | 46:20 | 30 | Sixteen findings, none filed | NEW | Sixteen findings: Fig 12.1 lifted (governance home × kind of gap); chips tinted from Fig 12.2 |
+| 77 | 40-act4 | W | 46:20 | 30 | Seventeen findings, none filed | NEW | Seventeen findings: Fig 12.1 lifted (governance home × kind of gap), plus F17 (agentgateway v1.6.0 deny as isError, docs/upstream-findings.md, after the book); chips tinted from Fig 12.2 |
 | 78 | 40-act4 | W | 46:50 | 40 | Where AI observability stands | NEW | where AI observability stands: the L0–L5 ladder and the ecosystem's measured rung (Instrumenting AI Agents, Dash0 DevRel, Aug 2026, p. 10); replaces the old OTel-support maturity model, which has since changed |
 | 79 | 50-close | W | 47:30 | 60 | What this does not do | NEW | Honest limitations: Ch 14's list (Backstage line kept exact in the note) plus the two abstract blocks the demo does not have (Ch 11.3; dashed like the blueprint's missing layers, Fig 11.1) |
 | 80 | 50-close | W | 48:30 | 45 | Becoming a regulated-platform wizard | DID WHAT | "Becoming an AI observability wizard": the six steps as the book lists them (Ch 3 Fig 3.18), dimmed, plus Ch 14's three regulated ones |
-| 81 | 50-close | W | 49:15 | 45 | What to do on Monday | NEW | The call to action: Ch 14's five verbs, ending on "Sixteen gaps. Pick one." |
+| 81 | 50-close | W | 49:15 | 45 | What to do on Monday | NEW | The call to action: Ch 14's five verbs, ending on "Seventeen findings. Pick one." |
 | 82 | 50-close | W | 50:00 | 30 | Three things to remember | NEW | Three things to remember: the layout of Figure 14.4 (study ed.; 14.9 full ed.), its text reworded after M8 for the talk's spine (guardrails, instrumented decisions, upstream projects), plus the callback. No QR: the book isn't hosted yet. |
 | 83 | 90-thanks | W | — | 0 | Thank you |  |  |
 | 84 | 90-thanks | K | — | 0 | Appendix — Pre-flight | NEW | appendix (speaker-only, 0 s): pre-flight T-60…T-5 (aip-demo docs/demo-runbook.md §4), at stage 7 with the Kyverno and over-grant checks (M7 design spec §4) |

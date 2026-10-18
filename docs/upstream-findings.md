@@ -84,7 +84,10 @@ guest auth provider refuses to issue a token at all outside
 is explicitly set — correct and by design, but its absence meant M6 Task 2
 shipped a catalog that built cleanly, collated without error, and passed every
 RBAC check, while being unreachable from any browser (ruling M6-R7 in this
-project's own SDD ledger). **Sixteen findings, still none filed.**
+project's own SDD ledger). **Sixteen findings, still none filed.** **Finding 17**, added 2026-10-13
+(M8 Task 0): agentgateway v1.6.0 returns an ExtMCP deny as an `isError` tool result, with no
+`error.data`, so the deck's "JSON-RPC error `-32001`" was overturned. **Seventeen findings, still
+none filed.**
 
 > **Corrected 2026-09-11, when Finding 11 was written.** This paragraph opened
 > *"**M3 (Supervised) adds no finding.** It adds a *measurement*"* and closed
