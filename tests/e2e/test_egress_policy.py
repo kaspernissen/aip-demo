@@ -80,9 +80,8 @@ KUBE_CONTEXT = "kind-northstar"
 
 AGENT_NS = "northstar-agents"
 
-# The three endpoints in the namespace the criterion names. `container` is
-# spelled out because `customer-ui`'s container has no interpreter -- see
-# `_probe_nc`.
+# The three endpoints in the namespace the criterion names. Every one now runs
+# a Python image, so one probe serves all three.
 MODEL_AGENT = "settlement-agent"
 OTHER_AGENTS = ("claims-agent", "customer-ui")
 ALL_AGENTS = (MODEL_AGENT, *OTHER_AGENTS)
@@ -137,11 +136,16 @@ EXPECTED_WORKLOAD_EGRESS = {
         # datapath shows the L4 pair, the method restriction is asserted by
         # the policy tests.
         ("k8s:app=payments-api", "8080/TCP"),
+        # M10: the push to the customer (L7, POST /a2a/push only; the method
+        # and path restriction is asserted by the probes below).
+        ("k8s:app=customer-ui", "8080/TCP"),
         ("k8s:app=otel-collector", "4318/TCP"),
     },
     "customer-ui": {
         ("k8s:k8s-app=kube-dns", "53/TCP"),
         ("k8s:k8s-app=kube-dns", "53/UDP"),
+        # M10: the server exports its spans (the push receiver's half of trace B).
+        ("k8s:app=otel-collector", "4318/TCP"),
     },
 }
 
@@ -214,8 +218,6 @@ def _probe(app: str, host: str, port: int) -> dict:
     keeping distinct. It also means the model-provider control costs no tokens
     and needs no API key: nothing is sent on the socket.
     """
-    if app == "customer-ui":
-        return _probe_nc(app, host, port)
     proc = _kubectl(
         "-n", AGENT_NS, "exec", _pod(app), "-c", app, "--",
         "python3", "-c", PROBE, host, str(port), str(CONNECT_TIMEOUT),
@@ -227,32 +229,6 @@ def _probe(app: str, host: str, port: int) -> dict:
         return json.loads(proc.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):  # pragma: no cover - diagnostic path
         pytest.fail(f"probe produced unreadable output: {proc.stdout!r}")
-
-
-def _probe_nc(app: str, host: str, port: int) -> dict:
-    """The same probe for `customer-ui`, which has no Python in it.
-
-    `customer-ui` is nginx on Alpine serving a static export -- `python3` is
-    absent and `command -v` finds only busybox `nc`. That is worth a second
-    code path rather than a skip: this pod being the one with a shell and no
-    interpreter is *why* it needed a policy of its own, so a probe that quietly
-    skipped here would be missing on exactly the endpoint whose omission was
-    the easiest outbound path in the namespace.
-    """
-    proc = _kubectl(
-        "-n", AGENT_NS, "exec", _pod(app), "--",
-        "sh", "-c",
-        f'nc -z -w {CONNECT_TIMEOUT} {host} {port} && echo REACHED || echo BLOCKED',
-        timeout=CONNECT_TIMEOUT + 45,
-    )
-    out = proc.stdout.strip().splitlines()
-    if not out:
-        pytest.skip(f"could not exec the probe in {app}: {proc.stderr.strip()}")
-    if out[-1] == "REACHED":
-        return {"reached": True, "error": None}
-    if out[-1] == "BLOCKED":
-        return {"reached": False, "error": "nc-nonzero"}
-    pytest.fail(f"probe produced unreadable output: {proc.stdout!r}")
 
 
 @pytest.fixture(scope="module")
@@ -546,7 +522,7 @@ def test_the_collector_is_reachable_from_every_agent_that_exports(policy_present
     """
     unreachable = [
         app
-        for app in (MODEL_AGENT, "claims-agent")
+        for app in ALL_AGENTS
         if not _probe(app, COLLECTOR_HOST, COLLECTOR_PORT)["reached"]
     ]
     assert not unreachable, (
@@ -572,17 +548,6 @@ def test_dns_still_resolves_inside_every_agent_pod(app, policy_present):
     resolution through the search list while looking tighter than it is.
     """
     names = [MODEL_HOST, GATEWAY_HOST, COLLECTOR_HOST]
-    if app == "customer-ui":
-        proc = _kubectl(
-            "-n", AGENT_NS, "exec", _pod(app), "--",
-            "sh", "-c", f"nslookup {MODEL_HOST} >/dev/null 2>&1 && echo OK || echo FAIL",
-            timeout=60,
-        )
-        assert proc.stdout.strip().splitlines()[-1:] == ["OK"], (
-            f"{app} cannot resolve {MODEL_HOST}: {proc.stdout!r} {proc.stderr!r}"
-        )
-        return
-
     proc = _kubectl(
         "-n", AGENT_NS, "exec", _pod(app), "-c", app, "--",
         "python3", "-c", RESOLVE, *names,
@@ -616,6 +581,69 @@ def test_every_agent_pod_is_still_ready(app, policy_present):
     )
     assert "True" in proc.stdout, (
         f"{app} is not Ready under the egress policy (got {proc.stdout!r})"
+    )
+
+
+# --- M10: the customer's push receiver, and nothing else on it -------------
+
+PUSH_HOST = "customer-ui.northstar-agents.svc.cluster.local"
+PUSH_PORT = 8080
+
+HTTP_PROBE = r"""
+import http.client, json, sys
+host, port, method, path = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+try:
+    c = http.client.HTTPConnection(host, port, timeout=float(sys.argv[5]))
+    c.request(method, path, body=b"{}" if method == "POST" else None,
+              headers={"content-type": "application/json"})
+    r = c.getresponse()
+    print(json.dumps({"status": r.status, "error": None}))
+except Exception as exc:
+    print(json.dumps({"status": None, "error": type(exc).__name__}))
+"""
+
+
+def _http_from_claims_agent(method: str, path: str) -> dict:
+    proc = _kubectl(
+        "-n", AGENT_NS, "exec", _pod("claims-agent"), "-c", "claims-agent", "--",
+        "python3", "-c", HTTP_PROBE, PUSH_HOST, str(PUSH_PORT), method, path,
+        str(CONNECT_TIMEOUT),
+        timeout=CONNECT_TIMEOUT + 45,
+    )
+    assert proc.stdout.strip(), (
+        f"could not run the probe in claims-agent (exit {proc.returncode}): {proc.stderr.strip()}"
+    )
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
+def test_claims_agent_reaches_the_push_receiver_and_the_server_answers(policy_present):
+    """POST /a2a/push with no token is answered by the SERVER (401), not dropped.
+
+    A 401 is the proof of reach: it can only come from customer-ui's own
+    handler, so the L7 rule admitted the request and the connection was made.
+    """
+    result = _http_from_claims_agent("POST", "/a2a/push")
+    assert result["status"] == 401, (
+        "claims-agent's POST to customer-ui:8080/a2a/push (no token) was not "
+        f"answered 401 by the server: {result}. A drop or a 403 means the "
+        "Reach rule is missing or wrong; the push would never be delivered"
+    )
+
+
+def test_claims_agent_cannot_read_anything_else_on_the_push_receiver(policy_present):
+    """Same pod, same port, a different method and path: denied by Cilium's L7 proxy (403)."""
+    result = _http_from_claims_agent("GET", "/")
+    assert result["status"] == 403, (
+        "claims-agent's GET customer-ui:8080/ was not denied by Cilium's L7 "
+        f"proxy: {result}. The push rule admits more than POST /a2a/push"
+    )
+
+
+def test_claims_agent_cannot_reach_another_customer_ui_port(policy_present):
+    result = _probe("claims-agent", PUSH_HOST, 9090)
+    assert not result["reached"], (
+        "claims-agent reached a customer-ui port other than 8080; the push "
+        "rule is wider than one port"
     )
 
 

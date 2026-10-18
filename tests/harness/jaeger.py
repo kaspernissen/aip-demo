@@ -36,6 +36,31 @@ class Link:
     span_id: str
 
 
+def _otlp_value(value: dict[str, Any]) -> Any:
+    for key in ("stringValue", "boolValue", "doubleValue"):
+        if key in value:
+            return value[key]
+    if "intValue" in value:
+        return int(value["intValue"])
+    return value
+
+
+def otlp_links(payload: dict) -> dict[str, list[dict[str, Any]]]:
+    """Span links, with their attributes, out of an OTLP JSON trace."""
+    out: dict[str, list[dict[str, Any]]] = {}
+    for resource in payload.get("resourceSpans", []):
+        for scope in resource.get("scopeSpans", []):
+            for span in scope.get("spans", []):
+                for link in span.get("links") or []:
+                    out.setdefault(span["spanId"], []).append({
+                        "trace_id": link.get("traceId", ""),
+                        "span_id": link.get("spanId", ""),
+                        "attrs": {a["key"]: _otlp_value(a.get("value", {}))
+                                  for a in link.get("attributes") or []},
+                    })
+    return out
+
+
 class Trace:
     def __init__(self, raw: dict[str, Any]):
         self._raw = raw
@@ -213,6 +238,26 @@ class JaegerClient:
             raise AssertionError(f"trace {trace_id} not found")
         return Trace(data[0])
 
+    def get_trace_otlp(self, trace_id: str) -> dict:
+        """The trace as OTLP JSON (Jaeger v2's `/api/v3/traces/{id}`).
+
+        The v1 `/api/traces` shape keeps a span link as a bare reference (trace id
+        and span id) and drops the link's own attributes. A link attribute such as
+        `northstar.a2a.link.reason`, and any attribute the v1 shape flattens, is
+        only visible here.
+        """
+        resp = requests.get(f"{self.base_url}/api/v3/traces/{trace_id}", timeout=15)
+        resp.raise_for_status()
+        result = resp.json().get("result") or {}
+        if not result.get("resourceSpans"):
+            raise AssertionError(f"trace {trace_id} not found")
+        return result
+
+    def link_attributes(self, trace_id: str) -> dict[str, list[dict[str, Any]]]:
+        """`{span_id: [{"trace_id", "span_id", "attrs"}]}` for every span in the
+        trace that carries span links, with the links' own attributes."""
+        return otlp_links(self.get_trace_otlp(trace_id))
+
     def wait_for_trace(
         self,
         service: str,
@@ -253,13 +298,6 @@ class JaegerClient:
     # constant must move with it.
     QUIET_WINDOW_S = 10.0
 
-    # What a claim that is waiting for a human adds to its trace for as long as
-    # it waits: a2a-sdk's background consumer polls the task's event queue every
-    # 0.5 s and each poll is a SERVER span (measured, M8 Task 2). They are counted
-    # as spans (nothing is dropped from the trace) but not as *movement* when
-    # `wait_for_trace_id` decides the trace has stopped growing.
-    WAIT_POLLING_SPANS = frozenset({"a2a.server.events.event_queue.EventQueue.dequeue_event"})
-
     def wait_for_trace_id(
         self,
         trace_id: str,
@@ -267,7 +305,6 @@ class JaegerClient:
         timeout: float = 60.0,
         interval: float = 2.0,
         services: set[str] | None = None,
-        steady_ignoring: frozenset[str] | None = None,
     ) -> Trace:
         """Poll for a trace by an ID the caller already knows (e.g. one it minted
         itself and sent as a `traceparent` header), rather than searching for it
@@ -283,16 +320,7 @@ class JaegerClient:
         raises `AssertionError` naming exactly which services never showed
         up, rather than returning whatever trace was last fetched — a caller
         can only ever act on a trace this method itself judged complete.
-
-        `steady_ignoring` names operations that do not count towards "the span
-        count held steady". The default is `WAIT_POLLING_SPANS` for EVERY caller,
-        not an opt-in: any claim can park for a human at `assisted`, and a
-        per-call opt-in was found missing one gate run at a time (M8 gate run 4,
-        `_drive_browser`). Pass `frozenset()` to count every span. The returned
-        trace still contains all of them.
         """
-        if steady_ignoring is None:
-            steady_ignoring = self.WAIT_POLLING_SPANS
         deadline = time.time() + timeout
         last_error: Exception | None = None
         last_trace: Trace | None = None
@@ -319,9 +347,7 @@ class JaegerClient:
                         quiet_since = None
                     else:
                         now = time.time()
-                        span_count = sum(
-                            1 for sp in trace.spans if sp.operation not in steady_ignoring
-                        )
+                        span_count = len(trace.spans)
                         if last_span_count is None or span_count != last_span_count:
                             last_span_count = span_count
                             quiet_since = now

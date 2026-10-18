@@ -35,6 +35,12 @@ groups:
             - {id: input_required, value: input-required, stability: development, brief: The task waits for a human.}
         stability: development
         brief: The A2A task state claims-agent reported on its span.
+      - id: northstar.a2a.link.reason
+        type:
+          members:
+            - {id: resume, value: resume, stability: development, brief: The span resumes a task that was parked at input-required; it links back to the span that parked it in the first trace.}
+        stability: development
+        brief: Why this span links to another trace. A link attribute, not a span attribute.
   - id: span.northstar.claim.submit
     type: span
     span_kind: internal
@@ -52,3 +58,13 @@ groups:
     brief: The customer waits for a human decision. Its own trace, linked to the submit span.
     attributes:
       - {ref: northstar.claim.id, requirement_level: required}
+  - id: span.northstar.a2a.resume
+    type: span
+    span_kind: internal
+    stability: development
+    name: northstar.a2a.resume
+    brief: The resume of a claim that waited for a human. Runs in the human's trace (B) and carries one link back to the span that parked the claim in trace A, with northstar.a2a.link.reason on the link.
+    attributes:
+      - {ref: northstar.claim.id, requirement_level: recommended}
+      - {ref: northstar.a2a.task.id, requirement_level: recommended}
+      - {ref: northstar.a2a.task.state, requirement_level: recommended}

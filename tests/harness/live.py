@@ -65,6 +65,10 @@ MCP_PROTOCOL_VERSION = "2025-06-18"
 UNAUTHORIZED = 401
 
 CLAIMS_AGENT_URL_DEFAULT = "http://localhost:19001"
+# The customer-ui server, reached the way the browser tests reach it: the kind
+# node's hostPort 8080 -> NodePort 30080 (deploy/kind/stage*.yaml). scripts/
+# start-demo.sh runs no port-forward for it, and this needs none.
+CUSTOMER_UI_URL_DEFAULT = os.environ.get("CUSTOMER_UI_URL", "http://localhost:8080")
 # A settlement is three sequential model turns plus MCP round trips; 180s
 # matches every other call site in this suite that drives one.
 SETTLEMENT_TIMEOUT_S = 180
@@ -198,11 +202,22 @@ def _jsonrpc(method: str, params: dict) -> dict:
     return {"jsonrpc": "2.0", "id": uuid.uuid4().hex, "method": method, "params": params}
 
 
+def push_config(*, customer_ui_url: str = CUSTOMER_UI_URL_DEFAULT) -> dict:
+    """A push URL and a fresh token from the customer-ui server, as the browser
+    gets them: `{"url", "token"}`."""
+    response = httpx.post(f"{customer_ui_url}/claims/push-config", timeout=15)
+    response.raise_for_status()
+    body = response.json()
+    assert body.get("url") and body.get("token"), f"push-config returned {sorted(body)}"
+    return body
+
+
 def submit_claim(
     claim_id: str,
     amount: float,
     *,
     claims_agent_url: str = CLAIMS_AGENT_URL_DEFAULT,
+    customer_ui_url: str = CUSTOMER_UI_URL_DEFAULT,
     timeout: float = SETTLEMENT_TIMEOUT_S,
     traceparent: str | None = None,
 ) -> dict:
@@ -210,11 +225,16 @@ def submit_claim(
 
     The caller originates the request, so it mints its own trace id and sends it
     as a `traceparent` (or is handed one) rather than searching for a plausible
-    trace afterwards. Returns at the first of `input-required` or a terminal
-    state -- and closes the stream there, as the customer-ui does:
-    `{"trace_id", "task_id", "context_id", "state", "reply"}`. `reply` is the
-    claim outcome claims-agent hands back (`status`, `paymentId`, `rule`,
-    `limit`, `narrative`, ...).
+    trace afterwards. The push config (`{url, token}`) comes from the customer-ui
+    server's `POST /claims/push-config` and rides in
+    `configuration.pushNotificationConfig`, as the browser's does.
+
+    The stream is read **to its end**: claims-agent ends it at `input-required`
+    or a terminal state, so there is nothing to close early. Returns
+    `{"trace_id", "task_id", "context_id", "state", "reply", "push_token"}`.
+    `reply` is the claim outcome claims-agent hands back (`status`, `paymentId`,
+    `rule`, `limit`, `narrative`, ...). `push_token` is what `await_outcome`
+    waits on. The token is a credential for one claim: never print it.
 
     A claim is never sent with a blocking `message/send`: one routed to a human
     would block for the whole wait.
@@ -222,12 +242,16 @@ def submit_claim(
     if traceparent is None:
         traceparent = f"00-{uuid.uuid4().hex}-{uuid.uuid4().hex[:16]}-01"
     trace_id = traceparent.split("-")[1]
-    request = _jsonrpc("message/stream", {"message": {
-        "role": "user", "messageId": uuid.uuid4().hex,
-        "parts": [{"kind": "text", "text": json.dumps({
-            "claimId": claim_id, "policyNumber": "POL-77120",
-            "description": "Rear-end collision at a junction", "estimatedAmount": amount})}]}})
-    snap: dict = {"trace_id": trace_id}
+    push = push_config(customer_ui_url=customer_ui_url)
+    request = _jsonrpc("message/stream", {
+        "message": {
+            "role": "user", "messageId": uuid.uuid4().hex,
+            "parts": [{"kind": "text", "text": json.dumps({
+                "claimId": claim_id, "policyNumber": "POL-77120",
+                "description": "Rear-end collision at a junction", "estimatedAmount": amount})}]},
+        "configuration": {"pushNotificationConfig": {"url": push["url"], "token": push["token"]}},
+    })
+    snap: dict = {"trace_id": trace_id, "push_token": push["token"]}
     with httpx.stream(
         "POST", f"{claims_agent_url}/", json=request,
         headers={"traceparent": traceparent, "accept": "text/event-stream"},
@@ -236,55 +260,50 @@ def submit_claim(
         response.raise_for_status()
         for event in _sse_results(response):
             snap = _snapshot(event, snap)
-            if snap.get("state") == "input-required" or snap.get("state") in TERMINAL_STATES:
-                break
     assert snap.get("state"), f"claims-agent streamed no task state for claim {claim_id!r}"
     assert snap.get("reply") is not None, f"claims-agent streamed no reply for claim {claim_id!r}: {snap}"
     return snap
 
 
-def resubscribe(
-    task_id: str,
+def await_outcome(
+    push_token: str,
     *,
     timeout: float,
     drop_after: float | None = None,
-    claims_agent_url: str = CLAIMS_AGENT_URL_DEFAULT,
+    customer_ui_url: str = CUSTOMER_UI_URL_DEFAULT,
 ) -> dict:
-    """tasks/resubscribe: hold one stream until the task reaches a terminal state.
+    """Wait for the claim's terminal state on the customer-ui's event stream
+    (`GET /claims/events`, token in the `x-claim-token` header), which relays the
+    snapshots claims-agent pushes.
 
-    Returns `{"state", "reply", "events", "ended_without_terminal"}`. If
-    `drop_after` seconds pass first the stream is closed and the result carries
-    `dropped=True`, the way a lost connection looks to the customer-ui.
+    Returns `{"state", "reply", "events"}` once a terminal snapshot arrives. If
+    `drop_after` seconds pass with no event the stream is closed and the result
+    carries `dropped=True`, the way a lost connection looks to the browser.
+    A stream that ends with no terminal snapshot is an assertion failure.
     """
-    request = _jsonrpc("tasks/resubscribe", {"id": task_id})
     snap: dict = {"events": 0}
-    # `drop_after` is a quiet period: the stream's own first event arrives at
-    # once, then nothing until the decision, so a read timeout of that length
-    # closes the stream the way a lost connection would.
+    # `drop_after` is a quiet period: a read timeout of that length closes the
+    # stream the way a lost connection would.
     read = drop_after if drop_after else timeout
     try:
         with httpx.stream(
-            "POST", f"{claims_agent_url}/", json=request,
-            headers={"accept": "text/event-stream"},
+            "GET", f"{customer_ui_url}/claims/events",
+            headers={"x-claim-token": push_token, "accept": "text/event-stream"},
             timeout=httpx.Timeout(timeout, read=read),
         ) as response:
             response.raise_for_status()
-            for event in _sse_results(response):
-                snap = {**_snapshot(event, snap), "events": snap["events"] + 1}
+            for line in response.iter_lines():
+                if not line.startswith("data:"):
+                    continue
+                snap = {**_snapshot(json.loads(line[len("data:"):].strip()), snap),
+                        "events": snap["events"] + 1}
                 if snap.get("state") in TERMINAL_STATES:
-                    return {**snap, "ended_without_terminal": False}
+                    return snap
     except httpx.ReadTimeout:
         if not drop_after:
             raise
-        return {**snap, "dropped": True, "ended_without_terminal": True}
-    except AssertionError:
-        # The decision landed before the resubscribe: the SDK refuses with "is in
-        # terminal state". Read the task once, as the customer-ui does.
-        now = get_task(task_id, claims_agent_url=claims_agent_url)
-        if now["state"] not in TERMINAL_STATES:
-            raise
-        return {**snap, **now, "events": snap["events"], "ended_without_terminal": False}
-    return {**snap, "ended_without_terminal": True}
+        return {**snap, "dropped": True}
+    raise AssertionError(f"the customer-ui event stream ended with no terminal snapshot: state {snap.get('state')!r}")
 
 
 UPSTREAM_MODEL_FAILURE = re.compile(r"ModelAPIError|Connection error|Name or service not known", re.I)
@@ -320,13 +339,12 @@ def release_wait(payment_id: str, reviewer_id: str = "demo-cleanup") -> dict:
     """Decide a claim that is waiting for a human (reject it) and return the
     ledger record as it was *while waiting*.
 
-    A waiting claim keeps its trace open: a2a-sdk's `_run_event_stream` SERVER
-    span lasts as long as the parked `execute()` and the SDK's background
-    consumer adds an `EventQueue.dequeue_event` span every 0.5 s, so trace A
-    never settles and its children read as orphans until the wait ends
-    (docs/telemetry-contract.md). A fixture that asserts on a settled trace
-    calls this first; the pre-decision ledger record it returns is the evidence
-    for what the wait looked like.
+    Trace A no longer stays open while a claim waits: claims-agent's `execute()`
+    returns at `input-required`, so trace A is finished at the hand-off and its
+    spans have all landed. The decision and the resume run in trace B. This is
+    now the way to clean up a parked claim (no payment left awaiting approval, no
+    task left waiting), and the pre-decision ledger record it returns is the
+    evidence for what the wait looked like.
     """
     before = get_payment(payment_id)
     decided = review(payment_id, "reject", reviewer_id)

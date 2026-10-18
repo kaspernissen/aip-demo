@@ -316,37 +316,6 @@ def test_wait_for_trace_id_services_timeout_names_the_missing_service(monkeypatc
         )
 
 
-def test_wait_for_trace_id_ignores_polling_spans_when_deciding_the_trace_is_steady(monkeypatch):
-    """A claim waiting for a human gains an SDK polling span every 0.5 s. With
-    those named in `steady_ignoring` the trace is steady once everything else
-    is, and the returned trace still contains them (nothing is dropped)."""
-    clock = _install_fake_clock(monkeypatch)
-    client = JaegerClient("http://fake")
-    poll = "a2a.server.events.event_queue.EventQueue.dequeue_event"
-
-    def trace_with(n_polls):
-        spans = [
-            _raw_span("span1", "POST /", process_id="p1"),
-            _raw_span("span2", "POST /", parent_id="span1", process_id="p2"),
-        ] + [_raw_span(f"poll{i}", poll, parent_id="span1", process_id="p1") for i in range(n_polls)]
-        return _raw_trace(spans)
-
-    # One more polling span arrives every second, for the whole run.
-    _script_get_trace(monkeypatch, client, [(float(t), trace_with(t)) for t in range(0, 40)])
-
-    # The default ignores them: no caller has to remember to opt in.
-    result = client.wait_for_trace_id(
-        "trace-x", timeout=60, interval=1, services={"svc-a", "svc-b"},
-    )
-    assert any(s.operation == poll for s in result.spans)
-    assert clock.now < 20.0
-
-    # Counting every span is the explicit choice, and it never settles here.
-    with pytest.raises(AssertionError, match="never held steady"):
-        client.wait_for_trace_id("trace-x", timeout=30, interval=1, services={"svc-a", "svc-b"},
-                                 steady_ignoring=frozenset())
-
-
 # --- span links, the root, and wait_for_operation (M8 Task 3) ----------------
 
 
@@ -422,3 +391,16 @@ def test_only_a_payment_less_model_connection_failure_counts_as_upstream():
         {"state": "failed", "reply": {"paymentId": "PAY-000001", "error": "Connection error"}})
     assert not live.is_upstream_model_failure(
         {"state": "failed", "reply": {"paymentId": None, "error": "amount must not be negative"}})
+
+
+def test_otlp_links_keep_the_link_attributes_the_v1_shape_drops():
+    from tests.harness.jaeger import otlp_links
+
+    payload = {"resourceSpans": [{"scopeSpans": [{"spans": [
+        {"spanId": "b2", "name": "northstar.a2a.resume", "links": [{
+            "traceId": "aaaa", "spanId": "a1",
+            "attributes": [{"key": "northstar.a2a.link.reason", "value": {"stringValue": "resume"}}]}]},
+        {"spanId": "b3", "name": "no links"},
+    ]}]}]}
+    assert otlp_links(payload) == {"b2": [
+        {"trace_id": "aaaa", "span_id": "a1", "attrs": {"northstar.a2a.link.reason": "resume"}}]}

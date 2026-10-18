@@ -26,7 +26,7 @@ import httpx
 import pytest
 
 from tests.harness import contract, live
-from tests.harness.jaeger import JaegerClient
+from tests.harness.jaeger import JaegerClient, Trace
 
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 
@@ -138,17 +138,16 @@ def test_autonomous_5800_completes_with_no_wait_and_6200_waits():
             live.review(waits["reply"]["paymentId"], "reject", "demo-cleanup")
 
 
-def test_a_resubscribe_held_open_ten_minutes_delivers_completed():
+def test_a_push_waited_on_for_ten_minutes_delivers_completed():
     run = _claim(AMOUNT)
     result = {}
-    with live.claims_agent_route():
-        listener = threading.Thread(target=lambda: result.update(
-            live.resubscribe(run["task_id"], timeout=900)))
-        listener.start()
-        time.sleep(600)
-        still_open = listener.is_alive()
-        live.review(run["reply"]["paymentId"], "approve", REVIEWER)
-        listener.join(timeout=60)
+    listener = threading.Thread(target=lambda: result.update(
+        live.await_outcome(run["push_token"], timeout=900)))
+    listener.start()
+    time.sleep(600)
+    still_open = listener.is_alive()
+    live.review(run["reply"]["paymentId"], "approve", REVIEWER)
+    listener.join(timeout=60)
     assert still_open, f"the stream ended before the decision: {result}"
     assert result.get("state") == "completed", result
     assert result["reply"]["status"] == "executed"
@@ -156,13 +155,13 @@ def test_a_resubscribe_held_open_ten_minutes_delivers_completed():
 
 def test_a_dropped_stream_reconnects_and_still_sees_the_outcome():
     run = _claim(AMOUNT)
+    first = live.await_outcome(run["push_token"], timeout=60, drop_after=3)
+    assert first.get("dropped"), first
+    live.review(run["reply"]["paymentId"], "reject", REVIEWER)
     with live.claims_agent_route():
-        first = live.resubscribe(run["task_id"], timeout=60, drop_after=3)
-        assert first.get("dropped"), first
-        live.review(run["reply"]["paymentId"], "reject", REVIEWER)
         once = live.get_task(run["task_id"])          # the one read after a drop
-        if once["state"] not in live.TERMINAL_STATES:
-            once = live.resubscribe(run["task_id"], timeout=60)
+    if once["state"] not in live.TERMINAL_STATES:
+        once = live.await_outcome(run["push_token"], timeout=60)
     assert once["state"] == "completed" and once["reply"]["status"] == "rejected"
 
 
@@ -249,12 +248,101 @@ def test_trace_b_is_rooted_at_review_decision_and_links_to_trace_a(approved):
 
 def test_trace_a_holds_the_deny_and_no_execute(approved):
     trace_a = JaegerClient(JAEGER_URL).wait_for_trace_id(
-        approved["trace_id"], services={"policy-decision-service"}, timeout=90,
-        steady_ignoring=JaegerClient.WAIT_POLLING_SPANS)
+        approved["trace_id"], services={"policy-decision-service"}, timeout=90)
     denies = [s for s in trace_a.spans
               if s.operation == "northstar.policy.decision" and s.attrs.get("northstar.policy.decision") == "deny"]
     assert denies and denies[0].attrs["northstar.policy.limit.amount"] == 0.0
     assert "POST /payments/{paymentId}/execute" not in {s.operation for s in trace_a.spans}
+
+
+HAND_OFF_SLACK_US = 2_000_000
+
+
+def test_trace_a_is_finished_at_the_hand_off():
+    """A claim that waits for a human no longer holds trace A open.
+
+    Read trace A once its policy span is in, again after the batch processors
+    have flushed (the baseline), and a third time 12 s later with nobody having
+    decided: the span count must not move, and no span may start later than the
+    `input-required` hand-off span's end plus 2 s. The claim is released after.
+    """
+    run = _claim(AMOUNT)
+    assert run["state"] == "input-required", run
+    try:
+        client = JaegerClient(JAEGER_URL)
+        client.wait_for_trace_id(run["trace_id"], operation="northstar.policy.decision", timeout=90)
+        time.sleep(8)    # past the slowest export batch (5 s)
+        baseline = client.get_trace(run["trace_id"])
+        time.sleep(12)
+        later = client.get_trace(run["trace_id"])
+        assert len(later.spans) == len(baseline.spans), (
+            f"trace A kept growing while the claim waited: {len(baseline.spans)} spans, then "
+            f"{len(later.spans)} twelve seconds later; new: "
+            f"{sorted({s.operation for s in later.spans} - {s.operation for s in baseline.spans})}")
+        hand_off = [s for s in later.spans
+                    if s.service == "claims-agent"
+                    and s.attrs.get("northstar.a2a.task.state") == "input-required"]
+        assert hand_off, ("no claims-agent span carries northstar.a2a.task.state=input-required; "
+                          f"spans: {sorted(s.operation for s in later.spans)}")
+        hand_off_end = max(s.start_us + s.duration_s * 1_000_000 for s in hand_off)
+        straggler = [s for s in later.spans if s.start_us > hand_off_end + HAND_OFF_SLACK_US]
+        assert not straggler, (
+            "spans started more than 2 s after the hand-off ended, so trace A is not finished: "
+            f"{[(s.service, s.operation) for s in straggler]}")
+    finally:
+        live.release_wait(run["reply"]["paymentId"])
+
+
+def _trace_b(approved: dict) -> Trace:
+    return JaegerClient(JAEGER_URL).wait_for_operation(
+        "reviewer-ui", "northstar.review.decision",
+        attrs={"northstar.review.reviewer.id": approved["reviewer"]}, timeout=90)
+
+
+def test_the_resume_runs_in_trace_b_and_links_to_trace_a(approved):
+    client = JaegerClient(JAEGER_URL)
+    trace_b = client.wait_for_trace_id(
+        _trace_b(approved).trace_id, operation="northstar.a2a.resume", timeout=60)
+    assert trace_b.trace_id != approved["trace_id"]
+    resumes = trace_b.spans_named("northstar.a2a.resume", "claims-agent")
+    assert len(resumes) == 1, [(s.service, s.operation) for s in trace_b.spans]
+    resume = resumes[0]
+    # The v1 shape drops link attributes, so the reason is read from the OTLP form.
+    links = client.link_attributes(trace_b.trace_id).get(resume.span_id, [])
+    assert [l["trace_id"] for l in links] == [approved["trace_id"]], links
+    assert links[0]["attrs"].get("northstar.a2a.link.reason") == "resume", links
+
+    # The push to the customer: claims-agent's CLIENT span, then the customer-ui
+    # server's SERVER span as its child. The server span lands up to ~5 s later.
+    deadline = time.monotonic() + 60
+    while True:
+        trace_b = client.get_trace(trace_b.trace_id)
+        pushes = [s for s in trace_b.spans
+                  if s.service == "claims-agent" and s.kind == "client"
+                  and any(str(v).endswith("/a2a/push") for v in s.attrs.values())]
+        received = [s for s in trace_b.spans
+                    if s.service == "customer-ui-server" and s.kind == "server"
+                    and "/a2a/push" in s.operation]
+        if (pushes and received) or time.monotonic() > deadline:
+            break
+        time.sleep(3)
+    assert pushes, f"no claims-agent CLIENT span to /a2a/push in trace B: {sorted((s.service, s.operation) for s in trace_b.spans)}"
+    assert received, f"no customer-ui-server SERVER span for /a2a/push in trace B: {sorted((s.service, s.operation) for s in trace_b.spans)}"
+    assert received[0].parent_id == pushes[0].span_id, (received[0], pushes[0])
+    assert received[0].start_us >= pushes[0].start_us
+
+
+def test_the_push_token_is_in_no_span_of_trace_a_or_trace_b(approved):
+    """The token is a per-claim credential. It reaches claims-agent in the stream
+    params and comes back as a header; nothing may record it. Read from the OTLP
+    form, which holds every attribute, resource attribute and event."""
+    import json
+    client = JaegerClient(JAEGER_URL)
+    token = approved["push_token"]
+    trace_b = _trace_b(approved).trace_id
+    for name, trace_id in (("A", approved["trace_id"]), ("B", trace_b)):
+        payload = json.dumps(client.get_trace_otlp(trace_id))
+        assert token not in payload, f"the push token appears in trace {name} ({trace_id})"
 
 
 # The series name was read off the running Prometheus on 2026-10-14. The label

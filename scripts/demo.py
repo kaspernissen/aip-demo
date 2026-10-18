@@ -549,8 +549,6 @@ def cmd_claim(args: argparse.Namespace) -> None:
         run["trace_id"],
         services={"agentgateway", live.PDS_SERVICE, live.PAYMENTS_API},
         timeout=TRACE_WAIT_S,
-        # A claim waiting for a human keeps adding SDK polling spans to its trace.
-        steady_ignoring=JaegerClient.WAIT_POLLING_SPANS,
     )
     facts = render_span_tree(trace, executed_expected=(status == "executed"))
     out()

@@ -5189,6 +5189,7 @@ The insurance claim a trace is about, and the A2A task that carries it.
 
 | Attribute | Type | Stability | Description | Examples / values |
 |---|---|---|---|---|
+| `northstar.a2a.link.reason` | enum | development | Why this span links to another trace. A link attribute, not a span attribute. | `resume` |
 | `northstar.a2a.task.id` | string | development | The A2A task id of a claim being processed by claims-agent. | `f2d33c09-7ffb-406b-8491-7fc94b9c6693` |
 | `northstar.a2a.task.state` | enum | development | The A2A task state claims-agent reported on its span. | `failed`, `completed`, `input-required` |
 | `northstar.claim.id` | string | development | The claim a span belongs to. Travels as W3C baggage; the span processors copy it onto spans. | `CLM-1842` |
@@ -5244,6 +5245,7 @@ A human's decision about one payment that policy refused to let an agent execute
 
 | Span | Kind | Brief | Attributes (requirement level) |
 |---|---|---|---|
+| `northstar.a2a.resume` | internal | The resume of a claim that waited for a human. Runs in the human's trace (B) and carries one link back to the span that parked the claim in trace A, with northstar.a2a.link.reason on the link. | `northstar.a2a.task.id` (recommended); `northstar.a2a.task.state` (recommended); `northstar.claim.id` (recommended) |
 | `northstar.autonomy_contract.change` | internal | One flip of the autonomy contract. Starts and ends in the same instant. | `k8s.namespace.name` (recommended); `northstar.contract.actor` (required); `northstar.contract.field_manager` (required); `northstar.contract.flag.name` (recommended); `northstar.contract.new_variant` (required); `northstar.contract.previous_variant` (required) |
 | `northstar.claim.submit` | internal | The customer submits a claim. Root of the claim's first trace. | `northstar.claim.id` (required); `northstar.claim.policy_number` (required) |
 | `northstar.claim.wait` | internal | The customer waits for a human decision. Its own trace, linked to the submit span. | `northstar.claim.id` (required) |

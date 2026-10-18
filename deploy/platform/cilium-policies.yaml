@@ -171,7 +171,7 @@ spec:
 #   settlement-agent -> example.com:443         reached
 #   claims-agent     -> api.anthropic.com:443   reached
 #   claims-agent     -> example.com:443         reached
-#   customer-ui      -> api.anthropic.com:443   reached   (nc -z, no python)
+#   customer-ui      -> api.anthropic.com:443   reached   (measured on the old nginx image, nc -z)
 #
 # So the requirement was false in three places, not one. A policy on
 # `settlement-agent` alone would have left `claims-agent` and `customer-ui` --
@@ -483,29 +483,47 @@ spec:
         - ports:
             - port: "4318"
               protocol: TCP
+
+    # 5. The customer's push receiver, and nothing else on it.
+    #
+    # M10: a claim decided by a human is pushed to the customer-ui server's
+    # /a2a/push (a2a-sdk BasePushNotificationSender). The URL comes from the
+    # client, so claims-agent checks it against an exact allowlist (push.py);
+    # this rule is the same fact on the wire. One port, POST to one path.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: northstar-agents
+            app: customer-ui
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+          rules:
+            http:
+              - method: POST
+                path: "/a2a/push"
 ---
 # Document 3 of 3: customer-ui.
 #
 # The smallest document here and the one most likely to be questioned, so the
-# reasoning is explicit. `customer-ui` is nginx serving a static Next.js
-# export (`apps/customer-ui/nginx.conf`: one `server` block, `root
-# /usr/share/nginx/html`, a `try_files` and no `proxy_pass` anywhere), and the
-# browser talks to `claims-agent` directly from the page rather than through
-# this pod. Its outbound inventory is therefore genuinely empty.
+# reasoning is explicit. `customer-ui` is a small Python (Starlette) server
+# (`apps/customer-ui/server/`, python:3.13-slim) that serves the static Next.js
+# export and receives claims-agent's A2A push; the browser talks to
+# `claims-agent` directly from the page rather than through this pod. Its
+# outbound inventory is DNS and the OTLP collector, nothing else: it makes no
+# call to any peer.
 #
-# It is policied anyway because it was measured reaching
-# `api.anthropic.com:443`, it carries `northstar.io/plane: agents` in the
-# namespace the criterion names, and it runs an Alpine image with `nc` in it
-# -- so leaving it out would have left the namespace's easiest outbound path
-# open in the pod with a shell. "Needs nothing" is the argument for a policy
-# here, not against one.
+# It is policied because it was measured reaching `api.anthropic.com:443`, it
+# carries `northstar.io/plane: agents` in the namespace the criterion names, and
+# its image has a shell and an interpreter -- so leaving it out would have left
+# the namespace's easiest outbound path open. "Needs almost nothing" is the
+# argument for a policy here, not against one.
 #
-# The DNS allowance is the whole document. Not because nginx needs it -- a
-# static server with no upstream resolves nothing -- but because an egress
-# block with no rule at all is a shape this file should not carry: it reads as
-# an oversight rather than as a decision, and any future addition here would
-# start by debugging name resolution. This grants the least that is still
-# recognisably a policy.
+# The DNS allowance keeps the document recognisably a policy and lets the
+# server resolve the collector's name. The collector rule is the one whose
+# absence is worst: the OTLP exporter swallows export failures, so without it
+# every span from `customer-ui-server` (the push receiver, the other end of the
+# trace B hand-off) would vanish while the demo kept working.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -527,6 +545,17 @@ spec:
             - port: "53"
               protocol: UDP
             - port: "53"
+              protocol: TCP
+
+    # The OTLP collector, http/protobuf on 4318 (deploy/k8s/customer-ui.yaml),
+    # the same endpoint and rule as claims-agent's rule 3.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            app: otel-collector
+      toPorts:
+        - ports:
+            - port: "4318"
               protocol: TCP
 ---
 # =============================================================================
