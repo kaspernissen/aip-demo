@@ -7,7 +7,7 @@
   "preferredTransport": "JSONRPC",
   "capabilities": {
     "streaming": true,
-    "pushNotifications": false,
+    "pushNotifications": true,
     "stateTransitionHistory": false
   },
   "defaultInputModes": ["text/plain"],

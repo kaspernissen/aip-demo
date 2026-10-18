@@ -4,15 +4,17 @@ import json
 import os
 from pathlib import Path
 
+import httpx
 import uvicorn
 from a2a.server.apps import A2AStarletteApplication
-from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.server.tasks import InMemoryTaskStore
+from a2a.server.tasks import (BasePushNotificationSender, InMemoryPushNotificationConfigStore,
+                              InMemoryTaskStore)
 from a2a.types import AgentCard
 from opentelemetry.instrumentation.starlette import StarletteInstrumentor
 from starlette.middleware.cors import CORSMiddleware
 
 from executor import ClaimsAgentExecutor
+from push import AllowlistedRequestHandler, allowlist_from_env
 
 CARD_PATH = Path(os.environ.get("AGENT_CARD_PATH", "/app/agent-card.json"))
 
@@ -22,9 +24,16 @@ def load_agent_card() -> AgentCard:
 
 
 def build_app():
-    handler = DefaultRequestHandler(
+    # bootstrap's global HTTPXClientInstrumentor covers this client, so the
+    # push carries traceparent and the customer-ui's receipt joins the trace.
+    push_client = httpx.AsyncClient(timeout=10.0)
+    push_store = InMemoryPushNotificationConfigStore()
+    handler = AllowlistedRequestHandler(
         agent_executor=ClaimsAgentExecutor(),
         task_store=InMemoryTaskStore(),
+        push_config_store=push_store,
+        push_sender=BasePushNotificationSender(push_client, push_store),
+        push_url_allowlist=allowlist_from_env(),
     )
     app = A2AStarletteApplication(
         agent_card=load_agent_card(), http_handler=handler

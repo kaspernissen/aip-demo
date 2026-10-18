@@ -33,6 +33,9 @@ spec:
           env:
             - name: OTEL_SERVICE_NAME
               value: claims-agent
+            # Exact-match allowlist of A2A push URLs (push.py); anything else is refused.
+            - name: CLAIMS_AGENT_PUSH_URL_ALLOWLIST
+              value: http://customer-ui.northstar-agents.svc.cluster.local:8080/a2a/push
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://otel-collector.observability.svc.cluster.local:4318
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
