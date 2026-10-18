@@ -3,9 +3,9 @@ task its input is a message on the same task id (and context id).
 
 tasks/get first, for two reasons: the context id (the ledger stores only the
 task id), and to say plainly when the task is gone (claims-agent restarted).
-The message is sent non-blocking (configuration.blocking=false): the
-claims-agent completes the task on its own stream, and a blocking send would
-race the SDK's cleanup of that task's queue.
+The message is a blocking send: it starts a fresh `execute()` on the
+claims-agent, which reads the ledger and completes the task, or refuses (a
+JSON-RPC error, raised here as `ResumeFailed`).
 """
 from __future__ import annotations
 
@@ -55,8 +55,7 @@ class ClaimsClient:
                     "message": {"role": "user", "messageId": uuid.uuid4().hex,
                                 "kind": "message",
                                 "taskId": task_id, "contextId": task["contextId"],
-                                "parts": [{"kind": "text", "text": json.dumps(payload)}]},
-                    "configuration": {"blocking": False}})
+                                "parts": [{"kind": "text", "text": json.dumps(payload)}]}})
         except httpx.HTTPError as exc:
             raise ResumeFailed(f"could not reach claims-agent to resume {task_id}: {exc}") from exc
         return (accepted.get("status") or {}).get("state", "unknown")

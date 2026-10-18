@@ -2,21 +2,27 @@
 
 Every claim is an A2A task. If the settlement-agent settles it, the task
 completes at once. If the platform routes the payment to a human, the task
-moves to input-required and this execute() stays running, parked on an
-in-process future, until the reviewer-ui resumes the same task id.
+moves to input-required and execute() RETURNS. Nothing in this process waits
+for the human.
 
-Why it must stay running (a2a-sdk 0.3.7, read from source, measured in
-NOTES.md): tasks/resubscribe needs the task's event queue, and the SDK removes
-that queue when execute() returns.
+Why it returns (M10): a parked execute() made a2a-sdk 0.3.7 add an
+`EventQueue.dequeue_event` span every 0.5 s to the agent's trace for the whole
+wait. Returning ends trace A at the hand-off, with no polling. The reviewer-ui's
+resume is a `message/send` on the same task id; the SDK starts a fresh
+execute() for it, in the reviewer's trace (B). The parked span's context is
+stored in the task's metadata (`northstar.a2a.parked_span_context`) and the
+resume span carries it as a link, so B points back at A.
 
-Why both status updates are final=False: the SDK's EventConsumer closes the root
-queue immediately on a final update, which clears every resubscriber's queue
-before it reads the event. The stream ends instead when this execute() returns
-and the SDK closes the queue gracefully. Clients end on the task state.
-
-The resume is never trusted. The outcome the customer sees is whatever the
+The resume is never trusted, and it carries no state: the reply to report is
+read from the stored task, and the outcome the customer sees is whatever the
 ledger says: executed -> Settled, rejected -> Declined by a reviewer, anything
-else -> the resume is refused and the task keeps waiting.
+else -> the resume is refused (execute() raises) and the task stays
+input-required, able to take a later, real decision.
+
+The input-required update is final=False and the stream ends when execute()
+returns and the SDK closes the queue gracefully; clients end on the task state.
+The completion uses the updater's default (final=True): with no resubscriber
+left, nothing taps the queue that a final update closes (measured, 0.3.7).
 
 A refusal the settlement-agent could not record on the ledger
 (`refusal_unrecorded`) is terminal here: there is no payment awaiting approval
@@ -24,17 +30,14 @@ for a reviewer to find, so parking the task would wait for nobody.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import Part, TaskState, TaskStatus, TaskStatusUpdateEvent, TextPart
+from a2a.types import Part, Role, Task, TaskState, TextPart
 from a2a.utils import new_task
 from opentelemetry import context as otel_context
 from opentelemetry import trace
@@ -45,7 +48,9 @@ from intake import parse_claim
 from ledger import LedgerReader
 
 logger = logging.getLogger(__name__)
+_tracer = trace.get_tracer("claims-agent")
 
+PARKED_CONTEXT_KEY = "northstar.a2a.parked_span_context"
 AWAITING_APPROVAL = "awaiting_approval"
 REFUSAL_UNRECORDED = "refusal_unrecorded"
 UNROUTED_NARRATIVE = (
@@ -63,15 +68,41 @@ DECIDED_NARRATIVE = {
 }
 
 
-@dataclass
-class _Waiting:
-    reply: dict[str, Any]
-    outcome: asyncio.Future
-    published: asyncio.Event = field(default_factory=asyncio.Event)
+def _span_context_dict(ctx: trace.SpanContext) -> dict[str, Any]:
+    return {"trace_id": format(ctx.trace_id, "032x"), "span_id": format(ctx.span_id, "016x"),
+            "trace_flags": int(ctx.trace_flags)}
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def _parked_link(task: Task) -> trace.Link | None:
+    raw = (task.metadata or {}).get(PARKED_CONTEXT_KEY)
+    try:
+        ctx = trace.SpanContext(trace_id=int(raw["trace_id"], 16), span_id=int(raw["span_id"], 16),
+                                is_remote=True, trace_flags=trace.TraceFlags(int(raw["trace_flags"])))
+    except (TypeError, KeyError, ValueError):
+        logger.warning("task %s: no usable parked span context (%r); resuming without a link", task.id, raw)
+        return None
+    if not ctx.is_valid:
+        logger.warning("task %s: parked span context is not valid; resuming without a link", task.id)
+        return None
+    return trace.Link(ctx, {"northstar.a2a.link.reason": "resume"})
+
+
+def _waiting_reply(task: Task) -> dict[str, Any]:
+    """The reply the task parked with: the last text the agent said.
+
+    Measured against a2a-sdk 0.3.7: when a message arrives for a task, the SDK
+    moves `status.message` into `history` before execute() sees the task, so on
+    a resume the reply is the agent's last history entry, not the status message.
+    """
+    messages = [task.status.message] if task.status.message else []
+    messages += list(reversed(task.history or []))
+    for message in messages:
+        if message.role != Role.agent:
+            continue
+        for part in message.parts:
+            if isinstance(part.root, TextPart):
+                return json.loads(part.root.text)
+    raise RuntimeError(f"task {task.id} is input-required but carries no reply to resume")
 
 
 class ClaimsAgentExecutor(AgentExecutor):
@@ -80,7 +111,6 @@ class ClaimsAgentExecutor(AgentExecutor):
         self._delegates = delegates if delegates is not None else {
             name: A2ADelegate(url, name) for name, url in ALLOWED_AGENTS.items()}
         self._ledger = ledger or LedgerReader()
-        self._waiting: dict[str, _Waiting] = {}
 
     def _delegate(self, name: str) -> A2ADelegate:
         try:
@@ -93,7 +123,7 @@ class ClaimsAgentExecutor(AgentExecutor):
     async def execute(self, request_context: RequestContext, event_queue: EventQueue) -> None:
         task = request_context.current_task
         if task is not None and task.status.state == TaskState.input_required:
-            await self._resume(task.id)
+            await self._resume(task, event_queue)
             return
         await self._claim(request_context, event_queue)
 
@@ -152,55 +182,36 @@ class ClaimsAgentExecutor(AgentExecutor):
             await updater.complete(updater.new_agent_message([Part(root=TextPart(text=json.dumps(reply)))]))
             return
 
-        waiting = _Waiting(reply=reply, outcome=asyncio.get_running_loop().create_future())
-        self._waiting[task.id] = waiting
-        try:
-            span.set_attribute("northstar.a2a.task.state", TaskState.input_required.value)
-            await updater.update_status(
-                TaskState.input_required,
-                message=updater.new_agent_message([Part(root=TextPart(text=json.dumps(reply)))]),
-                final=False)
-            outcome, resume_context = await waiting.outcome
-            # Publish under the resume's context (trace B), never trace A's, and
-            # still carrying the claim id.
-            token = otel_context.attach(set_claim_id(claim["claimId"], ctx=resume_context))
-            try:
-                await event_queue.enqueue_event(TaskStatusUpdateEvent(
-                    task_id=task.id, context_id=task.context_id, final=False,
-                    status=TaskStatus(
-                        state=TaskState.completed, timestamp=_now(),
-                        message=updater.new_agent_message(
-                            [Part(root=TextPart(text=json.dumps(outcome)))]))))
-            finally:
-                otel_context.detach(token)
-            waiting.published.set()
-        finally:
-            self._waiting.pop(task.id, None)
+        span.set_attribute("northstar.a2a.task.state", TaskState.input_required.value)
+        await updater.update_status(
+            TaskState.input_required,
+            message=updater.new_agent_message([Part(root=TextPart(text=json.dumps(reply)))]),
+            final=False,
+            metadata={PARKED_CONTEXT_KEY: _span_context_dict(span.get_span_context())})
+        # execute() returns here. Trace A ends at the hand-off; the resume is a
+        # new execute() in the reviewer's trace (B), linked back to this span.
 
-    async def _resume(self, task_id: str) -> None:
-        waiting = self._waiting.get(task_id)
-        if waiting is None:
-            raise RuntimeError(
-                f"task {task_id} is not waiting in this claims-agent process "
-                "(it may have restarted); nothing was resumed")
-        if waiting.outcome.done():
-            # Two resumes raced (a retry on top of a slow first one). The first has
-            # set the outcome; a second set_result would be an InvalidStateError
-            # surfaced as a confusing 500.
-            raise RuntimeError(f"task {task_id} was already resumed")
-        record = await self._ledger.get(waiting.reply["paymentId"])
-        decision = OUTCOMES.get(record.get("status"))
-        if decision is None:
-            raise RuntimeError(
-                f"task {task_id}: the ledger shows {record.get('status')!r} for "
-                f"{waiting.reply['paymentId']}, so there is no human decision to report")
-        trace.get_current_span().set_attribute("northstar.a2a.task.state", TaskState.completed.value)
-        outcome = {**waiting.reply, "status": record["status"], "decision": decision,
-                   "narrative": DECIDED_NARRATIVE[decision]}
-        waiting.outcome.set_result((outcome, otel_context.get_current()))
-        # The parked execute() publishes the completion and returns. Bounded, so
-        # a parked task that died cannot hold the reviewer-ui's resume forever.
-        await asyncio.wait_for(waiting.published.wait(), timeout=30)
+    async def _resume(self, task: Task, event_queue: EventQueue) -> None:
+        reply = _waiting_reply(task)
+        link = _parked_link(task)
+        token = otel_context.attach(set_claim_id(reply["claimId"]))
+        try:
+            with _tracer.start_as_current_span(
+                    "northstar.a2a.resume", links=[link] if link else []) as span:
+                span.set_attribute("northstar.a2a.task.id", task.id)
+                record = await self._ledger.get(reply["paymentId"])
+                decision = OUTCOMES.get(record.get("status"))
+                if decision is None:
+                    raise RuntimeError(
+                        f"task {task.id}: the ledger shows {record.get('status')!r} for "
+                        f"{reply['paymentId']}, so there is no human decision to report")
+                span.set_attribute("northstar.a2a.task.state", TaskState.completed.value)
+                outcome = {**reply, "status": record["status"], "decision": decision,
+                           "narrative": DECIDED_NARRATIVE[decision]}
+                updater = TaskUpdater(event_queue, task.id, task.context_id)
+                await updater.complete(updater.new_agent_message([Part(root=TextPart(text=json.dumps(outcome)))]))
+        finally:
+            otel_context.detach(token)
 
     async def cancel(self, request_context: RequestContext, event_queue: EventQueue) -> None:
         raise NotImplementedError("claims-agent does not support cancellation")

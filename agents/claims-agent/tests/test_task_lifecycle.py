@@ -1,22 +1,27 @@
 """The claims-agent's task lifecycle, driven through the real DefaultRequestHandler.
 
 No HTTP and no cluster: InMemoryTaskStore, a fake settlement-agent, a fake ledger.
-These tests are also the measurement of a2a-sdk 0.3.7's resubscribe behaviour
-(NOTES.md, M8 Task 2).
+Since M10, execute() returns at input-required and a resume is a fresh
+execute(); the first test below is the measurement of a2a-sdk 0.3.7 that the
+design rests on (spec §5).
 """
 import asyncio
 import json
 import uuid
 
 import pytest
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
-from a2a.types import (Message, MessageSendConfiguration, MessageSendParams, Part,
-                       Role, Task, TaskIdParams, TaskQueryParams, TaskState,
-                       TaskStatus, TaskStatusUpdateEvent, TextPart)
+from a2a.types import (Message, MessageSendParams, Part, Role, Task, TaskQueryParams,
+                       TaskState, TaskStatus, TaskStatusUpdateEvent, TextPart)
 from a2a.utils.errors import ServerError
 
-from executor import ClaimsAgentExecutor
+import executor as executor_module
+from executor import PARKED_CONTEXT_KEY, ClaimsAgentExecutor
 
 CLAIM = {"claimId": "CLM-T1", "policyNumber": "POL-1", "estimatedAmount": 5800}
 
@@ -64,22 +69,56 @@ def _state(event):
 
 
 async def _until_input_required(handler):
-    stream = handler.on_message_send_stream(MessageSendParams(message=_msg(json.dumps(CLAIM))))
-    seen = []
-    async for event in stream:
-        seen.append(event)
-        if _state(event) == TaskState.input_required:
-            break
-    await stream.aclose()   # the customer-ui closes its claim stream here
+    """Drain the claim stream to its end. It ends on its own, because execute()
+    returns at input-required; every event seen is returned."""
+    seen = [e async for e in handler.on_message_send_stream(
+        MessageSendParams(message=_msg(json.dumps(CLAIM))))]
+    # The SDK removes the task's queue in a background task after the stream
+    # ends (measured, 0.3.7). A human takes minutes to resume; a test takes
+    # microseconds, and a resume that taps the not-yet-removed closed queue
+    # loses its events. Wait for that cleanup, as a real gap would.
+    await asyncio.gather(*list(handler._background_tasks))
     task = next(e for e in seen if isinstance(e, Task))
     return task, seen
 
 
+def _resume_params(task, decision="approved"):
+    # No `configuration`: a blocking send, which is what the reviewer-ui sends.
+    return MessageSendParams(message=_msg(
+        json.dumps({"decision": decision, "paymentId": "PAY-000001"}),
+        task_id=task.id, context_id=task.context_id))
+
+
 async def _resume(handler, task, decision="approved"):
-    return await handler.on_message_send(MessageSendParams(
-        message=_msg(json.dumps({"decision": decision, "paymentId": "PAY-000001"}),
-                     task_id=task.id, context_id=task.context_id),
-        configuration=MessageSendConfiguration(blocking=False)))
+    return await handler.on_message_send(_resume_params(task, decision))
+
+
+def _handler_with_ledger(status="executed", reply=None):
+    return _handler(reply or _awaiting(), ledger_status=status)
+
+
+@pytest.fixture
+def span_exporter(monkeypatch):
+    """Finished spans, captured without touching the process-wide provider."""
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(executor_module, "_tracer", provider.get_tracer("claims-agent"))
+    exporter.provider = provider
+    return exporter
+
+
+async def test_after_execute_returns_the_stream_ends_and_a_resume_runs_a_fresh_execute():
+    # Measurement for M10 (spec §5). If this fails, STOP: the design rests on it.
+    handler, _ = _handler_with_ledger(status="executed")
+    task, seen = await _until_input_required(handler)
+    # The stream ended on its own: _until_input_required drained it to the end.
+    assert _state(seen[-1]) == TaskState.input_required
+    stored = await handler.task_store.get(task.id)
+    assert stored.status.state == TaskState.input_required
+    assert PARKED_CONTEXT_KEY in (stored.metadata or {})
+    result = await handler.on_message_send(_resume_params(task))
+    assert result.status.state == TaskState.completed
 
 
 async def test_a_claim_within_the_band_completes_without_waiting():
@@ -106,39 +145,57 @@ async def test_the_task_id_is_passed_down_to_the_settlement_agent():
     assert executor._delegates["settlement-agent"].sent[0]["a2aTaskId"] == task.id
 
 
-async def test_resubscribe_stays_open_and_delivers_completed_after_the_resume():
-    handler, _ = _handler(_awaiting(), ledger_status="executed")
+
+
+async def test_a_resume_span_links_to_the_parked_context(span_exporter):
+    handler, _ = _handler_with_ledger(status="executed")
+    # Trace A: the claim runs under a span, as it does under the SDK's server span.
+    with span_exporter.provider.get_tracer("test").start_as_current_span("trace-a") as trace_a:
+        task, _ = await _until_input_required(handler)
+    stored = await handler.task_store.get(task.id)
+    parked = stored.metadata[PARKED_CONTEXT_KEY]
+    assert parked["trace_id"] == format(trace_a.get_span_context().trace_id, "032x")
+    await _resume(handler, task)
+    resumes = [s for s in span_exporter.get_finished_spans() if s.name == "northstar.a2a.resume"]
+    assert len(resumes) == 1
+    (link,) = resumes[0].links
+    assert format(link.context.trace_id, "032x") == parked["trace_id"]
+    assert format(link.context.span_id, "016x") == parked["span_id"]
+    assert link.attributes == {"northstar.a2a.link.reason": "resume"}
+    # Trace B is the reviewer's, not trace A.
+    assert resumes[0].context.trace_id != link.context.trace_id
+
+
+async def test_a_second_resume_after_completion_is_refused():
+    handler, _ = _handler_with_ledger(status="executed")
     task, _ = await _until_input_required(handler)
-    got = []
+    first = await _resume(handler, task)
+    with pytest.raises(ServerError) as excinfo:
+        await _resume(handler, task)
+    assert "terminal state" in str(excinfo.value.error)
+    stored = await handler.on_get_task(TaskQueryParams(id=task.id))
+    assert stored.status.state == TaskState.completed
+    assert stored.status.message == first.status.message
 
-    async def listen():
-        async for event in handler.on_resubscribe_to_task(TaskIdParams(id=task.id)):
-            got.append(event)
 
-    listener = asyncio.create_task(listen())
-    await asyncio.sleep(0.2)
-    assert not listener.done()          # open, waiting on the human
-    await _resume(handler, task, "approved")
-    await asyncio.wait_for(listener, timeout=5)
-    completed = [e for e in got if _state(e) == TaskState.completed]
-    assert completed, got
-    body = json.loads(completed[-1].status.message.parts[0].root.text)
-    assert body["status"] == "executed" and body["decision"] == "approved"
-    # The pre-decision narrative ("I could not release this") would contradict
-    # the outcome, so the decision replaces it.
-    assert "approved it" in body["narrative"] and "colleague" not in body["narrative"]
-    # Design pin: the stream ends when execute() returns and the SDK drains the
-    # queue, never on a final update, which makes a consumer close the root
-    # queue immediately. (In-process the SDK did not lose the event either way;
-    # see NOTES.md "M8 Task 2 measurements".)
-    assert completed[-1].final is False
+async def test_a_malformed_parked_context_resumes_without_a_link(caplog, span_exporter):
+    handler, _ = _handler_with_ledger(status="executed")
+    task, _ = await _until_input_required(handler)
+    stored = await handler.task_store.get(task.id)
+    stored.metadata[PARKED_CONTEXT_KEY] = {"trace_id": "nope"}
+    await handler.task_store.save(stored)
+    with caplog.at_level("WARNING", logger="executor"):
+        result = await _resume(handler, task)
+    assert result.status.state == TaskState.completed
+    (resume,) = [s for s in span_exporter.get_finished_spans() if s.name == "northstar.a2a.resume"]
+    assert resume.links == ()
+    assert any(r.levelname == "WARNING" and task.id in r.getMessage() for r in caplog.records)
 
 
 async def test_a_rejection_completes_the_task_declined():
     handler, _ = _handler(_awaiting(), ledger_status="rejected")
     task, _ = await _until_input_required(handler)
     await _resume(handler, task, "rejected")
-    await asyncio.sleep(0.2)
     stored = await handler.on_get_task(TaskQueryParams(id=task.id))
     assert stored.status.state == TaskState.completed
     body = json.loads(stored.status.message.parts[0].root.text)
@@ -152,7 +209,6 @@ async def test_a_resume_the_ledger_does_not_back_changes_nothing():
     # The refusal reaches the caller (the reviewer-ui records it as resume_error).
     with pytest.raises(RuntimeError, match="no human decision"):
         await _resume(handler, task, "approved")
-    await asyncio.sleep(0.2)
     stored = await handler.on_get_task(TaskQueryParams(id=task.id))
     assert stored.status.state == TaskState.input_required
 
@@ -164,7 +220,6 @@ async def test_a_refused_resume_leaves_the_task_able_to_complete_on_a_real_decis
         await _resume(handler, task, "approved")
     executor._ledger.status = "executed"
     await _resume(handler, task, "approved")
-    await asyncio.sleep(0.2)
     stored = await handler.on_get_task(TaskQueryParams(id=task.id))
     assert stored.status.state == TaskState.completed
 
@@ -180,7 +235,6 @@ async def test_tasks_get_after_completion_reads_completed():
     handler, _ = _handler(_awaiting(), ledger_status="executed")
     task, _ = await _until_input_required(handler)
     await _resume(handler, task, "approved")
-    await asyncio.sleep(0.2)
     stored = await handler.on_get_task(TaskQueryParams(id=task.id))
     assert stored.status.state == TaskState.completed
 
@@ -197,58 +251,10 @@ async def test_a_refusal_the_ledger_never_recorded_completes_the_task_and_never_
     body = json.loads(events[-1].status.message.parts[0].root.text)
     assert body["status"] == "refusal_unrecorded"
     assert "could not be routed for review" in body["narrative"]
-    assert executor._waiting == {}
 
 
-async def test_resubscribe_after_the_task_finished_is_refused_not_streamed():
-    # Measured (a2a-sdk 0.3.7): once execute() has returned the task is terminal
-    # in the store and tasks/resubscribe answers InvalidParams "is in terminal
-    # state". A task the store never held (a restarted claims-agent) is
-    # TaskNotFound. Either way the customer-ui's awaitOutcome reads tasks/get once and resolves if terminal.
-    handler, _ = _handler(_awaiting(), ledger_status="executed")
-    task, _ = await _until_input_required(handler)
-    await _resume(handler, task, "approved")
-    await asyncio.sleep(0.2)
-    with pytest.raises(ServerError) as excinfo:
-        async for _ in handler.on_resubscribe_to_task(TaskIdParams(id=task.id)):
-            pass
-    assert "terminal state" in str(excinfo.value.error)
-    with pytest.raises(ServerError) as gone:
-        async for _ in handler.on_resubscribe_to_task(TaskIdParams(id="never-existed")):
-            pass
-    assert "not found" in str(gone.value.error).lower()
 
 
-async def test_a_client_still_on_the_claim_stream_and_a_resubscriber_both_see_completed():
-    # Why the completion is final=False. The EventConsumer of the first stream
-    # closes the ROOT queue immediately on a final update, which clears every
-    # tapped child (the resubscriber's) before it reads the event. With the
-    # first stream detached (the customer-ui's case) that cannot happen, so this
-    # test keeps it attached.
-    handler, _ = _handler(_awaiting(), ledger_status="executed")
-    stream = handler.on_message_send_stream(MessageSendParams(message=_msg(json.dumps(CLAIM))))
-    first, resub = [], []
-
-    async def stay_on_the_claim_stream():
-        async for event in stream:
-            first.append(event)
-
-    async def resubscribed(task_id):
-        async for event in handler.on_resubscribe_to_task(TaskIdParams(id=task_id)):
-            resub.append(event)
-
-    staying = asyncio.create_task(stay_on_the_claim_stream())
-    for _ in range(100):
-        await asyncio.sleep(0.05)
-        if any(_state(e) == TaskState.input_required for e in first):
-            break
-    task = next(e for e in first if isinstance(e, Task))
-    listener = asyncio.create_task(resubscribed(task.id))
-    await asyncio.sleep(0.2)
-    await _resume(handler, task, "approved")
-    await asyncio.wait_for(asyncio.gather(staying, listener), timeout=5)
-    assert TaskState.completed in [_state(e) for e in resub], resub
-    assert TaskState.completed in [_state(e) for e in first], first
 
 
 class FailingDelegate:
@@ -267,18 +273,8 @@ async def test_a_settlement_failure_fails_the_task_with_the_real_reason_instead_
     assert _state(events[-1]) == TaskState.failed
     body = json.loads(events[-1].status.message.parts[0].root.text)
     assert body["status"] == "failed" and "amount must not be negative" in body["error"]
-    assert executor._waiting == {}
 
 
-async def test_a_second_resume_while_the_first_is_publishing_is_refused_not_a_crash():
-    from executor import _Waiting
-    executor = ClaimsAgentExecutor(delegates={"settlement-agent": FakeDelegate(_awaiting())},
-                                   ledger=FakeLedger("executed"))
-    waiting = _Waiting(reply=_awaiting(), outcome=asyncio.get_running_loop().create_future())
-    waiting.outcome.set_result(({}, None))
-    executor._waiting["task-1"] = waiting
-    with pytest.raises(RuntimeError, match="already resumed"):
-        await executor._resume("task-1")
 
 
 async def test_a_ledger_read_that_fails_once_leaves_the_task_waiting_for_the_retry():
@@ -299,6 +295,5 @@ async def test_a_ledger_read_that_fails_once_leaves_the_task_waiting_for_the_ret
     stored = await handler.on_get_task(TaskQueryParams(id=task.id))
     assert stored.status.state == TaskState.input_required
     await _resume(handler, task, "approved")
-    await asyncio.sleep(0.2)
     stored = await handler.on_get_task(TaskQueryParams(id=task.id))
     assert stored.status.state == TaskState.completed

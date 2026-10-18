@@ -20,7 +20,7 @@ TASK = {"result": {"id": "task-1", "contextId": "ctx-1", "kind": "task",
                    "status": {"state": "input-required"}}}
 
 
-async def test_resume_reads_the_context_then_sends_on_the_same_task_without_blocking():
+async def test_resume_reads_the_context_then_sends_on_the_same_task_as_a_blocking_send():
     seen = []
     client = claims.ClaimsClient("http://claims", transport=_transport(TASK, TASK, seen))
     state = await client.resume("task-1", {"decision": "approved", "paymentId": "PAY-000001"})
@@ -28,7 +28,8 @@ async def test_resume_reads_the_context_then_sends_on_the_same_task_without_bloc
     assert [b["method"] for b in seen] == ["tasks/get", "message/send"]
     message = seen[1]["params"]["message"]
     assert message["taskId"] == "task-1" and message["contextId"] == "ctx-1"
-    assert seen[1]["params"]["configuration"]["blocking"] is False
+    # No `configuration`: the SDK treats that as a blocking send.
+    assert "configuration" not in seen[1]["params"]
 
 
 async def test_a_task_that_is_gone_is_resume_failed():
