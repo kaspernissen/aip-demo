@@ -14,7 +14,7 @@ stored in the task's metadata (`northstar.a2a.parked_span_context`) and the
 resume span carries it as a link, so B points back at A.
 
 The resume is never trusted, and it carries no state: the reply to report is
-read from the stored task, and the outcome the customer sees is whatever the
+read from the task's metadata (`northstar.a2a.parked_reply`, written by this agent), and the outcome the customer sees is whatever the
 ledger says: executed -> Settled, rejected -> Declined by a reviewer, anything
 else -> the resume is refused (execute() raises) and the task stays
 input-required, able to take a later, real decision.
@@ -50,6 +50,7 @@ from ledger import LedgerReader
 logger = logging.getLogger(__name__)
 _tracer = trace.get_tracer("claims-agent")
 
+PARKED_REPLY_KEY = "northstar.a2a.parked_reply"
 PARKED_CONTEXT_KEY = "northstar.a2a.parked_span_context"
 AWAITING_APPROVAL = "awaiting_approval"
 REFUSAL_UNRECORDED = "refusal_unrecorded"
@@ -88,21 +89,17 @@ def _parked_link(task: Task) -> trace.Link | None:
 
 
 def _waiting_reply(task: Task) -> dict[str, Any]:
-    """The reply the task parked with: the last text the agent said.
+    """The reply the task parked with, read ONLY from the task's metadata.
 
-    Measured against a2a-sdk 0.3.7: when a message arrives for a task, the SDK
-    moves `status.message` into `history` before execute() sees the task, so on
-    a resume the reply is the agent's last history entry, not the status message.
+    Only an agent-side status update writes `task.metadata` (a2a-sdk 0.3.7
+    task_manager.py), so a client cannot forge it. The task's history is not
+    safe to read: the SDK appends every incoming message to it without looking
+    at its role, and a refused message stays there.
     """
-    messages = [task.status.message] if task.status.message else []
-    messages += list(reversed(task.history or []))
-    for message in messages:
-        if message.role != Role.agent:
-            continue
-        for part in message.parts:
-            if isinstance(part.root, TextPart):
-                return json.loads(part.root.text)
-    raise RuntimeError(f"task {task.id} is input-required but carries no reply to resume")
+    reply = (task.metadata or {}).get(PARKED_REPLY_KEY)
+    if not isinstance(reply, dict) or not reply.get("claimId") or not reply.get("paymentId"):
+        raise RuntimeError(f"task {task.id} is input-required but carries no parked reply to resume")
+    return reply
 
 
 class ClaimsAgentExecutor(AgentExecutor):
@@ -123,6 +120,10 @@ class ClaimsAgentExecutor(AgentExecutor):
     async def execute(self, request_context: RequestContext, event_queue: EventQueue) -> None:
         task = request_context.current_task
         if task is not None and task.status.state == TaskState.input_required:
+            # A resume is a person's message. The SDK files an agent-role message
+            # the same way, so refuse it here; the task keeps waiting.
+            if request_context.message is None or request_context.message.role != Role.user:
+                raise RuntimeError(f"task {task.id}: a resume must be a user message; refused")
             await self._resume(task, event_queue)
             return
         await self._claim(request_context, event_queue)
@@ -130,8 +131,8 @@ class ClaimsAgentExecutor(AgentExecutor):
     async def _claim(self, request_context: RequestContext, event_queue: EventQueue) -> None:
         claim = parse_claim(request_context.get_user_input())
         # Every span from here on carries northstar.claim.id: set once, at
-        # intake, and held for the whole claim (including the wait), so the
-        # enqueue_event spans for the task and its status updates carry it too.
+        # intake, and held for the whole of this execute(), so the enqueue_event
+        # spans for the task and its status updates carry it too.
         token = otel_context.attach(set_claim_id(claim["claimId"]))
         try:
             await self._run_claim(claim, request_context, event_queue)
@@ -187,7 +188,8 @@ class ClaimsAgentExecutor(AgentExecutor):
             TaskState.input_required,
             message=updater.new_agent_message([Part(root=TextPart(text=json.dumps(reply)))]),
             final=False,
-            metadata={PARKED_CONTEXT_KEY: _span_context_dict(span.get_span_context())})
+            metadata={PARKED_CONTEXT_KEY: _span_context_dict(span.get_span_context()),
+                      PARKED_REPLY_KEY: reply})
         # execute() returns here. Trace A ends at the hand-off; the resume is a
         # new execute() in the reviewer's trace (B), linked back to this span.
 
