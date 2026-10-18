@@ -61,7 +61,7 @@ ordinary slides now, outside the five-minute cut.
 | 02 | 10-open-act1 | W | 0:15 | 20 | When an agent acts | NEW | regulated domains: four sectors where an agent acts, one line on what it moves (Ch 10, Ch 14 "Who is in the room") |
 | 03 | 10-open-act1 | W | 0:35 | 60 | The auditor’s questions | NEW | the auditor's five questions, big type, each tagged with the requirement behind it (Ch 10; Ch 14 slide 35 table). The table itself comes at "From requirement to artifact". |
 | 04 | 10-open-act1 | W | 1:35 | 25 | Not an answer | NEW | the stakes, as type: Ch 14 slide 09's title line |
-| 05 | 10-open-act1 | W | 2:00 | 60 | This is a success | NEW | the puzzle: a crop of the customer UI outcome block, €5,800 waiting for a person |
+| 05 | 10-open-act1 | W | 2:00 | 60 | The agent proposed | NEW | the cold open: a crop of the customer UI outcome block, €5,800 held for a person (M8: a hold, not a refusal) |
 | 06 | 10-open-act1 | W+K | 3:00 | 70 | Where this comes from | NEW | two earlier talks and William's OSFF 2026 demo feed this one; speaker portrait printed as plates; beginners welcome |
 | 07 | 10-open-act1 | W | 4:10 | 10 | Act 1 — Agents change the nature of complexity | NEW | Act 1 divider |
 | 08 | 10-open-act1 | W | 4:20 | 35 | The evolution of architectures | TAMING | evolution of architectures: book Figure 1.1, lifted; the FIXED row cut, the BROKE row and the crossing lines kept |
@@ -138,7 +138,7 @@ ordinary slides now, outside the five-minute cut.
 | 79 | 50-close | W | 47:30 | 60 | What this does not do | NEW | Honest limitations: Ch 14's list (Backstage line kept exact in the note) plus the two abstract blocks the demo does not have (Ch 11.3; dashed like the blueprint's missing layers, Fig 11.1) |
 | 80 | 50-close | W | 48:30 | 45 | Becoming a regulated-platform wizard | DID WHAT | "Becoming an AI observability wizard": the six steps as the book lists them (Ch 3 Fig 3.18), dimmed, plus Ch 14's three regulated ones |
 | 81 | 50-close | W | 49:15 | 45 | What to do on Monday | NEW | The call to action: Ch 14's five verbs, ending on "Sixteen gaps. Pick one." |
-| 82 | 50-close | W | 50:00 | 30 | Three things to remember | NEW | Three things to remember: Figure 14.4 (study ed.; 14.9 full ed.) lifted verbatim, plus the callback. No QR: the book isn't hosted yet. |
+| 82 | 50-close | W | 50:00 | 30 | Three things to remember | NEW | Three things to remember: the layout of Figure 14.4 (study ed.; 14.9 full ed.), its text reworded after M8 for the talk's spine (guardrails, instrumented decisions, upstream projects), plus the callback. No QR: the book isn't hosted yet. |
 | 83 | 90-thanks | W | — | 0 | Thank you |  |  |
 | 84 | 90-thanks | K | — | 0 | Appendix — Pre-flight | NEW | appendix (speaker-only, 0 s): pre-flight T-60…T-5 (aip-demo docs/demo-runbook.md §4), at stage 7 with the Kyverno and over-grant checks (M7 design spec §4) |
 | 85 | 90-thanks | K | — | 0 | Appendix — Reset between runs | NEW | appendix (speaker-only, 0 s): reset between runs (runbook §7: scripts/demo reset first), plus the over-grant check (M7 design spec §2.2) |

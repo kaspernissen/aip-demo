@@ -13,6 +13,6 @@
  },
  {
   "secs": 30,
-  "note": "WILLIAM\n\nIf you keep three sentences, keep these. One: a refusal is the platform working, so instrument decisions, not only errors. Two: decide at the gateway, with identity as an input. Three: prove it from spans you already emit, then map them to the regulation.\n\nPause. Then the line from the cover.\n\nIf you can't trace it, you can't govern it.\n\nSource: Ch 14"
+  "note": "WILLIAM\n\nIf you keep three sentences, keep these.\n\nOne: guardrails live in the platform, not in the prompt. Identity, reach, limits, and a human where the rule says, and the agent cannot edit any of them.\n\nTwo: instrument the decisions, not only the errors. A permit, a hold and a sign-off are spans with a rule, a limit and an identity, and the names are a published schema.\n\nThree: build it from upstream projects. CNCF and AAIF already ship the pieces. The only part you write is your rules.\n\nPause. Then the line from the cover.\n\nIf you can't trace it, you can't govern it.\n\n[verify: agentgateway joined AAIF 2026-06-04 (agentgateway.dev blog); A2A joined 2026-08-17 (secondary source; check aaif.io/projects)]\n\nSource: Ch 14 (Fig 14.4, reworded after M8: the stop is now a hold for a person, not a refusal)"
  }
 ]
