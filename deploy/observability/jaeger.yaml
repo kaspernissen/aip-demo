@@ -1,3 +1,98 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jaeger-config
+  namespace: observability
+data:
+  # Jaeger v2.20.0's built-in all-in-one config, verbatim except max_traces
+  # (see the Deployment's comment). A change here needs a pod restart:
+  # setup-kind.sh restarts the Deployment after applying this file.
+  config.yaml: |
+    service:
+      extensions: [jaeger_storage, jaeger_query, remote_sampling, healthcheckv2, expvar, zpages]
+      pipelines:
+        traces:
+          receivers: [otlp, jaeger, zipkin]
+          processors: [batch]
+          exporters: [jaeger_storage_exporter]
+      telemetry:
+        resource:
+          service.name: jaeger
+        metrics:
+          level: detailed
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: "${env:JAEGER_LISTEN_HOST:-localhost}"
+                    port: 8888
+        logs:
+          level: info
+
+    extensions:
+      jaeger_query:
+        storage:
+          traces: some_storage
+        ai:
+          enable_mcp: true
+
+      jaeger_storage:
+        backends:
+          some_storage:
+            memory:
+              max_traces: 20000
+
+      remote_sampling:
+        file:
+          path:
+          default_sampling_probability: 1
+          reload_interval: 1s
+        http:
+          endpoint: "${env:JAEGER_LISTEN_HOST:-localhost}:5778"
+        grpc:
+          endpoint: "${env:JAEGER_LISTEN_HOST:-localhost}:5779"
+
+      healthcheckv2:
+        use_v2: true
+        http:
+          endpoint: "${env:JAEGER_LISTEN_HOST:-localhost}:13133"
+        grpc:
+
+      expvar:
+        endpoint: "${env:JAEGER_LISTEN_HOST:-localhost}:27777"
+
+      zpages:
+        endpoint: "${env:JAEGER_LISTEN_HOST:-localhost}:27778"
+
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: "${env:JAEGER_LISTEN_HOST:-localhost}:4317"
+          http:
+            endpoint: "${env:JAEGER_LISTEN_HOST:-localhost}:4318"
+
+      jaeger:
+        protocols:
+          grpc:
+            endpoint: "${env:JAEGER_LISTEN_HOST:-localhost}:14250"
+          thrift_http:
+            endpoint: "${env:JAEGER_LISTEN_HOST:-localhost}:14268"
+          thrift_binary:
+            endpoint: "${env:JAEGER_LISTEN_HOST:-localhost}:6832"
+          thrift_compact:
+            endpoint: "${env:JAEGER_LISTEN_HOST:-localhost}:6831"
+
+      zipkin:
+        endpoint: "${env:JAEGER_LISTEN_HOST:-localhost}:9411"
+
+    processors:
+      batch:
+
+    exporters:
+      jaeger_storage_exporter:
+        trace_storage: some_storage
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -41,10 +136,21 @@ spec:
           #   COLLECTOR_OTLP_ENABLED  OTLP is always on in v2; there is no
           #                           switch to set.
           #   SPAN_STORAGE_TYPE       storage is chosen in the collector
-          #   MEMORY_MAX_TRACES       config, not by env var. The image's
-          #                           built-in default config is exactly what
-          #                           this demo wants (all-in-one, in-memory),
-          #                           so no ConfigMap is mounted.
+          #   MEMORY_MAX_TRACES       config, not by env var.
+          #
+          # **The config is the image's own built-in all-in-one config,
+          # mounted from the ConfigMap below with one value changed:
+          # `max_traces` 100000 -> 20000** (upstream file:
+          # cmd/jaeger/internal/all-in-one.yaml at tag v2.20.0, copied
+          # 2026-10-18). Why: the in-memory store evicts only by trace count,
+          # and at 100000 it never evicted before the 512Mi limit. The pod was
+          # OOMKilled on 2026-10-14T15:53Z, about 2.5 days after it started,
+          # and an OOM erases every trace -- since M9 that is the demo's
+          # evidence (`scripts/demo evidence` reads Jaeger). Most traces here
+          # are tiny (Kyverno self-checks, about six a minute); the claim
+          # traces are a few hundred spans each, so a count cap only bounds
+          # memory together with a limit that has headroom: 1Gi below.
+          # 20000 still holds a whole gate run: oldest traces go first.
           #
           # The image name is `jaegertracing/jaeger`, not
           # `jaegertracing/all-in-one`, which is a v1-only repository.
@@ -53,6 +159,11 @@ spec:
           # (/api/services, /api/traces, /api/traces/{id} -- tests/harness/
           # jaeger.py) are confirmed against the running pod.
           image: jaegertracing/jaeger:2.20.0
+          args: ["--config", "/etc/jaeger/config.yaml"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/jaeger
+              readOnly: true
           ports:
             - name: query
               containerPort: 16686
@@ -65,7 +176,11 @@ spec:
               memory: 256Mi
               cpu: 100m
             limits:
-              memory: 512Mi
+              memory: 1Gi
+      volumes:
+        - name: config
+          configMap:
+            name: jaeger-config
 ---
 apiVersion: v1
 kind: Service

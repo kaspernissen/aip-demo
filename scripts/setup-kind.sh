@@ -555,6 +555,10 @@ if (( STAGE >= 4 )); then
 fi
 
 kubectl apply -f "$ROOT/deploy/observability/jaeger.yaml"
+# The trace cap lives in the jaeger-config ConfigMap, and a ConfigMap change
+# does not reach a running pod: restart it. Jaeger is in-memory, so this also
+# starts a rebuild with an empty trace store.
+kubectl -n observability rollout restart deployment/jaeger
 kubectl apply -f "$ROOT/deploy/observability/collector.yaml"
 # The manifest's `image:` literal is a documented default; the deployed image genuinely
 # derives from OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE (.env), not the literal.
