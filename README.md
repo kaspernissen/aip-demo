@@ -40,8 +40,10 @@ is; the runbook is the script.
   UI. When a reviewer approves it, the reviewer UI itself calls
   `execute_payment` through the same gateway and policy check, under its own
   identity. The policy permits that only when it reads `awaiting_approval` from
-  the ledger. A reviewer can also reject, which is final. The approval trace is
-  joined to the refused one by a span link.
+  the ledger. A reviewer can also reject, which is final. The agent's trace ends
+  when it hands the claim to a person; the person's trace carries the release, the
+  resume and the push that tells the customer, and a span link joins the two.
+  Nothing polls while the claim waits.
 - **One live value changes what the agent may do.** The autonomy level is an
   OpenFeature flag, `northstar-autonomy`, stored as a Kubernetes object and
   read by the policy service through a flagd sidecar. Flipping it from
@@ -90,8 +92,9 @@ flowchart LR
       under its own SPIFFE ID`"| gw
 </pre>
 
-A refused claim and its later approval are two traces, joined by a span link
-from `northstar.review.decision` (the root of trace B) back to the refusal span in trace A,
+A refused claim and its later approval are two traces, joined by span links
+from trace B (`northstar.review.decision`, the root, and the claims-agent's
+`northstar.a2a.resume`) back to trace A (the refusal span, and the span where the agent handed the claim over),
 rather than a parent-child edge, because the human decides minutes later in a
 different process:
 
@@ -101,9 +104,10 @@ flowchart LR
         a1["browser → ... → settlement-agent"] --> a2["deny"]
     end
     subgraph B["trace B — approved"]
-        b1["northstar.review.decision"] --> b2["execute_payment via the gateway"]
+        b1["northstar.review.decision"] --> b2["execute_payment via the gateway"] --> b3["northstar.a2a.resume"] --> b4["push to customer-ui"]
     end
     b1 -.->|"span link"| a1
+    b3 -.->|"span link"| a1
 </pre>
 
 | Component | What it does |

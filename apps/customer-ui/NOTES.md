@@ -462,3 +462,23 @@ customer-ui's NodePort. Killed only that specific PID (never touched the
 `lsof -nP -iTCP:8080 -sTCP:LISTEN` afterward showed only Docker Desktop's own
 proxy for kind's port mapping. Recorded per A9's own instruction to report this
 plainly when it happens.
+
+## 9. M10: the server, the push and the token flow
+
+M10 replaced nginx with a small Starlette server (`server/`, service name
+`customer-ui-server`): it serves the static export exactly as the old
+`try_files` did, `POST /claims/push-config` hands the browser `{url, token}`,
+`POST /a2a/push` receives claims-agent's A2A push (token in
+`X-A2A-Notification-Token`, checked with a constant-time compare before the body
+is parsed; 401 unknown token, 400 bad JSON, 409 a second task for a token), and
+`GET /claims/events` streams to the browser (token in an `x-claim-token` header; a
+`?token=` query is refused so it never lands in an access log). Uvicorn's access
+log is off. The browser's `resubscribe` is deleted: it holds `/claims/events`
+instead, and a stream failure falls back to one `tasks/get`.
+
+Trace B carries the release, the resume and the push; trace A ended at the
+hand-off. The relay holds a stream open on an event, with no timer, so a waiting
+claim costs no spans. `push-config` is unauthenticated and the relay is in
+memory and single-replica (1000 calls evict live claims, a restart loses every
+token). Memory limits went from 32/64 Mi to 64/128 Mi because Python plus OTel
+does not fit the old ones.

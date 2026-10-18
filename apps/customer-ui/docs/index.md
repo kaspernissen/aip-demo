@@ -10,7 +10,7 @@ component in the system a customer touches directly.
   trace. It has no parent, and its two attributes
   (`northstar.claim.id`, `northstar.claim.policy_number`) are set here in the
   browser, propagated from nowhere.
-- Submit over A2A to `claims-agent` and render the determination.
+- Submit over A2A to `claims-agent` and render the determination. When the claim waits for a person, the outcome arrives by push (below).
 
 ## What the claimant sees
 
@@ -30,6 +30,28 @@ claims-agent's A2A push and relays it to the browser (`/claims/push-config`,
 
 Reached on host port `8080`, a kind `extraPortMapping` onto a NodePort, so it
 needs no `kubectl port-forward` and survives a redeploy.
+
+## The wait, the push and the token
+
+The page asks the server for a push config (`POST /claims/push-config`, which
+answers `{url, token}`: a fixed receiver URL and a fresh per-claim token) and
+sends it with `message/stream` as `configuration.pushNotificationConfig`. The
+stream ends when the claim reaches `input-required`. The page then holds
+`GET /claims/events`, with the token in an `x-claim-token` header (never in the
+URL), under the `northstar.claim.wait` span.
+
+When a person decides, claims-agent's resume completes the task and the A2A SDK
+pushes the Task to `POST /a2a/push` with the token in `X-A2A-Notification-Token`.
+The server checks the token before it parses the body, relays the Task to the
+open events stream, and the stream ends with the outcome. Nothing polls and the
+page never resubscribes. If the events stream drops, the page reopens it; if it
+is refused, it reads the task once with `tasks/get`. The relay is in memory and
+single-replica, so a customer-ui restart loses the tokens.
+
+The server is its own service, `customer-ui-server` (the browser keeps
+`customer-ui`), and exports OTLP to the collector. No token is recorded on any
+span. Cilium allows claims-agent to reach customer-ui on `8080` for
+`POST /a2a/push` only.
 
 ## A note for anyone editing the form
 

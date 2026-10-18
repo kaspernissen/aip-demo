@@ -97,10 +97,11 @@ Decisions made by Kasper (2026-10-18):
   - `POST /a2a/push`: accepts an A2A push only with the
     `X-A2A-Notification-Token` it issued for that task (constant-time compare),
     stores the latest task snapshot per task id, and wakes any waiter;
-  - `POST /claims/{taskId}/push-token`: issues the per-claim random token the
-    browser puts in `pushNotificationConfig` (the token lives only server-side
-    and in that one request);
-  - `GET /claims/{taskId}/events`: SSE to the browser; sends the stored snapshot
+  - `POST /claims/push-config`: returns `{url, token}`, the fixed receiver URL
+    and a per-claim random token the browser puts in `pushNotificationConfig`
+    (the token lives only server-side and in that one request);
+  - `GET /claims/events`: SSE to the browser, the token in an `x-claim-token`
+    header (plan ruling 5); sends the stored snapshot
     at once if it is terminal, else waits on an `asyncio.Event` (no loop, no
     timeout-poll) and sends the snapshot when the push arrives, then ends.
   - Snapshots and tokens live in memory with a bounded size (oldest evicted);

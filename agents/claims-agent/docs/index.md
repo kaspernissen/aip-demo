@@ -25,9 +25,10 @@ component in the chain — deliberately.
 
 | Direction | Protocol | Detail |
 |---|---|---|
-| In | A2A / JSON-RPC 2.0 | port `9001`: `message/stream` and `tasks/resubscribe` from the browser, `tasks/get` and `message/send` (the resume) from the reviewer-ui |
+| In | A2A / JSON-RPC 2.0 | port `9001`: `message/stream` from the browser, `tasks/get` and a blocking `message/send` (the resume) from the reviewer-ui |
 | Out | A2A | `settlement-agent:9002` |
 | Out | HTTP | `payments-api:8080`, one read: `GET /payments/{id}`, when a task is resumed |
+| Out | A2A push | `POST` of the finished Task to `customer-ui:8080/a2a/push`, only to a URL on the exact-match allowlist (`CLAIMS_AGENT_PUSH_URL_ALLOWLIST`) |
 
 ## The waiting claim
 
@@ -37,18 +38,34 @@ text part: `claimId`, `policyNumber`, `paymentId`, `amount`, `currency`,
 `status` (`executed`, `awaiting_approval`, `rejected`), `narrative`, `rule`,
 `limit`, `decision` (`null`, `approved`, `rejected`).
 
-- The first `execute()` stays running while the task is `input-required`. It is
-  parked on an in-process future. The SDK removes a task's event queue when
-  `execute()` returns, and `tasks/resubscribe` needs that queue. So a claims-agent
-  restart loses the waiting claims.
-- The reviewer-ui resumes the same task id. The resume message is never
-  trusted: the claims-agent reads the payment from the ledger and reports
-  what the ledger says. A resume the ledger does not back is refused, and the
-  task keeps waiting.
-- Both status updates are `final=False`. The stream ends when the parked
-  `execute()` returns. Clients end on the task state, not the `final` flag.
-- A claim must be submitted with `message/stream`. A blocking `message/send`
-  would hang for the whole wait.
+- The first `execute()` records `input-required` and **returns**. Nothing is
+  parked and nothing polls while the claim waits. Trace A, the agent's work,
+  ends at that hand-off. A claims-agent restart still loses the waiting claims:
+  the `TaskStore` is in memory (unchanged, and still documented).
+- Two keys ride in the input-required status update's `metadata`, which the SDK
+  stores on the task. They are A2A task metadata, not telemetry:
+  `northstar.a2a.parked_span_context` (`trace_id`, `span_id`, `trace_flags` of
+  the span that handed off) and `northstar.a2a.parked_reply` (the reply the
+  customer is waiting on: claim id, payment id, amount, rule). Only an
+  agent-side status update writes `task.metadata`, so the resume reads the
+  reply from there and never from the client-writable history. A resume whose
+  message is not user-role is refused.
+- The person's side is trace B. The reviewer-ui records `northstar.review.decision`,
+  releases the payment through agentgateway under `human-approved.execute`, and
+  sends a blocking `message/send` with the same task id. That starts a fresh
+  `execute()`, which opens the span `northstar.a2a.resume` in trace B with one
+  span link back to the hand-off span in trace A
+  (`northstar.a2a.link.reason = resume`).
+- The resume is never trusted: the claims-agent reads the payment from the
+  ledger and reports what the ledger says. A resume the ledger does not back is
+  refused, and the task keeps waiting.
+- The task then completes, and the SDK pushes the Task to the customer-ui
+  server, which relays it to the browser. The push goes only to a URL on the
+  exact-match allowlist (SSRF guard), the receiver checks the token in
+  `X-A2A-Notification-Token`, and Cilium allows this one call (`POST /a2a/push`)
+  and nothing else from claims-agent to customer-ui.
+- A claim must be submitted with `message/stream` and a push config. The
+  stream ends at `input-required`; the outcome arrives by push.
 
 ## How trace context crosses
 

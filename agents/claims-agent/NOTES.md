@@ -747,7 +747,7 @@ sse-starlette. The 15 s `: ping` comment is sse-starlette's default
 `allow_headers` was not widened: `Accept` is CORS-safelisted. Nothing in this
 path goes through agentgateway or a Next server route.
 
-### Step 2: the SDK's resubscribe and completion behaviour
+### Step 2: the SDK's resubscribe and completion behaviour (superseded by M10: the design below no longer exists)
 
 Measured by `tests/test_task_lifecycle.py`, driving the real `DefaultRequestHandler`.
 
@@ -803,7 +803,7 @@ rule: dropping is loss) and polling is not used. The telemetry contract and spec
   never saw an event in Chromium. `frames()` now normalises CRLF, and a vitest case
   feeds CRLF frames (mutating the normalisation is RED). The Python harness was not
   affected (httpx `iter_lines` handles CRLF).
-- **The wait also costs trace A a polling span every 0.5 s.** After the customer
+- **Superseded by M10 (see "M10 Task 1" below): the wait no longer polls.** The wait used to cost trace A a polling span every 0.5 s. After the customer
   closes the claim stream the SDK starts `background_consume`
   (`default_request_handler.py`, on `CancelledError`/`GeneratorExit`), which runs
   `consume_all` with a 0.5 s dequeue timeout, and each dequeue is an
@@ -815,3 +815,47 @@ rule: dropping is loss) and polling is not used. The telemetry contract and spec
   of `execute()` aborted the HTTP body ("incomplete chunked read", found by
   `test_settlement_failure_reaches_the_caller_with_its_real_reason`). The executor
   now fails the task and puts the real reason in the message's `error`.
+
+## M10 Task 1 (2026-10-18): the claim waits as a stored task, not a parked call
+
+M10 removes the parked `execute()`, the in-process future and the resubscribe.
+The M8 sections above (the resubscribe behaviour, the SERVER span held open for
+the whole wait, the 0.5 s `EventQueue.dequeue_event` polling paragraph) are
+**superseded**, kept as the dated record of what was measured then. Nothing
+polls while a claim waits any more.
+
+Measured against a2a-sdk 0.3.7 (`tests/test_task_lifecycle.py`, the real
+`DefaultRequestHandler`); the three assumptions the design rested on all hold:
+
+- The stream ends on its own once `execute()` returns at `input-required`.
+- `message/send` with that task id starts a fresh `execute()` with
+  `current_task` set and the state `input_required`.
+- A status update's `metadata` lands in `task.metadata` (the SDK's task manager
+  merges it).
+
+Three observations the design did not predict:
+
+1. On a resume the SDK moves `status.message` into `history` before `execute()`
+   sees the task. The reply is therefore carried in task metadata, not read from
+   the status message. Review found that reading it from history let a client
+   forge it (the SDK appends every incoming message without checking its role),
+   so the reply is read only from `northstar.a2a.parked_reply`, and a resume that
+   is not user-role is refused.
+2. After a stream ends the SDK removes the task queue in a background task. A
+   resume sent within microseconds taps a closed queue. A person takes minutes;
+   the tests wait for the SDK's background tasks.
+3. `updater.complete` (final) works for the blocking resume, so the M8 reason for
+   keeping the completion `final=False` is gone. `input-required` stays
+   `final=False`.
+
+The two metadata keys are A2A task metadata, not telemetry, and are not in the
+registry: `northstar.a2a.parked_span_context` is `{trace_id, span_id,
+trace_flags}` of the hand-off span, `northstar.a2a.parked_reply` is the reply
+dict. Trace A ends at the hand-off; the resume span `northstar.a2a.resume` is in
+the reviewer's trace B with one link back (`northstar.a2a.link.reason = resume`).
+
+Push (Task 2): `push.py` wraps the request handler so a push-notification config
+is refused unless its URL matches the allowlist exactly (JSON-RPC `-32602`, and
+the executor never runs). `main.py` wires the in-memory config store and the SDK's
+sender. A restart still loses waiting claims: `TaskStore` and the push config
+store are both in memory.

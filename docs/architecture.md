@@ -1,4 +1,4 @@
-# Northstar Architecture — M9 (Weaver registry, in progress), on M8's Human in the loop
+# Northstar Architecture — M10 (span links), on M9 (Weaver registry) and M8's Human in the loop
 
 > **M8 change, read this first.** `senior-settlement-agent` was **retired in
 > M8**. Wherever this document, written milestone by milestone, describes it,
@@ -54,6 +54,9 @@
 >   (ids from the ledger's `refusal.refusedTraceId` and `refusedSpanId`), and
 >   the claim id as both an attribute and baggage. Wherever the text below says
 >   the link sits on `settlement.execute_approved`, that is dated M3 to M7 history.
+> - **M10: the resume is linked too.** The claims-agent's resume span
+>   `northstar.a2a.resume` is in trace B and carries one span link back to the hand-off
+>   span in trace A. Trace A ends at the hand-off and no longer grows during the wait.
 > - **How long humans take is a metric.** reviewer-ui records the OpenTelemetry
 >   histogram `northstar.approval.wait.duration` (seconds, attributes
 >   `northstar.review.decision` (`approve`/`reject`) and `northstar.policy.autonomy.level`
@@ -61,7 +64,7 @@
 >   `awaitingSince` to the decision. It is not sampled, and it reaches Prometheus as
 >   `northstar_approval_wait_duration_seconds_*` (measured; see the contract).
 
-Status: **M9 (Weaver registry)**, in progress on branch `m9-weaver-registry`: the registry in `telemetry/registry/` defines every owned telemetry name (all of them `northstar.*`, renamed everywhere at once), Weaver live-check checks the cluster's telemetry against it, and the demo reads Jaeger. This document uses the new names; the generated tables in `docs/telemetry-contract.md` are the attribute, span and metric inventory. Before it came **M8 (Human in the loop)**, on branch `m8-human-in-the-loop`, on top of **M7 (Bounded)**, which sat on **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
+Status: **M10 (Span links)**, in progress on branch `m10-span-links`: a claim that waits for a person is two traces and a link (trace A ends at the hand-off; trace B carries the release, the resume and the A2A push). Before it came **M9 (Weaver registry)**, on branch `m9-weaver-registry`: the registry in `telemetry/registry/` defines every owned telemetry name (all of them `northstar.*`, renamed everywhere at once), Weaver live-check checks the cluster's telemetry against it, and the demo reads Jaeger. This document uses the new names; the generated tables in `docs/telemetry-contract.md` are the attribute, span and metric inventory. Before it came **M8 (Human in the loop)**, on branch `m8-human-in-the-loop`, on top of **M7 (Bounded)**, which sat on **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
 autonomy) merged 2026-09-15 at `e62238f`, tagged `m5-verified`** -- read that
 tag's own message before trusting it, it claims less than its predecessors.
 Bumped in M6's first commit rather than left to a doc pass: this line went
@@ -676,7 +679,7 @@ independent positive control for the collector→Prometheus hop). See
 [`docs/telemetry-contract.md`](telemetry-contract.md)'s "SPIRE
 instrumentation, as measured".
 
-## The waiting claim — A2A's own task lifecycle (M8)
+## The waiting claim — A2A's own task lifecycle (M8, reshaped by M10)
 
 The Hop 1 description below is the M1 shape (a blocking `message/send`) and is
 kept as dated history. Since M8 the customer-ui submits a claim with
@@ -684,30 +687,41 @@ kept as dated history. Since M8 the customer-ui submits a claim with
 `submitted → input-required → completed` when a payment is routed to a human,
 or `submitted → completed` when the settlement agent settles it.
 
+**M10 changed how the wait works.** Until M10 the claims-agent parked the first
+`execute()` and the browser held a `tasks/resubscribe`; the trace carried an SDK
+span that lasted the whole wait and a 0.5 s polling span. That design is
+**superseded**: the paragraphs on it elsewhere in this file, in the telemetry
+contract and in `agents/claims-agent/NOTES.md` are dated M8 history.
+
 - **The claim stream** returns at `input-required` (or at a terminal state) and
   the browser closes it. Its first event carries the task id. The status message
   is one JSON text part with `claimId`, `policyNumber`, `paymentId`, `amount`,
   `currency`, `status`, `narrative`, `rule`, `limit` and `decision`.
-- **The wait is one stream.** The browser sends `tasks/resubscribe` and holds it
-  until the task is `completed`. sse-starlette sends a `: ping` every 15 s. If
-  the stream drops, the customer-ui reads the task once with `tasks/get` and
-  resubscribes. That is a reconnect, not polling. A 10-minute hold was measured
-  across the real path (`agents/claims-agent/NOTES.md`).
-- **The first `execute()` stays running.** The claims-agent parks it on an
-  in-process future while the task is `input-required`. The SDK removes a
-  task's event queue when `execute()` returns, and `tasks/resubscribe` needs
-  that queue, so the parked call is what makes the resubscribe possible. The
-  price is that a claims-agent restart loses the waiting claims.
-- **Both status updates are `final=False`.** The SDK's event consumer closes the
-  root queue immediately on a final update. The stream ends instead when the
-  parked `execute()` returns and the SDK drains the queue. Clients end on the
-  task state.
-- **The reviewer-ui resumes the same task id** with `tasks/get` and then a
-  non-blocking `message/send` carrying the decision. The claims-agent does not
-  trust that message. It reads the payment from payments-api (one
-  `GET /payments/{id}`, allowed by an L7 Cilium rule) and reports what the
-  ledger says: `executed` is "Settled", `rejected` is "Declined by a reviewer".
-  A resume the ledger does not back is refused and the task keeps waiting.
+- **The first `execute()` records `input-required` and returns.** Trace A, the
+  agent's work, ends at the hand-off. Nothing is parked and nothing polls while
+  the claim waits. The parked span context and the parked reply ride in that
+  status update's metadata (`northstar.a2a.parked_span_context`,
+  `northstar.a2a.parked_reply`: A2A task metadata, not telemetry). The price is
+  unchanged: the `TaskStore` is in memory, so a claims-agent restart loses the
+  waiting claims.
+- **The person's work is trace B.** The reviewer-ui records
+  `northstar.review.decision`, releases the payment through agentgateway under
+  `human-approved.execute`, and sends a blocking `message/send` with the same task
+  id. The claims-agent does not trust that message: a non-user-role resume is
+  refused, it reads the reply from the metadata it wrote itself, and it reads the
+  payment from payments-api (one `GET /payments/{id}`, allowed by an L7 Cilium
+  rule) and reports what the ledger says. A resume the ledger does not back is
+  refused and the task keeps waiting. The resume runs under
+  `northstar.a2a.resume`, with one span link back to the hand-off span in trace A
+  (`northstar.a2a.link.reason = resume`).
+- **The outcome is pushed.** When the task completes, the A2A SDK pushes it to
+  the customer-ui server (`POST /a2a/push`, token in `X-A2A-Notification-Token`),
+  which relays it to the browser's `GET /claims/events` (token in an
+  `x-claim-token` header). The customer-ui is now a small Python Starlette server
+  (`customer-ui-server`) that serves the static export. Guardrails on the push:
+  an exact-match URL allowlist in claims-agent (SSRF), the token check in the
+  receiver, and Cilium allowing claims-agent to customer-ui:8080 `POST /a2a/push`
+  only.
 - **A decline is `completed`, not A2A's `rejected`.** In A2A `rejected` means
   the agent refused the task. Here the agent did the work and a person declined
   the payment.
@@ -715,10 +729,6 @@ or `submitted → completed` when the settlement agent settles it.
   the ledger) completes the task at once with a message that the claim could not
   be routed for review. Nobody could find that payment, so waiting would be for
   nobody.
-- **Trace A keeps one long span.** The SDK's `_run_event_stream` SERVER span
-  lasts as long as the parked `execute()`, so it is open in trace A for the whole
-  wait (measured 83.2 s for a 75 s wait; the `POST /` span itself ended when the
-  customer closed the claim stream). See `docs/telemetry-contract.md`.
 
 ## Hop 1 — browser → claims-agent: A2A over JSON-RPC 2.0
 

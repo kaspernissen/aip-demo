@@ -470,16 +470,15 @@ yourself with `time scripts/demo <command>`: a claim is the model (a few
 seconds) plus a bounded wait for every service's spans to land in Jaeger; the
 flips take under a second to reach flagd.
 
-**On stage, about trace A while a claim waits.** While a claim waits for a
-human, a2a-sdk adds an `EventQueue.dequeue_event` span about every 0.5 seconds
-to the claim's first trace (trace A), and its `_run_event_stream` span stays
-open for the whole wait. Both were measured and are kept: nothing is sampled or
-filtered out of the data. So: **open trace A in Jaeger after the decision, not
-during the wait** (it is a long, noisy trace until then), and use the terminal
-driver's trace view on stage, which prints only the road the money would take
-and leaves those polling spans out. Step 5's `trace` link for an approved claim
-is the other way round: it opens the approval's own trace (trace B), which is
-short, rooted at `northstar.review.decision`, and holds no polling spans.
+**On stage, about trace A while a claim waits.** Trace A, the agent's work,
+ends at the hand-off: the claims-agent records `input-required` and returns, so
+nothing polls and trace A does not grow while the claim waits. There is nothing to
+wait for before opening it. The person's work is trace B: the decision, the
+release through the gateway, the resume (`northstar.a2a.resume`, with one span
+link back to trace A) and the push to the customer-ui server (`POST /a2a/push`,
+service `customer-ui-server`), which the browser's wait ends on. Step 5's `trace`
+link for an approved claim opens trace B. The terminal driver's trace view prints
+only the road the money would take.
 
 ---
 
@@ -1025,9 +1024,10 @@ flowchart LR
         a1["customer-ui → claims-agent → settlement-agent"] --> a2["deny: awaiting_approval"]
     end
     subgraph B["trace B — a human released it"]
-        b1["northstar.review.decision"] --> b2["execute_payment through the gateway"]
+        b1["northstar.review.decision"] --> b2["execute_payment through the gateway"] --> b3["northstar.a2a.resume"] --> b4["POST /a2a/push to customer-ui"]
     end
     b1 -.->|"span LINK"| a1
+    b3 -.->|"span LINK"| a1
 </pre>
 
 **SAY**
@@ -1402,7 +1402,7 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 | EUR 5,800 waits at `autonomous` | the flag did not take, or the caller identity is wrong | check the card; check `northstar.policy.caller.spiffe_id` on the span |
 | Backstage card shows the old value | it reads live — so this means the write failed | check the response, then `kubectl get featureflag` as an independent witness |
 | Jaeger shows two disconnected traces | trace context broken at a hop | expected only for the **human approval**, which is a link by design (beat 4) |
-| Trace A is huge and still growing while a claim waits | a2a-sdk adds an `EventQueue.dequeue_event` span about every 0.5 s for the wait | expected and kept (nothing is sampled). Open it after the decision, or use the terminal driver's trace view |
+| Trace A looks short and ends at `input-required` | that is the design: trace A ends at the hand-off, and a person's decision is trace B | expected. Follow the link from trace B's `northstar.a2a.resume` span back to A |
 | `NoTaskQueue` ERROR in the claims-agent log after an approve | a2a-sdk's cleanup on every resume | expected noise; the claim completed |
 | Scores come back with `spanCount` still climbing | OpenSearch near-real-time lag | wait, re-ask with `"emit": false` until it settles |
 | A pod is CrashLooping | — | `kubectl -n <ns> logs <pod> --previous` |
