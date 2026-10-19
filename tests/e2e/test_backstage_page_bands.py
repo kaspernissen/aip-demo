@@ -357,8 +357,17 @@ def test_every_page_wears_the_band_its_route_is_assigned(backstage_url):
                     # false report that the band is missing.
                     page.wait_for_selector(selector, timeout=60000)
                 except Exception:  # noqa: BLE001
-                    unpainted.append(f"{route}: no `{selector}` element on the page")
-                    continue
+                    # One reload, then the same wait again. M10 gate run 2 lost
+                    # `/create` this way three minutes after a fresh rollout: the
+                    # scaffolder page rendered no plugin header within 60 s, and
+                    # the same test passed in 5 s on its own minutes later. A
+                    # page that is really broken fails the second wait too.
+                    _goto(page, f"{backstage_url}{route}")
+                    try:
+                        page.wait_for_selector(selector, timeout=60000)
+                    except Exception:  # noqa: BLE001
+                        unpainted.append(f"{route}: no `{selector}` element on the page")
+                        continue
                 background = page.eval_on_selector(
                     selector, "el => getComputedStyle(el).backgroundImage"
                 )
