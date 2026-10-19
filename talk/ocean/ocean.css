@@ -7,8 +7,8 @@
    is switched off. Delete the <link> in build/head.html to go back.
 
    Role mapping: Broadsheet cyan (--color-accent: lines, chart highlights)
-   becomes teal; Broadsheet magenta (--color-accent-2: the emphasis spot)
-   becomes deep ocean blue on light grounds and aqua on dark ones. */
+   becomes teal; Broadsheet magenta (--color-accent-2: the emphasis spot) becomes spark orange,
+   teal's complement: --ocean-spark on paper, --ocean-spark-lift on ink (deep blue until 2026-10-19). */
 @import url("fonts/fonts.css");
 
 :root {
@@ -57,17 +57,20 @@
   --color-accent-800: #034078;
   --color-accent-900: #001F54;
 
-  /* deep ocean: the emphasis spot (was magenta) */
-  --color-accent-2: var(--ocean-deep);
-  --color-accent-2-100: #E8EFF7;
-  --color-accent-2-200: #CCDCEE;
-  --color-accent-2-300: #A2BFE0;
-  --color-accent-2-400: #6E98C8;
-  --color-accent-2-500: #3A6FA8;
-  --color-accent-2-600: #1B5590;
-  --color-accent-2-700: #034078;
-  --color-accent-2-800: #02315E;
-  --color-accent-2-900: #001F54;
+  /* spark: the emphasis spot, teal's complement (2026-10-19: "a complement colour for highlights").
+     Warm orange on paper; --ocean-spark-lift on ink. */
+  --ocean-spark: #E4572E;
+  --ocean-spark-lift: #FF9466;
+  --color-accent-2: var(--ocean-spark);
+  --color-accent-2-100: #FDEEE8;
+  --color-accent-2-200: #FAD5C6;
+  --color-accent-2-300: #F6B096;
+  --color-accent-2-400: #F2875F;
+  --color-accent-2-500: #EE6A3B;
+  --color-accent-2-600: #D9542A;
+  --color-accent-2-700: #B8441F;
+  --color-accent-2-800: #8F3417;
+  --color-accent-2-900: #66250F;
 
   --color-process-yellow: var(--ocean-aqua);
 
@@ -135,12 +138,12 @@ deck-stage { --cap-anchor: 168.4px; }
 /* ── Dark sheets (Kasper, 2026-10-19): a few statement slides in reverse ──
    `.x-dark` on a content/hero/quote slide swaps the ground to ink, the same way
    the cover does: the tokens flip, so anything drawn in --color-text follows.
-   The emphasis spot goes aqua, as it does on every dark Ocean ground. */
+   The emphasis spot lifts to a lighter orange on ink. */
 .slide.x-dark {
   --color-text: var(--ocean-paper);
-  --color-accent-2: var(--ocean-aqua-lift);
-  --color-accent-2-400: var(--ocean-aqua-lift);
-  --color-accent-2-700: var(--ocean-aqua-lift);
+  --color-accent-2: var(--ocean-spark-lift);
+  --color-accent-2-400: var(--ocean-spark-lift);
+  --color-accent-2-700: var(--ocean-spark-lift);
   --color-accent-700: var(--ocean-aqua);
   background: var(--ocean-ink);
   color: var(--ocean-paper);

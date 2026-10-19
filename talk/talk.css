@@ -1633,6 +1633,10 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x40-ev-shot img { width: 100%; height: auto; display: block; border-radius: var(--radius-md); }
 .x40-ev-cap { margin: 28px 0 0; font-size: var(--type-small); max-width: 60ch; }
 
+/* the two checks take their own icon colours: evals violet, guardrails the spark */
+.x40-two .col { --icon: var(--ocean-violet); }
+.x40-two .col.m { --icon: var(--ocean-spark); }
+
 /* ===== 50-close.css ===== */
 /* 50-close: slides 48-51, Broadsheet. Everything is x50-* so no other fragment collides. */
 
