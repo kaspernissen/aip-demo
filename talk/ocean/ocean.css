@@ -220,3 +220,12 @@ deck-stage { --cap-anchor: 168.4px; }
   border: 3px solid var(--ocean-spark); border-radius: 8px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--ocean-spark) 18%, transparent); }
 .hl-mark b { position: absolute; left: calc(100% + 18px); top: 50%; transform: translateY(-50%); white-space: nowrap;
   background: var(--ocean-spark); color: #fff; font: 600 22px/1 var(--font-body); padding: 8px 12px; border-radius: 6px; }
+
+/* Dividers: what the act covers, on the ink side (2026-10-19: "a small visual or UP NEXT bullets") */
+.slide.divider .dv-next { position: absolute; left: 1230px; top: 210px; width: 560px; color: var(--ocean-paper); --icon: var(--ocean-aqua-lift); }
+.slide.divider .dv-next i { font-size: 120px; line-height: 1; }
+.slide.divider .dv-next .k { margin: 34px 0 18px; font-size: 22px; letter-spacing: .14em; text-transform: uppercase; color: var(--ocean-aqua-lift); }
+.slide.divider .dv-next ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
+.slide.divider .dv-next li { position: relative; padding-left: 34px; font-size: 38px; line-height: 1.2; font-weight: 500; }
+.slide.divider .dv-next li::before { content: ""; position: absolute; left: 0; top: .42em; width: 14px; height: 14px; border-radius: 50%; background: var(--ocean-spark-lift); }
+.slide.divider .dv-next .who { margin: 36px 0 0; font-size: 24px; font-style: italic; color: var(--ocean-on-ink-dim); }
