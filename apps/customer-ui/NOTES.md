@@ -471,8 +471,8 @@ M10 replaced nginx with a small Starlette server (`server/`, service name
 `POST /a2a/push` receives claims-agent's A2A push (token in
 `X-A2A-Notification-Token`, checked with a constant-time compare before the body
 is parsed; 401 unknown token, 400 bad JSON, 409 a second task for a token), and
-`GET /claims/events` streams to the browser (token in an `x-claim-token` header; a
-the token is header-only: a `?token=` query is ignored and answers 401, but a client that sent one would still have it recorded in the SERVER span's `url.query`, so never send one). Uvicorn's access
+`GET /claims/events` streams to the browser (token in an `x-claim-token` header,
+never in the URL: a `?token=` query is ignored and answers 401, but a client that sent one would still have it recorded in the SERVER span's `url.query`, so never send one). Uvicorn's access
 log is off. The browser's `resubscribe` is deleted: it holds `/claims/events`
 instead, and a stream failure falls back to one `tasks/get`.
 
