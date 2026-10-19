@@ -1723,6 +1723,20 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x40-two .col { --icon: var(--ocean-violet); }
 .x40-two .col.m { --icon: var(--ocean-spark); }
 
+/* content capture, simplified: two columns, kept (mint) and lost (spark) */
+.x40-cc { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: calc(1.1 * var(--baseline)); }
+.x40-cc .col { --c: var(--ocean-mint); --icon: var(--c); border-radius: 22px; padding: 30px 40px 28px; border: 3px solid var(--c);
+  background: color-mix(in srgb, var(--c) 9%, var(--color-bg)); }
+.x40-cc .col.lost { --c: var(--ocean-spark); border-style: dashed; }
+.x40-cc .h { margin: 0 0 18px; display: flex; align-items: center; gap: 14px; font: 700 44px/1 var(--font-heading); color: var(--c); }
+.x40-cc .h i { font-size: 52px; }
+.x40-cc ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+.x40-cc li { display: flex; align-items: center; gap: 16px; font-size: 32px; line-height: 1.2; }
+.x40-cc li i { font-size: 40px; flex: none; }
+.x40-cc .src { margin: 22px 0 0; font-size: 22px; font-style: italic; color: var(--color-neutral-600); }
+.x40-cc-line { margin: calc(1.1 * var(--baseline)) 0 0; font-size: 40px; font-weight: 600; letter-spacing: -0.01em; }
+.x40-cc .col.kept .h { color: #17926F; }
+
 /* ===== 50-close.css ===== */
 /* 50-close: slides 48-51, Broadsheet. Everything is x50-* so no other fragment collides. */
 

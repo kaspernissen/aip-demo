@@ -132,8 +132,8 @@ deck-stage { --cap-anchor: 168.4px; }
 /* ── Cover art: a regulated, verticalized platform, drawn in line ────────────
    Four pillars (the verticals) on one platform slab, a trace threading them,
    and a shield with a check: governed. Sits on the navy half of the cover. */
-.cover-art { position: absolute; right: 48px; top: 230px; width: 540px; height: auto; pointer-events: none; }
-.slide.cover.has-art .display { max-width: 1240px; font-size: 122px; line-height: 1.04; }
+.cover-art { position: absolute; right: 48px; top: 300px; width: 540px; height: auto; pointer-events: none; }
+.slide.cover.has-art .display { max-width: 1240px; font-size: 122px; line-height: 1.04; margin-top: 84px; }
 
 /* ── Dark sheets (Kasper, 2026-10-19): a few statement slides in reverse ──
    `.x-dark` on a content/hero/quote slide swaps the ground to ink, the same way
