@@ -15,5 +15,6 @@ def svg(data, ink="#0A1128"):
         out.append(f'<rect x="{fc+2}" y="{fr+2}" width="3" height="3" rx=".9" fill="{ink}"/>')
     out.append('</svg>')
     return "\n".join(out), q.version
+# usage: dotqr.py DATA OUT.svg [INK]  (INK defaults to the deck ink; #FFFFFF for the cover)
 if __name__ == "__main__":
-    s, v = svg(sys.argv[1]); open(sys.argv[2], "w").write(s); print(sys.argv[2], "version", v)
+    s, v = svg(sys.argv[1], *sys.argv[3:4]); open(sys.argv[2], "w").write(s); print(sys.argv[2], "version", v)

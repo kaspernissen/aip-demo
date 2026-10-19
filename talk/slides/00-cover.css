@@ -1,11 +1,11 @@
 /* 00-cover · two speaker cards bottom left under the rule (2026-10-19): QR code, name, title, then the
-   company logo. William's logo is a text stand-in (.co-text) until the Mirantis SVG arrives. */
+   company logo, all white straight on the ink (no card fill). William's logo is a text stand-in (.co-text) until the Mirantis SVG arrives. */
 .slide.cover .cover-people { position: absolute; left: var(--pad-x); bottom: 40px; display: flex !important; flex-direction: row !important; gap: 28px; margin: 0; width: auto; }
-.cp-card { margin: 0; display: flex; align-items: center; gap: 22px; background: #fff; border-radius: 20px; padding: 16px 30px 16px 16px; box-shadow: 0 16px 40px -18px rgba(0,0,0,.6); }
+.cp-card { margin: 0; display: flex; align-items: center; gap: 24px; }
 .cp-card .qr { width: 156px; height: 156px; display: block; }
 .cp-card figcaption { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
-.cp-card b { font-size: 26px; color: var(--ocean-ink, #0A1128); white-space: nowrap; letter-spacing: -0.01em; }
-.cp-card span { font-size: 19px; color: #4A5468; white-space: nowrap; }
+.cp-card b { font-size: 26px; color: #fff; white-space: nowrap; letter-spacing: -0.01em; }
+.cp-card span { font-size: 19px; color: rgba(255,255,255,.78); white-space: nowrap; }
 .cp-card .co { height: 30px; width: auto; margin-top: 14px; }
-.slide.cover .cp-card .co-text { height: auto; font-style: normal; font-weight: 700; font-size: 24px; letter-spacing: .01em; color: #0A1128; }
-.cp-card { width: 490px; box-sizing: border-box; }
+.slide.cover .cp-card .co-text { height: auto; font-style: normal; font-weight: 700; font-size: 24px; letter-spacing: .01em; color: #fff; }
+.cp-card + .cp-card { margin-left: 36px; }
