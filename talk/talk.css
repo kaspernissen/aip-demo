@@ -1310,6 +1310,56 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x30-air-idea { margin: calc(1.3 * var(--baseline)) 0 0; font-size: 34px; font-weight: 600; }
 .x30-air-idea em { font-style: normal; color: var(--color-accent-2); }
 
+/* agentgateway, drawn (2026-10-19 "more visual"): agent -> one box with three gates -> tool; the PDS under the policy gate */
+.x30-gx { display: grid; grid-template-columns: 220px 56px 1fr 56px 200px; grid-template-rows: auto auto; align-items: center; margin-top: calc(1.2 * var(--baseline)); }
+.x30-gx .end { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; --icon: var(--color-neutral-700); }
+.x30-gx .end i { font-size: 84px; line-height: 1; }
+.x30-gx .end b { font-size: 24px; white-space: nowrap; }
+.x30-gx .end span { font-size: 20px; font-style: italic; color: var(--color-neutral-600); }
+.x30-gx .end.out { --icon: var(--ocean-teal); }
+.x30-gx .end.out b { color: var(--ocean-teal); }
+.x30-gx .arrow { height: 3px; background: var(--color-neutral-400); position: relative; margin: 0 6px; }
+.x30-gx .arrow::after { content: ""; position: absolute; right: -2px; top: -7px; border: 8px solid transparent; border-left: 12px solid var(--color-neutral-400); border-right: 0; }
+.x30-gx .box { position: relative; border: 3px solid var(--ocean-teal); border-radius: 24px; padding: 54px 26px 28px; background: var(--color-accent-100); }
+.x30-gx .name { position: absolute; top: -22px; left: 32px; margin: 0; padding: 4px 16px; background: var(--ocean-teal); color: #fff; border-radius: 10px; font: 600 26px/1.2 var(--font-heading); letter-spacing: .01em; }
+.x30-gx .gates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+.x30-gx .gate { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; background: #fff; border-radius: 16px; padding: 24px 14px 22px;
+  box-shadow: 0 8px 22px -12px rgba(10,17,40,.3); position: relative; }
+.x30-gx .gate + .gate::before { content: "›"; position: absolute; left: -19px; top: 50%; transform: translateY(-50%); font-size: 40px; color: var(--ocean-teal); }
+.x30-gx .gate i { font-size: 66px; line-height: 1; }
+.x30-gx .gate code { font-family: var(--font-mono); font-size: 22px; color: var(--color-neutral-600); }
+.x30-gx .gate b { font-size: 28px; line-height: 1.15; }
+.x30-gx .gate .no, .x30-gx .gate .yes { margin-top: 4px; font-size: 20px; font-weight: 600; padding: 5px 12px; border-radius: 999px; }
+.x30-gx .gate .no { background: var(--color-accent-2-100); color: var(--color-accent-2-700); }
+.x30-gx .gate .yes { background: color-mix(in srgb, var(--ocean-mint) 18%, #fff); color: #157a5c; }
+.x30-gx .gate.pol { --icon: var(--ocean-violet); outline: 3px solid var(--ocean-violet); }
+.x30-gx .pds { grid-column: 3; justify-self: center; position: relative; margin-top: 46px; display: flex; align-items: center; gap: 14px; padding: 14px 24px;
+  border: 3px dashed var(--ocean-violet); border-radius: 16px; --icon: var(--ocean-violet); background: color-mix(in srgb, var(--ocean-violet) 7%, var(--color-bg)); }
+.x30-gx .pds::before { content: ""; position: absolute; left: 50%; top: -49px; height: 46px; border-left: 3px dashed var(--ocean-violet); }
+.x30-gx .pds i { font-size: 44px; }
+.x30-gx .pds b { font-size: 26px; }
+.x30-gx .pds span { font-size: 22px; color: var(--color-neutral-700); }
+.x30-gx code { font-family: var(--font-mono); }
+.x30-gx-tr { display: flex; align-items: center; gap: 14px; margin-top: calc(0.9 * var(--baseline)); font-size: 24px; --icon: var(--ocean-teal); }
+.x30-gx-tr i { font-size: 36px; }
+.x30-gx-tr code { font-family: var(--font-mono); font-size: 21px; background: var(--color-accent-100); color: var(--ocean-teal); padding: 3px 10px; border-radius: 6px; }
+
+/* toolbox: the project's own logo above its name (cncf/artwork icons, assets/logos); a plain icon where the project has none in cncf/artwork */
+.x30-box .lgs { display: flex; gap: 12px; align-items: center; height: 64px; margin: 6px 0 10px; --icon: var(--color-neutral-500); }
+.x30-box .lgs img { height: 60px; width: auto; }
+.x30-box .lgs i { font-size: 56px; line-height: 1; }
+.x30-box .job i { display: none; }
+.x30-box .job { min-height: 0; }
+.x30-box .job.blank { visibility: hidden; }
+.x30-box .tn { min-height: 0; }
+.x30-box .lgs { height: 54px; margin: 4px 0 6px; }
+.x30-box .lgs img { height: 52px; }
+.x30-box .lgs i { font-size: 50px; }
+.x30-box .band.c { margin-top: 14px; }
+.x30-air .g span { white-space: nowrap; }
+.x30-air .lgr { display: flex; gap: 10px; justify-content: center; }
+.x30-air .lg { height: 40px; width: auto; }
+
 /* ===== 30-live.css ===== */
 /* 30-live (Broadsheet): "What you just saw", the demo's five steps as outcomes. Everything is x3l-*.
    Magenta chips are the platform saying no or holding; cyan chips are what went through. */

@@ -9,7 +9,7 @@
 <!-- Broadsheet design system: tokens + components (bs/styles.css imports Source Serif 4). -->
 <link rel="stylesheet" href="bs/styles.css?v=ba62219013">
 <!-- The deck layer: Broadsheet's deck template layout, then this talk's components (talk.css is generated). -->
-<link rel="stylesheet" href="talk.css?v=41e9702ff8">
+<link rel="stylesheet" href="talk.css?v=59adf70209">
 <!-- Ocean theme layer: Deep Ocean Blue palette, Ocean type and furniture over Broadsheet. Remove this line to go back. -->
 <link rel="stylesheet" href="ocean/ocean.css?v=9652c5b648">
 <!-- Icons: Phosphor, duotone weight, as the system specifies. Use <i class="ph-duotone ph-NAME"></i>. -->
@@ -495,19 +495,19 @@
   <h2 class="slide-title">The toolbox, by the job it does</h2>
   <div class="x30-box rise">
     <p class="band m">On the claim path</p>
-    <div class="cell"><p class="job m"><i class="ph-duotone ph-chats-circle"></i>Protocols</p><p class="tn">A2A SDK + MCP</p><p class="ow">LF · AAIF</p><p class="use">agents talk A2A; tools answer MCP</p></div>
-    <div class="cell"><p class="job m"><i class="ph-duotone ph-graph"></i>Network</p><p class="tn">Cilium</p><p class="ow">CNCF</p><p class="use">the gateway is the only road to the tool</p></div>
-    <div class="cell"><p class="job m"><i class="ph-duotone ph-identification-card"></i>Identity</p><p class="tn">SPIFFE / SPIRE</p><p class="ow">CNCF</p><p class="use">a signed ID for each agent pod</p></div>
-    <div class="cell"><p class="job m"><i class="ph-duotone ph-door-open"></i>Gateway</p><p class="tn">agentgateway</p><p class="ow">LF · AAIF</p><p class="use">checks the ID, asks, then forwards</p></div>
-    <div class="cell"><p class="job m"><i class="ph-duotone ph-scales"></i>Decision</p><p class="tn">Policy Decision Service</p><p class="ow own">this repo</p><p class="use">permit or deny, and writes why</p></div>
-    <div class="cell"><p class="job m"><i class="ph-duotone ph-toggle-right"></i>Live policy</p><p class="tn">OpenFeature + flagd</p><p class="ow">CNCF</p><p class="use">the autonomy level, as a Kubernetes object</p></div>
+    <div class="cell"><p class="job m"><i class="ph-duotone ph-chats-circle"></i>Protocols</p><div class="lgs"><i class="ph-duotone ph-plugs-connected"></i></div><p class="tn">A2A SDK + MCP</p><p class="ow">LF · AAIF</p><p class="use">agents talk A2A; tools answer MCP</p></div>
+    <div class="cell"><p class="job m"><i class="ph-duotone ph-graph"></i>Network</p><div class="lgs"><img src="assets/logos/cilium.svg" alt="cilium"></div><p class="tn">Cilium</p><p class="ow">CNCF</p><p class="use">the gateway is the only road to the tool</p></div>
+    <div class="cell"><p class="job m"><i class="ph-duotone ph-identification-card"></i>Identity</p><div class="lgs"><img src="assets/logos/spiffe.svg" alt="spiffe"><img src="assets/logos/spire.svg" alt="spire"></div><p class="tn">SPIFFE / SPIRE</p><p class="ow">CNCF</p><p class="use">a signed ID for each agent pod</p></div>
+    <div class="cell"><p class="job m"><i class="ph-duotone ph-door-open"></i>Gateway</p><div class="lgs"><i class="ph-duotone ph-door-open"></i></div><p class="tn">agentgateway</p><p class="ow">LF · AAIF</p><p class="use">checks the ID, asks, then forwards</p></div>
+    <div class="cell"><p class="job m"><i class="ph-duotone ph-scales"></i>Decision</p><div class="lgs"><i class="ph-duotone ph-scales"></i></div><p class="tn">Decision service</p><p class="ow own">this repo</p><p class="use">permit or deny, and writes why</p></div>
+    <div class="cell"><p class="job m"><i class="ph-duotone ph-toggle-right"></i>Live policy</p><div class="lgs"><img src="assets/logos/openfeature.svg" alt="openfeature"></div><p class="tn">OpenFeature</p><p class="ow">CNCF</p><p class="use">flagd serves the autonomy level</p></div>
     <p class="band c">Around it</p>
-    <div class="cell"><p class="job c"><i class="ph-duotone ph-funnel"></i>Evidence</p><p class="tn">OTel Collector</p><p class="ow">CNCF</p><p class="use">every span, 100%, one pipe</p></div>
-    <div class="cell"><p class="job c blank">&nbsp;</p><p class="tn">Jaeger</p><p class="ow">CNCF</p><p class="use">read one trace</p></div>
-    <div class="cell"><p class="job c blank">&nbsp;</p><p class="tn">OpenSearch + Dashboards</p><p class="ow">LF</p><p class="use">the evidence dashboard, the scorer&rsquo;s store</p></div>
-    <div class="cell"><p class="job c blank">&nbsp;</p><p class="tn">Prometheus</p><p class="ow">CNCF</p><p class="use">metrics, OTLP in</p></div>
-    <div class="cell"><p class="job c blank">&nbsp;</p><p class="tn">eval-scorer</p><p class="ow own">this repo</p><p class="use">scores a run, writes it into the trace</p></div>
-    <div class="cell"><p class="job"><i class="ph-duotone ph-squares-four"></i>View</p><p class="tn">Backstage</p><p class="ow">CNCF + this repo</p><p class="use">shows the contract, flips one value</p></div>
+    <div class="cell"><p class="job c"><i class="ph-duotone ph-funnel"></i>Evidence</p><div class="lgs"><img src="assets/logos/opentelemetry.svg" alt="opentelemetry"></div><p class="tn">OTel Collector</p><p class="ow">CNCF</p><p class="use">every span, 100%, one pipe</p></div>
+    <div class="cell"><p class="job c blank">&nbsp;</p><div class="lgs"><img src="assets/logos/jaeger.svg" alt="jaeger"></div><p class="tn">Jaeger</p><p class="ow">CNCF</p><p class="use">read one trace</p></div>
+    <div class="cell"><p class="job c blank">&nbsp;</p><div class="lgs"><i class="ph-duotone ph-magnifying-glass"></i></div><p class="tn">OpenSearch</p><p class="ow">LF</p><p class="use">the scorer&rsquo;s store</p></div>
+    <div class="cell"><p class="job c blank">&nbsp;</p><div class="lgs"><img src="assets/logos/prometheus.svg" alt="prometheus"></div><p class="tn">Prometheus</p><p class="ow">CNCF</p><p class="use">metrics, OTLP in</p></div>
+    <div class="cell"><p class="job c blank">&nbsp;</p><div class="lgs"><i class="ph-duotone ph-exam"></i></div><p class="tn">eval-scorer</p><p class="ow own">this repo</p><p class="use">scores a run, writes it into the trace</p></div>
+    <div class="cell"><p class="job"><i class="ph-duotone ph-squares-four"></i>View</p><div class="lgs"><img src="assets/logos/backstage.svg" alt="backstage"></div><p class="tn">Backstage</p><p class="ow">CNCF + this repo</p><p class="use">shows the contract, flips one value</p></div>
   </div>
 </section>
 <section class="slide content" data-label="Workload identity: SPIFFE/SPIRE">
@@ -515,8 +515,8 @@
   <h2 class="slide-title">A passport, not a name tag</h2>
   <div class="x30-air rise">
     <div class="end"><i class="ph-duotone ph-robot"></i><span>the agent</span></div>
-    <div class="g"><i class="ph-duotone ph-path"></i><b>Corridor</b><span>Cilium · reach</span></div>
-    <div class="g here"><i class="ph-duotone ph-identification-card"></i><b>Passport</b><span>SPIFFE/SPIRE · identity</span></div>
+    <div class="g"><i class="ph-duotone ph-path"></i><b>Corridor</b><span>Cilium · reach</span><span class="lgr"><img class="lg" src="assets/logos/cilium.svg" alt="Cilium"></span></div>
+    <div class="g here"><i class="ph-duotone ph-identification-card"></i><b>Passport</b><span>SPIFFE/SPIRE · identity</span><span class="lgr"><img class="lg" src="assets/logos/spiffe.svg" alt="SPIFFE"><img class="lg" src="assets/logos/spire.svg" alt="SPIRE"></span></div>
     <div class="g"><i class="ph-duotone ph-scan"></i><b>Scanner</b><span>agentgateway + policy</span></div>
     <div class="g"><i class="ph-duotone ph-user-check"></i><b>Gate staff</b><span>a reviewer · a human</span></div>
     <div class="end"><i class="ph-duotone ph-airplane-tilt"></i><span>the payment</span></div>
@@ -534,15 +534,22 @@
 <section class="slide content" data-label="agentgateway: one choke point">
   <p class="ring">Ring 2 &middot; Capability</p>
   <h2 class="slide-title">agentgateway: one door, checks in order</h2>
-  <div class="x30-gw rise">
-    <p class="end in">settlement-agent<span>MCP + JWT-SVID</span></p>
-    <div class="g"><p class="key"><span class="code m">jwtAuth</span></p><p class="q">Who is asking?</p><p class="f">bad token: HTTP 401</p></div>
-    <div class="g"><p class="key"><span class="code m">mcpGuardrails</span></p><p class="q">Is it allowed?</p><p class="f">asks the PDS; deny stops here</p></div>
-    <div class="g"><p class="key"><span class="code">strip token</span></p><p class="q">Forward, anonymous</p><p class="f">the tool never sees the SVID</p></div>
-    <p class="end out">payments-mcp<span>permit only</span></p>
-    <p class="side pds"><b>ExtMCP, gRPC</b> to the PDS <span class="code m">failureMode: failClosed</span></p>
-    <p class="side tr"><b>tracing</b> every step, to the Collector: <span class="code c">tools/call</span> <span class="code c">Guardrail</span> <span class="code c">outbound tools/call</span></p>
+  <div class="x30-gx rise">
+    <div class="end"><i class="ph-duotone ph-robot"></i><b>settlement-agent</b><span>MCP call + its passport</span></div>
+    <div class="arrow"></div>
+    <div class="box">
+      <p class="name">agentgateway</p>
+      <div class="gates">
+        <div class="gate"><i class="ph-duotone ph-identification-card"></i><code>jwtAuth</code><b>Who is asking?</b><span class="no">✕ HTTP 401</span></div>
+        <div class="gate pol"><i class="ph-duotone ph-scales"></i><code>mcpGuardrails</code><b>Is it allowed?</b><span class="no">✕ deny stops here</span></div>
+        <div class="gate"><i class="ph-duotone ph-mask-happy"></i><code>strip token</code><b>Forward, anonymous</b><span class="yes">✓ tool never sees it</span></div>
+      </div>
+    </div>
+    <div class="arrow"></div>
+    <div class="end out"><i class="ph-duotone ph-wrench"></i><b>payments-mcp</b><span>permit only</span></div>
+    <div class="pds"><i class="ph-duotone ph-gavel"></i><b>policy decision service</b><span>gRPC · <code>failClosed</code>: no answer means no</span></div>
   </div>
+  <div class="x30-gx-tr rise"><i class="ph-duotone ph-path"></i><b>Every step writes a span</b><code>tools/call</code><code>Guardrail</code><code>outbound tools/call</code></div>
   <p class="x30-foot">Rust. MCP, A2A and LLM proxy. <b>Linux Foundation, in AAIF.</b> Not CNCF. v1.6.0.</p>
 </section>
 <section class="slide content" data-label="The decision and the live policy">
