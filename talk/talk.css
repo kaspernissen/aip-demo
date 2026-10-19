@@ -779,8 +779,7 @@ deck-stage { --page-foot-note: "kaspernissen.xyz"; }
 
 /* ===== 00-cover.css ===== */
 /* 00-cover · two speaker cards bottom left under the rule (2026-10-19): QR code, name, title, then the
-   company logo. William's logo is a text stand-in (.co-text) until the Mirantis SVG arrives. The event
-   line moves to the bottom right. */
+   company logo. William's logo is a text stand-in (.co-text) until the Mirantis SVG arrives. */
 .slide.cover .cover-people { position: absolute; left: var(--pad-x); bottom: 40px; display: flex !important; flex-direction: row !important; gap: 28px; margin: 0; width: auto; }
 .cp-card { margin: 0; display: flex; align-items: center; gap: 22px; background: #fff; border-radius: 20px; padding: 16px 30px 16px 16px; box-shadow: 0 16px 40px -18px rgba(0,0,0,.6); }
 .cp-card .qr { width: 156px; height: 156px; display: block; }
@@ -789,8 +788,6 @@ deck-stage { --page-foot-note: "kaspernissen.xyz"; }
 .cp-card span { font-size: 19px; color: #4A5468; white-space: nowrap; }
 .cp-card .co { height: 30px; width: auto; margin-top: 14px; }
 .slide.cover .cp-card .co-text { height: auto; font-style: normal; font-weight: 700; font-size: 24px; letter-spacing: .01em; color: #0A1128; }
-.slide.cover .cover-event { left: auto; text-align: right; display: block; bottom: 48px; }
-.slide.cover .cover-event { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; bottom: 56px; }
 .cp-card { width: 490px; box-sizing: border-box; }
 
 /* ===== 10-open-act1.css ===== */
