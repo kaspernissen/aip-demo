@@ -779,7 +779,7 @@ deck-stage { --page-foot-note: "kaspernissen.xyz"; }
 
 /* ===== 00-cover.css ===== */
 /* 00-cover · two speaker cards bottom left under the rule (2026-10-19): QR code, name, title, then the
-   company logo, all white straight on the ink (no card fill). William's logo is a text stand-in (.co-text) until the Mirantis SVG arrives. */
+   company logo, all white straight on the ink (no card fill). */
 .slide.cover .cover-people { position: absolute; left: var(--pad-x); bottom: 56px; display: flex !important; flex-direction: row !important; gap: 280px; margin: 0; width: auto; }
 .cp-card { margin: 0; display: flex; align-items: center; gap: 34px; }
 .cp-card .qr { width: 132px; height: 132px; display: block; }
@@ -787,7 +787,7 @@ deck-stage { --page-foot-note: "kaspernissen.xyz"; }
 .cp-card b { font-size: 26px; color: #fff; white-space: nowrap; letter-spacing: -0.01em; }
 .cp-card span { font-size: 19px; color: rgba(255,255,255,.78); white-space: nowrap; }
 .cp-card .co { height: 30px; width: auto; margin-top: 14px; }
-.slide.cover .cp-card .co-text { height: auto; font-style: normal; font-weight: 700; font-size: 24px; letter-spacing: .01em; color: #fff; }
+.cp-card .co.mir { height: 20px; margin-top: 20px; margin-bottom: 5px; }
 
 /* ===== 10-open-act1.css ===== */
 /* 10-open-act1: the open and Act 1, Broadsheet. Everything is x10-* so no other fragment collides. */
@@ -960,6 +960,7 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 
 /* company logos under the role (2026-10-19) */
 .x10-me .x10-co { display: block; height: 38px; width: auto; margin-top: 12px; }
+.x10-me .x10-co.mir { height: 24px; margin-top: 19px; margin-bottom: 7px; }
 
 /* ===== 20-act2.css ===== */
 /* 20-act2 · Act 2, "What tracing already gives us" (Broadsheet). Everything is .a2-* scoped.
@@ -1879,3 +1880,4 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .slide .x90-qr figcaption .to { font-style: normal; font-size: 20px; color: var(--ocean-aqua-lift); }
 .x90-qr figcaption b { white-space: nowrap; }
 .x90-qr figcaption .co { height: 24px; width: auto; align-self: flex-start; margin-top: 8px; }
+.x90-qr figcaption .co.mir { height: 15px; margin-top: 13px; margin-bottom: 4px; }

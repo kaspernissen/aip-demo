@@ -1,5 +1,5 @@
 /* 00-cover · two speaker cards bottom left under the rule (2026-10-19): QR code, name, title, then the
-   company logo, all white straight on the ink (no card fill). William's logo is a text stand-in (.co-text) until the Mirantis SVG arrives. */
+   company logo, all white straight on the ink (no card fill). */
 .slide.cover .cover-people { position: absolute; left: var(--pad-x); bottom: 56px; display: flex !important; flex-direction: row !important; gap: 280px; margin: 0; width: auto; }
 .cp-card { margin: 0; display: flex; align-items: center; gap: 34px; }
 .cp-card .qr { width: 132px; height: 132px; display: block; }
@@ -7,4 +7,4 @@
 .cp-card b { font-size: 26px; color: #fff; white-space: nowrap; letter-spacing: -0.01em; }
 .cp-card span { font-size: 19px; color: rgba(255,255,255,.78); white-space: nowrap; }
 .cp-card .co { height: 30px; width: auto; margin-top: 14px; }
-.slide.cover .cp-card .co-text { height: auto; font-style: normal; font-weight: 700; font-size: 24px; letter-spacing: .01em; color: #fff; }
+.cp-card .co.mir { height: 20px; margin-top: 20px; margin-bottom: 5px; }

@@ -46,3 +46,4 @@
 .slide .x90-qr figcaption .to { font-style: normal; font-size: 20px; color: var(--ocean-aqua-lift); }
 .x90-qr figcaption b { white-space: nowrap; }
 .x90-qr figcaption .co { height: 24px; width: auto; align-self: flex-start; margin-top: 8px; }
+.x90-qr figcaption .co.mir { height: 15px; margin-top: 13px; margin-bottom: 4px; }

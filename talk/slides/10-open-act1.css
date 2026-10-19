@@ -168,3 +168,4 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 
 /* company logos under the role (2026-10-19) */
 .x10-me .x10-co { display: block; height: 38px; width: auto; margin-top: 12px; }
+.x10-me .x10-co.mir { height: 24px; margin-top: 19px; margin-bottom: 7px; }
