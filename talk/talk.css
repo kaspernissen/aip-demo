@@ -787,6 +787,10 @@ deck-stage { --page-foot-note: "kaspernissen.xyz"; }
 .x10-dom b { margin-top: 30px; font-size: 56px; line-height: 1.1; font-weight: 700; letter-spacing: -0.01em; }
 .x10-dom span { margin-top: 12px; font-size: var(--type-small); font-style: italic;
   color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x10-dom > div:nth-child(1) { --icon: var(--ocean-mint); }
+.x10-dom > div:nth-child(2) { --icon: var(--ocean-amber); }
+.x10-dom > div:nth-child(3) { --icon: var(--ocean-coral); }
+.x10-dom > div:nth-child(4) { --icon: var(--ocean-violet); }
 .x10-same { margin: calc(2.5 * var(--baseline)) 0 0; font-size: 58px; line-height: 1.15; font-weight: 600; letter-spacing: -0.01em; }
 
 /* 02b · the auditor's questions: numeral, question in big type, the requirement as small magenta tags */
@@ -907,6 +911,23 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x10-rq .k { color: var(--color-accent-2-700); }
 .x10-bd-by { margin: 40px 0 0; font-size: var(--type-kicker);
   color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+
+/* 02a+ · verticalizing: four coloured domain columns standing on one platform bar */
+.x10-vcols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 36px; margin-top: calc(1.5 * var(--baseline)); }
+.x10-vcols > div { --v: var(--ocean-aqua); display: flex; flex-direction: column; gap: 14px; padding: 34px 32px 36px;
+  border: 2px solid var(--v); border-bottom: 0; border-radius: 18px 18px 0 0;
+  background: color-mix(in srgb, var(--v) 14%, transparent); }
+.x10-vcols .v-fin { --v: var(--ocean-mint); } .x10-vcols .v-ins { --v: var(--ocean-amber); }
+.x10-vcols .v-hc { --v: var(--ocean-coral); } .x10-vcols .v-tel { --v: var(--ocean-violet); }
+.x10-vcols > div { --icon: var(--v); }
+.x10-vcols i { font-size: 84px; line-height: 1; }
+.x10-vcols b { font-size: 50px; line-height: 1.1; font-weight: 700; margin-bottom: 6px; }
+.x10-vcols span { font-size: var(--type-small); color: var(--ocean-on-ink); }
+.x10-vbar { display: flex; align-items: baseline; gap: 32px; padding: 28px 40px; border-radius: 14px;
+  background: var(--ocean-teal); color: var(--ocean-paper); }
+.x10-vbar b { font-size: 44px; font-weight: 700; }
+.x10-vbar span { font-size: 36px; opacity: .9; }
+.x10-vline { margin: calc(1.2 * var(--baseline)) 0 0; font-size: 50px; font-weight: 600; letter-spacing: -0.01em; }
 
 /* ===== 20-act2.css ===== */
 /* 20-act2 · Act 2, "What tracing already gives us" (Broadsheet). Everything is .a2-* scoped.

@@ -22,6 +22,13 @@
   --ocean-teal-mute: #9FD0E0;
   --ocean-on-ink: #C9DCE8;
   --ocean-on-ink-dim: #86A2B8;
+  /* Warm and fresh accents (2026-10-19: "more colours"). Meaning, where they carry one:
+     coral = refused / denied, amber = a human is in the loop, mint = permitted / settled,
+     violet = policy and decisions. */
+  --ocean-coral: #FF6B5B;
+  --ocean-amber: #F5B53D;
+  --ocean-mint: #2FC79A;
+  --ocean-violet: #8B7CF6;
 
   --color-bg: var(--ocean-paper);
   --color-surface: #EAF1F5;
@@ -119,6 +126,12 @@ deck-stage { --cap-anchor: 168.4px; }
 .slide.cover .meta { color: var(--ocean-on-ink-dim); }
 .slide.cover em { color: var(--ocean-aqua-lift); }
 
+/* ── Cover art: a regulated, verticalized platform, drawn in line ────────────
+   Four pillars (the verticals) on one platform slab, a trace threading them,
+   and a shield with a check: governed. Sits on the navy half of the cover. */
+.cover-art { position: absolute; right: 64px; top: 170px; width: 640px; height: auto; pointer-events: none; }
+.slide.cover.has-art .display { max-width: 1010px; font-size: 104px; line-height: 1.08; }
+
 /* ── Dark sheets (Kasper, 2026-10-19): a few statement slides in reverse ──
    `.x-dark` on a content/hero/quote slide swaps the ground to ink, the same way
    the cover does: the tokens flip, so anything drawn in --color-text follows.
@@ -162,8 +175,9 @@ deck-stage { --cap-anchor: 168.4px; }
 /* ── Icons: Phosphor duotone in Ocean's two tones ──────────────────── */
 /* Teal line, aqua fill (the duotone layer is ::before). Icons that carry the
    slide's emphasis go deep ocean; the "open door" stays muted on purpose. */
-.slide i.ph-duotone { color: var(--ocean-teal) !important; }
-.slide i.ph-duotone::before { color: var(--ocean-aqua); opacity: .5; }
+/* --icon on any ancestor recolours its duotone icons (the colour pass: mint, amber, coral, violet) */
+.slide i.ph-duotone { color: var(--icon, var(--ocean-teal)) !important; }
+.slide i.ph-duotone::before { color: var(--icon, var(--ocean-aqua)); opacity: .5; }
 .slide .x10-eq-loop i.ph-duotone,
 .slide .x31-doors .shut i.ph-duotone { color: var(--ocean-deep) !important; }
 .slide .x31-doors .open i.ph-duotone { color: var(--color-neutral-500) !important; }
