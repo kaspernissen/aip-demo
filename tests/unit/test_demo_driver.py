@@ -244,6 +244,30 @@ def test_evidence_waits_for_ingest_lag_then_settles_and_never_returns_a_partial_
     assert row == complete
 
 
+def test_evidence_for_an_executed_claim_waits_for_the_execute_hop_itself(monkeypatch):
+    """M10 gate run 4: a claim approved in the browser was evidenced before
+    payments-api's execute span (batched, ~5 s) reached Jaeger. Trace A's refused
+    attempt already filled `money_hops`, so waiting for "any hop" returned early
+    and the row said nothing moved. An executed claim waits for the execute hop;
+    a rejected one for the reject hop."""
+    driver = _driver()
+    base = {"policy_decision": "deny", "rule": "r", "caller_identity": "c",
+            "executing_identity": "e", "approved_by": "kasper", "human_wait_s": 3.0}
+    early = {**base, "money_hops": ["tools/call execute_payment"]}
+    done = {**base, "money_hops": ["tools/call execute_payment", driver.EXECUTE_HOP]}
+    rows = iter([early, early, done])
+    monkeypatch.setattr(driver.evidence, "evidence_for", lambda claim_id, window: next(rows))
+    monkeypatch.setattr(driver.time, "sleep", lambda s: None)
+    row = driver._settled({"id": "CLM-X", "status": "executed", "decision": "approve"}, 0)
+    assert driver.EXECUTE_HOP in row["money_hops"]
+
+    rejected_early = {**base, "money_hops": ["tools/call execute_payment"]}
+    rejected_done = {**base, "money_hops": ["tools/call execute_payment", driver.REJECT_HOP]}
+    rows = iter([rejected_early, rejected_done])
+    row = driver._settled({"id": "CLM-Y", "status": "rejected", "decision": "reject"}, 0)
+    assert driver.REJECT_HOP in row["money_hops"]
+
+
 def test_evidence_that_never_arrives_is_a_failure_naming_what_is_missing(monkeypatch):
     driver = _driver()
     monkeypatch.setattr(driver, "EVIDENCE_WAIT_S", 0.0)

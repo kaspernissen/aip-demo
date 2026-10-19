@@ -900,6 +900,13 @@ def _settled(claim: dict, window_start_ms: int) -> dict:
     while True:
         row = evidence.evidence_for(claim["id"], window_start_ms)
         missing = [f for f in required if not row.get(f)]
+        # Trace A's refused attempt already fills `money_hops`, so "any hop" is not
+        # enough: wait for the hop this claim's outcome means. payments-api batches
+        # its spans (~5 s), and M10 gate run 4 evidenced an approved claim before
+        # its execute span had landed.
+        outcome_hop = {"executed": EXECUTE_HOP, "rejected": REJECT_HOP}.get(claim["status"])
+        if outcome_hop and outcome_hop not in (row.get("money_hops") or []):
+            missing.append(outcome_hop)
         if not missing:
             return row
         if time.time() > deadline:
