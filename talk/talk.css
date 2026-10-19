@@ -1360,6 +1360,37 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x30-air .lgr { display: flex; gap: 10px; justify-content: center; }
 .x30-air .lg { height: 40px; width: auto; }
 
+/* the decision and the live policy, drawn (2026-10-19): the flag chain on the left, the two levels as tiles on the right */
+.x30-pv { display: grid; grid-template-columns: 640px 1fr; gap: 70px; margin-top: calc(1 * var(--baseline)); align-items: start; }
+.x30-pv p { margin: 0; }
+.x30-pv .lab { font-size: 24px; color: var(--color-neutral-600); margin-bottom: 18px; }
+.x30-pv code { font-family: var(--font-mono); font-size: .9em; }
+.x30-pv .nd { display: flex; align-items: center; gap: 22px; background: #fff; border-radius: 18px; padding: 20px 26px; box-shadow: 0 10px 26px -14px rgba(10,17,40,.32); }
+.x30-pv .nd > div { display: flex; flex-direction: column; gap: 4px; }
+.x30-pv .nd img { height: 64px; width: auto; }
+.x30-pv .nd i { font-size: 60px; --icon: var(--ocean-teal); }
+.x30-pv .nd.pds i { --icon: var(--ocean-violet); }
+.x30-pv .nd.pds { outline: 3px solid var(--ocean-violet); }
+.x30-pv .nd b { font-size: 30px; }
+.x30-pv .nd code { font-size: 24px; color: var(--color-neutral-700); }
+.x30-pv .nd .s { font-size: 22px; color: var(--color-neutral-600); }
+.x30-pv .sw { display: inline-flex; margin-top: 10px; border-radius: 999px; background: var(--color-neutral-200); padding: 4px; font-size: 20px; font-weight: 600; width: max-content; }
+.x30-pv .sw span { padding: 4px 14px; border-radius: 999px; color: var(--color-neutral-600); }
+.x30-pv .sw .on { background: var(--ocean-amber); color: var(--ocean-ink); }
+.x30-pv .lk { margin: 0 0 0 48px; padding: 10px 0 10px 26px; border-left: 3px dashed var(--color-neutral-400); font-size: 20px; font-style: italic; color: var(--color-neutral-600); }
+.x30-pv .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.x30-pv .t { --c: var(--ocean-amber); --icon: var(--c); border-radius: 22px; padding: 28px 30px; border: 3px solid var(--c); background: color-mix(in srgb, var(--c) 12%, var(--color-bg)); }
+.x30-pv .t.au { --c: var(--ocean-mint); }
+.x30-pv .t i { font-size: 60px; }
+.x30-pv .t .lv { margin-top: 10px; font-size: 30px; font-weight: 700; }
+.x30-pv .t .amt { font: 700 88px/1.05 var(--font-heading); letter-spacing: -0.02em; margin-top: 6px; }
+.x30-pv .t .s { font-size: 22px; color: var(--color-neutral-700); margin-top: 6px; }
+.x30-pv .deny, .x30-pv .out { display: flex; align-items: center; gap: 14px; margin-top: 24px; font-size: 25px; }
+.x30-pv .deny { color: var(--color-neutral-600); --icon: var(--color-neutral-500); }
+.x30-pv .deny i, .x30-pv .out i { font-size: 36px; }
+.x30-pv .out { --icon: var(--ocean-teal); }
+.x30-pv .out code { background: var(--color-accent-100); color: var(--ocean-teal); padding: 2px 8px; border-radius: 6px; font-size: 22px; }
+
 /* ===== 30-live.css ===== */
 /* 30-live (Broadsheet): "What you just saw", the demo's five steps as outcomes. Everything is x3l-*.
    Magenta chips are the platform saying no or holding; cyan chips are what went through. */

@@ -316,26 +316,24 @@
 <section class="slide content" data-label="The decision and the live policy">
   <p class="ring">Ring 2 &middot; Capability</p>
   <h2 class="slide-title">The rule has two keys: who, and how free</h2>
-  <div class="x30-pd rise">
-    <div class="src">
-      <p class="lab">The level comes from a live object</p>
-      <div class="chain">
-        <p class="nd"><span class="code">FeatureFlag northstar-autonomy</span><span class="s">a Kubernetes object</span></p>
-        <p class="lk">watched by</p>
-        <p class="nd"><span class="code">flagd</span><span class="s">sidecar in the PDS pod</span></p>
-        <p class="lk">localhost:8013</p>
-        <p class="nd"><span class="code m">policy-decision-service</span><span class="s">caller from the gateway’s <span class="code">jwt.sub</span></span></p>
-      </div>
+  <div class="x30-pv rise">
+    <div class="chain">
+      <p class="lab">Where the level lives</p>
+      <div class="nd flag"><img src="assets/logos/openfeature.svg" alt="OpenFeature"><div><b>OpenFeature FeatureFlag</b><code>northstar-autonomy</code>
+        <span class="sw"><span class="on">assisted</span><span>autonomous</span></span></div></div>
+      <p class="lk">watched by</p>
+      <div class="nd"><i class="ph-duotone ph-broadcast"></i><div><b>flagd</b><span class="s">sidecar, serves the value</span></div></div>
+      <p class="lk">read by</p>
+      <div class="nd pds"><i class="ph-duotone ph-scales"></i><div><b>Decision service</b><span class="s">the caller comes from <code>jwt.sub</code></span></div></div>
     </div>
-    <div class="tbl">
-      <p class="lab">The rule table, keyed by caller + level</p>
-      <div class="rows">
-        <p class="h">caller</p><p class="h">level</p><p class="h">may execute up to</p>
-        <p>settlement-agent</p><p class="lv">assisted</p><p class="amt">€0</p>
-        <p>settlement-agent</p><p class="lv">autonomous</p><p class="amt">€6,000</p>
-        <p class="dim">no row</p><p class="dim">any</p><p class="amt dim">deny</p>
+    <div class="rule">
+      <p class="lab">settlement-agent may execute up to</p>
+      <div class="tiles">
+        <div class="t as"><i class="ph-duotone ph-user-check"></i><p class="lv">assisted</p><p class="amt">€0</p><p class="s">a person signs off</p></div>
+        <div class="t au"><i class="ph-duotone ph-robot"></i><p class="lv">autonomous</p><p class="amt">€6,000</p><p class="s">above it, a person decides</p></div>
       </div>
-      <p class="out">Every answer becomes a <span class="code m">northstar.policy.decision</span> span: rule, limit, amount, caller, level.</p>
+      <p class="deny"><i class="ph-duotone ph-prohibit"></i>Any other caller: no row, so deny</p>
+      <p class="out"><i class="ph-duotone ph-path"></i><span>Every answer writes <code>northstar.policy.decision</code>: rule, limit, amount, caller, level</span></p>
     </div>
   </div>
 </section>
