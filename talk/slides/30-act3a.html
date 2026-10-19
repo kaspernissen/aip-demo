@@ -220,13 +220,15 @@
 <section class="slide content" data-label="Workload identity: SPIFFE/SPIRE">
   <p class="ring">Core &middot; Identity</p>
   <h2 class="slide-title">A passport, not a name tag</h2>
-  <div class="x30-sv rise">
-    <div class="step"><p class="v">Register</p><p class="t">a <span class="code">ClusterSPIFFEID</span> names the pod’s ID</p><p class="who">spire-controller-manager</p></div>
-    <div class="step"><p class="v">Mount</p><p class="t">the Workload API socket, into the pod</p><p class="who">SPIFFE CSI driver</p></div>
-    <div class="step"><p class="v">Attest</p><p class="t">check the pod: namespace + ServiceAccount</p><p class="who">SPIRE agent</p></div>
-    <div class="step"><p class="v">Issue</p><p class="t">a JWT-SVID, for one audience</p><p class="who">SPIRE server</p></div>
-    <div class="step m"><p class="v">Verify</p><p class="t">against the JWKS; write <span class="code m">jwt.sub</span></p><p class="who">agentgateway</p></div>
+  <div class="x30-air rise">
+    <div class="end"><i class="ph-duotone ph-robot"></i><span>the agent</span></div>
+    <div class="g"><i class="ph-duotone ph-path"></i><b>Corridor</b><span>Cilium · reach</span></div>
+    <div class="g here"><i class="ph-duotone ph-identification-card"></i><b>Passport</b><span>SPIFFE/SPIRE · identity</span></div>
+    <div class="g"><i class="ph-duotone ph-scan"></i><b>Scanner</b><span>agentgateway + policy</span></div>
+    <div class="g"><i class="ph-duotone ph-user-check"></i><b>Gate staff</b><span>a reviewer · a human</span></div>
+    <div class="end"><i class="ph-duotone ph-airplane-tilt"></i><span>the payment</span></div>
   </div>
+  <p class="x30-air-idea rise">No single check catches everything. <em>Each one assumes the last one failed.</em></p>
   <div class="x30-pass rise">
     <p class="lab"><i class="ph-duotone ph-identification-card"></i>The passport settlement-agent carries</p>
     <dl class="attrs">
