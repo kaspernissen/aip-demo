@@ -60,7 +60,7 @@ def main():
     head = (BUILD / "head.html").read_text()
     out = (head +
            '\n<deck-stage width="1920" height="1080" data-footer="handles"\n'
-           '            data-handles="/in/william-rizzo &middot; /in/kaspernissen &middot; kaspernissen.xyz">\n\n' +
+           '            data-handles="/in/william-rizzo &middot; kaspernissen.xyz">\n\n' +
            "\n".join(sections) +
            "\n\n</deck-stage>\n\n<script type=\"application/json\" id=\"speaker-notes\">\n" +
            json.dumps(notes, ensure_ascii=False, indent=1) +
