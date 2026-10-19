@@ -50,7 +50,7 @@
     <div><i class="ph-duotone ph-heartbeat"></i><b>Healthcare</b><span>reads patient records</span></div>
     <div><i class="ph-duotone ph-cell-tower"></i><b>Telco</b><span>runs the network</span></div>
   </div>
-  <p class="x10-same rise">Different rules. <span class="spot-2">The same few questions.</span></p>
+  <p class="x10-same rise">Different rules. <span class="spot-2 hl-under">The same few questions.</span></p>
 </section>
 
 <!-- 02a+ · what "verticalizing" means: domain rules on top, one shared platform underneath -->
@@ -73,7 +73,7 @@
     <li><i>1</i><div><b>What did the agent do?</b><span class="x10-tags"><span class="x10-tag">EU AI Act Art. 12 &middot; record-keeping</span></span></div></li>
     <li><i>2</i><div><b>Who allowed it, and within what limits?</b><span class="x10-tags"><span class="x10-tag">FINRA 2026 &middot; scope and authority</span></span></div></li>
     <li><i>3</i><div><b>Could a human stop it, or reverse it?</b><span class="x10-tags"><span class="x10-tag">EU AI Act Art. 14 &middot; human oversight</span></span></div></li>
-    <li><i>4</i><div><b>Can you explain this one decision to the person it affected?</b><span class="x10-tags"><span class="x10-tag">EU AI Act Art. 86</span><span class="x10-tag">GDPR &middot; CJEU C-203/22</span></span></div></li>
+    <li><i>4</i><div><b>Can you explain <span class="hl-ring">this one decision</span> to the person it affected?</b><span class="x10-tags"><span class="x10-tag">EU AI Act Art. 86</span><span class="x10-tag">GDPR &middot; CJEU C-203/22</span></span></div></li>
     <li><i>5</i><div><b>Are the records complete, kept, and tamper-evident?</b><span class="x10-tags"><span class="x10-tag">EU AI Act Art. 19</span><span class="x10-tag">DORA RTS Art. 12</span><span class="x10-tag">ISO/IEC 24970 (FDIS)</span></span></div></li>
   </ol>
 </section>
@@ -286,6 +286,32 @@
     <b class="x10-pr-end">Tool server</b>
   </div>
   <p class="x10-under rise">Like the rules of a phone call. <span class="muted">Agree once, and anyone can plug in.</span></p>
+</section>
+
+<!-- 06a · MCP and A2A as two business cards, side by side: what each is for, before the diagram of how they fit -->
+<section class="slide content" data-label="Meet MCP and A2A">
+  <h2 class="slide-title">Two protocols, two jobs</h2>
+  <div class="x10-cards rise">
+    <article class="x10-card c-mcp">
+      <header><i class="ph-duotone ph-plugs-connected"></i><div><b>MCP</b><span>Model Context Protocol</span></div></header>
+      <p class="job">Gives an agent tools it didn’t ship with</p>
+      <dl>
+        <dt>Direction</dt><dd>Vertical · agent → tool</dd>
+        <dt>Says</dt><dd><code>tools/list</code> · <code>tools/call</code></dd>
+        <dt>In Northstar</dt><dd>settlement-agent → <code>execute_payment</code></dd>
+      </dl>
+    </article>
+    <article class="x10-card c-a2a">
+      <header><i class="ph-duotone ph-handshake"></i><div><b>A2A</b><span>Agent2Agent</span></div></header>
+      <p class="job">Lets one agent hand work to another</p>
+      <dl>
+        <dt>Direction</dt><dd>Horizontal · agent ↔ agent</dd>
+        <dt>Says</dt><dd>a task: working · input-required · done</dd>
+        <dt>In Northstar</dt><dd>claims-agent → settlement-agent</dd>
+      </dl>
+    </article>
+  </div>
+  <p class="x10-cards-foot rise">Both open, both in the Agentic AI Foundation. <span class="spot-2">Neither one decides what an agent may do.</span></p>
 </section>
 
 <!-- 08 · TAMING · MCP, A2A and Skills: book Figure 2.6 (vertical and horizontal) rebuilt with a skill folder, one dated fact each -->

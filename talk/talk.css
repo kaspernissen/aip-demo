@@ -929,6 +929,23 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x10-vbar span { font-size: 36px; opacity: .9; }
 .x10-vline { margin: calc(1.2 * var(--baseline)) 0 0; font-size: 50px; font-weight: 600; letter-spacing: -0.01em; }
 
+/* 06a · MCP and A2A as business cards: a coloured band, the acronym as the name, three key-value lines */
+.x10-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; margin-top: calc(1.2 * var(--baseline)); }
+.x10-card { --c: var(--ocean-teal); --icon: var(--c); position: relative; background: #fff; border-radius: 22px; padding: 40px 48px 40px 60px;
+  box-shadow: 0 18px 44px -18px rgba(10,17,40,.28), 0 2px 6px rgba(10,17,40,.06); overflow: hidden; }
+.x10-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 16px; background: var(--c); }
+.x10-card.c-a2a { --c: var(--ocean-violet); }
+.x10-card header { display: flex; align-items: center; gap: 26px; }
+.x10-card header i { font-size: 92px; line-height: 1; }
+.x10-card header b { display: block; font-family: var(--font-heading); font-size: 76px; line-height: 1; font-weight: 700; color: var(--c); letter-spacing: -0.01em; }
+.x10-card header span { display: block; margin-top: 8px; font-size: 26px; color: var(--color-neutral-600); letter-spacing: .02em; }
+.x10-card .job { margin: 30px 0 26px; font-size: 36px; line-height: 1.2; font-weight: 600; }
+.x10-card dl { display: grid; grid-template-columns: 190px 1fr; gap: 14px 20px; margin: 0; padding-top: 24px; border-top: 1px solid var(--color-divider); font-size: 26px; }
+.x10-card dt { margin: 0; color: var(--color-neutral-600); text-transform: uppercase; letter-spacing: .08em; font-size: 20px; padding-top: 5px; }
+.x10-card dd { margin: 0; }
+.x10-card code { font-family: var(--font-mono); font-size: .9em; }
+.x10-cards-foot { margin: calc(1.2 * var(--baseline)) 0 0; font-size: 40px; font-weight: 600; letter-spacing: -0.01em; }
+
 /* ===== 20-act2.css ===== */
 /* 20-act2 · Act 2, "What tracing already gives us" (Broadsheet). Everything is .a2-* scoped.
    Cyan = the trace holding together; magenta = the break. Serif throughout, no boxes. */

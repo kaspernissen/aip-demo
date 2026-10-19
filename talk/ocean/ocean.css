@@ -132,8 +132,8 @@ deck-stage { --cap-anchor: 168.4px; }
 /* ── Cover art: a regulated, verticalized platform, drawn in line ────────────
    Four pillars (the verticals) on one platform slab, a trace threading them,
    and a shield with a check: governed. Sits on the navy half of the cover. */
-.cover-art { position: absolute; right: 64px; top: 170px; width: 640px; height: auto; pointer-events: none; }
-.slide.cover.has-art .display { max-width: 1010px; font-size: 104px; line-height: 1.08; }
+.cover-art { position: absolute; right: 48px; top: 230px; width: 540px; height: auto; pointer-events: none; }
+.slide.cover.has-art .display { max-width: 1240px; font-size: 122px; line-height: 1.04; }
 
 /* ── Dark sheets (Kasper, 2026-10-19): a few statement slides in reverse ──
    `.x-dark` on a content/hero/quote slide swaps the ground to ink, the same way
@@ -201,3 +201,22 @@ deck-stage { --cap-anchor: 168.4px; }
 /* Ocean duotone: the photo's light and shade, the palette's hue. */
 .cmyk.portrait { background: var(--ocean-teal); }
 .cmyk.portrait img:first-child { filter: grayscale(1) contrast(1.08) brightness(1.04); mix-blend-mode: luminosity; }
+
+/* ── Highlights (2026-10-19: "boxes or circles to highlight a few things") ──
+   Used sparingly, in the spark colour, so they follow light and dark sheets.
+   .hl-ring  a hand-drawn ring around a word or phrase
+   .hl-under a marker stroke under a phrase
+   .hl-box   a box around a phrase
+   .hl-marks / .hl-mark  boxes drawn over a screenshot, each with a small label; place with
+             --x --y --w --h as percentages of the image. */
+.hl-ring { position: relative; white-space: nowrap; margin: 0 .38em; }
+.hl-ring::after { content: ""; position: absolute; inset: -0.36em -0.62em -0.3em -0.58em; pointer-events: none;
+  background: var(--color-accent-2);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 80' preserveAspectRatio='none'%3E%3Cpath d='M30 66 C 8 58, 6 26, 48 15 C 96 3, 172 6, 192 30 C 204 50, 176 72, 110 75 C 66 77, 26 72, 14 50 C 8 36, 22 20, 60 12' fill='none' stroke='black' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 80' preserveAspectRatio='none'%3E%3Cpath d='M30 66 C 8 58, 6 26, 48 15 C 96 3, 172 6, 192 30 C 204 50, 176 72, 110 75 C 66 77, 26 72, 14 50 C 8 36, 22 20, 60 12' fill='none' stroke='black' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
+.hl-under { background: linear-gradient(transparent 64%, color-mix(in srgb, var(--color-accent-2) 32%, transparent) 64%, color-mix(in srgb, var(--color-accent-2) 32%, transparent) 92%, transparent 92%); padding: 0 .08em; }
+.hl-box { border: 3px solid var(--color-accent-2); border-radius: 10px; padding: .02em .22em; }
+.hl-marks { position: relative; }
+.hl-mark { position: absolute; left: var(--x); top: var(--y); width: var(--w); height: var(--h);
+  border: 3px solid var(--ocean-spark); border-radius: 8px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--ocean-spark) 18%, transparent); }
+.hl-mark b { position: absolute; left: calc(100% + 18px); top: 50%; transform: translateY(-50%); white-space: nowrap;
+  background: var(--ocean-spark); color: #fff; font: 600 22px/1 var(--font-body); padding: 8px 12px; border-radius: 6px; }

@@ -50,7 +50,11 @@
 <!-- 39 · NEW · the evidence view, in Jaeger (2026-10-19, replaces the OpenSearch dashboard capture): trace B of an approved claim, the northstar.review.decision span open with its link -->
 <section class="slide content" data-label="The evidence view">
   <h2 class="slide-title">No new application code</h2>
-  <figure class="shot x40-ev-shot rise"><img src="assets/shots/jaeger-evidence-approval.png" alt="Jaeger: trace B of an approved claim, rooted at reviewer-ui northstar.review.decision, with its tags (decision approve, reviewer id, reviewer SPIFFE id, wait duration 6.359 s) and one reference, a span in another trace"></figure>
+  <figure class="shot x40-ev-shot hl-marks rise"><img src="assets/shots/jaeger-evidence-approval.png" alt="Jaeger: trace B of an approved claim, rooted at reviewer-ui northstar.review.decision, with its tags (decision approve, reviewer id, reviewer SPIFFE id, wait duration 6.359 s) and one reference, a span in another trace">
+    <span class="hl-mark" style="--x:1%;--y:35.5%;--w:61%;--h:14%"><b>who, as which identity</b></span>
+    <span class="hl-mark" style="--x:1%;--y:50.5%;--w:61%;--h:7.5%"><b>how long the human took</b></span>
+    <span class="hl-mark" style="--x:1%;--y:84%;--w:61%;--h:7%"><b>link back to the trace that asked</b></span>
+  </figure>
   <p class="x40-ev-cap rise">Who approved, as which identity, how long the human took, and a link back to the trace that asked.</p>
 </section>
 
