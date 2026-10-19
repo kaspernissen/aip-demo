@@ -778,15 +778,20 @@ deck-stage { --page-foot-note: "kaspernissen.xyz"; }
 .term .mm { background: var(--color-accent-2-100); color: var(--color-accent-2-800); border-radius: var(--radius-sm); padding: 0 0.15em; }
 
 /* ===== 00-cover.css ===== */
-/* 00-cover · the two QR codes from the close, bottom right under the rule (2026-10-19). The meta line
-   wraps so the event sits on its own line and leaves the corner free. */
-.slide.cover .meta { flex-wrap: wrap; row-gap: 6px; }
-.slide.cover .meta .br { flex-basis: 100%; height: 0; }
-.slide.cover .cover-qrs { position: absolute; right: 64px; bottom: 44px; display: flex !important; flex-direction: row !important; gap: 28px; margin: 0; width: auto; }
-.cover-qrs figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.cover-qrs .card { background: #fff; border-radius: 16px; padding: 14px; width: 168px; height: 168px; box-sizing: border-box; box-shadow: 0 16px 40px -18px rgba(0,0,0,.6); }
-.cover-qrs .card img { width: 100%; height: 100%; display: block; }
-.cover-qrs figcaption { font-size: 20px; color: var(--ocean-aqua-lift); letter-spacing: .02em; }
+/* 00-cover · two speaker cards bottom left under the rule (2026-10-19): QR code, name, title, then the
+   company logo. William's logo is a text stand-in (.co-text) until the Mirantis SVG arrives. The event
+   line moves to the bottom right. */
+.slide.cover .cover-people { position: absolute; left: var(--pad-x); bottom: 40px; display: flex !important; flex-direction: row !important; gap: 28px; margin: 0; width: auto; }
+.cp-card { margin: 0; display: flex; align-items: center; gap: 22px; background: #fff; border-radius: 20px; padding: 16px 30px 16px 16px; box-shadow: 0 16px 40px -18px rgba(0,0,0,.6); }
+.cp-card .qr { width: 156px; height: 156px; display: block; }
+.cp-card figcaption { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.cp-card b { font-size: 26px; color: var(--ocean-ink, #0A1128); white-space: nowrap; letter-spacing: -0.01em; }
+.cp-card span { font-size: 19px; color: #4A5468; white-space: nowrap; }
+.cp-card .co { height: 30px; width: auto; margin-top: 14px; }
+.slide.cover .cp-card .co-text { height: auto; font-style: normal; font-weight: 700; font-size: 24px; letter-spacing: .01em; color: #0A1128; }
+.slide.cover .cover-event { left: auto; text-align: right; display: block; bottom: 48px; }
+.slide.cover .cover-event { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; bottom: 56px; }
+.cp-card { width: 490px; box-sizing: border-box; }
 
 /* ===== 10-open-act1.css ===== */
 /* 10-open-act1: the open and Act 1, Broadsheet. Everything is x10-* so no other fragment collides. */
