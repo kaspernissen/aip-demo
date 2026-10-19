@@ -94,16 +94,6 @@
     </div>
   </div>
 </section>
-<section class="slide content" data-label="When an agent acts">
-  <h2 class="slide-title">When an agent acts, someone will ask</h2>
-  <div class="x10-dom rise">
-    <div><i class="ph-duotone ph-bank"></i><b>Fintech</b><span>moves money</span></div>
-    <div><i class="ph-duotone ph-umbrella"></i><b>Insurance</b><span>settles claims</span></div>
-    <div><i class="ph-duotone ph-heartbeat"></i><b>Healthcare</b><span>reads patient records</span></div>
-    <div><i class="ph-duotone ph-cell-tower"></i><b>Telco</b><span>runs the network</span></div>
-  </div>
-  <p class="x10-same rise">Different rules. <span class="spot-2 hl-under">The same few questions.</span></p>
-</section>
 <section class="slide content x10-vert x-dark" data-label="Verticalizing">
   <h2 class="slide-title">Verticalizing, in one picture</h2>
   <div class="x10-vcols rise">
@@ -152,68 +142,6 @@
     <div class="ghost-num cmyk-num"><span class="paper">01</span><span class="plate plate-c" aria-hidden="true">01</span><span class="plate plate-m" aria-hidden="true">01</span><span class="plate plate-y" aria-hidden="true">01</span></div>
   </div>
 </section>
-<section class="slide content" data-label="The evolution of architectures">
-  <h2 class="slide-title">Building got easier. Understanding got harder.</h2>
-  <figure class="bfig rise x10-fig" style="--fig-h:600px"><svg viewBox="0 0 860 326" role="img" aria-label="Four architecture stages from monolith to agents, each with what it broke, and two trend lines: effort to build falls while effort to understand rises.">
-<defs><marker id="x10-ar-1-1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#595959"/></marker></defs>
-<g font-family="Inter, sans-serif">
-<text x="112" y="32" font-size="15" font-weight="700" text-anchor="middle" fill="#111111">Monolith</text>
-<text x="324" y="32" font-size="15" font-weight="700" text-anchor="middle" fill="#111111">Microservices</text>
-<text x="536" y="32" font-size="15" font-weight="700" text-anchor="middle" fill="#111111">Event-driven</text>
-<text x="748" y="32" font-size="15" font-weight="700" text-anchor="middle" fill="#111111">Agents</text>
-<rect x="20" y="44" width="184" height="104" rx="8" fill="#F7F7F7" stroke="#E8E8E8"/>
-<rect x="232" y="44" width="184" height="104" rx="8" fill="#F7F7F7" stroke="#E8E8E8"/>
-<rect x="444" y="44" width="184" height="104" rx="8" fill="#F7F7F7" stroke="#E8E8E8"/>
-<rect x="656" y="44" width="184" height="104" rx="8" fill="#F7F7F7" stroke="#E8E8E8"/>
-<rect x="57" y="62" width="110" height="68" rx="6" fill="#DCEBFF" stroke="#123E7A"/>
-<text x="112" y="100" font-size="12" text-anchor="middle" fill="#123E7A">one process</text>
-<line x1="270" y1="72" x2="324" y2="96" stroke="#9E9E9E"/><line x1="378" y1="72" x2="324" y2="96" stroke="#9E9E9E"/>
-<line x1="270" y1="124" x2="324" y2="96" stroke="#9E9E9E"/><line x1="378" y1="124" x2="324" y2="96" stroke="#9E9E9E"/>
-<line x1="270" y1="72" x2="270" y2="124" stroke="#9E9E9E"/>
-<rect x="252" y="61" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
-<rect x="360" y="61" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
-<rect x="306" y="85" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
-<rect x="252" y="113" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
-<rect x="360" y="113" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
-<rect x="460" y="88" width="152" height="17" rx="3" fill="#FBE997" stroke="#9E9E9E"/>
-<text x="536" y="100.5" font-size="10.5" letter-spacing="1.2" text-anchor="middle" fill="#595959">EVENT BUS</text>
-<rect x="470" y="56" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
-<rect x="518" y="56" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
-<rect x="566" y="56" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
-<rect x="494" y="118" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
-<rect x="542" y="118" width="36" height="22" rx="4" fill="#DCEBFF" stroke="#123E7A"/>
-<line x1="488" y1="78" x2="488" y2="88" stroke="#9E9E9E"/><line x1="536" y1="78" x2="536" y2="88" stroke="#9E9E9E"/><line x1="584" y1="78" x2="584" y2="88" stroke="#9E9E9E"/>
-<line x1="512" y1="105" x2="512" y2="118" stroke="#9E9E9E"/><line x1="560" y1="105" x2="560" y2="118" stroke="#9E9E9E"/>
-<circle cx="720" cy="96" r="24" fill="#DCEBFF" stroke="#123E7A"/>
-<text x="720" y="100" font-size="11" text-anchor="middle" fill="#123E7A">agent</text>
-<path d="M706,74 A18,18 0 1,1 734,74" fill="none" stroke="#123E7A" stroke-width="1.5" marker-end="url(#x10-ar-1-1)"/>
-<rect x="766" y="52" width="64" height="22" rx="4" fill="#DBD4F8" stroke="#9078F3"/>
-<text x="798" y="67.5" font-size="11" text-anchor="middle" fill="#111111">model</text>
-<rect x="782" y="86" width="22" height="18" rx="3" fill="#A8FBBE" stroke="#6AD186"/>
-<rect x="782" y="112" width="22" height="18" rx="3" fill="#A8FBBE" stroke="#6AD186"/>
-<rect x="752" y="124" width="22" height="18" rx="3" fill="#A8FBBE" stroke="#6AD186"/>
-<line x1="744" y1="90" x2="766" y2="68" stroke="#9E9E9E" stroke-dasharray="3 2"/>
-<line x1="744" y1="98" x2="782" y2="95" stroke="#9E9E9E" stroke-dasharray="3 2"/>
-<line x1="740" y1="108" x2="782" y2="120" stroke="#9E9E9E" stroke-dasharray="3 2"/>
-<line x1="730" y1="118" x2="756" y2="126" stroke="#9E9E9E" stroke-dasharray="3 2"/>
-<line x1="206" y1="96" x2="229" y2="96" stroke="#595959" stroke-width="1.5" marker-end="url(#x10-ar-1-1)"/>
-<line x1="418" y1="96" x2="441" y2="96" stroke="#595959" stroke-width="1.5" marker-end="url(#x10-ar-1-1)"/>
-<line x1="630" y1="96" x2="653" y2="96" stroke="#595959" stroke-width="1.5" marker-end="url(#x10-ar-1-1)"/>
-<g font-size="11" letter-spacing="1.3" fill="#F8494D">
-<text x="24" y="178">BROKE</text><text x="236" y="178">BROKE</text><text x="448" y="178">BROKE</text><text x="660" y="178">BROKE</text>
-</g>
-<g font-size="12" fill="#212121">
-<text x="24" y="199">Teams block each other;</text><text x="24" y="216">one bug takes all down</text>
-<text x="236" y="199">A request crosses many</text><text x="236" y="216">hops; stack traces stop</text><text x="236" y="233">at the network</text>
-<text x="448" y="199">Cause and effect split</text><text x="448" y="216">by queues, delays and</text><text x="448" y="233">retries</text>
-<text x="660" y="199">The path is chosen at</text><text x="660" y="216">run time; the &#8220;why&#8221;</text><text x="660" y="233">lives inside a model</text>
-</g>
-<line x1="40" y1="304" x2="820" y2="270" stroke="#F8494D" stroke-width="3"/>
-<line x1="40" y1="270" x2="820" y2="304" stroke="#6AD186" stroke-width="3"/>
-<text x="820" y="261" font-size="13" font-weight="600" text-anchor="end" fill="#F8494D">Effort to understand what happened</text>
-<text x="820" y="322" font-size="13" font-weight="600" text-anchor="end" fill="#18632F">Effort to build it</text>
-</g></svg></figure>
-</section>
 <section class="slide content" data-label="The model draws the call graph">
   <h2 class="slide-title">The call graph is no longer something you drew</h2>
   <figure class="bfig rise x10-fig" style="--fig-h:560px"><svg viewBox="14 8 802 234" role="img" aria-label="The same prompt produces three different runs with different tool sequences and different token use.">
@@ -251,18 +179,6 @@
 <rect x="200" y="226" width="400" height="6" rx="3" fill="#FCB6B8"/>
 </g></svg></figure>
   <p class="x10-under">The model draws it at run time.</p>
-</section>
-<section class="slide content" data-label="What an agent is, in one sentence">
-  <h2 class="slide-title">What an agent is, in one sentence</h2>
-  <div class="x10-eq rise">
-    <div><i class="ph-duotone ph-brain"></i><b>A model</b><span>writes the next step</span></div>
-    <em>+</em>
-    <div><i class="ph-duotone ph-scroll"></i><b>instructions</b><span>the rules it is given</span></div>
-    <em>+</em>
-    <div><i class="ph-duotone ph-wrench"></i><b>tools</b><span>what it can touch</span></div>
-    <em>+</em>
-    <div class="x10-eq-loop"><i class="ph-duotone ph-arrows-clockwise"></i><b>a loop</b><span>asks again until the model says &ldquo;done&rdquo;</span></div>
-  </div>
 </section>
 <section class="slide content" data-label="Anatomy of an agent">
   <h2 class="slide-title">Anatomy of an agent</h2>
@@ -306,19 +222,6 @@
 </g></svg></figure>
   <p class="x10-under">The agent decides when to stop. <span class="spot-2">In a regulated domain, that is the problem.</span></p>
 </section>
-<section class="slide content" data-label="What a protocol is for">
-  <h2 class="slide-title">What a protocol is for</h2>
-  <p class="x10-pr-lede rise">An agreed way for two programs to talk.</p>
-  <div class="x10-pr rise">
-    <b class="x10-pr-end">Agent</b>
-    <div class="x10-pr-wire">
-      <p class="x10-pr-msg"><span class="code">{ "method": "tools/call", "id": 7 }</span><i class="x10-pr-ar"></i></p>
-      <p class="x10-pr-msg x10-pr-back"><i class="x10-pr-ar"></i><span class="code">{ "id": 7, "result": &hellip; }</span></p>
-    </div>
-    <b class="x10-pr-end">Tool server</b>
-  </div>
-  <p class="x10-under rise">Like the rules of a phone call. <span class="muted">Agree once, and anyone can plug in.</span></p>
-</section>
 <section class="slide content" data-label="Meet MCP and A2A">
   <h2 class="slide-title">Two protocols, two jobs</h2>
   <div class="x10-cards rise">
@@ -342,63 +245,6 @@
     </article>
   </div>
   <p class="x10-cards-foot rise">Both open, both in the Agentic AI Foundation. <span class="spot-2">Neither one decides what an agent may do.</span></p>
-</section>
-<section class="slide content" data-label="MCP, A2A and Skills">
-  <h2 class="slide-title">MCP, A2A and Skills</h2>
-  <figure class="bfig rise x10-fig" style="--fig-h:470px"><svg viewBox="0 0 1100 300" role="img" aria-label="Two agents joined horizontally by A2A, each reaching down to its own tools with MCP, and agent B loading a skill folder. One date each: MCP spec 2026-07-28, A2A v1.0.0 on 2026-03-12, Skills an open standard since 2025-12-18.">
-<defs><marker id="x10-ar-26" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#595959"/></marker>
-<marker id="x10-ar-26g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6AD186"/></marker></defs>
-<g font-family="Inter, sans-serif">
-<rect x="30" y="36" width="260" height="80" rx="10" fill="#DCEBFF" stroke="#123E7A"/>
-<text x="160" y="70" font-size="21" font-weight="700" text-anchor="middle" fill="#123E7A">Agent A</text>
-<text x="160" y="96" font-size="16" text-anchor="middle" fill="#123E7A">e.g. claims</text>
-<rect x="470" y="36" width="260" height="80" rx="10" fill="#DCEBFF" stroke="#123E7A"/>
-<text x="600" y="70" font-size="21" font-weight="700" text-anchor="middle" fill="#123E7A">Agent B</text>
-<text x="600" y="96" font-size="16" text-anchor="middle" fill="#123E7A">e.g. settlement</text>
-<line x1="294" y1="76" x2="466" y2="76" stroke="#111111" stroke-width="2.5" marker-start="url(#x10-ar-26)" marker-end="url(#x10-ar-26)"/>
-<text x="380" y="62" font-size="20" font-weight="700" text-anchor="middle" fill="#111111">A2A</text>
-<text x="380" y="102" font-size="15" text-anchor="middle" fill="#595959">v1.0.0 · 2026-03-12</text>
-<g stroke="#6AD186" stroke-width="2.5">
-<line x1="125" y1="118" x2="100" y2="192" marker-end="url(#x10-ar-26g)"/><line x1="195" y1="118" x2="220" y2="192" marker-end="url(#x10-ar-26g)"/>
-<line x1="565" y1="118" x2="540" y2="192" marker-end="url(#x10-ar-26g)"/><line x1="635" y1="118" x2="660" y2="192" marker-end="url(#x10-ar-26g)"/>
-</g>
-<text x="160" y="164" font-size="20" font-weight="700" text-anchor="middle" fill="#18632F">MCP</text>
-<text x="600" y="164" font-size="20" font-weight="700" text-anchor="middle" fill="#18632F">MCP</text>
-<g font-size="16" text-anchor="middle" fill="#18632F">
-<rect x="45" y="196" width="110" height="44" rx="6" fill="#A8FBBE" stroke="#6AD186"/><text x="100" y="224">tool</text>
-<rect x="165" y="196" width="110" height="44" rx="6" fill="#A8FBBE" stroke="#6AD186"/><text x="220" y="224">tool</text>
-<rect x="485" y="196" width="110" height="44" rx="6" fill="#A8FBBE" stroke="#6AD186"/><text x="540" y="224">tool</text>
-<rect x="605" y="196" width="110" height="44" rx="6" fill="#A8FBBE" stroke="#6AD186"/><text x="660" y="224">tool</text>
-</g>
-<text x="160" y="272" font-size="15" text-anchor="middle" fill="#595959">MCP spec 2026-07-28 · stateless</text>
-<path d="M850,48 H928 L942,62 H1070 V214 H850 Z" fill="#F7F7F7" stroke="#9E9E9E" stroke-width="1.5"/>
-<text x="872" y="108" font-size="18" fill="#111111">SKILL.md</text>
-<text x="872" y="140" font-size="18" fill="#212121">scripts/</text>
-<text x="872" y="172" font-size="18" fill="#212121">references/</text>
-<line x1="732" y1="96" x2="846" y2="96" stroke="#595959" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#x10-ar-26)"/>
-<text x="789" y="84" font-size="15" text-anchor="middle" fill="#595959">loads</text>
-<text x="960" y="246" font-size="20" font-weight="700" text-anchor="middle" fill="#111111">Skills</text>
-<text x="960" y="272" font-size="15" text-anchor="middle" fill="#595959">open standard · 2025-12-18</text>
-</g></svg></figure>
-  <p class="x10-under">None of the three is a CNCF project.</p>
-</section>
-<section class="slide content" data-label="The decoder ring">
-  <h2 class="slide-title">The decoder ring</h2>
-  <div class="x10-ring rise">
-    <span class="x10-rh">Your platform already watches</span><span></span><span class="x10-rh">It doesn&rsquo;t, yet</span>
-    <span class="x10-l">Stack trace</span><span class="x10-a">&rarr;</span><span class="x10-r">Reasoning chain</span>
-    <span class="x10-l">Status code</span><span class="x10-a">&rarr;</span><span class="x10-r">Quality signal</span>
-    <span class="x10-l">RPS and latency</span><span class="x10-a">&rarr;</span><span class="x10-r">Tokens, cost, blast radius</span>
-    <span class="x10-l">Static call graph</span><span class="x10-a">&rarr;</span><span class="x10-r">Dynamic tool invocation</span>
-    <span class="x10-l">Replayable request</span><span class="x10-a">&rarr;</span><span class="x10-r spot">Non-deterministic run</span>
-  </div>
-</section>
-<section class="slide quote" data-label="“We don’t know what the agent did”">
-  <figure class="rise">
-    <blockquote>&ldquo;Agents may act beyond the user&rsquo;s actual or intended <span class="spot-2">scope and authority.</span>&rdquo;</blockquote>
-    <p class="x10-q2">&ldquo;&hellip;multi-step agent reasoning tasks can make outcomes <span class="spot">difficult to trace or explain.</span>&rdquo;</p>
-    <figcaption class="text-muted">&mdash; FINRA, 2026 Annual Regulatory Oversight Report, December 2025</figcaption>
-  </figure>
 </section>
 <section class="slide content x10-thesis x-dark" data-label="Decide. Trace. Prove.">
   <div class="x10-words rise">
@@ -493,40 +339,6 @@
     </div>
   </div>
 </section>
-<section class="slide content" data-label="traceparent, now also in MCP">
-  <h2 class="slide-title"><span class="a2-ident">traceparent</span>, now also in MCP</h2>
-  <figure class="bfig rise a2-anat"><svg viewBox="30 14 820 142" role="img" aria-label="Anatomy of a W3C traceparent header: version, trace-id, parent-id, flags">
-<g font-family="Inter, sans-serif">
-<text x="45" y="34" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1.4" fill="#595959">TRACEPARENT:</text>
-<rect x="45" y="48" width="56" height="40" rx="6" fill="#E8E8E8" stroke="#595959"/>
-<rect x="121" y="48" width="400" height="40" rx="6" fill="#DCEBFF" stroke="#123E7A"/>
-<rect x="541" y="48" width="220" height="40" rx="6" fill="#DBD4F8" stroke="#9078F3"/>
-<rect x="781" y="48" width="56" height="40" rx="6" fill="#A8FBBE" stroke="#18632F"/>
-<g font-family="Martian Mono, monospace" font-size="14" fill="#111111" text-anchor="middle">
-<text x="73" y="73">00</text><text x="111" y="73">-</text>
-<text x="321" y="73" font-size="13">4bf92f3577b34da6a3ce929d0e0e4736</text><text x="531" y="73">-</text>
-<text x="651" y="73" font-size="13">00f067aa0ba902b7</text><text x="771" y="73">-</text>
-<text x="809" y="73">01</text>
-</g>
-<g font-size="12" fill="#212121">
-<text x="45" y="112" font-weight="600">version</text>
-<text x="45" y="129" fill="#595959">always 00</text>
-<text x="121" y="112" font-weight="600">trace-id</text>
-<text x="121" y="129" fill="#595959">the tracking number:</text>
-<text x="121" y="145" fill="#595959">the same on every span</text>
-<text x="541" y="112" font-weight="600">parent-id</text>
-<text x="541" y="129" fill="#595959">the caller&#8217;s span:</text>
-<text x="541" y="145" fill="#595959">replaced at every hop</text>
-<text x="837" y="112" font-weight="600" text-anchor="end">flags</text>
-<text x="837" y="129" fill="#595959" text-anchor="end">01 = sampled</text>
-</g>
-</g></svg></figure>
-  <div class="a2-carriers">
-    <div class="a2-car"><span class="a2-car-k">HTTP header</span><span class="code">traceparent: 00-4bf9&hellip;-01</span></div>
-    <div class="a2-car"><span class="a2-car-k">MCP <span class="code">params._meta</span></span><span class="code c">"_meta": { "traceparent": "00-4bf9&hellip;-01" }</span></div>
-    <div class="a2-car"><span class="a2-car-k"></span><span class="a2-car-n muted">new: SEP-414, MCP spec 2026-07-28</span></div>
-  </div>
-</section>
 <section class="slide content" data-label="What can gen_ai.* answer today?">
   <h2 class="slide-title">What can <span class="a2-ident">gen_ai.*</span> answer today?</h2>
   <table class="a2-tbl rise">
@@ -568,30 +380,6 @@
     <div><i class="ph-duotone ph-check-circle"></i><b>Evals</b><span>scores on the trace</span><em class="x30-chip x30-chip-on">Shown</em></div>
   </div>
   <p class="x30-rg"><span><b>Core &middot; Identity</b> SPIRE, checked at the gateway</span><span><b>Ring 1 &middot; Reach</b> Cilium, under the gateway</span><span><b>Ring 2 &middot; Capability</b> gateway + policy</span><span><b>Keystone</b> Kyverno, guards the rest</span></p>
-</section>
-<section class="slide content" data-label="We've done this before">
-  <h2 class="slide-title">We’ve done this before</h2>
-  <div class="x30-was rise">
-    <p class="h">What cloud native built</p><span></span><p class="h">Pointed at agents</p><p class="h">In Northstar</p>
-    <p class="l">Golden path</p><i class="ar"></i><p class="r m">A declared contract per agent</p><p class="n"><span class="code">FeatureFlag</span></p>
-    <p class="l">Guardrails, admission policy</p><i class="ar"></i><p class="r m">A decision at the tool gateway</p><p class="n"><span class="code">agentgateway → PDS</span></p>
-    <p class="l">Service identity, mTLS</p><i class="ar"></i><p class="r m">One SPIFFE identity per agent</p><p class="n"><span class="code">JWT-SVID</span></p>
-    <p class="l">Observability stack</p><i class="ar"></i><p class="r c">GenAI traces plus decision spans</p><p class="n"><span class="code">northstar.policy.decision</span></p>
-    <p class="l">Feature flags</p><i class="ar"></i><p class="r m">Autonomy level as a live value</p><p class="n"><span class="code">flagd</span></p>
-    <p class="l">Service catalog</p><i class="ar"></i><p class="r">Backstage as the view</p><p class="n"><span class="code">autonomy card</span></p>
-  </div>
-</section>
-<section class="slide content" data-label="Connected is not governed">
-  <h2 class="slide-title">Connected is not governed</h2>
-  <div class="x30-lad rise">
-    <div class="st s1"><p class="nm">Connected</p><i class="bar"></i><p class="pf">one trace exists</p><p class="ad">agents, MCP, collector, Jaeger</p><div class="rgs"></div></div>
-    <div class="st s2"><p class="nm">Governed</p><i class="bar"></i><p class="pf">identity is an input to the decision</p><p class="ad">Cilium, SPIRE, agentgateway, PDS</p><div class="rgs"><p class="rg">Core &middot; Identity</p><p class="rg">Ring 1 &middot; Reach</p><p class="rg">Ring 2 &middot; Capability</p></div><p class="x30-lad-mark">the platform starts deciding</p></div>
-    <div class="st s3"><p class="nm">Supervised</p><i class="bar"></i><p class="pf">a human can overturn</p><p class="ad">reviewer UI, human approval</p><div class="rgs"></div></div>
-    <div class="st s4"><p class="nm">Observable</p><i class="bar"></i><p class="pf">prove why, from telemetry alone</p><p class="ad">OpenSearch, Prometheus, eval-scorer</p><div class="rgs"></div></div>
-    <div class="st s5"><p class="nm">Progressive autonomy</p><i class="bar"></i><p class="pf">one live value, no redeploy</p><p class="ad">OpenFeature, flagd, FeatureFlag</p><div class="rgs"><p class="rg">Ring 2 &middot; Capability</p></div></div>
-    <div class="st s6"><p class="nm">Golden path</p><i class="bar"></i><p class="pf">Backstage is just the view</p><p class="ad">Backstage, autonomy card</p><div class="rgs"></div></div>
-    <div class="st s7"><p class="nm">Bounded</p><i class="bar"></i><p class="pf">the agent can&rsquo;t edit what constrains it</p><p class="ad">Kyverno, keystone policy</p><div class="rgs"><p class="rg">Keystone</p></div></div>
-  </div>
 </section>
 <section class="slide content" data-label="Meet Northstar">
   <h2 class="slide-title">Meet Northstar</h2>
@@ -703,30 +491,6 @@
 <text x="676" y="192" font-size="11" fill="#212121">request in the trace, effect absent</text>
 </g></svg></figure>
 </section>
-<section class="slide content" data-label="Enforcement point, decision point">
-  <h2 class="slide-title">The bouncer and the manager</h2>
-  <div class="x30-pep rise">
-    <div class="who">
-      <i class="ph-duotone ph-door-open"></i>
-      <p class="k">Enforcement point</p>
-      <p class="t">Stands at the door. Lets the call through, or stops it.</p>
-      <p class="n"><span class="code m">agentgateway</span></p>
-    </div>
-    <div class="ask">
-      <p class="q">“may this caller do this?”</p>
-      <i class="w to"></i>
-      <i class="w back"></i>
-      <p class="q">permit or deny, and why</p>
-    </div>
-    <div class="who">
-      <i class="ph-duotone ph-scales"></i>
-      <p class="k">Decision point</p>
-      <p class="t">Knows the rules. Never touches the door.</p>
-      <p class="n"><span class="code m">policy-decision-service</span></p>
-    </div>
-  </div>
-  <p class="x30-foot x30-pep-foot">Keep them apart, and the rule can change <b>without touching the door</b>.</p>
-</section>
 <section class="slide content" data-label="The toolbox">
   <h2 class="slide-title">The toolbox, by the job it does</h2>
   <div class="x30-box rise">
@@ -765,33 +529,6 @@
     </dl>
   </div>
 </section>
-<section class="slide content" data-label="What agentgateway is">
-  <p class="ring">Ring 2 &middot; Capability</p>
-  <h2 class="slide-title">A gateway that reads the protocol</h2>
-  <div class="x30-ag rise">
-    <div class="col api">
-      <p class="lab"><i class="ph-duotone ph-globe"></i>An API gateway sees</p>
-      <p class="ln"><span class="code">POST /mcp</span></p>
-      <p class="ln"><span class="code">Host: payments-mcp</span></p>
-      <p class="ln"><span class="code">Authorization: Bearer &hellip;</span></p>
-      <p class="ln dim">body: bytes</p>
-      <p class="rule">rules on the <b>URL</b></p>
-    </div>
-    <div class="col agw">
-      <p class="lab"><i class="ph-duotone ph-door-open"></i>agentgateway sees</p>
-      <p class="ln"><span class="code m">tools/call</span></p>
-      <p class="ln">tool <span class="code m">execute_payment</span></p>
-      <p class="ln">amount <span class="code m">6200 EUR</span></p>
-      <p class="ln">caller <span class="code m">&hellip;/sa/settlement-agent</span></p>
-      <p class="rule">rules on the <b>tool call</b></p>
-    </div>
-  </div>
-  <div class="x30-ag-kinds rise">
-    <p class="k on"><b>MCP</b> agent &rarr; tool <span>in the demo</span></p>
-    <p class="k"><b>A2A</b> agent &rarr; agent</p>
-    <p class="k"><b>LLM</b> agent &rarr; model</p>
-  </div>
-</section>
 <section class="slide content" data-label="agentgateway: one choke point">
   <p class="ring">Ring 2 &middot; Capability</p>
   <h2 class="slide-title">agentgateway: one door, checks in order</h2>
@@ -805,25 +542,6 @@
     <p class="side tr"><b>tracing</b> every step, to the Collector: <span class="code c">tools/call</span> <span class="code c">Guardrail</span> <span class="code c">outbound tools/call</span></p>
   </div>
   <p class="x30-foot">Rust. MCP, A2A and LLM proxy. <b>Linux Foundation, in AAIF.</b> Not CNCF. v1.6.0.</p>
-</section>
-<section class="slide content" data-label="What OpenFeature is">
-  <p class="ring">Ring 2 &middot; Capability</p>
-  <h2 class="slide-title">OpenFeature: one question, any backend</h2>
-  <div class="x30-of rise">
-    <div class="stack">
-      <p class="ly"><span class="n">Your code asks</span><span class="code">get_string_details("autonomy-level", {spiffeId})</span></p>
-      <p class="ly"><span class="n">OpenFeature SDK</span><span class="v">one API, every language &middot; hooks, e.g. OTel</span></p>
-      <p class="ly"><span class="n">Provider</span><span class="v"><span class="code">flagd</span> over gRPC, on <span class="code">localhost:8013</span></span></p>
-      <p class="ly"><span class="n">Source</span><span class="v"><span class="code">FeatureFlag</span> &middot; a Kubernetes object</span></p>
-    </div>
-    <div class="why">
-      <p class="lab">Why a flag, for a policy knob</p>
-      <p class="w"><i class="ph-duotone ph-rocket-launch"></i><span>changes <b>without a deploy</b></span></p>
-      <p class="w"><i class="ph-duotone ph-git-diff"></i><span>a <b>one-word diff</b> to review</span></p>
-      <p class="w"><i class="ph-duotone ph-identification-badge"></i><span>answered <b>per caller</b></span></p>
-      <p class="w"><i class="ph-duotone ph-footprints"></i><span>leaves <span class="code c">feature_flag.evaluation</span></span></p>
-    </div>
-  </div>
 </section>
 <section class="slide content" data-label="The decision and the live policy">
   <p class="ring">Ring 2 &middot; Capability</p>
@@ -867,51 +585,6 @@
     <div><i class="ph-duotone ph-magnifying-glass"></i><p class="rg">Evidence</p><p class="h">Every claim, read back</p><p class="o"><span class="x3l-yes">from the trace</span></p><p class="w">Who decided, which rule, who approved, how long.</p></div>
   </div>
 </section>
-<section class="slide content" data-label="Identity is an input">
-  <p class="ring">Core &middot; Identity</p>
-  <h2 class="slide-title">Identity is an input, not a label</h2>
-  <div class="x31-id rise">
-    <div>
-      <p class="x31-lab">Five bad credentials, five HTTP 401s</p>
-      <div class="x31-401">
-        <span>No token</span><span class="e">no bearer token found</span>
-        <span>Garbage token</span><span class="e">token header is malformed</span>
-        <span>Untrusted issuer</span><span class="e">token uses the unknown key</span>
-        <span>Forged key id</span><span class="e">InvalidSignature</span>
-        <span class="hi">Genuine SVID, wrong audience</span><span class="e hi">InvalidAudience</span>
-      </div>
-    </div>
-    <div>
-      <p class="x31-lab">Same code, same rule, different caller</p>
-      <div class="x31-rows">
-        <div><div class="who">…/sa/<b>settlement-agent</b></div><div class="amt">€6,000</div></div>
-        <div><div class="who">…/sa/<b>reviewer-ui</b></div><div class="amt sen" style="font-size:var(--type-subtitle)">only a payment waiting for a human</div></div>
-        <div><div class="who">anyone else</div><div class="amt none">no row: unknown_caller</div></div>
-      </div>
-    </div>
-  </div>
-</section>
-<section class="slide content" data-label="Reach has two layers">
-  <p class="ring">Ring 1 &middot; Reach</p>
-  <h2 class="slide-title">Reach has two layers</h2>
-  <p class="x31-opt rise">Optional &middot; after William&rsquo;s Linkerd beat &middot; measured in a spike, not part of this demo</p>
-  <div class="x31-tw x31-tw-r rise">
-    <div>
-      <p class="x31-tw-k">Linkerd</p>
-      <p class="x31-tw-s">identity, at the destination</p>
-      <p class="x31-tw-l">Every bypass of payments-mcp and the PDS: <span class="code m">HTTP 403</span></p>
-      <p class="x31-tw-l">Pods with no proxy, or skipping it: <span class="code m">403</span> too</p>
-      <p class="x31-tw-l">Meshed, the claim stayed <b>one trace</b>: 149 &rarr; 293 spans</p>
-    </div>
-    <div>
-      <p class="x31-tw-k">Cilium</p>
-      <p class="x31-tw-s">in the kernel, by name</p>
-      <p class="x31-tw-l">Only the settlement agents reach <span class="code">api.anthropic.com</span></p>
-      <p class="x31-tw-l">Linkerd&rsquo;s egress rule can&rsquo;t say that: namespace-wide, and it matches the SNI only</p>
-    </div>
-  </div>
-  <p class="x31-line">This demo runs Cilium only. <em>Open-source Linkerd ships edge releases only.</em></p>
-</section>
 <section class="slide content" data-label="One trace, and the absence">
   <p class="ring">Ring 2 &middot; Capability</p>
   <h2 class="slide-title">One trace, and the absence that proves it</h2>
@@ -931,90 +604,10 @@
   </div>
   <p class="x31-tread"><b>Read it like this:</b> indented means called by the line above · struck through means it never happened</p>
 </section>
-<section class="slide content" data-label="What agentgateway says about one governed call">
-  <h2 class="slide-title">What agentgateway says about one governed call</h2>
-  <div class="stree rise" style="margin-top:calc(1.5 * var(--baseline))">
-    <div class="r"><span class="svc agent">settlement-agent</span><span class="op">POST</span><span class="v">carries the JWT-SVID</span></div>
-    <div class="r i1 hl"><span class="svc gw">agentgateway</span><span class="op">tools/call</span><span class="v"><b>22 keys</b> &middot; <span class="code m">jwt.sub=spiffe://…/sa/settlement-agent</span> <span class="code m">gen_ai.tool.name=execute_payment</span></span></div>
-    <div class="r i2"><span class="svc gw">agentgateway</span><span class="op">Guardrail</span><span class="v"><b>9 keys</b> &middot; <span class="code">grpc.status=0</span> the call, not the verdict</span></div>
-    <div class="r i2"><span class="svc pds">policy-decision-service</span><span class="op">northstar.policy.decision</span><span class="v"><b>11 northstar.policy.* keys</b> &middot; the why: rule, limit, amount</span></div>
-    <div class="r i2"><span class="svc gw">agentgateway</span><span class="op">tools/call payments-mcp_execute_payment</span><span class="v"><b>6 keys</b> &middot; no jwt.sub</span></div>
-    <div class="r i3"><span class="svc tool">payments-mcp</span><span class="op">tools/call execute_payment</span></div>
-    <div class="r i4"><span class="svc sys">payments-api</span><span class="op">POST /payments/{paymentId}/execute</span></div>
-  </div>
-  <div class="x31-adds rise"><span class="k">A refusal adds four keys:</span>
-    <span class="code m">error=true</span><span class="code m">otel.status_code=ERROR</span><span class="code m">reason=MCP</span><span class="code m">otel.status_description=&ldquo;mcp: mcpGuardrails rejected: requested 5800 EUR exceeds the 0 EUR limit&hellip;&rdquo;</span></div>
-</section>
 <section class="slide hero x-dark" data-label="HTTP 200 means no">
   <div class="hero-num cmyk-num rise"><span class="paper">200</span><span class="plate plate-c" aria-hidden="true">200</span><span class="plate plate-m" aria-hidden="true">200</span><span class="plate plate-y" aria-hidden="true">200</span></div>
   <p class="hero-caption"><b>HTTP 200 <span class="hl-ring">means no.</span></b> The no is a tool result marked <span class="code">isError</span>, with the rule in its text. No metric counts permit versus deny, and zero agentgateway series reach Prometheus.</p>
   <p class="x31-names">From v1.6.0 the span says <span class="code">http.response.status_code</span></p>
-</section>
-<section class="slide content" data-label="Defence in depth">
-  <h2 class="slide-title">Defence in depth</h2>
-  <div class="x31-gates rise">
-    <div class="who"><i class="ph-duotone ph-person-simple-walk"></i></div>
-    <div class="g"><i class="ph-duotone ph-path"></i><span>Corridor</span></div>
-    <div class="g"><i class="ph-duotone ph-identification-card"></i><span>Passport</span></div>
-    <div class="g"><i class="ph-duotone ph-scan"></i><span>Scanner</span></div>
-    <div class="g"><i class="ph-duotone ph-user-check"></i><span>Gate staff</span></div>
-    <div class="who end"><i class="ph-duotone ph-airplane-tilt"></i></div>
-  </div>
-  <p class="x31-idea">No single check catches everything. <em>Each one assumes the last one failed.</em></p>
-  <p class="x31-q">Next: the eight checks between an agent and a payment.</p>
-</section>
-<section class="slide content" data-label="Limiting access to MCP">
-  <h2 class="slide-title">Limiting access to MCP, layer by layer</h2>
-  <p class="x31-read">Read down: one call, eight checks</p>
-  <figure class="bfig rise x31-fig" style="--fig-h:660px"><svg viewBox="0 0 1632 652" role="img" aria-label="Eight layers of MCP access control: what each stops and what proves it worked">
-<defs><marker id="x31a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#111111"/></marker></defs>
-<g font-family="Inter, sans-serif">
-<text x="80" y="24" font-size="20" letter-spacing="1.5" fill="#595959">LAYER</text>
-<text x="610" y="24" font-size="20" letter-spacing="1.5" fill="#595959">WHAT IT STOPS</text>
-<text x="1090" y="24" font-size="20" letter-spacing="1.5" fill="#595959">WHAT PROVES IT</text>
-<line x1="34" y1="42" x2="34" y2="640" stroke="#111111" stroke-width="2" marker-end="url(#x31a)"/>
-<text x="20" y="340" font-size="20" letter-spacing="1.5" fill="#111111" transform="rotate(-90 20 340)" text-anchor="middle">EVERY TOOLS/CALL</text>
-<!-- band 1 -->
-<rect x="56" y="40" width="1576" height="68" rx="8" fill="#FBE997"/>
-<text x="80" y="83" font-size="28" font-weight="700" fill="#111111">Network reachability</text>
-<text x="610" y="83" font-size="25" fill="#212121">Callers that skip the gateway</text>
-<text x="1090" y="83" font-size="25" fill="#212121"><tspan fill="#F8494D" font-weight="700">Not a span:</tspan> BPF maps, TCP probes</text>
-<!-- band 2 -->
-<rect x="56" y="116" width="1576" height="68" rx="8" fill="#DCEBFF"/>
-<text x="80" y="159" font-size="28" font-weight="700" fill="#111111">Workload identity</text>
-<text x="610" y="159" font-size="25" fill="#212121">Forgeable or reused identities</text>
-<text x="1090" y="159" font-size="25" fill="#212121">jwt.sub · northstar.policy.caller.spiffe_id</text>
-<!-- band 3 -->
-<rect x="56" y="192" width="1576" height="68" rx="8" fill="#DCEBFF"/>
-<text x="80" y="235" font-size="28" font-weight="700" fill="#111111">Authentication</text>
-<text x="610" y="235" font-size="25" fill="#212121">Bad or misaddressed tokens</text>
-<text x="1090" y="235" font-size="25" fill="#212121">POST /* span, 401, reason=JwtAuth</text>
-<!-- band 4 -->
-<rect x="56" y="268" width="1576" height="68" rx="8" fill="#FFE1D6"/>
-<text x="80" y="311" font-size="28" font-weight="700" fill="#111111">Tool authorization</text>
-<text x="610" y="311" font-size="25" fill="#212121">A known caller, a forbidden call</text>
-<text x="1090" y="311" font-size="25" fill="#212121">Guardrail span + northstar.policy.decision</text>
-<!-- band 5 -->
-<rect x="56" y="344" width="1576" height="68" rx="8" fill="#FEF1F1"/>
-<text x="80" y="387" font-size="28" font-weight="700" fill="#111111">Fail closed, terminal deny</text>
-<text x="610" y="387" font-size="25" fill="#212121">Outage payments; retry loops</text>
-<text x="1090" y="387" font-size="25" fill="#212121">grpc.status; a test counts retries</text>
-<!-- band 6 -->
-<rect x="56" y="420" width="1576" height="68" rx="8" fill="#F7F7F7" stroke="#E8E8E8"/>
-<text x="80" y="463" font-size="28" font-weight="700" fill="#111111">Method coverage</text>
-<text x="610" y="463" font-size="25" fill="#212121">Effects the hook never sees</text>
-<text x="1090" y="463" font-size="25" fill="#212121">a batch → HTTP 400, 0 decisions</text>
-<!-- band 7 -->
-<rect x="56" y="496" width="1576" height="68" rx="8" fill="#A8FBBE"/>
-<text x="80" y="539" font-size="28" font-weight="700" fill="#111111">Credential stripping</text>
-<text x="610" y="539" font-size="25" fill="#212121">A tool replaying the agent's token</text>
-<text x="1090" y="539" font-size="25" fill="#212121">no jwt.sub on the outbound span</text>
-<!-- band 8 -->
-<rect x="56" y="572" width="1576" height="68" rx="8" fill="#FCB6B8"/>
-<text x="80" y="615" font-size="28" font-weight="700" fill="#111111">Human override</text>
-<text x="610" y="615" font-size="25" fill="#212121">Overrides that go around policy</text>
-<text x="1090" y="615" font-size="25" fill="#212121">a 2nd northstar.policy.decision, reviewer-ui ID</text>
-</g></svg></figure>
 </section>
 <section class="slide content" data-label="Two ways to say no">
   <h2 class="slide-title">Two ways to say no</h2>
@@ -1032,97 +625,6 @@ request.method != &quot;POST&quot;
   || mcp.tool.name != &quot;execute_payment&quot;
   || (mcp.tool.arguments.amount &gt; 0 &amp;&amp; mcp.tool.arguments.amount &lt;= 50000)</pre>
   <p class="x31-line">The gateway holds the hard ceiling. <em>The service makes the decision.</em></p>
-</section>
-<section class="slide content" data-label="Guardrails for model traffic">
-  <h2 class="slide-title">Guardrails for model traffic</h2>
-  <p class="x31-opt rise">What agentgateway v1.6.0 ships &middot; <span class="code">crates/agentgateway/src/llm/policy/</span></p>
-  <ul class="x31-gl rise">
-    <li><b>Regex rules</b> mask or reject text that matches</li>
-    <li><b>Personal data</b> is found and masked: card numbers, emails, phone numbers, national IDs</li>
-    <li><b>Moderation</b> asks a moderation model to judge the prompt</li>
-    <li><b>A webhook</b> lets your own service judge the prompt and the answer</li>
-    <li><b>Connectors</b> call Amazon Bedrock Guardrails, Azure Content Safety or Google Model Armor</li>
-  </ul>
-  <p class="x31-line">Northstar&rsquo;s model calls do not go through the gateway today. <em>None of these are in the demo.</em></p>
-</section>
-<section class="slide content" data-label="Hide or refuse">
-  <h2 class="slide-title">Hide or refuse</h2>
-  <div class="x31-tw rise">
-    <div>
-      <p class="x31-tw-k">Hide</p>
-      <p class="x31-tw-s">a static allowlist &middot; William&rsquo;s OSFF demo</p>
-      <p class="x31-tw-c"><span class="code cel">mcp.tool.name in ["document_extract", "risk_scoring"]</span></p>
-      <p class="x31-tw-l">The forbidden tool never appears in <span class="code">tools/list</span></p>
-      <p class="x31-tw-l">Call it anyway: <span class="code m">HTTP 400 &middot; Unknown tool</span></p>
-      <p class="x31-tw-f">For a tool this agent must never have</p>
-    </div>
-    <div>
-      <p class="x31-tw-k">Refuse and record</p>
-      <p class="x31-tw-s">a decision service &middot; Northstar</p>
-      <p class="x31-tw-c"><span class="code">tools/list</span> shows all four tools, <span class="code">execute_payment</span> too. <b>&euro;5,800</b> depends on its arguments.</p>
-      <p class="x31-tw-flow"><span>proposed</span><i></i><span class="m">refused</span><i></i><span class="c">recorded</span><i></i><span class="c">explained</span></p>
-      <p class="x31-tw-l"><span class="code c">northstar.policy.decision</span> deny &middot; rule, limit, amount, caller</p>
-      <p class="x31-tw-f">Listed is not permitted: every call is decided</p>
-    </div>
-  </div>
-  <p class="x31-line">Two layers, not two camps. <em>Hide what it must never touch. Refuse, and record, the rest.</em></p>
-</section>
-<section class="slide content" data-label="Fail-closed vs fail-open">
-  <h2 class="slide-title">Fail-closed vs fail-open</h2>
-  <p class="x31-lab x31-cut"><i class="ph-duotone ph-lightning-slash"></i>Power cut. The checker can&rsquo;t answer.</p>
-  <div class="x31-doors rise">
-    <div class="shut"><i class="ph-duotone ph-lock-key"></i><h3>Fail-closed</h3><p>The door stays locked</p></div>
-    <div class="open"><i class="ph-duotone ph-lock-key-open"></i><h3>Fail-open</h3><p>The door swings open</p></div>
-  </div>
-  <p class="x31-q">Which one does our gateway do, and did anyone check?</p>
-</section>
-<section class="slide content" data-label="Fail-open is one word away">
-  <h2 class="slide-title">Fail-open is one word away</h2>
-  <div class="x31-two rise">
-    <div>
-      <p class="x31-lab">deploy/platform/agentgateway/config.yaml</p>
-      <div class="x31-yaml">
-        <div class="d">mcpGuardrails:</div>
-        <div class="d i1">- kind: remote</div>
-        <div class="i2"><span class="d">methods:</span> "tools/call": request</div>
-        <div class="i2"><span class="code m">failureMode: failClosed</span></div>
-        <div class="i2"><span class="d">metadata:</span> {caller: 'jwt.sub'}</div>
-      </div>
-    </div>
-    <div>
-      <p class="x31-lab">Guardrail pointed at a dead address</p>
-      <div class="x31-probe">
-        <div class="r"><span>key omitted</span><span class="v">refused</span></div>
-        <div class="r"><span>failClosed</span><span class="v">refused</span></div>
-        <div class="r bad"><span>failOpen</span><span class="v">reached the tool</span></div>
-      </div>
-    </div>
-  </div>
-</section>
-<section class="slide content" data-label="A span link vs a parent edge">
-  <h2 class="slide-title">A span link vs a parent edge</h2>
-  <div class="x31-links rise">
-    <div>
-      <p class="x31-lab">Parent edge &middot; one trace</p>
-      <div class="x31-tl">
-        <div class="bar p" style="width:100%">parent</div>
-        <div class="bar k" style="margin-left:18%;width:60%">child</div>
-      </div>
-      <p class="x31-cap">The parent waits while the child runs.</p>
-    </div>
-    <div>
-      <p class="x31-lab">Span link &middot; two traces</p>
-      <div class="x31-tl two">
-        <div class="bar p" style="width:34%">trace A</div>
-        <div class="gap">minutes</div>
-        <div class="bar l" style="width:34%">trace B</div>
-        <svg class="arc" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path d="M83,2 C70,30 30,30 17,2"/></svg>
-        <span class="see">link: &ldquo;see also&rdquo;</span>
-      </div>
-      <p class="x31-cap">Minutes later, in another process.</p>
-    </div>
-  </div>
-  <p class="x31-q">How does an approval, minutes later, join its refusal?</p>
 </section>
 <section class="slide content" data-label="Maker and checker">
   <h2 class="slide-title">The agent makes it. A human checks it.</h2>
@@ -1145,58 +647,6 @@ request.method != &quot;POST&quot;
 <span class="code">histogram_quantile(0.95, sum by (le, northstar_policy_autonomy_level) (rate(northstar_approval_wait_duration_seconds_bucket[1h])))</span></p>
   <p class="x31-line">A link, not a parent. <em>Work separated by human time is two traces and a link.</em></p>
 </section>
-<section class="slide content" data-label="The same flip, with a UI">
-  <h2 class="slide-title">The same flip, with a UI</h2>
-  <p class="x31-opt rise">Optional &middot; Backstage writes the same value step 3 wrote, and records the change</p>
-  <div class="x31-fb rise" style="grid-template-columns:780px 780px;gap:14px 72px;margin-top:calc(0.75 * var(--baseline))">
-    <div>
-      <figure class="shot x31-crop" style="width:780px;height:278px">
-        <img src="assets/shots/backstage-autonomy-assisted.png" alt="Backstage autonomy contract card: settlement-agent assisted" style="width:1544px;left:-315px;top:-494px">
-      </figure>
-      <div class="shot-cap">1 · Before: settlement-agent assisted</div>
-    </div>
-    <div>
-      <figure class="shot x31-crop" style="width:780px;height:278px">
-        <img src="assets/shots/backstage-autonomy-flipped.png" alt="Backstage autonomy contract card after the flip: settlement-agent autonomous" style="width:1544px;left:-315px;top:-494px">
-      </figure>
-      <div class="shot-cap">2 · One click: settlement-agent autonomous</div>
-    </div>
-    <div>
-      <figure class="shot x31-crop" style="width:780px;height:178px">
-        <img src="assets/shots/customer-ui-autonomous-executed.png" alt="Customer UI: the same 5,800 EUR claim CLM-1842, settled by the agent at autonomous" style="width:1086px;left:-153px;top:-710px">
-      </figure>
-      <div class="shot-cap">3 · The same €5,800: settled, no human</div>
-    </div>
-    <div>
-      <figure class="shot x31-crop" style="width:780px;height:210px">
-        <img src="assets/shots/jaeger-autonomy-change.png" alt="Jaeger: northstar.autonomy_contract.change span, previous_variant assisted, new_variant autonomous, actor backstage-autonomy-card" style="width:1279px;left:-323px;top:-342px">
-      </figure>
-      <div class="shot-cap">4 · The audit span: assisted → autonomous</div>
-    </div>
-  </div>
-</section>
-<section class="slide content" data-label="The platform API is the resource">
-  <h2 class="slide-title">The platform API is the resource</h2>
-  <div class="x31-chain rise">
-    <div>
-      <h3 class="m">The resource</h3>
-      <p class="t"><span class="d">FeatureFlag</span> northstar-autonomy<br><span class="d">targeting, then:</span> <span class="code m">"assisted"</span></p>
-    </div>
-    <div>
-      <h3>The view</h3>
-      <p class="t"><span class="d">kubectl, or the Backstage card</span><br>the same write</p>
-    </div>
-    <div>
-      <h3>The record</h3>
-      <p class="t"><span class="d">one span per Backstage flip</span><br><span class="code c">northstar.autonomy_contract.change</span></p>
-    </div>
-  </div>
-  <div class="x31-keep rise">
-    <div class="gone"><s>managedFields</s>: erased by the next write</div>
-    <div class="stay">The span survives the revert and the pod</div>
-  </div>
-  <p class="x31-hand">So what does an auditor get to read?</p>
-</section>
 <section class="slide divider" data-label="Act 4 — How you prove it">
   <div class="press-field" aria-hidden="true"><i class="pf-y"></i><i class="pf-c"></i><i class="pf-m"></i></div>
   <div class="scale-color" aria-hidden="true"><i class="sc-c"></i><i class="sc-m"></i><i class="sc-y"></i><i class="sc-cm"></i><i class="sc-my"></i><i class="sc-cy"></i><i class="sc-cmy"></i><i class="sc-k"></i></div>
@@ -1207,39 +657,6 @@ request.method != &quot;POST&quot;
     <div class="ghost-num cmyk-num"><span class="paper">04</span><span class="plate plate-c" aria-hidden="true">04</span><span class="plate plate-m" aria-hidden="true">04</span><span class="plate plate-y" aria-hidden="true">04</span></div>
   </div>
 </section>
-<section class="slide content" data-label="Evidence vs logs">
-  <h2 class="slide-title">Evidence vs logs: what an auditor can use</h2>
-  <div class="x40-el rise">
-    <div class="x40-log">
-      <p class="x40-k">A log line</p>
-      <p class="x40-line"><span class="code">10:14:03 INFO tool call ok</span></p>
-      <p class="x40-sub muted">what one program said, at one moment</p>
-    </div>
-    <div>
-      <p class="x40-k spot-2">Evidence</p>
-      <dl class="x40-ev">
-        <dt>What was decided?</dt><dd><span class="code m">northstar.policy.decision</span></dd>
-        <dt>Under which rule?</dt><dd><span class="code m">northstar.policy.rule</span></dd>
-        <dt>At which limit?</dt><dd><span class="code m">northstar.policy.limit.amount</span></dd>
-        <dt>Who asked?</dt><dd><span class="code m">northstar.policy.caller.spiffe_id</span></dd>
-        <dt>Was a human involved?</dt><dd><span class="code m">northstar.review.decision</span></dd>
-        <dt>What reached the ledger?</dt><dd><span class="code">payments-api</span> spans</dd>
-      </dl>
-      <p class="x40-sub muted">one span field each, joined by one trace id</p>
-    </div>
-  </div>
-</section>
-<section class="slide content" data-label="Which refusals the trace can see">
-  <h2 class="slide-title">Which refusals the trace can see</h2>
-  <div class="x40-rt rise">
-    <p class="x40-rh">Ring</p><p class="x40-rh">The refusal</p><p class="x40-rh">In the trace?</p><p class="x40-rh">Where</p>
-    <p class="x40-rg">Core &middot; Identity</p><p>agentgateway 401</p><p class="x40-y">yes</p><p class="x40-w">gateway span &middot; <span class="code">401</span> &middot; <span class="code">reason=JwtAuth</span></p>
-    <p class="x40-rg">Ring 1 &middot; Reach</p><p>Cilium drop</p><p class="x40-n0">no</p><p class="x40-w">a drop leaves no span: Hubble is not installed</p>
-    <p class="x40-rg">Ring 2 &middot; Capability</p><p>policy deny</p><p class="x40-y">yes</p><p class="x40-w">inside the claim&rsquo;s trace &middot; <span class="code m">northstar.policy.decision</span></p>
-    <p class="x40-rg">Keystone</p><p>Kyverno denial</p><p class="x40-y">yes, alone</p><p class="x40-w">its own trace &middot; <span class="code m">allowed=false</span> &middot; no <span class="code">traceparent</span></p>
-  </div>
-  <p class="x40-th">Traced everywhere except where a packet is dropped. <span class="spot-2">The gap is named, not hidden.</span></p>
-</section>
 <section class="slide content" data-label="The evidence view">
   <h2 class="slide-title">No new application code</h2>
   <figure class="shot x40-ev-shot hl-marks rise"><img src="assets/shots/jaeger-evidence-approval.png" alt="Jaeger: trace B of an approved claim, rooted at reviewer-ui northstar.review.decision, with its tags (decision approve, reviewer id, reviewer SPIFFE id, wait duration 6.359 s) and one reference, a span in another trace">
@@ -1248,52 +665,6 @@ request.method != &quot;POST&quot;
     <span class="hl-mark" style="--x:1%;--y:84%;--w:61%;--h:7%"><b>link back to the trace that asked</b></span>
   </figure>
   <p class="x40-ev-cap rise">Who approved, as which identity, how long the human took, and a link back to the trace that asked.</p>
-</section>
-<section class="slide content" data-label="The decision contract is a published schema">
-  <h2 class="slide-title">The decision contract is a published schema</h2>
-  <div class="x40-rs rise">
-    <div>
-      <pre class="term x40-reg"><span class="p">telemetry/registry/policy.yaml</span>
-  - id: span.northstar.policy.decision
-    type: span
-    span_kind: server
-    stability: development
-    name: northstar.policy.decision
-    brief: One decision, a child of the gateway's tools/call span.
-    attributes:
-      - {ref: northstar.policy.decision, requirement_level: required}
-      - {ref: northstar.policy.rule, requirement_level: required}
-      - ref: northstar.policy.limit.amount
-        requirement_level: {conditionally_required: when the rule has a limit}
-&hellip;</pre>
-      <div class="shot-cap">The schema: a Weaver registry. The gate checks it, and live-check compares the running cluster&rsquo;s names, types and enum values with it. <em>Required</em> is pinned by the behaviour tests, not by live-check.</div>
-    </div>
-    <div>
-      <figure class="shot x40-rs-shot"><img src="assets/shots/jaeger-policy-decision-m9.png" alt="Jaeger: the northstar.policy.decision span of a denied EUR 5,800 execute: northstar.policy.decision deny, northstar.policy.rule settlement-agent.assisted.execute_limit, northstar.policy.limit.amount 0, northstar.policy.request.amount 5800"></figure>
-      <div class="shot-cap">The span: the same names, on a real denial</div>
-    </div>
-  </div>
-</section>
-<section class="slide content" data-label="What an evaluation is">
-  <h2 class="slide-title">An evaluation is a grade, kept with the work</h2>
-  <div class="x40-evl rise">
-    <div class="x40-work">
-      <p class="x40-k">The work: one trace</p>
-      <div class="x40-bars" aria-hidden="true"><i style="width:100%"></i><i style="margin-left:12%;width:70%"></i><i style="margin-left:24%;width:40%"></i></div>
-      <p class="x40-sub muted">the grade is parented to the span it judges</p>
-    </div>
-    <svg class="x40-staple" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><path d="M100 20 L6 20"/><path d="M16 8 L2 20 L16 32"/></svg>
-    <div>
-      <p class="x40-k">The grade</p>
-      <dl class="x40-ev">
-        <dt>name</dt><dd>which check</dd>
-        <dt>score.value</dt><dd>a number to graph</dd>
-        <dt>score.label</dt><dd>a gate: pass or fail</dd>
-        <dt>explanation</dt><dd>why, in words</dd>
-      </dl>
-      <p class="x40-sub muted">all <span class="code">gen_ai.evaluation.*</span></p>
-    </div>
-  </div>
 </section>
 <section class="slide content" data-label="How the auditor works">
   <h2 class="slide-title">How the auditor works</h2>
@@ -1304,43 +675,6 @@ request.method != &quot;POST&quot;
     <li class="hot"><i>4</i><b>Written back</b><span>one span per score, <span class="code m">gen_ai.evaluation.*</span>, parented into the trace it judged</span></li>
   </ol>
   <p class="x40-same rise">OpenTelemetry in, OpenTelemetry out. <span class="muted">No second pipeline, no second store.</span></p>
-</section>
-<section class="slide content" data-label="A score that can go to zero">
-  <div class="beat x40-asslide"><span class="dot"></span>Longer demo &middot; shown as slide</div>
-  <h2 class="slide-title">A score that can go to zero</h2>
-  <div class="x40-sc rise">
-    <div class="x40-pair">
-      <div class="x40-n">
-        <div class="x40-num cmyk-num"><span class="paper">1.0</span><span class="plate plate-c" aria-hidden="true">1.0</span><span class="plate plate-m" aria-hidden="true">1.0</span><span class="plate plate-y" aria-hidden="true">1.0</span></div>
-        <p>compliant run</p>
-      </div>
-      <div class="x40-n">
-        <div class="x40-num cmyk-num"><span class="paper">0.0</span><span class="plate plate-c" aria-hidden="true">0.0</span><span class="plate plate-m" aria-hidden="true">0.0</span><span class="plate plate-y" aria-hidden="true">0.0</span></div>
-        <p class="spot-2">misrouted approval</p>
-      </div>
-      <p class="x40-what"><span class="code m">stopped_when_refused</span></p>
-    </div>
-    <figure class="x40-scshot">
-      <div class="shot"><img src="assets/shots/jaeger-eval-scores.png" alt="Jaeger: five eval-scorer evaluation spans inside the judged trace; stopped_when_refused reads 0, retry-after-refusal"></div>
-      <figcaption class="shot-cap">Each score is a span in the trace it judges. (Captured before M9: the root span now reads <span class="code">northstar.claim.submit</span>.)</figcaption>
-    </figure>
-  </div>
-</section>
-<section class="slide content" data-label="And LLM-as-judge?">
-  <h2 class="slide-title">And LLM-as-judge?</h2>
-  <div class="cols cols-2 x40-jd rise">
-    <div>
-      <h3>&ldquo;Was it good?&rdquo;</h3>
-      <p><b>LLM-as-judge</b></p>
-      <p class="muted">another model call; reads the prompt, the tool calls, the answer</p>
-    </div>
-    <div>
-      <h3 class="spot-2">&ldquo;Did it follow policy?&rdquo;</h3>
-      <p class="ink-2"><b>The auditor: eval-scorer</b></p>
-      <p class="muted">pure functions over spans; same input, same score; pull-only</p>
-    </div>
-  </div>
-  <p class="x40-same rise">Same output: <span class="code">gen_ai.evaluation.*</span>, beside the trace it judged</p>
 </section>
 <section class="slide content" data-label="Two kinds of checks">
   <h2 class="slide-title">Two kinds of checks on the model</h2>
@@ -1427,141 +761,6 @@ request.method != &quot;POST&quot;
     </tbody>
   </table>
 </section>
-<section class="slide content" data-label="The deadline moved">
-  <h2 class="slide-title">The deadline moved. The requirements didn&rsquo;t.</h2>
-  <figure class="bfig rise x40-fig" style="--fig-h:560px"><svg viewBox="0 0 860 320" role="img" aria-label="Timeline of EU AI Act application dates, with the high-risk dates moved by the Digital Omnibus">
-<defs><marker id="x40ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#F8494D"/></marker></defs>
-<g font-family="Inter, sans-serif">
-
-<line x1="40" y1="150" x2="830" y2="150" stroke="#111111" stroke-width="2"/>
-<line x1="132" y1="144" x2="132" y2="156" stroke="#111111"/><text x="132" y="170" text-anchor="middle" font-size="11" fill="#595959">2025</text>
-<line x1="315" y1="144" x2="315" y2="156" stroke="#111111"/><text x="315" y="170" text-anchor="middle" font-size="11" fill="#595959">2026</text>
-<line x1="499" y1="144" x2="499" y2="156" stroke="#111111"/><text x="499" y="170" text-anchor="middle" font-size="11" fill="#595959">2027</text>
-<line x1="683" y1="144" x2="683" y2="156" stroke="#111111"/><text x="683" y="170" text-anchor="middle" font-size="11" fill="#595959">2028</text>
-<circle cx="55" cy="150" r="5" fill="#111111"/><line x1="55" y1="145" x2="55" y2="70" stroke="#9E9E9E"/>
-<text x="59" y="52" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#595959">1 AUG 2024</text><text x="59" y="66" font-size="11" fill="#212121">Entry into force</text>
-<circle cx="147" cy="150" r="5" fill="#111111"/><line x1="147" y1="155" x2="147" y2="182" stroke="#9E9E9E"/>
-<text x="151" y="186" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#595959">2 FEB 2025</text><text x="151" y="200" font-size="11" fill="#212121">Prohibitions, AI literacy</text>
-<circle cx="239" cy="150" r="5" fill="#111111"/><line x1="239" y1="145" x2="239" y2="70" stroke="#9E9E9E"/>
-<text x="243" y="52" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#595959">2 AUG 2025</text><text x="243" y="66" font-size="11" fill="#212121">GPAI model obligations</text>
-<circle cx="422" cy="150" r="5" fill="#111111"/><line x1="422" y1="145" x2="422" y2="112" stroke="#9E9E9E"/>
-<text x="352" y="94" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#595959">2 AUG 2026</text><text x="352" y="108" font-size="11" fill="#212121">Art. 50, GPAI fines</text>
-<rect x="414" y="143" width="10" height="10" transform="rotate(45 419 148)" fill="#9078F3"/>
-<line x1="452" y1="30" x2="452" y2="150" stroke="#9078F3" stroke-dasharray="4 3"/>
-<text x="458" y="30" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#9078F3">28 SEP 2026</text>
-<text x="458" y="46" font-size="11" fill="#212121">Omnibus (EU) 2026/1744 in force since 27 Jul</text>
-<text x="40" y="206" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#FD6F40">ANNEX III</text>
-<circle cx="422" cy="202" r="6" fill="#E8E8E8" stroke="#9E9E9E"/>
-<text x="412" y="206" text-anchor="end" font-size="11" fill="#9E9E9E" text-decoration="line-through">was 2 Aug 2026</text>
-<line x1="430" y1="202" x2="657" y2="202" stroke="#F8494D" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#x40ar)"/>
-<circle cx="667" cy="202" r="7" fill="#F8494D"/>
-<text x="679" y="206" font-size="13" font-weight="700" fill="#F8494D">now 2 Dec 2027</text>
-<text x="40" y="256" font-family="Martian Mono, monospace" font-size="11" letter-spacing="0.6" fill="#FD6F40">ANNEX I</text>
-<circle cx="606" cy="252" r="6" fill="#E8E8E8" stroke="#9E9E9E"/>
-<text x="596" y="256" text-anchor="end" font-size="11" fill="#9E9E9E" text-decoration="line-through">was 2 Aug 2027</text>
-<line x1="614" y1="252" x2="780" y2="252" stroke="#F8494D" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#x40ar)"/>
-<circle cx="790" cy="252" r="7" fill="#F8494D"/>
-<text x="845" y="278" text-anchor="end" font-size="13" font-weight="700" fill="#F8494D">now 2 Aug 2028</text>
-<rect x="40" y="286" width="640" height="28" rx="4" fill="#FEF1F1"/>
-<text x="52" y="304" font-size="13" fill="#111111">The deadline moved. Arts. 12, 13, 14, 19, 26 and 86 were not rewritten.*</text>
-</g></svg></figure>
-  <p class="x40-us rise">US banking: <span class="muted"><s>SR 11-7</s></span> &rarr; SR 26-2 puts agentic AI out of scope.</p>
-</section>
-<section class="slide content" data-label="Seventeen findings, none filed">
-  <h2 class="slide-title">Seventeen findings, none filed yet</h2>
-  <p class="x40-read muted"><b>Read it like this:</b> columns are who governs the project; rows are the kind of gap.</p>
-  <figure class="bfig rise x40-fig x40-f16" style="--fig-h:600px"><svg viewBox="0 10 860 422" role="img" aria-label="Grid of the seventeen findings by governance home and by category">
-<g font-family="Inter, sans-serif">
-
-<!-- column headers -->
-<g font-size="16" font-weight="600" fill="#111111" text-anchor="middle">
-<text x="231" y="30">Independent pkgs</text>
-<text x="371" y="30">agentgateway</text>
-<text x="511" y="30">OpenTelemetry</text>
-<text x="651" y="30">OpenFeature</text>
-<text x="791" y="30">Backstage</text>
-</g>
-<g font-family="Martian Mono, monospace" font-size="13" letter-spacing="0.6" fill="#595959" text-anchor="middle">
-<text x="231" y="46">AS GROUPED IN DOC</text>
-<text x="371" y="46">LF · AAIF</text>
-<text x="511" y="46">CNCF</text>
-<text x="651" y="46">OPEN-FEATURE ORG</text>
-<text x="791" y="46">CNCF</text>
-</g>
-<!-- row labels -->
-<g font-size="16" font-weight="600" fill="#212121">
-<text x="12" y="92">Propagation</text>
-<text x="12" y="162">Naming &amp; metrics</text>
-<text x="12" y="232">Policy extension</text>
-<text x="12" y="302">Interop</text>
-<text x="12" y="372">Portal</text>
-</g>
-<g font-family="Martian Mono, monospace" font-size="13" letter-spacing="0.4" fill="#595959">
-<text x="12" y="110">TRACE CONTEXT</text>
-<text x="12" y="180">SEMCONV</text>
-<text x="12" y="250">EXTMCP HOOK</text>
-<text x="12" y="320">TWO CORRECT SIDES</text>
-<text x="12" y="390">GOLDEN PATH</text>
-</g>
-<!-- row bands -->
-<rect x="162" y="64" width="690" height="60" fill="#DCEBFF" rx="6"/>
-<rect x="162" y="134" width="690" height="60" fill="#FBE997" rx="6"/>
-<rect x="162" y="204" width="690" height="60" fill="#FFE1D6" rx="6"/>
-<rect x="162" y="274" width="690" height="60" fill="#DBD4F8" rx="6"/>
-<rect x="162" y="344" width="690" height="60" fill="#A8FBBE" rx="6"/>
-<!-- column separators -->
-<g stroke="#FFFFFF" stroke-width="3">
-<line x1="301" y1="60" x2="301" y2="408"/><line x1="441" y1="60" x2="441" y2="408"/><line x1="581" y1="60" x2="581" y2="408"/><line x1="721" y1="60" x2="721" y2="408"/>
-</g>
-<!-- chips: helper style -->
-<g font-size="13" font-weight="700" text-anchor="middle">
-<!-- propagation / independent: F1 F3 F4 F5 -->
-<rect x="172" y="82" width="26" height="22" rx="4" fill="#FCB6B8" stroke="#123E7A"/><text x="185" y="97" fill="#123E7A">F1</text>
-<rect x="202" y="82" width="26" height="22" rx="4" fill="#FCB6B8" stroke="#123E7A"/><text x="215" y="97" fill="#123E7A">F3</text>
-<rect x="232" y="82" width="26" height="22" rx="4" fill="#FFFFFF" stroke="#123E7A"/><text x="245" y="97" fill="#123E7A">F4</text>
-<rect x="262" y="82" width="26" height="22" rx="4" fill="#FFFFFF" stroke="#123E7A"/><text x="275" y="97" fill="#123E7A">F5</text>
-<!-- propagation / agw: F6, F10 dashed -->
-<rect x="340" y="82" width="26" height="22" rx="4" fill="#FCB6B8" stroke="#123E7A"/><text x="353" y="97" fill="#123E7A">F6</text>
-<rect x="372" y="82" width="30" height="22" rx="4" fill="#FFFFFF" stroke="#123E7A" stroke-dasharray="3 2"/><text x="387" y="97" fill="#123E7A">F10</text>
-<!-- propagation / otel: F11 dashed (also interop) -->
-<rect x="494" y="82" width="30" height="22" rx="4" fill="#FFFFFF" stroke="#123E7A" stroke-dasharray="3 2"/><text x="509" y="97" fill="#123E7A">F11</text>
-<!-- naming / independent: F1 dashed F2 F12 -->
-<rect x="176" y="152" width="26" height="22" rx="4" fill="#FFFFFF" stroke="#595959" stroke-dasharray="3 2"/><text x="189" y="167" fill="#212121">F1</text>
-<rect x="208" y="152" width="26" height="22" rx="4" fill="#FFFFFF" stroke="#595959"/><text x="221" y="167" fill="#212121">F2</text>
-<rect x="240" y="152" width="30" height="22" rx="4" fill="#FCB6B8" stroke="#595959"/><text x="255" y="167" fill="#212121">F12</text>
-<!-- naming / agw: F7 -->
-<rect x="358" y="152" width="26" height="22" rx="4" fill="#FCB6B8" stroke="#595959"/><text x="371" y="167" fill="#212121">F7</text>
-<!-- naming / openfeature: F13 F14 -->
-<rect x="617" y="152" width="30" height="22" rx="4" fill="#FCB6B8" stroke="#595959"/><text x="632" y="167" fill="#212121">F13</text>
-<rect x="655" y="152" width="30" height="22" rx="4" fill="#FCB6B8" stroke="#595959"/><text x="670" y="167" fill="#212121">F14</text>
-<!-- policy / agw: F8 F9 F10, then F17 (v1.6.0 isError deny; upstream's own change, so not tinted) and OQ-U1 -->
-<rect x="307" y="209" width="26" height="22" rx="4" fill="#FCB6B8" stroke="#FD6F40"/><text x="320" y="224" fill="#111111">F8</text>
-<rect x="337" y="209" width="26" height="22" rx="4" fill="#FCB6B8" stroke="#FD6F40"/><text x="350" y="224" fill="#111111">F9</text>
-<rect x="367" y="209" width="30" height="22" rx="4" fill="#FCB6B8" stroke="#FD6F40"/><text x="382" y="224" fill="#111111">F10</text>
-<rect x="307" y="236" width="30" height="22" rx="4" fill="#FFFFFF" stroke="#FD6F40"/><text x="322" y="251" fill="#111111">F17</text>
-<rect x="341" y="236" width="36" height="22" rx="4" fill="#F7F7F7" stroke="#9E9E9E"/><text x="359" y="251" fill="#595959">OQ</text>
-<!-- interop / otel: F11 ; openfeature: F13 dashed -->
-<rect x="496" y="292" width="30" height="22" rx="4" fill="#FCB6B8" stroke="#9078F3"/><text x="511" y="307" fill="#111111">F11</text>
-<rect x="636" y="292" width="30" height="22" rx="4" fill="#FFFFFF" stroke="#9078F3" stroke-dasharray="3 2"/><text x="651" y="307" fill="#111111">F13</text>
-<!-- portal / backstage: F15 F16 -->
-<rect x="757" y="362" width="30" height="22" rx="4" fill="#FFFFFF" stroke="#18632F"/><text x="772" y="377" fill="#18632F">F15</text>
-<rect x="795" y="362" width="30" height="22" rx="4" fill="#FFFFFF" stroke="#18632F"/><text x="810" y="377" fill="#18632F">F16</text>
-</g>
-<text x="12" y="426" font-size="14" fill="#595959">Tinted chip: a half nobody has reported anywhere. Dashed: touches this row too. None filed.</text>
-</g></svg></figure>
-</section>
-<section class="slide content" data-label="Where AI observability stands">
-  <h2 class="slide-title">Where AI observability stands</h2>
-  <div class="x40-lad rise">
-    <div class="x40-st s0"><div class="x40-bar"></div><b>L0</b><span class="x40-nm">Prompt logs</span><span class="x40-ec">&mdash;</span></div>
-    <div class="x40-st s1"><div class="x40-bar"></div><b>L1</b><span class="x40-nm">Model telemetry</span><span class="x40-ec">7 of 7</span></div>
-    <div class="x40-st s2"><div class="x40-bar"></div><b>L2</b><span class="x40-nm">Connected AI traces</span><span class="x40-ec">3 of 7</span></div>
-    <div class="x40-st s3"><div class="x40-bar"></div><b>L3</b><span class="x40-nm">Quality observability</span><span class="x40-ec">just starting</span></div>
-    <div class="x40-st s4"><div class="x40-bar"></div><b>L4</b><span class="x40-nm">Continuous evaluation</span><span class="x40-ec">not reached</span></div>
-    <div class="x40-st s5"><div class="x40-bar"></div><b>L5</b><span class="x40-nm">Governed agent observability</span><span class="x40-ec m">not reached &middot; this talk</span></div>
-  </div>
-  <p class="x40-ladcap"><span class="muted">L5 asks for</span> identity, permissions, trajectories, MCP, privacy controls</p>
-</section>
 <section class="slide content" data-label="What this does not do">
   <h2 class="slide-title">What this does <em>not</em> do</h2>
   <div class="x50-lim rise">
@@ -1587,28 +786,6 @@ request.method != &quot;POST&quot;
         <i class="ph-duotone ph-users-three"></i>
         <div><b>Multi-agent over shared context</b><span>needs span links, one identity per agent</span></div>
       </div>
-    </div>
-  </div>
-</section>
-<section class="slide content" data-label="Becoming a regulated-platform wizard">
-  <h2 class="slide-title">Becoming a regulated-platform wizard</h2>
-  <div class="x50-wz rise">
-    <div>
-      <p class="x50-k">The observability basics</p>
-      <ol class="x50-old">
-        <li><i>1</i>Instrument application code</li>
-        <li><i>2</i>Instrument agents</li>
-        <li><i>3</i>Instrument LLM API calls</li>
-        <li><i>4</i>Follow <span class="code">gen_ai.*</span> conventions</li>
-        <li><i>5</i>LLM-as-judge for validation</li>
-        <li><i>6</i>Propagate that context!</li>
-      </ol>
-    </div>
-    <div>
-      <p class="x50-k m"><i class="ph-duotone ph-magic-wand"></i>What a regulated platform adds</p>
-      <div class="x50-step"><i>7</i><div><b>Decide at a choke point</b><span><span class="code m">failClosed</span></span></div></div>
-      <div class="x50-step"><i>8</i><div><b>Make identity an input</b><span>the caller is half the key</span></div></div>
-      <div class="x50-step"><i>9</i><div><b>Keep every decision span</b><span>never sampled</span></div></div>
     </div>
   </div>
 </section>
@@ -1668,80 +845,45 @@ request.method != &quot;POST&quot;
 [
  "WILLIAM\n\nSay nothing yet. Let the room settle.\n\nTwo speakers: William Rizzo (Global Field CTO, Mirantis) and Kasper Borg Nissen (Director, Developer Relations, Dash0). The subtitle is the thesis in six words, and the close calls back to it.\n\nSource: Ch 14, 'The one sentence'. Session: Wed 11 Nov, 11:00–11:30, Salt Palace L2 255 EF, Platform Engineering, Advanced.\n\n[0:00 → 0:15 · 15s]",
  "WILLIAM: I'm William Rizzo, Global Field CTO at Mirantis. I spend my days with platform teams in regulated industries, and the questions we're about to show you are the ones they bring me.\n\nKASPER: And I'm Kasper Borg Nissen, Director, Developer Relations at Dash0. I work on observability and OpenTelemetry, and I built the demo you'll see live today.\n\nWILLIAM: Beginners are welcome. If you've never read a trace before, you'll be able to read the ones in this talk.\n\n[verify: William's lines are placeholders; let him write his own.]\n\nSource: Ch 14 (the beginners line is Ch 14's takeaway); KubeCon NA 2026 schedule, session 1238630\n\n[0:15 → 0:55 · 40s]",
- "WILLIAM\n\nFirst, who this talk is for. Fintech, insurance, healthcare, telco. Here an AI agent doesn't just chat. It moves money, settles claims, reads patient records, runs part of a network.\n\nEvery sector has its own rules. Strip away the legal language, and they ask the same few questions.\n\nSource: Ch 10 (opening lines, 10.7, 10.8) · Ch 14, 'Who is in the room'\n\n[0:55 → 1:15 · 20s]",
- "WILLIAM\n\nSo what do we mean by verticalizing? Each of these industries has its own rulebook. A bank answers to DORA and its payment limits. An insurer's AI that prices life and health cover is high-risk under the EU AI Act, and claims need a sign-off. Healthcare has HIPAA in the US and GDPR in Europe, and patient consent. Telcos answer to NIS2 and change control.\n\nThe mistake is building a separate AI stack for each one. Verticalizing means the opposite: one platform underneath, the same identity, gateway, policy, telemetry and evals for everyone, and the domain rules expressed on top of it as policy. Change the vertical, you change the rules, not the platform.\n\nThat's what the demo shows for one vertical, insurance.\n\n[verify: EU AI Act Annex III 5(c), risk assessment and pricing for life and health insurance, is high-risk]\n[verify: NIS2 Annex I lists providers of public electronic communications networks or services]\n[verify: DORA applies to EU financial entities from 17 January 2025]\n\n[1:15 → 1:55 · 40s]",
- "WILLIAM\n\nPicture an auditor sitting next to you with one decision your agent made. These are the five questions they will ask. The big line is the question; the small tag is the rule behind it.\n\nOne: what did the agent do? The EU AI Act, Article 12: automatic logs, for the life of the system.\nTwo: who allowed it, and within what limits? FINRA calls this scope and authority.\nThree: could a human stop it, or reverse it? Article 14, human oversight.\nFour: can you explain this one decision to the person it affected? Article 86, and the EU court's Dun and Bradstreet ruling: \"the procedure and principles actually applied\". Not the model in general. Their case.\nFive: are the records complete, kept, and safe from tampering? Six months at least, says Article 19. DORA wants them protected. ISO 24970, a draft standard, will say what an AI log contains.\n\nHold on to these five. At \"From requirement to artifact\" we answer them with what Northstar produces. Not legal advice.\n\n[verify: ISO/IEC 24970 still at FDIS; a vote could publish it around late October]\n[verify: DORA RTS Art. 12 enumeration is via a secondary summary; check Delegated Reg. (EU) 2024/1774]\n\nSource: Ch 10 (10.2 Arts. 12, 14, 19, 86; 10.3; 10.4; 10.6 C-203/22; 10.7 FINRA) · Ch 14, slide 35 table\n\n[1:55 → 2:55 · 60s]",
- "WILLIAM\n\nThat is the stakes. For a hobby project, \"the agent did something odd, so we changed the prompt\" is a fine post-mortem. For a bank, an insurer, a hospital or a telco, \"we don't know what the agent did\" is not an answer. Not to the auditor, and not to the customer.\n\nSo let's look at an agent that wanted to move money.\n\nSource: Ch 14, slide 09 title · Ch 10.1\n\n[2:55 → 3:20 · 25s]",
- "WILLIAM\n\nThis is a screen from a demo insurer Kasper built, called Northstar. An AI agent handled a car-damage claim and proposed paying the customer five thousand eight hundred euros. It wasn't paid. It wasn't refused either. It is waiting.\n\nLook at the two ringed lines. Amount: 5800. Status: awaiting approval. The agent did all the work up to the money. The platform, not the agent, decided that this one needs a person, and the agent tells the customer so.\n\nThat is the whole talk on one screen: guardrails the agent cannot move, rules that give it some autonomy, and a record of what it did and why. By the end you'll know how to build it, from upstream projects.\n\nNotice what this screen cannot tell you: which rule held it, at what limit, who signs, and how long they take. Those are the auditor's questions two, three and four. Act 3 answers them live, and the trace answers them afterwards.\n\nThis is claim CLM-1842, from a live run of the demo.\n\nSource: Ch 14 · Ch 5 · M8 design spec (maker-checker: the agent's limit at assisted is €0)\n\n[3:20 → 4:20 · 60s]",
- "WILLIAM\n\nAct one. Agents don't just add more complexity. They change what kind of complexity we have. Keep moving.\n\nSource: Ch 14\n\n[4:20 → 4:30 · 10s]",
- "WILLIAM\n\nYou have probably seen this picture before, and that is the point.\n\nThe top row: we went from one big program, the monolith, to many small services, then to services that talk through queues, and now to agents, which pick their own next step.\n\nThe magenta row. Every step fixed a real problem, but what it broke was always the same kind of thing: we lost sight of what was going on.\n\nThe two lines at the bottom. Building got easier. Understanding got harder.\n\nSource: Ch 1\n\n[4:30 → 5:05 · 35s]",
- "WILLIAM\n\nIn a normal system you can draw the call graph, the map of who calls whom, on a whiteboard before it runs.\n\nAn agent is different. On the left, one prompt: \"remove the free-plan accounts\". Then the same prompt, run three times. Run one looks first, then deletes. Run two stops and asks a human. Run three deletes without looking. And the pink bars are the tokens each run used, so even the cost changes.\n\nLike a taxi driver who picks a new route every ride. The code tells you what the agent may do, not what it will do. The model draws the call graph at run time. A test that passed on run two tells you nothing about run three.\n\nSource: Ch 1\n\n[5:05 → 5:50 · 45s]",
- "WILLIAM\n\nWe keep saying \"agent\", so here is the definition. An agent is a model, plus instructions, plus tools, plus a loop. The model writes the next step. The instructions are its rules. The tools are what it can touch. The loop keeps asking the model until it says \"done\". Watch that last part.\n\nSource: Ch 1, 'the five terms'\n\n[5:50 → 6:10 · 20s]",
- "WILLIAM\n\nHere is that loop, opened up. The dashed frame is the harness, the program that runs the agent.\n\nFollow it left to right. First, on the left: a goal comes in. The agent packs it with its instructions and its list of tools. Next: it sends that to the model, and you pay per token, in and out. Then the diamond: the model answers one of two ways. \"Run this tool\", and the agent runs it, often through an MCP server, adds the result and goes round again. Or \"here is my final answer\", and it stops.\n\nSo the model, not your code, decides when to stop. Nobody knows how many steps there will be. In a regulated domain, that is the problem.\n\nSource: Ch 1\n\n[6:10 → 6:55 · 45s]",
- "WILLIAM\n\nNext come three protocols, so first: what is a protocol? An agreed way for two programs to talk, like the rules of a phone call. The agent asks \"call this tool\", and numbers the question, seven. The answer comes back with the same seven. MCP and A2A both work like this.\n\nSource: Ch 2, 'In plain words' (JSON-RPC)\n\n[6:55 → 7:15 · 20s]",
- "WILLIAM\n\nTwo protocols you'll hear all talk. Think of them as two business cards.\n\nMCP, the Model Context Protocol. Its job: give an agent tools it didn't ship with. It points down, from the agent to a tool. It mostly says two things: list your tools, and call this one. In our demo, the settlement agent calls a tool named execute_payment over MCP.\n\nA2A, Agent2Agent. Its job: let one agent hand work to another. It points sideways, agent to agent. What it passes is a task, and a task has a state: working, waiting for input, done. In our demo, the claims agent hands the case to the settlement agent over A2A.\n\nBoth are open, and both now sit in the Agentic AI Foundation under the Linux Foundation. And notice what's not on either card: neither one decides what an agent is allowed to do. That's the platform's job, and the rest of this talk.\n\n[verify: MCP and A2A both in AAIF (A2A joined 2026-08-17) — week of]\n[verify: A2A task states include working, input-required, completed]\n\nSource: Ch 2; agents/claims-agent/delegation.py; tools/payments-mcp/server.py\n\n[7:15 → 8:00 · 45s]",
- "WILLIAM\n\nThree open standards, one minute. Take each one by where it sits.\n\nThe lines going down first. MCP, the Model Context Protocol, is how an agent gets tools it didn't ship with. Think USB-C for AI tools: build the plug once, and any agent can use it. The current spec is dated 28 July 2026, and it is stateless: no more sessions.\n\nThen the line going across. A2A, Agent2Agent, is how agents talk to each other: a claims agent hands a case to a settlement agent. The A2A docs put it in two words: MCP is vertical, A2A is horizontal. Version 1.0 shipped on 12 March 2026, and A2A joined the Agentic AI Foundation, AAIF, on 17 August.\n\nAnd the folder on the right. Skills are the simplest: a folder with a SKILL.md file and some scripts, loaded only when the task needs them. An open standard since December 2025.\n\nNone of the three is a CNCF project.\n\n[verify: MCP current spec still 2026-07-28 — week of]\n[verify: Agent Skills AAIF proposal #47 still not accepted — after AGNTCon]\n[verify: A2A and agentgateway still in AAIF, not CNCF — week of]\n\nSource: Ch 2\n\n[8:00 → 9:00 · 60s]",
- "WILLIAM\n\nIf you already know observability, you don't start over. Think of this as a decoder ring. Each row: what you know, and its new shape.\n\nA stack trace becomes a reasoning chain, and you only have it if you saved it. A status code becomes a quality signal, because a 200 OK can still carry a wrong answer. Requests per second and latency become tokens, cost and blast radius.\n\nThe last row matters most. A request you could replay becomes a run you can't repeat. So the trace you recorded is the only copy. Like a flight recorder: you can't fly the same flight twice.\n\nAnd that brings us back to the auditor.\n\nSource: Ch 1\n\n[9:00 → 9:45 · 45s]",
- "WILLIAM\n\nRemember the auditor's questions from the start? Here a regulator writes two of them down.\n\nThis is FINRA, which oversees US broker-dealers, in its 2026 oversight report from December 2025. It is the first US regulatory text with advice written for agents.\n\nThe first line is question two: scope and authority. Can the agent do more than it was meant to? The second line is questions one and four: can you trace it, and can you explain it? Can you show afterwards what it did, and why?\n\nSo \"we don't know what the agent did\" was never going to be an answer. Hold on to those two lines.\n\nSource: Ch 10.1, 10.7 · Ch 14, slide 09\n\n[9:45 → 10:30 · 45s]",
- "WILLIAM\n\nHere is the whole talk in one sentence. Agents change the nature of complexity, so the platform has to decide what an agent may do, and prove it afterwards from the trace.\n\nThree words. Decide: the platform, not the agent, says yes or no. Trace: we record what actually happened. Prove: later, someone who isn't an engineer can check it. Think of airport security: the guard decides, the camera records, and the log proves it.\n\nNone of this is new: golden paths, guardrails and observability stacks, pointed at agents. We already have the open-source pieces.\n\nThe first word needs a sharper definition. What does it mean for the platform to decide?\n\nSource: Ch 14 · Ch 1\n\n[10:30 → 11:15 · 45s]",
- "WILLIAM\n\nHere is what \"decide\" means, and it's the line my OSFF demo was built on. You don't trust an agent to remember its own authority limits. You make the platform enforce them. An agent is a model in a loop. It can be talked into things, and it forgets. The platform doesn't.\n\nSo we draw the limits as rings, like the walls of a castle. Start in the middle.\n\nCore, identity: who it is. Every agent gets an identity the platform can check, not a name it claims.\nRing 1, reach: what it connects to. Which other programs it can even open a connection to.\nRing 2, capability: what it may do. Which tools, and with which arguments.\nAnd the outer ring, the keystone: it can never edit what constrains it. In an arch, the keystone is the stone that holds the others in place. If the agent could rewrite its own rules, the other three rings would mean nothing.\n\nHold on to these four. In Act 3 Kasper shows you each ring in Northstar, and two of them get stopped live. Kasper: how much of this does tracing already give us?\n\nSource: bounded-ai/README.md, 'Rings → projects' (William Rizzo, Bounded Agent Autonomy, OSFF 2026); docs/superpowers/specs/2026-10-12-northstar-m7-bounded-design.md §1\n\n[11:15 → 12:05 · 50s]",
- "KASPER\n\nAct two. Before we build anything: what tracing already gives us, and where it stops.\n\nSource: Ch 14\n\n[12:05 → 12:15 · 10s]",
- "KASPER\n\nTwo words for the rest of the talk.\n\nOn the left, one span: the record of one step, like one tool call. It has a name, a start, an end, and labels: facts about the work.\n\nOn the right, a trace: every span that shares one trace id. Each span points at its parent, so they form a tree. Read it top down: the customer submits, the agent runs, calls a tool, and the gateway asks the policy service. One request, one story.\n\nSource: Ch 3\n\n[12:15 → 12:45 · 30s]",
- "KASPER\n\nThat tree only holds together if every span carries the same trace id.\n\nThink of a parcel with a tracking number. Every depot scans the label. On the left, every hop kept the label on: one story. On the right, one hop stuck on a new label, and the history splits in two. Nothing errors. You just can't follow it any more.\n\nAnd agents add a lot of new hops.\n\nSource: Ch 3\n\n[12:45 → 13:15 · 30s]",
- "KASPER\n\nThis is the label: the W3C traceparent header. Version, always zero zero. The trace id, the tracking number, the same on every span. The parent id, replaced at every hop, like a depot stamp. The flags: zero one means sampled.\n\nThe news: since the July twenty-eighth MCP spec, SEP-414 puts the same label inside the message, in params underscore meta. So context survives transports with no headers, like stdio. Northstar sends both copies. The gateway reads only the header.\n\n[verify: exact params._meta key names against the 2026-07-28 MCP spec; the slide's JSON is illustrative, not a captured request]\n[verify: agentgateway reading trace context from HTTP headers only was established on v1.5.0 (Finding 6; test_gateway_trace.py cites the v1.5.0 source). The pin is now v1.6.0 and this was not re-measured there: re-check it, since v1.6.0 may read _meta]\n\nSource: Ch 2, Ch 3\n\n[13:15 → 13:45 · 30s]",
- "KASPER\n\nSo what can the gen_ai names answer? Read across: one, a question an investigator asks; two, the attribute that answers it; three, dimmed rows are the content.\n\nThe dark rows are the spec's defaults: kind of step, model, act or stop, tool, conversation.\n\nThe dimmed rows are content: what it was told, what it decided, what it asked for, what happened. The most sensitive data, so the spec makes them opt-in. Many libraries capture them anyway: at their defaults, four of seven wrote the model's output. And exactly what an auditor needs. Hold that until Act 4.\n\n[verify: GenAI semconv are all at Development stability in semantic-conventions-genai, which has cut no release; attribute names may move]\n\nSource: Ch 3; Instrumenting AI Agents (Dash0 DevRel, Aug 2026), p. 40\n\n[13:45 → 14:20 · 35s]",
- "KASPER\n\nAct three. Enough background. Now we watch a platform decide, live, on a system small enough to run on this laptop.\n\nSource: Ch 14.\n\n[14:20 → 14:30 · 10s]",
- "KASPER\n\nThis is the book's blueprint for a governed agent platform, boiled down to nine pieces. Five of them are the building blocks the abstract promised: the agent runtime, the context layer, the tool gateway, policy and evals, and multi-agent over shared context. Tools, models and telemetry are what those blocks stand on.\n\nRead it like this. A request goes from the agent runtime through the tool gateway to the tools and models. The gateway asks policy on every call that matters. The evidence goes the other way: telemetry, then evals. Each chip says how much Northstar shows. Gateway, policy and evals: shown, in depth. Runtime and telemetry: partial. Two blocks are missing: the context layer, meaning memory and retrieval, and multi-agent over shared context. Better you hear that now than in Q&A.\n\nThe row underneath is William's four rings, landed on it. Core, identity: SPIRE gives each agent a passport, and the gateway checks it. Ring 1, reach: Cilium, underneath the gateway, so the gateway is the only road to a tool. Ring 2, capability: the gateway and policy together. And the keystone: Kyverno, which stops an agent changing any of the other three.\n\nIF ASKED 'why is the runtime only partial?' Because our agents can't run code. Their only way to change anything is an MCP call through the gateway, and the policy decides it. More advanced agents are different: a coding agent with a shell, a file system, a code interpreter. For those the next boundary is the runtime itself. Run the agent in an agent-sandbox Sandbox, the Kubernetes SIG project for exactly this, on a gVisor or Kata runtime class, so what the model writes and runs stays inside its own kernel boundary. Then let Kyverno refuse any agent pod without that runtime class, the same way the keystone protects authority today. Identity, reach and capability limit what an agent can call. A sandbox limits what it can execute.\n\n[verify: kubernetes-sigs/agent-sandbox latest release and its SIG home before November]\n\nSource: Ch 11 (Figure 11.1, section 11.2); M7 design spec §1 (the rings table).\n\n[14:30 → 15:20 · 50s]",
- "KASPER\n\nWilliam said none of this is new. Here's what he meant. Read each row left to right. On the left, something your platform team already runs. On the right, the same idea pointed at agents. A golden path becomes a declared contract per agent. Admission policy becomes a decision at the tool gateway. Service identity becomes one SPIFFE identity per agent. Your observability stack learns GenAI traces and decision spans. A feature flag becomes the autonomy level, changed live. And the catalog becomes the view onto all of it. The last column is where each one lives in Northstar. So don't start an AI platform from scratch. Teach the one you have about agents.\n\nSource: Ch 1 (Figure 1.8), Ch 11.\n\n[15:20 → 16:05 · 45s]",
- "KASPER\n\nSo what makes a foundation governed, not just connected? Northstar comes up in seven stages, and each adds one thing you can prove. Read the stair left to right.\n\nFirst, connected: the agents talk, and one trace covers the claim. That's plumbing. The second is the line: the platform starts deciding, and identity is an input to that decision. The second stage is where three of William's rings arrive at once: identity, reach and capability. Third: a human can overturn a refusal. Fourth: prove why money moved, from telemetry alone. Fifth: one live value changes what's allowed, no redeploy. That value is part of the capability ring. Sixth: Backstage is just the view.\n\nAnd seventh, new: bounded. The agent can't edit what constrains it. That's the keystone, and its proof is a denial you'll watch live. The grey line under each stage is what it installs. Today we run the last one.\n\n[verify: stage 7 (M7 Bounded) merged and gated before November. the five-minute flow (scripts/demo) has a captured live run, 2026-10-12.]\n\nSource: docs/demo-runbook.md §1 and §3 (Option 1); M7 design spec §1 and §2.1; Ch 4, Ch 11.\n\n[16:05 → 17:00 · 55s]",
- "KASPER\n\nHere is Northstar. A customer files claim CLM-1842. The claims agent checks it with plain rules, no model, and hands it on. The settlement agent is the only one with a model, Claude. To pay, it calls agentgateway, not the payment tool. The gateway checks who is calling, then asks the policy service, the box underneath, whether this payment is allowed. Only on a yes does it forward to payments-mcp and the ledger. Model calls go straight to Anthropic, not through the gateway. Cilium makes the gateway the only road to the tool. Everything reports to one Collector, at one hundred percent. Next: the rule behind this picture, then each tool.\n\n[verify: pinned versions (agentgateway v1.6.0, Cilium 1.20.1, a2a-sdk 0.3.7) before November, Appendix B]\n\nSource: Ch 4 (Figure 4.5).\n\n[17:00 → 17:40 · 40s]",
- "KASPER\n\nThe design rule as a picture. Left: the model can request anything, even six thousand two hundred euros. Middle: one choke point the agent can't skip. Who is asking, and is it allowed? Right: only a permit becomes an effect. Why not limit the agent? An agent that can choose to ask permission can choose not to. The tool? That's an if-statement with extra steps. A test fails if one ever appears. And that middle box hides two different jobs. Next slide.\n\nSource: Ch 4 (Figure 4.4, design principle 2), Ch 7 (Decision 2).\n\n[17:40 → 18:10 · 30s]",
- "KASPER\n\nTwo words you'll hear from here on. An enforcement point stands at the door. Think of a bouncer. It lets a call through or stops it, and that's all it does. A decision point knows the rules. Think of the manager. The bouncer asks, the manager answers, and the manager never touches the door. In Northstar the bouncer is agentgateway, and the manager is our policy decision service. Keep them apart, and you can change the rule without touching the door.\n\nSource: Ch 7; docs/architecture.md \"The decision the platform makes\".\n\n[18:10 → 18:40 · 30s]",
- "KASPER\n\nEvery tool, grouped by the job it does. Read the top row first: the claim path. A2A is how agents talk to each other; MCP is how an agent calls a tool. Both now sit in the Agentic AI Foundation, under the Linux Foundation. Cilium, the network, makes the gateway the only road to the tool. SPIFFE and SPIRE give each agent pod a signed identity. agentgateway checks it and asks for a decision. The Policy Decision Service is our own code: permit or deny, and why. OpenFeature and flagd hold the autonomy level. Bottom row, around the path: the Collector takes every span, unsampled, to Jaeger, OpenSearch and Prometheus. Our eval-scorer writes scores back into the trace. Backstage is the view. The tinted chips mark code we wrote.\n\n[verify: a2a-sdk 0.3.7, mcp 2.2.0, Cilium 1.20.1, SPIRE 1.15.3, agentgateway v1.6.0, Open Feature Operator v0.9.3, flagd v0.16.2, Collector contrib 0.160.0, Jaeger 2.20.0, OpenSearch 3.8.0, Prometheus v3.14.0, Backstage 1.54.0; OpenSearch's home is the OpenSearch Software Foundation under the LF; A2A joined AAIF 2026-08-17; OpenFeature still CNCF Incubating]\n\nSource: docs/architecture.md (the two components tables); deploy/*; Ch 2 (Figure 2.12).\n\n[18:40 → 19:40 · 60s]",
- "KASPER\n\nThe first ring, the core: identity. Who is this agent? In the platform world that's called workload identity. A name tag says who you claim to be. A passport is issued by someone else, checked at the border, and valid for one destination. SPIFFE is the standard for the name. SPIRE is the passport office. Follow the steps left to right. First: a ClusterSPIFFEID says which pods get which ID, and the controller-manager turns it into a registration. Second: the CSI driver mounts SPIRE's Workload API socket into the settlement-agent pod. Third: when the agent asks, the SPIRE agent checks the pod's namespace and ServiceAccount. Fourth: SPIRE issues a JWT-SVID for one audience, the gateway. Fifth: the gateway checks the signature against keys the OIDC discovery provider publishes, and writes jwt.sub on its span. Trust domain: northstar.local. One thing SPIRE does not do is emit spans. Metrics only.\n\n[verify: SPIRE 1.15.3 still has no OTLP or tracing support]\n\nSource: deploy/platform/spire/registration.yaml and values.yaml; agents/settlement-agent/svid.py; docs/architecture.md \"Workload identity\"; Ch 7.\n\n[19:40 → 20:40 · 60s]",
- "KASPER\n\nThe next ring out is capability: what the agent may do. Most of that ring lives in the gateway. Before its config, what kind of thing is agentgateway?\n\nLook left first. An ordinary API gateway sees an HTTP request: a POST to slash mcp, a host, a token. The body is just bytes to it. So it can make rules about URLs.\n\nNow the right. agentgateway speaks the agent protocols. It opens the message and sees a tools/call, for the tool execute_payment, for six thousand two hundred euros, from settlement-agent. So it can make rules about the tool call itself. Think of a post office that only reads the envelope, next to a customs officer who opens the parcel.\n\nAlong the bottom: one proxy for three kinds of traffic. MCP, agent to tool. A2A, agent to agent. And LLM, agent to model. In our demo it guards one road: the MCP road to the payments tool. And Cilium makes sure it's the only road.\n\n[verify: agentgateway v1.6.0 feature set: MCP, A2A and LLM routes; still LF/AAIF]\n\nSource: deploy/platform/agentgateway/config.yaml (one mcp backend, payments-mcp); tools/payments-mcp/server.py; docs/architecture.md \"Hop 3\".\n\n[20:40 → 21:25 · 45s]",
- "KASPER\n\nStill ring two, capability. Now the gateway's config. agentgateway is written in Rust, and it's a Linux Foundation project, in the Agentic AI Foundation, not CNCF. Our whole setup is one YAML file. Read it left to right: every tool call passes three checks, in this order. First, jwtAuth: who is asking? A bad or missing token gets HTTP 401 before the gateway even reads the MCP message. Second, mcpGuardrails: is it allowed? The gateway sends the call over gRPC to the policy service, and waits. failClosed means: if the policy service can't answer, the answer is no. A deny stops right here. Third: on a permit, the gateway drops the token and forwards. The tool never sees the agent's credential. Underneath, every step writes a span. You'll see them in a minute.\n\n[verify: agentgateway v1.6.0 still the latest stable before November]\n\nSource: deploy/platform/agentgateway/config.yaml; docs/architecture.md \"Hop 3\"; Ch 6, Ch 7.\n\n[21:25 → 22:25 · 60s]",
- "KASPER\n\nStill ring two. How much an agent may do also depends on a live setting, its autonomy level. That setting uses OpenFeature, so here's what that is.\n\nOpenFeature is a CNCF standard for asking about feature flags. The question is standard. What answers it is pluggable. Think of a wall socket: every appliance fits the same socket, whatever power station is behind it.\n\nRead the stack from the top. Our policy service asks one question: what is the autonomy level, for this SPIFFE ID? The OpenFeature SDK is the same API in every language, and it has hooks. We use the OpenTelemetry hook. Under it, a provider plugs in a backend. Ours is flagd, over gRPC on localhost. And the flag itself lives in a FeatureFlag, a Kubernetes object. The OpenFeature Operator puts the flagd sidecar in the pod for us.\n\nNow the right: why use a flag for a policy knob? It changes without a deploy. The change is a one-word diff you can review. It's answered per caller. And every evaluation leaves evidence.\n\n[verify: OpenFeature still CNCF Incubating; Open Feature Operator v0.9.3, flagd v0.16.2, openfeature-sdk 0.10.0 (Python)]\n\nSource: platform/policy-decision-service/pds/autonomy.py and requirements.txt; deploy/platform/openfeature/featureflag.yaml and featureflagsource.yaml; deploy/k8s/policy-decision-service.yaml (openfeature.dev annotations).\n\n[22:25 → 23:10 · 45s]",
- "KASPER\n\nAnd this is the manager, the policy decision service, our own code. Read the right side first: the rule table. It has two keys: who is calling, and the autonomy level. settlement-agent at assisted may execute nothing: its limit is zero euros. At autonomous, up to six thousand. Above its limit a human decides, and that human is a different caller, the reviewer-ui. Any other caller has no row, and no row means deny. Now the left: where the level comes from. The FeatureFlag you just met, read through the flagd sidecar. If flagd can't answer, the level falls back to assisted. Every answer becomes a northstar.policy.decision span. The other key, identity, comes back after the demo. Keep one question in your head: if one value on one object decides this much, who is allowed to change that value? We answer it live, in step 4.\n\nSource: platform/policy-decision-service/pds/rules.py and pds/autonomy.py; deploy/platform/openfeature/featureflag.yaml; docs/architecture.md (flagd row); Ch 7, Ch 8.\n\n[23:10 → 23:55 · 45s]",
- "KASPER\n\nSAY: \"Here's the demo. Five steps, about five minutes. A customer files a vehicle-damage claim, our agents prepare the payment, and the platform decides who may release it. Each command lands one ring of what you've just seen.\"\n\nTHE SLIDE STAYS UP FOR THE WHOLE DEMO. It shows no commands: everything below is for you. Switch to the terminal and the two browser tabs; come back to the deck for \"What you just saw\".\n\n———\n\nStep 1 · live · terminal. Core · Identity and Ring 1 · Reach.\n\nPlain words first: three ways to try to reach the payment tool. With no identity. Around the gateway. And with the agent's own identity.\n\n1. DO: ./scripts/demo guard. No model. About nine seconds, eight of them waiting on purpose.\n2. SHOW part 1, no identity: tools/list, then tools/call execute_payment, to the gateway with no token. Both HTTP 401, nothing forwarded.\nSAY: \"No identity, no conversation.\"\n3. SHOW part 2, around the gateway, from inside claims-agent, a real pod with no SVID. First the control: settlement-agent on port 9002 answers 200, so the network works. Then an MCP initialize straight at payments-mcp: DROPPED.\nSAY, during the 8-second wait: \"That wait is the drop. There's no error to read, because nothing answered. The network threw the packet away. And notice: no span either. Cilium's drops are not in our trace, because Hubble, its flow viewer, isn't installed. This terminal line is the evidence.\"\n4. SHOW part 3, with settlement-agent's identity: SPIRE mints the same token the agent holds (it's never printed), and tools/list through the gateway answers 200 with all four tools, including execute_payment, the one that moves money.\nSAY: \"Seeing a tool is not being allowed to use it. Listed is not permitted: every call is decided, one by one. That's the next step.\"\n\nIF IT FAILS: \"FAIL … the control did not answer\" means the network is down, not the policy. \"FAIL … was not dropped\" means the Cilium policy isn't enforcing. No SPIRE token: the spire-server pod. In every case, say so and move on: the next slide shows what you meant to show.\n\n[verify: Cilium 1.20.1, SPIRE 1.15.3 and agentgateway v1.6.0 still the pinned versions]\n\n———\n\nStep 2 · live · browser, then terminal. Ring 2 · Capability. A human signs.\n\nPlain words first: the agent can do the work, but above its limit a person has to sign. This step shows that person.\n\n1. DO: in the customer tab, file a claim for 5,800 euros. A real claim, through claims-agent, settlement-agent and the model. About seven seconds.\n2. SHOW the customer tab: \"Awaiting human approval\", and a timer that keeps running. Nothing was paid.\nSAY, while the model works: \"The model decides what to propose. The platform decides what happens.\"\n3. DO: switch to the reviewer tab. SHOW four facts: the rule, assisted; the limit, zero euros; the amount; and the model's own words. Read the narrative aloud: it says it needs a colleague to sign. It is telling the truth, because the platform told it the truth.\nSAY: \"This is maker-checker. The agent is the maker. It proposed the payment and tried to release it. The reviewer is the checker, a different service with a different identity. The agent can't approve its own payment, because the platform reads the ledger before it lets anyone release money.\"\n4. DO: press Approve. SHOW: the customer tab flips to Settled, without a reload.\nSAY: \"The agent did the work. A human signed. The trace shows how long the human took.\"\n\nAbout the trace on stage. Nothing polls while a claim waits: the claim's first trace ends at the hand-off. The approval starts a second trace, with a span link back to the first. Open either one in Jaeger at any time.\n\nThe no itself: HTTP 200. The gateway's answer is a tool result marked isError, with the rule in its text. A no is a decision, not an HTTP failure.\n\nIF THE BROWSER MISBEHAVES: the terminal does both halves. ./scripts/demo claim 5800, then ./scripts/demo approve last. Then carry on.\nIF THE CUSTOMER TAB NEVER FLIPS: finish with ./scripts/demo approve last. The payment is settled either way; only the tab is stale.\n\n———\n\nStep 3 · live · terminal. One live dial.\n\nPlain words first: how much the agent may do is one value on one Kubernetes object, a FeatureFlag. flagd serves it, and the decision service reads it on every call.\n\n1. DO: ./scripts/demo autonomy autonomous. Under a second. SHOW: flagd resolves autonomous, and \"Pods restarted: NONE\": twelve pods compared by UID, start time and restart count, before and after.\nSAY: \"I changed one value, from the command line. Nothing was redeployed, and the command counts the pods to prove it.\"\n2. DO: ./scripts/demo claim 5800. The same amount you just saw wait. About seven seconds, then a short pause while the spans land. Fill it: \"Same amount, same agent, same code, same image.\"\n3. SHOW: SETTLED, by the agent. northstar.policy.decision permit, under a different rule, settlement-agent.autonomous.execute_limit, limit 6,000. The execute span is PRESENT: money moved, and no human was asked.\n4. DO: ./scripts/demo claim 6200. SHOW: WAITING. The limit is 6,000, the request is 6,200, so the platform sends it to a human again.\nSAY: \"One live dial. The band widens; the human stays. More autonomy did not remove the human. It moved the line.\"\n5. DO: ./scripts/demo autonomy assisted. SHOW assisted, and Pods restarted: NONE again. SAY: \"And back.\"\n\nThe 6,200 claim is left waiting on purpose. ./scripts/demo reset ends it at the end of the talk.\n\nThe slide is the diff the first command makes: the first branch of the flag's targeting rule, assisted to autonomous.\n\nHAZARD: never leave the flag at autonomous; the next run assumes assisted. ./scripts/demo reset fixes it. \"FAIL … something restarted\" means a rollout overlapped the flip: believe it and check the pods.\nWorth knowing: the CLI flip leaves no audit span. Backstage's card writes the same value and records a northstar.autonomy_contract.change span; that's the optional slide after the demo.\n\n———\n\nStep 4 · live · terminal. The keystone.\n\nStep 3 just showed that one value on one object changes what the agent may do. So who may change that value? If the answer is \"the agent\", every limit you've seen is a suggestion.\n\nPlain words first. Kubernetes checks this change twice. RBAC, role-based access control, is the key card: which identity may touch which kind of object. Kyverno is an admission policy: a guard who reads each change before it's saved, and can say no even when your key card works.\n\n1. DO: ./scripts/demo keystone. Half a second; talk over the output. It acts as the settlement agent's own Kubernetes identity.\n2. SHOW the first row: the agent patches its own flag to autonomous. Forbidden, from RBAC: it \"cannot get resource featureflags\". Why get, when it asked to patch? kubectl reads the object before it patches it, and the agent may not even read it.\nSAY: \"RBAC says no. That's the first line.\"\n3. SHOW the second row: the over-grant, a Role and RoleBinding giving settlement-agent get and patch on that one flag. auth can-i patch: yes.\nSAY: \"Now someone makes a mistake, the kind every real cluster collects. RBAC now says yes.\"\n4. SHOW the third row: the same patch. Point at the policy name, agents-cannot-edit-their-own-authority, and DENIED. Read the end aloud: \"Authority changes go through a reviewed commit, never a runtime decision by the agent.\"\nSAY: \"Each check assumes the last one failed. RBAC failed, on purpose, and the keystone held.\"\n5. SHOW the fourth and fifth rows: the over-grant deleted (on every exit path, Ctrl-C included), and the flag still resolves assisted.\nSAY, and credit William: \"William has the line for this: we scripted the attempt. The platform scripts the response. The agent can never edit what constrains it.\"\n\nIF ASKED \"but Backstage can change the flag\": yes, as Backstage's own narrow identity, which the policy doesn't match. People change authority through the reviewed path; the agent can't.\n\nIF IT FAILS: \"FAIL … is not Ready\": Kyverno or stage 7 isn't up. \"FAIL … over-grant is already applied\": ./scripts/demo reset. \"FAIL … not by the keystone\": Kyverno didn't fire and RBAC did. Say so and move on.\n\n[verify: Kyverno v1.19.1 (chart 3.9.1) still the latest stable before November. The policy is a ValidatingPolicy (policies.kyverno.io/v1), written in CEL; the legacy ClusterPolicy is deprecated since 1.19 (kyverno/kyverno#16868). William's OSFF demo used ClusterPolicy on v1.18.1.]\n\n———\n\nStep 5 · live · terminal. Prove.\n\n1. DO: ./scripts/demo evidence. About a second. It reads this run's three claims back from Jaeger, and nothing older. The first claim's link is the approval's own trace: its northstar.review.decision span is where \"approved by\" and \"after N s\" come from.\n2. SHOW the first claim, the one a human approved: the decision service sent it to a human. Rule settlement-agent.assisted.execute_limit, limit 0, autonomy level assisted. Outcome SETTLED, by reviewer-ui. Approved by the stage reviewer, after about twenty seconds. That number is the human wait, read off the reviewer's own span.\n3. SHOW the second: PERMIT, under a different rule, settlement-agent.autonomous.execute_limit, limit 6,000. SETTLED by the agent. Approved by: none.\n4. SHOW the third, the 6,200 claim: sent to a human, limit 6,000, still waiting, nothing moved. Approved by: none, yet.\nSAY: \"For each claim: who decided, the rule, who approved, how long the human took.\"\nSAY: \"Every line here is a span attribute, read back from Jaeger. Nothing is reconstructed.\"\nDon't say \"same rule, different amount\" here: that's the longer evidence view in Act 4 (5,800 against 6,200 at one level), not this run.\n\nIF IT FAILS: it waits for Jaeger for up to 90 seconds, then names the fields that never arrived. \"FAIL no claims in this run yet\": a reset ran between the claims and this. Say so and move on.\n\n[verify: re-time at rehearsal; measured on the OpenSearch reader]\n\n———\n\nTIMING (measured): the commands take about 55 seconds in total; the rest is you talking. Step 1 waits 8 seconds on purpose (the drop). Steps 2 and 3 each pause about 15 seconds while every service's spans land in Jaeger; those notes say what to fill the pause with.\n\nPRE-FLIGHT, done before the talk (runbook §4):\n1. ./scripts/setup-kind.sh --stage 7 printed ANTHROPIC_API_KEY: SET. ./scripts/start-demo.sh is running in its own terminal.\n2. Every pod Running, Kyverno's included, and the keystone policy Ready: kubectl get validatingpolicy agents-cannot-edit-their-own-authority.\n3. Rehearse once: ./scripts/demo claim 5800 --expect awaiting_approval, then ./scripts/demo approve last. The claim exits non-zero unless it waits for a human.\n4. The last thing you type before the audience arrives: ./scripts/demo reset. It sets the flag to assisted, removes any over-grant and clears the run's claims. It is safe at any time.\n5. A terminal at the repo root, font large, about 100 columns wide.\n\nSource: docs/demo-runbook.md §5 \"The five-minute flow\"; M7 design spec §7; scratchpad flow/*.txt and flow/timings.md (stage-7 run, 2026-10-12)\n\n[23:55 → 30:05 · 370s]",
- "KASPER\n\nBack to the slides. That was five minutes, so here it is in one picture.\n\nIdentity and reach: no identity, no call. A 401 at the gateway, and around the gateway the packet was simply dropped. With its own identity the agent could see every tool, but listed is not permitted.\n\nCapability: the agent did all the work on 5,800 euros, and a person signed before any money moved.\n\nOne live dial: we turned the agent's autonomy up. 5,800 settled on its own; 6,200 still waited, because the limit is 6,000. The band widened, the human stayed.\n\nThe keystone: even when someone gave the agent the permission by mistake, it could not change its own limits.\n\nAnd evidence: every claim, read back from the trace. Who decided, which rule, who approved, and how long the human took.\n\nSource: docs/demo-runbook.md §5 \"The five-minute flow\"\n\n[30:05 → 30:45 · 40s]",
- "KASPER\n\nStep 1 showed one 401. Here are five, and why the caller matters. Every agent gets a passport. SPIFFE is the naming standard. SPIRE hands each agent a signed token, an SVID. Think of a sealed envelope with a passport inside, addressed to one recipient.\n\nLook at the left. Five bad credentials, sent straight to the gateway, no model involved. All five got HTTP 401. The red row is a genuine SPIRE token, real signer, real name. It was only addressed to payments-mcp instead of the gateway. Refused.\n\nNow the right. The caller is half the lookup key. Same rule: settlement-agent may pay up to its limit, the reviewer-ui may pay only a payment that is waiting for a human, and anyone else gets no row. \"Identity is an input to the decision, not a label on it.\"\n\nIF THERE IS TIME, run it live. No model call, no browser, costs nothing. From the repo root:\n.venv/bin/python -m pytest tests/e2e/test_policy_denial.py -v -k \"criterion_4 or criterion_5\"\nSAY: \"Criterion 4 is a walk over the source proving there is no policy logic in the settlement agent or the MCP server at all. Criterion 5 speaks MCP to the gateway directly with two different SPIRE-minted identities, and shows the verdict change with the caller.\"\nRunning it adds time; budget about a minute.\n\nSource: Ch 7, Ch 14; aip-demo docs/demo-runbook.md §5 Beat 3\n\n[30:45 → 31:30 · 45s]",
- "KASPER\n\nOptional. Ring 1 · Reach has two layers, and William's demo shows the other one.\n\nPlain words first. In his OSFF demo William used Linkerd, a service mesh: a small proxy beside every pod that checks the caller's identity at the destination's door. Cilium, what our demo runs, works in the Linux kernel and can match on names. We measured both side by side in a spike, on 2026-10-12, on a separate cluster. Linkerd is not in the demo you just saw.\n\nLeft, Linkerd. Every attempt to go around the gateway, to payments-mcp or to the decision service, got HTTP 403: a refusal you can read, where Cilium gives silence. That held for pods with no proxy at all, and for pods told to skip it. And a bonus for tracing: with the mesh on, the claim stayed one trace. The proxies added spans, 149 became 293, and nothing split apart.\n\nRight, Cilium. Only the two settlement agents may reach the model provider, api.anthropic.com. Linkerd's egress rule couldn't say that: it applies to a whole namespace, and it matches only the server name the client claims, the SNI, which a client can fake.\n\nSAY: \"So reach has two layers: identity at the destination, and names in the kernel. William's beat shows the first; ours shows the second.\"\n\nSAY, before someone in the room does: \"One caveat for a regulated audience: open-source Linkerd ships edge releases only. Its last open-source stable release was February 2024; stable builds now come from vendors.\"\n\nIF ASKED whether Northstar will switch: not decided. The spike's answer was that Linkerd matches Cilium on the way in, not on the way out.\n\n[verify: Linkerd edge-26.10.1 was the release tested; Cilium 1.20.1 still pinned]\n\nSource: Linkerd spike report, 2026-10-12 (criteria 1, 3, 4 and 6; the trace result; release channels); bounded-ai/README.md (Ring 1 · Reach)\n\n[31:30 → 32:15 · 45s]",
- "KASPER\n\nThe longer version of step 2: the whole trace, as Jaeger shows it when the claim comes in through the customer UI. Read it like the line under it says: indented means called by the line above, struck through means it never happened.\n\n1. The root, northstar.claim.submit, carries the claim id. Under it the agent asks for execute_payment, and the gateway's tools/call carries jwt.sub, the caller's SPIFFE ID, and HTTP 200.\n2. northstar.policy.decision: deny, €5,800 over the agent's limit of €0 at assisted. Its status is not ERROR. A refusal is the platform working; if it were an error, every dashboard you own would page you for correct behaviour.\n3. Guardrail says gRPC status zero: the call to the decision service worked. That's how \"the policy said no\" stays different from \"the policy service was down\".\n4. The struck-through lines: the gateway's call to payments-mcp, payments-mcp's execute_payment, and payments-api's execute. Never attempted.\nSAY: \"The execute never reached the tool. The absence is the evidence.\" The claim then waits for a person. The proposal and the refusal record are payments-api spans too, and they are there; what's missing is the execute. That only holds because we never sample.\n\nSource: Ch 5 (Figure 5.5), Ch 6 (Figure 6.13); flow timings.md assumption 6\n\n[32:15 → 33:00 · 45s]",
- "KASPER\n\nNow we read what the bouncer writes down, for one permitted payment. Follow the rows down. First: tools/call, the request as it arrived. Twenty-two keys. jwt.sub is who asked, and gen_ai.tool.name is the only place the tool is named. Second: Guardrail, nine keys: the gateway phoning the policy service. grpc.status zero means the call worked, not what the answer was. Third: the policy service's span holds the why: rule, limit, amount. Fourth: the outbound call, six keys, and no jwt.sub, because the token was stripped. At the bottom: the four keys a refusal adds to span one. On a deny, span four doesn't exist.\n\n[verify: re-run test_gateway_trace.py at slide freeze (the key sets were last measured on agentgateway v1.6.0, 2026-10-13), Appendix B]\n\nSource: Ch 6 (Figures 6.7, 6.9 to 6.12, 6.15).\n\n[33:00 → 33:45 · 45s]",
- "KASPER\n\nRead the big number first. Two hundred is the HTTP status of the refused payment. The gateway marks its span ERROR with reason MCP, but the refusal travels inside a successful HTTP response: a tool result marked isError, with the rule, the limit and the amount in its text, ending in a short tag the agent reads. We probed it directly, with no model. A sealed envelope delivered on time, with a no inside. \"Anyone alerting on HTTP status alone will not see this refusal at all.\" Metrics don't help. No agentgateway metric counts permit versus deny, and the Guardrail histogram counts every check, whatever the answer. In Northstar none of it reaches Prometheus anyway: nothing scrapes the gateway's port. The small line: from v1.6.0 the span carries the new attribute name. So alert on the decision span.\n\n[verify: whether a permit/deny metric has been added after v1.6.0, Appendix B]\n\nSource: Ch 6 (Figure 6.15, Figure 6.24, Finding 7); M8 Task 0 (the deny is an isError tool result ending in a [policy-denial ...] tag).\n\n[33:45 → 34:30 · 45s]",
- "KASPER\n\nBefore the detail, one idea: defence in depth. Think of airport security. You walk down a corridor, show your passport, go through the scanner, and meet the gate staff. No single check is trusted to catch everything. Each one assumes the one before it failed.\n\nNext: the eight checks between an agent and a payment.\n\nSource: Ch 7\n\n[34:30 → 34:50 · 20s]",
- "KASPER\n\nThis is the question every platform team asks in an agent review: how do we limit what an agent can do with an MCP server? Here is Northstar's airport.\n\nRead it from the top down. That is the order one tool call travels. Each row has three parts. On the left, the layer. In the middle, what it stops. On the right, what you would show an auditor as proof.\n\nRows two to four: who is calling, is the token real, is this call allowed. Row five: if the checker is down, the answer is no. Row eight: a human can overturn a refusal, but only by asking again as a different caller.\n\nThe one to remember is row one. Seven layers leave a span. The network doesn't. Its proof is BPF maps and TCP probes. A trace records what happened. Only network policy shows what couldn't happen.\n\nSource: Ch 7\n\n[34:50 → 35:50 · 60s]",
- "KASPER\n\nThere are two ways for the platform to say no. The gateway can do it alone, with one line of config: no payment over fifty thousand, for anyone. It answers 403 and says nothing else. The decision service is a service we wrote: it has the live dial, the rule's name, a reason the model can explain, and its own span. We use both. The gateway holds the hard ceiling; the service makes the decision.\n\nRead the table top to bottom. Code to write: none against a service. Sees the tool's arguments: both, since agentgateway 1.6. Changes live: the gateway reloads its config in about a third of a second; the service reads a flag and nothing reloads. Says why: the gateway says \"authorization failed\" and nothing else; the service names the rule and the limit. In the trace: the gateway leaves one span; the service leaves northstar.policy.decision.\n\nThe line at the bottom is the real rule, from the config file. It is an allow rule on purpose: a deny rule lets a string amount through, and we measured that. The ceiling is not in the live demo. scripts/demo ceiling shows it if someone asks.\n\n[verify: agentgateway is a Linux Foundation project hosted in AAIF, not CNCF.]\n\nSource: docs/architecture.md \"Two ways to say no\"; tests/e2e/test_gateway_ceiling.py; M8 design spec §5\n\n[35:50 → 36:30 · 40s]",
- "KASPER\n\nThe gateway has a second family of guardrails, for the model's own traffic. We read the list from the source, at the v1.6.0 tag. Regex rules mask or reject text. Personal data, like card numbers and emails, is found and masked. A moderation model can judge a prompt. A webhook lets your own service judge. And there are connectors for Amazon Bedrock Guardrails, Azure Content Safety and Google Model Armor.\n\nSAY, plainly: \"Northstar's model calls do not go through the gateway today. So none of these are in the demo.\" Routing them through the gateway is a separate piece of work.\n\nSource: agentgateway v1.6.0, crates/agentgateway/src/llm/policy/ (mod.rs, pii/, webhook.rs, moderation.rs, bedrock_guardrails.rs, azure_content_safety.rs, google_model_armor.rs); M8 design spec §5\n\n[36:30 → 36:50 · 20s]",
- "KASPER\n\nThere are two ways for a platform to say no. William's demo shows one, Northstar shows the other. They're layers, not rivals.\n\nOn the left: hide. In William's OSFF demo the gateway has a static allowlist, one CEL line: the tool's name must be in this list. Anything else isn't there. Ask the gateway for its list of tools, and the forbidden one never appears. Call it anyway, and you get HTTP 400, Unknown tool. Think of a building where the vault isn't on the map. The agent can't even ask for it.\n\nOn the right: refuse and record. Our payment tool isn't hidden. You saw it in step 1: with the settlement agent's identity, tools/list shows all four tools, execute_payment included. Listed is not permitted: every call is decided. It can't be hidden, because paying claims is the agent's job. Whether a call is fine depends on its arguments: at autonomous the limit is six thousand: five thousand eight hundred, yes. Six thousand two hundred, no. At assisted the limit is zero, so even five thousand eight hundred waits for a person. So the call is proposed, refused, recorded as a northstar.policy.decision span with the rule and the limit, and explained, to the customer now and to an auditor later.\n\nUse both. Hide what an agent must never touch. Refuse, and record, the rest. And credit where it's due: the hide layer, and the rings you've been seeing all along, are William's.\n\n[verify: agentgateway 1.6.0 gives CEL the tool's arguments, so a gateway rule can now refuse by amount too (the previous slide). Hiding is still the cheaper layer, and refusing is still the one that leaves a record.]\n[verify: William's demo ran agentgateway v1.3.1; the HTTP 400 Unknown tool and the tools/list filtering are from his README, checked against that version's source]\n\nSource: flow timings.md assumption 3 (the list is not filtered, measured 2026-10-12); bounded-ai/README.md (Rings → projects, Ring 2 · Capability; deviation 2); M7 design spec §1; Ch 7\n\n[36:50 → 37:30 · 40s]",
- "KASPER\n\nOne more idea. In a power cut, what does the door lock do? Fail-closed: it stays locked. Fail-open: it swings open, like a fire exit. For a payment gate, only one of those is safe. So which does ours do?\n\nSource: Ch 7\n\n[37:30 → 37:45 · 15s]",
- "KASPER\n\nStart on the left: the real config line, failureMode: failClosed. Then the right: we pointed the guardrail at a dead address. Key left out, or failClosed: refused. failOpen: through to the tool. The plan said the default was fail-open. Nobody had measured it, and it wasn't. The line stays anyway, with a test.\n\n[verify: the exact shape of the outage span was never published as a measurement; don't quote its attributes.]\n\nSource: Ch 7\n\n[37:45 → 38:05 · 20s]",
- "KASPER\n\nLast idea before the demo. On the left, a parent edge: inside one trace, the parent waits while its child runs. On the right, a span link: two separate traces, and a pointer back, like \"see also\". You use a link when someone took minutes, in another process.\n\nSource: Ch 8\n\n[38:05 → 38:20 · 15s]",
- "KASPER\n\nMaker and checker. The agent makes the payment. A human checks it. These are two traces, and the slide shows both.\n\n1. Left, trace A: the maker. The agent proposes: the claim came in, the agent asked to execute the payment, and the platform said a person decides. The agent records \"input required\" and its work is done: trace A ends at the hand-off. Nothing polls while the claim waits, and nothing moved.\n2. Right, trace B: the checker. A person approves it. The reviewer-ui records northstar.review.decision, asks the gateway to execute the payment under its own identity and its own rule, human-approved.execute, and then resumes the claim. The decision service has read the ledger and seen that the payment is waiting for a human, so it permits. When the claim completes, the platform pushes the outcome to the customer's page.\nSAY: \"Nothing was overridden. A different caller was asked about.\"\n3. The dashed line is a span link: B's resume points back to A. A link, not a parent. \"Work separated by human time is two traces and a link. Nothing polls while the claim waits.\" A parent edge would have misstated both the duration and what was executing.\n4. The bottom line is a Prometheus question: how long do humans take? One histogram, by autonomy level and decision. The 95th percentile per level shows whether widening the band really cut the human's load.\n\nHonest limits: Reject is final and the customer is told their claim was declined; but there is no second approver, no timeout, no expiry, and no login on the reviewer-ui. The reviewer id is a string the form supplies.\n\nSource: aip-demo docs/demo-runbook.md §5 Beat 4; docs/telemetry-contract.md (trace B, northstar_approval_wait_duration_seconds); Ch 8\n\n[38:20 → 39:05 · 45s]",
- "KASPER\n\nOptional. Step 3 flipped the value from the command line. Backstage, the developer portal, does the same write with a button, and that's the point: Backstage is only a view onto the same object.\n\n1. Before: settlement-agent reads assisted, a live read of the Kubernetes object.\n2. One click: settlement-agent reads autonomous.\n3. The same €5,800 claim: settled by the agent, no human. At assisted it had waited for a person.\n4. The difference from the CLI: Backstage's write path records one span per flip, northstar.autonomy_contract.change, with the previous and the new value. The CLI flip in step 3 leaves no such span.\n\nSource: aip-demo docs/demo-runbook.md §5 Beat 7 (the longer version), §7; platform/backstage/packages/backend/src/plugins/autonomyContract/telemetry.ts\n\n[39:05 → 39:35 · 30s]",
- "KASPER\n\n\"The platform API is the resource. kubectl and Backstage are just views a person uses to read and change it.\" And as step 4 showed, who may write it is enforced too. managedFields records who wrote a value last, but the next write wipes it, like a whiteboard. That's why Backstage writes one span per flip, which survives the revert and the pod. The CLI flip in step 3 writes none; the evidence for it is the claim's own northstar.policy.decision, which names the level it was decided under.\n\nSource: Ch 8, Ch 14; flow transcript 5-evidence.txt (autonomy level on each claim)\n\n[39:35 → 39:55 · 20s]",
- "KASPER\n\nAct four. The auditor walks in and asks: can you prove it? What did the agent do, who let it, and how do you know?\n\nSource: Ch 14\n\n[39:55 → 40:05 · 10s]",
- "KASPER\n\nFirst, what counts as evidence. On the left, a log line: what one program said at one moment. Fine for debugging, thin for an auditor.\n\nOn the right, what an auditor asks. What was decided, under which rule, at which limit, who asked, was a human involved, what reached the ledger. Each answer is one span field.\n\nSource: Ch 3, Ch 9\n\n[40:05 → 40:25 · 20s]",
- "KASPER\n\nBefore we look at the evidence, one honest question: when something gets refused, can you find the refusal later? We just saw four kinds of no. Here's which ones leave a trace, a recorded trail you can search afterwards.\n\n1. Core, identity. A call with no valid token gets a 401 from agentgateway. Yes: the gateway writes a span with the 401 and the reason, JwtAuth. Layer two on the eight-layer slide.\n2. Ring 1, reach. The Cilium drop from step 1. No. The packet is thrown away before any program sees it, so nothing writes a span. Cilium's flow viewer, Hubble, would record it, and we haven't installed it. A drop leaves no span.\n3. Ring 2, capability. The policy service's deny. Yes, and the best case: it's inside the claim's own trace, as northstar.policy.decision, next to everything else the agent did.\n4. The keystone. Kyverno's denial from step 4. Yes, but on its own. Kyverno sends its own trace, under the service kyverno-admission-controller: about eight spans, all under a millisecond, with the identity that asked and allowed equals false. It isn't joined to any agent's trace, because kubectl doesn't send a traceparent, the header that would link them. And we don't sample it: every denial is kept.\n\nSAY: \"So: traced everywhere except where a packet is dropped. That's a real gap, and I'd rather name it than hide it.\"\n\nIF ASKED where the policy name is in Kyverno's span: only in the result message and in the webhook's URL path, /vpol/ plus the policy name. There's no dedicated attribute for it.\n\nSource: M7 Kyverno trace findings (2026-10-12: service kyverno-admission-controller, admission.response.allowed=false, admission.request.user.name, admission.request.roles, no sampler); scripts/demo guard (Cilium drops are not in the trace; Hubble is not installed); the eight-layer slide (gateway 401 span, reason=JwtAuth)\n\n[40:25 → 41:10 · 45s]",
- "KASPER\n\nThis is the evidence for one approval, straight from Jaeger. It's the second trace of a claim that waited for a person: it starts at the reviewer's decision.\n\nRead the tags. The decision: approve. Who: the reviewer's id, and the reviewer service's own SPIFFE identity, so you know which workload signed, not just which name was typed. How long the human took: northstar.review.wait.duration, in seconds. And at the bottom, one reference: a link to a span in another trace. That's trace A, the agent's work, which ended when it handed the payment to a person.\n\nSAY: \"No new application code behind this. These are spans the system already emits. The evidence is the telemetry.\"\n\nCaptured 2026-10-19 from the M10 gate run's cluster; the claim id is a test claim.\n\nSource: Ch 9; M10 design spec (trace B and the resume link)\n\n[41:10 → 42:00 · 50s]",
- "KASPER\n\nFrom the evidence view to the thing it stands on. Left: a few lines of the schema, copied from telemetry/registry/policy.yaml in the repo, shortened only where you see the dots. It says that a policy decision is a server span called northstar.policy.decision, and that two attributes are required on it: the decision itself and the rule that fired. The limit is required only when the rule has one.\n\nRight: Jaeger, the same span, on a real denied claim. Same names. Decision deny, rule settlement-agent.assisted.execute_limit, limit 0, requested 5800.\n\nSAY: \"Every name here starts with northstar dot. We did not make them up as we went: they are defined in a schema, and a checker called Weaver compares the running cluster against that schema.\"\n\nBe plain about what the checker does not do (runbook §8, the contract): it does not catch a missing required attribute, and it does not judge span names. The behaviour tests pin those. Names from the OpenTelemetry conventions are not validated, only ours.\n\nThis slide sits outside the five-minute live block; cut it first if you are short.\n\nSource: telemetry/registry/policy.yaml; docs/telemetry-contract.md \"What live-check checks, and what it does not\"; M9 Task 4\n\n[42:00 → 42:30 · 30s]",
- "KASPER\n\nOne more word: evaluation. A grade, kept with the work it grades.\n\nOpenTelemetry gives it four fields. A name: which check. A score: a number to graph. A label: pass or fail, to alert on. An explanation: why. The grade hangs off the span it judges.\n\nSource: Ch 3\n\n[42:30 → 42:50 · 20s]",
- "KASPER\n\nSo who writes those grades here? A small service called eval-scorer. Think of it as the auditor that never sleeps. Follow the four steps.\n\nOne: spans land. Every service sends its telemetry to the OpenTelemetry Collector, and the Collector keeps a copy in OpenSearch, the same spans Jaeger gets. Nothing extra is emitted for the scorer.\n\nTwo: read back. You ask it about one claim, POST slash score. It pulls every span of every trace that claim touched. If the read-back is cut short, it refuses to score. A trajectory with a missing piece always looks more compliant than it was: a retry that fell off the page is a retry it would never see.\n\nThree: five checks, plain code, no model. Did the agent propose before it executed? Did it stop when it was refused? Did it record the refusal? Does the amount paid match the amount proposed and approved? Did the identity that paid have the authority? For that last one it keeps its own copy of the limits, so it can disagree with the policy service.\n\nFour: written back. Each score goes out as an OpenTelemetry span, using the gen_ai.evaluation names you just saw, through the same Collector, parented to a real span in the trace it judged. Open the claim in Jaeger, and its grades are in the waterfall.\n\nSAY: \"OpenTelemetry in, OpenTelemetry out.\" The scores are telemetry like everything else, so any backend that reads OTLP can see them.\n\nHow it's emitted: OpenSearch's GenAI observability SDK (opensearch-genai-observability-sdk-py 0.2.8), its score() call. It writes a span named \"evaluation <name>\" plus a gen_ai.evaluation.result span event, per the GenAI conventions. The five checks themselves are ours: they are our policy, like the rules in the decision service.\n\nSource: platform/eval-scorer/README.md; scorer/emit.py; scorer/opensearch.py (TrajectoryTruncated); scorer/authority.py; M4 design spec §5\n\n[42:50 → 43:40 · 50s]",
- "KASPER\n\nFrom the longer demo (runbook beat 6), shown as a slide; not in the five-minute cut.\nSHOW: the two numbers, then the span on the right.\n\neval-scorer is our auditor: plain code that reads a payment's spans back and scores five policy rules. This one asks: after a refusal, did the agent stop? A compliant run scores 1.0. Then we deliberately sent the human approval to the wrong agent, the refused agent tried again, and the score dropped to 0.0. SAY: \"A scorer that returns 1.0 for everything proves nothing.\" A smoke alarm you've never seen go off might not have a battery. On the right, that score is a span in the trace it judges.\n\nSTAGE WARNING: never say \"all 1.0\" about the scripted demo. In the longer demo as scripted, beat 6 scores 0.0, because its beat 1 submits the five-eight-hundred claim under the same claim id, CLM-1842, and the scorer reads it as a retry. The screenshot is that 0. The sinceMs fix: set sinceMs just before the deny run, which drops earlier rehearsals. It still includes the later five-eight-hundred run, so for a clean 1.0 give the permit run its own claim id (CLM-PERMIT-random), or keep beat 6 on this slide.\n\n[verify: rehearse beat 6 end to end before claiming any score live]\n\nSource: Ch 9\n\n[43:40 → 44:25 · 45s]",
- "KASPER\n\nThe usual answer is an LLM-as-judge: a second model reads the prompt, the tool calls and the answer, and grades the work. That answers \"was it good?\". An auditor asks \"did it follow policy?\".\n\nDriving examiner versus speed camera: the camera just checks the number. Northstar has no LLM judge anywhere. Its scorer is deterministic and pull-only: it scores when asked. Both write the same gen_ai.evaluation fields, so a judge can come later.\n\nIF ASKED \"which judge?\": two open-source options read the same OpenTelemetry GenAI traces. OpenLIT (Apache 2.0) runs LLM-as-judge and programmatic evals on production traces and has SDK guardrails. OpenSearch Agent Health compares an agent's trajectory with a \"golden path\", using an LLM judge. eval-scorer already emits through OpenSearch's GenAI observability SDK, the same family as Agent Health. Northstar has not run either one: say so.\n\n[verify: OpenLIT and OpenSearch Agent Health feature lists at slide freeze (openlit.io; observability.opensearch.org/docs/agent-health)]\n\nSource: Ch 3, Ch 9\n\n[44:25 → 44:55 · 30s]",
- "KASPER\n\nOur scorer asks \"did it follow policy?\". Teams running models in production usually add two more kinds of check, on the model itself.\n\nOn the left, evals: after the answer, a score. Was it good? Did it make something up, a hallucination? Is it biased? Is it toxic? These are usually an LLM-as-judge: a second model grades the first one's answer, from zero to one.\n\nOn the right, guardrails: before the answer goes anywhere, block it or flag it. Is the prompt trying to hijack the agent, a prompt injection? Is it a sensitive topic, like medical or legal advice? And topic restriction: an insurance agent should talk about claims, not write your homework.\n\nOpenLIT, an open-source project on OpenTelemetry, ships both: LLM-as-judge evals for hallucination, bias and toxicity, and guards for prompt injection, sensitive topics and topic restriction. agentgateway's model guardrails, a few slides back, cover the same ground at the gateway.\n\nWherever they run, record the result as a gen_ai.evaluation event beside the trace it judged, so the score and the decision sit in the same place as everything else.\n\nSAY, plainly: \"Neither is in the demo. Northstar's model calls don't go through a guardrail today.\"\n\n[verify: OpenLIT docs (docs.openlit.io/latest/sdk/features/evaluations and /guardrails, read 2026-10-19): evals run LLM-as-judge on the OpenLIT server, score 0.0-1.0 with a yes/no verdict at threshold 0.5, examples hallucination, bias, toxicity; guards openlit.guard.PromptInjection, SensitiveTopic, TopicRestriction, All (LLM via provider openai or anthropic, or regex custom_rules; topic restriction LLM-only). Neither page names the OpenTelemetry attributes OpenLIT emits for them: don't claim OpenLIT writes gen_ai.evaluation.*]\n\nSource: docs.openlit.io (glossary, evaluations, guardrails); OpenTelemetry GenAI semantic conventions (gen_ai.evaluation.*); Ch 3\n\n[44:55 → 45:40 · 45s]",
- "KASPER\n\nContent capture means putting the actual words into telemetry: what the model was told, what it said, the arguments it passed to tools. Often the most sensitive data you hold.\n\nWe ran the six-thousand-two-hundred story twice, capture on and off. Read the bands bottom-up. One, cyan: the governance story, decision, rule, limit, reviewer, ledger. Intact. Two, grey: the floor, names and shapes. Always survives. Three, dashed: the model's own account, including the amount it proposed. Lost.\n\nThen the right column. Keys barely move, 28 to 25, but the text inside is gone. \"The evidence view loses nothing.\" Redaction is a trade, not a free safety win. In production, keep content outside the trace, behind its own access control.\n\nSource: Ch 9\n\n[45:40 → 46:25 · 45s]",
- "KASPER\n\nThe goal is the right spans, not more spans. Northstar taught us one more lesson. Our second backend, OpenSearch, quietly rejected the policy decision spans. Jaeger had 142 spans, OpenSearch 139. The missing three were exactly the decisions. Losing data looks exactly like sampling it. So never sample the decisions. A test asserts 100% capture, and a parity guard compares span IDs across both backends, like counting parcels at both ends of the belt.\n\nWe can produce the evidence. But what do the regulations actually ask for? William.\n\nSource: Ch 9\n\n[46:25 → 46:55 · 30s]",
- "WILLIAM\n\nRemember the questions we started with, the ones a regulator asks. Here is what answers them.\n\nRead across: the law, what it asks for, and the Northstar artifact that answers it. Magenta text means not there yet. None of this makes you compliant. It gives your compliance people something to point at.\n\nRow one: the AI Act's right to explanation, plus the EU court's Dun and Bradstreet ruling: a person is owed \"the procedure and principles actually applied\". A model card is the car's manual. A decision span is the dashcam footage: rule, limit, amount, caller.\n\nRow two: DORA, the EU's rulebook for financial IT, wants logs protected against tampering, and logging failures detected. The parity guard covers the second half. We have no tamper protection. Strong at producing the record, weak at keeping it, and keeping it is what your organisation already knows how to do.\n\nNot legal advice.\n\n[verify: DORA RTS Art. 12 enumeration is via a secondary summary; check Delegated Reg. (EU) 2024/1774 before the table goes out] [verify: ISO/IEC 24970 still at FDIS; it could publish around late October]\n\nSource: Ch 10, Ch 14\n\n[46:55 → 47:55 · 60s]",
- "WILLIAM\n\nMost 2025 talks said the AI Act's high-risk rules would bite on 2 August 2026, the struck-through date. They didn't. The Digital Omnibus, Regulation 2026/1744, moved Annex III to 2 December 2027. But record-keeping, oversight and explanation were not rewritten. The exam got postponed; the syllabus stayed. And in US banking, SR 26-2 replaced SR 11-7 in April and put generative and agentic AI out of scope, so platform controls fill that vacuum.\n\n[verify: \"Arts. 12, 13, 14, 19, 26, 86 not amended\" comes from a secondary analysis; check the consolidated text of 2026/1744 on EUR-Lex before slide freeze]\n\nSource: Ch 10\n\n[47:55 → 48:25 · 30s]",
- "WILLIAM\n\nThe seventeen upstream findings: gaps in open-source projects we depend on. Read the columns first: who governs each project. Then the rows: the kind of gap. Tinted chips are a half nobody has reported. We have filed none yet.\n\nagentgateway owns the whole policy-extension row. The newest, seventeen, is a change in its v1.6.0: a refusal now comes back as an ordinary tool result marked isError, so anything that alerts on HTTP status or JSON-RPC errors misses it. A trace crosses every column, so no single foundation can fix the whole path. The dominant failure is silent: nothing errors, and the spans land in two traces.\n\nIf any finding is filed before the talk, say the issue number. Maintainers may be in the room.\n\n[verify: seventeen findings, none filed; search each tracker at slide freeze] [verify: governance homes on the day; OpenFeature is CNCF incubating, the doc groups it separately]\n\nSource: Ch 12 (Findings 1–16) · docs/upstream-findings.md Finding 17 (2026-10-13, after the book)\n\n[48:25 → 48:55 · 30s]",
- "WILLIAM\n\nSo where does the industry stand? Here is a ladder for AI observability. Read it left to right, one rung at a time.\n\nL0 is prompt logs: what was asked and answered, with a timestamp. L1 is model telemetry: model, latency, tokens, cost. L2 is connected traces: tools, retrieval and orchestration in one story. L3 is quality: evaluations and feedback. L4 is evaluation running all the time. And L5, top right, is governed agent observability: identity, permissions, trajectories, MCP, privacy controls.\n\nKasper's team measured seven ways to instrument the same agent. All seven reach L1. Three of seven reach L2. L3 is just starting, and nothing measured reached L4 or L5.\n\nL5 is what this talk has been about. Everything you saw in Northstar is a piece of it. Like a building site: the ground floor is solid, the top floor is still scaffolding.\n\nSource: Instrumenting AI Agents (Dash0 DevRel, Aug 2026), p. 10\n\n[48:55 → 49:35 · 40s]",
- "WILLIAM\n\nLet me point at the holes before you go looking. An audience of platform engineers will spot all of these, and naming them first is worth more than the features.\n\nOn the left, Northstar as built. Identity is checked on one hop only, the tools/call into the payment tool. The tool and the ledger just trust the network. The reviewer isn't logged in: one human, one click, once. Backstage: the backend checks a credential, but anyone who can reach port 7007 can mint one. They can flip the contract, and nothing else. The claim id stops at the MCP boundary, so the evidence joins on trace id. Model calls skip the gateway. One GenAI metric of twelve arrives.\n\nOn the right, dashed, two layers the demo lacks. A context layer needs retrieval and memory spans. Multi-agent over shared context needs span links and one identity per agent.\n\nSource: Ch 14, Ch 11\n[verify: 1 of 12 GenAI metrics still true at slide freeze]\n\n[49:35 → 50:35 · 60s]",
- "WILLIAM\n\nBecoming an AI observability wizard starts with six basics. They're on the left, dimmed, and they all still hold. One footnote: Northstar's step five is the deterministic auditor you just saw, not a model judge.\n\nRegulated domains add three steps. Seven: decide at a choke point. Like airport security: every passenger goes through one gate, and if the gate is down, nobody boards. Eight: make identity an input. The caller is half the policy key: the same payment that the settlement agent may not release is one the reviewer-ui may release, because the platform asks who is calling and reads what the ledger says. Nine: keep every decision span. Never sample it away.\n\nSource: Ch 3, Ch 14\n\n[50:35 → 51:20 · 45s]",
- "WILLIAM\n\nSo what do you do on Monday? Five verbs, and none of them needs a purchase order.\n\nInstrument: turn on what your agent framework already emits, follow the gen_ai conventions, and carry trace context over every hop: A2A, MCP, skills, the policy call. Put a gateway in the path: one choke point, a decision span, and failClosed written down. Make identity an input: one SPIFFE identity per agent, a passport for a workload, checked at the gateway. Contribute upstream: seventeen findings are written up and waiting. Map to the standard: nobody has mapped OTel's GenAI conventions to ISO/IEC 24970, the AI logging standard, yet.\n\nSeventeen findings. Pick one.\n\nSource: Ch 14\n[verify: ISO/IEC 24970 still at FDIS the week of the talk; seventeen findings still unfiled at slide freeze]\n\n[51:20 → 52:05 · 45s]",
- "WILLIAM\n\nIf you keep three sentences, keep these.\n\nOne: guardrails live in the platform, not in the prompt. Identity, reach, limits, and a human where the rule says, and the agent cannot edit any of them.\n\nTwo: instrument the decisions, not only the errors. A permit, a hold and a sign-off are spans with a rule, a limit and an identity, and the names are a published schema.\n\nThree: build it from upstream projects. CNCF and AAIF already ship the pieces. The only part you write is your rules.\n\nPause. Then the line from the cover.\n\nIf you can't trace it, you can't govern it.\n\n[verify: agentgateway joined AAIF 2026-06-04 (agentgateway.dev blog); A2A joined 2026-08-17 (secondary source; check aaif.io/projects)]\n\nSource: Ch 14 (Fig 14.4, reworded after M8: the stop is now a hold for a person, not a refusal)\n\n[52:05 → 52:35 · 30s]",
- "WILLIAM\n\nBoth speakers on stage for this one.\n\nSAY: \"Thank you. Kasper and I will both take questions.\" Hand demo, trace and gateway questions to Kasper; regulation and platform-team questions stay with William.\n\nQ&A. The ten likely questions and 30-second answers are in the study edition, Ch 14 (Q&A preparation). The ones most likely from a KubeCon room: is agentgateway CNCF (no: Linux Foundation, hosted in AAIF), why not just a CEL rule (the two-ways-to-say-no slide), what if the policy service is down.\n\nAPPENDIX: three speaker-only slides follow (pre-flight, reset, triage), 0 s each. Don't press → past this slide in the talk; go there only to prepare or to fix something.\n\n[52:35 → 52:35 · 0s]"
+ "WILLIAM\n\nSo what do we mean by verticalizing? Each of these industries has its own rulebook. A bank answers to DORA and its payment limits. An insurer's AI that prices life and health cover is high-risk under the EU AI Act, and claims need a sign-off. Healthcare has HIPAA in the US and GDPR in Europe, and patient consent. Telcos answer to NIS2 and change control.\n\nThe mistake is building a separate AI stack for each one. Verticalizing means the opposite: one platform underneath, the same identity, gateway, policy, telemetry and evals for everyone, and the domain rules expressed on top of it as policy. Change the vertical, you change the rules, not the platform.\n\nThat's what the demo shows for one vertical, insurance.\n\n[verify: EU AI Act Annex III 5(c), risk assessment and pricing for life and health insurance, is high-risk]\n[verify: NIS2 Annex I lists providers of public electronic communications networks or services]\n[verify: DORA applies to EU financial entities from 17 January 2025]\n\n[0:55 → 1:35 · 40s]",
+ "WILLIAM\n\nPicture an auditor sitting next to you with one decision your agent made. These are the five questions they will ask. The big line is the question; the small tag is the rule behind it.\n\nOne: what did the agent do? The EU AI Act, Article 12: automatic logs, for the life of the system.\nTwo: who allowed it, and within what limits? FINRA calls this scope and authority.\nThree: could a human stop it, or reverse it? Article 14, human oversight.\nFour: can you explain this one decision to the person it affected? Article 86, and the EU court's Dun and Bradstreet ruling: \"the procedure and principles actually applied\". Not the model in general. Their case.\nFive: are the records complete, kept, and safe from tampering? Six months at least, says Article 19. DORA wants them protected. ISO 24970, a draft standard, will say what an AI log contains.\n\nHold on to these five. At \"From requirement to artifact\" we answer them with what Northstar produces. Not legal advice.\n\n[verify: ISO/IEC 24970 still at FDIS; a vote could publish it around late October]\n[verify: DORA RTS Art. 12 enumeration is via a secondary summary; check Delegated Reg. (EU) 2024/1774]\n\nSource: Ch 10 (10.2 Arts. 12, 14, 19, 86; 10.3; 10.4; 10.6 C-203/22; 10.7 FINRA) · Ch 14, slide 35 table\n\n[1:35 → 2:35 · 60s]",
+ "WILLIAM\n\nThat is the stakes. For a hobby project, \"the agent did something odd, so we changed the prompt\" is a fine post-mortem. For a bank, an insurer, a hospital or a telco, \"we don't know what the agent did\" is not an answer. Not to the auditor, and not to the customer.\n\nSo let's look at an agent that wanted to move money.\n\nSource: Ch 14, slide 09 title · Ch 10.1\n\n[2:35 → 3:00 · 25s]",
+ "WILLIAM\n\nThis is a screen from a demo insurer Kasper built, called Northstar. An AI agent handled a car-damage claim and proposed paying the customer five thousand eight hundred euros. It wasn't paid. It wasn't refused either. It is waiting.\n\nLook at the two ringed lines. Amount: 5800. Status: awaiting approval. The agent did all the work up to the money. The platform, not the agent, decided that this one needs a person, and the agent tells the customer so.\n\nThat is the whole talk on one screen: guardrails the agent cannot move, rules that give it some autonomy, and a record of what it did and why. By the end you'll know how to build it, from upstream projects.\n\nNotice what this screen cannot tell you: which rule held it, at what limit, who signs, and how long they take. Those are the auditor's questions two, three and four. Act 3 answers them live, and the trace answers them afterwards.\n\nThis is claim CLM-1842, from a live run of the demo.\n\nSource: Ch 14 · Ch 5 · M8 design spec (maker-checker: the agent's limit at assisted is €0)\n\n[3:00 → 4:00 · 60s]",
+ "WILLIAM\n\nAct one. Agents don't just add more complexity. They change what kind of complexity we have. Keep moving.\n\nSource: Ch 14\n\n[4:00 → 4:10 · 10s]",
+ "WILLIAM\n\nIn a normal system you can draw the call graph, the map of who calls whom, on a whiteboard before it runs.\n\nAn agent is different. On the left, one prompt: \"remove the free-plan accounts\". Then the same prompt, run three times. Run one looks first, then deletes. Run two stops and asks a human. Run three deletes without looking. And the pink bars are the tokens each run used, so even the cost changes.\n\nLike a taxi driver who picks a new route every ride. The code tells you what the agent may do, not what it will do. The model draws the call graph at run time. A test that passed on run two tells you nothing about run three.\n\nSource: Ch 1\n\n[4:10 → 4:55 · 45s]",
+ "WILLIAM\n\nHere is that loop, opened up. The dashed frame is the harness, the program that runs the agent.\n\nFollow it left to right. First, on the left: a goal comes in. The agent packs it with its instructions and its list of tools. Next: it sends that to the model, and you pay per token, in and out. Then the diamond: the model answers one of two ways. \"Run this tool\", and the agent runs it, often through an MCP server, adds the result and goes round again. Or \"here is my final answer\", and it stops.\n\nSo the model, not your code, decides when to stop. Nobody knows how many steps there will be. In a regulated domain, that is the problem.\n\nSource: Ch 1\n\n[4:55 → 5:40 · 45s]",
+ "WILLIAM\n\nTwo protocols you'll hear all talk. Think of them as two business cards.\n\nMCP, the Model Context Protocol. Its job: give an agent tools it didn't ship with. It points down, from the agent to a tool. It mostly says two things: list your tools, and call this one. In our demo, the settlement agent calls a tool named execute_payment over MCP.\n\nA2A, Agent2Agent. Its job: let one agent hand work to another. It points sideways, agent to agent. What it passes is a task, and a task has a state: working, waiting for input, done. In our demo, the claims agent hands the case to the settlement agent over A2A.\n\nBoth are open, and both now sit in the Agentic AI Foundation under the Linux Foundation. And notice what's not on either card: neither one decides what an agent is allowed to do. That's the platform's job, and the rest of this talk.\n\n[verify: MCP and A2A both in AAIF (A2A joined 2026-08-17) — week of]\n[verify: A2A task states include working, input-required, completed]\n\nSource: Ch 2; agents/claims-agent/delegation.py; tools/payments-mcp/server.py\n\n[5:40 → 6:25 · 45s]",
+ "WILLIAM\n\nHere is the whole talk in one sentence. Agents change the nature of complexity, so the platform has to decide what an agent may do, and prove it afterwards from the trace.\n\nThree words. Decide: the platform, not the agent, says yes or no. Trace: we record what actually happened. Prove: later, someone who isn't an engineer can check it. Think of airport security: the guard decides, the camera records, and the log proves it.\n\nNone of this is new: golden paths, guardrails and observability stacks, pointed at agents. We already have the open-source pieces.\n\nThe first word needs a sharper definition. What does it mean for the platform to decide?\n\nSource: Ch 14 · Ch 1\n\n[6:25 → 7:10 · 45s]",
+ "WILLIAM\n\nHere is what \"decide\" means, and it's the line my OSFF demo was built on. You don't trust an agent to remember its own authority limits. You make the platform enforce them. An agent is a model in a loop. It can be talked into things, and it forgets. The platform doesn't.\n\nSo we draw the limits as rings, like the walls of a castle. Start in the middle.\n\nCore, identity: who it is. Every agent gets an identity the platform can check, not a name it claims.\nRing 1, reach: what it connects to. Which other programs it can even open a connection to.\nRing 2, capability: what it may do. Which tools, and with which arguments.\nAnd the outer ring, the keystone: it can never edit what constrains it. In an arch, the keystone is the stone that holds the others in place. If the agent could rewrite its own rules, the other three rings would mean nothing.\n\nHold on to these four. In Act 3 Kasper shows you each ring in Northstar, and two of them get stopped live. Kasper: how much of this does tracing already give us?\n\nSource: bounded-ai/README.md, 'Rings → projects' (William Rizzo, Bounded Agent Autonomy, OSFF 2026); docs/superpowers/specs/2026-10-12-northstar-m7-bounded-design.md §1\n\n[7:10 → 8:00 · 50s]",
+ "KASPER\n\nAct two. Before we build anything: what tracing already gives us, and where it stops.\n\nSource: Ch 14\n\n[8:00 → 8:10 · 10s]",
+ "KASPER\n\nTwo words for the rest of the talk.\n\nOn the left, one span: the record of one step, like one tool call. It has a name, a start, an end, and labels: facts about the work.\n\nOn the right, a trace: every span that shares one trace id. Each span points at its parent, so they form a tree. Read it top down: the customer submits, the agent runs, calls a tool, and the gateway asks the policy service. One request, one story.\n\nSource: Ch 3\n\n[8:10 → 8:40 · 30s]",
+ "KASPER\n\nThat tree only holds together if every span carries the same trace id.\n\nThink of a parcel with a tracking number. Every depot scans the label. On the left, every hop kept the label on: one story. On the right, one hop stuck on a new label, and the history splits in two. Nothing errors. You just can't follow it any more.\n\nAnd agents add a lot of new hops.\n\nSource: Ch 3\n\n[8:40 → 9:10 · 30s]",
+ "KASPER\n\nSo what can the gen_ai names answer? Read across: one, a question an investigator asks; two, the attribute that answers it; three, dimmed rows are the content.\n\nThe dark rows are the spec's defaults: kind of step, model, act or stop, tool, conversation.\n\nThe dimmed rows are content: what it was told, what it decided, what it asked for, what happened. The most sensitive data, so the spec makes them opt-in. Many libraries capture them anyway: at their defaults, four of seven wrote the model's output. And exactly what an auditor needs. Hold that until Act 4.\n\n[verify: GenAI semconv are all at Development stability in semantic-conventions-genai, which has cut no release; attribute names may move]\n\nSource: Ch 3; Instrumenting AI Agents (Dash0 DevRel, Aug 2026), p. 40\n\n[9:10 → 9:45 · 35s]",
+ "KASPER\n\nAct three. Enough background. Now we watch a platform decide, live, on a system small enough to run on this laptop.\n\nSource: Ch 14.\n\n[9:45 → 9:55 · 10s]",
+ "KASPER\n\nThis is the book's blueprint for a governed agent platform, boiled down to nine pieces. Five of them are the building blocks the abstract promised: the agent runtime, the context layer, the tool gateway, policy and evals, and multi-agent over shared context. Tools, models and telemetry are what those blocks stand on.\n\nRead it like this. A request goes from the agent runtime through the tool gateway to the tools and models. The gateway asks policy on every call that matters. The evidence goes the other way: telemetry, then evals. Each chip says how much Northstar shows. Gateway, policy and evals: shown, in depth. Runtime and telemetry: partial. Two blocks are missing: the context layer, meaning memory and retrieval, and multi-agent over shared context. Better you hear that now than in Q&A.\n\nThe row underneath is William's four rings, landed on it. Core, identity: SPIRE gives each agent a passport, and the gateway checks it. Ring 1, reach: Cilium, underneath the gateway, so the gateway is the only road to a tool. Ring 2, capability: the gateway and policy together. And the keystone: Kyverno, which stops an agent changing any of the other three.\n\nIF ASKED 'why is the runtime only partial?' Because our agents can't run code. Their only way to change anything is an MCP call through the gateway, and the policy decides it. More advanced agents are different: a coding agent with a shell, a file system, a code interpreter. For those the next boundary is the runtime itself. Run the agent in an agent-sandbox Sandbox, the Kubernetes SIG project for exactly this, on a gVisor or Kata runtime class, so what the model writes and runs stays inside its own kernel boundary. Then let Kyverno refuse any agent pod without that runtime class, the same way the keystone protects authority today. Identity, reach and capability limit what an agent can call. A sandbox limits what it can execute.\n\n[verify: kubernetes-sigs/agent-sandbox latest release and its SIG home before November]\n\nSource: Ch 11 (Figure 11.1, section 11.2); M7 design spec §1 (the rings table).\n\n[9:55 → 10:45 · 50s]",
+ "KASPER\n\nHere is Northstar. A customer files claim CLM-1842. The claims agent checks it with plain rules, no model, and hands it on. The settlement agent is the only one with a model, Claude. To pay, it calls agentgateway, not the payment tool. The gateway checks who is calling, then asks the policy service, the box underneath, whether this payment is allowed. Only on a yes does it forward to payments-mcp and the ledger. Model calls go straight to Anthropic, not through the gateway. Cilium makes the gateway the only road to the tool. Everything reports to one Collector, at one hundred percent. Next: the rule behind this picture, then each tool.\n\n[verify: pinned versions (agentgateway v1.6.0, Cilium 1.20.1, a2a-sdk 0.3.7) before November, Appendix B]\n\nSource: Ch 4 (Figure 4.5).\n\n[10:45 → 11:25 · 40s]",
+ "KASPER\n\nThe design rule as a picture. Left: the model can request anything, even six thousand two hundred euros. Middle: one choke point the agent can't skip. Who is asking, and is it allowed? Right: only a permit becomes an effect. Why not limit the agent? An agent that can choose to ask permission can choose not to. The tool? That's an if-statement with extra steps. A test fails if one ever appears. So what fills that middle box? Here is every tool, by its job.\n\nSource: Ch 4 (Figure 4.4, design principle 2), Ch 7 (Decision 2).\n\n[11:25 → 11:55 · 30s]",
+ "KASPER\n\nEvery tool, grouped by the job it does. Read the top row first: the claim path. A2A is how agents talk to each other; MCP is how an agent calls a tool. Both now sit in the Agentic AI Foundation, under the Linux Foundation. Cilium, the network, makes the gateway the only road to the tool. SPIFFE and SPIRE give each agent pod a signed identity. agentgateway checks it and asks for a decision. The Policy Decision Service is our own code: permit or deny, and why. OpenFeature and flagd hold the autonomy level. Bottom row, around the path: the Collector takes every span, unsampled, to Jaeger, OpenSearch and Prometheus. Our eval-scorer writes scores back into the trace. Backstage is the view. The tinted chips mark code we wrote.\n\n[verify: a2a-sdk 0.3.7, mcp 2.2.0, Cilium 1.20.1, SPIRE 1.15.3, agentgateway v1.6.0, Open Feature Operator v0.9.3, flagd v0.16.2, Collector contrib 0.160.0, Jaeger 2.20.0, OpenSearch 3.8.0, Prometheus v3.14.0, Backstage 1.54.0; OpenSearch's home is the OpenSearch Software Foundation under the LF; A2A joined AAIF 2026-08-17; OpenFeature still CNCF Incubating]\n\nSource: docs/architecture.md (the two components tables); deploy/*; Ch 2 (Figure 2.12).\n\n[11:55 → 12:55 · 60s]",
+ "KASPER\n\nThe first ring, the core: identity. Who is this agent? In the platform world that's called workload identity. A name tag says who you claim to be. A passport is issued by someone else, checked at the border, and valid for one destination. SPIFFE is the standard for the name. SPIRE is the passport office. Follow the steps left to right. First: a ClusterSPIFFEID says which pods get which ID, and the controller-manager turns it into a registration. Second: the CSI driver mounts SPIRE's Workload API socket into the settlement-agent pod. Third: when the agent asks, the SPIRE agent checks the pod's namespace and ServiceAccount. Fourth: SPIRE issues a JWT-SVID for one audience, the gateway. Fifth: the gateway checks the signature against keys the OIDC discovery provider publishes, and writes jwt.sub on its span. Trust domain: northstar.local. One thing SPIRE does not do is emit spans. Metrics only.\n\n[verify: SPIRE 1.15.3 still has no OTLP or tracing support]\n\nSource: deploy/platform/spire/registration.yaml and values.yaml; agents/settlement-agent/svid.py; docs/architecture.md \"Workload identity\"; Ch 7.\n\n[12:55 → 13:55 · 60s]",
+ "KASPER\n\nStill ring two, capability. Now the gateway's config. agentgateway is written in Rust, and it's a Linux Foundation project, in the Agentic AI Foundation, not CNCF. Our whole setup is one YAML file. Read it left to right: every tool call passes three checks, in this order. First, jwtAuth: who is asking? A bad or missing token gets HTTP 401 before the gateway even reads the MCP message. Second, mcpGuardrails: is it allowed? The gateway sends the call over gRPC to the policy service, and waits. failClosed means: if the policy service can't answer, the answer is no. A deny stops right here. Third: on a permit, the gateway drops the token and forwards. The tool never sees the agent's credential. Underneath, every step writes a span. You'll see them in a minute.\n\n[verify: agentgateway v1.6.0 still the latest stable before November]\n\nSource: deploy/platform/agentgateway/config.yaml; docs/architecture.md \"Hop 3\"; Ch 6, Ch 7.\n\n[13:55 → 14:55 · 60s]",
+ "KASPER\n\nAnd this is the manager, the policy decision service, our own code. Read the right side first: the rule table. It has two keys: who is calling, and the autonomy level. settlement-agent at assisted may execute nothing: its limit is zero euros. At autonomous, up to six thousand. Above its limit a human decides, and that human is a different caller, the reviewer-ui. Any other caller has no row, and no row means deny. Now the left: where the level comes from. The FeatureFlag you just met, read through the flagd sidecar. If flagd can't answer, the level falls back to assisted. Every answer becomes a northstar.policy.decision span. The other key, identity, comes back after the demo. Keep one question in your head: if one value on one object decides this much, who is allowed to change that value? We answer it live, in step 4.\n\nSource: platform/policy-decision-service/pds/rules.py and pds/autonomy.py; deploy/platform/openfeature/featureflag.yaml; docs/architecture.md (flagd row); Ch 7, Ch 8.\n\n[14:55 → 15:40 · 45s]",
+ "KASPER\n\nSAY: \"Here's the demo. Five steps, about five minutes. A customer files a vehicle-damage claim, our agents prepare the payment, and the platform decides who may release it. Each command lands one ring of what you've just seen.\"\n\nTHE SLIDE STAYS UP FOR THE WHOLE DEMO. It shows no commands: everything below is for you. Switch to the terminal and the two browser tabs; come back to the deck for \"What you just saw\".\n\n———\n\nStep 1 · live · terminal. Core · Identity and Ring 1 · Reach.\n\nPlain words first: three ways to try to reach the payment tool. With no identity. Around the gateway. And with the agent's own identity.\n\n1. DO: ./scripts/demo guard. No model. About nine seconds, eight of them waiting on purpose.\n2. SHOW part 1, no identity: tools/list, then tools/call execute_payment, to the gateway with no token. Both HTTP 401, nothing forwarded.\nSAY: \"No identity, no conversation.\"\n3. SHOW part 2, around the gateway, from inside claims-agent, a real pod with no SVID. First the control: settlement-agent on port 9002 answers 200, so the network works. Then an MCP initialize straight at payments-mcp: DROPPED.\nSAY, during the 8-second wait: \"That wait is the drop. There's no error to read, because nothing answered. The network threw the packet away. And notice: no span either. Cilium's drops are not in our trace, because Hubble, its flow viewer, isn't installed. This terminal line is the evidence.\"\n4. SHOW part 3, with settlement-agent's identity: SPIRE mints the same token the agent holds (it's never printed), and tools/list through the gateway answers 200 with all four tools, including execute_payment, the one that moves money.\nSAY: \"Seeing a tool is not being allowed to use it. Listed is not permitted: every call is decided, one by one. That's the next step.\"\n\nIF IT FAILS: \"FAIL … the control did not answer\" means the network is down, not the policy. \"FAIL … was not dropped\" means the Cilium policy isn't enforcing. No SPIRE token: the spire-server pod. In every case, say so and move on: the next slide shows what you meant to show.\n\n[verify: Cilium 1.20.1, SPIRE 1.15.3 and agentgateway v1.6.0 still the pinned versions]\n\n———\n\nStep 2 · live · browser, then terminal. Ring 2 · Capability. A human signs.\n\nPlain words first: the agent can do the work, but above its limit a person has to sign. This step shows that person.\n\n1. DO: in the customer tab, file a claim for 5,800 euros. A real claim, through claims-agent, settlement-agent and the model. About seven seconds.\n2. SHOW the customer tab: \"Awaiting human approval\", and a timer that keeps running. Nothing was paid.\nSAY, while the model works: \"The model decides what to propose. The platform decides what happens.\"\n3. DO: switch to the reviewer tab. SHOW four facts: the rule, assisted; the limit, zero euros; the amount; and the model's own words. Read the narrative aloud: it says it needs a colleague to sign. It is telling the truth, because the platform told it the truth.\nSAY: \"This is maker-checker. The agent is the maker. It proposed the payment and tried to release it. The reviewer is the checker, a different service with a different identity. The agent can't approve its own payment, because the platform reads the ledger before it lets anyone release money.\"\n4. DO: press Approve. SHOW: the customer tab flips to Settled, without a reload.\nSAY: \"The agent did the work. A human signed. The trace shows how long the human took.\"\n\nAbout the trace on stage. Nothing polls while a claim waits: the claim's first trace ends at the hand-off. The approval starts a second trace, with a span link back to the first. Open either one in Jaeger at any time.\n\nThe no itself: HTTP 200. The gateway's answer is a tool result marked isError, with the rule in its text. A no is a decision, not an HTTP failure.\n\nIF THE BROWSER MISBEHAVES: the terminal does both halves. ./scripts/demo claim 5800, then ./scripts/demo approve last. Then carry on.\nIF THE CUSTOMER TAB NEVER FLIPS: finish with ./scripts/demo approve last. The payment is settled either way; only the tab is stale.\n\n———\n\nStep 3 · live · terminal. One live dial.\n\nPlain words first: how much the agent may do is one value on one Kubernetes object, a FeatureFlag. flagd serves it, and the decision service reads it on every call.\n\n1. DO: ./scripts/demo autonomy autonomous. Under a second. SHOW: flagd resolves autonomous, and \"Pods restarted: NONE\": twelve pods compared by UID, start time and restart count, before and after.\nSAY: \"I changed one value, from the command line. Nothing was redeployed, and the command counts the pods to prove it.\"\n2. DO: ./scripts/demo claim 5800. The same amount you just saw wait. About seven seconds, then a short pause while the spans land. Fill it: \"Same amount, same agent, same code, same image.\"\n3. SHOW: SETTLED, by the agent. northstar.policy.decision permit, under a different rule, settlement-agent.autonomous.execute_limit, limit 6,000. The execute span is PRESENT: money moved, and no human was asked.\n4. DO: ./scripts/demo claim 6200. SHOW: WAITING. The limit is 6,000, the request is 6,200, so the platform sends it to a human again.\nSAY: \"One live dial. The band widens; the human stays. More autonomy did not remove the human. It moved the line.\"\n5. DO: ./scripts/demo autonomy assisted. SHOW assisted, and Pods restarted: NONE again. SAY: \"And back.\"\n\nThe 6,200 claim is left waiting on purpose. ./scripts/demo reset ends it at the end of the talk.\n\nThe slide is the diff the first command makes: the first branch of the flag's targeting rule, assisted to autonomous.\n\nHAZARD: never leave the flag at autonomous; the next run assumes assisted. ./scripts/demo reset fixes it. \"FAIL … something restarted\" means a rollout overlapped the flip: believe it and check the pods.\nWorth knowing: the CLI flip leaves no audit span. Backstage's card writes the same value and records a northstar.autonomy_contract.change span; that's the optional slide after the demo.\n\n———\n\nStep 4 · live · terminal. The keystone.\n\nStep 3 just showed that one value on one object changes what the agent may do. So who may change that value? If the answer is \"the agent\", every limit you've seen is a suggestion.\n\nPlain words first. Kubernetes checks this change twice. RBAC, role-based access control, is the key card: which identity may touch which kind of object. Kyverno is an admission policy: a guard who reads each change before it's saved, and can say no even when your key card works.\n\n1. DO: ./scripts/demo keystone. Half a second; talk over the output. It acts as the settlement agent's own Kubernetes identity.\n2. SHOW the first row: the agent patches its own flag to autonomous. Forbidden, from RBAC: it \"cannot get resource featureflags\". Why get, when it asked to patch? kubectl reads the object before it patches it, and the agent may not even read it.\nSAY: \"RBAC says no. That's the first line.\"\n3. SHOW the second row: the over-grant, a Role and RoleBinding giving settlement-agent get and patch on that one flag. auth can-i patch: yes.\nSAY: \"Now someone makes a mistake, the kind every real cluster collects. RBAC now says yes.\"\n4. SHOW the third row: the same patch. Point at the policy name, agents-cannot-edit-their-own-authority, and DENIED. Read the end aloud: \"Authority changes go through a reviewed commit, never a runtime decision by the agent.\"\nSAY: \"Each check assumes the last one failed. RBAC failed, on purpose, and the keystone held.\"\n5. SHOW the fourth and fifth rows: the over-grant deleted (on every exit path, Ctrl-C included), and the flag still resolves assisted.\nSAY, and credit William: \"William has the line for this: we scripted the attempt. The platform scripts the response. The agent can never edit what constrains it.\"\n\nIF ASKED \"but Backstage can change the flag\": yes, as Backstage's own narrow identity, which the policy doesn't match. People change authority through the reviewed path; the agent can't.\n\nIF IT FAILS: \"FAIL … is not Ready\": Kyverno or stage 7 isn't up. \"FAIL … over-grant is already applied\": ./scripts/demo reset. \"FAIL … not by the keystone\": Kyverno didn't fire and RBAC did. Say so and move on.\n\n[verify: Kyverno v1.19.1 (chart 3.9.1) still the latest stable before November. The policy is a ValidatingPolicy (policies.kyverno.io/v1), written in CEL; the legacy ClusterPolicy is deprecated since 1.19 (kyverno/kyverno#16868). William's OSFF demo used ClusterPolicy on v1.18.1.]\n\n———\n\nStep 5 · live · terminal. Prove.\n\n1. DO: ./scripts/demo evidence. About a second. It reads this run's three claims back from Jaeger, and nothing older. The first claim's link is the approval's own trace: its northstar.review.decision span is where \"approved by\" and \"after N s\" come from.\n2. SHOW the first claim, the one a human approved: the decision service sent it to a human. Rule settlement-agent.assisted.execute_limit, limit 0, autonomy level assisted. Outcome SETTLED, by reviewer-ui. Approved by the stage reviewer, after about twenty seconds. That number is the human wait, read off the reviewer's own span.\n3. SHOW the second: PERMIT, under a different rule, settlement-agent.autonomous.execute_limit, limit 6,000. SETTLED by the agent. Approved by: none.\n4. SHOW the third, the 6,200 claim: sent to a human, limit 6,000, still waiting, nothing moved. Approved by: none, yet.\nSAY: \"For each claim: who decided, the rule, who approved, how long the human took.\"\nSAY: \"Every line here is a span attribute, read back from Jaeger. Nothing is reconstructed.\"\nDon't say \"same rule, different amount\" here: that's the longer evidence view in Act 4 (5,800 against 6,200 at one level), not this run.\n\nIF IT FAILS: it waits for Jaeger for up to 90 seconds, then names the fields that never arrived. \"FAIL no claims in this run yet\": a reset ran between the claims and this. Say so and move on.\n\n[verify: re-time at rehearsal; measured on the OpenSearch reader]\n\n———\n\nTIMING (measured): the commands take about 55 seconds in total; the rest is you talking. Step 1 waits 8 seconds on purpose (the drop). Steps 2 and 3 each pause about 15 seconds while every service's spans land in Jaeger; those notes say what to fill the pause with.\n\nPRE-FLIGHT, done before the talk (runbook §4):\n1. ./scripts/setup-kind.sh --stage 7 printed ANTHROPIC_API_KEY: SET. ./scripts/start-demo.sh is running in its own terminal.\n2. Every pod Running, Kyverno's included, and the keystone policy Ready: kubectl get validatingpolicy agents-cannot-edit-their-own-authority.\n3. Rehearse once: ./scripts/demo claim 5800 --expect awaiting_approval, then ./scripts/demo approve last. The claim exits non-zero unless it waits for a human.\n4. The last thing you type before the audience arrives: ./scripts/demo reset. It sets the flag to assisted, removes any over-grant and clears the run's claims. It is safe at any time.\n5. A terminal at the repo root, font large, about 100 columns wide.\n\nSource: docs/demo-runbook.md §5 \"The five-minute flow\"; M7 design spec §7; scratchpad flow/*.txt and flow/timings.md (stage-7 run, 2026-10-12)\n\n[15:40 → 21:50 · 370s]",
+ "KASPER\n\nBack to the slides. That was five minutes, so here it is in one picture.\n\nIdentity and reach: no identity, no call. A 401 at the gateway, and around the gateway the packet was simply dropped. With its own identity the agent could see every tool, but listed is not permitted.\n\nCapability: the agent did all the work on 5,800 euros, and a person signed before any money moved.\n\nOne live dial: we turned the agent's autonomy up. 5,800 settled on its own; 6,200 still waited, because the limit is 6,000. The band widened, the human stayed.\n\nThe keystone: even when someone gave the agent the permission by mistake, it could not change its own limits.\n\nAnd evidence: every claim, read back from the trace. Who decided, which rule, who approved, and how long the human took.\n\nSource: docs/demo-runbook.md §5 \"The five-minute flow\"\n\n[21:50 → 22:30 · 40s]",
+ "KASPER\n\nThe longer version of step 2: the whole trace, as Jaeger shows it when the claim comes in through the customer UI. Read it like the line under it says: indented means called by the line above, struck through means it never happened.\n\n1. The root, northstar.claim.submit, carries the claim id. Under it the agent asks for execute_payment, and the gateway's tools/call carries jwt.sub, the caller's SPIFFE ID, and HTTP 200.\n2. northstar.policy.decision: deny, €5,800 over the agent's limit of €0 at assisted. Its status is not ERROR. A refusal is the platform working; if it were an error, every dashboard you own would page you for correct behaviour.\n3. Guardrail says gRPC status zero: the call to the decision service worked. That's how \"the policy said no\" stays different from \"the policy service was down\".\n4. The struck-through lines: the gateway's call to payments-mcp, payments-mcp's execute_payment, and payments-api's execute. Never attempted.\nSAY: \"The execute never reached the tool. The absence is the evidence.\" The claim then waits for a person. The proposal and the refusal record are payments-api spans too, and they are there; what's missing is the execute. That only holds because we never sample.\n\nSource: Ch 5 (Figure 5.5), Ch 6 (Figure 6.13); flow timings.md assumption 6\n\n[22:30 → 23:15 · 45s]",
+ "KASPER\n\nRead the big number first. Two hundred is the HTTP status of the refused payment. The gateway marks its span ERROR with reason MCP, but the refusal travels inside a successful HTTP response: a tool result marked isError, with the rule, the limit and the amount in its text, ending in a short tag the agent reads. We probed it directly, with no model. A sealed envelope delivered on time, with a no inside. \"Anyone alerting on HTTP status alone will not see this refusal at all.\" Metrics don't help. No agentgateway metric counts permit versus deny, and the Guardrail histogram counts every check, whatever the answer. In Northstar none of it reaches Prometheus anyway: nothing scrapes the gateway's port. The small line: from v1.6.0 the span carries the new attribute name. So alert on the decision span.\n\n[verify: whether a permit/deny metric has been added after v1.6.0, Appendix B]\n\nSource: Ch 6 (Figure 6.15, Figure 6.24, Finding 7); M8 Task 0 (the deny is an isError tool result ending in a [policy-denial ...] tag).\n\n[23:15 → 24:00 · 45s]",
+ "KASPER\n\nThere are two ways for the platform to say no. The gateway can do it alone, with one line of config: no payment over fifty thousand, for anyone. It answers 403 and says nothing else. The decision service is a service we wrote: it has the live dial, the rule's name, a reason the model can explain, and its own span. We use both. The gateway holds the hard ceiling; the service makes the decision.\n\nRead the table top to bottom. Code to write: none against a service. Sees the tool's arguments: both, since agentgateway 1.6. Changes live: the gateway reloads its config in about a third of a second; the service reads a flag and nothing reloads. Says why: the gateway says \"authorization failed\" and nothing else; the service names the rule and the limit. In the trace: the gateway leaves one span; the service leaves northstar.policy.decision.\n\nThe line at the bottom is the real rule, from the config file. It is an allow rule on purpose: a deny rule lets a string amount through, and we measured that. The ceiling is not in the live demo. scripts/demo ceiling shows it if someone asks.\n\n[verify: agentgateway is a Linux Foundation project hosted in AAIF, not CNCF.]\n\nSource: docs/architecture.md \"Two ways to say no\"; tests/e2e/test_gateway_ceiling.py; M8 design spec §5\n\n[24:00 → 24:40 · 40s]",
+ "KASPER\n\nMaker and checker. The agent makes the payment. A human checks it. These are two traces, and the slide shows both.\n\n1. Left, trace A: the maker. The agent proposes: the claim came in, the agent asked to execute the payment, and the platform said a person decides. The agent records \"input required\" and its work is done: trace A ends at the hand-off. Nothing polls while the claim waits, and nothing moved.\n2. Right, trace B: the checker. A person approves it. The reviewer-ui records northstar.review.decision, asks the gateway to execute the payment under its own identity and its own rule, human-approved.execute, and then resumes the claim. The decision service has read the ledger and seen that the payment is waiting for a human, so it permits. When the claim completes, the platform pushes the outcome to the customer's page.\nSAY: \"Nothing was overridden. A different caller was asked about.\"\n3. The dashed line is a span link: B's resume points back to A. A link, not a parent. \"Work separated by human time is two traces and a link. Nothing polls while the claim waits.\" A parent edge would have misstated both the duration and what was executing.\n4. The bottom line is a Prometheus question: how long do humans take? One histogram, by autonomy level and decision. The 95th percentile per level shows whether widening the band really cut the human's load.\n\nHonest limits: Reject is final and the customer is told their claim was declined; but there is no second approver, no timeout, no expiry, and no login on the reviewer-ui. The reviewer id is a string the form supplies.\n\nSource: aip-demo docs/demo-runbook.md §5 Beat 4; docs/telemetry-contract.md (trace B, northstar_approval_wait_duration_seconds); Ch 8\n\n[24:40 → 25:25 · 45s]",
+ "KASPER\n\nAct four. The auditor walks in and asks: can you prove it? What did the agent do, who let it, and how do you know?\n\nSource: Ch 14\n\n[25:25 → 25:35 · 10s]",
+ "KASPER\n\nThis is the evidence for one approval, straight from Jaeger. It's the second trace of a claim that waited for a person: it starts at the reviewer's decision.\n\nRead the tags. The decision: approve. Who: the reviewer's id, and the reviewer service's own SPIFFE identity, so you know which workload signed, not just which name was typed. How long the human took: northstar.review.wait.duration, in seconds. And at the bottom, one reference: a link to a span in another trace. That's trace A, the agent's work, which ended when it handed the payment to a person.\n\nSAY: \"No new application code behind this. These are spans the system already emits. The evidence is the telemetry.\"\n\nCaptured 2026-10-19 from the M10 gate run's cluster; the claim id is a test claim.\n\nSource: Ch 9; M10 design spec (trace B and the resume link)\n\n[25:35 → 26:25 · 50s]",
+ "KASPER\n\nSo who writes those grades here? A small service called eval-scorer. Think of it as the auditor that never sleeps. Follow the four steps.\n\nOne: spans land. Every service sends its telemetry to the OpenTelemetry Collector, and the Collector keeps a copy in OpenSearch, the same spans Jaeger gets. Nothing extra is emitted for the scorer.\n\nTwo: read back. You ask it about one claim, POST slash score. It pulls every span of every trace that claim touched. If the read-back is cut short, it refuses to score. A trajectory with a missing piece always looks more compliant than it was: a retry that fell off the page is a retry it would never see.\n\nThree: five checks, plain code, no model. Did the agent propose before it executed? Did it stop when it was refused? Did it record the refusal? Does the amount paid match the amount proposed and approved? Did the identity that paid have the authority? For that last one it keeps its own copy of the limits, so it can disagree with the policy service.\n\nFour: written back. Each score goes out as an OpenTelemetry span, using the gen_ai.evaluation names you just saw, through the same Collector, parented to a real span in the trace it judged. Open the claim in Jaeger, and its grades are in the waterfall.\n\nSAY: \"OpenTelemetry in, OpenTelemetry out.\" The scores are telemetry like everything else, so any backend that reads OTLP can see them.\n\nHow it's emitted: OpenSearch's GenAI observability SDK (opensearch-genai-observability-sdk-py 0.2.8), its score() call. It writes a span named \"evaluation <name>\" plus a gen_ai.evaluation.result span event, per the GenAI conventions. The five checks themselves are ours: they are our policy, like the rules in the decision service.\n\nSource: platform/eval-scorer/README.md; scorer/emit.py; scorer/opensearch.py (TrajectoryTruncated); scorer/authority.py; M4 design spec §5\n\n[26:25 → 27:15 · 50s]",
+ "KASPER\n\nOur scorer asks \"did it follow policy?\". Teams running models in production usually add two more kinds of check, on the model itself.\n\nOn the left, evals: after the answer, a score. Was it good? Did it make something up, a hallucination? Is it biased? Is it toxic? These are usually an LLM-as-judge: a second model grades the first one's answer, from zero to one.\n\nOn the right, guardrails: before the answer goes anywhere, block it or flag it. Is the prompt trying to hijack the agent, a prompt injection? Is it a sensitive topic, like medical or legal advice? And topic restriction: an insurance agent should talk about claims, not write your homework.\n\nOpenLIT, an open-source project on OpenTelemetry, ships both: LLM-as-judge evals for hallucination, bias and toxicity, and guards for prompt injection, sensitive topics and topic restriction. agentgateway's model guardrails, a few slides back, cover the same ground at the gateway.\n\nWherever they run, record the result as a gen_ai.evaluation event beside the trace it judged, so the score and the decision sit in the same place as everything else.\n\nSAY, plainly: \"Neither is in the demo. Northstar's model calls don't go through a guardrail today.\"\n\n[verify: OpenLIT docs (docs.openlit.io/latest/sdk/features/evaluations and /guardrails, read 2026-10-19): evals run LLM-as-judge on the OpenLIT server, score 0.0-1.0 with a yes/no verdict at threshold 0.5, examples hallucination, bias, toxicity; guards openlit.guard.PromptInjection, SensitiveTopic, TopicRestriction, All (LLM via provider openai or anthropic, or regex custom_rules; topic restriction LLM-only). Neither page names the OpenTelemetry attributes OpenLIT emits for them: don't claim OpenLIT writes gen_ai.evaluation.*]\n\nSource: docs.openlit.io (glossary, evaluations, guardrails); OpenTelemetry GenAI semantic conventions (gen_ai.evaluation.*); Ch 3\n\n[27:15 → 28:00 · 45s]",
+ "KASPER\n\nContent capture means putting the actual words into telemetry: what the model was told, what it said, the arguments it passed to tools. Often the most sensitive data you hold.\n\nWe ran the six-thousand-two-hundred story twice, capture on and off. Read the bands bottom-up. One, cyan: the governance story, decision, rule, limit, reviewer, ledger. Intact. Two, grey: the floor, names and shapes. Always survives. Three, dashed: the model's own account, including the amount it proposed. Lost.\n\nThen the right column. Keys barely move, 28 to 25, but the text inside is gone. \"The evidence view loses nothing.\" Redaction is a trade, not a free safety win. In production, keep content outside the trace, behind its own access control.\n\nSource: Ch 9\n\n[28:00 → 28:45 · 45s]",
+ "KASPER\n\nThe goal is the right spans, not more spans. Northstar taught us one more lesson. Our second backend, OpenSearch, quietly rejected the policy decision spans. Jaeger had 142 spans, OpenSearch 139. The missing three were exactly the decisions. Losing data looks exactly like sampling it. So never sample the decisions. A test asserts 100% capture, and a parity guard compares span IDs across both backends, like counting parcels at both ends of the belt.\n\nWe can produce the evidence. But what do the regulations actually ask for? William.\n\nSource: Ch 9\n\n[28:45 → 29:15 · 30s]",
+ "WILLIAM\n\nRemember the questions we started with, the ones a regulator asks. Here is what answers them.\n\nRead across: the law, what it asks for, and the Northstar artifact that answers it. Magenta text means not there yet. None of this makes you compliant. It gives your compliance people something to point at.\n\nRow one: the AI Act's right to explanation, plus the EU court's Dun and Bradstreet ruling: a person is owed \"the procedure and principles actually applied\". A model card is the car's manual. A decision span is the dashcam footage: rule, limit, amount, caller.\n\nRow two: DORA, the EU's rulebook for financial IT, wants logs protected against tampering, and logging failures detected. The parity guard covers the second half. We have no tamper protection. Strong at producing the record, weak at keeping it, and keeping it is what your organisation already knows how to do.\n\nNot legal advice.\n\n[verify: DORA RTS Art. 12 enumeration is via a secondary summary; check Delegated Reg. (EU) 2024/1774 before the table goes out] [verify: ISO/IEC 24970 still at FDIS; it could publish around late October]\n\nSource: Ch 10, Ch 14\n\n[29:15 → 30:15 · 60s]",
+ "WILLIAM\n\nLet me point at the holes before you go looking. An audience of platform engineers will spot all of these, and naming them first is worth more than the features.\n\nOn the left, Northstar as built. Identity is checked on one hop only, the tools/call into the payment tool. The tool and the ledger just trust the network. The reviewer isn't logged in: one human, one click, once. Backstage: the backend checks a credential, but anyone who can reach port 7007 can mint one. They can flip the contract, and nothing else. The claim id stops at the MCP boundary, so the evidence joins on trace id. Model calls skip the gateway. One GenAI metric of twelve arrives.\n\nOn the right, dashed, two layers the demo lacks. A context layer needs retrieval and memory spans. Multi-agent over shared context needs span links and one identity per agent.\n\nSource: Ch 14, Ch 11\n[verify: 1 of 12 GenAI metrics still true at slide freeze]\n\n[30:15 → 31:15 · 60s]",
+ "WILLIAM\n\nSo what do you do on Monday? Five verbs, and none of them needs a purchase order.\n\nInstrument: turn on what your agent framework already emits, follow the gen_ai conventions, and carry trace context over every hop: A2A, MCP, skills, the policy call. Put a gateway in the path: one choke point, a decision span, and failClosed written down. Make identity an input: one SPIFFE identity per agent, a passport for a workload, checked at the gateway. Contribute upstream: seventeen findings are written up and waiting. Map to the standard: nobody has mapped OTel's GenAI conventions to ISO/IEC 24970, the AI logging standard, yet.\n\nSeventeen findings. Pick one.\n\nSource: Ch 14\n[verify: ISO/IEC 24970 still at FDIS the week of the talk; seventeen findings still unfiled at slide freeze]\n\n[31:15 → 32:00 · 45s]",
+ "WILLIAM\n\nIf you keep three sentences, keep these.\n\nOne: guardrails live in the platform, not in the prompt. Identity, reach, limits, and a human where the rule says, and the agent cannot edit any of them.\n\nTwo: instrument the decisions, not only the errors. A permit, a hold and a sign-off are spans with a rule, a limit and an identity, and the names are a published schema.\n\nThree: build it from upstream projects. CNCF and AAIF already ship the pieces. The only part you write is your rules.\n\nPause. Then the line from the cover.\n\nIf you can't trace it, you can't govern it.\n\n[verify: agentgateway joined AAIF 2026-06-04 (agentgateway.dev blog); A2A joined 2026-08-17 (secondary source; check aaif.io/projects)]\n\nSource: Ch 14 (Fig 14.4, reworded after M8: the stop is now a hold for a person, not a refusal)\n\n[32:00 → 32:30 · 30s]",
+ "WILLIAM\n\nBoth speakers on stage for this one.\n\nSAY: \"Thank you. Kasper and I will both take questions.\" Hand demo, trace and gateway questions to Kasper; regulation and platform-team questions stay with William.\n\nQ&A. The ten likely questions and 30-second answers are in the study edition, Ch 14 (Q&A preparation). The ones most likely from a KubeCon room: is agentgateway CNCF (no: Linux Foundation, hosted in AAIF), why not just a CEL rule (the two-ways-to-say-no slide), what if the policy service is down.\n\nAPPENDIX: three speaker-only slides follow (pre-flight, reset, triage), 0 s each. Don't press → past this slide in the talk; go there only to prepare or to fix something.\n\n[32:30 → 32:30 · 0s]"
 ]
 </script>
 <script src="chrome.js"></script>

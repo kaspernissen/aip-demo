@@ -19,6 +19,7 @@ root = pathlib.Path(__file__).resolve().parent.parent
 rows = []
 t = 0
 n = 0
+cut = []
 for f in sorted(root.glob("slides/[0-9][0-9]-*.html")):
     text = f.read_text()
     notes = json.loads((root / "notes" / (f.stem + ".json")).read_text())
@@ -36,6 +37,9 @@ for f in sorted(root.glob("slides/[0-9][0-9]-*.html")):
                     len(parts) == 3 and re.fullmatch(r"[A-Z +]+", parts[1])):
                 origin, what = parts[1], parts[2]
         label = html.unescape(re.search(r'data-label="([^"]*)"', m.group(0)).group(1))
+        if "data-cut" in m.group(0).split(">", 1)[0]:
+            cut.append(f"{label} ({f.stem})")
+            continue
         body = note["note"]
         first = body.splitlines()[0]
         who = []
@@ -55,6 +59,7 @@ for f in sorted(root.glob("slides/[0-9][0-9]-*.html")):
         t += s
         rows.append(f"| {n:02d} | {f.stem} | {who} | {start} | {s} | {label} | {origin} | {what} |")
 
+rows.append(f"| — | hidden | | | 0 | {len(cut)} slides carry data-cut and are not built: " + "; ".join(cut) + " | | |")
 table = "\n".join(["| # | Fragment | Who | Start | secs | Slide | Origin | What it shows |",
                    "|---|---|---|---|---|---|---|---|"] + rows)
 plan = root / "PLAN.md"

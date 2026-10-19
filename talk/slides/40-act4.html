@@ -11,7 +11,7 @@
 </section>
 
 <!-- 38a · NEW · concept: evidence vs logs. A log line (Fig 3.1) against the five things the evidence view answers (Ch 9: who decided, rule, limit, human, ledger), all on spans, one join key -->
-<section class="slide content" data-label="Evidence vs logs">
+<section data-cut class="slide content" data-label="Evidence vs logs">
   <h2 class="slide-title">Evidence vs logs: what an auditor can use</h2>
   <div class="x40-el rise">
     <div class="x40-log">
@@ -35,7 +35,7 @@
 </section>
 
 <!-- 38b · BOUNDED · which refusals the trace can see: one row per ring, measured in M7 (gateway 401 spans; Cilium drop has no span, Hubble not installed; northstar.policy.decision in the claim trace; Kyverno denial as its own trace, no traceparent from kubectl) -->
-<section class="slide content" data-label="Which refusals the trace can see">
+<section data-cut class="slide content" data-label="Which refusals the trace can see">
   <h2 class="slide-title">Which refusals the trace can see</h2>
   <div class="x40-rt rise">
     <p class="x40-rh">Ring</p><p class="x40-rh">The refusal</p><p class="x40-rh">In the trace?</p><p class="x40-rh">Where</p>
@@ -59,7 +59,7 @@
 </section>
 
 <!-- 39r · NEW · The decision contract is a published schema (M9): a real excerpt of telemetry/registry/policy.yaml beside a real Jaeger screenshot of the same northstar.policy.decision span (jaeger-policy-decision-m9.png, 2026-10-17). Outside the live block. -->
-<section class="slide content" data-label="The decision contract is a published schema">
+<section data-cut class="slide content" data-label="The decision contract is a published schema">
   <h2 class="slide-title">The decision contract is a published schema</h2>
   <div class="x40-rs rise">
     <div>
@@ -86,7 +86,7 @@
 </section>
 
 <!-- 39a · NEW · concept: what an evaluation is. The gen_ai.evaluation.result fields (Ch 3 table, Fig 3.13), parented to the judged span -->
-<section class="slide content" data-label="What an evaluation is">
+<section data-cut class="slide content" data-label="What an evaluation is">
   <h2 class="slide-title">An evaluation is a grade, kept with the work</h2>
   <div class="x40-evl rise">
     <div class="x40-work">
@@ -121,7 +121,7 @@
 </section>
 
 <!-- 40 · NEW · A score that can go to zero (longer-demo beat 6, as a slide): 1.0 vs 0.0 (Fig 9.3) plus jaeger-eval-scores.png -->
-<section class="slide content" data-label="A score that can go to zero">
+<section data-cut class="slide content" data-label="A score that can go to zero">
   <div class="beat x40-asslide"><span class="dot"></span>Longer demo &middot; shown as slide</div>
   <h2 class="slide-title">A score that can go to zero</h2>
   <div class="x40-sc rise">
@@ -144,7 +144,7 @@
 </section>
 
 <!-- 41 · DID WHAT · "Enter LLM-as-judge", rebuilt as judge vs auditor on one output format (Ch 3 Fig 3.13, Ch 9 "What Northstar does not have") -->
-<section class="slide content" data-label="And LLM-as-judge?">
+<section data-cut class="slide content" data-label="And LLM-as-judge?">
   <h2 class="slide-title">And LLM-as-judge?</h2>
   <div class="cols cols-2 x40-jd rise">
     <div>
@@ -255,7 +255,7 @@
 </section>
 
 <!-- 45 · NEW · The deadline moved: Fig 10.1 lifted (the Omnibus timeline), plus SR 26-2 -->
-<section class="slide content" data-label="The deadline moved">
+<section data-cut class="slide content" data-label="The deadline moved">
   <h2 class="slide-title">The deadline moved. The requirements didn&rsquo;t.</h2>
   <figure class="bfig rise x40-fig" style="--fig-h:560px"><svg viewBox="0 0 860 320" role="img" aria-label="Timeline of EU AI Act application dates, with the high-risk dates moved by the Digital Omnibus">
 <defs><marker id="x40ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#F8494D"/></marker></defs>
@@ -297,7 +297,7 @@
 </section>
 
 <!-- 46 · NEW · Seventeen findings: Fig 12.1 lifted (governance home × kind of gap), plus F17 (agentgateway v1.6.0 deny as isError, docs/upstream-findings.md, after the book); chips tinted from Fig 12.2 -->
-<section class="slide content" data-label="Seventeen findings, none filed">
+<section data-cut class="slide content" data-label="Seventeen findings, none filed">
   <h2 class="slide-title">Seventeen findings, none filed yet</h2>
   <p class="x40-read muted"><b>Read it like this:</b> columns are who governs the project; rows are the kind of gap.</p>
   <figure class="bfig rise x40-fig x40-f16" style="--fig-h:600px"><svg viewBox="0 10 860 422" role="img" aria-label="Grid of the seventeen findings by governance home and by category">
@@ -382,7 +382,7 @@
 </section>
 
 <!-- 47 · NEW · where AI observability stands: the L0–L5 ladder and the ecosystem's measured rung (Instrumenting AI Agents, Dash0 DevRel, Aug 2026, p. 10); replaces the old OTel-support maturity model, which has since changed -->
-<section class="slide content" data-label="Where AI observability stands">
+<section data-cut class="slide content" data-label="Where AI observability stands">
   <h2 class="slide-title">Where AI observability stands</h2>
   <div class="x40-lad rise">
     <div class="x40-st s0"><div class="x40-bar"></div><b>L0</b><span class="x40-nm">Prompt logs</span><span class="x40-ec">&mdash;</span></div>

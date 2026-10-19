@@ -1,5 +1,5 @@
 <!-- 32 · NEW · deep dive after step 1: five 401s, and the caller as half of the lookup key (Ch 7, Figures 7.3 and 7.4) -->
-<section class="slide content" data-label="Identity is an input">
+<section data-cut class="slide content" data-label="Identity is an input">
   <p class="ring">Core &middot; Identity</p>
   <h2 class="slide-title">Identity is an input, not a label</h2>
   <div class="x31-id rise">
@@ -25,7 +25,7 @@
 </section>
 
 <!-- 32r · BOUNDED · optional: reach has two layers, after William's Linkerd reach beat, backed by the Linkerd spike's measured results (scratchpad linkerd-spike-report.md, 2026-10-12: criteria 1, 3, 4, 6, release channels). The demo runs Cilium only. -->
-<section class="slide content" data-label="Reach has two layers">
+<section data-cut class="slide content" data-label="Reach has two layers">
   <p class="ring">Ring 1 &middot; Reach</p>
   <h2 class="slide-title">Reach has two layers</h2>
   <p class="x31-opt rise">Optional &middot; after William&rsquo;s Linkerd beat &middot; measured in a spike, not part of this demo</p>
@@ -69,7 +69,7 @@
 </section>
 
 <!-- 27 · NEW · the gateway's spans per governed call: Ch 6 Figure 6.7 tree with the measured key counts, plus Figure 6.15's four added keys -->
-<section class="slide content" data-label="What agentgateway says about one governed call">
+<section data-cut class="slide content" data-label="What agentgateway says about one governed call">
   <h2 class="slide-title">What agentgateway says about one governed call</h2>
   <div class="stree rise" style="margin-top:calc(1.5 * var(--baseline))">
     <div class="r"><span class="svc agent">settlement-agent</span><span class="op">POST</span><span class="v">carries the JWT-SVID</span></div>
@@ -92,7 +92,7 @@
 </section>
 
 <!-- 28b · NEW · concept before the eight layers: defence in depth, as airport security -->
-<section class="slide content" data-label="Defence in depth">
+<section data-cut class="slide content" data-label="Defence in depth">
   <h2 class="slide-title">Defence in depth</h2>
   <div class="x31-gates rise">
     <div class="who"><i class="ph-duotone ph-person-simple-walk"></i></div>
@@ -107,7 +107,7 @@
 </section>
 
 <!-- 29 · NEW · the eight layers between an agent and a payment (Ch 7, Figure 7.1, lifted and re-set: "how Northstar builds it" became "what it stops") -->
-<section class="slide content" data-label="Limiting access to MCP">
+<section data-cut class="slide content" data-label="Limiting access to MCP">
   <h2 class="slide-title">Limiting access to MCP, layer by layer</h2>
   <p class="x31-read">Read down: one call, eight checks</p>
   <figure class="bfig rise x31-fig" style="--fig-h:660px"><svg viewBox="0 0 1632 652" role="img" aria-label="Eight layers of MCP access control: what each stops and what proves it worked">
@@ -181,7 +181,7 @@ request.method != &quot;POST&quot;
 </section>
 
 <!-- 30g · NEW · what agentgateway v1.6.0 ships for model traffic: read from crates/agentgateway/src/llm/policy/ at the v1.6.0 tag (mod.rs RequestGuardKind, pii/, webhook.rs, moderation.rs, bedrock_guardrails.rs, azure_content_safety.rs, google_model_armor.rs). Northstar's model calls do not go through the gateway, so none of it is in the demo (M8 spec §5) -->
-<section class="slide content" data-label="Guardrails for model traffic">
+<section data-cut class="slide content" data-label="Guardrails for model traffic">
   <h2 class="slide-title">Guardrails for model traffic</h2>
   <p class="x31-opt rise">What agentgateway v1.6.0 ships &middot; <span class="code">crates/agentgateway/src/llm/policy/</span></p>
   <ul class="x31-gl rise">
@@ -195,7 +195,7 @@ request.method != &quot;POST&quot;
 </section>
 
 <!-- 30a · BOUNDED · hide or refuse, as two layers: HIDE, a static CEL allowlist (William's OSFF demo: mcp.tool.name in [...], the tool never in tools/list, HTTP 400 Unknown tool) beside REFUSE AND RECORD, Northstar's decision service (all four tools listed to settlement-agent's SVID, measured 2026-10-12; the €6,200 call depends on its arguments). Credits William; not a disagreement (bounded-ai/README.md; M7 design spec §1) -->
-<section class="slide content" data-label="Hide or refuse">
+<section data-cut class="slide content" data-label="Hide or refuse">
   <h2 class="slide-title">Hide or refuse</h2>
   <div class="x31-tw rise">
     <div>
@@ -219,7 +219,7 @@ request.method != &quot;POST&quot;
 </section>
 
 <!-- 30b · NEW · concept before fail-open: the door lock in a power cut -->
-<section class="slide content" data-label="Fail-closed vs fail-open">
+<section data-cut class="slide content" data-label="Fail-closed vs fail-open">
   <h2 class="slide-title">Fail-closed vs fail-open</h2>
   <p class="x31-lab x31-cut"><i class="ph-duotone ph-lightning-slash"></i>Power cut. The checker can&rsquo;t answer.</p>
   <div class="x31-doors rise">
@@ -230,7 +230,7 @@ request.method != &quot;POST&quot;
 </section>
 
 <!-- 31 · NEW · failureMode: failClosed, the real config line (deploy/platform/agentgateway/config.yaml) -->
-<section class="slide content" data-label="Fail-open is one word away">
+<section data-cut class="slide content" data-label="Fail-open is one word away">
   <h2 class="slide-title">Fail-open is one word away</h2>
   <div class="x31-two rise">
     <div>
@@ -255,7 +255,7 @@ request.method != &quot;POST&quot;
 </section>
 
 <!-- 32b · NEW · concept before the human approval: a span link vs a parent edge -->
-<section class="slide content" data-label="A span link vs a parent edge">
+<section data-cut class="slide content" data-label="A span link vs a parent edge">
   <h2 class="slide-title">A span link vs a parent edge</h2>
   <div class="x31-links rise">
     <div>
@@ -305,7 +305,7 @@ request.method != &quot;POST&quot;
 </section>
 
 <!-- 36 · NEW · optional: the same flip, with a UI: backstage-autonomy-assisted/flipped + customer-ui-autonomous-executed + jaeger-autonomy-change (runbook §5 Beat 7, the longer version) -->
-<section class="slide content" data-label="The same flip, with a UI">
+<section data-cut class="slide content" data-label="The same flip, with a UI">
   <h2 class="slide-title">The same flip, with a UI</h2>
   <p class="x31-opt rise">Optional &middot; Backstage writes the same value step 3 wrote, and records the change</p>
   <div class="x31-fb rise" style="grid-template-columns:780px 780px;gap:14px 72px;margin-top:calc(0.75 * var(--baseline))">
@@ -337,7 +337,7 @@ request.method != &quot;POST&quot;
 </section>
 
 <!-- 37 · NEW · The platform API is the resource. Handover point (William Rizzo) -->
-<section class="slide content" data-label="The platform API is the resource">
+<section data-cut class="slide content" data-label="The platform API is the resource">
   <h2 class="slide-title">The platform API is the resource</h2>
   <div class="x31-chain rise">
     <div>

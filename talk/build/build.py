@@ -42,6 +42,8 @@ def main():
         if len(n) != len(secs):
             sys.exit(f"{f.name}: {len(secs)} slides but {len(n)} notes")
         for sec, entry in zip(secs, n):
+            if "data-cut" in sec.split(">", 1)[0]:
+                continue  # hidden: kept in the fragment for Q&A or a longer cut, not built
             start = t
             t += int(entry["secs"])
             label = re.search(r'data-label="([^"]*)"', sec)

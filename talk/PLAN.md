@@ -59,80 +59,46 @@ ordinary slides now, outside the five-minute cut.
 |---|---|---|---|---|---|---|---|
 | 01 | 00-cover | W | 0:00 | 15 | Cover | NEW | Cover. The CFP title is fixed; the subtitle does the concrete work (Ch 14). |
 | 02 | 10-open-act1 | W+K | 0:15 | 40 | Who? | NEW | who we are: the two speakers, portraits printed as plates (Kasper, 2026-10-19: an intro, not the lineage of talks) |
-| 03 | 10-open-act1 | W | 0:55 | 20 | When an agent acts | NEW | regulated domains: four sectors where an agent acts, one line on what it moves (Ch 10, Ch 14 "Who is in the room") |
-| 04 | 10-open-act1 | W | 1:15 | 40 | Verticalizing |  |  |
-| 05 | 10-open-act1 | W | 1:55 | 60 | The auditor’s questions | NEW | the auditor's five questions, big type, each tagged with the requirement behind it (Ch 10; Ch 14 slide 35 table). The table itself comes at "From requirement to artifact". |
-| 06 | 10-open-act1 | W | 2:55 | 25 | Not an answer | NEW | the stakes, as type: Ch 14 slide 09's title line |
-| 07 | 10-open-act1 | W | 3:20 | 60 | The agent proposed | NEW | the cold open: a crop of the customer UI outcome block, €5,800 held for a person (M8: a hold, not a refusal) |
-| 08 | 10-open-act1 | W | 4:20 | 10 | Act 1 — Agents change the nature of complexity | NEW | Act 1 divider |
-| 09 | 10-open-act1 | W | 4:30 | 35 | The evolution of architectures | TAMING | evolution of architectures: book Figure 1.1, lifted; the FIXED row cut, the BROKE row and the crossing lines kept |
-| 10 | 10-open-act1 | W | 5:05 | 45 | The model draws the call graph | TAMING | the model draws the call graph: book Figure 1.4 (one prompt, three runs), lifted and cropped |
-| 11 | 10-open-act1 | W | 5:50 | 20 | What an agent is, in one sentence | NEW | concept: what an agent is, in one sentence (Ch 1, "the five terms") |
-| 12 | 10-open-act1 | W | 6:10 | 45 | Anatomy of an agent | DID WHAT | anatomy of an agent: book Figure 1.3 (the agent loop, mermaid in the book) redrawn as SVG, inside Figure 1.2's harness |
-| 13 | 10-open-act1 | W | 6:55 | 20 | What a protocol is for | NEW | concept: what a protocol is for; one JSON-RPC call and its answer (Ch 2, "In plain words") |
-| 14 | 10-open-act1 | W | 7:15 | 45 | Meet MCP and A2A |  |  |
-| 15 | 10-open-act1 | W | 8:00 | 60 | MCP, A2A and Skills | TAMING | MCP, A2A and Skills: book Figure 2.6 (vertical and horizontal) rebuilt with a skill folder, one dated fact each |
-| 16 | 10-open-act1 | W | 9:00 | 45 | The decoder ring | DID WHAT | the decoder ring (book Figure 1.5, first two columns), set as type |
-| 17 | 10-open-act1 | W | 9:45 | 45 | “We don’t know what the agent did” | NEW | FINRA 2026: scope and traceability, both lines verbatim from Ch 10 / Ch 14 |
-| 18 | 10-open-act1 | W | 10:30 | 45 | Decide. Trace. Prove. | NEW | the thesis: three words, each with its gloss |
-| 19 | 10-open-act1 | W | 11:15 | 50 | Bounded autonomy | BOUNDED | bounded autonomy, the definition of Decide: William's four rings as concentric bands, one question each (William Rizzo, Bounded Agent Autonomy, OSFF 2026); Northstar's piece per ring waits for Act 3 |
-| 20 | 20-act2 | K | 12:05 | 10 | Act 2 — What tracing already gives us | NEW | Act 2 divider: what tracing already gives us |
-| 21 | 20-act2 | K | 12:15 | 30 | What a span is | NEW | concept: what a span is, and how spans make a trace (Ch 3 Fig 3.2 and 3.3, values illustrative) |
-| 22 | 20-act2 | K | 12:45 | 30 | Context gets lost | TAMING | context gets lost: one whole trace next to the same work split into two traces (Ch 3 parcel-label idea) |
-| 23 | 20-act2 | K | 13:15 | 30 | traceparent, now also in MCP | TAMING | traceparent anatomy (Ch 3 Fig 3.4, cropped, labels shortened), then the two carriers: HTTP header and MCP params._meta (Ch 3 Fig 3.5 rows 1 and 4) |
-| 24 | 20-act2 | K | 13:45 | 35 | What can gen_ai.* answer today? | DID WHAT | the "what can the conventions answer today" table (Ch 3 Fig 3.10, minus the gap row, which is slide 18); the four opt-in rows dimmed |
-| 25 | 30-act3a | K | 14:20 | 10 | Act 3 — Northstar, live | NEW | Act 3 divider |
-| 26 | 30-act3a | K | 14:30 | 50 | What a governed foundation needs | NEW | the abstract's five building blocks on Ch 11's blueprint (Figure 11.1, cropped; numbered 1–5 by the abstract's five building blocks, 4 = policy (4a) + evals (4b)); under it, where William's four rings land |
-| 27 | 30-act3a | K | 15:20 | 45 | We've done this before | NEW | we've done this before: Ch 1 Figure 1.8 (what cloud native built, extended to agents), widened to six rows with the Northstar piece of each |
-| 28 | 30-act3a | K | 16:05 | 55 | Connected is not governed | NEW | connected is not governed: the runbook's stage ladder (docs/demo-runbook.md §1, §3 Option 1; Ch 4 stage table), now seven stages with M7's Bounded, each with its one proof and the ring it adds (M7 design spec §1) |
-| 29 | 30-act3a | K | 17:00 | 40 | Meet Northstar | NEW | Meet Northstar: Ch 4 Figure 4.5, claim path only |
-| 30 | 30-act3a | K | 17:40 | 30 | The model can request. The platform decides. | NEW | the design rule: Ch 4 Figure 4.4 |
-| 31 | 30-act3a | K | 18:10 | 30 | Enforcement point, decision point | NEW | concept: an enforcement point and a decision point (the bouncer and the manager), set before the tools |
-| 32 | 30-act3a | K | 18:40 | 60 | The toolbox | NEW | the toolbox map: every tool on the claim path and around it, by job (docs/architecture.md components tables; deploy/*; Ch 2 Figure 2.12 for who governs what) |
-| 33 | 30-act3a | K | 19:40 | 60 | Workload identity: SPIFFE/SPIRE | NEW | SPIFFE/SPIRE: how settlement-agent gets its JWT-SVID (deploy/platform/spire/*, architecture.md "Workload identity" and "Identity with teeth", agents/settlement-agent/svid.py) |
-| 34 | 30-act3a | K | 20:40 | 45 | What agentgateway is | NEW | concept before the gateway config: what an agent gateway is, and why an API gateway is not one (deploy/platform/agentgateway/config.yaml: one mcp backend; tools/payments-mcp/server.py execute_payment) |
-| 35 | 30-act3a | K | 21:25 | 60 | agentgateway: one choke point | NEW | agentgateway: the one choke point and its checks in order (deploy/platform/agentgateway/config.yaml; architecture.md "Hop 3") |
-| 36 | 30-act3a | K | 22:25 | 45 | What OpenFeature is | NEW | concept before the live policy: what OpenFeature is, in four layers, and why a flag carries a policy knob (pds/autonomy.py; requirements.txt openfeature-sdk, -provider-flagd, -hooks-opentelemetry; deploy/platform/openfeature/*) |
-| 37 | 30-act3a | K | 23:10 | 45 | The decision and the live policy | NEW | the decision and the live policy: pds/rules.py EXECUTE_LIMITS, pds/autonomy.py (flagd on localhost:8013), deploy/platform/openfeature/featureflag.yaml |
-| 38 | 30-act3a | K | 23:55 | 370 | Live: Northstar | NEW | the demo: one dark sheet while the terminal is up; no commands on the face (Kasper, 2026-10-19). The run-sheet is the note. |
-| 39 | 30-live | K | 30:05 | 40 | What you just saw | NEW | what you just saw: the five demo steps as outcomes, no commands (Kasper, 2026-10-19; replaces the five live-step slides and their transcript fallbacks) |
-| 40 | 31-act3b | K | 30:45 | 45 | Identity is an input | NEW | deep dive after step 1: five 401s, and the caller as half of the lookup key (Ch 7, Figures 7.3 and 7.4) |
-| 41 | 31-act3b | K | 31:30 | 45 | Reach has two layers | BOUNDED | optional: reach has two layers, after William's Linkerd reach beat, backed by the Linkerd spike's measured results (scratchpad linkerd-spike-report.md, 2026-10-12: criteria 1, 3, 4, 6, release channels). The demo runs Cilium only. |
-| 42 | 31-act3b | K | 32:15 | 45 | One trace, and the absence | NEW | deep dive after step 2: the full deny trace from the customer UI, after Ch 5 Figure 5.5 and Ch 6 Figure 6.13 (trace a4007e49…) |
-| 43 | 31-act3b | K | 33:00 | 45 | What agentgateway says about one governed call | NEW | the gateway's spans per governed call: Ch 6 Figure 6.7 tree with the measured key counts, plus Figure 6.15's four added keys |
-| 44 | 31-act3b | K | 33:45 | 45 | HTTP 200 means no | NEW | HTTP 200 means no (Ch 6: Figure 6.15, the metrics Figure 6.24, Finding 7) |
-| 45 | 31-act3b | K | 34:30 | 20 | Defence in depth | NEW | concept before the eight layers: defence in depth, as airport security |
-| 46 | 31-act3b | K | 34:50 | 60 | Limiting access to MCP | NEW | the eight layers between an agent and a payment (Ch 7, Figure 7.1, lifted and re-set: "how Northstar builds it" became "what it stops") |
-| 47 | 31-act3b | K | 35:50 | 40 | Two ways to say no | NEW | two ways to say no, measured: a gateway guardrail in CEL (config only; the real rule from deploy/platform/agentgateway/config.yaml) beside the decision service, the table from the M8 spec §5; the ceiling is on the deck, not in the live demo (tests/e2e/test_gateway_ceiling.py) |
-| 48 | 31-act3b | K | 36:30 | 20 | Guardrails for model traffic | NEW | what agentgateway v1.6.0 ships for model traffic: read from crates/agentgateway/src/llm/policy/ at the v1.6.0 tag (mod.rs RequestGuardKind, pii/, webhook.rs, moderation.rs, bedrock_guardrails.rs, azure_content_safety.rs, google_model_armor.rs). Northstar's model calls do not go through the gateway, so none of it is in the demo (M8 spec §5) |
-| 49 | 31-act3b | K | 36:50 | 40 | Hide or refuse | BOUNDED | hide or refuse, as two layers: HIDE, a static CEL allowlist (William's OSFF demo: mcp.tool.name in [...], the tool never in tools/list, HTTP 400 Unknown tool) beside REFUSE AND RECORD, Northstar's decision service (all four tools listed to settlement-agent's SVID, measured 2026-10-12; the €6,200 call depends on its arguments). Credits William; not a disagreement (bounded-ai/README.md; M7 design spec §1) |
-| 50 | 31-act3b | K | 37:30 | 15 | Fail-closed vs fail-open | NEW | concept before fail-open: the door lock in a power cut |
-| 51 | 31-act3b | K | 37:45 | 20 | Fail-open is one word away | NEW | failureMode: failClosed, the real config line (deploy/platform/agentgateway/config.yaml) |
-| 52 | 31-act3b | K | 38:05 | 15 | A span link vs a parent edge | NEW | concept before the human approval: a span link vs a parent edge |
-| 53 | 31-act3b | K | 38:20 | 45 | Maker and checker | NEW | maker and checker: trace A (the agent's work, ending at the hand-off), trace B (a person released it through the gateway, the resume, the push), the span link from B's resume back to A, and how long humans take (northstar_approval_wait_duration_seconds, docs/telemetry-contract.md; runbook §5 Beat 4) |
-| 54 | 31-act3b | K | 39:05 | 30 | The same flip, with a UI | NEW | optional: the same flip, with a UI: backstage-autonomy-assisted/flipped + customer-ui-autonomous-executed + jaeger-autonomy-change (runbook §5 Beat 7, the longer version) |
-| 55 | 31-act3b | K | 39:35 | 20 | The platform API is the resource | NEW | The platform API is the resource. Handover point (William Rizzo) |
-| 56 | 40-act4 | K | 39:55 | 10 | Act 4 — How you prove it | NEW | Act 4 divider. The act title is Ch 14's alternative subtitle. |
-| 57 | 40-act4 | K | 40:05 | 20 | Evidence vs logs | NEW | concept: evidence vs logs. A log line (Fig 3.1) against the five things the evidence view answers (Ch 9: who decided, rule, limit, human, ledger), all on spans, one join key |
-| 58 | 40-act4 | K | 40:25 | 45 | Which refusals the trace can see | BOUNDED | which refusals the trace can see: one row per ring, measured in M7 (gateway 401 spans; Cilium drop has no span, Hubble not installed; northstar.policy.decision in the claim trace; Kyverno denial as its own trace, no traceparent from kubectl) |
-| 59 | 40-act4 | K | 41:10 | 50 | The evidence view | NEW | the evidence view, in Jaeger (2026-10-19, replaces the OpenSearch dashboard capture): trace B of an approved claim, the northstar.review.decision span open with its link |
-| 60 | 40-act4 | K | 42:00 | 30 | The decision contract is a published schema | NEW | The decision contract is a published schema (M9): a real excerpt of telemetry/registry/policy.yaml beside a real Jaeger screenshot of the same northstar.policy.decision span (jaeger-policy-decision-m9.png, 2026-10-17). Outside the live block. |
-| 61 | 40-act4 | K | 42:30 | 20 | What an evaluation is | NEW | concept: what an evaluation is. The gen_ai.evaluation.result fields (Ch 3 table, Fig 3.13), parented to the judged span |
-| 62 | 40-act4 | K | 42:50 | 50 | How the auditor works | NEW | How the auditor works: eval-scorer's loop, OpenTelemetry in and OpenTelemetry out (platform/eval-scorer/README.md; scorer/emit.py; scorer/opensearch.py TrajectoryTruncated; M4 design spec §5) |
-| 63 | 40-act4 | K | 43:40 | 45 | A score that can go to zero | NEW | A score that can go to zero (longer-demo beat 6, as a slide): 1.0 vs 0.0 (Fig 9.3) plus jaeger-eval-scores.png |
-| 64 | 40-act4 | K | 44:25 | 30 | And LLM-as-judge? | DID WHAT | "Enter LLM-as-judge", rebuilt as judge vs auditor on one output format (Ch 3 Fig 3.13, Ch 9 "What Northstar does not have") |
-| 65 | 40-act4 | K | 44:55 | 45 | Two kinds of checks | NEW | two kinds of checks on the model itself: quality evals and topic guardrails (OpenLIT docs, 2026-10-19); neither is in the demo |
-| 66 | 40-act4 | K | 45:40 | 45 | Content capture, a matched pair | NEW | Content capture as a matched pair: Fig 9.5 lifted (three layers, keys vs content) |
-| 67 | 40-act4 | K | 46:25 | 30 | Never sample the decisions | TAMING | "More Telemetry ≠ Better Telemetry" (p.40), reworked: the 142 vs 139 defect |
-| 68 | 40-act4 | W | 46:55 | 60 | From requirement to artifact | NEW | Requirement → artifact, Ch 14's six-row table; walk two rows (Art. 86 / C-203/22 and DORA) |
-| 69 | 40-act4 | W | 47:55 | 30 | The deadline moved | NEW | The deadline moved: Fig 10.1 lifted (the Omnibus timeline), plus SR 26-2 |
-| 70 | 40-act4 | W | 48:25 | 30 | Seventeen findings, none filed | NEW | Seventeen findings: Fig 12.1 lifted (governance home × kind of gap), plus F17 (agentgateway v1.6.0 deny as isError, docs/upstream-findings.md, after the book); chips tinted from Fig 12.2 |
-| 71 | 40-act4 | W | 48:55 | 40 | Where AI observability stands | NEW | where AI observability stands: the L0–L5 ladder and the ecosystem's measured rung (Instrumenting AI Agents, Dash0 DevRel, Aug 2026, p. 10); replaces the old OTel-support maturity model, which has since changed |
-| 72 | 50-close | W | 49:35 | 60 | What this does not do | NEW | Honest limitations: Ch 14's list (Backstage line kept exact in the note) plus the two abstract blocks the demo does not have (Ch 11.3; dashed like the blueprint's missing layers, Fig 11.1) |
-| 73 | 50-close | W | 50:35 | 45 | Becoming a regulated-platform wizard | DID WHAT | "Becoming an AI observability wizard": the six steps as the book lists them (Ch 3 Fig 3.18), dimmed, plus Ch 14's three regulated ones |
-| 74 | 50-close | W | 51:20 | 45 | What to do on Monday | NEW | The call to action: Ch 14's five verbs, ending on "Seventeen findings. Pick one." |
-| 75 | 50-close | W | 52:05 | 30 | Three things to remember | NEW | Three things to remember: the layout of Figure 14.4 (study ed.; 14.9 full ed.), its text reworded after M8 for the talk's spine (guardrails, instrumented decisions, upstream projects), plus the callback. No QR: the book isn't hosted yet. |
-| 76 | 90-thanks | W | — | 0 | Thank you |  |  |
+| 03 | 10-open-act1 | W | 0:55 | 40 | Verticalizing |  |  |
+| 04 | 10-open-act1 | W | 1:35 | 60 | The auditor’s questions | NEW | the auditor's five questions, big type, each tagged with the requirement behind it (Ch 10; Ch 14 slide 35 table). The table itself comes at "From requirement to artifact". |
+| 05 | 10-open-act1 | W | 2:35 | 25 | Not an answer | NEW | the stakes, as type: Ch 14 slide 09's title line |
+| 06 | 10-open-act1 | W | 3:00 | 60 | The agent proposed | NEW | the cold open: a crop of the customer UI outcome block, €5,800 held for a person (M8: a hold, not a refusal) |
+| 07 | 10-open-act1 | W | 4:00 | 10 | Act 1 — Agents change the nature of complexity | NEW | Act 1 divider |
+| 08 | 10-open-act1 | W | 4:10 | 45 | The model draws the call graph | TAMING | the model draws the call graph: book Figure 1.4 (one prompt, three runs), lifted and cropped |
+| 09 | 10-open-act1 | W | 4:55 | 45 | Anatomy of an agent | DID WHAT | anatomy of an agent: book Figure 1.3 (the agent loop, mermaid in the book) redrawn as SVG, inside Figure 1.2's harness |
+| 10 | 10-open-act1 | W | 5:40 | 45 | Meet MCP and A2A |  |  |
+| 11 | 10-open-act1 | W | 6:25 | 45 | Decide. Trace. Prove. | NEW | the thesis: three words, each with its gloss |
+| 12 | 10-open-act1 | W | 7:10 | 50 | Bounded autonomy | BOUNDED | bounded autonomy, the definition of Decide: William's four rings as concentric bands, one question each (William Rizzo, Bounded Agent Autonomy, OSFF 2026); Northstar's piece per ring waits for Act 3 |
+| 13 | 20-act2 | K | 8:00 | 10 | Act 2 — What tracing already gives us | NEW | Act 2 divider: what tracing already gives us |
+| 14 | 20-act2 | K | 8:10 | 30 | What a span is | NEW | concept: what a span is, and how spans make a trace (Ch 3 Fig 3.2 and 3.3, values illustrative) |
+| 15 | 20-act2 | K | 8:40 | 30 | Context gets lost | TAMING | context gets lost: one whole trace next to the same work split into two traces (Ch 3 parcel-label idea) |
+| 16 | 20-act2 | K | 9:10 | 35 | What can gen_ai.* answer today? | DID WHAT | the "what can the conventions answer today" table (Ch 3 Fig 3.10, minus the gap row, which is slide 18); the four opt-in rows dimmed |
+| 17 | 30-act3a | K | 9:45 | 10 | Act 3 — Northstar, live | NEW | Act 3 divider |
+| 18 | 30-act3a | K | 9:55 | 50 | What a governed foundation needs | NEW | the abstract's five building blocks on Ch 11's blueprint (Figure 11.1, cropped; numbered 1–5 by the abstract's five building blocks, 4 = policy (4a) + evals (4b)); under it, where William's four rings land |
+| 19 | 30-act3a | K | 10:45 | 40 | Meet Northstar | NEW | Meet Northstar: Ch 4 Figure 4.5, claim path only |
+| 20 | 30-act3a | K | 11:25 | 30 | The model can request. The platform decides. | NEW | the design rule: Ch 4 Figure 4.4 |
+| 21 | 30-act3a | K | 11:55 | 60 | The toolbox | NEW | the toolbox map: every tool on the claim path and around it, by job (docs/architecture.md components tables; deploy/*; Ch 2 Figure 2.12 for who governs what) |
+| 22 | 30-act3a | K | 12:55 | 60 | Workload identity: SPIFFE/SPIRE | NEW | SPIFFE/SPIRE: how settlement-agent gets its JWT-SVID (deploy/platform/spire/*, architecture.md "Workload identity" and "Identity with teeth", agents/settlement-agent/svid.py) |
+| 23 | 30-act3a | K | 13:55 | 60 | agentgateway: one choke point | NEW | agentgateway: the one choke point and its checks in order (deploy/platform/agentgateway/config.yaml; architecture.md "Hop 3") |
+| 24 | 30-act3a | K | 14:55 | 45 | The decision and the live policy | NEW | the decision and the live policy: pds/rules.py EXECUTE_LIMITS, pds/autonomy.py (flagd on localhost:8013), deploy/platform/openfeature/featureflag.yaml |
+| 25 | 30-act3a | K | 15:40 | 370 | Live: Northstar | NEW | the demo: one dark sheet while the terminal is up; no commands on the face (Kasper, 2026-10-19). The run-sheet is the note. |
+| 26 | 30-live | K | 21:50 | 40 | What you just saw | NEW | what you just saw: the five demo steps as outcomes, no commands (Kasper, 2026-10-19; replaces the five live-step slides and their transcript fallbacks) |
+| 27 | 31-act3b | K | 22:30 | 45 | One trace, and the absence | NEW | deep dive after step 2: the full deny trace from the customer UI, after Ch 5 Figure 5.5 and Ch 6 Figure 6.13 (trace a4007e49…) |
+| 28 | 31-act3b | K | 23:15 | 45 | HTTP 200 means no | NEW | HTTP 200 means no (Ch 6: Figure 6.15, the metrics Figure 6.24, Finding 7) |
+| 29 | 31-act3b | K | 24:00 | 40 | Two ways to say no | NEW | two ways to say no, measured: a gateway guardrail in CEL (config only; the real rule from deploy/platform/agentgateway/config.yaml) beside the decision service, the table from the M8 spec §5; the ceiling is on the deck, not in the live demo (tests/e2e/test_gateway_ceiling.py) |
+| 30 | 31-act3b | K | 24:40 | 45 | Maker and checker | NEW | maker and checker: trace A (the agent's work, ending at the hand-off), trace B (a person released it through the gateway, the resume, the push), the span link from B's resume back to A, and how long humans take (northstar_approval_wait_duration_seconds, docs/telemetry-contract.md; runbook §5 Beat 4) |
+| 31 | 40-act4 | K | 25:25 | 10 | Act 4 — How you prove it | NEW | Act 4 divider. The act title is Ch 14's alternative subtitle. |
+| 32 | 40-act4 | K | 25:35 | 50 | The evidence view | NEW | the evidence view, in Jaeger (2026-10-19, replaces the OpenSearch dashboard capture): trace B of an approved claim, the northstar.review.decision span open with its link |
+| 33 | 40-act4 | K | 26:25 | 50 | How the auditor works | NEW | How the auditor works: eval-scorer's loop, OpenTelemetry in and OpenTelemetry out (platform/eval-scorer/README.md; scorer/emit.py; scorer/opensearch.py TrajectoryTruncated; M4 design spec §5) |
+| 34 | 40-act4 | K | 27:15 | 45 | Two kinds of checks | NEW | two kinds of checks on the model itself: quality evals and topic guardrails (OpenLIT docs, 2026-10-19); neither is in the demo |
+| 35 | 40-act4 | K | 28:00 | 45 | Content capture, a matched pair | NEW | Content capture as a matched pair: Fig 9.5 lifted (three layers, keys vs content) |
+| 36 | 40-act4 | K | 28:45 | 30 | Never sample the decisions | TAMING | "More Telemetry ≠ Better Telemetry" (p.40), reworked: the 142 vs 139 defect |
+| 37 | 40-act4 | W | 29:15 | 60 | From requirement to artifact | NEW | Requirement → artifact, Ch 14's six-row table; walk two rows (Art. 86 / C-203/22 and DORA) |
+| 38 | 50-close | W | 30:15 | 60 | What this does not do | NEW | Honest limitations: Ch 14's list (Backstage line kept exact in the note) plus the two abstract blocks the demo does not have (Ch 11.3; dashed like the blueprint's missing layers, Fig 11.1) |
+| 39 | 50-close | W | 31:15 | 45 | What to do on Monday | NEW | The call to action: Ch 14's five verbs, ending on "Seventeen findings. Pick one." |
+| 40 | 50-close | W | 32:00 | 30 | Three things to remember | NEW | Three things to remember: the layout of Figure 14.4 (study ed.; 14.9 full ed.), its text reworded after M8 for the talk's spine (guardrails, instrumented decisions, upstream projects), plus the callback. No QR: the book isn't hosted yet. |
+| 41 | 90-thanks | W | — | 0 | Thank you |  |  |
+| — | hidden | | | 0 | 35 slides carry data-cut and are not built: When an agent acts (10-open-act1); The evolution of architectures (10-open-act1); What an agent is, in one sentence (10-open-act1); What a protocol is for (10-open-act1); MCP, A2A and Skills (10-open-act1); The decoder ring (10-open-act1); “We don’t know what the agent did” (10-open-act1); traceparent, now also in MCP (20-act2); We've done this before (30-act3a); Connected is not governed (30-act3a); Enforcement point, decision point (30-act3a); What agentgateway is (30-act3a); What OpenFeature is (30-act3a); Identity is an input (31-act3b); Reach has two layers (31-act3b); What agentgateway says about one governed call (31-act3b); Defence in depth (31-act3b); Limiting access to MCP (31-act3b); Guardrails for model traffic (31-act3b); Hide or refuse (31-act3b); Fail-closed vs fail-open (31-act3b); Fail-open is one word away (31-act3b); A span link vs a parent edge (31-act3b); The same flip, with a UI (31-act3b); The platform API is the resource (31-act3b); Evidence vs logs (40-act4); Which refusals the trace can see (40-act4); The decision contract is a published schema (40-act4); What an evaluation is (40-act4); A score that can go to zero (40-act4); And LLM-as-judge? (40-act4); The deadline moved (40-act4); Seventeen findings, none filed (40-act4); Where AI observability stands (40-act4); Becoming a regulated-platform wizard (50-close) | | |
 
 **Check before presenting:** every fast-moving fact on a slide carries a `[verify: …]` line in its
 speaker note. They map to Appendix B of the book.

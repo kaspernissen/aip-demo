@@ -21,7 +21,7 @@
   },
   {
     "secs": 30,
-    "note": "KASPER\n\nThe design rule as a picture. Left: the model can request anything, even six thousand two hundred euros. Middle: one choke point the agent can't skip. Who is asking, and is it allowed? Right: only a permit becomes an effect. Why not limit the agent? An agent that can choose to ask permission can choose not to. The tool? That's an if-statement with extra steps. A test fails if one ever appears. And that middle box hides two different jobs. Next slide.\n\nSource: Ch 4 (Figure 4.4, design principle 2), Ch 7 (Decision 2)."
+    "note": "KASPER\n\nThe design rule as a picture. Left: the model can request anything, even six thousand two hundred euros. Middle: one choke point the agent can't skip. Who is asking, and is it allowed? Right: only a permit becomes an effect. Why not limit the agent? An agent that can choose to ask permission can choose not to. The tool? That's an if-statement with extra steps. A test fails if one ever appears. So what fills that middle box? Here is every tool, by its job.\n\nSource: Ch 4 (Figure 4.4, design principle 2), Ch 7 (Decision 2)."
   },
   {
     "secs": 30,
