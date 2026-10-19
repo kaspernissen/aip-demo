@@ -1,0 +1,9 @@
+/* 00-cover · the two QR codes from the close, bottom right under the rule (2026-10-19). The meta line
+   wraps so the event sits on its own line and leaves the corner free. */
+.slide.cover .meta { flex-wrap: wrap; row-gap: 6px; }
+.slide.cover .meta .br { flex-basis: 100%; height: 0; }
+.slide.cover .cover-qrs { position: absolute; right: 64px; bottom: 44px; display: flex !important; flex-direction: row !important; gap: 28px; margin: 0; width: auto; }
+.cover-qrs figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.cover-qrs .card { background: #fff; border-radius: 16px; padding: 14px; width: 168px; height: 168px; box-sizing: border-box; box-shadow: 0 16px 40px -18px rgba(0,0,0,.6); }
+.cover-qrs .card img { width: 100%; height: 100%; display: block; }
+.cover-qrs figcaption { font-size: 20px; color: var(--ocean-aqua-lift); letter-spacing: .02em; }
