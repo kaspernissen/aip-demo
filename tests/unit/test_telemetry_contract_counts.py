@@ -335,6 +335,10 @@ _PER_SERVICE_SUITES = [
     ("payments-mcp", REPO_ROOT / "tools" / "payments-mcp", _pytest_collected_count),
     ("payments-api", REPO_ROOT / "systems" / "payments-api", _go_test_count),
     ("customer-ui", REPO_ROOT / "apps" / "customer-ui", _vitest_test_count),
+    # The customer-ui's Python server (M10) has its own `.venv` and `tests/`
+    # and is run by `scripts/smoke-test.sh` after the vitest row, so it is
+    # counted like every other pytest suite here.
+    ("customer-ui server", REPO_ROOT / "apps" / "customer-ui" / "server", _pytest_collected_count),
     # `tests/unit` already depends on the PDS's generated stubs --
     # `agents/settlement-agent`'s own suite imports `pds.server`, and the row
     # three lines above collects that suite -- so the PDS's own suite is

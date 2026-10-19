@@ -53,10 +53,11 @@ command_exists npx || { echo -e "${RED}npx (Node.js) is required${NC}" >&2; exit
 #   test about a contract count rather than about a missing prerequisite.
 #   docs/telemetry-contract.md's per-service row publishes each suite's
 #   count, and that same test module re-measures it -- not restated here.
-for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui platform/eval-scorer; do
+for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui platform/eval-scorer apps/customer-ui/server; do
   [[ -x "$ROOT/$svc/.venv/bin/python" ]] || {
     echo -e "${RED}Error: $ROOT/$svc/.venv not found.${NC}" >&2
     echo "Create it: (cd $svc && uv venv --python 3.13 .venv && uv pip install -r requirements.txt)" >&2
+    [[ -f "$ROOT/$svc/requirements-dev.txt" ]] && echo "  (this one carries its test packages in requirements-dev.txt: install that instead)" >&2
     exit 1
   }
 done
@@ -268,6 +269,13 @@ echo -e "${YELLOW}policy-decision-service${NC}"
 
 echo -e "${YELLOW}customer-ui${NC}"
 (cd "$ROOT/apps/customer-ui" && npx vitest run)
+
+# customer-ui's Python server (relay, token handling, the static export). Its
+# venv is in the prerequisite loop above; docs/telemetry-contract.md's
+# per-service row publishes the count and tests/unit/test_telemetry_contract_counts.py
+# re-measures it, so no count is restated here.
+echo -e "${YELLOW}customer-ui server${NC}"
+(cd "$ROOT/apps/customer-ui/server" && .venv/bin/python -m pytest tests -q)
 
 # reviewer-ui. Same shape as the PDS row above -- the venv is required in the
 # prerequisite loop, so reaching here means it exists, and the suite is

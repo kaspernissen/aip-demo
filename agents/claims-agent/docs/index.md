@@ -28,7 +28,7 @@ component in the chain — deliberately.
 | In | A2A / JSON-RPC 2.0 | port `9001`: `message/stream` from the browser, `tasks/get` and a blocking `message/send` (the resume) from the reviewer-ui |
 | Out | A2A | `settlement-agent:9002` |
 | Out | HTTP | `payments-api:8080`, one read: `GET /payments/{id}`, when a task is resumed |
-| Out | A2A push | `POST` of the finished Task to `customer-ui:8080/a2a/push`, only to a URL on the exact-match allowlist (`CLAIMS_AGENT_PUSH_URL_ALLOWLIST`) |
+| Out | A2A push | `POST` of the finished Task (terminal states only; never in trace A) to `customer-ui:8080/a2a/push`, only to a URL on the exact-match allowlist (`CLAIMS_AGENT_PUSH_URL_ALLOWLIST`) |
 
 ## The waiting claim
 
@@ -60,10 +60,15 @@ text part: `claimId`, `policyNumber`, `paymentId`, `amount`, `currency`,
   ledger and reports what the ledger says. A resume the ledger does not back is
   refused, and the task keeps waiting.
 - The task then completes, and the SDK pushes the Task to the customer-ui
-  server, which relays it to the browser. The push goes only to a URL on the
+  server, which relays it to the browser. Only the outcome is pushed, in trace B:
+  `TerminalPushNotificationSender` sends nothing for `submitted` or
+  `input-required`, so trace A holds no push and no `customer-ui-server` span.
+  The push goes only to a URL on the
   exact-match allowlist (SSRF guard), the receiver checks the token in
   `X-A2A-Notification-Token`, and Cilium allows this one call (`POST /a2a/push`)
-  and nothing else from claims-agent to customer-ui.
+  and nothing else from claims-agent to customer-ui. `tasks/pushNotificationConfig/get`,
+  `/list` and `/delete` are refused (JSON-RPC -32004): `get` would hand the token
+  to anyone holding the task id, and the customer-ui never needs them.
 - A claim must be submitted with `message/stream` and a push config. The
   stream ends at `input-required`; the outcome arrives by push.
 

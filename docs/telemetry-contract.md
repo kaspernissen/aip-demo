@@ -81,7 +81,9 @@ release through agentgateway under `human-approved.execute`, then the resume. Th
 resume is the claims-agent span `northstar.a2a.resume` (registry span, internal),
 which carries **one span link** back to the hand-off span in trace A, with link
 attribute `northstar.a2a.link.reason = resume`. When the task completes, a2a-sdk
-pushes the Task to the customer-ui server (`POST /a2a/push`, service
+pushes the Task (the outcome only: claims-agent's `TerminalPushNotificationSender`
+sends terminal states only, so trace A holds no push and no `customer-ui-server`
+span) to the customer-ui server (`POST /a2a/push`, service
 `customer-ui-server`, token in `X-A2A-Notification-Token`), and the browser's
 `GET /claims/events` ends with the outcome. The parked span context and the parked
 reply travel in the input-required update's task metadata
@@ -2289,10 +2291,11 @@ the 19 other `tests/unit/` harness-correctness tests silently) or if
 environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
-Per-service unit suites (all nine run by `smoke-test.sh`, before any e2e test):
-claims-agent 46, settlement-agent 99, payments-mcp 16, payments-api (Go) 39,
-customer-ui (vitest) 29, policy-decision-service 156,
+Per-service unit suites (all ten run by `smoke-test.sh`, before any e2e test):
+claims-agent 57, settlement-agent 99, payments-mcp 16, payments-api (Go) 39,
+customer-ui (vitest) 29, customer-ui server (pytest) 16, policy-decision-service 156,
 reviewer-ui 103, eval-scorer 166, backstage (jest) 37 — all passing.
+(**M10 final-review fix wave: claims-agent 46 → 57, and a new row, customer-ui server (pytest) 16.** The claims-agent gains eleven tests in `test_push.py` (a non-terminal task is not pushed, a terminal one is, the stream pushes only the outcome, push-config get/list/delete are refused); the customer-ui's Python server suite, which the gate did not run before, is now in `smoke-test.sh` and counted here. The collection under `tests/` is unchanged (616, gated 107), so the predicted gate figure stays `615 passed, 1 xfailed`.)
 (**2026-10-15, M8 final-review fix wave: claims-agent 30 → 32, reviewer-ui 95 → 101.** The claims-agent gains two lifecycle tests (a second resume while the first publishes is refused; a ledger read that fails once leaves the task waiting for the retry); the reviewer-ui gains six healing tests in `test_review.py` (a decision already on the ledger re-sends the resume and moves no money, for approve and reject; a contradicting decision stays a 409; a task no longer waiting stays a 409; another resend failure is reported; no task id stays a 409). The policy-decision-service stays at 157: one parametrised test split in two.)
 (**2026-10-14, M8 Task 3: reviewer-ui 87 → 95, eval-scorer 165 → 166.** reviewer-ui gains
 `tests/test_approval_metrics.py` (2) and six tests in `test_review.py` (the span link, no link

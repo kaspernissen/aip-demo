@@ -451,7 +451,7 @@ spec:
             - port: "9002"
               protocol: TCP
 
-    # 2b. payments-api, for one read (M8): ledger.py's GET /payments/{id}, made
+    # 3. payments-api, for one read (M8): ledger.py's GET /payments/{id}, made
     # when a waiting task is resumed, so the customer is told what the ledger
     # says and not what the resume message claims. L7 for the reason the
     # reviewer-ui's rule gives: payments-api has no caller authentication, so
@@ -470,7 +470,7 @@ spec:
               - method: GET
                 path: "/payments/PAY-[0-9]{6}"
 
-    # 3. The OTLP collector. Same endpoint and the same silent-failure
+    # 4. The OTLP collector. Same endpoint and the same silent-failure
     #    argument as settlement-agent's rule 3 --
     #    deploy/k8s/claims-agent.yaml:29-32. This service owns the entry span
     #    of the A2A chain, so losing its export would not empty the trace, it
@@ -548,7 +548,7 @@ spec:
               protocol: TCP
 
     # The OTLP collector, http/protobuf on 4318 (deploy/k8s/customer-ui.yaml),
-    # the same endpoint and rule as claims-agent's rule 3.
+    # the same endpoint and rule as claims-agent's rule 4.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: observability

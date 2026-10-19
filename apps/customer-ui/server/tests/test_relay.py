@@ -78,6 +78,15 @@ async def test_the_subscriber_waits_and_ends_on_the_terminal_push(aclient):
     assert [f["status"]["state"] for f in _frames(r.text)] == ["input-required", "completed"]
 
 
+async def test_a_first_push_that_is_already_terminal_binds_the_token_and_ends_the_stream(aclient):
+    # claims-agent pushes terminal states only, so the FIRST push a token sees is the outcome.
+    tok = (await aclient.post("/claims/push-config")).json()["token"]
+    assert (await _apush(aclient, tok, _task("completed"))).status_code == 204
+    assert (await _apush(aclient, tok, {**_task("completed"), "id": "other"})).status_code == 409
+    r = await asyncio.wait_for(aclient.get("/claims/events", headers={"x-claim-token": tok}), 5)
+    assert [f["status"]["state"] for f in _frames(r.text)] == ["completed"]
+
+
 def test_events_without_a_known_token_is_rejected(client):
     assert client.get("/claims/events", headers={"x-claim-token": "nope"}).status_code == 401
     assert client.get("/claims/events").status_code == 401

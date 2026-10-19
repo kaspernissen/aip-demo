@@ -1,0 +1,19 @@
+# Test-only packages for the customer-ui server suite. The runtime image does
+# not install this file (the Dockerfile copies requirements.txt only). Create
+# the venv with: uv venv --python 3.13 .venv && uv pip install -r requirements-dev.txt
+-r requirements.txt
+
+# Test client transport (tests/conftest.py's ASGITransport; Starlette's
+# TestClient also needs it). Version matches every other Python service.
+httpx==0.28.1
+# Test runner, gated by the same advisory-pin discipline as every other
+# service's test_pins.py.
+pytest==9.1.1
+pytest-asyncio==1.4.0
+
+# Their transitive closure, pinned exactly as resolved by `pip install` into a
+# clean venv (python 3.13).
+httpcore==1.0.9
+iniconfig==2.3.1
+pluggy==1.7.0
+Pygments==2.21.0

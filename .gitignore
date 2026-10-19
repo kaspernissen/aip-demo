@@ -30,3 +30,5 @@ talk/preview-*
 
 # The demo driver's run state (scripts/demo): this run's claim ids.
 .demo/
+# tsc incremental build state (apps/customer-ui has incremental: true)
+*.tsbuildinfo

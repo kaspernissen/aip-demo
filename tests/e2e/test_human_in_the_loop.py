@@ -282,6 +282,8 @@ def test_trace_a_is_finished_at_the_hand_off():
             f"trace A kept growing while the claim waited: {len(baseline.spans)} spans, then "
             f"{len(later.spans)} twelve seconds later; new: "
             f"{sorted({s.operation for s in later.spans} - {s.operation for s in baseline.spans})}")
+        assert not [s for s in later.spans if s.service == "customer-ui-server"], (
+            "trace A holds a customer-ui-server span: only the outcome is pushed, in trace B")
         hand_off = [s for s in later.spans
                     if s.service == "claims-agent"
                     and s.attrs.get("northstar.a2a.task.state") == "input-required"]

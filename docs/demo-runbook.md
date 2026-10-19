@@ -475,8 +475,9 @@ ends at the hand-off: the claims-agent records `input-required` and returns, so
 nothing polls and trace A does not grow while the claim waits. There is nothing to
 wait for before opening it. The person's work is trace B: the decision, the
 release through the gateway, the resume (`northstar.a2a.resume`, with one span
-link back to trace A) and the push to the customer-ui server (`POST /a2a/push`,
-service `customer-ui-server`), which the browser's wait ends on. Step 5's `trace`
+link back to trace A) and the push of the outcome to the customer-ui server
+(`POST /a2a/push`, service `customer-ui-server`), which the browser's wait ends on.
+Only the outcome is pushed: trace A holds no push and no `customer-ui-server` span. Step 5's `trace`
 link for an approved claim opens trace B. The terminal driver's trace view prints
 only the road the money would take.
 

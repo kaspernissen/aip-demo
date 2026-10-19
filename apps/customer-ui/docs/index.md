@@ -41,7 +41,9 @@ stream ends when the claim reaches `input-required`. The page then holds
 URL), under the `northstar.claim.wait` span.
 
 When a person decides, claims-agent's resume completes the task and the A2A SDK
-pushes the Task to `POST /a2a/push` with the token in `X-A2A-Notification-Token`.
+pushes the finished Task to `POST /a2a/push` (terminal states only: the submitted
+and input-required snapshots are not pushed, so trace A holds no push and no
+`customer-ui-server` span) with the token in `X-A2A-Notification-Token`.
 The server checks the token before it parses the body, relays the Task to the
 open events stream, and the stream ends with the outcome. Nothing polls and the
 page never resubscribes. If the events stream drops, the page reopens it; if it

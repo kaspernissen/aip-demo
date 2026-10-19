@@ -17,15 +17,41 @@ import os
 from collections.abc import Mapping
 
 from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.types import InvalidParamsError
+from a2a.server.tasks import BasePushNotificationSender
+from a2a.types import InvalidParamsError, TaskState, UnsupportedOperationError
 from a2a.utils.errors import ServerError
 
 DEFAULT_PUSH_URL = "http://customer-ui.northstar-agents.svc.cluster.local:8080/a2a/push"
 
 
+TERMINAL_STATES = frozenset(
+    {TaskState.completed, TaskState.failed, TaskState.canceled, TaskState.rejected})
+
+
+class TerminalPushNotificationSender(BasePushNotificationSender):
+    """Push the outcome and nothing else.
+
+    a2a-sdk 0.3.7 awaits the sender before it yields EVERY stream event, so the
+    stock sender would POST the submitted and input-required snapshots from
+    inside trace A. Only a terminal state is pushed, and it happens in trace B
+    (the resume); trace A holds no push and no customer-ui-server span.
+    """
+
+    async def send_notification(self, task) -> None:
+        if task.status.state not in TERMINAL_STATES:
+            return
+        await super().send_notification(task)
+
+
 class PushUrlRefused(ServerError):
     def __init__(self, url: str):
         super().__init__(error=InvalidParamsError(message=f"push URL not allowed: {url!r}"))
+
+
+class PushConfigReadRefused(ServerError):
+    def __init__(self):
+        super().__init__(error=UnsupportedOperationError(
+            message="push notification config can only be set, not read or deleted"))
 
 
 def allowlist_from_env(env: Mapping[str, str] = os.environ) -> list[str]:
@@ -58,3 +84,16 @@ class AllowlistedRequestHandler(DefaultRequestHandler):
     async def on_set_task_push_notification_config(self, params, context=None):
         self._check(params.push_notification_config)
         return await super().on_set_task_push_notification_config(params, context)
+
+    # tasks/pushNotificationConfig/get|list return the token to anyone who holds
+    # the task id, and delete would leave the browser waiting with no drop. The
+    # customer-ui needs none of them. UnsupportedOperationError maps to JSON-RPC
+    # -32004 through JSONRPCHandler's ServerError handling.
+    async def on_get_task_push_notification_config(self, params, context=None):
+        raise PushConfigReadRefused()
+
+    async def on_list_task_push_notification_config(self, params, context=None):
+        raise PushConfigReadRefused()
+
+    async def on_delete_task_push_notification_config(self, params, context=None):
+        raise PushConfigReadRefused()

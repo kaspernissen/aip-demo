@@ -7,6 +7,12 @@
 # just resolved. Excluding them forces the image to always contain exactly
 # what npm ci produced from package-lock.json.
 node_modules
+server/.venv
+server/tests
+server/.pytest_cache
+**/__pycache__
+*.pyc
+*.tsbuildinfo
 .next
 out
 npm-debug.log*

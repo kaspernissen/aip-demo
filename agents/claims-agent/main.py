@@ -7,14 +7,14 @@ from pathlib import Path
 import httpx
 import uvicorn
 from a2a.server.apps import A2AStarletteApplication
-from a2a.server.tasks import (BasePushNotificationSender, InMemoryPushNotificationConfigStore,
+from a2a.server.tasks import (InMemoryPushNotificationConfigStore,
                               InMemoryTaskStore)
 from a2a.types import AgentCard
 from opentelemetry.instrumentation.starlette import StarletteInstrumentor
 from starlette.middleware.cors import CORSMiddleware
 
 from executor import ClaimsAgentExecutor
-from push import AllowlistedRequestHandler, allowlist_from_env
+from push import AllowlistedRequestHandler, TerminalPushNotificationSender, allowlist_from_env
 
 CARD_PATH = Path(os.environ.get("AGENT_CARD_PATH", "/app/agent-card.json"))
 
@@ -32,7 +32,7 @@ def build_app():
         agent_executor=ClaimsAgentExecutor(),
         task_store=InMemoryTaskStore(),
         push_config_store=push_store,
-        push_sender=BasePushNotificationSender(push_client, push_store),
+        push_sender=TerminalPushNotificationSender(push_client, push_store),
         push_url_allowlist=allowlist_from_env(),
     )
     app = A2AStarletteApplication(

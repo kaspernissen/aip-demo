@@ -237,8 +237,9 @@ root, one per Python service, and a Playwright Chromium:
 
 ```bash
 uv venv --python 3.13 .venv && uv pip install -r tests/requirements.txt && .venv/bin/playwright install chromium
-for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui platform/eval-scorer; do
-  (cd "$svc" && uv venv --python 3.13 .venv && uv pip install -r requirements.txt)
+for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui platform/eval-scorer apps/customer-ui/server; do
+  # requirements-dev.txt (runtime + test packages) where a service has one
+  (cd "$svc" && uv venv --python 3.13 .venv && uv pip install -r "$([ -f requirements-dev.txt ] && echo requirements-dev.txt || echo requirements.txt)")
 done
 ```
 

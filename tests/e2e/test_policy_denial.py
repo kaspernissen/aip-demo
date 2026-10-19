@@ -420,11 +420,10 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
         f"browser reported CORS errors; traceparent is being rejected: {cors_errors}"
     )
 
-    # A claim routed to a human is waiting, and a waiting claim keeps its trace
-    # open (a2a-sdk's `_run_event_stream` span and a 0.5 s polling span last as
-    # long as the wait), so the trace would not hold steady. The human decided
-    # above, with the page open; `ledger_record` is what the ledger said while
-    # the claim waited.
+    # A claim routed to a human is waiting, but trace A ends at the hand-off
+    # (M10: nothing polls and no span stays open while the claim waits). The
+    # human decided above, with the page open; `ledger_record` is what the
+    # ledger said while the claim waited.
     reply = json.loads(outcome["raw"])
 
     # Wait for the whole chain to land *and hold steady* past the 5s
