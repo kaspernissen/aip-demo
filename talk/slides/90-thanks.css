@@ -33,3 +33,16 @@
 .x90-never { display: flex; align-items: baseline; gap: 40px; margin-top: calc(0.9 * var(--baseline)); font-size: 26px; }
 .x90-never b { color: var(--color-accent-2-700); }
 .x90-never s { text-decoration-color: var(--color-accent-2); }
+
+/* close: two dotted QR codes on the navy side (2026-10-19) — William's LinkedIn, Kasper's site */
+.slide.cover .x90-qrs { position: absolute; right: 110px; top: 290px; display: grid !important; grid-template-columns: 280px 280px; gap: 44px; margin: 0; width: auto; }
+.x90-qr { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 22px; }
+.x90-qr .card { background: #fff; border-radius: 26px; padding: 26px; width: 280px; height: 280px; box-sizing: border-box; box-shadow: 0 20px 50px -20px rgba(0,0,0,.6); }
+.x90-qr .card img { width: 100%; height: 100%; display: block; }
+.x90-qr figcaption { display: flex; align-items: center; gap: 14px; color: var(--ocean-paper); }
+.x90-qr .av { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 2px solid var(--ocean-aqua-lift); }
+.x90-qr figcaption span { display: flex; flex-direction: column; }
+.x90-qr figcaption b { font-size: 24px; }
+.slide .x90-qr figcaption .to { font-style: normal; font-size: 20px; color: var(--ocean-aqua-lift); }
+.x90-qr figcaption b { white-space: nowrap; }
+.x90-qr figcaption .co { height: 24px; width: auto; align-self: flex-start; margin-top: 8px; }

@@ -165,3 +165,6 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x10-card dd { margin: 0; }
 .x10-card code { font-family: var(--font-mono); font-size: .9em; }
 .x10-cards-foot { margin: calc(1.2 * var(--baseline)) 0 0; font-size: 40px; font-weight: 600; letter-spacing: -0.01em; }
+
+/* company logos under the role (2026-10-19) */
+.x10-me .x10-co { display: block; height: 38px; width: auto; margin-top: 12px; }
