@@ -638,6 +638,11 @@ deck-stage[data-baselines] .slide::after {
 
 html, body { margin: 0; background: var(--color-neutral-300); }
 deck-stage { --page-foot-note: "kaspernissen.xyz"; }
+/* Folio split (Kasper, 2026-10-19): the speakers' handles bottom-left, the page
+   number bottom-right. Both sit at pad-x, mirrored, clear of the corner marks. */
+.page-foot { left: var(--pad-x); right: var(--pad-x); display: flex; justify-content: space-between; }
+.page-foot::before { content: var(--page-foot-note); font-feature-settings: normal; }
+.page-foot::after { content: counter(page); font-feature-settings: "tnum" 1; }
 
 /* Slide text scale beyond the template's tokens (all serif). */
 .lede { font-size: var(--type-subtitle); line-height: var(--baseline); max-width: 34ch; margin: 0; }
@@ -798,9 +803,10 @@ deck-stage { --page-foot-note: "kaspernissen.xyz"; }
 .x10-stakes { padding-top: var(--cap-anchor); }
 .x10-st-q { font-family: var(--font-heading); font-style: italic; font-weight: 400; font-size: 120px; line-height: 1.12;
   letter-spacing: -0.015em; max-width: none; margin: 0; text-indent: -0.45em;
-  color: color-mix(in srgb, var(--color-text) 62%, transparent); text-box: trim-both cap alphabetic; }
+  color: color-mix(in srgb, currentColor 62%, transparent); text-box: trim-both cap alphabetic; }
 .x10-st-a { font-family: var(--font-heading); font-weight: 700; font-size: 120px; line-height: 1.12; letter-spacing: -0.02em;
   margin: 60px 0 0 -0.035em; color: var(--color-accent-2); }
+.x-dark .x10-st-a { color: var(--color-accent-2-400); }
 
 /* 02 · the outcome crop: the 1860px screenshot at 1.2x, window on the outcome block
    (source origin x=89, y=2352). Magenta rings mark amount and status. */
@@ -813,19 +819,18 @@ deck-stage { --page-foot-note: "kaspernissen.xyz"; }
 .x10-hl-st { top: 410px; width: 720px; }
 .x10-crop .shot-cap { font-size: var(--type-small); color: var(--color-text); margin-top: 30px; }
 
-/* 03 · portrait and the lineage of talks, set as type */
-.x10-who { display: grid; grid-template-columns: 620px 1fr; gap: 110px; align-items: start;
-  margin-top: calc(2 * var(--baseline)); }
-.x10-us { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
-.x10-portrait { width: 290px; margin: 0; }
-.x10-me-n { font-size: var(--type-kicker); margin: 22px 0 0; }
-.x10-line { display: flex; flex-direction: column; gap: 46px; }
-.x10-tk p { margin: 0; }
-.x10-tk-t { font-size: var(--type-subtitle); line-height: 1.15; }
-.x10-tk-by { font-size: var(--type-kicker); margin-top: 8px !important; letter-spacing: 0.01em; }
-.x10-tk-q { font-size: var(--type-small); margin-top: 6px !important; }
-.x10-now-q { font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  font-size: 54px; line-height: 1.12; letter-spacing: -0.01em; margin-top: 6px !important; }
+/* 01a · who: the two speakers, portraits as process plates, each with the
+   credentials they list themselves (Kasper's GOTO CPH deck; William's Sessionize). */
+.x10-us { display: grid; grid-template-columns: repeat(2, 1fr); gap: 100px; margin-top: calc(1.25 * var(--baseline)); }
+.x10-me { display: grid; grid-template-columns: 240px 1fr; grid-template-rows: auto auto 1fr; column-gap: 44px; align-items: start; }
+.x10-portrait { width: 240px; margin: 0; grid-row: span 3; }
+.x10-me p { margin: 0; }
+.x10-me-n { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 46px; line-height: 1.1; letter-spacing: -0.01em; }
+.x10-me-r { margin-top: 10px !important; font-size: var(--type-kicker); font-weight: 600; color: var(--color-accent-2); }
+.x10-me-l { list-style: none; margin: 26px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px;
+  font-size: 24px; line-height: 1.3; color: color-mix(in srgb, var(--color-text) 72%, transparent); }
+.x10-me-l li { padding-left: 22px; position: relative; }
+.x10-me-l li::before { content: ""; position: absolute; left: 0; top: 0.55em; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); }
 
 /* 06a · concept: model + instructions + tools + loop, as an equation set in type */
 .x10-eq { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; gap: 36px; align-items: start;
@@ -878,12 +883,6 @@ p.x10-w { margin-left: -0.035em; }
 div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x10-g { font-size: var(--type-subtitle); font-style: italic; margin: 0;
   color: color-mix(in srgb, var(--color-text) 60%, transparent); }
-.x10-me-n .muted { display: block; }
-
-/* 03 · four sources now: tighten the lineage so it clears the folio */
-.x10-who { margin-top: calc(1.25 * var(--baseline)); }
-.x10-line { gap: 26px; }
-.x10-now-q { font-size: 48px; }
 
 /* 11a · bounded autonomy: four concentric bands beside the four questions.
    Magenta ramp: these are governance boundaries. The keystone is the clasp around
@@ -1042,7 +1041,6 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x30-lad .st p { margin: 0; }
 .x30-lad .nm { font-size: 30px; font-weight: 700; line-height: 1.15; margin-bottom: 14px !important; min-height: 2.3em;
   display: flex; flex-direction: column; justify-content: flex-end; }
-.x30-lad .no { font-size: var(--type-kicker); font-weight: 400; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
 .x30-lad .bar { display: block; border-radius: var(--radius-sm); background: var(--color-accent-2-200); }
 .x30-lad .s1 .bar { height: 50px; background: var(--color-neutral-300); }
 .x30-lad .s2 .bar { height: 100px; background: var(--color-accent-2); }
@@ -1098,12 +1096,9 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 /* ---- A passport, not a name tag: five steps on a line, then the token ---- */
 .x30-sv { display: grid; grid-template-columns: repeat(5, 1fr); column-gap: 34px; position: relative;
   margin-top: calc(1.25 * var(--baseline)); }
-.x30-sv::before { content: ""; position: absolute; left: 24px; right: 24px; top: 24px; height: 2px; background: var(--color-neutral-400); }
-.x30-sv .step { position: relative; display: flex; flex-direction: column; gap: 8px; }
+.x30-sv::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--color-neutral-400); }
+.x30-sv .step { position: relative; display: flex; flex-direction: column; gap: 8px; padding-top: 26px; }
 .x30-sv .step p { margin: 0; }
-.x30-sv .no { width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; font-size: 26px; font-weight: 700;
-  background: var(--color-bg); box-shadow: inset 0 0 0 2px var(--color-text); margin-bottom: 10px; }
-.x30-sv .step.m .no { background: var(--color-accent-2); color: var(--color-bg); box-shadow: none; }
 .x30-sv .v { font-size: var(--type-small); font-weight: 700; }
 .x30-sv .step.m .v { color: var(--color-accent-2-700); }
 .x30-sv .t { font-size: 25px; line-height: 1.3; }
@@ -1125,9 +1120,7 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x30-gw .end span { display: block; font-size: 22px; font-weight: 400; font-style: italic; margin-top: 6px;
   color: color-mix(in srgb, var(--color-text) 55%, transparent); }
 .x30-gw .end.out { color: var(--color-accent-700); }
-.x30-gw .g { position: relative; display: flex; flex-direction: column; gap: 10px; }
-.x30-gw .g .no { width: 68px; height: 68px; border-radius: 50%; display: grid; place-items: center; font-size: 32px; font-weight: 700;
-  background: var(--color-accent-2); color: var(--color-bg); }
+.x30-gw .g { position: relative; display: flex; flex-direction: column; gap: 10px; padding-top: 70px; }
 .x30-gw .key .code { font-size: 28px; }
 .x30-gw .q { font-size: var(--type-small); font-weight: 700; }
 .x30-gw .f { font-size: 24px; line-height: 1.3; color: color-mix(in srgb, var(--color-text) 65%, transparent); }
@@ -1238,110 +1231,43 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x30-dm .rg { font-size: 22px; line-height: 1.3; color: color-mix(in srgb, var(--color-text) 60%, transparent); }
 .x30-dm + .x30-foot { margin-top: calc(0.75 * var(--baseline)); }
 
-/* ===== 30-live.css ===== */
-/* 30-live (Broadsheet): the five live steps and their transcript fallbacks. Everything is x3l-*. */
+/* Live: the dark sheet that stays up during the demo; no commands on its face. */
+.x30-live { padding-top: var(--cap-anchor); }
+.x30-live p { margin: 0; }
+.x30-live-k { font-size: var(--type-kicker); letter-spacing: 0.2em; text-transform: uppercase; color: var(--color-accent-2-400); }
+.x30-live-t { margin-top: 48px !important; font-family: var(--font-heading); font-weight: 700; font-size: 76px; line-height: 1.15; letter-spacing: -0.015em; }
+.x30-live-m { color: var(--color-accent-2-400); }
 
-/* the command under the title */
-.x3l-cmd { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px 22px; margin: calc(0.75 * var(--baseline)) 0 0; font-size: 30px; }
-.x3l-cmd .s { font-size: var(--type-kicker); color: color-mix(in srgb, var(--color-text) 55%, transparent); }
-.x3l-cmd .s .code { font-size: 22px; }
-
-/* a short line under the visual */
-.x3l-foot { margin: calc(1.25 * var(--baseline)) 0 0; font-size: var(--type-small); line-height: var(--baseline);
+/* What a governed foundation needs (Kasper, 2026-10-19: icons, not the book's nine-box
+   blueprint; no layer numbers). Nine tiles, three by three; the chip says how much
+   Northstar shows. Tools and models carry no chip: they are what the blocks stand on. */
+.x30-fd { display: grid; grid-template-columns: repeat(3, 1fr); gap: 34px 60px; margin-top: calc(1.25 * var(--baseline)); }
+.x30-fd > div { display: grid; grid-template-columns: 76px 1fr; grid-template-rows: auto auto 1fr; column-gap: 24px; align-items: start; align-content: start; }
+.x30-fd i { grid-row: span 3; font-size: 72px; line-height: 1; color: var(--color-neutral-700); align-self: start; }
+.x30-fd b { font-size: 38px; line-height: 1.1; font-weight: 700; letter-spacing: -0.01em; }
+.x30-fd span { font-size: var(--type-kicker); font-style: italic; margin-top: 6px;
   color: color-mix(in srgb, var(--color-text) 60%, transparent); }
-.x3l-foot b { color: var(--color-text); font-weight: 600; }
-.x3l-line { font-size: var(--type-subtitle); margin: calc(1.5 * var(--baseline)) 0 0; }
-.x3l-line em { color: var(--color-accent-2-700); }
+.x30-fd em { font-style: normal; justify-self: start; margin-top: 10px; }
+.x30-fd .x30-chip-on { background: var(--color-accent-2); color: var(--color-bg); }
+.x30-fd .x30-chip-off { opacity: 0.55; }
+.x30-fd > div:has(.x30-chip-on) i { color: var(--color-accent-2); }
+.content > .x30-fd + .x30-rg { margin-top: calc(1.25 * var(--baseline)); }
 
-/* Step 1: three callers, three roads, three answers */
-.x3l-g { display: grid; grid-template-columns: 420px 1fr 520px; margin-top: calc(1.5 * var(--baseline)); }
-.x3l-g p { margin: 0; padding: 26px 32px 26px 0; border-top: 1px solid color-mix(in srgb, var(--color-text) 18%, transparent); }
-.x3l-g .who { font-size: 36px; font-weight: 700; line-height: 1.1; }
-.x3l-g .who span, .x3l-g .res span { display: block; font-size: 24px; font-weight: 400; margin-top: 6px;
-  color: color-mix(in srgb, var(--color-text) 55%, transparent); }
-.x3l-g .call { font-size: 28px; }
-.x3l-g .call .code { font-size: 24px; }
-.x3l-g .res { font-family: var(--font-heading); font-size: 52px; font-weight: 700; line-height: 1; }
-.x3l-g .res span { font-family: var(--font-body); }
-.x3l-g .res.c { color: var(--color-accent-700); }
-.x3l-g .res.m { color: var(--color-accent-2-700); }
-
-/* Step 2: the terminal's span tree, set as a tree */
-.content > .x3l-tree { margin-top: calc(1.25 * var(--baseline)); }
-.stree .x3l-gap { margin-top: 22px; }
-.stree .x3l-never { font-size: 23px; font-style: italic; color: var(--color-accent-2-700); }
-
-/* Step 3: the one-word diff beside the amount */
-.x3l-b7 { display: grid; grid-template-columns: 1.2fr .8fr; gap: 100px; align-items: start; margin-top: calc(1.25 * var(--baseline)); }
-.x3l-lab { font-size: var(--type-kicker); letter-spacing: 0.04em; margin: 0; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
-.x3l-yaml { font-size: 32px; line-height: 1.6; margin: 18px 0 0; font-feature-settings: "tnum" 1; }
-.x3l-yaml .d { color: color-mix(in srgb, var(--color-text) 50%, transparent); }
-.x3l-yaml .i1 { padding-left: 1.2em; }
-.x3l-yaml .code.m { font-size: 34px; font-weight: 600; }
-.x3l-diff > div { margin-top: 6px; }
-.x3l-diff .del { color: color-mix(in srgb, var(--color-text) 45%, transparent); text-decoration: line-through;
-  text-decoration-color: var(--color-accent-2); }
-.x3l-diff .note { font-size: var(--type-kicker); font-style: italic; margin-left: 28px; }
-.x3l-amt .eur { font-family: var(--font-heading); font-weight: 700; font-size: 120px; line-height: 1; letter-spacing: -0.02em;
-  font-feature-settings: "tnum" 1; margin: 20px 0 30px; }
-.x3l-amt .r { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--type-body); margin-top: 18px; }
-.x3l-amt .k { color: color-mix(in srgb, var(--color-text) 60%, transparent); }
-.x3l-amt .v { font-weight: 700; }
-.x3l-amt .v.no { color: var(--color-accent-2-700); }
-.x3l-amt .v.yes { color: var(--color-accent-700); }
-
-/* Step 4: the keystone's five steps on one axis */
-.x3l-ks { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); column-gap: 34px; position: relative;
-  margin: calc(1.5 * var(--baseline)) 0 0; }
-.x3l-ks::before { content: ""; position: absolute; left: 24px; right: 24px; top: 24px; height: 2px; background: var(--color-neutral-400); }
-.x3l-ks li { position: relative; display: flex; flex-direction: column; gap: 10px; }
-.x3l-ks p { margin: 0; }
-.x3l-ks .no { width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; font-size: 26px; font-weight: 700;
-  background: var(--color-bg); box-shadow: inset 0 0 0 2px var(--color-text); margin-bottom: 8px; }
-.x3l-ks .a { font-size: 27px; line-height: 1.3; min-height: 2.6em; }
-.x3l-ks .r { font-family: var(--font-heading); font-weight: 700; font-size: 48px; line-height: 1.05;
-  color: color-mix(in srgb, var(--color-text) 55%, transparent); }
-.x3l-ks .r.m { color: var(--color-accent-2-700); }
-.x3l-ks .r.c { color: var(--color-accent-700); }
-.x3l-ks .w { font-size: 22px; line-height: 1.35; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
-.x3l-ks .w .code { font-size: 20px; white-space: normal; }
-.x3l-ks li:has(.r.m) .no { background: var(--color-accent-2); color: var(--color-bg); box-shadow: none; }
-.x3l-ks .oops .no { box-shadow: inset 0 0 0 2px var(--color-neutral-500); color: var(--color-neutral-600); }
-
-/* Step 5: two claims, read back, field by field */
-.x3l-ev { display: grid; grid-template-columns: 260px 1fr 1fr; margin-top: calc(1 * var(--baseline)); font-size: 28px; }
-.x3l-ev p { margin: 0; padding: 9px 32px 9px 0; border-top: 1px solid color-mix(in srgb, var(--color-text) 18%, transparent); }
-.x3l-ev .h { border-top: 0; padding-top: 0; font-weight: 700; font-size: 30px; }
-.x3l-ev .k { font-size: var(--type-kicker); color: color-mix(in srgb, var(--color-text) 55%, transparent); }
-.x3l-ev .code { font-size: 22px; }
-.x3l-ev .m { color: var(--color-accent-2-700); }
-.x3l-ev .c { color: var(--color-accent-700); }
-
-/* the fallbacks: a real transcript under the title */
-.content > .x3l-term { margin-top: calc(0.75 * var(--baseline)); font-size: 17px; line-height: 1.3; padding: 18px 28px; }
-/* the long transcripts (steps 2, 3, 5, 34-39 lines) must fit above the folio */
-.content > .x3l-term.x3l-fit { font-size: 14px; line-height: 1.18; padding: 14px 28px; }
-.x3l-ev + .x3l-foot { margin-top: calc(0.75 * var(--baseline)); }
-
-/* Step 2: three cards, left to right: customer tab, reviewer tab, customer tab */
-.x3l-hs { display: grid; grid-template-columns: 1fr 70px 1fr 70px 1fr; align-items: stretch; margin-top: calc(1.5 * var(--baseline)); }
-.x3l-hs .card { display: flex; flex-direction: column; gap: 14px; padding: 28px 30px; border-radius: var(--radius-md);
-  background: var(--color-neutral-200); }
-.x3l-hs .card p { margin: 0; }
-.x3l-hs .tab { font-size: var(--type-kicker); letter-spacing: 0.04em; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
-.x3l-hs .big { font-family: var(--font-heading); font-weight: 700; font-size: 44px; line-height: 1.1; }
-.x3l-hs .big.m { color: var(--color-accent-2-700); }
-.x3l-hs .big.c { color: var(--color-accent-700); }
-.x3l-hs .sm { font-size: 27px; line-height: 1.3; }
-.x3l-hs .sm .code { font-size: 24px; }
-.x3l-hs .arr { align-self: center; height: 2px; background: var(--color-neutral-500); position: relative; }
-.x3l-hs .arr::after { content: ""; position: absolute; right: 0; top: -7px; border: 8px solid transparent;
-  border-left: 14px solid var(--color-neutral-500); border-right: 0; }
-
-/* Step 5: three claims side by side */
-.x3l-ev3 { grid-template-columns: 220px 1fr 1fr 1fr; font-size: 26px; }
-.x3l-ev3 p { padding-right: 24px; }
-.x3l-ev3 .code { font-size: 20px; }
+/* ===== 30-live.css ===== */
+/* 30-live (Broadsheet): "What you just saw", the demo's five steps as outcomes. Everything is x3l-*.
+   Magenta chips are the platform saying no or holding; cyan chips are what went through. */
+.x3l-saw { display: grid; grid-template-columns: repeat(5, 1fr); gap: 48px; margin-top: calc(2 * var(--baseline)); }
+.x3l-saw > div { display: flex; flex-direction: column; }
+.x3l-saw p { margin: 0; }
+.x3l-saw i { font-size: 96px; line-height: 1; color: var(--color-neutral-700); }
+.x3l-saw .rg { margin-top: 28px; font-size: var(--type-kicker); letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-accent-2-700); }
+.x3l-saw .h { margin-top: 12px; font-size: 38px; line-height: 1.12; font-weight: 700; letter-spacing: -0.01em; min-height: 2.3em; }
+.x3l-saw .o { min-height: 108px; align-content: flex-start; }
+.x3l-saw .o { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 10px; }
+.x3l-saw .o span { font-size: var(--type-kicker); font-weight: 600; padding: 6px 14px; border-radius: var(--radius-sm); }
+.x3l-no { background: var(--color-accent-2); color: var(--color-bg); }
+.x3l-yes { background: var(--color-accent-100); color: var(--color-accent-800); }
+.x3l-saw .w { margin-top: 22px; font-size: var(--type-small); line-height: 1.3; font-style: italic; color: color-mix(in srgb, var(--color-text) 62%, transparent); }
 
 /* ===== 31-act3b.css ===== */
 /* 31-act3b · Act 3b in Broadsheet: the deep dives after the live demo, in ring order, then the handover.
@@ -1421,9 +1347,6 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x31-401 { gap: 22px 36px; }
 
 /* ---- reading aids: numbered call-outs and a "read it like this" label ---- */
-.x31-n { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px;
-  margin-right: 14px; border-radius: 50%; box-shadow: inset 0 0 0 2px currentColor;
-  font-size: 20px; font-weight: 700; font-feature-settings: "tnum" 1; vertical-align: 0.1em; }
 .x31-read { position: absolute; top: 58px; right: var(--pad-x); margin: 0; font-size: var(--type-kicker);
   letter-spacing: 0.04em; font-style: italic; color: color-mix(in srgb, var(--color-text) 60%, transparent); }
 
@@ -1498,8 +1421,6 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x31-tread { margin: calc(0.5 * var(--baseline)) 0 0; font-size: var(--type-kicker); line-height: 1.3;
   color: color-mix(in srgb, var(--color-text) 60%, transparent); }
 .x31-tread b { color: var(--color-accent-2-700); font-weight: 600; }
-.stree .x31-sn { flex: none; width: 34px; height: 34px; border-radius: 50%; display: inline-grid; place-items: center;
-  font-size: 20px; font-weight: 700; background: var(--color-accent-2); color: var(--color-bg); align-self: center; margin-left: -50px; }
 .x31-adds { margin-top: calc(1 * var(--baseline)); display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 18px;
   font-size: 27px; max-width: 1632px; }
 .x31-adds .k { color: color-mix(in srgb, var(--color-text) 60%, transparent); }
@@ -1670,6 +1591,26 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x40-loop span .code { font-size: 0.92em; }
 .x40-loop + .x40-same { margin-top: calc(1.5 * var(--baseline)); }
 .x40-loop li.hot { background: color-mix(in srgb, var(--color-accent-2) 16%, transparent); }
+
+/* 41a · two kinds of checks: evals (after the answer) beside guardrails (before it).
+   The guardrail column carries the magenta spot: it is the one that can say no. */
+.x40-two { display: grid; grid-template-columns: 1fr 1fr; gap: 120px; margin-top: calc(1.5 * var(--baseline)); }
+.x40-two p { margin: 0; }
+.x40-two .when { font-size: var(--type-kicker); letter-spacing: 0.08em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x40-two .q { margin-top: 14px; font-family: var(--font-heading); font-weight: 700; font-size: 64px; line-height: 1.1; letter-spacing: -0.015em; }
+.x40-two .m .q { color: var(--color-accent-2); }
+.x40-two .kind { margin-top: 12px; font-size: var(--type-small); font-style: italic; color: color-mix(in srgb, var(--color-text) 62%, transparent); }
+.x40-two ul { list-style: none; margin: 40px 0 0; padding: 0; display: flex; flex-direction: column; gap: 22px; }
+.x40-two li { display: flex; align-items: center; gap: 24px; font-size: 40px; font-weight: 600; line-height: 1.1; }
+.x40-two li i { font-size: 60px; color: var(--color-neutral-700); }
+.x40-two .m li i { color: var(--color-accent-2); }
+.x40-two-f { margin: calc(1.5 * var(--baseline)) 0 0; font-size: var(--type-small); }
+
+/* 39 · the evidence view: one Jaeger capture, full width (3200x1300 at 2x) */
+.x40-ev-shot { margin: calc(0.75 * var(--baseline)) 0 0; width: 1350px; flex: none; }
+.x40-ev-shot img { width: 100%; height: auto; display: block; border-radius: var(--radius-md); }
+.x40-ev-cap { margin: 28px 0 0; font-size: var(--type-small); max-width: 60ch; }
 
 /* ===== 50-close.css ===== */
 /* 50-close: slides 48-51, Broadsheet. Everything is x50-* so no other fragment collides. */

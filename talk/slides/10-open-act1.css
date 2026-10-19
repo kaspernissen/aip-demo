@@ -23,9 +23,10 @@
 .x10-stakes { padding-top: var(--cap-anchor); }
 .x10-st-q { font-family: var(--font-heading); font-style: italic; font-weight: 400; font-size: 120px; line-height: 1.12;
   letter-spacing: -0.015em; max-width: none; margin: 0; text-indent: -0.45em;
-  color: color-mix(in srgb, var(--color-text) 62%, transparent); text-box: trim-both cap alphabetic; }
+  color: color-mix(in srgb, currentColor 62%, transparent); text-box: trim-both cap alphabetic; }
 .x10-st-a { font-family: var(--font-heading); font-weight: 700; font-size: 120px; line-height: 1.12; letter-spacing: -0.02em;
   margin: 60px 0 0 -0.035em; color: var(--color-accent-2); }
+.x-dark .x10-st-a { color: var(--color-accent-2-400); }
 
 /* 02 · the outcome crop: the 1860px screenshot at 1.2x, window on the outcome block
    (source origin x=89, y=2352). Magenta rings mark amount and status. */
@@ -38,19 +39,18 @@
 .x10-hl-st { top: 410px; width: 720px; }
 .x10-crop .shot-cap { font-size: var(--type-small); color: var(--color-text); margin-top: 30px; }
 
-/* 03 · portrait and the lineage of talks, set as type */
-.x10-who { display: grid; grid-template-columns: 620px 1fr; gap: 110px; align-items: start;
-  margin-top: calc(2 * var(--baseline)); }
-.x10-us { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
-.x10-portrait { width: 290px; margin: 0; }
-.x10-me-n { font-size: var(--type-kicker); margin: 22px 0 0; }
-.x10-line { display: flex; flex-direction: column; gap: 46px; }
-.x10-tk p { margin: 0; }
-.x10-tk-t { font-size: var(--type-subtitle); line-height: 1.15; }
-.x10-tk-by { font-size: var(--type-kicker); margin-top: 8px !important; letter-spacing: 0.01em; }
-.x10-tk-q { font-size: var(--type-small); margin-top: 6px !important; }
-.x10-now-q { font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  font-size: 54px; line-height: 1.12; letter-spacing: -0.01em; margin-top: 6px !important; }
+/* 01a · who: the two speakers, portraits as process plates, each with the
+   credentials they list themselves (Kasper's GOTO CPH deck; William's Sessionize). */
+.x10-us { display: grid; grid-template-columns: repeat(2, 1fr); gap: 100px; margin-top: calc(1.25 * var(--baseline)); }
+.x10-me { display: grid; grid-template-columns: 240px 1fr; grid-template-rows: auto auto 1fr; column-gap: 44px; align-items: start; }
+.x10-portrait { width: 240px; margin: 0; grid-row: span 3; }
+.x10-me p { margin: 0; }
+.x10-me-n { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 46px; line-height: 1.1; letter-spacing: -0.01em; }
+.x10-me-r { margin-top: 10px !important; font-size: var(--type-kicker); font-weight: 600; color: var(--color-accent-2); }
+.x10-me-l { list-style: none; margin: 26px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px;
+  font-size: 24px; line-height: 1.3; color: color-mix(in srgb, var(--color-text) 72%, transparent); }
+.x10-me-l li { padding-left: 22px; position: relative; }
+.x10-me-l li::before { content: ""; position: absolute; left: 0; top: 0.55em; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); }
 
 /* 06a · concept: model + instructions + tools + loop, as an equation set in type */
 .x10-eq { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; gap: 36px; align-items: start;
@@ -103,12 +103,6 @@ p.x10-w { margin-left: -0.035em; }
 div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x10-g { font-size: var(--type-subtitle); font-style: italic; margin: 0;
   color: color-mix(in srgb, var(--color-text) 60%, transparent); }
-.x10-me-n .muted { display: block; }
-
-/* 03 · four sources now: tighten the lineage so it clears the folio */
-.x10-who { margin-top: calc(1.25 * var(--baseline)); }
-.x10-line { gap: 26px; }
-.x10-now-q { font-size: 48px; }
 
 /* 11a · bounded autonomy: four concentric bands beside the four questions.
    Magenta ramp: these are governance boundaries. The keystone is the clasp around

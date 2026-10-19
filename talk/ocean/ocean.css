@@ -119,6 +119,23 @@ deck-stage { --cap-anchor: 168.4px; }
 .slide.cover .meta { color: var(--ocean-on-ink-dim); }
 .slide.cover em { color: var(--ocean-aqua-lift); }
 
+/* ── Dark sheets (Kasper, 2026-10-19): a few statement slides in reverse ──
+   `.x-dark` on a content/hero/quote slide swaps the ground to ink, the same way
+   the cover does: the tokens flip, so anything drawn in --color-text follows.
+   The emphasis spot goes aqua, as it does on every dark Ocean ground. */
+.slide.x-dark {
+  --color-text: var(--ocean-paper);
+  --color-accent-2: var(--ocean-aqua-lift);
+  --color-accent-2-400: var(--ocean-aqua-lift);
+  --color-accent-2-700: var(--ocean-aqua-lift);
+  --color-accent-700: var(--ocean-aqua);
+  background: var(--ocean-ink);
+  color: var(--ocean-paper);
+}
+.slide.x-dark .hero-num { color: var(--ocean-paper); }
+.slide.x-dark .muted, .slide.x-dark .meta { color: var(--ocean-on-ink-dim); }
+.slide.x-dark .code { background: var(--ocean-navy); color: var(--ocean-on-ink); }
+
 /* ── Dividers: the aqua flood, ink type on it ──────────────────────── */
 .slide.divider {
   --color-text: var(--ocean-ink);

@@ -5,11 +5,13 @@ The talk deck for KubeCon + CloudNativeCon North America 2026, Salt Lake City. I
 follower, and a folio with the speaker's handles.
 
 - Subtitle and thesis: **If you can't trace it, you can't govern it.**
-- 87 slides, 51:20 of content: the **long cut**, for a 30-minute slot (Wed 11 Nov, 11:00–11:30). Kasper cuts
+- 74 slides, 51:10 of content: the **long cut**, for a 30-minute slot (Wed 11 Nov, 11:00–11:30). Kasper cuts
   it down himself. The live demo is five commands in one terminal (`./scripts/demo`, about 5 minutes with
-  narration) against Northstar at stage 7, in its own fragment, `slides/30-live.html`. Each step has a hidden
-  fallback that typesets the real transcript of a live run (2026-10-12 for guard and keystone, 2026-10-15 for steps 2 and 3, 2026-10-17 for evidence). Three speaker-only appendix slides
-  sit after "Thank you": pre-flight, reset, triage.
+  narration) against Northstar at stage 7. No slide shows a command (2026-10-19): one dark "Live" slide stays up
+  during the demo and carries the whole run-sheet in its note, and `slides/30-live.html` is one visual summary,
+  "What you just saw". The old per-step slides and their transcript fallbacks are in git history (before this
+  change). A few statement slides are dark sheets (`.x-dark`, in `ocean/ocean.css`). The deck ends at "Thank you"; the operator
+  checklists (pre-flight, reset, triage) live in `docs/demo-runbook.md`.
 - "Decide" is defined by William's *Bounded Agent Autonomy* (OSFF 2026): the platform enforces an agent's
   authority limits, in four rings (Core · Identity, Ring 1 · Reach, Ring 2 · Capability, Keystone). Slides
   derived from his demo carry the origin tag `BOUNDED` in `PLAN.md`; Act 3's tools slides carry their ring
@@ -27,8 +29,7 @@ follower, and a folio with the speaker's handles.
 ```
 
 **Keys:** `←` / `→` / `Space` to move, `Home` / `End` to jump, number keys to seek, `R` to reset.
-`index.html?slide=27` deep-links to a slide. Fallback slides sit right after each live step and carry a
-hollow "Fallback · Step N" marker. When the step works live, press → to skip past its fallback slide.
+`index.html?slide=27` deep-links to a slide.
 
 ## Build
 

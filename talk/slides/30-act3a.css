@@ -39,7 +39,6 @@
 .x30-lad .st p { margin: 0; }
 .x30-lad .nm { font-size: 30px; font-weight: 700; line-height: 1.15; margin-bottom: 14px !important; min-height: 2.3em;
   display: flex; flex-direction: column; justify-content: flex-end; }
-.x30-lad .no { font-size: var(--type-kicker); font-weight: 400; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
 .x30-lad .bar { display: block; border-radius: var(--radius-sm); background: var(--color-accent-2-200); }
 .x30-lad .s1 .bar { height: 50px; background: var(--color-neutral-300); }
 .x30-lad .s2 .bar { height: 100px; background: var(--color-accent-2); }
@@ -95,12 +94,9 @@
 /* ---- A passport, not a name tag: five steps on a line, then the token ---- */
 .x30-sv { display: grid; grid-template-columns: repeat(5, 1fr); column-gap: 34px; position: relative;
   margin-top: calc(1.25 * var(--baseline)); }
-.x30-sv::before { content: ""; position: absolute; left: 24px; right: 24px; top: 24px; height: 2px; background: var(--color-neutral-400); }
-.x30-sv .step { position: relative; display: flex; flex-direction: column; gap: 8px; }
+.x30-sv::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--color-neutral-400); }
+.x30-sv .step { position: relative; display: flex; flex-direction: column; gap: 8px; padding-top: 26px; }
 .x30-sv .step p { margin: 0; }
-.x30-sv .no { width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; font-size: 26px; font-weight: 700;
-  background: var(--color-bg); box-shadow: inset 0 0 0 2px var(--color-text); margin-bottom: 10px; }
-.x30-sv .step.m .no { background: var(--color-accent-2); color: var(--color-bg); box-shadow: none; }
 .x30-sv .v { font-size: var(--type-small); font-weight: 700; }
 .x30-sv .step.m .v { color: var(--color-accent-2-700); }
 .x30-sv .t { font-size: 25px; line-height: 1.3; }
@@ -122,9 +118,7 @@
 .x30-gw .end span { display: block; font-size: 22px; font-weight: 400; font-style: italic; margin-top: 6px;
   color: color-mix(in srgb, var(--color-text) 55%, transparent); }
 .x30-gw .end.out { color: var(--color-accent-700); }
-.x30-gw .g { position: relative; display: flex; flex-direction: column; gap: 10px; }
-.x30-gw .g .no { width: 68px; height: 68px; border-radius: 50%; display: grid; place-items: center; font-size: 32px; font-weight: 700;
-  background: var(--color-accent-2); color: var(--color-bg); }
+.x30-gw .g { position: relative; display: flex; flex-direction: column; gap: 10px; padding-top: 70px; }
 .x30-gw .key .code { font-size: 28px; }
 .x30-gw .q { font-size: var(--type-small); font-weight: 700; }
 .x30-gw .f { font-size: 24px; line-height: 1.3; color: color-mix(in srgb, var(--color-text) 65%, transparent); }
@@ -234,3 +228,25 @@
 .x30-dm .see .c { color: var(--color-accent-700); }
 .x30-dm .rg { font-size: 22px; line-height: 1.3; color: color-mix(in srgb, var(--color-text) 60%, transparent); }
 .x30-dm + .x30-foot { margin-top: calc(0.75 * var(--baseline)); }
+
+/* Live: the dark sheet that stays up during the demo; no commands on its face. */
+.x30-live { padding-top: var(--cap-anchor); }
+.x30-live p { margin: 0; }
+.x30-live-k { font-size: var(--type-kicker); letter-spacing: 0.2em; text-transform: uppercase; color: var(--color-accent-2-400); }
+.x30-live-t { margin-top: 48px !important; font-family: var(--font-heading); font-weight: 700; font-size: 76px; line-height: 1.15; letter-spacing: -0.015em; }
+.x30-live-m { color: var(--color-accent-2-400); }
+
+/* What a governed foundation needs (Kasper, 2026-10-19: icons, not the book's nine-box
+   blueprint; no layer numbers). Nine tiles, three by three; the chip says how much
+   Northstar shows. Tools and models carry no chip: they are what the blocks stand on. */
+.x30-fd { display: grid; grid-template-columns: repeat(3, 1fr); gap: 34px 60px; margin-top: calc(1.25 * var(--baseline)); }
+.x30-fd > div { display: grid; grid-template-columns: 76px 1fr; grid-template-rows: auto auto 1fr; column-gap: 24px; align-items: start; align-content: start; }
+.x30-fd i { grid-row: span 3; font-size: 72px; line-height: 1; color: var(--color-neutral-700); align-self: start; }
+.x30-fd b { font-size: 38px; line-height: 1.1; font-weight: 700; letter-spacing: -0.01em; }
+.x30-fd span { font-size: var(--type-kicker); font-style: italic; margin-top: 6px;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x30-fd em { font-style: normal; justify-self: start; margin-top: 10px; }
+.x30-fd .x30-chip-on { background: var(--color-accent-2); color: var(--color-bg); }
+.x30-fd .x30-chip-off { opacity: 0.55; }
+.x30-fd > div:has(.x30-chip-on) i { color: var(--color-accent-2); }
+.content > .x30-fd + .x30-rg { margin-top: calc(1.25 * var(--baseline)); }

@@ -67,6 +67,13 @@ def main():
     if only:
         target = f"preview-{only.stem}.html"
         out = out.replace('href="talk.css"', f'href="preview-{only.stem}.css"')
+    else:
+        # Cache-bust each stylesheet with a hash of its content, so a plain reload
+        # never shows new slides over an old stylesheet (2026-10-19: it did).
+        import hashlib
+        for css_name in ("talk.css", "ocean/ocean.css", "bs/styles.css"):
+            digest = hashlib.sha1((ROOT / css_name).read_bytes()).hexdigest()[:10]
+            out = out.replace(f'href="{css_name}"', f'href="{css_name}?v={digest}"')
     (ROOT / target).write_text(out)
     print(f"wrote {target}: {len(sections)} slides, running time {mmss(t)}")
     if "--list" in sys.argv:

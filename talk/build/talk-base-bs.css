@@ -6,6 +6,11 @@
 
 html, body { margin: 0; background: var(--color-neutral-300); }
 deck-stage { --page-foot-note: "kaspernissen.xyz"; }
+/* Folio split (Kasper, 2026-10-19): the speakers' handles bottom-left, the page
+   number bottom-right. Both sit at pad-x, mirrored, clear of the corner marks. */
+.page-foot { left: var(--pad-x); right: var(--pad-x); display: flex; justify-content: space-between; }
+.page-foot::before { content: var(--page-foot-note); font-feature-settings: normal; }
+.page-foot::after { content: counter(page); font-feature-settings: "tnum" 1; }
 
 /* Slide text scale beyond the template's tokens (all serif). */
 .lede { font-size: var(--type-subtitle); line-height: var(--baseline); max-width: 34ch; margin: 0; }

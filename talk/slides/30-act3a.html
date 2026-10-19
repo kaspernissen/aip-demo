@@ -13,71 +13,18 @@
 <!-- 20 · NEW · the abstract's five building blocks on Ch 11's blueprint (Figure 11.1, cropped; numbered 1–5 by the abstract's five building blocks, 4 = policy (4a) + evals (4b)); under it, where William's four rings land -->
 <section class="slide content" data-label="What a governed foundation needs">
   <h2 class="slide-title">What a governed foundation needs</h2>
-  <figure class="bfig rise x30-tight" style="--fig-h:540px"><svg viewBox="8 82 845 312" role="img" aria-label="Reference architecture for a governed, observable agentic platform in nine layers">
-<defs><marker id="x30-ar111" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#595959"/></marker></defs>
-<g font-family="Inter, sans-serif">
-<rect x="15" y="88" width="185" height="222" rx="8" fill="#DCEBFF"/>
-<text x="27" y="108" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1.3" fill="#123E7A">1 · AGENT RUNTIME</text>
-<text x="27" y="128" font-size="12.5" fill="#123E7A">kagent, agent-sandbox,</text>
-<text x="27" y="142" font-size="12.5" fill="#123E7A">Dapr Agents, frameworks</text>
-<text x="27" y="156" font-size="12.5" fill="#123E7A">(PydanticAI, ADK, MAF)</text>
-<rect x="27" y="166" width="88" height="20" rx="4" fill="#FFFFFF"/><text x="34" y="180" font-family="Martian Mono, monospace" font-size="10.5" letter-spacing="1" fill="#123E7A">PARTIAL</text>
-<rect x="25" y="200" width="165" height="100" rx="6" fill="#FFFFFF" stroke="#9E9E9E" stroke-dasharray="5 3"/>
-<text x="35" y="220" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1.3" fill="#595959">2 · CONTEXT LAYER</text>
-<text x="35" y="240" font-size="12.5" fill="#212121">memory, retrieval,</text>
-<text x="35" y="254" font-size="12.5" fill="#212121">MCP resources, skills</text>
-<rect x="35" y="266" width="110" height="20" rx="4" fill="#E8E8E8"/><text x="42" y="280" font-family="Martian Mono, monospace" font-size="10.5" letter-spacing="1" fill="#595959">NOT IN DEMO</text>
-<rect x="220" y="88" width="185" height="222" rx="8" fill="#FFE1D6"/>
-<text x="232" y="108" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1.3" fill="#FD6F40">3 · TOOL GATEWAY</text>
-<text x="232" y="128" font-size="12.5" fill="#212121">agentgateway (MCP, A2A,</text>
-<text x="232" y="142" font-size="12.5" fill="#212121">LLM) · Agent Router ·</text>
-<text x="232" y="156" font-size="12.5" fill="#212121">Gateway API Inference Ext.</text>
-<text x="232" y="180" font-size="12.5" fill="#212121">Authenticate, route, call</text>
-<text x="232" y="194" font-size="12.5" fill="#212121">policy, emit spans.</text>
-<rect x="232" y="210" width="88" height="20" rx="4" fill="#A8FBBE"/><text x="239" y="224" font-family="Martian Mono, monospace" font-size="10.5" letter-spacing="1" fill="#18632F">SHOWN</text>
-<text x="232" y="252" font-size="12" fill="#595959">MCP only in the demo.</text>
-<text x="232" y="266" font-size="12" fill="#595959">Model calls bypass it.</text>
-<rect x="425" y="88" width="175" height="105" rx="8" fill="#A8FBBE"/>
-<text x="437" y="108" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1.3" fill="#18632F">TOOLS AND SYSTEMS</text>
-<text x="437" y="128" font-size="12.5" fill="#18632F">MCP servers over systems</text>
-<text x="437" y="142" font-size="12.5" fill="#18632F">of record you do not own</text>
-<text x="437" y="162" font-size="12" fill="#18632F">payments-mcp → payments-api</text>
-<rect x="425" y="205" width="175" height="105" rx="8" fill="#F7F7F7" stroke="#E8E8E8"/>
-<text x="437" y="225" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1.3" fill="#595959">MODELS</text>
-<text x="437" y="245" font-size="12.5" fill="#212121">KServe, llm-d (self-hosted)</text>
-<text x="437" y="259" font-size="12.5" fill="#212121">or hosted APIs (register</text>
-<text x="437" y="273" font-size="12.5" fill="#212121">them under DORA)</text>
-<line x1="200" y1="150" x2="216" y2="150" stroke="#595959" stroke-width="1.5" marker-end="url(#x30-ar111)"/>
-<line x1="405" y1="140" x2="421" y2="140" stroke="#595959" stroke-width="1.5" marker-end="url(#x30-ar111)"/>
-<line x1="405" y1="258" x2="421" y2="258" stroke="#595959" stroke-width="1.5" marker-end="url(#x30-ar111)"/>
-<rect x="15" y="325" width="585" height="62" rx="8" fill="#DBD4F8"/>
-<text x="27" y="346" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1.3" fill="#111111">4a · POLICY</text>
-<text x="27" y="366" font-size="12.5" fill="#212121">Decision service over ExtMCP / ext_authz · OPA, Kyverno, CEL · OpenFeature autonomy flags</text>
-<text x="27" y="380" font-size="12" fill="#595959">Called by the gateway on every consequential call. Fails closed. Emits a decision span.</text>
-<rect x="500" y="336" width="88" height="20" rx="4" fill="#A8FBBE"/><text x="507" y="350" font-family="Martian Mono, monospace" font-size="10.5" letter-spacing="1" fill="#18632F">SHOWN</text>
-<line x1="312" y1="310" x2="312" y2="321" stroke="#595959" stroke-width="1.5" marker-end="url(#x30-ar111)"/>
-<rect x="620" y="88" width="225" height="222" rx="8" fill="#F7F7F7" stroke="#111111"/>
-<text x="632" y="108" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1.3" fill="#111111">TELEMETRY</text>
-<text x="632" y="128" font-size="12.5" fill="#212121">OTel SDKs and framework</text>
-<text x="632" y="142" font-size="12.5" fill="#212121">instrumentation</text>
-<text x="632" y="162" font-size="12.5" fill="#212121">Collector: normalise GenAI</text>
-<text x="632" y="176" font-size="12.5" fill="#212121">semconv, redact, tee content</text>
-<text x="632" y="190" font-size="12.5" fill="#212121">to an external store</text>
-<text x="632" y="210" font-size="12.5" fill="#212121">Backends: traces, metrics,</text>
-<text x="632" y="224" font-size="12.5" fill="#212121">logs, never sampled on</text>
-<text x="632" y="238" font-size="12.5" fill="#212121">decision paths</text>
-<rect x="632" y="256" width="88" height="20" rx="4" fill="#FFE1D6"/><text x="639" y="270" font-family="Martian Mono, monospace" font-size="10.5" letter-spacing="1" fill="#FD6F40">PARTIAL</text>
-<rect x="620" y="325" width="225" height="62" rx="8" fill="#A8FBBE"/>
-<text x="632" y="346" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1.3" fill="#18632F">4b · EVALS</text>
-<text x="632" y="366" font-size="12.5" fill="#18632F">online and offline, scores as</text>
-<text x="632" y="380" font-size="12.5" fill="#18632F">gen_ai.evaluation.result</text>
-<line x1="600" y1="200" x2="616" y2="200" stroke="#595959" stroke-width="1.5" marker-end="url(#x30-ar111)"/>
-<line x1="600" y1="356" x2="616" y2="230" stroke="#595959" stroke-width="1.2" marker-end="url(#x30-ar111)"/>
-<line x1="732" y1="310" x2="732" y2="321" stroke="#595959" stroke-width="1.5" marker-end="url(#x30-ar111)"/>
-<rect x="757" y="336" width="80" height="20" rx="4" fill="#A8FBBE"/><text x="764" y="350" font-family="Martian Mono, monospace" font-size="10.5" letter-spacing="1" fill="#18632F">SHOWN</text>
-</g></svg></figure>
-  <p class="x30-ma"><b>5 · Multi-agent over shared context</b><span class="x30-chip">Not in demo</span></p>
-  <p class="x30-rg"><span><b>Core &middot; Identity</b> SPIRE, checked at 3</span><span><b>Ring 1 &middot; Reach</b> Cilium, under 3</span><span><b>Ring 2 &middot; Capability</b> 3 + 4a</span><span><b>Keystone</b> Kyverno, guards the rest</span></p>
+  <div class="x30-fd rise">
+    <div><i class="ph-duotone ph-robot"></i><b>Agent runtime</b><span>kagent, agent-sandbox</span><em class="x30-chip">Partial</em></div>
+    <div><i class="ph-duotone ph-door-open"></i><b>Tool gateway</b><span>agentgateway</span><em class="x30-chip x30-chip-on">Shown</em></div>
+    <div><i class="ph-duotone ph-scales"></i><b>Policy</b><span>decision service, OpenFeature</span><em class="x30-chip x30-chip-on">Shown</em></div>
+    <div><i class="ph-duotone ph-brain"></i><b>Context</b><span>memory, retrieval</span><em class="x30-chip x30-chip-off">Not in demo</em></div>
+    <div><i class="ph-duotone ph-wrench"></i><b>Tools and systems</b><span>MCP servers</span></div>
+    <div><i class="ph-duotone ph-graph"></i><b>Telemetry</b><span>OpenTelemetry, never sampled</span><em class="x30-chip">Partial</em></div>
+    <div><i class="ph-duotone ph-users-three"></i><b>Multi-agent</b><span>shared context</span><em class="x30-chip x30-chip-off">Not in demo</em></div>
+    <div><i class="ph-duotone ph-cpu"></i><b>Models</b><span>KServe, llm-d, hosted APIs</span></div>
+    <div><i class="ph-duotone ph-check-circle"></i><b>Evals</b><span>scores on the trace</span><em class="x30-chip x30-chip-on">Shown</em></div>
+  </div>
+  <p class="x30-rg"><span><b>Core &middot; Identity</b> SPIRE, checked at the gateway</span><span><b>Ring 1 &middot; Reach</b> Cilium, under the gateway</span><span><b>Ring 2 &middot; Capability</b> gateway + policy</span><span><b>Keystone</b> Kyverno, guards the rest</span></p>
 </section>
 
 <!-- 20a · NEW · we've done this before: Ch 1 Figure 1.8 (what cloud native built, extended to agents), widened to six rows with the Northstar piece of each -->
@@ -98,20 +45,20 @@
 <section class="slide content" data-label="Connected is not governed">
   <h2 class="slide-title">Connected is not governed</h2>
   <div class="x30-lad rise">
-    <div class="st s1"><p class="nm"><span class="no">1</span>Connected</p><i class="bar"></i><p class="pf">one trace exists</p><p class="ad">agents, MCP, collector, Jaeger</p><div class="rgs"></div></div>
-    <div class="st s2"><p class="nm"><span class="no">2</span>Governed</p><i class="bar"></i><p class="pf">identity is an input to the decision</p><p class="ad">Cilium, SPIRE, agentgateway, PDS</p><div class="rgs"><p class="rg">Core &middot; Identity</p><p class="rg">Ring 1 &middot; Reach</p><p class="rg">Ring 2 &middot; Capability</p></div><p class="x30-lad-mark">the platform starts deciding</p></div>
-    <div class="st s3"><p class="nm"><span class="no">3</span>Supervised</p><i class="bar"></i><p class="pf">a human can overturn</p><p class="ad">reviewer UI, human approval</p><div class="rgs"></div></div>
-    <div class="st s4"><p class="nm"><span class="no">4</span>Observable</p><i class="bar"></i><p class="pf">prove why, from telemetry alone</p><p class="ad">OpenSearch, Prometheus, eval-scorer</p><div class="rgs"></div></div>
-    <div class="st s5"><p class="nm"><span class="no">5</span>Progressive autonomy</p><i class="bar"></i><p class="pf">one live value, no redeploy</p><p class="ad">OpenFeature, flagd, FeatureFlag</p><div class="rgs"><p class="rg">Ring 2 &middot; Capability</p></div></div>
-    <div class="st s6"><p class="nm"><span class="no">6</span>Golden path</p><i class="bar"></i><p class="pf">Backstage is just the view</p><p class="ad">Backstage, autonomy card</p><div class="rgs"></div></div>
-    <div class="st s7"><p class="nm"><span class="no">7</span>Bounded</p><i class="bar"></i><p class="pf">the agent can&rsquo;t edit what constrains it</p><p class="ad">Kyverno, keystone policy</p><div class="rgs"><p class="rg">Keystone</p></div></div>
+    <div class="st s1"><p class="nm">Connected</p><i class="bar"></i><p class="pf">one trace exists</p><p class="ad">agents, MCP, collector, Jaeger</p><div class="rgs"></div></div>
+    <div class="st s2"><p class="nm">Governed</p><i class="bar"></i><p class="pf">identity is an input to the decision</p><p class="ad">Cilium, SPIRE, agentgateway, PDS</p><div class="rgs"><p class="rg">Core &middot; Identity</p><p class="rg">Ring 1 &middot; Reach</p><p class="rg">Ring 2 &middot; Capability</p></div><p class="x30-lad-mark">the platform starts deciding</p></div>
+    <div class="st s3"><p class="nm">Supervised</p><i class="bar"></i><p class="pf">a human can overturn</p><p class="ad">reviewer UI, human approval</p><div class="rgs"></div></div>
+    <div class="st s4"><p class="nm">Observable</p><i class="bar"></i><p class="pf">prove why, from telemetry alone</p><p class="ad">OpenSearch, Prometheus, eval-scorer</p><div class="rgs"></div></div>
+    <div class="st s5"><p class="nm">Progressive autonomy</p><i class="bar"></i><p class="pf">one live value, no redeploy</p><p class="ad">OpenFeature, flagd, FeatureFlag</p><div class="rgs"><p class="rg">Ring 2 &middot; Capability</p></div></div>
+    <div class="st s6"><p class="nm">Golden path</p><i class="bar"></i><p class="pf">Backstage is just the view</p><p class="ad">Backstage, autonomy card</p><div class="rgs"></div></div>
+    <div class="st s7"><p class="nm">Bounded</p><i class="bar"></i><p class="pf">the agent can&rsquo;t edit what constrains it</p><p class="ad">Kyverno, keystone policy</p><div class="rgs"><p class="rg">Keystone</p></div></div>
   </div>
 </section>
 
 <!-- 21 · NEW · Meet Northstar: Ch 4 Figure 4.5, claim path only -->
 <section class="slide content" data-label="Meet Northstar">
   <h2 class="slide-title">Meet Northstar</h2>
-  <figure class="bfig rise x30-tight" style="--fig-h:620px"><svg viewBox="0 2 860 338" role="img" aria-label="Northstar architecture at stage 7: namespaces northstar-agents, northstar-platform, northstar-tools, northstar-systems, observability, with Cilium underneath">
+  <figure class="bfig rise x30-tight" style="--fig-h:620px"><svg viewBox="0 2 880 354" role="img" aria-label="Northstar architecture at stage 7: namespaces northstar-agents, northstar-platform, northstar-tools, northstar-systems, observability, with Cilium underneath">
 <g font-family="Inter, sans-serif">
 <defs>
 <marker id="x30-ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#111111"/></marker>
@@ -122,20 +69,20 @@
 <!-- people and outside -->
 <rect x="26" y="12" width="92" height="28" rx="14" fill="#FEF1F1" stroke="#F8494D"/>
 <text x="72" y="30" font-size="12.5" font-weight="600" fill="#F8494D" text-anchor="middle">Customer</text>
-<rect x="560" y="10" width="284" height="32" rx="8" fill="#F7F7F7" stroke="#9E9E9E" stroke-dasharray="4 3"/>
-<text x="702" y="24" font-size="12.5" font-weight="600" fill="#212121" text-anchor="middle">api.anthropic.com · Claude</text>
-<text x="702" y="37" font-size="11.5" fill="#595959" text-anchor="middle">outside the cluster · claude-sonnet-5</text>
+<rect x="580" y="10" width="284" height="32" rx="8" fill="#F7F7F7" stroke="#9E9E9E" stroke-dasharray="4 3"/>
+<text x="722" y="24" font-size="12.5" font-weight="600" fill="#212121" text-anchor="middle">api.anthropic.com · Claude</text>
+<text x="722" y="37" font-size="11.5" fill="#595959" text-anchor="middle">outside the cluster · claude-sonnet-5</text>
 <!-- bands -->
-<rect x="16" y="56" width="358" height="190" rx="10" fill="#DCEBFF" fill-opacity="0.45" stroke="#123E7A" stroke-opacity="0.5"/>
-<rect x="382" y="56" width="222" height="190" rx="10" fill="#FFE1D6" fill-opacity="0.45" stroke="#FD6F40" stroke-opacity="0.6"/>
-<rect x="612" y="56" width="112" height="190" rx="10" fill="#A8FBBE" fill-opacity="0.35" stroke="#18632F" stroke-opacity="0.5"/>
-<rect x="732" y="56" width="112" height="190" rx="10" fill="#FBE997" fill-opacity="0.45" stroke="#595959" stroke-opacity="0.5"/>
-<text x="366" y="238" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1" fill="#123E7A" text-anchor="end">NORTHSTAR-AGENTS</text>
-<text x="392" y="238" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1" fill="#FD6F40">NORTHSTAR-PLATFORM</text>
-<text x="620" y="226" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1" fill="#18632F">NORTHSTAR-</text>
-<text x="620" y="238" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1" fill="#18632F">TOOLS</text>
-<text x="740" y="226" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1" fill="#595959">NORTHSTAR-</text>
-<text x="740" y="238" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1" fill="#595959">SYSTEMS</text>
+<rect x="16" y="56" width="358" height="206" rx="10" fill="#DCEBFF" fill-opacity="0.45" stroke="#123E7A" stroke-opacity="0.5"/>
+<rect x="382" y="56" width="242" height="206" rx="10" fill="#FFE1D6" fill-opacity="0.45" stroke="#FD6F40" stroke-opacity="0.6"/>
+<rect x="632" y="56" width="112" height="206" rx="10" fill="#A8FBBE" fill-opacity="0.35" stroke="#18632F" stroke-opacity="0.5"/>
+<rect x="752" y="56" width="112" height="206" rx="10" fill="#FBE997" fill-opacity="0.45" stroke="#595959" stroke-opacity="0.5"/>
+<text x="366" y="252" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1" fill="#123E7A" text-anchor="end">NORTHSTAR-AGENTS</text>
+<text x="396" y="252" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1" fill="#FD6F40">NORTHSTAR-PLATFORM</text>
+<text x="640" y="240" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1" fill="#18632F">NORTHSTAR-</text>
+<text x="640" y="252" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1" fill="#18632F">TOOLS</text>
+<text x="760" y="240" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1" fill="#595959">NORTHSTAR-</text>
+<text x="760" y="252" font-family="Martian Mono, monospace" font-size="11" letter-spacing="1" fill="#595959">SYSTEMS</text>
 <!-- row 1: claim path -->
 <rect x="26" y="92" width="92" height="52" rx="6" fill="#FFFFFF" stroke="#F8494D"/>
 <text x="72" y="114" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">customer-ui</text>
@@ -147,49 +94,42 @@
 <text x="312" y="112" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">settlement-agent</text>
 <text x="312" y="126" font-size="11.5" fill="#595959" text-anchor="middle">PydanticAI 2.42</text>
 <text x="312" y="138" font-size="11.5" fill="#595959" text-anchor="middle">mcp 2.2.0 client</text>
-<rect x="392" y="92" width="124" height="52" rx="6" fill="#FFFFFF" stroke="#FD6F40" stroke-width="2"/>
-<text x="454" y="112" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">agentgateway</text>
-<text x="454" y="126" font-size="11.5" fill="#595959" text-anchor="middle">v1.6.0 · Rust</text>
-<text x="454" y="138" font-size="11.5" fill="#595959" text-anchor="middle">jwtAuth · guardrail</text>
-<rect x="620" y="92" width="96" height="52" rx="6" fill="#FFFFFF" stroke="#18632F"/>
-<text x="668" y="114" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">payments-mcp</text>
-<text x="668" y="130" font-size="11.5" fill="#595959" text-anchor="middle">FastMCP 4.0.3</text>
-<rect x="740" y="92" width="96" height="52" rx="6" fill="#FFFFFF" stroke="#595959"/>
-<text x="788" y="112" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">payments-api</text>
-<text x="788" y="126" font-size="11.5" fill="#595959" text-anchor="middle">Go · otelhttp</text>
-<text x="788" y="138" font-size="11.5" fill="#595959" text-anchor="middle">the ledger</text>
+<rect x="398" y="92" width="134" height="52" rx="6" fill="#FFFFFF" stroke="#FD6F40" stroke-width="2"/>
+<text x="465" y="112" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">agentgateway</text>
+<text x="465" y="126" font-size="11.5" fill="#595959" text-anchor="middle">v1.6.0 · Rust</text>
+<text x="465" y="138" font-size="11.5" fill="#595959" text-anchor="middle">jwtAuth · guardrail</text>
+<rect x="640" y="92" width="96" height="52" rx="6" fill="#FFFFFF" stroke="#18632F"/>
+<text x="688" y="114" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">payments-mcp</text>
+<text x="688" y="130" font-size="11.5" fill="#595959" text-anchor="middle">FastMCP 4.0.3</text>
+<rect x="760" y="92" width="96" height="52" rx="6" fill="#FFFFFF" stroke="#595959"/>
+<text x="808" y="112" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">payments-api</text>
+<text x="808" y="126" font-size="11.5" fill="#595959" text-anchor="middle">Go · otelhttp</text>
+<text x="808" y="138" font-size="11.5" fill="#595959" text-anchor="middle">the ledger</text>
 <!-- row 2 -->
-<rect x="392" y="176" width="104" height="52" rx="6" fill="#FFFFFF" stroke="#9078F3" stroke-width="2"/>
-<text x="444" y="198" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">PDS + flagd</text>
-<text x="444" y="214" font-size="11.5" fill="#595959" text-anchor="middle">the decision span</text>
-<rect x="506" y="176" width="90" height="52" rx="6" fill="#FFFFFF" stroke="#9078F3"/>
-<text x="551" y="198" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">FeatureFlag</text>
-<text x="551" y="214" font-size="11.5" fill="#595959" text-anchor="middle">the contract</text>
-<line x1="496" y1="202" x2="506" y2="202" stroke="#9078F3" stroke-width="1.5"/>
+<rect x="398" y="178" width="112" height="52" rx="6" fill="#FFFFFF" stroke="#9078F3" stroke-width="2"/>
+<text x="454" y="200" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">PDS + flagd</text>
+<text x="454" y="216" font-size="11.5" fill="#595959" text-anchor="middle">the decision span</text>
+<rect x="524" y="178" width="92" height="52" rx="6" fill="#FFFFFF" stroke="#9078F3"/>
+<text x="570" y="200" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">FeatureFlag</text>
+<text x="570" y="216" font-size="11.5" fill="#595959" text-anchor="middle">the contract</text>
+<line x1="510" y1="204" x2="524" y2="204" stroke="#9078F3" stroke-width="1.5"/>
 <!-- arrows: claim path -->
 <line x1="72" y1="40" x2="72" y2="90" stroke="#111111" stroke-width="1.3" marker-end="url(#x30-ar2)"/>
 <line x1="118" y1="118" x2="136" y2="118" stroke="#111111" stroke-width="1.5" marker-end="url(#x30-ar2)"/>
 <line x1="238" y1="118" x2="254" y2="118" stroke="#111111" stroke-width="1.5" marker-end="url(#x30-ar2)"/>
-<line x1="368" y1="112" x2="390" y2="112" stroke="#111111" stroke-width="1.5" marker-end="url(#x30-ar2)"/>
-<line x1="516" y1="118" x2="618" y2="118" stroke="#111111" stroke-width="1.5" marker-end="url(#x30-ar2)"/>
-<line x1="716" y1="118" x2="738" y2="118" stroke="#111111" stroke-width="1.5" marker-end="url(#x30-ar2)"/>
-<line x1="444" y1="146" x2="444" y2="174" stroke="#9078F3" stroke-width="1.5" marker-start="url(#x30-ar2)" marker-end="url(#x30-ar2)"/>
-<!-- hop badges -->
-<circle cx="128" cy="104" r="11" fill="#111111"/><text x="128" y="108.5" font-family="Martian Mono, monospace" font-size="11" fill="#FFFFFF" text-anchor="middle">1</text>
-<circle cx="247" cy="104" r="11" fill="#111111"/><text x="247" y="108.5" font-family="Martian Mono, monospace" font-size="11" fill="#FFFFFF" text-anchor="middle">2</text>
-<circle cx="380" cy="98" r="11" fill="#111111"/><text x="380" y="102.5" font-family="Martian Mono, monospace" font-size="11" fill="#FFFFFF" text-anchor="middle">3a</text>
-<circle cx="456" cy="160" r="11" fill="#9078F3"/><text x="456" y="164.5" font-family="Martian Mono, monospace" font-size="11" fill="#FFFFFF" text-anchor="middle">3p</text>
-<circle cx="560" cy="104" r="11" fill="#111111"/><text x="560" y="108.5" font-family="Martian Mono, monospace" font-size="11" fill="#FFFFFF" text-anchor="middle">3b</text>
-<circle cx="728" cy="104" r="11" fill="#111111"/><text x="728" y="108.5" font-family="Martian Mono, monospace" font-size="11" fill="#FFFFFF" text-anchor="middle">4</text>
-<text x="522" y="140" font-size="11.5" fill="#595959">permit only</text>
+<line x1="368" y1="112" x2="396" y2="112" stroke="#111111" stroke-width="1.5" marker-end="url(#x30-ar2)"/>
+<line x1="532" y1="118" x2="638" y2="118" stroke="#111111" stroke-width="1.5" marker-end="url(#x30-ar2)"/>
+<line x1="736" y1="118" x2="758" y2="118" stroke="#111111" stroke-width="1.5" marker-end="url(#x30-ar2)"/>
+<line x1="454" y1="146" x2="454" y2="176" stroke="#9078F3" stroke-width="1.5" marker-start="url(#x30-ar2)" marker-end="url(#x30-ar2)"/>
+<text x="585" y="136" font-size="11.5" fill="#595959" text-anchor="middle">permit only</text>
 <!-- egress to model -->
-<path d="M340,92 L340,26 L558,26" fill="none" stroke="#FD6F40" stroke-width="1.3" stroke-dasharray="5 3" marker-end="url(#x30-ar2o)"/>
+<path d="M340,92 L340,26 L578,26" fill="none" stroke="#FD6F40" stroke-width="1.3" stroke-dasharray="5 3" marker-end="url(#x30-ar2o)"/>
 <text x="350" y="19" font-size="12" fill="#FD6F40">model egress (Cilium toFQDNs)</text>
 <!-- floors -->
-<rect x="16" y="258" width="828" height="34" rx="8" fill="#F7F7F7" stroke="#9E9E9E"/>
-<text x="30" y="280" font-size="13" fill="#212121"><tspan font-weight="600">OTel Collector</tspan>  ·  OTLP from every service  →  Jaeger · OpenSearch · Prometheus  ·  100%, no sampler</text>
-<rect x="16" y="300" width="828" height="34" rx="8" fill="#FBE997" stroke="#595959" stroke-opacity="0.6"/>
-<text x="30" y="322" font-size="13" fill="#111111"><tspan font-weight="600">Cilium 1.20.1</tspan>  ·  NetworkPolicy under every hop  ·  payments-mcp admits only agentgateway</text>
+<rect x="16" y="274" width="848" height="34" rx="8" fill="#F7F7F7" stroke="#9E9E9E"/>
+<text x="30" y="296" font-size="13" fill="#212121"><tspan font-weight="600">OTel Collector</tspan>  ·  OTLP from every service  →  Jaeger · OpenSearch · Prometheus  ·  100%, no sampler</text>
+<rect x="16" y="316" width="848" height="34" rx="8" fill="#FBE997" stroke="#595959" stroke-opacity="0.6"/>
+<text x="30" y="338" font-size="13" fill="#111111"><tspan font-weight="600">Cilium 1.20.1</tspan>  ·  NetworkPolicy under every hop  ·  payments-mcp admits only agentgateway</text>
 </g></svg></figure>
 </section>
 
@@ -281,11 +221,11 @@
   <p class="ring">Core &middot; Identity</p>
   <h2 class="slide-title">A passport, not a name tag</h2>
   <div class="x30-sv rise">
-    <div class="step"><span class="no">1</span><p class="v">Register</p><p class="t">a <span class="code">ClusterSPIFFEID</span> names the pod’s ID</p><p class="who">spire-controller-manager</p></div>
-    <div class="step"><span class="no">2</span><p class="v">Mount</p><p class="t">the Workload API socket, into the pod</p><p class="who">SPIFFE CSI driver</p></div>
-    <div class="step"><span class="no">3</span><p class="v">Attest</p><p class="t">check the pod: namespace + ServiceAccount</p><p class="who">SPIRE agent</p></div>
-    <div class="step"><span class="no">4</span><p class="v">Issue</p><p class="t">a JWT-SVID, for one audience</p><p class="who">SPIRE server</p></div>
-    <div class="step m"><span class="no">5</span><p class="v">Verify</p><p class="t">against the JWKS; write <span class="code m">jwt.sub</span></p><p class="who">agentgateway</p></div>
+    <div class="step"><p class="v">Register</p><p class="t">a <span class="code">ClusterSPIFFEID</span> names the pod’s ID</p><p class="who">spire-controller-manager</p></div>
+    <div class="step"><p class="v">Mount</p><p class="t">the Workload API socket, into the pod</p><p class="who">SPIFFE CSI driver</p></div>
+    <div class="step"><p class="v">Attest</p><p class="t">check the pod: namespace + ServiceAccount</p><p class="who">SPIRE agent</p></div>
+    <div class="step"><p class="v">Issue</p><p class="t">a JWT-SVID, for one audience</p><p class="who">SPIRE server</p></div>
+    <div class="step m"><p class="v">Verify</p><p class="t">against the JWKS; write <span class="code m">jwt.sub</span></p><p class="who">agentgateway</p></div>
   </div>
   <div class="x30-pass rise">
     <p class="lab"><i class="ph-duotone ph-identification-card"></i>The passport settlement-agent carries</p>
@@ -332,9 +272,9 @@
   <h2 class="slide-title">agentgateway: one door, checks in order</h2>
   <div class="x30-gw rise">
     <p class="end in">settlement-agent<span>MCP + JWT-SVID</span></p>
-    <div class="g"><span class="no">1</span><p class="key"><span class="code m">jwtAuth</span></p><p class="q">Who is asking?</p><p class="f">bad token: HTTP 401</p></div>
-    <div class="g"><span class="no">2</span><p class="key"><span class="code m">mcpGuardrails</span></p><p class="q">Is it allowed?</p><p class="f">asks the PDS; deny stops here</p></div>
-    <div class="g"><span class="no">3</span><p class="key"><span class="code">strip token</span></p><p class="q">Forward, anonymous</p><p class="f">the tool never sees the SVID</p></div>
+    <div class="g"><p class="key"><span class="code m">jwtAuth</span></p><p class="q">Who is asking?</p><p class="f">bad token: HTTP 401</p></div>
+    <div class="g"><p class="key"><span class="code m">mcpGuardrails</span></p><p class="q">Is it allowed?</p><p class="f">asks the PDS; deny stops here</p></div>
+    <div class="g"><p class="key"><span class="code">strip token</span></p><p class="q">Forward, anonymous</p><p class="f">the tool never sees the SVID</p></div>
     <p class="end out">payments-mcp<span>permit only</span></p>
     <p class="side pds"><b>ExtMCP, gRPC</b> to the PDS <span class="code m">failureMode: failClosed</span></p>
     <p class="side tr"><b>tracing</b> every step, to the Collector: <span class="code c">tools/call</span> <span class="code c">Guardrail</span> <span class="code c">outbound tools/call</span></p>
@@ -391,16 +331,10 @@
   </div>
 </section>
 
-<!-- 22f · NEW · the demo: five steps, about five minutes (M8 design spec §4; docs/demo-runbook.md §5 "The five-minute flow"; measured timings 2026-10-12) -->
-<section class="slide content" data-label="The demo">
-  <h2 class="slide-title">The demo: five steps, about five minutes</h2>
-  <div class="x30-dm rise">
-    <p class="h"></p><p class="h">Command</p><p class="h">What you&rsquo;ll see</p><p class="h">Ring</p>
-    <p class="no">1</p><p class="cmd"><span class="code">demo guard</span></p><p class="see">no identity: 401 &middot; around the gateway: dropped &middot; its own identity: the tools</p><p class="rg">Core &middot; Identity<br>Ring 1 &middot; Reach</p>
-    <p class="no">2</p><p class="cmd"><span class="code">a claim for &euro;5,800</span><span class="code">a human approves</span></p><p class="see">the agent may pay nothing yet: the claim <b class="m">waits</b>, a person signs, and the trace shows both</p><p class="rg">Ring 2 &middot; Capability</p>
-    <p class="no">3</p><p class="cmd"><span class="code">demo autonomy autonomous</span><span class="code">demo claim 5800</span><span class="code">demo claim 6200</span></p><p class="see">one live value: &euro;5,800 <b class="c">settles</b> alone, &euro;6,200 still <b class="m">waits</b>, nothing restarts</p><p class="rg">the platform API is the resource</p>
-    <p class="no">4</p><p class="cmd"><span class="code">demo keystone</span></p><p class="see">the agent edits its own limit: RBAC, then Kyverno, <b class="m">deny</b></p><p class="rg">Keystone</p>
-    <p class="no">5</p><p class="cmd"><span class="code">demo evidence</span></p><p class="see">each claim, read back: who decided, the rule, who approved, how long the human took</p><p class="rg">Prove</p>
+<!-- 26 · NEW · the demo: one dark sheet while the terminal is up; no commands on the face (Kasper, 2026-10-19). The run-sheet is the note. -->
+<section class="slide content x30-live x-dark" data-label="Live: Northstar">
+  <div class="rise">
+    <p class="x30-live-k">Live</p>
+    <p class="x30-live-t">A customer files a claim.<br>Agents prepare the payment.<br><span class="x30-live-m">The platform decides who may release it.</span></p>
   </div>
-  <p class="x30-foot">About 5 minutes with the talking. <b>The model is called in steps 2 and 3 only.</b> Step 2 also runs from the terminal.</p>
 </section>

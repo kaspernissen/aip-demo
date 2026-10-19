@@ -1,7 +1,11 @@
 [
  {
+  "secs": 40,
+  "note": "WILLIAM: I'm William Rizzo, Global Field CTO at Mirantis. I spend my days with platform teams in regulated industries, and the questions we're about to show you are the ones they bring me.\n\nKASPER: And I'm Kasper Borg Nissen, Director, Developer Relations at Dash0. I work on observability and OpenTelemetry, and I built the demo you'll see live today.\n\nWILLIAM: Beginners are welcome. If you've never read a trace before, you'll be able to read the ones in this talk.\n\n[verify: William's lines are placeholders; let him write his own.]\n\nSource: Ch 14 (the beginners line is Ch 14's takeaway); KubeCon NA 2026 schedule, session 1238630"
+ },
+ {
   "secs": 20,
-  "note": "WILLIAM\n\nBefore we say who we are: who this talk is for. Fintech, insurance, healthcare, telco. Here an AI agent doesn't just chat. It moves money, settles claims, reads patient records, runs part of a network.\n\nEvery sector has its own rules. Strip away the legal language, and they ask the same few questions.\n\nSource: Ch 10 (opening lines, 10.7, 10.8) · Ch 14, 'Who is in the room'"
+  "note": "WILLIAM\n\nFirst, who this talk is for. Fintech, insurance, healthcare, telco. Here an AI agent doesn't just chat. It moves money, settles claims, reads patient records, runs part of a network.\n\nEvery sector has its own rules. Strip away the legal language, and they ask the same few questions.\n\nSource: Ch 10 (opening lines, 10.7, 10.8) · Ch 14, 'Who is in the room'"
  },
  {
   "secs": 60,
@@ -16,20 +20,16 @@
   "note": "WILLIAM\n\nThis is a screen from a demo insurer Kasper built, called Northstar. An AI agent handled a car-damage claim and proposed paying the customer five thousand eight hundred euros. It wasn't paid. It wasn't refused either. It is waiting.\n\nLook at the two ringed lines. Amount: 5800. Status: awaiting approval. The agent did all the work up to the money. The platform, not the agent, decided that this one needs a person, and the agent tells the customer so.\n\nThat is the whole talk on one screen: guardrails the agent cannot move, rules that give it some autonomy, and a record of what it did and why. By the end you'll know how to build it, from upstream projects.\n\nNotice what this screen cannot tell you: which rule held it, at what limit, who signs, and how long they take. Those are the auditor's questions two, three and four. Act 3 answers them live, and the trace answers them afterwards.\n\nThis is claim CLM-1842, from a live run of the demo.\n\nSource: Ch 14 · Ch 5 · M8 design spec (maker-checker: the agent's limit at assisted is €0)"
  },
  {
-  "secs": 70,
-  "note": "WILLIAM: I'm William Rizzo, Global Field CTO at Mirantis. I spend my days with platform teams in regulated industries, and the questions you just saw are the ones they bring me.\n\nKASPER: And I'm Kasper, Principal Developer Advocate at Dash0. This is the third talk in a series. Your Agent Did WHAT?, with Adriana Villela at SRE Day London, asked what an agent actually does. Taming Complexity, with Mauricio Salatino at KubeCon EU, asked how you trace it.\n\nWILLIAM: And the third source is mine. At OSFF this year I showed a demo called Bounded Agent Autonomy: a loan agent that tries to go beyond its authority, and gets stopped by the platform, live. It asks who enforces the limits. We'll borrow its shape in a minute.\n\nKASPER: So this talk asks: what happens when a regulator asks? I built Northstar, a pretend insurer, with only open source and open standards, to answer it. You'll see it live in Act 3.\n\nWILLIAM: And beginners are welcome. If you've never read a trace before, you'll be able to read the ones in this talk. If you have, stay for the parts where they lie to you. First: why agents are different.\n\n[verify: William's lines are placeholders; let him write his own. Titles are from the KubeCon schedule, 2026-09-28. OSFF 2026 demo title and event name as William wants them said.]\n\nSource: Ch 14 ('Where this comes from'; the beginners line is Ch 14's takeaway); KubeCon NA 2026 schedule, session 1238630; bounded-ai/README.md (William Rizzo, OSFF 2026)"
- },
- {
   "secs": 10,
   "note": "WILLIAM\n\nAct one. Agents don't just add more complexity. They change what kind of complexity we have. Keep moving.\n\nSource: Ch 14"
  },
  {
   "secs": 35,
-  "note": "WILLIAM\n\nYou have probably seen this picture before, and that is the point. Follow the numbers.\n\nOne, the top row: we went from one big program, the monolith, to many small services, then to services that talk through queues, and now to agents, which pick their own next step.\n\nTwo, the magenta row. Every step fixed a real problem, but what it broke was always the same kind of thing: we lost sight of what was going on.\n\nThree, the two lines at the bottom. Building got easier. Understanding got harder.\n\nSource: Ch 1"
+  "note": "WILLIAM\n\nYou have probably seen this picture before, and that is the point.\n\nThe top row: we went from one big program, the monolith, to many small services, then to services that talk through queues, and now to agents, which pick their own next step.\n\nThe magenta row. Every step fixed a real problem, but what it broke was always the same kind of thing: we lost sight of what was going on.\n\nThe two lines at the bottom. Building got easier. Understanding got harder.\n\nSource: Ch 1"
  },
  {
   "secs": 45,
-  "note": "WILLIAM\n\nIn a normal system you can draw the call graph, the map of who calls whom, on a whiteboard before it runs.\n\nAn agent is different. Start at one, on the left: one prompt, \"remove the free-plan accounts\". Two: the same prompt, run three times. Run one looks first, then deletes. Run two stops and asks a human. Run three deletes without looking. Three: the pink bars are the tokens each run used, so even the cost changes.\n\nLike a taxi driver who picks a new route every ride. The code tells you what the agent may do, not what it will do. The model draws the call graph at run time. A test that passed on run two tells you nothing about run three.\n\nSource: Ch 1"
+  "note": "WILLIAM\n\nIn a normal system you can draw the call graph, the map of who calls whom, on a whiteboard before it runs.\n\nAn agent is different. On the left, one prompt: \"remove the free-plan accounts\". Then the same prompt, run three times. Run one looks first, then deletes. Run two stops and asks a human. Run three deletes without looking. And the pink bars are the tokens each run used, so even the cost changes.\n\nLike a taxi driver who picks a new route every ride. The code tells you what the agent may do, not what it will do. The model draws the call graph at run time. A test that passed on run two tells you nothing about run three.\n\nSource: Ch 1"
  },
  {
   "secs": 20,
@@ -37,7 +37,7 @@
  },
  {
   "secs": 45,
-  "note": "WILLIAM\n\nHere is that loop, opened up. The dashed frame is the harness, the program that runs the agent.\n\nFollow the numbers. One: a goal comes in. The agent packs it with its instructions and its list of tools. Two: it sends that to the model, and you pay per token, in and out. Three, the diamond: the model answers one of two ways. \"Run this tool\", and the agent runs it, often through an MCP server, adds the result and goes round again. Or \"here is my final answer\", and it stops.\n\nSo the model, not your code, decides when to stop. Nobody knows how many steps there will be. In a regulated domain, that is the problem.\n\nSource: Ch 1"
+  "note": "WILLIAM\n\nHere is that loop, opened up. The dashed frame is the harness, the program that runs the agent.\n\nFollow it left to right. First, on the left: a goal comes in. The agent packs it with its instructions and its list of tools. Next: it sends that to the model, and you pay per token, in and out. Then the diamond: the model answers one of two ways. \"Run this tool\", and the agent runs it, often through an MCP server, adds the result and goes round again. Or \"here is my final answer\", and it stops.\n\nSo the model, not your code, decides when to stop. Nobody knows how many steps there will be. In a regulated domain, that is the problem.\n\nSource: Ch 1"
  },
  {
   "secs": 20,
@@ -45,7 +45,7 @@
  },
  {
   "secs": 60,
-  "note": "WILLIAM\n\nThree open standards, one minute. Follow the numbers.\n\nTwo first, the lines going down. MCP, the Model Context Protocol, is how an agent gets tools it didn't ship with. Think USB-C for AI tools: build the plug once, and any agent can use it. The current spec is dated 28 July 2026, and it is stateless: no more sessions.\n\nOne, the line going across. A2A, Agent2Agent, is how agents talk to each other: a claims agent hands a case to a settlement agent. The A2A docs put it in two words: MCP is vertical, A2A is horizontal. Version 1.0 shipped on 12 March 2026, and A2A joined the Agentic AI Foundation, AAIF, on 17 August.\n\nThree, the folder on the right. Skills are the simplest: a folder with a SKILL.md file and some scripts, loaded only when the task needs them. An open standard since December 2025.\n\nNone of the three is a CNCF project.\n\n[verify: MCP current spec still 2026-07-28 — week of]\n[verify: Agent Skills AAIF proposal #47 still not accepted — after AGNTCon]\n[verify: A2A and agentgateway still in AAIF, not CNCF — week of]\n\nSource: Ch 2"
+  "note": "WILLIAM\n\nThree open standards, one minute. Take each one by where it sits.\n\nThe lines going down first. MCP, the Model Context Protocol, is how an agent gets tools it didn't ship with. Think USB-C for AI tools: build the plug once, and any agent can use it. The current spec is dated 28 July 2026, and it is stateless: no more sessions.\n\nThen the line going across. A2A, Agent2Agent, is how agents talk to each other: a claims agent hands a case to a settlement agent. The A2A docs put it in two words: MCP is vertical, A2A is horizontal. Version 1.0 shipped on 12 March 2026, and A2A joined the Agentic AI Foundation, AAIF, on 17 August.\n\nAnd the folder on the right. Skills are the simplest: a folder with a SKILL.md file and some scripts, loaded only when the task needs them. An open standard since December 2025.\n\nNone of the three is a CNCF project.\n\n[verify: MCP current spec still 2026-07-28 — week of]\n[verify: Agent Skills AAIF proposal #47 still not accepted — after AGNTCon]\n[verify: A2A and agentgateway still in AAIF, not CNCF — week of]\n\nSource: Ch 2"
  },
  {
   "secs": 45,

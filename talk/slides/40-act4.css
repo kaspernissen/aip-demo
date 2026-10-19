@@ -122,3 +122,23 @@
 .x40-loop span .code { font-size: 0.92em; }
 .x40-loop + .x40-same { margin-top: calc(1.5 * var(--baseline)); }
 .x40-loop li.hot { background: color-mix(in srgb, var(--color-accent-2) 16%, transparent); }
+
+/* 41a · two kinds of checks: evals (after the answer) beside guardrails (before it).
+   The guardrail column carries the magenta spot: it is the one that can say no. */
+.x40-two { display: grid; grid-template-columns: 1fr 1fr; gap: 120px; margin-top: calc(1.5 * var(--baseline)); }
+.x40-two p { margin: 0; }
+.x40-two .when { font-size: var(--type-kicker); letter-spacing: 0.08em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x40-two .q { margin-top: 14px; font-family: var(--font-heading); font-weight: 700; font-size: 64px; line-height: 1.1; letter-spacing: -0.015em; }
+.x40-two .m .q { color: var(--color-accent-2); }
+.x40-two .kind { margin-top: 12px; font-size: var(--type-small); font-style: italic; color: color-mix(in srgb, var(--color-text) 62%, transparent); }
+.x40-two ul { list-style: none; margin: 40px 0 0; padding: 0; display: flex; flex-direction: column; gap: 22px; }
+.x40-two li { display: flex; align-items: center; gap: 24px; font-size: 40px; font-weight: 600; line-height: 1.1; }
+.x40-two li i { font-size: 60px; color: var(--color-neutral-700); }
+.x40-two .m li i { color: var(--color-accent-2); }
+.x40-two-f { margin: calc(1.5 * var(--baseline)) 0 0; font-size: var(--type-small); }
+
+/* 39 · the evidence view: one Jaeger capture, full width (3200x1300 at 2x) */
+.x40-ev-shot { margin: calc(0.75 * var(--baseline)) 0 0; width: 1350px; flex: none; }
+.x40-ev-shot img { width: 100%; height: auto; display: block; border-radius: var(--radius-md); }
+.x40-ev-cap { margin: 28px 0 0; font-size: var(--type-small); max-width: 60ch; }

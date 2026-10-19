@@ -47,15 +47,11 @@
   <p class="x40-th">Traced everywhere except where a packet is dropped. <span class="spot-2">The gap is named, not hidden.</span></p>
 </section>
 
-<!-- 39 · NEW · The evidence view (longer-demo beat 5, as a slide): opensearch-evidence.png, cropped -->
-<section class="slide split" data-label="The evidence view">
-  <div class="beat x40-asslide"><span class="dot"></span>Longer demo &middot; shown as slide</div>
-  <div class="split-copy">
-    <h2 class="slide-title">No new application code</h2>
-    <p class="note">Four panels from spans already emitted, joined on <span class="code c">traceId</span>, because the claim id stops at MCP.</p>
-    <p class="shot-cap">Captured before M8: the old assisted limit, the retired second agent and elapsed ms. The live demo reads Jaeger.</p>
-  </div>
-  <figure class="split-figure shot x40-crop"><img src="assets/shots/opensearch-evidence.png" alt="OpenSearch Dashboards: the northstar-evidence view, readme panel and panel 1, claims to trace ids"></figure>
+<!-- 39 · NEW · the evidence view, in Jaeger (2026-10-19, replaces the OpenSearch dashboard capture): trace B of an approved claim, the northstar.review.decision span open with its link -->
+<section class="slide content" data-label="The evidence view">
+  <h2 class="slide-title">No new application code</h2>
+  <figure class="shot x40-ev-shot rise"><img src="assets/shots/jaeger-evidence-approval.png" alt="Jaeger: trace B of an approved claim, rooted at reviewer-ui northstar.review.decision, with its tags (decision approve, reviewer id, reviewer SPIFFE id, wait duration 6.359 s) and one reference, a span in another trace"></figure>
+  <p class="x40-ev-cap rise">Who approved, as which identity, how long the human took, and a link back to the trace that asked.</p>
 </section>
 
 <!-- 39r · NEW · The decision contract is a published schema (M9): a real excerpt of telemetry/registry/policy.yaml beside a real Jaeger screenshot of the same northstar.policy.decision span (jaeger-policy-decision-m9.png, 2026-10-17). Outside the live block. -->
@@ -161,6 +157,34 @@
   <p class="x40-same rise">Same output: <span class="code">gen_ai.evaluation.*</span>, beside the trace it judged</p>
 </section>
 
+<!-- 41a · NEW · two kinds of checks on the model itself: quality evals and topic guardrails (OpenLIT docs, 2026-10-19); neither is in the demo -->
+<section class="slide content" data-label="Two kinds of checks">
+  <h2 class="slide-title">Two kinds of checks on the model</h2>
+  <div class="x40-two rise">
+    <div class="col">
+      <p class="when">After the answer</p>
+      <p class="q">Was it good?</p>
+      <p class="kind">Evals &middot; a score</p>
+      <ul>
+        <li><i class="ph-duotone ph-ghost"></i>Hallucination</li>
+        <li><i class="ph-duotone ph-arrows-left-right"></i>Bias</li>
+        <li><i class="ph-duotone ph-warning-octagon"></i>Toxicity</li>
+      </ul>
+    </div>
+    <div class="col m">
+      <p class="when">Before the answer</p>
+      <p class="q">May it say this?</p>
+      <p class="kind">Guardrails &middot; block or flag</p>
+      <ul>
+        <li><i class="ph-duotone ph-syringe"></i>Prompt injection</li>
+        <li><i class="ph-duotone ph-eye-slash"></i>Sensitive topics</li>
+        <li><i class="ph-duotone ph-signpost"></i>Topic restriction</li>
+      </ul>
+    </div>
+  </div>
+  <p class="x40-two-f rise">Record either one as <span class="code">gen_ai.evaluation.*</span>, beside the trace it judged. <span class="muted">Neither is in the demo.</span></p>
+</section>
+
 <!-- 42 · NEW · Content capture as a matched pair: Fig 9.5 lifted (three layers, keys vs content) -->
 <section class="slide content" data-label="Content capture, a matched pair">
   <h2 class="slide-title">Content capture, measured as a matched pair</h2>
@@ -204,7 +228,7 @@
 </section>
 
 <!-- 43 · TAMING · "More Telemetry ≠ Better Telemetry" (p.40), reworked: the 142 vs 139 defect -->
-<section class="slide hero" data-label="Never sample the decisions">
+<section class="slide hero x-dark" data-label="Never sample the decisions">
   <div class="hero-num cmyk-num rise"><span class="paper">142 vs 139</span><span class="plate plate-c" aria-hidden="true">142 vs 139</span><span class="plate plate-m" aria-hidden="true">142 vs 139</span><span class="plate plate-y" aria-hidden="true">142 vs 139</span></div>
   <p class="hero-caption x40-hc">Spans in Jaeger vs OpenSearch. The missing three were exactly the decisions. <span class="spot-2">Never sample them.</span></p>
 </section>

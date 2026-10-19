@@ -107,38 +107,6 @@
   </div>
 </section>
 
-<!-- 16 · DID WHAT · three dialects for "which model" funnel into one Collector processor (Ch 3 Fig 3.15 and 3.16, redrawn; OpenLLMetry row updated 2026-09-28: it emits gen_ai.* since v0.53.4) -->
-<section class="slide content" data-label="Competing vocabularies, one processor">
-  <h2 class="slide-title">You can&rsquo;t query what you can&rsquo;t name</h2>
-  <div class="a2-fun rise">
-    <div class="a2-src">
-      <div class="a2-dia"><span class="a2-who">OpenInference</span><span class="code">llm.model_name</span></div>
-      <div class="a2-dia"><span class="a2-who">OpenLLMetry, before v0.53.4</span><span class="code">llm.request.model</span></div>
-      <div class="a2-dia"><span class="a2-who">OTel GenAI &middot; and OpenLLMetry since v0.53.4</span><span class="code">gen_ai.request.model</span></div>
-    </div>
-    <svg class="a2-wire" viewBox="0 0 120 360" preserveAspectRatio="none" aria-hidden="true">
-      <path d="M0 60 C60 60 60 180 120 180"/>
-      <path d="M0 180 L120 180"/>
-      <path d="M0 300 C60 300 60 180 120 180"/>
-    </svg>
-    <div class="a2-proc">
-      <span class="a2-who">OTel Collector processor</span>
-      <b>gen_ai_normalizer</b>
-    </div>
-    <svg class="a2-wire out" viewBox="0 0 120 360" preserveAspectRatio="none" aria-hidden="true">
-      <path d="M0 180 L108 180"/>
-      <path d="M98 168 L114 180 L98 192"/>
-    </svg>
-    <div class="a2-out">
-      <span class="a2-who">one name to query</span>
-      <span class="code c">gen_ai.request.model</span>
-      <span class="a2-kept"><span class="code">llm.model_name</span> kept beside it</span>
-    </div>
-  </div>
-  <p class="a2-cap muted">Semantic conventions: OpenTelemetry&rsquo;s shared dictionary. Translate once, in the platform.</p>
-</section>
-
-
 <!-- 17 · DID WHAT · the "what can the conventions answer today" table (Ch 3 Fig 3.10, minus the gap row, which is slide 18); the four opt-in rows dimmed -->
 <section class="slide content" data-label="What can gen_ai.* answer today?">
   <h2 class="slide-title">What can <span class="a2-ident">gen_ai.*</span> answer today?</h2>
@@ -156,12 +124,4 @@
       <tr><td>Same conversation?</td><td><span class="code">gen_ai.conversation.id</span></td><td></td></tr>
     </tbody>
   </table>
-</section>
-
-<!-- 18 · DID WHAT · statement from the quote bank: we can prove what, not why; the missing attribute; bridge into Act 3 -->
-<section class="slide quote" data-label="We can prove what, not why">
-  <figure class="rise">
-    <blockquote class="a2-stmt">A trace proves <em>what</em> happened. Not <span class="spot-2">why</span>.</blockquote>
-  </figure>
-  <p class="a2-nope"><span class="a2-strike">gen_ai.tool.call.reason</span> <span class="muted">does not exist</span></p>
 </section>
