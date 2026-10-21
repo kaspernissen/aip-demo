@@ -13,9 +13,13 @@
     autonomy <level>      flip the one live value: assisted | autonomous
     keystone              the agent tries to edit what constrains it
     evidence              who decided, the rule, who approved, how long the human took
-    evals                 (off stage) AgentEvals scores what the agent did, from its own
-                          traces: the path it took, whether it stopped when refused, and
-                          whether its narrative stated an amount. One line per claim
+    config                the restraining config, read live from the repo: identity,
+                          reach, what the gateway checks and delegates, the live level,
+                          the keystone. A line that has moved is a failure, not a guess
+    evals [--quick]       AgentEvals scores what the agent did, from its own traces. On
+                          stage --quick: our three checks (the path it took, stopped when
+                          refused, no amount in the narrative), seconds. Without it, also
+                          its built-in metrics with an LLM judge (AGENTEVALS_JUDGE), minutes
     reset                 rejects open approvals as demo-reset, flag assisted,
                           over-grant absent, state cleared
     ceiling               (off stage) the gateway's own CEL ceiling: a 403 before the PDS
@@ -23,7 +27,8 @@
 The five-minute flow (spec section 4): guard; claim 5800 (it WAITS at assisted)
 then approve last; autonomy autonomous; claim 5800 (settled by the agent) and
 claim 6200 (waits: the limit is 6,000); autonomy assisted; keystone; evidence;
-reset. At rest the contract is `assisted` and nothing waits.
+evals --quick; reset. At rest the contract is `assisted` and nothing waits. `config`
+is there if a question asks what, exactly, restrains the agent.
 
 Design: docs/superpowers/specs/2026-10-13-northstar-m8-human-in-the-loop-design.md, section 4.
 
@@ -135,7 +140,7 @@ AGENTEVALS_EVALUATORS = ("took_a_known_path", "stopped_when_refused", "narrative
 # need Google Cloud (Vertex AI): safety_v1, response_evaluation_score and the three
 # multi_turn_*_v1 metrics; rubric_based_multi_turn_trajectory_quality_v1 reports
 # itself as not working at 0.11.0.
-AGENTEVALS_JUDGE = "anthropic/claude-sonnet-5"
+AGENTEVALS_JUDGE = os.environ.get("AGENTEVALS_JUDGE", "anthropic/claude-sonnet-5")
 AGENTEVALS_BUILTINS = (
     {"name": "hallucinations_v1", "judge_model": AGENTEVALS_JUDGE},
     {"name": "rubric_based_final_response_quality_v1", "judge_model": AGENTEVALS_JUDGE, "rubrics": [
@@ -1090,7 +1095,8 @@ def cmd_ceiling(_: argparse.Namespace) -> None:
 # --- evals: AgentEvals, what the agent did -----------------------------------------
 
 
-def cmd_evals(_: argparse.Namespace) -> None:
+def cmd_evals(args: argparse.Namespace) -> None:
+    quick = getattr(args, "quick", False)
     title("EVALS  AgentEvals scores what the agent did, from the traces it emitted")
     say("One session per claim. Three of our own checks, run by AgentEvals as code evaluators.")
     say("It reads the agent's spans only: not the policy decision, not the human, not the caller.")
@@ -1114,21 +1120,31 @@ def cmd_evals(_: argparse.Namespace) -> None:
         "eval_set_id": "northstar",
         "evaluators": [{"type": "code", "name": name, "path": f"/evaluators/{name}.py"}
                        for name in AGENTEVALS_EVALUATORS]
-                      + [{"type": "builtin", **metric} for metric in AGENTEVALS_BUILTINS],
+                      + ([] if quick else [{"type": "builtin", **metric} for metric in AGENTEVALS_BUILTINS]),
     }
     doing(f"POST {AGENTEVALS_URL}/api/streaming/evaluate-sessions  {len(complete)} claim(s), "
           f"{len(body['evaluators'])} metrics, golden {golden}")
-    say(f"Our three checks, plus {len(AGENTEVALS_BUILTINS)} of AgentEvals' own, judged by {AGENTEVALS_JUDGE}.")
-    say("Not here: safety_v1 and the multi-turn metrics, which need Google Cloud.")
+    if quick:
+        say("Our three checks, deterministic: the same answer every run, in seconds.")
+    else:
+        say(f"Our three checks, plus {len(AGENTEVALS_BUILTINS)} of AgentEvals' own, judged by {AGENTEVALS_JUDGE}.")
+        say("Not here: safety_v1 and the multi-turn metrics, which need Google Cloud.")
     scored = requests.post(f"{AGENTEVALS_URL}/api/streaming/evaluate-sessions", json=body,
                            timeout=AGENTEVALS_TIMEOUT_S)
     scored.raise_for_status()
     failed = 0
-    for result in scored.json()["data"]["results"]:
+    results = scored.json()["data"]["results"]
+    # AgentEvals keeps every session it has seen since its pod started, the gate's
+    # test claims included. Show this run's claims when the run has any.
+    mine = {c["id"] for c in load_state().get("claims") or []}
+    shown = [r for r in results if r["sessionId"] in mine] if mine else results
+    if len(shown) < len(results):
+        say(f"{len(results) - len(shown)} older session(s) in AgentEvals are not from this run: not shown.")
+    for result in shown:
         out()
         out(paint(result["sessionId"], "bold")
             + (paint("   the golden run: the comparison metrics compare it with itself", "dim")
-               if result["sessionId"] == golden else ""))
+               if result["sessionId"] == golden and not quick else ""))
         if result.get("error"):
             out(f"    {word('ERROR', 'stop')}  {result['error']}")
             failed += 1
@@ -1152,6 +1168,69 @@ def cmd_evals(_: argparse.Namespace) -> None:
     out()
     out(paint(f"{failed} failing check(s). What the agent did; the platform's side is eval-scorer's."
               if failed else "Every check passed. What the agent did; the platform's side is eval-scorer's.", "bold"))
+
+
+# --- config: what restrains the agent, read from the files that do it -----------
+
+# Each entry names a file and the exact lines in it that restrain the agent. The
+# lines are found, not retyped: `config` prints them with their line numbers, and
+# fails if one has moved or changed. The deck's "The guardrails are config" slide
+# shows the same lines (tests/unit/test_guardrail_config.py holds both to the files).
+GUARDRAIL_CONFIG = (
+    ("Core · Identity", "who it is: SPIRE issues this ID to the pod, from where it runs",
+     "deploy/platform/spire/registration.yaml",
+     ('spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"',
+      "app: settlement-agent")),
+    ("Ring 1 · Reach", "the only way out: the model provider, by name",
+     "deploy/platform/cilium-policies.yaml",
+     ("- toFQDNs:", "- matchName: api.anthropic.com")),
+    ("Ring 2 · Capability", "the gateway: who, how much, and the delegated decision",
+     "deploy/platform/agentgateway/config.yaml",
+     ("mode: strict",
+      "- allow: 'request.method != \"POST\" || mcp.methodName != \"tools/call\" || "
+      "mcp.tool.name != \"execute_payment\" || (mcp.tool.arguments.amount > 0 && "
+      "mcp.tool.arguments.amount <= 50000)'",
+      "- kind: remote",
+      "host: policy-decision-service.northstar-platform.svc.cluster.local:9100",
+      "failureMode: failClosed")),
+    ("Ring 2 · the live level", "how free: one value, for one identity",
+     "deploy/platform/openfeature/featureflag.yaml",
+     ("defaultVariant: assisted", "- var: spiffeId",
+      '- - "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"')),
+    ("Keystone", "the agent can never edit what defines its authority",
+     "deploy/platform/kyverno/keystone-policy.yaml",
+     ("request.userInfo.username.startsWith('system:serviceaccount:northstar-agents:') ||",
+      'resources: ["featureflags", "featureflagsources"]',
+      '- expression: "!variables.isProtected"')),
+)
+
+
+def guardrail_lines() -> list[tuple[str, str, str, list[tuple[int, str]]]]:
+    """Each entry with its lines found in its file: (ring, gloss, path, [(lineno, line)])."""
+    found = []
+    for ring, gloss, path, wanted in GUARDRAIL_CONFIG:
+        text = (ROOT / path).read_text().splitlines()
+        hits = []
+        for want in wanted:
+            lineno = next((n for n, line in enumerate(text, 1) if line.strip() == want), None)
+            if lineno is None:
+                raise Fail(f"{path} no longer has the line {want!r}: the config moved, update GUARDRAIL_CONFIG")
+            hits.append((lineno, text[lineno - 1].strip()))
+        found.append((ring, gloss, path, hits))
+    return found
+
+
+def cmd_config(_: argparse.Namespace) -> None:
+    title("CONFIG  what restrains the agent, read from the files that do it")
+    say("No code of the agent's own. Five files, a few lines each.")
+    for ring, gloss, path, hits in guardrail_lines():
+        out()
+        out(f"  {paint(ring, 'head')}   {paint(gloss, 'dim')}")
+        out(f"  {paint(path, 'dim')}")
+        for lineno, line in hits:
+            out(f"    {paint(f'{lineno:>4}', 'dim')}  {line}")
+    out()
+    out(paint("Change one of these lines, and the agent's bounds change. The agent can change none of them.", "bold"))
 
 
 # --- main -----------------------------------------------------------------------
@@ -1180,7 +1259,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("evidence", help="who decided, and why, from Jaeger").set_defaults(fn=cmd_evidence)
     sub.add_parser("reset", help="reject open approvals, flag assisted, over-grant absent, state cleared").set_defaults(fn=cmd_reset)
     sub.add_parser("ceiling", help="the gateway's own CEL ceiling (not in the five-minute flow)").set_defaults(fn=cmd_ceiling)
-    sub.add_parser("evals", help="AgentEvals scores what the agent did (not in the five-minute flow)").set_defaults(fn=cmd_evals)
+    evals = sub.add_parser("evals", help="AgentEvals scores what the agent did, from its own traces")
+    evals.add_argument("--quick", action="store_true",
+                       help="our three deterministic checks only (the stage version, seconds)")
+    evals.set_defaults(fn=cmd_evals)
+    sub.add_parser("config", help="the restraining config, read live from the repo").set_defaults(fn=cmd_config)
     args = parser.parse_args(argv)
     try:
         args.fn(args)

@@ -436,6 +436,7 @@ section 4. Everything below it in this section is the **longer-slot** version.
 | 3 | `autonomy autonomous`, `claim 5800`, `claim 6200` | 75s | EUR 5,800 settled by the agent, nothing waiting; EUR 6,200 waits (limit 6,000) | One live dial; the band widens, the human stays |
 | 4 | `scripts/demo keystone` | 45s | RBAC says no; Kyverno says no | Keystone |
 | 5 | `scripts/demo evidence` | 45s | For each claim: who decided, the rule, who approved, how long the human took | Prove |
+| 6 | `scripts/demo evals --quick` | 30s | For each claim: the path the agent took, whether it stopped when refused, whether its narrative stated an amount, scored by AgentEvals from the agent's own traces | What the agent did, graded |
 
 The terminal version of the whole flow:
 
@@ -449,6 +450,7 @@ scripts/demo claim 6200             #    ... EUR 6,200 still waits
 scripts/demo autonomy assisted      #    ... and back
 scripts/demo keystone               # 4  the agent cannot edit what constrains it
 scripts/demo evidence               # 5  prove it
+scripts/demo evals --quick          # 6  what the agent did, graded (seconds)
 scripts/demo reset                  #    rejects open approvals, back to rest
 ```
 
@@ -529,8 +531,8 @@ terminal line is the evidence, and the slide says so.
 **If it fails** — `FAIL ... the control did not answer`: the network is down, not
 the policy; `kubectl -n northstar-agents get pods`. `FAIL ... was not dropped`:
 the Cilium policy is not enforcing, see §8. No SPIRE token: `kubectl -n
-northstar-platform get pod spire-server-0`. Fallback: the transcript slide, which
-is this output.
+northstar-platform get pod spire-server-0`. Fallback: none on the deck any more (the
+transcript slides left it on 2026-10-19); say what the step proves and move on.
 
 ---
 
@@ -712,7 +714,7 @@ the keystone. The over-grant is removed on every exit path, including Ctrl-C.
 **If it fails** — `FAIL ... is not Ready`: stage 7 is not up or Kyverno is down
 (§8). `FAIL ... over-grant is already applied`: `scripts/demo reset`.
 `FAIL ... not by the keystone`: Kyverno did not fire and RBAC did; read §8's
-Kyverno rows. Fallback: the transcript slide (Beat K's, which is this output).
+Kyverno rows. Fallback: none on the deck any more; say what the keystone proves and move on.
 
 ---
 
@@ -798,8 +800,39 @@ Jaeger (...)`, then fails naming the fields that never arrived: read the
 collector log (`kubectl -n observability logs deploy/otel-collector | grep
 'Exporting failed'`) and check the `jaeger` pod. `FAIL ... no claims in this
 run yet`: you ran `reset` between the claims and this; run the claims again.
-Fallback: the transcript slide, or open the claim's trace in Jaeger by hand
+Fallback: open the claim's trace in Jaeger by hand
 (service `policy-decision-service`, operation `northstar.policy.decision`).
+
+---
+
+#### Step 6 — `scripts/demo evals --quick` · what the agent did, graded
+
+**DO** — `scripts/demo evals --quick`. Optionally first, if the room asks what
+exactly restrains the agent: `scripts/demo config` (the lines, from the files).
+
+**SEE** — for each claim this run filed, three lines from AgentEvals:
+`took_a_known_path` (settled: propose, execute; held: propose, execute refused),
+`stopped_when_refused`, `narrative_states_no_amount`. PASS on every line on a
+normal run. Older sessions AgentEvals still holds (the gate's test claims) are
+counted and not shown.
+
+**SAY** —
+> "Evidence was the platform's side: who decided and why. This is the agent's side,
+> graded by an open-source evaluator, AgentEvals, from the same OpenTelemetry the
+> agent already emits. It never touched the agent. Every grade goes back into the
+> telemetry as a gen_ai.evaluation.result event. And it can only see what the
+> agent did, not what the platform decided, which is why we keep both."
+
+**Land:** `--quick` runs our three deterministic checks, seconds, the same answer
+every run. The full `scripts/demo evals` (minutes, off stage) adds AgentEvals'
+own metrics with an LLM judge, Claude by default (`AGENTEVALS_JUDGE` overrides
+it); the judge is not stable across runs (measured: 0.60, 0.40, 0.40 on one
+claim), which is the point of keeping the stage checks deterministic.
+
+**If it fails** — `FAIL ... no finished claim yet`: a session completes a few
+seconds after its last span; wait, re-run. Connection refused on 18001: the
+forward is dead (the pod restarted); re-run `scripts/start-demo.sh`. Fallback:
+the UI at http://localhost:18001, Local Development, expand a claim.
 
 ---
 

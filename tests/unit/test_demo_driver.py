@@ -591,3 +591,24 @@ def test_evals_compares_against_the_latest_claim_the_agent_settled(monkeypatch, 
     sent = _evals_fakes(monkeypatch, demo, [])
     assert demo.main(["evals"]) == 0
     assert sent["body"]["golden_session_id"] == "CLM-DEMO-AAAAAA"
+
+
+def test_evals_quick_asks_for_our_three_checks_only(monkeypatch):
+    demo = _driver()
+    monkeypatch.setattr(demo, "STATE_FILE", Path("/nonexistent/state.json"))
+    sent = _evals_fakes(monkeypatch, demo, [])
+    assert demo.main(["evals", "--quick"]) == 0
+    assert [e["type"] for e in sent["body"]["evaluators"]] == ["code"] * len(demo.AGENTEVALS_EVALUATORS)
+
+
+def test_evals_shows_only_this_runs_claims_when_the_run_has_some(monkeypatch, tmp_path, capsys):
+    demo = _driver()
+    state = tmp_path / "state.json"
+    state.write_text('{"claims": [{"id": "CLM-DEMO-AAAAAA", "status": "executed"}]}')
+    monkeypatch.setattr(demo, "STATE_FILE", state)
+    _evals_fakes(monkeypatch, demo, [{"sessionId": "CLM-DEMO-AAAAAA", "metricResults": []},
+                                     {"sessionId": "CLM-1842", "metricResults": []}])
+    assert demo.main(["evals", "--quick"]) == 0
+    printed = capsys.readouterr().out
+    assert "CLM-DEMO-AAAAAA" in printed and "CLM-1842" not in printed
+    assert "1 older session(s)" in printed
