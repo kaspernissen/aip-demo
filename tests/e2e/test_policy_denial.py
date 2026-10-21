@@ -1176,8 +1176,8 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
       these components *carry* the platform's numbers to a log line and a
       reply; they do not *hold* any.
 
-    `tests/unit/test_stage2_network_policy.py` documents this hazard class for
-    the Cilium manifests and is the model followed here.
+    `tests/unit/test_reach_policy.py` documents this hazard class for
+    the reach manifests (Linkerd and NetworkPolicy) and is the model followed here.
 
     **Four assertions.**
 

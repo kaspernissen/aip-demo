@@ -51,6 +51,7 @@ def test_the_reach_urls_are_the_ones_beat_reach_probes():
     beat = SCRIPTS / "beat-reach.sh"
     assert driver.CONTROL_URL == _shell_var(beat, "CONTROL_URL")
     assert driver.DIRECT_URL == _shell_var(beat, "DIRECT_URL")
+    assert driver.INGRESS_URL == _shell_var(beat, "INGRESS_URL")
     assert f"CONNECT_TIMEOUT={driver.CONNECT_TIMEOUT_S}\n" in beat.read_text()
 
 

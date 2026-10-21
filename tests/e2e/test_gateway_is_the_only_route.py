@@ -1,371 +1,309 @@
-"""Proves the choke point is enforced by the dataplane, not merely observed.
+"""Proves the choke point is enforced by the mesh, not merely observed.
 
-**The gap this closes.** `test_gateway_trace.py` has a test called
-`test_the_gateway_is_the_only_route_into_payments_mcp`, and its docstring is
-scrupulous about what it actually asserts: every `payments-mcp` span *in an
-observed trace* is parented to an agentgateway span. That is a property of the
-traffic that happened. It says nothing about whether other traffic is
-possible, and it passes perfectly on a cluster where any pod can reach the
-tool directly.
+**The gap this closes.** `test_gateway_trace.py` asserts that every
+`payments-mcp` span *in an observed trace* is parented to an agentgateway span.
+That is a property of the traffic that happened. It says nothing about whether
+other traffic is possible, and it passes perfectly on a cluster where any pod
+can reach the tool directly.
 
-Measured before `deploy/platform/cilium-policies.yaml` existed: `claims-agent`,
-holding no SVID and with no reason to touch payments, POSTed an MCP
-`initialize` straight at `payments-mcp:8000/mcp` and got **HTTP 200**. The
-claim this demo rests on -- "the platform decides if it becomes an effect" --
-therefore held only for a caller that chose to cooperate. A choke point a
-workload can walk around is a convention, not a control.
+Measured before any reach policy existed: `claims-agent`, holding no SVID and
+with no reason to touch payments, POSTed an MCP `initialize` straight at
+`payments-mcp:8000/mcp` and got **HTTP 200**. A choke point a workload can walk
+around is a convention, not a control.
 
-**Why `claims-agent` is the prober.** It is a real workload already in the
-cluster, in the same namespace as the agent that *is* allowed through, with no
-SVID and no MCP client. If the policy were scoped by namespace instead of by
-workload, this probe would wrongly succeed -- so the choice of prober is part
-of the assertion.
+**M12: what enforces it now.** Ingress is Linkerd's, at the destination's
+proxy: `payments-mcp:8000` and `policy-decision-service:9100` each have a
+`Server` (`accessPolicy: deny`) and one `AuthorizationPolicy` naming
+agentgateway's mesh identity
+(`deploy/platform/reach/linkerd-policies.yaml`). Egress is core NetworkPolicy,
+enforced by kindnet (`deploy/platform/reach/network-policies.yaml`). Both file
+halves are asserted here; the egress half lives in `test_egress_policy.py`.
 
-**Why this is not behind `RUN_BROWSER_TESTS=1`.** Like
-`test_caller_identity.py`, it spends no model tokens: it opens TCP connections
-and reads status codes. It needs the live stage-2 cluster and nothing else.
+**The oracle, from the plan's measurements M1-M6.** An ingress refusal is an
+HTTP 403 (or a proxy 404 when no route matched), an empty body, no
+`l5d-proxy-error` header, AND the destination proxy's
+`inbound_http_authz_deny_total` for that Server and caller rising by at least
+one across the call. The counter is what says Linkerd's policy refused it
+rather than an application. It is read through the API server pod proxy, never
+through `kubectl port-forward`, which bypasses the proxy (M3). **A TCP connect
+is never the oracle for ingress**: the proxy accepts every connection and
+answers above TCP. All decisions are pure functions in `tests/harness/reach.py`
+with their own unit tests; this file only runs probes and applies them.
 
-**Cost of a false green.** If the policy silently stopped being applied, these
-tests failing is the only signal -- the demo would keep working perfectly,
-because the legitimate path is unaffected by the thing that broke.
+**Which callers.** A refusal can only be observed from a caller whose egress
+reaches the destination, and every agent-plane workload's egress is
+allowlisted (so `claims-agent` is stopped one layer earlier, see below). The
+tests therefore create two throwaway pods, deleted afterwards, in
+`northstar-agents`, labelled so that no NetworkPolicy selects them: one
+UNMESHED (`linkerd.io/inject: disabled`: no proxy, no identity) and one MESHED
+with a ServiceAccount of its own that no policy names (the wrong identity).
+`claims-agent` itself is the prober for the egress half and for the control.
+
+**Not behind `RUN_BROWSER_TESTS=1`**: it spends no model tokens.
+
+**A skip is invisible in a green gate.** The fixture skips only below stage 2
+(no policy-decision-service). On a stage >= 2 cluster without Linkerd or
+without the reach objects it FAILS, so the one event these tests exist to catch
+(the policy silently no longer applied) cannot leave the suite green.
 """
 
 import json
-import subprocess
 
 import pytest
 
-KUBE_CONTEXT = "kind-northstar"
+from tests.harness import reach
 
-PROTECTED_APP = "payments-mcp"
-CALLER_APP = "agentgateway"
+KUBE_CONTEXT = "kind-northstar"
+AGENT_NS = "northstar-agents"
 
 PROTECTED_HOST = "payments-mcp.northstar-tools.svc.cluster.local"
 PROTECTED_PORT = 8000
-# Reachable from the same pod and deliberately NOT covered by the policy, so a
-# blocked result here would mean the cluster is broken rather than protected.
-#
-# Not `payments-api.northstar-systems.svc.cluster.local:8080`: `claims-agent`
-# never had any business calling `payments-api` (it holds no MCP client and
-# no payments URL; `deploy/k8s/claims-agent.yaml` configures exactly one
-# peer), so that destination is absent from `claims-agent-egress-allowlist`
-# by design and times out once egress allowlists exist on
-# `northstar-agents`. Using it as the control would have meant either a
-# permanently red control or -- much worse -- widening a security policy so
-# a test's control could stay green.
-#
-# `settlement-agent:9002` is the replacement because it is what this pod is
-# *for*: `NORTHSTAR_ALLOWED_AGENTS` names it as claims-agent's single
-# delegation target, so it is both ignored by the payments-mcp ingress policy
-# under test here and load-bearing for the demo. A blocked result on it is a
-# real outage rather than a stale test fixture, which is exactly what a control
-# should be.
+PDS_HOST = "policy-decision-service.northstar-platform.svc.cluster.local"
+PDS_PORT = 9100
+GATEWAY_IDENTITY = reach.client_id("agentgateway", "northstar-platform")
+
+# Reachable from claims-agent and deliberately NOT the thing under test: the
+# control, so a refusal below cannot be an outage. `settlement-agent:9002` is
+# what claims-agent is *for* (NORTHSTAR_ALLOWED_AGENTS names it as its single
+# delegation target) and it is authorized for claims-agent's identity.
 CONTROL_HOST = "settlement-agent.northstar-agents.svc.cluster.local"
 CONTROL_PORT = 9002
 
-# Long enough that a slow-but-allowed connection is not mistaken for a drop,
-# short enough that six probes do not dominate the suite. A Cilium drop
-# presents as a connect timeout rather than a refusal, because the packet is
-# dropped rather than rejected -- there is no RST to turn into ECONNREFUSED.
-CONNECT_TIMEOUT = 8
+PROBE_TIMEOUT = 8
 
-PROBE = r"""
-import json, socket, sys
-host, port, timeout = sys.argv[1], int(sys.argv[2]), float(sys.argv[3])
-try:
-    s = socket.create_connection((host, port), timeout=timeout)
-    s.close()
-    print(json.dumps({"reached": True, "error": None}))
-except Exception as exc:
-    print(json.dumps({"reached": False, "error": type(exc).__name__}))
-"""
-
-
-def _kubectl(*args: str, timeout: int = 90) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["kubectl", "--context", KUBE_CONTEXT, *args],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+WRONG_ID_SA = "reach-probe-wrongid"
 
 
 def _pod(namespace: str, app: str) -> str:
-    proc = _kubectl(
-        "-n", namespace, "get", "pod", "-l", f"app={app}",
+    proc = reach.kubectl(
+        KUBE_CONTEXT, "-n", namespace, "get", "pod", "-l", f"app={app}",
         "-o", "jsonpath={.items[0].metadata.name}",
-    )
-    if proc.returncode != 0 or not proc.stdout.strip():
-        pytest.skip(
-            f"needs the live stage-2 cluster: no {app} pod in {namespace} "
-            f"({proc.stderr.strip() or 'no output'})"
-        )
-    return proc.stdout.strip()
-
-
-def _probe(namespace: str, app: str, container: str, host: str, port: int) -> dict:
-    """Open a TCP connection from inside `app`'s pod. Returns the probe's JSON.
-
-    A TCP connect is deliberately the whole probe. The question is reachability
-    at the dataplane, and answering it with an HTTP request would conflate a
-    Cilium drop with an application-level refusal -- two failures this file
-    deliberately keeps distinct.
-    """
-    pod = _pod(namespace, app)
-    proc = _kubectl(
-        "-n", namespace, "exec", pod, "-c", container, "--",
-        "python3", "-c", PROBE, host, str(port), str(CONNECT_TIMEOUT),
-        timeout=CONNECT_TIMEOUT + 45,
-    )
-    if proc.returncode != 0 and not proc.stdout.strip():
-        pytest.skip(f"could not exec the probe in {app}: {proc.stderr.strip()}")
-    try:
-        return json.loads(proc.stdout.strip().splitlines()[-1])
-    except (ValueError, IndexError):  # pragma: no cover - diagnostic path
-        pytest.fail(f"probe produced unreadable output: {proc.stdout!r}")
-
-
-@pytest.fixture(scope="module")
-def datapath_ingress(policy_present):
-    """Ingress rows the Cilium datapath is actually enforcing for payments-mcp.
-
-    Parses `cilium-dbg bpf policy get`'s table rather than its `-o json`,
-    deliberately: the JSON reports numeric security identities that would need
-    a second lookup to become meaningful, while the table already resolves them
-    to labels. A row's labels continue on following lines, which is why this
-    accumulates into the current row rather than treating each line as one.
-    """
-    cil = _kubectl(
-        "-n", "kube-system", "get", "pod", "-l", "k8s-app=cilium",
-        "-o", "jsonpath={.items[0].metadata.name}",
-    )
-    if cil.returncode != 0 or not cil.stdout.strip():
-        pytest.skip("no cilium agent pod; this is not a stage-2 cluster")
-
-    endpoints = _kubectl(
-        "-n", "kube-system", "exec", cil.stdout.strip(), "-c", "cilium-agent",
-        "--", "cilium-dbg", "endpoint", "list", "-o", "json",
-    )
-    if endpoints.returncode != 0:
-        pytest.skip(f"could not list cilium endpoints: {endpoints.stderr.strip()}")
-
-    endpoint_id = None
-    for ep in json.loads(endpoints.stdout):
-        labels = (ep.get("status", {}).get("labels", {}) or {}).get(
-            "security-relevant", []
-        ) or []
-        if any(f"app={PROTECTED_APP}" in label for label in labels):
-            endpoint_id = ep["id"]
-            break
-    if endpoint_id is None:
-        pytest.skip(f"no cilium endpoint for {PROTECTED_APP}")
-
-    dump = _kubectl(
-        "-n", "kube-system", "exec", cil.stdout.strip(), "-c", "cilium-agent",
-        "--", "cilium-dbg", "bpf", "policy", "get", str(endpoint_id),
-    )
-    if dump.returncode != 0:
-        pytest.skip(f"could not read the datapath policy: {dump.stderr.strip()}")
-
-    rows, current = [], None
-    for line in dump.stdout.splitlines():
-        if not line.strip() or line.lstrip().startswith("POLICY"):
-            continue
-        fields = line.split()
-        if fields[0] in ("Allow", "Deny"):
-            current = {
-                "verdict": fields[0],
-                "direction": fields[1],
-                "labels": [fields[2]],
-                "ports": " ".join(fields[3:]),
-            }
-            if current["direction"] == "Ingress":
-                rows.append(current)
-        elif current is not None:
-            current["labels"].append(fields[0])
-    return rows
-
-
-@pytest.fixture(scope="module")
-def policy_present():
-    """Present on a stage-2 cluster, or the tests below FAIL -- never skip.
-
-    **This fixture had the exact defect it guards against.** Its first version
-    skipped when the policy was missing, on the reasoning that an unprovisioned
-    cluster should not fail the suite. Mutation testing killed it: deleting the
-    live CiliumNetworkPolicy turned all four tests into skips, and a skip does
-    not fail a run. So the one event these tests exist to catch -- the policy
-    silently no longer being applied -- would have left the suite green.
-
-    The fix is to separate two situations the first version conflated:
-
-    * **Not a stage-2 cluster** (no Cilium agent at all) -- nothing to say, so
-      skip. `tests/unit/test_stage2_network_policy.py` still guards the
-      manifest and the setup script without a cluster.
-    * **A stage-2 cluster with the policy missing** -- that is the regression,
-      and it fails here, loudly.
-    """
-    cilium = _kubectl(
-        "-n", "kube-system", "get", "pod", "-l", "k8s-app=cilium",
-        "-o", "jsonpath={.items[*].metadata.name}",
-    )
-    # `cilium.returncode != 0` must not be folded into this skip condition:
-    # an unreachable API server -- or a wrong context, or an expired
-    # credential -- would otherwise read as "not a stage-2 cluster" and skip
-    # every assertion in this file, exactly the "skip where you should fail"
-    # defect this repo guards against elsewhere. A label selector does not
-    # 404: on a reachable cluster
-    # with no Cilium the query succeeds and returns nothing, so EMPTINESS is
-    # the honest discriminator and a non-zero exit is a failure.
-    assert cilium.returncode == 0, (
-        "`kubectl get pod -l k8s-app=cilium` failed, so this file cannot tell "
-        "whether the cluster is below stage 2 or simply unreachable, and it "
-        "must not guess -- a skip here would remove every assertion below from "
-        f"a green run. Exit {cilium.returncode}; stderr: "
-        f"{cilium.stderr.strip() or '(empty)'}"
-    )
-    if not cilium.stdout.strip():
-        pytest.skip(
-            "not a stage-2 cluster (no Cilium agent), so there is no dataplane "
-            "to enforce anything; run ./scripts/setup-kind.sh --stage 7"
-        )
-
-    proc = _kubectl(
-        "-n", "northstar-tools", "get", "cnp", "payments-mcp-gateway-only",
-        "-o", "jsonpath={.metadata.name}",
     )
     assert proc.returncode == 0 and proc.stdout.strip(), (
-        "Cilium is running but the payments-mcp-gateway-only "
-        "CiliumNetworkPolicy is NOT applied, so any workload in the cluster "
-        "can reach payments-mcp directly and the gateway is a convention "
-        "rather than a control. Re-apply deploy/platform/cilium-policies.yaml "
-        f"(kubectl said: {proc.stderr.strip() or 'no such policy'})"
+        f"no {app} pod in {namespace} on a stage >= 2 cluster "
+        f"({proc.stderr.strip() or 'no output'})"
     )
     return proc.stdout.strip()
 
 
-def test_an_unprivileged_workload_cannot_reach_the_tool_directly(policy_present):
-    """The bypass that worked before the policy existed must now fail.
+def _image(deployment: str) -> str:
+    proc = reach.kubectl(
+        KUBE_CONTEXT, "-n", AGENT_NS, "get", "deployment", deployment,
+        "-o", "jsonpath={.spec.template.spec.containers[0].image}",
+    )
+    assert proc.returncode == 0 and proc.stdout.strip(), proc.stderr
+    return proc.stdout.strip()
 
-    This is the assertion this demo's claim rests on. It is written against
-    `claims-agent` rather than a purpose-built prober pod so that it exercises
-    the policy exactly as a real neighbouring workload would.
 
-    **Which layer this actually exercises.** `payments-mcp`'s *ingress* policy
-    says "only the gateway may connect to this pod". `claims-agent`'s own
-    egress allowlist (`claims-agent-egress-allowlist`) does not include
-    `payments-mcp` at all, so this connection is dropped at **egress**, on
-    the client side, before the ingress policy is ever consulted. The
-    assertion still fails loudly if *either* layer breaks, which is what
-    defence in depth looks like from the outside. What it does not do on its
-    own is attribute the block to the ingress half.
-    `test_the_datapath_allowlist_admits_the_gateway_and_no_other_workload`
-    below pins that half specifically, by reading the enforced allowlist out
-    of `payments-mcp`'s BPF policy map rather than probing it: adding a
-    `payments-mcp:8000` egress allowance alone would leave this behavioural
-    probe green, because the ingress policy would still be dropping the
-    packet, and only the BPF-map assertion catches that.
+@pytest.fixture(scope="module")
+def reach_objects():
+    """Stage >= 2 with Linkerd and every reach object, or FAIL (never skip)."""
+    return reach.require_reach(KUBE_CONTEXT)
+
+
+@pytest.fixture(scope="module")
+def unmeshed_pod(reach_objects):
+    """A pod with no proxy and no mesh identity, selected by no NetworkPolicy."""
+    with reach.throwaway_pod(
+        KUBE_CONTEXT, AGENT_NS, "reach-probe-unmeshed", _image("settlement-agent"),
+        {"app": "reach-probe"}, meshed=False,
+    ) as pod:
+        yield pod.name
+
+
+@pytest.fixture(scope="module")
+def wrong_identity_pod(reach_objects):
+    """A meshed pod whose identity (`reach-probe-wrongid.northstar-agents`) no policy names."""
+    with reach.throwaway_pod(
+        KUBE_CONTEXT, AGENT_NS, "reach-probe-wrongid", _image("settlement-agent"),
+        {"app": "reach-probe"}, meshed=True, service_account=WRONG_ID_SA,
+    ) as pod:
+        yield pod.name
+
+
+def _refusal(pod: str, host: str, port: int, method: str, path: str,
+             dst_ns: str, dst_app: str, **counter_filter):
+    """Probe from `pod` and return (classification, result, delta, refused_by).
+
+    The delta is read across the call on the destination proxy's metrics, via
+    the API server (never a port-forward).
     """
-    result = _probe(
-        "northstar-agents", "claims-agent", "claims-agent",
-        PROTECTED_HOST, PROTECTED_PORT,
+    dst_pod = _pod(dst_ns, dst_app)
+    before = reach.read_deny_counters(KUBE_CONTEXT, dst_ns, dst_pod)
+    result = reach.exec_probe(
+        KUBE_CONTEXT, AGENT_NS, pod, "probe", host, port, method, path, PROBE_TIMEOUT)
+    after = reach.read_deny_counters(KUBE_CONTEXT, dst_ns, dst_pod)
+    return (
+        reach.classify_ingress(result), result,
+        reach.deny_delta(before, after, **counter_filter),
+        reach.refused_by(before, after, **counter_filter),
     )
-    assert not result["reached"], (
-        f"claims-agent reached {PROTECTED_HOST}:{PROTECTED_PORT} directly, so "
-        "the gateway is not the only route into payments-mcp and the choke "
-        "point is a convention rather than a control"
-    )
 
 
-def test_the_block_is_targeted_and_the_cluster_is_otherwise_healthy(policy_present):
-    """Control: the same pod can still reach a service the policy ignores.
+def test_an_unmeshed_pod_cannot_reach_the_tool_directly(unmeshed_pod):
+    """The bypass that worked before any policy existed must now be refused.
 
-    Without this, the test above would also pass on a cluster whose networking
-    is simply broken, or where `claims-agent` has no egress at all -- a green
-    suite reporting a security property that is really an outage.
+    An unmeshed pod has no mesh identity, so no AuthorizationPolicy can admit
+    it: payments-mcp's proxy answers 403 with an empty body and counts it with
+    `tls="no_identity"`. The TCP connect succeeds (the proxy accepts it); that
+    is exactly why the verdict is read from the HTTP answer and the counter.
     """
-    result = _probe(
-        "northstar-agents", "claims-agent", "claims-agent",
-        CONTROL_HOST, CONTROL_PORT,
+    kind, result, delta, by = _refusal(
+        unmeshed_pod, PROTECTED_HOST, PROTECTED_PORT, "POST", "/mcp",
+        "northstar-tools", "payments-mcp", srv_name="payments-mcp", tls="no_identity",
     )
-    assert result["reached"], (
-        f"claims-agent could not reach {CONTROL_HOST}:{CONTROL_PORT} either, "
-        "so the previous test proves an outage rather than a policy"
+    assert kind == "refused-403", (
+        f"an unmeshed pod's POST to payments-mcp:8000/mcp was not refused 403: "
+        f"{kind}, {result}. The gateway is not the only route into payments-mcp"
+    )
+    assert delta >= 1, (
+        "payments-mcp's inbound_http_authz_deny_total{srv_name=payments-mcp, "
+        f"tls=no_identity}} did not rise (delta {delta}), so the 403 did not come "
+        "from Linkerd's policy"
     )
 
 
-def test_the_datapath_allowlist_admits_the_gateway_and_no_other_workload(
-    datapath_ingress,
+def test_a_meshed_workload_with_the_wrong_identity_cannot_reach_the_tool_directly(
+    wrong_identity_pod,
 ):
-    """Reads the enforced allowlist out of the BPF map, not the manifest.
+    """Meshed is not enough: the identity must be the gateway's.
 
-    This is the other half of the property -- the allowlist must actually
-    *allow*, or a policy that drops everything would satisfy the bypass test
-    while silently breaking the demo.
-
-    It cannot be checked the same way as the bypass. The gateway runs a
-    distroless image with no shell and no interpreter (`exec /bin/sh` fails
-    with `stat /bin/sh: no such file or directory`), so there is nothing inside
-    that pod to open a socket with. Rather than leave a permanently-skipping
-    test that looks like coverage, this asks the dataplane what it is actually
-    enforcing, which is a stronger question than "did one packet get through":
-    it enumerates every identity the endpoint admits.
-
-    Two assertions, and the second is the load-bearing one:
-
-    1. The gateway is admitted on 8000/TCP -- pinned by ServiceAccount as well
-       as app label, which is what the `fromEndpoints` selector compiles down
-       to.
-    2. **No other workload identity is admitted at all.** `reserved:` entries
-       (host, remote-node, kube-apiserver) are infrastructure and are excluded
-       by construction; any `k8s:app=` other than the gateway is a widened
-       choke point and fails here.
+    The pod presents a valid mTLS identity (`reach-probe-wrongid`) that no
+    policy names. The refusal is counted against exactly that client_id, which
+    is also what shows the authorization is by workload identity and not by
+    namespace or by "is in the mesh".
     """
-    rows = datapath_ingress
-
-    gateway_rows = [
-        r for r in rows
-        if f"k8s:app={CALLER_APP}" in r["labels"] and "8000/TCP" in r["ports"]
-    ]
-    assert gateway_rows, (
-        "the datapath does not admit agentgateway to payments-mcp on 8000/TCP; "
-        "the policy is denying the one workload it exists to permit, and every "
-        f"MCP tool call will fail. Rows seen: {rows}"
+    cid = reach.client_id(WRONG_ID_SA, AGENT_NS)
+    kind, result, delta, by = _refusal(
+        wrong_identity_pod, PROTECTED_HOST, PROTECTED_PORT, "POST", "/mcp",
+        "northstar-tools", "payments-mcp", srv_name="payments-mcp", client_id=cid,
     )
-    assert any(
-        f"k8s:io.cilium.k8s.policy.serviceaccount={CALLER_APP}" in r["labels"]
-        for r in gateway_rows
-    ), (
-        "the admitted identity is not pinned to the agentgateway "
-        "ServiceAccount, so the allowance is weaker than the manifest implies"
+    assert kind == "refused-403", (
+        f"a meshed pod with the wrong identity was not refused 403: {kind}, {result}"
     )
-
-    admitted_workloads = {
-        label
-        for r in rows
-        for label in r["labels"]
-        if label.startswith("k8s:app=")
-    }
-    assert admitted_workloads == {f"k8s:app={CALLER_APP}"}, (
-        "exactly one workload may reach payments-mcp; the datapath admits "
-        f"{sorted(admitted_workloads)}"
+    assert delta >= 1, (
+        f"no deny counter for client_id={cid} on payments-mcp rose ({delta}); "
+        "the refusal is not attributable to the identity policy"
     )
+    assert by is not None and by[0] == "payments-mcp", by
 
 
-def test_the_protected_pod_is_ready(policy_present):
-    """The readiness probe still passes under the policy.
+def test_the_pds_refuses_every_caller_but_the_gateway(wrong_identity_pod):
+    """A caller that is not the gateway cannot ask the PDS anything.
 
-    kubelet dials the `tcpSocket` probe from the node, not from a pod, so a
-    policy without a `host` allowance drops it. The symptom is not a network
-    error -- it is a pod that never becomes Ready and a `setup-kind.sh` that
-    hangs on `rollout status`, with nothing in the output mentioning
-    networking.
+    The PDS is fail-closed and the gateway's ExtMCP hook is its only client; a
+    workload that could call it could probe the ruleset. gRPC refusal is
+    PERMISSION_DENIED (an HTTP 403 at the HTTP/2 layer, or `grpc-status: 7`;
+    a client library reports both as the same code). **UNMEASURED until the
+    first live run** (plan M6): the HTTP-layer 403 and the counter were measured
+    on a route-less HTTP Server, not on a gRPC one. If this fails on the first
+    run, look at the code before the policy.
     """
-    proc = _kubectl(
-        "-n", "northstar-tools", "get", "pod", "-l", "app=payments-mcp",
-        "-o", "jsonpath={.items[*].status.conditions[?(@.type=='Ready')].status}",
+    cid = reach.client_id(WRONG_ID_SA, AGENT_NS)
+    dst_pod = _pod("northstar-platform", "policy-decision-service")
+    before = reach.read_deny_counters(KUBE_CONTEXT, "northstar-platform", dst_pod)
+    result = reach.exec_grpc_probe(
+        KUBE_CONTEXT, AGENT_NS, wrong_identity_pod, "probe",
+        f"{PDS_HOST}:{PDS_PORT}", PROBE_TIMEOUT,
     )
-    assert "True" in proc.stdout, (
-        "payments-mcp is not Ready under the network policy; check that the "
-        f"policy still admits `host` for the readiness probe (got {proc.stdout!r})"
+    after = reach.read_deny_counters(KUBE_CONTEXT, "northstar-platform", dst_pod)
+    assert reach.classify_grpc(result) == "refused", (
+        f"the PDS did not answer PERMISSION_DENIED to the wrong identity: {result}"
     )
+    delta = reach.deny_delta(
+        before, after, srv_name="policy-decision-service", client_id=cid)
+    assert delta >= 1, (
+        f"the PDS proxy's deny counter for client_id={cid} did not rise ({delta})"
+    )
+
+
+def test_claims_agent_cannot_reach_the_tool_directly_and_the_tool_never_hears_of_it():
+    """claims-agent is stopped at its own egress, before payments-mcp's policy.
+
+    `claims-agent-egress` does not list payments-mcp, so the node drops the
+    packets the proxy sends and the request fails in claims-agent's own proxy
+    (a 504 with `l5d-proxy-error`, a reset or a timeout). The destination's deny
+    counter must NOT move: the request never arrived. That is what attributes
+    this block to the egress half; the ingress half is the two tests above.
+    """
+    dst_pod = _pod("northstar-tools", "payments-mcp")
+    before = reach.read_deny_counters(KUBE_CONTEXT, "northstar-tools", dst_pod)
+    claims = _pod(AGENT_NS, "claims-agent")
+    result = reach.exec_probe(
+        KUBE_CONTEXT, AGENT_NS, claims, "claims-agent",
+        PROTECTED_HOST, PROTECTED_PORT, "POST", "/mcp", PROBE_TIMEOUT)
+    after = reach.read_deny_counters(KUBE_CONTEXT, "northstar-tools", dst_pod)
+    verdict, how = reach.classify_egress(result)
+    assert verdict == "dropped", (
+        f"claims-agent reached payments-mcp:8000 directly ({result}), so the "
+        "gateway is not the only route into payments-mcp"
+    )
+    assert reach.deny_delta(before, after, srv_name="payments-mcp") == 0, (
+        "payments-mcp's proxy saw (and refused) claims-agent's request, so the "
+        "egress NetworkPolicy no longer stops it: only the ingress half is left"
+    )
+
+
+def test_the_block_is_targeted_and_the_cluster_is_otherwise_healthy(reach_objects):
+    """Control: the same pod can still reach a service the policies allow.
+
+    Without this the test above would also pass on a cluster whose networking
+    is simply broken, or where `claims-agent` has no egress at all.
+    """
+    claims = _pod(AGENT_NS, "claims-agent")
+    result = reach.exec_probe(
+        KUBE_CONTEXT, AGENT_NS, claims, "claims-agent",
+        CONTROL_HOST, CONTROL_PORT, "GET", "/.well-known/agent-card.json", PROBE_TIMEOUT)
+    assert reach.classify_egress(result) == ("reached", "answered"), (
+        f"claims-agent could not reach {CONTROL_HOST}:{CONTROL_PORT} either "
+        f"({result}), so the previous test proves an outage rather than a policy"
+    )
+    assert result["status"] == 200, result
+
+
+@pytest.mark.parametrize(
+    "server,namespace",
+    [("payments-mcp", "northstar-tools"), ("policy-decision-service", "northstar-platform")],
+)
+def test_the_cluster_admits_the_gateway_identity_and_nothing_else(
+    server, namespace, reach_objects
+):
+    """Reads what the control plane holds, not what the repo declares.
+
+    The gateway runs a distroless image with no shell, so nothing inside its
+    pod can open a socket; rather than leave a permanently-skipping test, this
+    asks the live AuthorizationPolicies which identities may reach each Server
+    (a stronger question than "did one request get through": it enumerates
+    them). Exactly one identity, agentgateway's own service account; the
+    `default` account is never one of them.
+    """
+    allowed = reach.identities_authorized_for(
+        "Server", server, reach_objects, namespace=namespace)
+    assert allowed == {GATEWAY_IDENTITY}, (
+        f"{server} must admit exactly {GATEWAY_IDENTITY}; the cluster admits "
+        f"{sorted(allowed)}"
+    )
+
+
+@pytest.mark.parametrize(
+    "app,namespace",
+    [("payments-mcp", "northstar-tools"), ("policy-decision-service", "northstar-platform")],
+)
+def test_the_protected_pod_is_ready_and_meshed(app, namespace, reach_objects):
+    """Both protected pods are Ready under their Servers, with a proxy.
+
+    Their probes are `tcpSocket`, which the proxy accepts under
+    `accessPolicy: deny` (M6). The symptom of getting it wrong is not a network
+    error but a pod that never becomes Ready, or a PDS that restarts and fails
+    closed so every payment is refused for the wrong reason. A pod without a
+    `linkerd-proxy` container is a pod the Server does not protect.
+    """
+    proc = reach.kubectl(
+        KUBE_CONTEXT, "-n", namespace, "get", "pod", "-l", f"app={app}", "-o", "json")
+    assert proc.returncode == 0, proc.stderr
+    pod = json.loads(proc.stdout)["items"][0]
+    ready = [c["status"] for c in pod["status"]["conditions"] if c["type"] == "Ready"]
+    assert ready == ["True"], f"{app} is not Ready under its Server: {pod['status']}"
+    names = {c["name"] for c in pod["spec"].get("containers", [])} | {
+        c["name"] for c in pod["spec"].get("initContainers", [])}
+    assert "linkerd-proxy" in names, f"{app} has no linkerd-proxy; its Server protects nothing"

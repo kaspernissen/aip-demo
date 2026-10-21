@@ -503,7 +503,7 @@ else
   # operator to build only as far as reviewer-ui's own first stage lands them
   # on a cluster where every one of
   # tests/e2e/test_opensearch_trace_ingest.py's guards skips, missing
-  # everything a later stage added. `tests/unit/test_stage2_cilium_config.py`'s
+  # everything a later stage added. `tests/unit/test_stage2_linkerd_config.py`'s
   # `test_no_operator_facing_instruction_still_points_at_an_older_stage`
   # enforces exactly this for every operator-facing instruction in this repo:
   # an instruction naming a stage older than `CURRENT_STAGE` is an offender

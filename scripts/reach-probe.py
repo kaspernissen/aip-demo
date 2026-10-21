@@ -1,12 +1,26 @@
-# The prober that runs INSIDE claims-agent's pod, as `python3 -c "$(cat this)"
+# The prober that runs INSIDE a meshed pod, as `python3 -c "$(cat this)"
 # <url> <GET|POST> <timeout>`. One file, two callers: scripts/beat-reach.sh and
 # scripts/demo (`demo guard`), so the stage path and the gate path ask the
 # cluster the same question with the same code.
 #
 # Prints exactly one line:
-#   REACHED <http status>        -- something answered
-#   DROPPED timeout              -- nothing answered: the packet was dropped
-#   REFUSED <exception name>     -- something actively refused (an RST, a reset)
+#   REACHED <http status>   -- something answered: a status line came back (a
+#                              401 from the app is "reached"; so is a 200)
+#   REFUSED <http status>   -- Linkerd refused it at the destination: an empty
+#                              403 (wrong identity) or 404 (no route matched),
+#                              no `l5d-proxy-error` header. The caller reads
+#                              the destination's deny counter around the call
+#                              to name the policy; this file cannot (it has no
+#                              kubectl).
+#   DROPPED <how>           -- nothing answered: `timeout`, `reset`, or
+#                              `proxy-error` (this pod's own proxy could not
+#                              reach the peer, because the node dropped its
+#                              packets). From a meshed pod a TCP connect
+#                              "succeeds" for every address, so the verdict is
+#                              always read from the HTTP exchange, never the
+#                              connect. The same rules as
+#                              tests/harness/reach.py (pinned together by
+#                              tests/unit/test_reach_probe_script.py).
 import json, sys, urllib.request, urllib.error, socket
 url, method, timeout = sys.argv[1], sys.argv[2], float(sys.argv[3])
 body = None
@@ -18,20 +32,29 @@ if method == "POST":
     headers = {"Content-Type": "application/json",
                "Accept": "application/json, text/event-stream"}
 req = urllib.request.Request(url, data=body, headers=headers, method=method)
+
+
+def how_dropped(exc):
+    if isinstance(exc, (socket.timeout, TimeoutError)):
+        return "timeout"
+    if isinstance(exc, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)):
+        return "reset"
+    return type(exc).__name__
+
+
 try:
     with urllib.request.urlopen(req, timeout=timeout) as r:
+        r.read()
         print("REACHED", r.status)
 except urllib.error.HTTPError as e:
-    print("REACHED", e.code)
-except urllib.error.URLError as e:
-    # urllib wraps a connect timeout in URLError; the wrapped reason is what
-    # tells a Cilium drop (timeout) from a refusal (ConnectionRefusedError).
-    reason = e.reason
-    if isinstance(reason, (socket.timeout, TimeoutError)):
-        print("DROPPED timeout")
+    data = e.read()
+    if e.headers.get("l5d-proxy-error"):
+        print("DROPPED proxy-error")
+    elif e.code in (403, 404) and not data:
+        print("REFUSED", e.code)
     else:
-        print("REFUSED", type(reason).__name__)
-except (socket.timeout, TimeoutError):
-    print("DROPPED timeout")
+        print("REACHED", e.code)
+except urllib.error.URLError as e:
+    print("DROPPED", how_dropped(e.reason))
 except Exception as e:
-    print("REFUSED", type(e).__name__)
+    print("DROPPED", how_dropped(e))

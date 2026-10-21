@@ -53,6 +53,9 @@ POLICY_CRD = "validatingpolicies.policies.kyverno.io"
 
 NAMESPACE = "northstar-platform"
 AGENTS_NAMESPACE = "northstar-agents"
+# Built, not quoted: test_no_legacy_names.py reads a quoted `policy.<x>` string as a
+# retired telemetry name, and an API group has the same shape.
+LINKERD_GROUP = "policy" + ".linkerd.io"
 FLAG = "featureflag/northstar-autonomy"
 AGENT = "system:serviceaccount:northstar-agents:settlement-agent"
 
@@ -437,22 +440,50 @@ CASES = {
                  "--ignore-not-found", "--wait=false"],
         names="Pod/keystone-test-pod",
     ),
-    "cilium-clusterwide-network-policy": dict(
-        rules=[{"apiGroups": ["cilium.io"],
-                "resources": ["ciliumclusterwidenetworkpolicies"],
-                "verbs": ["create"]}],
+    "network-policy": dict(
+        # Reach ring, egress half (M12): core NetworkPolicy, enforced by the
+        # node. An agent that could add one could add an allow next to the
+        # allowlist that keeps it off the model provider and the tools.
+        rules=[{"apiGroups": ["networking.k8s.io"],
+                "resources": ["networkpolicies"], "verbs": ["create"]}],
         manifest={
-            "apiVersion": "cilium.io/v2",
-            "kind": "CiliumClusterwideNetworkPolicy",
-            "metadata": {"name": "keystone-test-ccnp"},
+            "apiVersion": "networking.k8s.io/v1",
+            "kind": "NetworkPolicy",
+            "metadata": {"name": "keystone-test-netpol",
+                         "namespace": AGENTS_NAMESPACE},
             "spec": {
-                "endpointSelector": {"matchLabels": {"keystone-test": "never"}},
-                "ingress": [{"fromEntities": ["all"]}],
+                "podSelector": {"matchLabels": {"keystone-test": "never"}},
+                "policyTypes": ["Egress"],
+                "egress": [{}],
             },
         },
-        cleanup=["delete", "ciliumclusterwidenetworkpolicy",
-                 "keystone-test-ccnp", "--ignore-not-found"],
-        names="CiliumClusterwideNetworkPolicy/keystone-test-ccnp",
+        cleanup=["-n", AGENTS_NAMESPACE, "delete", "networkpolicy",
+                 "keystone-test-netpol", "--ignore-not-found"],
+        names="NetworkPolicy/keystone-test-netpol",
+    ),
+    "linkerd-authorization-policy": dict(
+        # Reach ring, ingress half (M12): who may call the money path is a
+        # Linkerd AuthorizationPolicy. Every policy.linkerd.io kind is covered
+        # (Server, HTTPRoute, the *Authentication kinds), this is the one that
+        # would admit a caller.
+        rules=[{"apiGroups": [LINKERD_GROUP],
+                "resources": ["authorizationpolicies"], "verbs": ["create"]}],
+        manifest={
+            "apiVersion": "policy.linkerd.io/v1alpha1",
+            "kind": "AuthorizationPolicy",
+            "metadata": {"name": "keystone-test-authz",
+                         "namespace": "northstar-tools"},
+            "spec": {
+                "targetRef": {"group": LINKERD_GROUP, "kind": "Server",
+                              "name": "payments-mcp"},
+                "requiredAuthenticationRefs": [{
+                    "group": LINKERD_GROUP, "kind": "NetworkAuthentication",
+                    "name": "keystone-never"}],
+            },
+        },
+        cleanup=["-n", "northstar-tools", "delete", "authorizationpolicy",
+                 "keystone-test-authz", "--ignore-not-found"],
+        names="AuthorizationPolicy/keystone-test-authz",
     ),
     "spire-clusterspiffeid": dict(
         # Identity ring: who is issued which SVID.
@@ -583,5 +614,34 @@ def test_an_over_granted_agent_cannot_mint_another_serviceaccounts_token(
     assert proc.returncode != 0, (
         "an over-granted agent minted a token for reviewer-ui: "
         "serviceaccounts/token is not covered"
+    )
+    assert POLICY in proc.stderr and "DENIED" in proc.stderr, proc.stderr
+
+
+def test_an_over_granted_agent_cannot_patch_its_namespaces_mesh_annotation(
+    keystone_armed,
+):
+    """The mesh is switched on by an annotation on the Namespace
+    (`linkerd.io/inject: enabled`). An agent that could patch it could have the
+    next pod in its own namespace start with no proxy and no mesh identity,
+    outside every Linkerd policy. `namespaces` is a keystone ring for exactly
+    that reason; this asserts the UPDATE, not just the CREATE, is refused."""
+    try:
+        _over_grant_cluster_wide(
+            [{"apiGroups": [""], "resources": ["namespaces"], "verbs": ["patch"]}],
+            can_i=["patch", "namespaces", "-A"],
+        )
+        proc = _as_agent(
+            "annotate", "namespace", AGENTS_NAMESPACE,
+            "linkerd.io/inject=disabled", "--overwrite",
+        )
+    finally:
+        # Never leave the namespace unmeshed, whatever the refusal did.
+        _kubectl("annotate", "namespace", AGENTS_NAMESPACE,
+                 "linkerd.io/inject=enabled", "--overwrite")
+        _remove_cluster_wide_grant()
+    assert proc.returncode != 0, (
+        "an over-granted agent changed its namespace's linkerd.io/inject "
+        "annotation: `namespaces` is not covered on UPDATE"
     )
     assert POLICY in proc.stderr and "DENIED" in proc.stderr, proc.stderr

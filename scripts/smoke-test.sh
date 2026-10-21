@@ -83,7 +83,7 @@ kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
   # (reviewer-ui, OpenSearch, ...) the checks below require -- so an operator
   # following an older instruction would just fail the very next check, on a
   # component this script had just told them not to install.
-  # tests/unit/test_stage2_cilium_config.py's
+  # tests/unit/test_stage2_linkerd_config.py's
   # `test_no_operator_facing_instruction_still_points_at_an_older_stage`
   # keeps this pinned to the current stage as a test rather than trusting a
   # reader to notice it drifted.

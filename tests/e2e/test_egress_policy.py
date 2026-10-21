@@ -1,11 +1,11 @@
 """Exit criterion 7: the model provider is reachable from one workload, not a namespace.
 
 The criterion, verbatim: *"Direct egress from `northstar-agents` to the model
-provider is **denied** by Cilium, with the gateway as the only path."*
+provider is **denied**, with the gateway as the only path."* (Enforced by
+Cilium until M12; by core NetworkPolicy, in the node, since.)
 
-**What was measured before `deploy/platform/cilium-policies.yaml` grew an
-egress half.** Not inferred from the absence of a policy -- probed from inside
-each of the three pods in `northstar-agents`:
+**What was measured before any egress policy existed.** Probed from inside each
+of the three pods then in `northstar-agents`:
 
     settlement-agent -> api.anthropic.com:443   reached
     settlement-agent -> example.com:443         reached
@@ -13,99 +13,84 @@ each of the three pods in `northstar-agents`:
     claims-agent     -> example.com:443         reached
     customer-ui      -> api.anthropic.com:443   reached
 
-So the criterion was false in three places. Scoping the policy to
+So the criterion was false in three places, and scoping a policy to
 `settlement-agent` alone would have satisfied a test named for the criterion
-while leaving `claims-agent` and `customer-ui` -- neither of
-which holds an API key or makes a model call -- as unrestricted outbound
-egress points sitting in the namespace the criterion names. All three are
-policied, and this file asserts all three.
+while leaving `claims-agent` and `customer-ui` as unrestricted outbound egress
+points. All four workloads in the namespace now carry an egress NetworkPolicy
+(`reviewer-ui` too, as it had one under Cilium), and this file asserts them.
 
 **The honest reading of "the gateway as the only path".** `settlement-agent`
-*must* reach `api.anthropic.com:443`: that is where its own model call goes,
-and agentgateway is an MCP proxy that does not carry model traffic. So the
-criterion cannot mean "no pod in this namespace reaches the model provider"
-without meaning "the demo does not work". It is discharged here as two
-statements that are both testable and both true:
+*must* reach `api.anthropic.com:443`: its own model call goes there, and
+agentgateway is an MCP proxy that does not carry model traffic. So the
+criterion is discharged as two testable statements:
 
-1. **One workload, not the namespace.** Exactly one endpoint in
-   `northstar-agents` is admitted to the model provider, and it is the one
-   whose job is the model call. The other two are denied -- which is the
-   criterion's own sentence, and the thing that was false before.
-2. **The gateway really is the only path to a tool.** On the egress side this
-   time. `payments-mcp:8000` and `policy-decision-service:9100` appear in no
-   allowlist, so `agentgateway:3000` is the only tool destination
-   `settlement-agent` can open a socket to at all. The ingress half
-   (`test_gateway_is_the_only_route.py`) says the same thing from the other
-   end; the two now have to be relaxed independently for the choke point to
-   widen.
+1. **One workload, not the namespace.** Only `settlement-agent` is admitted to
+   the model provider, and only to Anthropic's published ranges
+   (160.79.104.0/23 and 2607:6bc0::/48, TCP 443). The Cilium policy matched the
+   NAME `api.anthropic.com`; NetworkPolicy has no names, so an address range is
+   the honest equivalent and a name that resolves elsewhere is dropped.
+2. **The gateway really is the only path to a tool**, from the egress side:
+   `payments-mcp:8000`, `policy-decision-service:9100` and
+   `payments-api:8080` appear in no agent's allowlist but the ones
+   that need them.
 
-**Why blocked probes and a BPF map dump, and not an assertion that the policy
-object exists.** A `kubectl get cnp` assertion passes on a cluster where Cilium
-is not enforcing anything -- it proves a YAML document was accepted by the API
-server. Every assertion below either attempts the egress and requires it to
-fail, or reads what the datapath is actually enforcing out of the BPF policy
-map. Same standard, and the same `cilium-dbg bpf policy get` table parsing, as
-the ingress half.
+**The oracle changed, and why (plan M1).** From a *meshed* pod a TCP connect to
+ANY address "succeeds": the pod's own outbound proxy accepts it locally. So
+nothing in this file asserts on a connect from a meshed pod. A meshed pod's
+egress is read above TCP: a TLS handshake plus an HTTP request. Allowed = a
+status line comes back; refused = reset or timeout (or the pod's own proxy
+answering 504 with `l5d-proxy-error` when it cannot reach an in-cluster peer).
+From an *unmeshed* pod nothing intercepts the connect, so the kernel's drop
+shows as a connect timeout, and that is still the oracle there. The bypass
+tests below use exactly such a pod, to prove the node enforces egress and not
+the proxy. The decisions are pure functions in `tests/harness/reach.py`, unit
+tested against output recorded on the spike cluster.
 
-**Controls, because a blanket outage would otherwise read as a success.** The
-denial assertions here are all satisfied by a pod with no network at all, so
-each one is paired: `settlement-agent` must still reach the model provider, the
-gateway and the collector; `claims-agent` must still reach its delegation peer
-and the collector; and DNS must still resolve in every pod. That last one is
-not decoration -- `toFQDNs` depends on Cilium's DNS proxy seeing the lookup, so
-DNS and the model-provider allowance are one mechanism in two rules. If DNS
-broke or bypassed the proxy, `toFQDNs` would silently match nothing and the
-model call would be dropped with no error naming a policy.
+**Controls, because a blanket outage would otherwise read as a success.** Each
+denial is paired: `settlement-agent` must still reach the model provider, the
+gateway and the collector; `claims-agent` must still reach its peer and the
+collector; DNS must resolve in every pod; every pod must be Ready. Nothing here
+is a `kubectl get networkpolicy` assertion on its own: a live-object comparison
+(`test_the_live_egress_rules_are_the_ones_in_the_repo`) is there for drift, but
+the verdicts are behaviour.
 
-**Why this is not behind `RUN_BROWSER_TESTS=1`.** Like the ingress half, it
-spends no model tokens: it opens TCP connections, resolves names and reads a
-BPF map. It needs the live stage-2 cluster and nothing else.
-
-**Cost of a false green.** The ingress half's failure mode was invisible (the
-demo keeps working when the policy stops being applied). This half's is worse
-in one direction and better in another: losing the *deny* is invisible in the
-same way, but losing an *allow* breaks the demo loudly -- except for the OTLP
-rule, where the BatchSpanProcessor swallows the export failure and the
-milestone loses its telemetry while every settlement still succeeds. That
-asymmetry is why the collector allowance is asserted here as its own named
-test rather than folded into a list.
+**Not behind `RUN_BROWSER_TESTS=1`**: it spends no model tokens. **A skip is
+invisible in a green gate**: the fixture skips only below stage 2 and FAILS on a
+stage >= 2 cluster missing Linkerd or the reach objects.
 """
 
 import json
-import subprocess
 
 import pytest
+
+from tests.harness import reach
 
 KUBE_CONTEXT = "kind-northstar"
 
 AGENT_NS = "northstar-agents"
 
-# The three endpoints in the namespace the criterion names. Every one now runs
-# a Python image, so one probe serves all three.
 MODEL_AGENT = "settlement-agent"
 OTHER_AGENTS = ("claims-agent", "customer-ui")
-ALL_AGENTS = (MODEL_AGENT, *OTHER_AGENTS)
+ALL_AGENTS = (MODEL_AGENT, *OTHER_AGENTS, "reviewer-ui")
 
-# The one external name any workload here may reach, and the SDK default it
-# comes from rather than a value this repo configures: the pinned `anthropic`
-# client's `base_url = f"https://api.anthropic.com"`. No `ANTHROPIC_BASE_URL`
-# override exists anywhere in the repo.
+# The one external service any workload here may reach: the SDK default
+# (`base_url = "https://api.anthropic.com"`); no override exists in the repo.
 MODEL_HOST = "api.anthropic.com"
 MODEL_PORT = 443
 
-# Two external hosts that are emphatically not the model provider. Two rather
-# than one, and one of them another model provider's API, so the assertion is
-# "this is an allowlist" rather than "anthropic.com is special-cased".
+# Not the model provider. Two, one of them another provider's API, so the
+# assertion is "this is an allowlist" rather than "anthropic is special-cased".
 FOREIGN_EXTERNAL = (("example.com", 443), ("api.openai.com", 443))
 
-# The tool destinations that must be unreachable from the agent plane, so that
-# agentgateway is the only route to a tool from this side too. Both are already
-# protected by an *ingress* policy; their absence from every egress allowlist is
-# the independent second statement.
+# An address inside Anthropic's published range, for the bypass probes: the
+# range is allowed for settlement-agent ONLY, so a pod labelled claims-agent
+# must time out on it.
+ANTHROPIC_RANGE_ADDRESS = "160.79.104.1"
+
 DENIED_TOOLS = (
-    ("payments-mcp.northstar-tools.svc.cluster.local", 8000),
-    ("policy-decision-service.northstar-platform.svc.cluster.local", 9100),
-    ("payments-api.northstar-systems.svc.cluster.local", 8080),
+    ("payments-mcp.northstar-tools.svc.cluster.local", 8000, "POST", "/mcp"),
+    ("policy-decision-service.northstar-platform.svc.cluster.local", 9100, "POST", "/"),
+    ("payments-api.northstar-systems.svc.cluster.local", 8080, "GET", "/healthz"),
 )
 
 GATEWAY_HOST = "agentgateway.northstar-platform.svc.cluster.local"
@@ -114,65 +99,14 @@ COLLECTOR_HOST = "otel-collector.observability.svc.cluster.local"
 COLLECTOR_PORT = 4318
 PEER_HOST = "settlement-agent.northstar-agents.svc.cluster.local"
 PEER_PORT = 9002
+PUSH_HOST = "customer-ui.northstar-agents.svc.cluster.local"
+PUSH_PORT = 8080
 
-# The egress allowlist each endpoint is supposed to have, as (workload label,
-# port/proto) pairs the datapath should admit. Read off the manifest, and
-# asserted as an equality below so that *adding* a destination fails here
-# instead of quietly widening the policy. `k8s:app=` is the only label form
-# compared: FQDN- and reserved-identity rows are handled separately, because
-# they are not workloads.
-EXPECTED_WORKLOAD_EGRESS = {
-    "settlement-agent": {
-        ("k8s:k8s-app=kube-dns", "53/TCP"),
-        ("k8s:k8s-app=kube-dns", "53/UDP"),
-        ("k8s:app=agentgateway", "3000/TCP"),
-        ("k8s:app=otel-collector", "4318/TCP"),
-    },
-    "claims-agent": {
-        ("k8s:k8s-app=kube-dns", "53/TCP"),
-        ("k8s:k8s-app=kube-dns", "53/UDP"),
-        ("k8s:app=settlement-agent", "9002/TCP"),
-        # M8: the ledger read on resume (L7, GET /payments/{id} only); the
-        # datapath shows the L4 pair, the method restriction is asserted by
-        # the policy tests.
-        ("k8s:app=payments-api", "8080/TCP"),
-        # M10: the push to the customer (L7, POST /a2a/push only; the method
-        # and path restriction is asserted by the probes below).
-        ("k8s:app=customer-ui", "8080/TCP"),
-        ("k8s:app=otel-collector", "4318/TCP"),
-    },
-    "customer-ui": {
-        ("k8s:k8s-app=kube-dns", "53/TCP"),
-        ("k8s:k8s-app=kube-dns", "53/UDP"),
-        # M10: the server exports its spans (the push receiver's half of trace B).
-        ("k8s:app=otel-collector", "4318/TCP"),
-    },
-}
+# Long enough that a slow-but-allowed connection is not mistaken for a drop,
+# short enough that a few dozen probes do not dominate the suite.
+PROBE_TIMEOUT = 8
 
-EGRESS_POLICIES = {
-    "settlement-agent-egress-allowlist": MODEL_AGENT,
-    "claims-agent-egress-allowlist": "claims-agent",
-    "customer-ui-egress-allowlist": "customer-ui",
-}
-
-# Same reasoning as the ingress half: long enough that a slow-but-allowed
-# connection is not mistaken for a drop, short enough that a dozen probes do
-# not dominate the suite. A Cilium drop presents as a connect timeout, not a
-# refusal -- the packet is dropped, so there is no RST to become
-# ECONNREFUSED, and a test that expected ECONNREFUSED here would fail on a
-# working policy.
-CONNECT_TIMEOUT = 8
-
-PROBE = r"""
-import json, socket, sys
-host, port, timeout = sys.argv[1], int(sys.argv[2]), float(sys.argv[3])
-try:
-    s = socket.create_connection((host, port), timeout=timeout)
-    s.close()
-    print(json.dumps({"reached": True, "error": None}))
-except Exception as exc:
-    print(json.dumps({"reached": False, "error": type(exc).__name__}))
-"""
+WRONG_ID_SA = "reach-probe-wrongid"
 
 RESOLVE = r"""
 import json, socket, sys
@@ -186,292 +120,199 @@ print(json.dumps(out))
 """
 
 
-def _kubectl(*args: str, timeout: int = 90) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["kubectl", "--context", KUBE_CONTEXT, *args],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-
-
-def _pod(app: str) -> str:
-    proc = _kubectl(
-        "-n", AGENT_NS, "get", "pod", "-l", f"app={app}",
+def _pod(app: str, namespace: str = AGENT_NS) -> str:
+    proc = reach.kubectl(
+        KUBE_CONTEXT, "-n", namespace, "get", "pod", "-l", f"app={app}",
         "-o", "jsonpath={.items[0].metadata.name}",
     )
-    if proc.returncode != 0 or not proc.stdout.strip():
-        pytest.skip(
-            f"needs the live stage-2 cluster: no {app} pod in {AGENT_NS} "
-            f"({proc.stderr.strip() or 'no output'})"
-        )
+    assert proc.returncode == 0 and proc.stdout.strip(), (
+        f"no {app} pod in {namespace} on a stage >= 2 cluster "
+        f"({proc.stderr.strip() or 'no output'})"
+    )
     return proc.stdout.strip()
 
 
-def _probe(app: str, host: str, port: int) -> dict:
-    """Open a TCP connection from inside `app`'s pod. Returns the probe's JSON.
-
-    A bare TCP connect is deliberately the whole probe, for the same reason the
-    ingress half gives: the question is reachability at the dataplane, and
-    asking it with an HTTP request would conflate a Cilium drop with an
-    application-level refusal -- the two failures this milestone spent effort
-    keeping distinct. It also means the model-provider control costs no tokens
-    and needs no API key: nothing is sent on the socket.
-    """
-    proc = _kubectl(
-        "-n", AGENT_NS, "exec", _pod(app), "-c", app, "--",
-        "python3", "-c", PROBE, host, str(port), str(CONNECT_TIMEOUT),
-        timeout=CONNECT_TIMEOUT + 45,
+def _image(deployment: str) -> str:
+    proc = reach.kubectl(
+        KUBE_CONTEXT, "-n", AGENT_NS, "get", "deployment", deployment,
+        "-o", "jsonpath={.spec.template.spec.containers[0].image}",
     )
-    if proc.returncode != 0 and not proc.stdout.strip():
-        pytest.skip(f"could not exec the probe in {app}: {proc.stderr.strip()}")
-    try:
-        return json.loads(proc.stdout.strip().splitlines()[-1])
-    except (ValueError, IndexError):  # pragma: no cover - diagnostic path
-        pytest.fail(f"probe produced unreadable output: {proc.stdout!r}")
+    assert proc.returncode == 0 and proc.stdout.strip(), proc.stderr
+    return proc.stdout.strip()
+
+
+def _http(app: str, host: str, port: int, method: str = "GET", path: str = "/",
+          tls: bool = False) -> dict:
+    """An HTTP(S) request from inside `app`'s pod, through its own proxy."""
+    return reach.exec_probe(
+        KUBE_CONTEXT, AGENT_NS, _pod(app), app, host, port, method, path,
+        PROBE_TIMEOUT, tls)
 
 
 @pytest.fixture(scope="module")
-def policy_present():
-    """Present on a stage-2 cluster, or every test below FAILS -- never skips.
-
-    Structured exactly like the ingress half's fixture of the same name, and
-    for the reason recorded there: its first version skipped when the policy
-    was missing, and mutation testing killed it -- deleting the live
-    CiliumNetworkPolicy turned four tests into skips and left the suite green,
-    so the one event the file exists to catch was invisible. Two situations
-    that must not be conflated:
-
-    * **Not a stage-2 cluster** (no Cilium agent at all) -- nothing to say, so
-      skip.
-    * **A stage-2 cluster with an egress policy missing** -- that is the
-      regression, and it fails here, loudly, naming the policy.
-
-    All three policies are checked, not just `settlement-agent`'s. Deleting
-    `claims-agent-egress-allowlist` alone would restore precisely the gap this
-    criterion closes -- an unrestricted route to the model provider from the
-    namespace -- while `settlement-agent`'s policy stayed applied and the demo
-    kept working.
-    """
-    cilium = _kubectl(
-        "-n", "kube-system", "get", "pod", "-l", "k8s-app=cilium",
-        "-o", "jsonpath={.items[*].metadata.name}",
-    )
-    # `cilium.returncode != 0` must not be folded into this skip condition:
-    # an unreachable API server -- or a wrong context, or an expired
-    # credential -- would otherwise read as "not a stage-2 cluster" and skip
-    # every assertion in this file, exactly the "skip where you should fail"
-    # defect this repo guards against elsewhere. A label selector does not
-    # 404: on a reachable cluster
-    # with no Cilium the query succeeds and returns nothing, so EMPTINESS is
-    # the honest discriminator and a non-zero exit is a failure.
-    assert cilium.returncode == 0, (
-        "`kubectl get pod -l k8s-app=cilium` failed, so this file cannot tell "
-        "whether the cluster is below stage 2 or simply unreachable, and it "
-        "must not guess -- a skip here would remove every assertion below from "
-        f"a green run. Exit {cilium.returncode}; stderr: "
-        f"{cilium.stderr.strip() or '(empty)'}"
-    )
-    if not cilium.stdout.strip():
-        pytest.skip(
-            "not a stage-2 cluster (no Cilium agent), so there is no dataplane "
-            "to enforce anything; run ./scripts/setup-kind.sh --stage 7"
-        )
-
-    for name in sorted(EGRESS_POLICIES):
-        proc = _kubectl(
-            "-n", AGENT_NS, "get", "cnp", name, "-o", "jsonpath={.metadata.name}",
-        )
-        assert proc.returncode == 0 and proc.stdout.strip(), (
-            f"Cilium is running but the {name} CiliumNetworkPolicy is NOT "
-            f"applied, so {EGRESS_POLICIES[name]} has unrestricted outbound "
-            "egress and can reach the model provider directly. Re-apply "
-            "deploy/platform/cilium-policies.yaml (kubectl said: "
-            f"{proc.stderr.strip() or 'no such policy'})"
-        )
-    return sorted(EGRESS_POLICIES)
+def reach_objects():
+    """Stage >= 2 with Linkerd and every reach object, or FAIL (never skip)."""
+    return reach.require_reach(KUBE_CONTEXT)
 
 
 @pytest.fixture(scope="module")
-def datapath(policy_present):
-    """What the BPF policy map is enforcing, per agent-plane endpoint.
+def bypass_pod(reach_objects):
+    """An UNMESHED pod labelled `app=claims-agent`, created and deleted here.
 
-    Parses `cilium-dbg bpf policy get`'s table rather than its `-o json`, for
-    the reason the ingress half records: the JSON reports numeric security
-    identities that would need a second lookup to become meaningful, while the
-    table already resolves them to labels. A row's labels continue on following
-    lines, which is why this accumulates into the current row.
-
-    Keeps one extra column the ingress half discards -- `PROXY PORT`. That is
-    how the DNS proxy shows up in the datapath, and the proxy is the mechanism
-    `toFQDNs` depends on, so it is evidence rather than noise.
+    No `linkerd-proxy`, so nothing in the pod intercepts a connect: what stops
+    it is the node, enforcing the NetworkPolicy that selects `app=claims-agent`.
+    It runs the settlement-agent image only for `python3` (its command is
+    replaced by a sleep), so it carries none of claims-agent's credentials.
     """
-    cil = _kubectl(
-        "-n", "kube-system", "get", "pod", "-l", "k8s-app=cilium",
-        "-o", "jsonpath={.items[0].metadata.name}",
-    )
-    if cil.returncode != 0 or not cil.stdout.strip():
-        pytest.skip("no cilium agent pod; this is not a stage-2 cluster")
-    agent = cil.stdout.strip()
-
-    listing = _kubectl(
-        "-n", "kube-system", "exec", agent, "-c", "cilium-agent",
-        "--", "cilium-dbg", "endpoint", "list", "-o", "json",
-    )
-    if listing.returncode != 0:
-        pytest.skip(f"could not list cilium endpoints: {listing.stderr.strip()}")
-    endpoints = json.loads(listing.stdout)
-
-    out = {}
-    for app in ALL_AGENTS:
-        endpoint_id = None
-        for ep in endpoints:
-            labels = (ep.get("status", {}).get("labels", {}) or {}).get(
-                "security-relevant", []
-            ) or []
-            if any(f"app={app}" in label for label in labels):
-                endpoint_id = ep["id"]
-                break
-        assert endpoint_id is not None, (
-            f"Cilium has no endpoint for {app}, but its pod exists in "
-            f"{AGENT_NS} -- an unmanaged endpoint is enforcing nothing"
-        )
-
-        dump = _kubectl(
-            "-n", "kube-system", "exec", agent, "-c", "cilium-agent",
-            "--", "cilium-dbg", "bpf", "policy", "get", str(endpoint_id),
-        )
-        if dump.returncode != 0:
-            pytest.skip(f"could not read the datapath policy: {dump.stderr.strip()}")
-
-        rows, current = [], None
-        for line in dump.stdout.splitlines():
-            if not line.strip() or line.lstrip().startswith("POLICY"):
-                continue
-            fields = line.split()
-            if fields[0] in ("Allow", "Deny"):
-                current = {
-                    "verdict": fields[0],
-                    "direction": fields[1],
-                    "labels": [fields[2]],
-                    "port": fields[3],
-                    "proxy_port": fields[4],
-                }
-                rows.append(current)
-            elif current is not None:
-                current["labels"].append(fields[0])
-        out[app] = rows
-    return out
+    with reach.throwaway_pod(
+        KUBE_CONTEXT, AGENT_NS, "reach-bypass-claims", _image("settlement-agent"),
+        {"app": "claims-agent"}, meshed=False,
+    ) as pod:
+        yield pod.name
 
 
-def _egress(rows: list[dict]) -> list[dict]:
-    return [r for r in rows if r["direction"] == "Egress" and r["verdict"] == "Allow"]
+@pytest.fixture(scope="module")
+def wrong_identity_pod(reach_objects):
+    """A meshed pod with a service account no policy names, selected by no NetworkPolicy."""
+    with reach.throwaway_pod(
+        KUBE_CONTEXT, AGENT_NS, "reach-probe-wrongid-egress", _image("settlement-agent"),
+        {"app": "reach-probe"}, meshed=True, service_account=WRONG_ID_SA,
+    ) as pod:
+        yield pod.name
 
 
 # --- The criterion's own sentence -------------------------------------------
 
 
 @pytest.mark.parametrize("app", OTHER_AGENTS)
-def test_an_agent_with_no_model_call_cannot_reach_the_model_provider(
-    app, policy_present
-):
+def test_an_agent_with_no_model_call_cannot_reach_the_model_provider(app, reach_objects):
     """§9.7: direct egress from `northstar-agents` to the model provider.
 
-    This is the assertion the criterion names, and it is written against the
-    two workloads that were measured reaching `api.anthropic.com:443` before
-    the policy existed. Neither holds `ANTHROPIC_API_KEY` and neither makes a
-    model call, so neither loses anything -- but before this, either could have
-    been the exfiltration path out of the namespace, and the milestone's
-    "second defence" would have been a claim about one pod.
-
-    Parametrized over the workloads rather than asserted as a loop so that a
-    failure names which pod is reachable.
+    Written against the two workloads measured reaching `api.anthropic.com:443`
+    before any policy existed. Neither holds `ANTHROPIC_API_KEY` or makes a
+    model call, so neither loses anything. A meshed pod's connect succeeds
+    regardless (M1), so the request is a TLS handshake plus an HTTP request and
+    the verdict is whether a status line came back.
     """
-    result = _probe(app, MODEL_HOST, MODEL_PORT)
-    assert not result["reached"], (
-        f"{app} reached {MODEL_HOST}:{MODEL_PORT} directly, so direct egress "
-        "from northstar-agents to the model provider is not denied and "
-        "criterion 7 is false for this pod"
+    result = _http(app, MODEL_HOST, MODEL_PORT, "HEAD", "/", tls=True)
+    verdict, how = reach.classify_egress(result)
+    assert verdict == "dropped", (
+        f"{app} completed a TLS handshake and an HTTP request to "
+        f"{MODEL_HOST}:{MODEL_PORT} ({result}), so direct egress from "
+        "northstar-agents to the model provider is not denied and criterion 7 "
+        "is false for this pod"
     )
 
 
 @pytest.mark.parametrize("host,port", FOREIGN_EXTERNAL)
-def test_the_model_agent_reaches_no_other_external_host(host, port, policy_present):
-    """The allowance is an allowlist of one name, not "external is fine".
+def test_the_model_agent_reaches_no_other_external_host(host, port, reach_objects):
+    """The allowance is one address range, not "external is fine".
 
-    `settlement-agent` has to be allowed out to the model provider, so the
-    denial that carries weight for *this* pod is a different one: every other
-    external destination. `api.openai.com` is in the list on purpose -- if the
-    rule had been written as a pattern, or if the DNS proxy were handing back a
-    blanket `reserved:world` allowance on 443, a second model provider is
-    exactly what would slip through while `example.com` still looked blocked.
+    `api.openai.com` is in the list on purpose: if the rule had been written as
+    a blanket 443 allowance, a second model provider is exactly what would slip
+    through while `example.com` still looked blocked.
     """
-    result = _probe(MODEL_AGENT, host, port)
-    assert not result["reached"], (
-        f"{MODEL_AGENT} reached {host}:{port}, so its egress allowance is not "
-        f"scoped to {MODEL_HOST} and the toFQDNs rule is admitting more than "
-        "the one name it lists"
+    result = _http(MODEL_AGENT, host, port, "HEAD", "/", tls=True)
+    assert reach.egress_is_dropped(result), (
+        f"{MODEL_AGENT} reached {host}:{port} ({result}), so its egress "
+        f"allowance is wider than Anthropic's published range for {MODEL_HOST}"
     )
 
 
-@pytest.mark.parametrize("host,port", DENIED_TOOLS)
+@pytest.mark.parametrize("host,port,method,path", DENIED_TOOLS)
 def test_the_gateway_is_the_only_tool_destination_from_the_model_agent(
-    host, port, policy_present
+    host, port, method, path, reach_objects
 ):
-    """The criterion's second clause -- "with the gateway as the only path".
+    """The criterion's second clause, from the egress side.
 
-    Asserted from the egress side. `test_gateway_is_the_only_route.py` proves
-    only agentgateway may open a connection *to* payments-mcp; the property
-    here is that `settlement-agent` cannot open a connection to a tool at all,
-    so the two have to be relaxed independently for the choke point to widen.
-
-    **What this probe can and cannot attribute, measured rather than assumed.**
-    Adding a `payments-mcp:8000` allowance to settlement-agent's egress policy
-    and re-running this file left this test GREEN on that destination -- the
-    ingress policy on payments-mcp was still dropping the connection, so the
-    probe cannot tell which of the two halves refused it. That is defence in
-    depth working exactly as intended, and it is also a limit on what this
-    assertion evidences. Two things follow, and both are deliberate:
-
-    * `payments-api.northstar-systems:8080` is in the parametrized list
-      because it carries no CiliumNetworkPolicy of its own. A block there is
-      attributable to this policy and nothing else, so it is the member of
-      this list that actually measures the egress half.
-    * The loss of the egress half on the two destinations that *do* have
-      ingress policies is caught by
-      `test_the_datapath_egress_allowlist_is_exactly_the_measured_inventory`,
-      which failed on that same mutation. A behavioural probe alone would
-      have missed it.
+    `settlement-agent` has no allowance to a tool at all. Any HTTP answer here,
+    including a Linkerd 403, would mean the packets got to the tool's proxy, so
+    the egress policy no longer stops it and only the ingress half is left: a
+    403 FAILS this test on purpose. Only a failed request (the pod's own proxy
+    answering 504 with `l5d-proxy-error`, a reset, a timeout) passes.
     """
-    result = _probe(MODEL_AGENT, host, port)
-    assert not result["reached"], (
-        f"{MODEL_AGENT} reached {host}:{port} directly, bypassing "
+    result = _http(MODEL_AGENT, host, port, method, path)
+    assert reach.egress_is_dropped(result), (
+        f"{MODEL_AGENT} got an answer from {host}:{port} ({result}), bypassing "
         f"{GATEWAY_HOST}:{GATEWAY_PORT}; the gateway is not the only path out "
         "of the agent to a tool"
     )
 
 
+# --- The bypass: the node enforces egress, not the proxy ---------------------
+
+
+@pytest.mark.parametrize(
+    "host,why",
+    [
+        (ANTHROPIC_RANGE_ADDRESS, "Anthropic's range is allowed for settlement-agent only"),
+        ("example.com", "an arbitrary external host"),
+    ],
+)
+def test_a_pod_that_skips_the_proxy_is_still_dropped_by_the_node(
+    host, why, bypass_pod
+):
+    """`linkerd.io/inject: disabled` is not a way out of the egress policy.
+
+    The pod is labelled `app=claims-agent` and has no proxy, so a connect is
+    answered by the kernel or not at all. A timeout is the oracle here (and
+    only here: from a meshed pod it would prove nothing). Control below: the
+    same pod CAN connect to the one peer claims-agent is allowed.
+    """
+    result = reach.exec_probe(
+        KUBE_CONTEXT, AGENT_NS, bypass_pod, "probe", host, 443,
+        timeout=PROBE_TIMEOUT, mode="tcp")
+    assert reach.classify_tcp(result) == "timeout", (
+        f"an unmeshed pod labelled app=claims-agent connected to {host}:443 "
+        f"({why}): got {reach.classify_tcp(result)} ({result}). The node is not "
+        "enforcing egress; only the proxy was, and a pod can skip the proxy"
+    )
+
+
+def test_the_bypass_pod_is_dropped_on_the_tool_too_and_the_control_connects(bypass_pod):
+    """Direct to payments-mcp: timeout. Control: the allowed peer connects.
+
+    The control matters: without it a bypass pod with no network at all passes.
+    DNS must also work from it (the policy allows kube-dns on 53), or the
+    external-host timeout above would be a resolution failure, not a drop.
+    """
+    denied = reach.exec_probe(
+        KUBE_CONTEXT, AGENT_NS, bypass_pod, "probe",
+        "payments-mcp.northstar-tools.svc.cluster.local", 8000,
+        timeout=PROBE_TIMEOUT, mode="tcp")
+    assert reach.classify_tcp(denied) == "timeout", (
+        f"the unmeshed claims-agent-labelled pod connected to payments-mcp:8000: {denied}"
+    )
+    control = reach.exec_probe(
+        KUBE_CONTEXT, AGENT_NS, bypass_pod, "probe", PEER_HOST, PEER_PORT,
+        timeout=PROBE_TIMEOUT, mode="tcp")
+    assert reach.classify_tcp(control) == "connected", (
+        f"the bypass pod cannot connect to its allowed peer {PEER_HOST}:{PEER_PORT} "
+        f"either ({control}); the drops above prove an outage, not a policy"
+    )
+    proc = reach.kubectl(
+        KUBE_CONTEXT, "-n", AGENT_NS, "exec", bypass_pod, "-c", "probe", "--",
+        "python3", "-c", RESOLVE, "example.com", timeout=60)
+    assert json.loads(proc.stdout.strip().splitlines()[-1])["example.com"][:7] != "FAILED:", proc.stdout
+
+
 # --- Controls: the denials above must not be an outage ----------------------
 
 
-def test_the_model_agent_still_reaches_the_model_provider(policy_present):
+def test_the_model_agent_still_reaches_the_model_provider(reach_objects):
     """Control, and the one that makes the whole file mean something.
 
-    Without it, every denial above is satisfied by an agent plane with no
-    network at all -- a green suite reporting a security property that is
-    really a demo that cannot run. It is also the only end-to-end evidence
-    that the `toFQDNs` rule and the L7 DNS rule are working *together*: the
-    allowance is derived from what Cilium's DNS proxy saw resolve, so a
-    connection succeeding here means the proxy is interposed, the lookup was
-    permitted, and the resulting identity is admitted on 443.
+    Without it every denial above is satisfied by an agent plane with no
+    network at all. A TLS handshake and an HTTP status line from
+    `api.anthropic.com` (any status: an unauthenticated HEAD on `/` is a 4xx)
+    prove the address range, DNS and the proxy are all working together.
     """
-    result = _probe(MODEL_AGENT, MODEL_HOST, MODEL_PORT)
-    assert result["reached"], (
-        f"{MODEL_AGENT} cannot reach {MODEL_HOST}:{MODEL_PORT}, so every "
-        "settlement will fail on the model call. The usual cause is the DNS "
-        "rule: toFQDNs is populated from what Cilium's DNS proxy observes, so "
-        "removing the `rules.dns` block from the DNS egress rule leaves this "
-        "policy VALID and this connection dropped"
+    result = _http(MODEL_AGENT, MODEL_HOST, MODEL_PORT, "HEAD", "/", tls=True)
+    assert reach.classify_egress(result) == ("reached", "answered"), (
+        f"{MODEL_AGENT} cannot complete a request to {MODEL_HOST}:{MODEL_PORT} "
+        f"({result}), so every settlement will fail on the model call. If "
+        "Anthropic's published ranges moved, the ipBlock in "
+        "deploy/platform/reach/network-policies.yaml is stale"
     )
 
 
@@ -480,50 +321,53 @@ def test_the_model_agent_still_reaches_the_model_provider(policy_present):
     [(GATEWAY_HOST, GATEWAY_PORT), (COLLECTOR_HOST, COLLECTOR_PORT)],
 )
 def test_the_model_agent_still_reaches_the_gateway_and_the_collector(
-    host, port, policy_present
+    host, port, reach_objects
 ):
-    """The two in-cluster destinations a settlement cannot happen without."""
-    result = _probe(MODEL_AGENT, host, port)
-    assert result["reached"], (
-        f"{MODEL_AGENT} cannot reach {host}:{port} -- the egress allowlist is "
-        "denying a destination the demo depends on"
+    """The two in-cluster destinations a settlement cannot happen without.
+
+    The gateway is meshed (so the allowance is its service port AND the proxy's
+    4143, M2); the collector is not. Any HTTP answer counts, a 404 or 405
+    included: the question is whether something answered.
+    """
+    result = _http(MODEL_AGENT, host, port, "GET", "/")
+    assert reach.classify_egress(result) == ("reached", "answered"), (
+        f"{MODEL_AGENT} cannot reach {host}:{port} ({result}) -- the egress "
+        "allowlist is denying a destination the demo depends on"
     )
 
 
 @pytest.mark.parametrize(
-    "host,port", [(PEER_HOST, PEER_PORT), (COLLECTOR_HOST, COLLECTOR_PORT)]
+    "host,port,path",
+    [(PEER_HOST, PEER_PORT, "/.well-known/agent-card.json"),
+     (COLLECTOR_HOST, COLLECTOR_PORT, "/")],
 )
 def test_claims_agent_still_reaches_its_peer_and_the_collector(
-    host, port, policy_present
+    host, port, path, reach_objects
 ):
-    """Control for the claims-agent denial, on the two things it actually does.
+    """Control for the claims-agent denials, on the two things it actually does.
 
     `NORTHSTAR_ALLOWED_AGENTS` names `settlement-agent:9002` as its single
-    delegation target; losing it would break every claim, not just the model
-    provider. This is also now the positive control
-    `test_gateway_is_the_only_route.py` uses, for the reason recorded there.
+    delegation target; losing it would break every claim.
     """
-    result = _probe("claims-agent", host, port)
-    assert result["reached"], (
-        f"claims-agent cannot reach {host}:{port}, so the model-provider "
-        "denial above proves an outage rather than a policy"
+    result = _http("claims-agent", host, port, "GET", path)
+    assert reach.classify_egress(result) == ("reached", "answered"), (
+        f"claims-agent cannot reach {host}:{port} ({result}), so the "
+        "model-provider denial above proves an outage rather than a policy"
     )
 
 
-def test_the_collector_is_reachable_from_every_agent_that_exports(policy_present):
+def test_the_collector_is_reachable_from_every_agent_that_exports(reach_objects):
     """Its own test because its failure is the one that looks like success.
 
     The OTLP exporter runs on a BatchSpanProcessor background thread and
     swallows export failures. Drop the collector rule and settlements keep
-    succeeding, the UI keeps showing the right numbers, and every span from
-    that service silently disappears -- in a milestone whose entire claim is
-    that the decision is visible in one trace. Nothing else in this repo's
-    suites would go red.
+    succeeding while every span from that service silently disappears.
     """
     unreachable = [
-        app
-        for app in ALL_AGENTS
-        if not _probe(app, COLLECTOR_HOST, COLLECTOR_PORT)["reached"]
+        app for app in ALL_AGENTS
+        if not reach.classify_egress(
+            _http(app, COLLECTOR_HOST, COLLECTOR_PORT, "GET", "/")
+        )[0] == "reached"
     ]
     assert not unreachable, (
         f"{unreachable} cannot reach {COLLECTOR_HOST}:{COLLECTOR_PORT}; their "
@@ -532,342 +376,141 @@ def test_the_collector_is_reachable_from_every_agent_that_exports(policy_present
 
 
 @pytest.mark.parametrize("app", ALL_AGENTS)
-def test_dns_still_resolves_inside_every_agent_pod(app, policy_present):
-    """DNS is a control here *and* half of the enforcement mechanism.
-
-    Two things would break if the DNS rule were wrong, and only one of them is
-    obvious. The obvious one: nothing resolves and every call fails. The
-    non-obvious one: `toFQDNs` is populated from responses Cilium's DNS proxy
-    observes, so DNS that works but bypasses the proxy leaves the model
-    provider silently unreachable with no error mentioning a policy.
-
-    The names resolved include the in-cluster ones on purpose. `ClusterFirst`
-    DNS appends search domains, so those lookups also emit queries for
-    suffixed variants, and a `rules.dns` block narrower than `matchPattern:
-    "*"` would have the DNS proxy deny the ones that do not match -- breaking
-    resolution through the search list while looking tighter than it is.
-    """
+def test_dns_still_resolves_inside_every_agent_pod(app, reach_objects):
+    """DNS is a control: the policy allows kube-dns on 53 UDP and TCP, and an
+    egress policy that forgot it would break every lookup, including the
+    in-cluster ones (`ClusterFirst` search domains emit several queries per
+    name)."""
     names = [MODEL_HOST, GATEWAY_HOST, COLLECTOR_HOST]
-    proc = _kubectl(
-        "-n", AGENT_NS, "exec", _pod(app), "-c", app, "--",
-        "python3", "-c", RESOLVE, *names,
-        timeout=90,
-    )
-    if proc.returncode != 0 and not proc.stdout.strip():
-        pytest.skip(f"could not exec the resolver in {app}: {proc.stderr.strip()}")
+    proc = reach.kubectl(
+        KUBE_CONTEXT, "-n", AGENT_NS, "exec", _pod(app), "-c", app, "--",
+        "python3", "-c", RESOLVE, *names, timeout=90)
+    assert proc.stdout.strip(), (
+        f"could not exec the resolver in {app} (exit {proc.returncode}): {proc.stderr.strip()}")
     resolved = json.loads(proc.stdout.strip().splitlines()[-1])
     failed = {n: v for n, v in resolved.items() if v.startswith("FAILED:")}
     assert not failed, (
         f"{app} could not resolve {sorted(failed)} -- the DNS egress rule is "
-        f"wrong, and on {MODEL_AGENT} that also silently disables the toFQDNs "
-        f"allowance. Full result: {resolved}"
+        f"wrong. Full result: {resolved}"
     )
 
 
 @pytest.mark.parametrize("app", ALL_AGENTS)
-def test_every_agent_pod_is_still_ready(app, policy_present):
+def test_every_agent_pod_is_still_ready(app, reach_objects):
     """Nothing was severed, stated the way an operator would notice it.
 
-    None of the egress policy documents carries an `ingress` block, so these
-    endpoints stay default-*allow* for ingress and kubelet's `httpGet` probes
-    -- dialled from the node, not from a pod -- are unaffected. Asserted rather
-    than argued, because the symptom of getting it wrong is not a network error
-    but a pod that never becomes Ready and a `rollout status` that hangs with
-    nothing in its output mentioning networking.
+    A pod that cannot reach the Linkerd control plane (8080, 8086, 8090) cannot
+    get its identity and never becomes Ready, with nothing in the output
+    mentioning networking.
     """
-    proc = _kubectl(
-        "-n", AGENT_NS, "get", "pod", "-l", f"app={app}",
-        "-o", "jsonpath={.items[*].status.conditions[?(@.type=='Ready')].status}",
-    )
+    proc = reach.kubectl(
+        KUBE_CONTEXT, "-n", AGENT_NS, "get", "pod", "-l", f"app={app}",
+        "-o", "jsonpath={.items[*].status.conditions[?(@.type=='Ready')].status}")
     assert "True" in proc.stdout, (
-        f"{app} is not Ready under the egress policy (got {proc.stdout!r})"
-    )
+        f"{app} is not Ready under the egress policy (got {proc.stdout!r})")
 
 
-# --- M10: the customer's push receiver, and nothing else on it -------------
-
-PUSH_HOST = "customer-ui.northstar-agents.svc.cluster.local"
-PUSH_PORT = 8080
-
-HTTP_PROBE = r"""
-import http.client, json, sys
-host, port, method, path = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
-try:
-    c = http.client.HTTPConnection(host, port, timeout=float(sys.argv[5]))
-    c.request(method, path, body=b"{}" if method == "POST" else None,
-              headers={"content-type": "application/json"})
-    r = c.getresponse()
-    print(json.dumps({"status": r.status, "error": None}))
-except Exception as exc:
-    print(json.dumps({"status": None, "error": type(exc).__name__}))
-"""
+# --- M10: the customer's push receiver --------------------------------------
 
 
-def _http_from_claims_agent(method: str, path: str) -> dict:
-    proc = _kubectl(
-        "-n", AGENT_NS, "exec", _pod("claims-agent"), "-c", "claims-agent", "--",
-        "python3", "-c", HTTP_PROBE, PUSH_HOST, str(PUSH_PORT), method, path,
-        str(CONNECT_TIMEOUT),
-        timeout=CONNECT_TIMEOUT + 45,
-    )
-    assert proc.stdout.strip(), (
-        f"could not run the probe in claims-agent (exit {proc.returncode}): {proc.stderr.strip()}"
-    )
-    return json.loads(proc.stdout.strip().splitlines()[-1])
+def test_claims_agent_reaches_the_push_receiver_and_the_server_answers(reach_objects):
+    """POST /a2a/push with no token is answered by the SERVER (401), not refused.
 
-
-def test_claims_agent_reaches_the_push_receiver_and_the_server_answers(policy_present):
-    """POST /a2a/push with no token is answered by the SERVER (401), not dropped.
-
-    A 401 is the proof of reach: it can only come from customer-ui's own
-    handler, so the L7 rule admitted the request and the connection was made.
+    A 401 can only come from customer-ui's own handler, so the push route's
+    AuthorizationPolicy admitted claims-agent's identity and the egress rule
+    admitted the connection (service port 8080 and the proxy's 4143).
     """
-    result = _http_from_claims_agent("POST", "/a2a/push")
+    result = _http("claims-agent", PUSH_HOST, PUSH_PORT, "POST", "/a2a/push")
     assert result["status"] == 401, (
         "claims-agent's POST to customer-ui:8080/a2a/push (no token) was not "
-        f"answered 401 by the server: {result}. A drop or a 403 means the "
-        "Reach rule is missing or wrong; the push would never be delivered"
+        f"answered 401 by the server: {result}. A 403 means the push route's "
+        "policy does not admit claims-agent; a proxy error means the egress "
+        "rule is wrong. Either way the push would never be delivered"
     )
 
 
-def test_claims_agent_cannot_read_anything_else_on_the_push_receiver(policy_present):
-    """Same pod, same port, a different method and path: denied by Cilium's L7 proxy (403)."""
-    result = _http_from_claims_agent("GET", "/")
-    assert result["status"] == 403, (
-        "claims-agent's GET customer-ui:8080/ was not denied by Cilium's L7 "
-        f"proxy: {result}. The push rule admits more than POST /a2a/push"
-    )
+def test_an_identity_that_is_not_claims_agent_cannot_push(wrong_identity_pod):
+    """Only claims-agent's identity may POST /a2a/push: the wrong one is a counted 403.
+
+    M11 asserted this for reviewer-ui. reviewer-ui is now stopped earlier, by its
+    own egress allowlist (asserted next), so the wrong caller is the throwaway
+    meshed pod. The refusal names the route `customer-ui-push`.
+    """
+    cid = reach.client_id(WRONG_ID_SA, AGENT_NS)
+    dst = _pod("customer-ui")
+    before = reach.read_deny_counters(KUBE_CONTEXT, AGENT_NS, dst)
+    result = reach.exec_probe(
+        KUBE_CONTEXT, AGENT_NS, wrong_identity_pod, "probe",
+        PUSH_HOST, PUSH_PORT, "POST", "/a2a/push", PROBE_TIMEOUT)
+    after = reach.read_deny_counters(KUBE_CONTEXT, AGENT_NS, dst)
+    assert reach.classify_ingress(result) == "refused-403", (
+        f"the wrong identity's forged push was not refused 403: {result}")
+    by = reach.refused_by(before, after, srv_name="customer-ui", client_id=cid)
+    assert by is not None and by[:2] == ("customer-ui", "customer-ui-push"), (
+        f"the deny counter did not name Server customer-ui / route "
+        f"customer-ui-push for client_id={cid}: {by}")
 
 
-def test_claims_agent_cannot_reach_another_customer_ui_port(policy_present):
-    """A port other than 8080 on the customer-ui POD is dropped, not refused.
+def test_reviewer_ui_has_no_egress_to_the_push_receiver(reach_objects):
+    """reviewer-ui may not reach customer-ui at all (egress), so it cannot push."""
+    result = _http("reviewer-ui", PUSH_HOST, PUSH_PORT, "POST", "/a2a/push")
+    assert reach.egress_is_dropped(result), (
+        f"reviewer-ui got an answer from customer-ui:8080 ({result}); its "
+        "egress allowlist is wider than payments-api, claims-agent, the "
+        "gateway and the collector")
+
+
+def test_claims_agent_may_use_the_rest_of_customer_ui_and_that_is_documented(reach_objects):
+    """Wider than Cilium's POST-only rule, on purpose and stated.
+
+    Under Cilium claims-agent's egress allowed `POST /a2a/push` only. Linkerd
+    restricts the PUSH path by caller; every other path is open to every caller
+    (the catch-all route in linkerd-policies.yaml is what keeps the browser and
+    the readiness probe working). So `GET /` from claims-agent is answered, not
+    refused. This pins the documented widening: if it flips to a refusal, the
+    catch-all went away and the page and its probe need re-checking.
+    """
+    result = _http("claims-agent", PUSH_HOST, PUSH_PORT, "GET", "/")
+    assert reach.classify_ingress(result) == "answered", (
+        f"claims-agent's GET / on customer-ui was not simply answered: {result}")
+
+
+def test_claims_agent_cannot_reach_another_customer_ui_port(reach_objects):
+    """A port other than 8080 on the customer-ui POD is dropped.
 
     The Service exposes only 8080, so a probe through the Service name would
-    fail with or without the policy and prove nothing. This probes the pod IP.
-    Nothing on the pod listens on 9090, so the kernel would answer a SYN with a
-    RST (ConnectionRefusedError) if the packet reached it. With the Reach rule
-    admitting only 8080, Cilium drops the SYN at claims-agent's egress, and the
-    connect TIMES OUT. A timeout therefore says the policy dropped it; a refusal
-    says the rule is wider than one port. The datapath inventory test carries
-    the same "one port" fact from the BPF map.
+    fail with or without the policy. This probes the pod IP. A meshed pod's
+    connect always succeeds (M1), so the verdict is the HTTP request: with the
+    rule admitting only 8080 (and 4143) the node drops the proxy's packets and
+    the request fails.
     """
-    proc = _kubectl(
-        "-n", AGENT_NS, "get", "pod", "-l", "app=customer-ui",
-        "-o", "jsonpath={.items[0].status.podIP}",
-    )
+    proc = reach.kubectl(
+        KUBE_CONTEXT, "-n", AGENT_NS, "get", "pod", "-l", "app=customer-ui",
+        "-o", "jsonpath={.items[0].status.podIP}")
     pod_ip = proc.stdout.strip()
     assert pod_ip, f"could not read the customer-ui pod IP: {proc.stderr.strip()}"
-    result = _probe("claims-agent", pod_ip, 9090)
-    assert not result["reached"], "claims-agent connected to customer-ui:9090"
-    assert result["error"] in ("TimeoutError", "timeout"), (
-        f"connect to customer-ui pod {pod_ip}:9090 ended {result['error']!r}, not a "
-        "timeout: a refusal means the SYN reached the pod, so Cilium did not drop it "
-        "and the push rule is wider than one port"
-    )
+    result = _http("claims-agent", pod_ip, 9090)
+    assert reach.egress_is_dropped(result), (
+        f"claims-agent got an answer from customer-ui pod {pod_ip}:9090 "
+        f"({result}): the push rule is wider than one port")
 
 
-# --- The datapath, not the manifest ----------------------------------------
+# --- The objects, not just the behaviour ----------------------------------------
 
 
-def test_the_datapath_admits_the_model_provider_by_name_and_not_the_world(datapath):
-    """The FQDN allowance is a per-name identity, not a hole punched to 443.
+def test_the_live_egress_rules_are_the_ones_in_the_repo(reach_objects):
+    """Drift check: every NetworkPolicy in the repo is live with the same selector and rules.
 
-    Cilium implements `toFQDNs` by minting a CIDR identity from the addresses
-    it saw the name resolve to, and that identity carries **both**
-    `fqdn:api.anthropic.com` and `reserved:world` labels. So "assert no egress
-    row mentions reserved:world" would be wrong -- it would fail on a correct
-    policy. The assertion that actually distinguishes the two cases is that
-    *every* world-bearing egress row is also FQDN-labelled for the one name,
-    and is scoped to 443/TCP. A blanket `toEntities: world` allowance would
-    produce a row with `reserved:world` and no `fqdn:` label, and would fail
-    here -- which is the mistake this test exists to catch, because it would
-    leave every behavioural probe in this file passing.
+    Behaviour is asserted above; this catches the policy someone edited in the
+    cluster to make a probe pass (or an `allow` added next to the ones tested).
     """
-    rows = _egress(datapath[MODEL_AGENT])
-    world = [r for r in rows if "reserved:world" in r["labels"]]
-    assert world, (
-        "the datapath grants settlement-agent no external egress at all, so "
-        f"{MODEL_HOST} is unreachable and every settlement fails on the model "
-        f"call. Egress rows seen: {rows}"
-    )
-    for row in world:
-        assert f"fqdn:{MODEL_HOST}" in row["labels"], (
-            "an egress row admits reserved:world without being scoped to a "
-            f"single FQDN -- that is a blanket external allowance: {row}"
-        )
-        assert row["port"] == f"{MODEL_PORT}/TCP", (
-            f"the model-provider allowance is not scoped to {MODEL_PORT}/TCP: {row}"
-        )
-
-
-@pytest.mark.parametrize("app", OTHER_AGENTS)
-def test_the_datapath_gives_the_other_agents_no_external_egress_at_all(app, datapath):
-    """Read out of the BPF map, the stronger form of the criterion's sentence.
-
-    The probe above shows one external host is unreachable from this pod. This
-    shows the datapath admits *no* external identity from it -- no
-    `reserved:world`, no `fqdn:`, no CIDR -- so the property does not depend on
-    which host the probe happened to pick.
-    """
-    external = [
-        r
-        for r in _egress(datapath[app])
-        if any(
-            label.startswith(("reserved:world", "fqdn:", "cidr:"))
-            for label in r["labels"]
-        )
-    ]
-    assert not external, (
-        f"the datapath admits external egress from {app}, which makes no model "
-        f"call and holds no API key: {external}"
-    )
-
-
-@pytest.mark.parametrize("app", ALL_AGENTS)
-def test_the_datapath_egress_allowlist_is_exactly_the_measured_inventory(
-    app, datapath
-):
-    """Equality, not containment, so adding a destination fails here.
-
-    Compares the set of (workload label, port/proto) pairs the BPF map admits
-    against the inventory each policy was written from. Containment would let a
-    later `toEndpoints` block widen the agent plane's reachability with nothing
-    going red; this is the same set-equality shape the ingress half uses on its
-    admitted identities, and for the same reason.
-
-    FQDN and reserved identities are excluded here by construction -- they are
-    not workloads, and the two tests above own them.
-    """
-    admitted = {
-        (label, row["port"])
-        for row in _egress(datapath[app])
-        for label in row["labels"]
-        if label.startswith(("k8s:app=", "k8s:k8s-app="))
-    }
-    assert admitted == EXPECTED_WORKLOAD_EGRESS[app], (
-        f"{app}'s enforced egress allowlist is not the inventory its policy "
-        f"was written from.\n  extra:   {sorted(admitted - EXPECTED_WORKLOAD_EGRESS[app])}"
-        f"\n  missing: {sorted(EXPECTED_WORKLOAD_EGRESS[app] - admitted)}"
-    )
-
-
-def test_the_dns_proxy_is_interposed_on_the_model_agent_and_only_there(datapath):
-    """The coupling between the two rules `toFQDNs` needs, seen in the datapath.
-
-    `PROXY PORT` is how Cilium's DNS proxy appears in the BPF policy map: a
-    non-`NONE` value on a 53 row means DNS from that endpoint is redirected
-    through the proxy, which is the only way `toFQDNs` ever learns an address.
-    Asserting it here is what turns "the model call works" from an observation
-    into an explanation -- and it fails on the specific mistake of granting
-    plain L4 DNS to `settlement-agent`, which leaves the policy VALID, DNS
-    working, and the model provider silently unreachable.
-
-    The negative half matters too. `claims-agent` and `customer-ui` are given
-    L4-only DNS deliberately, because neither has a `toFQDNs` rule to feed;
-    if the proxy showed up on them, the two documents would be doing the same
-    job while claiming to differ, and the DNS proxy would be sitting in the
-    path of the demo's entry service for no reason.
-    """
-    model_dns = [
-        r for r in _egress(datapath[MODEL_AGENT]) if r["port"].startswith("53/")
-    ]
-    assert len(model_dns) == 2, (
-        f"expected 53/TCP and 53/UDP egress rows for {MODEL_AGENT}, got "
-        f"{[r['port'] for r in model_dns]}"
-    )
-    for row in model_dns:
-        assert row["proxy_port"] != "NONE", (
-            "DNS from settlement-agent is not redirected through Cilium's DNS "
-            "proxy, so toFQDNs can never populate and the model provider is "
-            f"unreachable however the policy reads: {row}"
-        )
-
-    for app in OTHER_AGENTS:
-        for row in _egress(datapath[app]):
-            if row["port"].startswith("53/"):
-                assert row["proxy_port"] == "NONE", (
-                    f"{app} has no toFQDNs rule, so interposing the DNS proxy "
-                    f"on its lookups buys nothing: {row}"
-                )
-
-
-def test_the_agent_planes_ingress_is_exactly_what_the_milestones_intended(datapath):
-    """Inbound A2A must be filtered exactly where intended, and nowhere else.
-
-    This test once asserted the opposite: it was named
-    `test_the_agent_plane_is_still_default_allow_for_ingress`, and its
-    premise was that the egress policy touches egress only: `claims-agent`
-    calls `settlement-agent:9002` and the browser calls `claims-agent:9001`,
-    so an `ingress` block accidentally added to one of those egress
-    documents would make that endpoint default-deny and break the chain
-    from the far end. It asserted the absence of such a block where it is
-    enforced -- as the catch-all `Allow Ingress ANY` row the datapath
-    carries for an endpoint no ingress policy selects.
-
-    **`settlement-agent-ingress-allowlist` exists on purpose.** Both
-    settlement Deployments were reachable from anything in the mesh, so
-    anything that could reach an A2A port could execute any proposed
-    payment. That is the exact condition the old assertion required to
-    remain true. Nothing caught the contradiction because this module needs
-    a live Cilium dataplane and `cilium-dbg`, so it is not part of any
-    cheap local loop.
-
-    The repair is deliberately a STRENGTHENING rather than a narrowing, so the
-    mutation the original was written to catch is still caught:
-
-    * `claims-agent` and `customer-ui` must still carry the catch-all.
-      Nothing has filtered their ingress, and an ingress block accidentally
-      added to either egress document still fails here.
-    * `settlement-agent` must now be default-DENY for ingress AND must admit
-      `claims-agent` on 9002 specifically. The old test passed on
-      "unfiltered"; this one fails both if the allowlist disappears (the
-      catch-all returns) and if the allowlist stops naming its one real
-      caller (the 9002 row goes). An accidental ingress block on the *egress*
-      document would still be caught, because it would not produce a
-      claims-agent-labelled row on 9002.
-
-    Scope is unchanged on purpose: `reviewer-ui` has its own ingress document
-    and its own coverage in tests/e2e/test_human_in_the_loop.py; widening this
-    module's fixture to it is a separate change, not a bug fix.
-    """
-    for app in OTHER_AGENTS:
-        catch_all = [
-            r
-            for r in datapath[app]
-            if r["direction"] == "Ingress"
-            and r["verdict"] == "Allow"
-            and r["labels"] == ["ANY"]
-            and r["port"] == "ANY"
-        ]
-        assert catch_all, (
-            f"{app} is no longer default-allow for ingress, so something added "
-            "an ingress block to an egress-only policy; inbound A2A and the "
-            f"kubelet readiness probe are now filtered. Nothing asks "
-            f"for that on {app}. Rows: {datapath[app]}"
-        )
-
-    ingress = [r for r in datapath[MODEL_AGENT] if r["direction"] == "Ingress"]
-    catch_all = [
-        r
-        for r in ingress
-        if r["verdict"] == "Allow" and r["labels"] == ["ANY"] and r["port"] == "ANY"
-    ]
-    assert not catch_all, (
-        f"{MODEL_AGENT} is default-allow for ingress again, so "
-        "settlement-agent-ingress-allowlist is no longer selecting it -- "
-        "anything in the mesh that can reach 9002 can execute a proposed "
-        f"payment. Rows: {ingress}"
-    )
-    from_claims = [
-        r
-        for r in ingress
-        if r["verdict"] == "Allow"
-        and r["port"] == "9002/TCP"
-        and any(lbl == "k8s:app=claims-agent" for lbl in r["labels"])
-    ]
-    assert from_claims, (
-        f"{MODEL_AGENT}'s ingress no longer admits claims-agent on 9002, so "
-        "the A2A hop the whole demo runs through is filtered. An ingress "
-        "policy that denies the one caller it exists to permit is worse than "
-        f"no policy. Rows: {ingress}"
-    )
+    live = {reach.object_key(i): i for i in reach_objects}
+    problems = {}
+    for doc in reach.repo_reach_documents():
+        if doc["kind"] != "NetworkPolicy":
+            continue
+        key = reach.object_key(doc)
+        drift = reach.egress_drift(doc, live[key])
+        if drift:
+            problems[key[2]] = drift
+    assert not problems, f"live NetworkPolicies differ from the repo: {problems}"

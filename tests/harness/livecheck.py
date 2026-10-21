@@ -58,7 +58,7 @@ STATE_PATH = Path(__file__).resolve().parents[2] / ".demo" / "m9-live-check-stat
 #
 # The old histogram attribute keys (decision, autonomy.level) are NOT listed here:
 # a bare `decision` is a plausible attribute key of a framework we do not own
-# (Kyverno, Cilium, agentgateway), and listing it would turn that framework's
+# (Kyverno, Linkerd, agentgateway), and listing it would turn that framework's
 # `information` findings into gate failures. The rename is guarded in source by
 # tests/unit/test_no_legacy_names.py::test_approval_histogram_uses_registry_label_keys
 # and live by the e2e series assertions in tests/e2e/test_human_in_the_loop.py.
@@ -299,7 +299,7 @@ def owned_violations(report_: dict[str, Any]) -> list[dict[str, Any]]:
     `telemetry/live-check.toml` already lowers every finding about a name we do
     not own to `information`, so on a correct config every violation is owned.
     This filter is the second line: a config edit that let a foreign name
-    through as a violation must not fail the gate on Kyverno's or Cilium's
+    through as a violation must not fail the gate on Kyverno's or Linkerd's
     behalf.
     """
     return [

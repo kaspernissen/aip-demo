@@ -1,38 +1,51 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Beat R -- "the only way in". The Reach ring: a workload that holds no SVID and
-# has no business at the tool cannot even open a connection to it.
+# Beat R -- "the only way in". The Reach ring: a workload that has no business
+# at the tool cannot get to it, and a workload that can get to a service cannot
+# do what its identity does not allow there. Two enforcement points, one beat:
 #
-# From inside claims-agent -- the same prober, for the same reason, as
-# tests/e2e/test_gateway_is_the_only_route.py (a real neighbouring workload in
-# the agents' own namespace, no SVID, no MCP client; if the policy were scoped
-# by namespace instead of by workload this probe would wrongly succeed) --
-# this script makes two requests:
+#   * EGRESS is core NetworkPolicy, enforced in the node by kindnet. A pod's
+#     own Linkerd proxy accepts every connect locally, so the verdict is read
+#     above TCP: the HTTP request fails (DROPPED), it is never a refused connect.
+#   * INGRESS is Linkerd, at the destination's proxy, by workload identity. A
+#     refusal is an empty HTTP 403 and the destination counts it in
+#     inbound_http_authz_deny_total, which this script reads around the call
+#     (through the API server's pod proxy, never a port-forward: a port-forward
+#     bypasses the proxy) to name the Server and route that refused it.
 #
-#   (a) the CONTROL: settlement-agent:9002, the one peer claims-agent exists to
-#       call. It must answer. Without it, step (b) would also "pass" on a
+# Three requests:
+#
+#   (a) the CONTROL, from claims-agent: settlement-agent:9002, the one peer it
+#       exists to call. It must answer. Without it, (b) would also "pass" on a
 #       cluster whose networking is simply broken.
-#   (b) a direct MCP `initialize` at payments-mcp:8000/mcp, around the gateway.
-#       It must be DROPPED -- a connect timeout, not a refusal and not an HTTP
-#       status: Cilium drops the packet, it does not reject it, so there is no
-#       RST to turn into an error. A 401/403 here would mean something at the
-#       application layer answered, i.e. the dataplane let it through.
+#   (b) EGRESS, from claims-agent: a direct MCP `initialize` at
+#       payments-mcp:8000/mcp, around the gateway. It must be DROPPED: the node
+#       drops the packets its proxy sends, the proxy answers 504 with
+#       `l5d-proxy-error`. Anything that answers -- a 401, a 403 -- means the
+#       packets got through.
+#   (c) INGRESS, from reviewer-ui: POST /payments/<id>/execute straight at
+#       payments-api, skipping the gateway and the PDS. reviewer-ui may reach
+#       payments-api (it lists and rejects there) but its identity is not the
+#       one authorized on the execute route: REFUSED 403, empty body, and the
+#       payments-api proxy's deny counter rises by one.
 #
-# Exits non-zero if the control fails or the direct request is NOT dropped, so
-# a rehearsal that "worked" cannot hide a ring that is open. No new image
-# tooling: the client is python3's standard library, already in the pod, which
-# is what the e2e test's prober uses too.
+# Exits non-zero if the control fails, (b) is not dropped, or (c) is not
+# refused with a counted 403, so a rehearsal that "worked" cannot hide a ring
+# that is open. No new image tooling: the client is python3's standard library,
+# already in the pods, which is what the e2e tests' prober uses too.
 #
-# Cilium drops are NOT in the trace (Hubble is not installed); this beat shows
-# the refusal on the terminal, and says so on the slide.
+# Refusals are COUNTED, not traced: they are in no span. This beat shows the
+# refusal and the counter on the terminal.
 
 CONTEXT="kind-northstar"
 NAMESPACE="northstar-agents"
 CONTROL_URL="http://settlement-agent.northstar-agents.svc.cluster.local:9002/.well-known/agent-card.json"
 DIRECT_URL="http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp"
-# A Cilium drop presents as a connect timeout. Long enough that a slow-but-
-# allowed connection is not mistaken for a drop, short enough to stay on stage.
+INGRESS_URL="http://payments-api.northstar-systems.svc.cluster.local:8080/payments/PAY-000000/execute"
+# A dropped request ends as a timeout, a reset, or the proxy's own 504. Long
+# enough that a slow-but-allowed request is not mistaken for a drop, short
+# enough to stay on stage.
 CONNECT_TIMEOUT=8
 
 RED='\033[0;31m'
@@ -53,46 +66,82 @@ fi
 
 kc() { "${TIMEOUT[@]}" 60 kubectl --context "$CONTEXT" "$@"; }
 
-# Runs inside the claims-agent pod; the source is scripts/reach-probe.py, shared
-# with `scripts/demo guard`. It prints exactly one line:
-#   REACHED <http status>        -- something answered
-#   DROPPED timeout              -- nothing answered: the packet was dropped
-#   REFUSED <exception name>     -- something actively refused (an RST, a reset)
+# Runs inside a pod; the source is scripts/reach-probe.py, shared with
+# `scripts/demo guard`. It prints exactly one line:
+#   REACHED <http status>   -- something answered
+#   REFUSED <http status>   -- Linkerd refused it (empty 403, or a proxy 404)
+#   DROPPED <how>           -- nothing answered (timeout, reset, proxy-error)
 PROBE="$(cat "$(dirname "${BASH_SOURCE[0]}")/reach-probe.py")"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 step() { echo; echo -e "${BLUE}$*${NC}"; }
 
-POD="$(kc -n "$NAMESPACE" get pod -l app=claims-agent -o jsonpath='{.items[0].metadata.name}')"
-[[ -n "$POD" ]] || { echo -e "${RED}Error: no claims-agent pod in ${NAMESPACE}.${NC}" >&2; exit 1; }
+pod_of() { kc -n "$1" get pod -l "app=$2" -o jsonpath='{.items[0].metadata.name}'; }
 
-probe() {
-  kc -n "$NAMESPACE" exec "$POD" -c claims-agent -- \
-    python3 -c "$PROBE" "$1" "$2" "$CONNECT_TIMEOUT" | tail -1
+POD="$(pod_of "$NAMESPACE" claims-agent)"
+[[ -n "$POD" ]] || { echo -e "${RED}Error: no claims-agent pod in ${NAMESPACE}.${NC}" >&2; exit 1; }
+RPOD="$(pod_of "$NAMESPACE" reviewer-ui)"
+[[ -n "$RPOD" ]] || { echo -e "${RED}Error: no reviewer-ui pod in ${NAMESPACE}.${NC}" >&2; exit 1; }
+APIPOD="$(pod_of northstar-systems payments-api)"
+[[ -n "$APIPOD" ]] || { echo -e "${RED}Error: no payments-api pod in northstar-systems.${NC}" >&2; exit 1; }
+
+probe() { # <pod> <container> <url> <method>
+  kc -n "$NAMESPACE" exec "$1" -c "$2" -- \
+    python3 -c "$PROBE" "$3" "$4" "$CONNECT_TIMEOUT" | tail -1
 }
 
+reach_cli() { (cd "$ROOT" && python3 -m tests.harness.reach "$@"); }
+
 echo -e "${BLUE}=== Beat R: the only way in ===${NC}"
-echo "Probing from inside ${POD} (claims-agent: no SVID, no MCP client, no business at the tool)."
+echo "Egress is NetworkPolicy in the node; ingress is Linkerd, by workload identity."
 
 step "1. Control: claims-agent calls settlement-agent, the one peer it exists to call"
 echo "\$ GET ${CONTROL_URL}"
-CONTROL="$(probe "$CONTROL_URL" GET)"
+CONTROL="$(probe "$POD" claims-agent "$CONTROL_URL" GET)"
 echo "  -> ${CONTROL}"
 if [[ "$CONTROL" != REACHED\ * ]]; then
-  echo -e "${RED}FAIL: the control did not answer, so the next step would prove an outage rather than a policy.${NC}" >&2
+  echo -e "${RED}FAIL: the control did not answer, so the next steps would prove an outage rather than a policy.${NC}" >&2
   exit 1
 fi
-echo -e "${GREEN}  reachable, as it should be.${NC}"
+echo -e "${GREEN}  REACHED. reachable, as it should be.${NC}"
 
-step "2. Around the gateway: claims-agent sends an MCP initialize straight to payments-mcp"
-echo "\$ POST ${DIRECT_URL}   (initialize, ${CONNECT_TIMEOUT}s connect timeout)"
-DIRECT="$(probe "$DIRECT_URL" POST)"
-echo "  -> ${DIRECT}"
+step "2. Egress: claims-agent sends an MCP initialize straight to payments-mcp, around the gateway"
+echo "\$ POST ${DIRECT_URL}   (initialize, ${CONNECT_TIMEOUT}s timeout)"
+DIRECT="$(probe "$POD" claims-agent "$DIRECT_URL" POST)"
 if [[ "$DIRECT" != DROPPED\ * ]]; then
-  echo -e "${RED}FAIL: claims-agent was not dropped on the way to payments-mcp (${DIRECT}). Either it got through, or something refused it instead of the dataplane dropping it. The gateway is not provably the only way in.${NC}" >&2
+  echo "  -> ${DIRECT}"
+  echo -e "${RED}FAIL: claims-agent was not dropped on the way to payments-mcp (${DIRECT}). Either it got through, or something answered. The gateway is not provably the only way in.${NC}" >&2
   exit 1
 fi
-echo -e "${GREEN}  DROPPED. Nothing answered: not a 401, not a refusal. The packet never arrived.${NC}"
+HOW="${DIRECT#DROPPED }"
+case "$HOW" in
+  proxy-error) HOW_TEXT="DROPPED (proxy error: the node dropped the packets, this pod's proxy answered 504)" ;;
+  reset)       HOW_TEXT="DROPPED (TLS reset)" ;;
+  *)           HOW_TEXT="DROPPED (${HOW})" ;;
+esac
+echo "  -> ${HOW_TEXT}"
+echo -e "${GREEN}  DROPPED. Nothing answered: not a 401, not a 403. The packets never arrived.${NC}"
+
+step "3. Ingress: reviewer-ui calls payments-api's execute route directly, skipping the gateway and the PDS"
+echo "\$ POST ${INGRESS_URL}"
+BEFORE="$(mktemp)"; AFTER="$(mktemp)"
+trap 'rm -f "$BEFORE" "$AFTER"' EXIT
+reach_cli snapshot "$CONTEXT" northstar-systems "$APIPOD" > "$BEFORE"
+REFUSAL="$(probe "$RPOD" reviewer-ui "$INGRESS_URL" POST)"
+reach_cli snapshot "$CONTEXT" northstar-systems "$APIPOD" > "$AFTER"
+if [[ "$REFUSAL" != "REFUSED 403" ]]; then
+  echo "  -> ${REFUSAL}"
+  echo -e "${RED}FAIL: reviewer-ui's direct execute was not refused 403 (${REFUSAL}). payments-api's ingress policy is not holding.${NC}" >&2
+  exit 1
+fi
+if ! LINE="$(reach_cli refusal 403 "$BEFORE" "$AFTER" payments-api)"; then
+  echo "  -> ${LINE}"
+  echo -e "${RED}FAIL: the 403 is not attributable to Linkerd: payments-api's inbound_http_authz_deny_total did not rise.${NC}" >&2
+  exit 1
+fi
+echo "  -> ${LINE}"
+echo -e "${GREEN}  REFUSED. By the proxy, by identity, and counted.${NC}"
 
 echo
-echo -e "${GREEN}Beat R holds: the gateway is the only route to payments-mcp.${NC}"
-echo "(Cilium drops are not in the trace; Hubble is not installed.)"
+echo -e "${GREEN}Beat R holds: the gateway is the only route to payments-mcp, and only payments-mcp's identity may execute at payments-api.${NC}"
+echo "(Refusals are counted at the destination proxy, not traced.)"

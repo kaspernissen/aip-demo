@@ -632,6 +632,22 @@ def test_the_agent_plane_workloads_have_the_expected_servers():
     }
 
 
+def test_every_servers_port_is_a_container_port_of_the_workload_it_selects():
+    """A Server on a port the pod does not declare selects nothing useful: the
+    default policy would keep applying and the refusals would silently not
+    happen. The port must be one of the workload's `containerPort`s, read from
+    its Deployment."""
+    for s in _by_kind("Server"):
+        app = s["spec"]["podSelector"]["matchLabels"]["app"]
+        ns = s["metadata"]["namespace"]
+        workload = WORKLOADS[app]
+        assert workload.namespace == ns, (s["metadata"]["name"], workload.namespace, ns)
+        assert s["spec"]["port"] in workload.ports, (
+            f"Server {s['metadata']['name']} names port {s['spec']['port']}, but "
+            f"{app} declares containerPorts {sorted(workload.ports)}"
+        )
+
+
 def test_every_server_denies_what_no_policy_authorizes():
     for s in _by_kind("Server"):
         assert s["apiVersion"] == "policy.linkerd.io/v1beta3"

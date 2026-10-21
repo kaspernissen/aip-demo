@@ -25,7 +25,7 @@ import uuid
 import httpx
 import pytest
 
-from tests.harness import contract, live
+from tests.harness import contract, live, reach
 from tests.harness.jaeger import JaegerClient, Trace
 
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
@@ -401,30 +401,40 @@ def waiting():
         pass
 
 
-_DIRECT = (
-    "import urllib.request, urllib.error\n"
-    "r = urllib.request.Request("
-    "'http://payments-api.northstar-systems.svc.cluster.local:8080/payments/{id}/execute',"
-    " method='POST', data=b'{{\"amount\": 5800, \"currency\": \"EUR\"}}',"
-    " headers={{'content-type': 'application/json'}})\n"
-    "try:\n"
-    "    print('STATUS', urllib.request.urlopen(r, timeout=10).status)\n"
-    "except urllib.error.HTTPError as e:\n"
-    "    print('STATUS', e.code, e.read()[:40])\n"
-)
-
-
 def test_reviewer_ui_cannot_execute_directly_against_payments_api(waiting):
-    """payments-api has no caller auth; only Cilium's L7 rule on the
-    reviewer-ui's egress stops a direct POST /execute that skips the gateway
-    and the PDS. The proxy answers 403 before the ledger sees it."""
-    result = live.kubectl(
-        "-n", "northstar-agents", "exec", "deploy/reviewer-ui", "--",
-        "python", "-c", _DIRECT.format(id=waiting), timeout=60,
+    """payments-api has no caller auth of its own; Linkerd's ingress policy on
+    payments-api:8080 is what stops a direct POST /execute that skips the
+    gateway and the PDS. Only payments-mcp's identity is authorized on the
+    `payments-api-execute` route, so reviewer-ui's mesh identity gets a 403
+    from payments-api's proxy: empty body, no `l5d-proxy-error` header (it is
+    not a proxy failure), and the proxy's inbound_http_authz_deny_total for
+    that route and that client rises. (Under Cilium this was the L7 proxy's
+    "Access denied" text; that text is gone, and its absence is part of the
+    oracle: an application answering 403 would have a body.)"""
+    pod = live.kubectl(
+        "-n", "northstar-systems", "get", "pod", "-l", "app=payments-api",
+        "-o", "jsonpath={.items[0].metadata.name}",
+    ).stdout.strip()
+    assert pod, "no payments-api pod"
+    cid = reach.client_id("reviewer-ui", "northstar-agents")
+    before = reach.read_deny_counters(live.KUBE_CONTEXT, "northstar-systems", pod)
+    result = reach.exec_probe(
+        live.KUBE_CONTEXT, "northstar-agents",
+        live.kubectl(
+            "-n", "northstar-agents", "get", "pod", "-l", "app=reviewer-ui",
+            "-o", "jsonpath={.items[0].metadata.name}",
+        ).stdout.strip(),
+        "reviewer-ui", "payments-api.northstar-systems.svc.cluster.local", 8080,
+        "POST", f"/payments/{waiting}/execute", timeout=10,
     )
-    assert result.returncode == 0, result.stderr
-    assert "STATUS 403" in result.stdout, result.stdout
-    assert "Access denied" in result.stdout, result.stdout
+    after = reach.read_deny_counters(live.KUBE_CONTEXT, "northstar-systems", pod)
+    assert reach.classify_ingress(result) == "refused-403", result
+    by = reach.refused_by(
+        before, after, srv_name="payments-api", client_id=cid)
+    assert by is not None and by[:2] == ("payments-api", "payments-api-execute"), (
+        f"payments-api's deny counter did not rise for route payments-api-execute "
+        f"and client_id={cid}: {by}"
+    )
     assert live.get_payment(waiting)["status"] == "awaiting_approval"
 
 

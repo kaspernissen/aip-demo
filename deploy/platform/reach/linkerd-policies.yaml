@@ -46,8 +46,9 @@
 # THE EVIDENCE FOR THIS FILE
 #
 # tests/unit/test_reach_policy.py evaluates it against a table of requests and
-# the table is the spec. tests/e2e/test_gateway_is_the_only_route.py proves
-# the refusals on the live cluster. A `kubectl port-forward` bypasses the
+# the table is the spec. tests/e2e/test_gateway_is_the_only_route.py is
+# written to prove the refusals on the live cluster (it has not run against
+# one yet: the first live run is what makes that sentence true). A `kubectl port-forward` bypasses the
 # proxy (M3), so nothing here is, or can be, probed through one.
 ---
 # payments-mcp:8000 -- the gateway, and nothing else in the mesh.
@@ -270,7 +271,10 @@ spec:
 # A Server with routes refuses everything no route authorizes, the probe
 # included, so the second route is a catch-all (PathPrefix `/`) authorized for
 # all networks: the browser, the probe and every other workload still get in,
-# as they did. Which of the two routes applies to `POST /a2a/push` is
+# as they did. SAY IT PLAINLY: that catch-all means claims-agent can use every
+# OTHER path on customer-ui too (GET /, the static assets, anything), which is
+# wider than Cilium's rule (claims-agent's egress allowed `POST /a2a/push` and
+# nothing else on this port). Only the push path is restricted, by caller. Which of the two routes applies to `POST /a2a/push` is
 # Gateway API route precedence: an Exact path match beats a PathPrefix, so the
 # push route wins for that one request and the catch-all never sees it.
 # (Verified against the installed Linkerd; see the Task 2 report.)

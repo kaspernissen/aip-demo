@@ -79,7 +79,7 @@ sys.path.insert(0, str(ROOT))
 import httpx  # noqa: E402
 import requests  # noqa: E402
 
-from tests.harness import contract, evidence, live  # noqa: E402
+from tests.harness import contract, evidence, live, reach  # noqa: E402
 from tests.harness.jaeger import JaegerClient, Trace  # noqa: E402
 
 # --- what the demo knows about the platform -----------------------------------
@@ -107,8 +107,13 @@ CONTROL_URL = (
     "/.well-known/agent-card.json"
 )
 DIRECT_URL = "http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp"
-# A Cilium drop presents as a connect timeout. Long enough that a slow-but-
-# allowed connection is not mistaken for a drop, short enough for a stage.
+INGRESS_URL = (
+    "http://payments-api.northstar-systems.svc.cluster.local:8080"
+    "/payments/PAY-000000/execute"
+)
+# A dropped request ends as a timeout, a reset, or the pod's own proxy answering
+# 504. Long enough that a slow-but-allowed request is not mistaken for a drop,
+# short enough for a stage.
 CONNECT_TIMEOUT_S = 8
 
 REVIEWER_UI = os.environ.get("REVIEWER_UI_URL", "http://localhost:8081")
@@ -308,10 +313,10 @@ def gateway_headers(token: str) -> dict:
 # --- guard ----------------------------------------------------------------------
 
 
-def probe_from_claims_agent(pod: str, url: str, method: str) -> str:
-    """The shared prober, run inside claims-agent. One line of output."""
+def probe_from_claims_agent(pod: str, url: str, method: str, container: str = "claims-agent") -> str:
+    """The shared prober, run inside a meshed agent pod. One line of output."""
     result = live.kubectl(
-        "-n", AGENTS_NS, "exec", pod, "-c", "claims-agent", "--",
+        "-n", AGENTS_NS, "exec", pod, "-c", container, "--",
         "python3", "-c", REACH_PROBE.read_text(), url, method, str(CONNECT_TIMEOUT_S),
         timeout=60,
     )
@@ -319,6 +324,40 @@ def probe_from_claims_agent(pod: str, url: str, method: str) -> str:
     if result.returncode != 0 or not lines:
         raise Fail(f"the probe did not run inside {pod}: {result.stderr.strip()[:300]}")
     return lines[-1]
+
+
+def refusal_from_reviewer_ui() -> str:
+    """reviewer-ui POSTs payments-api's execute route; Linkerd must refuse it.
+
+    Returns the line to print, `REFUSED 403 by <Server>/<route> (deny counter
+    +1)`. The counter is read on payments-api's proxy through the API server
+    (never a port-forward: that bypasses the proxy) around the call; a 403 that
+    moved no counter is not Linkerd's and fails the beat.
+    """
+    pods = {}
+    for ns, app in ((AGENTS_NS, "reviewer-ui"), ("northstar-systems", "payments-api")):
+        found = live.kubectl(
+            "-n", ns, "get", "pod", "-l", f"app={app}",
+            "-o", "jsonpath={.items[0].metadata.name}", timeout=30,
+        ).stdout.strip()
+        if not found:
+            raise Fail(f"no {app} pod found")
+        pods[app] = found
+    before = reach.read_deny_counters(live.KUBE_CONTEXT, "northstar-systems", pods["payments-api"])
+    result = probe_from_claims_agent(pods["reviewer-ui"], INGRESS_URL, "POST", container="reviewer-ui")
+    after = reach.read_deny_counters(live.KUBE_CONTEXT, "northstar-systems", pods["payments-api"])
+    if result != "REFUSED 403":
+        raise Fail(
+            f"reviewer-ui's direct execute at payments-api was not refused 403 ({result}): "
+            "payments-api's ingress policy is not holding."
+        )
+    by = reach.refused_by(before, after, srv_name="payments-api")
+    if by is None:
+        raise Fail(
+            "payments-api answered 403 but its inbound_http_authz_deny_total did not rise, "
+            "so the refusal is not Linkerd's."
+        )
+    return reach.refusal_line(403, by)
 
 
 def start_run(state: dict, window_start_ms: int | None = None) -> dict:
@@ -380,12 +419,17 @@ def cmd_guard(_: argparse.Namespace) -> None:
         doing(f"POST  payments-mcp:8000/mcp  initialize, straight to the tool, {CONNECT_TIMEOUT_S}s timeout")
         direct = probe_from_claims_agent(pod, DIRECT_URL, "POST")
         if not direct.startswith("DROPPED"):
-            how = "refused (REFUSED) by something other than the dataplane" if direct.startswith("REFUSED") else "let through"
+            how = "refused (REFUSED) by the destination, so the packets arrived" if direct.startswith("REFUSED") else "let through"
             raise Fail(
                 f"claims-agent was not dropped on the way to payments-mcp ({direct}): "
                 f"it was {how}. The gateway is not provably the only way in."
             )
-        out(f"  -> {word('DROPPED', 'stop')}  no answer, no 401. The packet never arrived.")
+        out(f"  -> {word(reach.egress_line('dropped', direct.split(' ', 1)[1], True), 'stop')}  "
+            "no answer, no 401. The node dropped the packets.")
+        say("From inside reviewer-ui: it may reach payments-api, but not as the tool.")
+        doing("POST  payments-api:8080/payments/<id>/execute  straight to the ledger, skipping gateway and PDS")
+        refusal = refusal_from_reviewer_ui()
+        out(f"  -> {word(refusal, 'stop')}")
 
         step("3  With settlement-agent's identity")
         say("SPIRE mints the same JWT-SVID settlement-agent holds (not shown).")
