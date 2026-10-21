@@ -1,3 +1,21 @@
+# A dedicated ServiceAccount (M12), so Linkerd can tell this workload from its
+# neighbours. A meshed pod's identity is
+# `<serviceaccount>.<namespace>.serviceaccount.identity.linkerd.cluster.local`
+# (deploy/platform/reach/linkerd-policies.yaml authorizes callers by it), and
+# until now this pod ran as `default`, which every other pod in `northstar-systems` that
+# names no account shares: a policy naming it would admit them all. It grants no
+# RBAC; this pod makes no Kubernetes API calls. No SPIRE ClusterSPIFFEID selects
+# this workload (deploy/platform/spire/registration.yaml), so no SPIFFE ID
+# changes with this account.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: payments-api
+  namespace: northstar-systems
+  labels:
+    app: payments-api
+    northstar.io/plane: systems
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,6 +42,7 @@ spec:
         northstar.io/plane: systems
         backstage.io/kubernetes-id: payments-api
     spec:
+      serviceAccountName: payments-api
       containers:
         - name: payments-api
           image: localhost:5001/northstar/payments-api:dev

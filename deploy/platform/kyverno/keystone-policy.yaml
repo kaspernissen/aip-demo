@@ -1,7 +1,7 @@
 # The keystone: an agent cannot edit what constrains it.
 #
-# Every other ring in this demo limits what an agent can DO (Cilium: who it can
-# reach; the gateway and the Policy Decision Service: what it may call). This
+# Every other ring in this demo limits what an agent can DO (Linkerd and
+# NetworkPolicy: who it can reach; the gateway and the Policy Decision Service: what it may call). This
 # policy limits what an agent can CHANGE -- the objects that define those very
 # limits. Without it, a single over-broad RBAC grant (the kind of mistake a
 # real cluster collects) would let an agent patch `northstar-autonomy` to
@@ -35,7 +35,13 @@
 #   1. Capability: FeatureFlag / FeatureFlagSource in northstar-platform (the
 #      autonomy contract); the `agentgateway-config` ConfigMap (the gateway's
 #      rules);
-#   2. Reach: CiliumNetworkPolicy and CiliumClusterwideNetworkPolicy;
+#   2. Reach: core NetworkPolicy (the egress allowlists), EVERY kind in the
+#      Linkerd policy group (Server, HTTPRoute, AuthorizationPolicy,
+#      MeshTLSAuthentication, NetworkAuthentication: who may call what),
+#      `gateway.networking.k8s.io` HTTPRoute (a Gateway API route can stand in
+#      for a Linkerd one), and Namespaces -- the mesh is switched on by an
+#      annotation on a namespace, so editing one is a way
+#      to take a workload out of the mesh and with it out of every Server;
 #   3. Identity: SPIRE's ClusterSPIFFEID, ClusterStaticEntry and
 #      ClusterFederatedTrustDomain -- who gets which SVID;
 #   4. RBAC: Role, RoleBinding, ClusterRole, ClusterRoleBinding;
@@ -99,7 +105,7 @@ spec:
       - apiGroups: [""]
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["configmaps", "pods"]
+        resources: ["configmaps", "pods", "namespaces"]
       - apiGroups: [""]
         apiVersions: ["v1"]
         operations: ["CREATE"]
@@ -112,10 +118,18 @@ spec:
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE", "DELETE"]
         resources: ["jobs", "cronjobs"]
-      - apiGroups: ["cilium.io"]
+      - apiGroups: ["networking.k8s.io"]
         apiVersions: ["*"]
         operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["ciliumnetworkpolicies", "ciliumclusterwidenetworkpolicies"]
+        resources: ["networkpolicies"]
+      - apiGroups: [policy.linkerd.io]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["*"]
+      - apiGroups: [gateway.networking.k8s.io]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["httproutes"]
       - apiGroups: ["spire.spiffe.io"]
         apiVersions: ["*"]
         operations: ["CREATE", "UPDATE", "DELETE"]

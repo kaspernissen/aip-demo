@@ -1,0 +1,787 @@
+# Linkerd ingress policy: who may reach the money path, by workload identity.
+#
+# This file replaces the ingress half of the CiliumNetworkPolicy file that M12
+# deleted (deploy/platform/cilium-policies.yaml at `main`, ruling 1 of the M12
+# plan: parity, not more). The egress half is NetworkPolicy, in
+# network-policies.yaml beside this file, because Linkerd cannot enforce
+# egress by itself.
+#
+# HOW TO READ IT
+#
+# Linkerd's default inbound policy is `all-unauthenticated`: a port that has
+# no `Server` is open, exactly as every port was open under Cilium unless a
+# policy selected it. A `Server` names one port on one set of pods and, with
+# `accessPolicy: deny`, refuses whatever no AuthorizationPolicy authorizes.
+# What authorizes is a mesh identity -- `<serviceaccount>.<namespace>.
+# serviceaccount.identity.linkerd.cluster.local`, taken from the caller's mTLS
+# certificate -- or, for the few paths that must stay open, a source network.
+# A refusal is an HTTP 403 (a gRPC PERMISSION_DENIED) with an empty body,
+# counted at the destination proxy as `inbound_http_authz_deny_total`; under
+# Cilium it was a silent drop that appeared nowhere. A request that matches no
+# route on a Server that has routes is a 404 from the proxy.
+#
+# Five ports get a Server, exactly the ports Cilium protected: payments-mcp:
+# 8000, policy-decision-service:9100, settlement-agent:9002, payments-api:8080
+# and customer-ui:8080. There is deliberately NO Server on agentgateway,
+# claims-agent or reviewer-ui: nothing restricted who could call them under
+# Cilium and nothing does now.
+#
+# TWO FACTS THAT SHAPE EVERY DOCUMENT BELOW (measured, M4 and M5 in the plan)
+#
+#   * A Server WITHOUT routes authorizes per Server, and Linkerd adds a default
+#     `probe` route: `GET <the pod's httpGet probe path>` is open to every
+#     caller. A tcpSocket probe needs nothing. So a route-less Server is
+#     right where the port speaks one protocol with no per-path policy to
+#     express, and wrong anywhere the probe path is also an API path.
+#   * A Server WITH routes authorizes per route and nothing else: the kubelet
+#     probe is refused (the pod goes unready) unless a route for its path is
+#     authorized for the node. payments-api and customer-ui therefore carry an
+#     explicit probe or catch-all route, authorized for all networks.
+#
+# Identities are workload identities. The `default` service account is never
+# named, because every pod that sets no serviceAccountName shares it; the four
+# workloads that used to run as `default` (claims-agent, customer-ui,
+# payments-mcp, payments-api) have their own accounts since this milestone.
+#
+# THE EVIDENCE FOR THIS FILE
+#
+# tests/unit/test_reach_policy.py evaluates it against a table of requests and
+# the table is the spec. tests/e2e/test_gateway_is_the_only_route.py proves
+# the refusals on the live cluster. A `kubectl port-forward` bypasses the
+# proxy (M3), so nothing here is, or can be, probed through one.
+---
+# payments-mcp:8000 -- the gateway, and nothing else in the mesh.
+#
+# The same measured hazard the Cilium file opened with: with nothing in the way,
+# `claims-agent` POSTed an MCP `initialize` straight at
+# payments-mcp.northstar-tools.svc.cluster.local:8000/mcp and got HTTP 200.
+# agentgateway verifies a SPIRE JWT-SVID on every `tools/call`, but that is a
+# check on traffic that cooperates; this Server is the check on traffic that
+# does not. Authorizing by the gateway's *service account* rather than a pod
+# label also closes the pod-label forgery the Cilium rule had to pin the
+# namespace for, and a host-network pod (which Cilium's `fromEntities: host`
+# admitted) has no mesh identity at all.
+#
+# No routes: the readiness probe is a tcpSocket on 8000
+# (deploy/k8s/payments-mcp.yaml), which the proxy accepts without any policy.
+# `proxyProtocol: HTTP/1` because streamable-HTTP MCP is HTTP/1.1.
+apiVersion: policy.linkerd.io/v1beta3
+kind: Server
+metadata:
+  name: payments-mcp
+  namespace: northstar-tools
+  labels:
+    northstar.io/milestone: m12
+spec:
+  podSelector:
+    matchLabels:
+      app: payments-mcp
+  port: 8000
+  proxyProtocol: HTTP/1
+  accessPolicy: deny
+---
+# The one identity payments-mcp admits: agentgateway's service account.
+# `agentgateway` is the account deploy/platform/agentgateway/deployment.yaml
+# runs as, and the same name SPIRE's ClusterSPIFFEID gives its SVID; Linkerd's
+# certificate and the SPIRE SVID are two credentials for one identity
+# (spec section 5) and this is the one that answers "may it connect".
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: agentgateway
+  namespace: northstar-tools
+  labels:
+    northstar.io/milestone: m12
+spec:
+  identities:
+    - agentgateway.northstar-platform.serviceaccount.identity.linkerd.cluster.local
+---
+# Authorizes the payments-mcp Server for the agentgateway identity. Without an
+# AuthorizationPolicy a Server admits nobody, so this is the line that lets the
+# gateway in and, by being the only one, keeps everyone else out.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: payments-mcp-gateway-only
+  namespace: northstar-tools
+  labels:
+    northstar.io/milestone: m12
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: Server
+    name: payments-mcp
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: agentgateway
+---
+# policy-decision-service:9100 -- the same argument, for the Policy Decision
+# Service.
+#
+# A policy service anything can call is a policy service anything can
+# impersonate answers from. The caller identity the policy decides on arrives
+# as a field in the request (`metadata_context.caller`, which the gateway fills
+# from an already-verified `jwt.sub`), so anything that can reach this port can
+# claim to be settlement-agent and be told, truthfully, what the policy would
+# answer: an oracle, not an authorisation, a confidentiality problem rather than
+# an integrity one. Exactly one client has any business here, agentgateway, on
+# the guardrail hook; everything else is refused 403 (PERMISSION_DENIED) at
+# this pod's proxy, where the old drop was silent.
+#
+# `proxyProtocol: gRPC` because the ExtMCP hook is plain gRPC over HTTP/2.
+# No routes, and NO ROUTES IS LOAD-BEARING: deploy/k8s/policy-decision-service.yaml
+# probes 9100 with tcpSocket, which the proxy accepts without policy. The probe
+# failing would not look like networking -- the pod never goes Ready and
+# because the gateway's guardrail is `failureMode: failClosed`, a PDS the
+# gateway cannot reach REFUSES EVERY PAYMENT, so the demo would show every
+# payment refused for entirely the wrong reason. Do not add routes here
+# without adding the probe's route and re-reading that failure mode.
+#
+# The PDS lives in `northstar-platform` with SPIRE and Backstage. The Server
+# selects it by `app` label AND lives in its namespace, so it cannot reach
+# anything else there; the mesh annotation is on the PDS pod template, not the
+# namespace, so nothing else in that namespace is meshed.
+apiVersion: policy.linkerd.io/v1beta3
+kind: Server
+metadata:
+  name: policy-decision-service
+  namespace: northstar-platform
+  labels:
+    northstar.io/milestone: m12
+spec:
+  podSelector:
+    matchLabels:
+      app: policy-decision-service
+  port: 9100
+  proxyProtocol: gRPC
+  accessPolicy: deny
+---
+# The one identity the PDS admits: agentgateway's service account, as above.
+# Declared in the PDS's own namespace so the policy below can refer to it
+# without a cross-namespace reference.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: agentgateway
+  namespace: northstar-platform
+  labels:
+    northstar.io/milestone: m12
+spec:
+  identities:
+    - agentgateway.northstar-platform.serviceaccount.identity.linkerd.cluster.local
+---
+# Authorizes the PDS Server for the agentgateway identity and nobody else. The
+# gateway's ExtMCP guardrail hook is the PDS's only legitimate client.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: policy-decision-service-gateway-only
+  namespace: northstar-platform
+  labels:
+    northstar.io/milestone: m12
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: Server
+    name: policy-decision-service
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: agentgateway
+---
+# settlement-agent:9002 -- claims-agent, its one real A2A caller.
+#
+# Measured under Cilium: the settlement endpoint had `Allow Ingress ANY`, the
+# Deployment had never gained an ingress policy. `NORTHSTAR_ALLOWED_AGENTS` in
+# deploy/k8s/claims-agent.yaml names settlement-agent as claims-agent's only
+# delegate, and this is the other half of that connection.
+#
+# No routes, so Linkerd's default probe route applies, and it is worth saying
+# what it opens. settlement-agent's readinessProbe is an httpGet on 9002 for
+# `/.well-known/agent-card.json` (deploy/k8s/settlement-agent.yaml). On a
+# route-less Server that exact path, GET only, is open to EVERY caller (M5).
+# That is the public A2A agent card: a read of a static document that the A2A
+# protocol publishes for discovery, which acts on nothing. It is acceptable.
+# What would not be acceptable is a probe path that did something; if this
+# probe ever moves to a path that acts, this Server needs routes and a probe
+# route instead. A POST to `/` (the A2A JSON-RPC endpoint, where a message
+# starts a settlement) still needs claims-agent's identity.
+apiVersion: policy.linkerd.io/v1beta3
+kind: Server
+metadata:
+  name: settlement-agent
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m12
+spec:
+  podSelector:
+    matchLabels:
+      app: settlement-agent
+  port: 9002
+  proxyProtocol: HTTP/1
+  accessPolicy: deny
+---
+# claims-agent's identity: the one caller settlement-agent admits (and the one
+# caller customer-ui admits on its push route). Its own service account since
+# M12; until then it ran as `default`, which a policy cannot decide on.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: claims-agent
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m12
+spec:
+  identities:
+    - claims-agent.northstar-agents.serviceaccount.identity.linkerd.cluster.local
+---
+# Authorizes the settlement-agent Server for claims-agent. Anything else that
+# POSTs an A2A message to settlement-agent (reviewer-ui, customer-ui, an
+# unmeshed pod) is refused 403.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: settlement-agent-claims-agent-only
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m12
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: Server
+    name: settlement-agent
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: claims-agent
+---
+# customer-ui:8080 -- the push receiver. Only claims-agent may POST /a2a/push.
+#
+# M10: a claim decided by a human is pushed to customer-ui's /a2a/push
+# (a2a-sdk BasePushNotificationSender). claims-agent checks the URL against an
+# exact allowlist (push.py) and Cilium narrowed claims-agent's egress to
+# `POST /a2a/push`. NetworkPolicy has no L7, so the same fact moves to the
+# receiver: the route below is authorized for claims-agent's identity alone. A
+# reviewer-ui or any other workload that POSTs a forged push is refused 403.
+#
+# customer-ui is also the page the browser loads (NodePort 30080) and a pod
+# with an httpGet readiness probe (`/healthz`), and none of that may change.
+# A Server with routes refuses everything no route authorizes, the probe
+# included, so the second route is a catch-all (PathPrefix `/`) authorized for
+# all networks: the browser, the probe and every other workload still get in,
+# as they did. Which of the two routes applies to `POST /a2a/push` is
+# Gateway API route precedence: an Exact path match beats a PathPrefix, so the
+# push route wins for that one request and the catch-all never sees it.
+# (Verified against the installed Linkerd; see the Task 2 report.)
+apiVersion: policy.linkerd.io/v1beta3
+kind: Server
+metadata:
+  name: customer-ui
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m12
+spec:
+  podSelector:
+    matchLabels:
+      app: customer-ui
+  port: 8080
+  proxyProtocol: HTTP/1
+  accessPolicy: deny
+---
+# The push route: exactly `POST /a2a/push`, nothing wider. A request matching
+# this route is authorized by customer-ui-push-claims-agent-only below.
+apiVersion: policy.linkerd.io/v1beta3
+kind: HTTPRoute
+metadata:
+  name: customer-ui-push
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m12
+spec:
+  parentRefs:
+    - group: policy.linkerd.io
+      kind: Server
+      name: customer-ui
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /a2a/push
+          method: POST
+---
+# The catch-all: every path, every method. It exists so the browser, the NodePort
+# and the readiness probe keep working on a Server that has routes. It loses to
+# the push route on `POST /a2a/push` (an Exact path outranks a prefix).
+apiVersion: policy.linkerd.io/v1beta3
+kind: HTTPRoute
+metadata:
+  name: customer-ui-everything-else
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m12
+spec:
+  parentRefs:
+    - group: policy.linkerd.io
+      kind: Server
+      name: customer-ui
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+---
+# Authorizes the push route for claims-agent alone: a reviewer-ui, a settlement-
+# agent or an unmeshed pod that POSTs /a2a/push gets a 403 here, counted
+# against route_name="customer-ui-push".
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: customer-ui-push-claims-agent-only
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m12
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: HTTPRoute
+    name: customer-ui-push
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: claims-agent
+---
+# Every network, meshed or not: the browser (it arrives through the kind
+# NodePort from the node's address, with no identity), kubelet, and every other
+# workload. The only thing a NetworkAuthentication of `0.0.0.0/0` and `::/0`
+# says is "no restriction"; it is how a route is left open on purpose.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: NetworkAuthentication
+metadata:
+  name: all-networks
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m12
+spec:
+  networks:
+    - cidr: 0.0.0.0/0
+    - cidr: ::/0
+---
+# Authorizes the catch-all route for every network, which is what leaves the
+# browser, kubelet and every other caller exactly as they were before M12.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: customer-ui-everything-else-open
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m12
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: HTTPRoute
+    name: customer-ui-everything-else
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: NetworkAuthentication
+      name: all-networks
+---
+# payments-api:8080 -- the ledger. One route per (method, path) family, each
+# authorized only for the identities that call it.
+#
+# Under Cilium this was L7 on each CALLER's egress: reviewer-ui, claims-agent
+# and (by omission) everyone else were narrowed to the reads and the reject.
+# NetworkPolicy has no L7, so the same table moves to payments-api's ingress
+# (ruling 2), keyed by caller identity instead of by who the caller's own
+# policy happened to be. The reason is unchanged and is the whole point of the
+# table: payments-api has no caller authentication of its own, so an allow on
+# the port would let reviewer-ui or claims-agent POST /payments/{id}/execute
+# straight at the ledger, skipping the gateway and the PDS that are the only
+# thing permitting a release. `execute` is authorized for payments-mcp alone.
+#
+# The clients each route was checked against:
+#   payments-mcp           tools/payments-mcp/payments_client.py
+#                            :24 POST /payments/propose
+#                            :34 POST /payments/{id}/execute
+#                            :42 GET  /payments/{id}
+#                            :69 POST /payments/{id}/refuse
+#   reviewer-ui            apps/reviewer-ui/ledger.py
+#                            :59 GET  /payments?status=awaiting_approval
+#                            :83 GET  /payments/{id}
+#                            :109 POST /payments/{id}/reject
+#   claims-agent           agents/claims-agent/ledger.py:27 GET /payments/{id}
+#   policy-decision-service platform/policy-decision-service/pds/ledger.py:32
+#                            GET /payments/{id} (the execute-on-resume check)
+#   kubelet                GET /healthz (deploy/k8s/payments-api.yaml)
+# and against the server's own routes, systems/payments-api/handlers.go:220-438.
+#
+# Ids are `PAY-` and six digits (store.go), matched with an anchored regular
+# expression, as the Cilium rules were, so a path cannot be made to mean
+# something else; a malformed id matches no route and gets a 404 from the
+# proxy. A route's `path` never includes the query string, so the list route
+# matches `/payments?status=awaiting_approval` as `/payments`.
+#
+# No two routes overlap (the regular expressions are disjoint from the exact
+# paths), so precedence between them never decides anything.
+apiVersion: policy.linkerd.io/v1beta3
+kind: Server
+metadata:
+  name: payments-api
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  podSelector:
+    matchLabels:
+      app: payments-api
+  port: 8080
+  proxyProtocol: HTTP/1
+  accessPolicy: deny
+---
+# payments-mcp's identity, for payments-api's propose, execute and refuse routes:
+# the only caller that may write to the ledger on the agent's behalf, and the
+# only caller that may execute.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: payments-mcp
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  identities:
+    - payments-mcp.northstar-tools.serviceaccount.identity.linkerd.cluster.local
+---
+# reviewer-ui's identity, for the list and reject routes: the human reviewer's
+# page reads the queue and records a rejection, and moves no money by either.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: reviewer-ui
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  identities:
+    - reviewer-ui.northstar-agents.serviceaccount.identity.linkerd.cluster.local
+---
+# Everyone who reads one payment: the three read paths named in the table
+# above, plus payments-mcp's own `get_payment` tool. Reads move no money.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: payment-readers
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  identities:
+    - payments-mcp.northstar-tools.serviceaccount.identity.linkerd.cluster.local
+    - reviewer-ui.northstar-agents.serviceaccount.identity.linkerd.cluster.local
+    - claims-agent.northstar-agents.serviceaccount.identity.linkerd.cluster.local
+    - policy-decision-service.northstar-platform.serviceaccount.identity.linkerd.cluster.local
+---
+# Every network, for payments-api's probe route only. The same object as in
+# northstar-agents, declared again because an AuthorizationPolicy refers to
+# authentications in its own namespace.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: NetworkAuthentication
+metadata:
+  name: all-networks
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  networks:
+    - cidr: 0.0.0.0/0
+    - cidr: ::/0
+---
+# POST /payments/propose -- payments-mcp's propose_payment tool. Exact path,
+# POST only; the caller is authorized by the policy below.
+apiVersion: policy.linkerd.io/v1beta3
+kind: HTTPRoute
+metadata:
+  name: payments-api-propose
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  parentRefs:
+    - group: policy.linkerd.io
+      kind: Server
+      name: payments-api
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /payments/propose
+          method: POST
+---
+# Authorizes the propose route for payments-mcp alone. Any other identity, or
+# none, is refused 403 at payments-api's proxy.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: payments-api-propose-payments-mcp
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: HTTPRoute
+    name: payments-api-propose
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: payments-mcp
+---
+# POST /payments/{id}/execute -- the one that moves money. payments-mcp only,
+# which means only a call that came through agentgateway, past the PDS. A 403
+# here, counted as inbound_http_authz_deny_total{route_name="payments-api-
+# execute"}, is what reviewer-ui or claims-agent get for trying it directly.
+apiVersion: policy.linkerd.io/v1beta3
+kind: HTTPRoute
+metadata:
+  name: payments-api-execute
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  parentRefs:
+    - group: policy.linkerd.io
+      kind: Server
+      name: payments-api
+  rules:
+    - matches:
+        - path:
+            type: RegularExpression
+            value: ^/payments/PAY-[0-9]{6}/execute$
+          method: POST
+---
+# Authorizes the execute route for payments-mcp alone: a reviewer-ui, claims-agent
+# or unmeshed caller of /payments/{id}/execute gets a 403 counted against
+# route_name="payments-api-execute".
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: payments-api-execute-payments-mcp
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: HTTPRoute
+    name: payments-api-execute
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: payments-mcp
+---
+# POST /payments/{id}/refuse -- payments-mcp's record_refusal tool, the write
+# that parks a denied release as awaiting_approval (M8). payments-mcp only: a
+# caller that could refuse could rewrite the audit trail's trace ids.
+apiVersion: policy.linkerd.io/v1beta3
+kind: HTTPRoute
+metadata:
+  name: payments-api-refuse
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  parentRefs:
+    - group: policy.linkerd.io
+      kind: Server
+      name: payments-api
+  rules:
+    - matches:
+        - path:
+            type: RegularExpression
+            value: ^/payments/PAY-[0-9]{6}/refuse$
+          method: POST
+---
+# Authorizes the refuse route for payments-mcp alone. Any other identity, or
+# none, is refused 403 at payments-api's proxy.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: payments-api-refuse-payments-mcp
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: HTTPRoute
+    name: payments-api-refuse
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: payments-mcp
+---
+# GET /payments/{id} -- read one payment: payments-mcp (get_payment),
+# reviewer-ui (the page's detail and the pre-decision read-back), claims-agent
+# (the ledger read on resume, M8) and the PDS (the execute-on-resume status
+# check). Nobody else.
+apiVersion: policy.linkerd.io/v1beta3
+kind: HTTPRoute
+metadata:
+  name: payments-api-get
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  parentRefs:
+    - group: policy.linkerd.io
+      kind: Server
+      name: payments-api
+  rules:
+    - matches:
+        - path:
+            type: RegularExpression
+            value: ^/payments/PAY-[0-9]{6}$
+          method: GET
+---
+# Authorizes the read-one route for the four readers named in payment-readers.
+# Any other identity, or none, is refused 403.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: payments-api-get-readers
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: HTTPRoute
+    name: payments-api-get
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: payment-readers
+---
+# GET /payments -- list (the reviewer's queue, `?status=awaiting_approval`).
+# reviewer-ui only. Exact, so it never matches a payment id or anything below.
+apiVersion: policy.linkerd.io/v1beta3
+kind: HTTPRoute
+metadata:
+  name: payments-api-list
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  parentRefs:
+    - group: policy.linkerd.io
+      kind: Server
+      name: payments-api
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /payments
+          method: GET
+---
+# Authorizes the list route for reviewer-ui alone. Any other identity, or none,
+# is refused 403.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: payments-api-list-reviewer-ui
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: HTTPRoute
+    name: payments-api-list
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: reviewer-ui
+---
+# POST /payments/{id}/reject -- the human's refusal. reviewer-ui only; it moves
+# no money (the release of an approved payment goes through the gateway).
+apiVersion: policy.linkerd.io/v1beta3
+kind: HTTPRoute
+metadata:
+  name: payments-api-reject
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  parentRefs:
+    - group: policy.linkerd.io
+      kind: Server
+      name: payments-api
+  rules:
+    - matches:
+        - path:
+            type: RegularExpression
+            value: ^/payments/PAY-[0-9]{6}/reject$
+          method: POST
+---
+# Authorizes the reject route for reviewer-ui alone. Any other identity, or
+# none, is refused 403.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: payments-api-reject-reviewer-ui
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: HTTPRoute
+    name: payments-api-reject
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: reviewer-ui
+---
+# GET /healthz -- the readiness probe (deploy/k8s/payments-api.yaml), and the
+# ONLY route open to every network. A Server with routes refuses the kubelet
+# probe unless a route authorizes it (M5); without this the pod never goes
+# Ready. It is an unauthenticated 200 `{"status":"ok"}` that touches no ledger
+# state (handlers.go:220), so open is the right answer. Exact: a prefix here
+# would open `/healthz/anything`.
+apiVersion: policy.linkerd.io/v1beta3
+kind: HTTPRoute
+metadata:
+  name: payments-api-probe
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  parentRefs:
+    - group: policy.linkerd.io
+      kind: Server
+      name: payments-api
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /healthz
+          method: GET
+---
+# Authorizes the probe route for every network: kubelet's readiness probe
+# comes from the node, with no mesh identity.
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: payments-api-probe-open
+  namespace: northstar-systems
+  labels:
+    northstar.io/milestone: m12
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: HTTPRoute
+    name: payments-api-probe
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: NetworkAuthentication
+      name: all-networks

@@ -289,7 +289,7 @@ def test_the_gate_fails_when_the_suite_skips_anything():
     module skip prints no `path::test` line at all (the largest possible
     instance of what this check exists for), and neither does a
     parametrised id containing a space, which this tree already has
-    (`test_no_stray_core_networkpolicy_shadows_the_cilium_one[kind: NetworkPolicy]`).
+    (`test_reach_policy.py::test_ingress_reach_matrix[agentgateway->payments-mcp:8000 POST /mcp = allow]`).
     Pinning that literal string would keep this test green while the
     gate it guards silently undercounted skips. So instead this extracts
     whatever expression the script actually uses to compute `SKIPPED` and
@@ -332,7 +332,7 @@ def test_the_gate_fails_when_the_suite_skips_anything():
     space_id_log = (
         "collected 5 items\n"
         "tests/unit/test_a.py::test_a PASSED\n"
-        "tests/unit/test_b.py::test_no_stray_core_networkpolicy_shadows_the_cilium_one[kind: NetworkPolicy] SKIPPED\n"
+        "tests/unit/test_b.py::test_ingress_reach_matrix[agentgateway->payments-mcp:8000 POST /mcp = allow] SKIPPED\n"
         "========== 4 passed, 1 skipped in 0.42s ==========\n"
     )
 

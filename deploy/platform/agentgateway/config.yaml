@@ -213,7 +213,7 @@ binds:
               # which is the correct trade for a component whose entire job is
               # refusing them, and it is why the PDS's own readiness probe and
               # its ingress network policy (see
-              # deploy/platform/cilium-policies.yaml) are load-bearing rather
+              # deploy/platform/reach/linkerd-policies.yaml) are load-bearing rather
               # than hygiene.
               #
               # `FailureMode`'s default matters here because omitting this key

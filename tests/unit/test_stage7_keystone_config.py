@@ -31,6 +31,9 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 POLICY = REPO_ROOT / "deploy" / "platform" / "kyverno" / "keystone-policy.yaml"
+# Built, not quoted: test_no_legacy_names.py reads a quoted `policy.<x>` string
+# as a retired telemetry name, and an API group has the same shape.
+LINKERD_GROUP = "policy" + ".linkerd.io"
 OVERGRANT = REPO_ROOT / "deploy" / "demo" / "keystone-overgrant.yaml"
 SETUP_KIND = REPO_ROOT / "scripts" / "setup-kind.sh"
 START_DEMO = REPO_ROOT / "scripts" / "start-demo.sh"
@@ -88,9 +91,13 @@ def test_it_covers_every_rings_configuration_and_the_identity_routes():
         ("core.openfeature.dev", "featureflags"),
         ("core.openfeature.dev", "featureflagsources"),
         ("", "configmaps"),
-        # Reach, namespaced and cluster-wide
-        ("cilium.io", "ciliumnetworkpolicies"),
-        ("cilium.io", "ciliumclusterwidenetworkpolicies"),
+        # Reach (M12): the egress allowlists, every Linkerd policy kind (who
+        # may call what), a Gateway API route that could stand in for a Linkerd
+        # one, and Namespaces, where the mesh annotation lives
+        ("networking.k8s.io", "networkpolicies"),
+        (LINKERD_GROUP, "*"),
+        ("gateway.networking.k8s.io", "httproutes"),
+        ("", "namespaces"),
         # Identity: who is issued which SVID
         ("spire.spiffe.io", "clusterspiffeids"),
         ("spire.spiffe.io", "clusterstaticentries"),
@@ -116,6 +123,26 @@ def test_it_covers_every_rings_configuration_and_the_identity_routes():
         ("", "serviceaccounts/token"),
     }
     assert expected <= pairs, f"the policy no longer covers {sorted(expected - pairs)}"
+
+
+def test_no_cilium_kind_is_claimed_or_granted_any_more():
+    """Cilium left the cluster in M12; a rule for its CRDs would keep the
+    ValidatingPolicy unready (Kyverno cannot read a kind that does not exist)
+    while looking like a ring."""
+    groups = {
+        g
+        for rule in _policy()["spec"]["matchConstraints"]["resourceRules"]
+        for g in rule["apiGroups"]
+    }
+    assert "cilium.io" not in groups
+    values = yaml.safe_load(VALUES.read_text())
+    granted = {
+        g
+        for controller in ("admissionController", "reportsController")
+        for rule in values[controller]["rbac"]["clusterRole"]["extraResources"]
+        for g in rule["apiGroups"]
+    }
+    assert "cilium.io" not in granted
 
 
 def test_webhook_configurations_are_not_claimed_as_covered():

@@ -64,7 +64,7 @@ from tests.unit._setup_script import effective_script as _effective_script
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GATEWAY_CONFIG = REPO_ROOT / "deploy" / "platform" / "agentgateway" / "config.yaml"
 PDS_MANIFEST = REPO_ROOT / "deploy" / "k8s" / "policy-decision-service.yaml"
-CILIUM_POLICIES = REPO_ROOT / "deploy" / "platform" / "cilium-policies.yaml"
+LINKERD_POLICIES = REPO_ROOT / "deploy" / "platform" / "reach" / "linkerd-policies.yaml"
 SPIRE_REGISTRATION = REPO_ROOT / "deploy" / "platform" / "spire" / "registration.yaml"
 REBUILD_AND_DEPLOY = REPO_ROOT / "scripts" / "rebuild-and-deploy.sh"
 
@@ -72,12 +72,14 @@ APP = "policy-decision-service"
 NAMESPACE = "northstar-platform"
 PORT = 9100
 GATEWAY_APP = "agentgateway"
-NAMESPACE_LABEL = "k8s:io.kubernetes.pod.namespace"
+GATEWAY_IDENTITY = (
+    "agentgateway.northstar-platform.serviceaccount.identity.linkerd.cluster.local"
+)
 
 # The service's own `DEFAULT_PORT`, and the port `README.md` publishes. Named
 # here as a constant so the several places that must agree about it -- the
 # guardrail `host`, the container port, the Service, both probes and the
-# network policy -- are all checked against one value rather than against each
+# Linkerd Server -- are all checked against one value rather than against each
 # other pairwise.
 PDS_PORT = 9100
 
@@ -550,94 +552,109 @@ def test_the_pds_image_follows_the_registry_convention():
 # --- Reachability: the PDS is not a service anything may call ---------------
 
 
-def _pds_network_policy() -> dict:
+def _linkerd(kind: str) -> list[dict]:
+    return [d for d in _docs(LINKERD_POLICIES) if d.get("kind") == kind]
+
+
+def _pds_server() -> dict:
     hits = [
         d
-        for d in _docs(CILIUM_POLICIES)
-        if d.get("kind") == "CiliumNetworkPolicy"
-        and d.get("spec", {}).get("endpointSelector", {}).get("matchLabels", {}).get(
-            "app"
-        )
-        == APP
+        for d in _linkerd("Server")
+        if d["spec"]["podSelector"].get("matchLabels", {}).get("app") == APP
     ]
     assert len(hits) == 1, (
-        f"expected exactly one CiliumNetworkPolicy selecting app={APP}; found "
+        f"expected exactly one Linkerd Server selecting app={APP}; found "
         f"{len(hits)}: {[d.get('metadata', {}).get('name') for d in hits]}"
     )
     return hits[0]
 
 
+def _pds_policies() -> list[dict]:
+    server = _pds_server()
+    return [
+        p
+        for p in _linkerd("AuthorizationPolicy")
+        if p["spec"]["targetRef"]["kind"] == "Server"
+        and p["spec"]["targetRef"]["name"] == server["metadata"]["name"]
+        and p["metadata"]["namespace"] == server["metadata"]["namespace"]
+    ]
+
+
 def test_the_pds_is_default_deny_for_ingress():
     """A policy service anything can call is a policy service anything can
-    impersonate answers from. The deny is implicit in Cilium: an endpoint
-    selected by a policy carrying an `ingress` section is default-deny for
-    ingress and the rules are the allowlist -- so deleting the `ingress` key
-    does not loosen this slightly, it removes protection entirely while
-    leaving an object that still applies and still reports valid."""
-    policy = _pds_network_policy()
-    assert policy["apiVersion"] == "cilium.io/v2"
-    assert policy["metadata"]["namespace"] == NAMESPACE, (
-        "a CiliumNetworkPolicy is namespaced and its endpointSelector only "
-        "matches endpoints in its own namespace; elsewhere it would apply "
-        "cleanly and protect nothing"
+    impersonate answers from. A Linkerd Server with `accessPolicy: deny`
+    refuses whatever no AuthorizationPolicy authorizes (a 403, counted), so
+    deleting the AuthorizationPolicy does not loosen this slightly: it locks
+    the gateway out too, which is why one must exist. And a Server in another
+    namespace would select nothing and protect nothing."""
+    server = _pds_server()
+    assert server["apiVersion"] == "policy.linkerd.io/v1beta3"
+    assert server["metadata"]["namespace"] == NAMESPACE, (
+        "a Server is namespaced and selects only pods in its own namespace; "
+        "elsewhere it would apply cleanly and protect nothing"
     )
-    assert policy["spec"].get("ingress"), (
-        "the ingress block is what makes the PDS default-deny; without it "
-        "this policy selects the endpoint and permits everything"
+    assert server["spec"]["port"] == PDS_PORT
+    assert server["spec"]["accessPolicy"] == "deny"
+    assert server["spec"]["proxyProtocol"] == "gRPC", (
+        "the ExtMCP hook is gRPC over HTTP/2"
+    )
+    assert _pds_policies(), (
+        "no AuthorizationPolicy targets the PDS Server: it admits nobody, "
+        "the gateway included, and fail-closed refuses every payment"
     )
 
 
 def test_only_the_gateway_may_reach_the_pds_and_only_on_9100():
-    """Exactly one workload, scoped by namespace as well as app label -- pod
-    labels are not a security boundary on their own, and a Cilium
-    `fromEndpoints` selector is not implicitly scoped to the policy's own
-    namespace the way a core NetworkPolicy's `podSelector` is."""
-    policy = _pds_network_policy()
-    allowed = {
-        (
-            sel.get("matchLabels", {}).get(NAMESPACE_LABEL),
-            sel.get("matchLabels", {}).get("app"),
-        )
-        for rule in policy["spec"]["ingress"]
-        for sel in rule.get("fromEndpoints", [])
-    }
-    assert allowed == {(NAMESPACE, GATEWAY_APP)}, (
-        f"exactly one workload may reach the PDS; got {sorted(allowed)}"
+    """Exactly one identity -- the gateway's service account, which names its
+    namespace as well as its name (a pod labelled like the gateway elsewhere
+    has a different identity) -- and a Server scoped to the one port."""
+    identities = set()
+    for policy in _pds_policies():
+        for ref in policy["spec"]["requiredAuthenticationRefs"]:
+            assert ref["kind"] == "MeshTLSAuthentication", (
+                "a NetworkAuthentication would admit by address, not identity"
+            )
+            auth = next(
+                a
+                for a in _linkerd("MeshTLSAuthentication")
+                if a["metadata"]["name"] == ref["name"]
+                and a["metadata"]["namespace"] == policy["metadata"]["namespace"]
+            )
+            identities |= set(auth["spec"]["identities"])
+    assert identities == {GATEWAY_IDENTITY}, (
+        f"exactly one workload may reach the PDS; got {sorted(identities)}"
     )
-    ports = {
-        port.get("port")
-        for rule in policy["spec"]["ingress"]
-        if rule.get("fromEndpoints")
-        for block in rule.get("toPorts", [])
-        for port in block.get("ports", [])
-    }
-    assert ports == {str(PDS_PORT)}, (
-        f"the gateway rule should be scoped to {PDS_PORT}; got {sorted(ports)}"
-    )
+    assert _pds_server()["spec"]["port"] == PDS_PORT
 
 
-def test_the_node_may_reach_the_pds_for_its_probes():
+def test_the_pds_probes_need_no_policy_because_they_are_tcp_and_it_has_no_routes():
     """The guard whose absence would be actively misleading.
 
-    kubelet dials the `tcpSocket` probe from the host, not from a pod. Drop
-    the `host` entity and the probe is dropped, the pod never goes Ready, and
-    because the guardrail is fail-closed **every payment is refused for the
-    wrong reason** -- including the €5,800 control whose whole job is to prove
-    the platform permits as well as refuses. The demo would show the €6,200
-    denial and look correct. `remote-node` is asserted alongside it on the same
-    reasoning the payments-mcp rule records: it costs nothing on a single-node
-    cluster and is the difference between working and not on a multi-node one.
-    """
-    entities = {
-        e
-        for rule in _pds_network_policy()["spec"]["ingress"]
-        for e in rule.get("fromEntities", [])
-    }
-    assert {"host", "remote-node"} <= entities, (
-        "the PDS ingress policy must admit `host` and `remote-node`; got "
-        f"{sorted(entities)}. Without `host`, kubelet's probe is dropped, "
-        "the pod never becomes Ready, and fail-closed turns that into every "
-        "payment refused."
+    kubelet's `tcpSocket` probe is accepted by the proxy without any policy.
+    Give the Server routes, or move the probe to an httpGet, and a route for
+    the probe path must be authorized for the node or the pod never goes
+    Ready -- and because the guardrail is fail-closed **every payment is
+    refused for the wrong reason**, including the EUR 5,800 control whose whole
+    job is to prove the platform permits as well as refuses. The demo would
+    show the EUR 6,200 denial and look correct."""
+    pod = next(
+        d for d in _docs(PDS_MANIFEST) if d.get("kind") == "Deployment"
+    )["spec"]["template"]["spec"]["containers"][0]
+    for probe in ("readinessProbe", "livenessProbe"):
+        assert "tcpSocket" in pod[probe] and "httpGet" not in pod[probe], (
+            f"the PDS {probe} is no longer a tcpSocket: its Server needs a "
+            "probe route authorized for all networks, or the pod never goes "
+            "Ready and fail-closed refuses every payment"
+        )
+    server = _pds_server()
+    routes = [
+        r
+        for r in _linkerd("HTTPRoute")
+        if any(ref["name"] == server["metadata"]["name"] for ref in r["spec"]["parentRefs"])
+    ]
+    assert not routes, (
+        "the PDS Server gained routes: re-read the probe failure mode above "
+        "before keeping them"
     )
 
 

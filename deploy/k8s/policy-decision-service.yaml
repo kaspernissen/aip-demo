@@ -9,7 +9,7 @@
 # It lives in `northstar-platform`, with the gateway and SPIRE, rather than in
 # `northstar-tools` or beside the agents: it is platform machinery, not a tool
 # an agent may call and not an agent's own dependency. Nothing in
-# northstar-agents can reach it (see deploy/platform/cilium-policies.yaml).
+# northstar-agents can reach it (see deploy/platform/reach/linkerd-policies.yaml).
 ---
 # A dedicated ServiceAccount, for the same reason
 # deploy/k8s/settlement-agent.yaml and deploy/platform/agentgateway/deployment.yaml

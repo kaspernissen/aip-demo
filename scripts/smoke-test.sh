@@ -413,7 +413,7 @@ fi
 # collection-time module skip -- which prints no `path::test` line at all,
 # the largest possible instance of what this check exists for -- and any
 # parametrised id containing a space, which this tree already has
-# (test_no_stray_core_networkpolicy_shadows_the_cilium_one[kind: NetworkPolicy]).
+# (test_reach_policy.py::test_ingress_reach_matrix[agentgateway->payments-mcp:8000 POST /mcp = allow]).
 # The old objection to a bare `grep SKIPPED` -- that it also matches the word
 # inside a test name -- does not apply to the summary line: pytest's own
 # tally is the one place that word means what this check needs it to mean.

@@ -16,7 +16,9 @@
 # socket for both uses: its own X.509 SPIFFE ID for the `northstar.review.decision` span,
 # and the JWT-SVID it presents to the gateway. Its egress is allow-listed to
 # payments-api (read, reject) and agentgateway (release)
-# (deploy/platform/cilium-policies.yaml, reviewer-ui-egress-allowlist).
+# (deploy/platform/reach/network-policies.yaml, reviewer-ui-egress; the route
+# table that refuses `execute` is payments-api's Linkerd ingress policy in
+# deploy/platform/reach/linkerd-policies.yaml).
 apiVersion: v1
 kind: ServiceAccount
 metadata:

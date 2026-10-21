@@ -451,18 +451,14 @@ metadata:
   name: northstar-platform
 EOF
 
-  # The network policy that makes the choke point real rather than
-  # conventional -- only agentgateway may reach payments-mcp on 8000 -- was a
-  # CiliumNetworkPolicy file applied here. Cilium is gone (M12 Task 1) and its
-  # CRDs with it, so `kubectl apply -f deploy/platform/cilium-policies.yaml`
-  # would now fail stage 2. The apply is commented out, not removed, and the
-  # file still exists: Task 2 of M12 deletes it and applies
-  # deploy/platform/reach/linkerd-policies.yaml and network-policies.yaml in
-  # this spot. UNTIL THEN a cluster built from this commit has NO ingress or
-  # egress policy on the money path; it is not a state to demo or gate.
-  #
-  # kubectl --context "kind-${CLUSTER_NAME}" apply \
-  #   -f "$ROOT/deploy/platform/cilium-policies.yaml"
+  # The reach policy: who may call the money path (Linkerd Servers, routes and
+  # authorizations, by workload identity) and who may leave the agent pods
+  # (NetworkPolicy egress allowlists). It replaces the CiliumNetworkPolicy
+  # file M12 deleted. Applied here, after the namespaces above exist and after
+  # Step 2b installed Linkerd's CRDs, and BEFORE any workload: the Servers
+  # select pods that do not exist yet, which is fine, and no pod is ever
+  # briefly unprotected. Idempotent (`apply`), so a re-run reconciles it.
+  kubectl --context "kind-${CLUSTER_NAME}" apply -f "$ROOT/deploy/platform/reach/"
 fi
 
 # settlement-agent's decision is a real model call, so it needs a model

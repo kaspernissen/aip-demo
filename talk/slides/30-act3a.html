@@ -400,9 +400,9 @@
     <div class="cell"><p class="ring-k">Core · Identity</p><p class="gl">who it is: SPIRE issues this ID to the pod, from where it runs</p>
       <pre class="x30-gc-code" data-src="deploy/platform/spire/registration.yaml">spiffeIDTemplate: &quot;spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}&quot;
 app: settlement-agent</pre><p class="src">registration.yaml</p></div>
-    <div class="cell"><p class="ring-k">Ring 1 · Reach</p><p class="gl">the only way out: the model provider, by name</p>
-      <pre class="x30-gc-code" data-src="deploy/platform/cilium-policies.yaml">- toFQDNs:
-- matchName: api.anthropic.com</pre><p class="src">cilium-policies.yaml</p></div>
+    <div class="cell"><p class="ring-k">Ring 1 · Reach</p><p class="gl">the only way out: the model provider, by address range</p>
+      <pre class="x30-gc-code" data-src="deploy/platform/reach/network-policies.yaml">cidr: 160.79.104.0/23
+cidr: 2607:6bc0::/48</pre><p class="src">network-policies.yaml</p></div>
     <div class="cell"><p class="ring-k">Ring 2 · Capability</p><p class="gl">the gateway: who, how much, and the delegated decision</p>
       <pre class="x30-gc-code" data-src="deploy/platform/agentgateway/config.yaml">mode: strict
 - allow: &#x27;request.method != &quot;POST&quot; || mcp.methodName != &quot;tools/call&quot; || mcp.tool.name != &quot;execute_payment&quot; || (mcp.tool.arguments.amount &gt; 0 &amp;&amp; mcp.tool.arguments.amount &lt;= 50000)&#x27;

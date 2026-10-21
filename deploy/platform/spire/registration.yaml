@@ -213,8 +213,9 @@ spec:
 # it by the gateway as an already-verified `jwt.sub`
 # (deploy/platform/agentgateway/config.yaml, `metadata: {caller: 'jwt.sub'}`),
 # and it presents nothing of its own: the ExtMCP hop between the gateway and
-# the PDS is plain gRPC, protected by a CiliumNetworkPolicy rather than by
-# mTLS (deploy/platform/cilium-policies.yaml).
+# the PDS is plain gRPC, protected by a Linkerd Server and AuthorizationPolicy
+# rather than by a credential of its own (deploy/platform/reach/
+# linkerd-policies.yaml).
 #
 # So why register it at all? Because the ServiceAccount in
 # deploy/k8s/policy-decision-service.yaml exists specifically to make this

@@ -1,0 +1,457 @@
+# Egress allowlists on the agent plane, as core Kubernetes NetworkPolicy.
+#
+# This file replaces the egress half of the CiliumNetworkPolicy file M12
+# deleted (deploy/platform/cilium-policies.yaml at `main`). The ingress half,
+# who may call what, is Linkerd's, in linkerd-policies.yaml beside this file.
+# Egress is NetworkPolicy because Linkerd cannot do it alone: its EgressNetwork
+# is namespace-wide, matches on SNI and is bypassed by any pod that skips its
+# proxy. NetworkPolicy is enforced in the node (kindnet's kube-network-policies
+# on kind >= 0.24) and works whether or not the workload cooperates.
+#
+# THE REQUIREMENT, unchanged: "Direct egress from `northstar-agents` to the
+# model provider is denied, with the gateway as the only path." Every workload
+# in the namespace is policied, one document each, because a workload no policy
+# selects is wholly unrestricted: measured under Cilium, all three then reached
+# api.anthropic.com:443 and example.com:443. One document per workload, not one
+# for the plane, so a shared baseline cannot grant customer-ui a path nothing
+# measured asked for.
+#
+# THE HAZARD THIS FILE HAS TO GET RIGHT. A pod selected by ANY egress policy is
+# default-deny for egress: there is no partial application. Each document
+# therefore lists that workload's COMPLETE outbound inventory, from its own
+# manifest and source rather than from watching a pod run, so a destination
+# that is configured but rarely used is still present. M12 adds three entries
+# to every inventory that Cilium's did not need, all measured (M1, M2 in the
+# plan):
+#
+#   * The Linkerd control plane (namespace `linkerd`, TCP 8080 identity, 8086
+#     destination, 8090 policy). Every meshed pod's proxy dials these; without
+#     them the proxy cannot get a certificate or a route and the pod's traffic
+#     fails with nothing in the output that says "network policy".
+#   * For every MESHED peer, the peer's service port AND TCP 4143, the peer
+#     proxy's inbound port. Meshed traffic goes proxy to proxy on 4143; allowing
+#     only the service port yields an HTTP 504 (`l5d-proxy-error: ... service
+#     in fail-fast`). agentgateway, claims-agent, settlement-agent, customer-ui
+#     and payments-api are all meshed.
+#   * The collector is NOT meshed (nothing in `observability` is), so it is
+#     reached on its plain port, 4318, with no 4143 beside it.
+#
+# WHAT A MESHED POD'S TCP CONNECT NO LONGER MEANS. The pod's own proxy accepts
+# any outbound TCP connection locally, so "connect succeeded" proves nothing;
+# the real outcome shows only above TCP (a TLS handshake or HTTP request that
+# completes, or is reset). Nothing here is asserted by a connect.
+#
+# Two things have no rule anywhere below. The SPIFFE Workload API is a
+# CSI-mounted unix socket (deploy/k8s/settlement-agent.yaml), which never enters
+# the pod's network namespace. Reply traffic needs none either: NetworkPolicy
+# is stateful. Kubelet's probes are ingress to these pods, and no document
+# carries an ingress block, so probes are untouched (Linkerd, not this file,
+# governs what may reach a port).
+#
+# WHAT THIS DOES NOT CLAIM. NetworkPolicy enforces reachability, not intent:
+# settlement-agent may still reach the model provider, because that is where
+# its own model call goes. The "gateway as the only path" clause is discharged
+# for *tools* (payments-mcp:8000 and the PDS:9100 are absent from every
+# allowlist, so the only route to a tool is agentgateway:3000), and for the
+# model provider as "one workload, not the namespace".
+#
+# Enforcement is kind's. The objects are portable; a production cluster needs a
+# CNI that enforces NetworkPolicy. The refusal is a kernel drop: a pod's
+# connect times out and no counter records it.
+---
+# Document 1 of 4: settlement-agent. The only workload in the cluster permitted
+# to reach the model provider, and the reason the requirement exists.
+#
+# Inventory, from deploy/k8s/settlement-agent.yaml and agents/settlement-agent/:
+# DNS; agentgateway:3000 (PAYMENTS_MCP_URL, the gateway being the only way to a
+# tool); the collector (OTLP http/protobuf on 4318, not the 4317 gRPC port
+# agentgateway uses); the model provider; the Linkerd control plane. It is an
+# A2A *server* only: it calls no peer, so no 9001 or 9002 allowance here.
+# Notably absent: payments-mcp:8000, payments-api:8080 and the PDS:9100 --
+# every route to a tool or the ledger goes through the gateway.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: settlement-agent-egress
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m12
+spec:
+  podSelector:
+    matchLabels:
+      app: settlement-agent
+  policyTypes:
+    - Egress
+  egress:
+    # 1. DNS. CoreDNS is selected by the label its pods carry (`k8s-app: kube-dns`), not
+    # by the kube-dns ClusterIP: no manifest in this repo pins that address, so
+    # hardcoding it would invent a pin and break resolution with a symptom that names
+    # neither this file nor the range. Both UDP and TCP, as the Cilium rule had.
+    # No FQDN machinery is needed or possible here.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # 2. agentgateway, on the MCP port, and the whole of "the gateway is the only path"
+    # from this side. Both the namespace and the label are required, so a pod that
+    # labels itself `app: agentgateway` elsewhere does not inherit the gateway's
+    # place in the path. 4143 beside 3000: agentgateway is meshed (M2).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: northstar-platform
+          podSelector:
+            matchLabels:
+              app: agentgateway
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 4143
+    # 3. The OTLP collector. THE RULE WHOSE ABSENCE IS WORST: the BatchSpanProcessor
+    # exports on a background thread and swallows failure, so settlements would keep
+    # succeeding while every span from this service vanished, in a milestone whose
+    # claim is that the decision is visible in one trace. 4318 only; the collector is
+    # not meshed, so no 4143.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4318
+    # 4. The Linkerd control plane (identity 8080, destination 8086, policy 8090): the
+    # proxy dials it for its certificate and its routes (M2).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: linkerd
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8086
+        - protocol: TCP
+          port: 8090
+    # 5. The model provider, by ADDRESS RANGE. This is what egress by name became.
+    #
+    # `api.anthropic.com` is not configured anywhere in this repo; it is the
+    # pinned `anthropic` SDK's own default base_url, reached because settlement.py
+    # hands PydanticAI the model `anthropic:claude-sonnet-5`. Cilium followed the
+    # name through its DNS proxy (`toFQDNs`). NetworkPolicy cannot, so this is
+    # Anthropic's published API range, https://platform.claude.com/docs/en/api/ip-addresses:
+    # 160.79.104.0/23 (IPv4) and 2607:6bc0::/48 (IPv6), TCP 443 only. The
+    # published range "will not change without notice", and any other host in
+    # it is also reachable: a loss of precision, said plainly in the design
+    # (spec section 3). The measured effect: from an unmeshed pod a connect to
+    # 160.79.104.0/23:443 succeeds and example.com:443 and 1.1.1.1:443 time out;
+    # from this meshed pod the same shows as a TLS handshake that completes to
+    # api.anthropic.com and is reset to example.com (M1).
+    - to:
+        - ipBlock:
+            cidr: 160.79.104.0/23
+        - ipBlock:
+            cidr: 2607:6bc0::/48
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# Document 2 of 4: claims-agent.
+#
+# The workload that makes the requirement's own sentence true: measured under
+# Cilium it reached api.anthropic.com:443. It holds no API key
+# (deploy/k8s/claims-agent.yaml sets no ANTHROPIC_API_KEY and no model
+# variable) and makes no model call, so it gets NO external reachability at all.
+#
+# Inventory, from its manifest and source: DNS; the one A2A peer it delegates to
+# (NORTHSTAR_ALLOWED_AGENTS: settlement-agent:9002); payments-api:8080 for one
+# read (ledger.py's GET /payments/{id}, made when a waiting task is resumed:
+# at L4 only here, the L7 narrowing to that one GET moved to payments-api's
+# ingress, where only claims-agent's identity on the read route is admitted);
+# the collector; customer-ui:8080 for the M10 push (claims-agent checks the URL
+# against an exact allowlist in push.py, and customer-ui's Server admits only
+# claims-agent on POST /a2a/push); the Linkerd control plane. There is no
+# Kubernetes API client, no gateway call and no tool call anywhere in
+# agents/claims-agent/. In particular it has no route to payments-mcp:8000,
+# so the direct bypass of the gateway is closed from both ends.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: claims-agent-egress
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m12
+spec:
+  podSelector:
+    matchLabels:
+      app: claims-agent
+  policyTypes:
+    - Egress
+  egress:
+    # 1. DNS: CoreDNS by label, UDP and TCP 53 (see settlement-agent-egress rule 1).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # 2. settlement-agent's A2A port, plus 4143 (both are meshed). Delegation here is
+    # configured and never discovered, so the dataplane can be as narrow as the
+    # configuration: one peer, one port.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: northstar-agents
+          podSelector:
+            matchLabels:
+              app: settlement-agent
+      ports:
+        - protocol: TCP
+          port: 9002
+        - protocol: TCP
+          port: 4143
+    # 3. payments-api, for the resume's ledger read. L4 here; payments-api's own
+    # Server decides which routes this identity may use (the read, never execute).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: northstar-systems
+          podSelector:
+            matchLabels:
+              app: payments-api
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 4143
+    # 4. The OTLP collector, http/protobuf on 4318. This service owns the entry span
+    # of the A2A chain: losing its export would not empty the trace, it would
+    # decapitate it.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4318
+    # 5. The customer's push receiver (M10): a claim decided by a human is pushed to
+    # customer-ui's /a2a/push. Only POST /a2a/push is admitted, by customer-ui's own
+    # Server (the exact allowlist in push.py is the same fact in the client).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: northstar-agents
+          podSelector:
+            matchLabels:
+              app: customer-ui
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 4143
+    # 6. The Linkerd control plane.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: linkerd
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8086
+        - protocol: TCP
+          port: 8090
+---
+# Document 3 of 4: customer-ui.
+#
+# The smallest document, and the one most likely to be questioned. customer-ui
+# is a small Starlette server (apps/customer-ui/server/) that serves the static
+# Next.js export and receives claims-agent's A2A push; the browser talks to
+# claims-agent directly from the page. Its outbound inventory is DNS, the
+# collector and the Linkerd control plane: it calls no peer.
+#
+# It is policied because it was measured reaching api.anthropic.com:443, it
+# carries `northstar.io/plane: agents` in the namespace the requirement names,
+# and its image has a shell and an interpreter. "Needs almost nothing" is the
+# argument for a policy here, not against one. The collector rule is the one
+# whose absence is worst: the OTLP exporter swallows failures, so every span
+# from customer-ui-server (the push receiver, the other end of the trace B
+# hand-off) would vanish while the demo kept working.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: customer-ui-egress
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m12
+spec:
+  podSelector:
+    matchLabels:
+      app: customer-ui
+  policyTypes:
+    - Egress
+  egress:
+    # 1. DNS: CoreDNS by label, UDP and TCP 53 (see settlement-agent-egress rule 1).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # 2. The OTLP collector, http/protobuf on 4318 (deploy/k8s/customer-ui.yaml).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4318
+    # 3. The Linkerd control plane.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: linkerd
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8086
+        - protocol: TCP
+          port: 8090
+---
+# Document 4 of 4: reviewer-ui.
+#
+# Its COMPLETE outbound inventory, from apps/reviewer-ui/bootstrap.py,
+# ledger.py, gateway.py and identity.py: DNS; payments-api:8080 (ledger.py's
+# list, get and reject, direct REST calls that move no money: payments-api's own
+# Server refuses execute for this identity, which is the L7 the Cilium rule
+# carried here, M8 review I1); claims-agent:9001 (claims.py resumes the
+# customer's waiting task once a payment is decided); agentgateway:3000
+# (gateway.py's execute_payment, the release of an approved payment under
+# reviewer-ui's own JWT-SVID, decided by the PDS like any other execute); the
+# collector; the Linkerd control plane.
+#
+# Deliberately absent: payments-mcp:8000, policy-decision-service:9100 and the
+# model provider. reviewer-ui calls none of them directly, and payments-mcp and
+# the PDS admit only the gateway. identity.py's SPIFFE Workload API call is a
+# unix socket and needs no rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: reviewer-ui-egress
+  namespace: northstar-agents
+  labels:
+    northstar.io/milestone: m12
+spec:
+  podSelector:
+    matchLabels:
+      app: reviewer-ui
+  policyTypes:
+    - Egress
+  egress:
+    # 1. DNS: CoreDNS by label, UDP and TCP 53 (see settlement-agent-egress rule 1).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # 2. payments-api, directly: list, get and reject. L4 here; the route table lives on
+    # payments-api's ingress and admits this identity for exactly those three.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: northstar-systems
+          podSelector:
+            matchLabels:
+              app: payments-api
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 4143
+    # 2b. claims-agent, on its A2A port, to resume the customer's waiting task.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: northstar-agents
+          podSelector:
+            matchLabels:
+              app: claims-agent
+      ports:
+        - protocol: TCP
+          port: 9001
+        - protocol: TCP
+          port: 4143
+    # 3. agentgateway, on the MCP port: gateway.py's one outbound peer for the release
+    # of an approved payment.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: northstar-platform
+          podSelector:
+            matchLabels:
+              app: agentgateway
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 4143
+    # 4. The OTLP collector.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4318
+    # 5. The Linkerd control plane.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: linkerd
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8086
+        - protocol: TCP
+          port: 8090
