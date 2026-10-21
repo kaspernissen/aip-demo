@@ -114,9 +114,25 @@ TEXT = """() => {
     if (!n.textContent.trim() || el.closest('svg') || seen.has(el)) continue;
     if (el.closest('.page-foot')) continue;
     seen.add(el);
-    const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    // Measure the text, not the element: an element's box includes the padding a
+    // CSS bullet is drawn in, and a text box placed there prints over the dot. A
+    // bullet that is itself text ("• ") is painted out with the rest, so it travels
+    // with the run, and the run starts where the bullet did.
+    const before = getComputedStyle(el, '::before').content;
+    const glyph = /^".+"$/.test(before) ? JSON.parse(before) : '';
+    // The left of the text itself: its text nodes, not an inline logo in front of it.
+    const textLeft = () => { const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let min = Infinity;
+      while (tw.nextNode()) { if (!tw.currentNode.textContent.trim()) continue;
+        const rg = document.createRange(); rg.selectNodeContents(tw.currentNode);
+        for (const q of rg.getClientRects()) if (q.width) min = Math.min(min, q.left); }
+      return min; };
+    // Only the left edge comes from the text: its height is the font's ascent and
+    // descent, taller than the line box the deck sets, which loosens every title.
+    const box = el.getBoundingClientRect(), left = glyph ? box.left : Math.min(box.right, textLeft());
+    const r = {left, top: box.top, width: box.right - left, height: box.height};
     if (!r.width) continue;
-    runs.push({t: el.innerText.replace(/\\s+/g, ' ').trim(), font: cs.fontFamily.split(',')[0].replace(/"/g, ''),
+    runs.push({t: (glyph + el.innerText).replace(/\\s+/g, ' ').trim(), font: cs.fontFamily.split(',')[0].replace(/"/g, ''),
                size: Math.round(parseFloat(cs.fontSize) * k), weight: cs.fontWeight, color: hex(cs.color),
                upper: cs.textTransform === 'uppercase',
                x: Math.round((r.left - r0.left) * k), y: Math.round((r.top - r0.top) * k),
