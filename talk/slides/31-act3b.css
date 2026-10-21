@@ -193,3 +193,29 @@
 .x31-mc-q { margin: calc(1 * var(--baseline)) 0 0; font-size: 26px; line-height: 1.4; }
 .x31-mc-q .d { display: block; color: color-mix(in srgb, var(--color-text) 60%, transparent); margin-bottom: 8px; }
 .x31-mc-q .code { font-size: 21px; white-space: normal; word-break: break-word; }
+
+/* maker and checker, as two waterfalls: trace A ends at the hand-off, a gap of human time, trace B;
+   the span link arcs back under the gap. Cyan = traced/permitted, magenta = refused. */
+.content > figure.x31-mk { margin-top: 36px; }
+.x31-mk svg { width: 100%; height: auto; display: block; font-family: var(--font-body); }
+.x31-mk .mk-k { font-size: 20px; letter-spacing: 0.12em; fill: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x31-mk .mk-w { font-family: var(--font-heading); font-weight: 700; font-size: 34px; fill: var(--color-text); }
+.x31-mk .mk-s { fill: var(--color-accent-100); stroke: var(--color-accent); stroke-width: 2; }
+.x31-mk .mk-s.deny { fill: var(--color-accent-2-100); stroke: var(--color-accent-2); }
+.x31-mk .mk-s.ok { fill: var(--color-accent); }
+.x31-mk .mk-s.rev { fill: color-mix(in srgb, var(--ocean-violet) 16%, transparent); stroke: var(--ocean-violet); }
+.x31-mk .mk-t { font-size: 22px; fill: var(--color-text); }
+.x31-mk .mk-t.mono, .x31-mk .mk-r { font-family: var(--font-mono); font-size: 20px; }
+.x31-mk .mk-t.on, .x31-mk .mk-tag.on { fill: var(--color-bg); }
+.x31-mk .mk-tag { font-weight: 700; font-size: 22px; fill: var(--color-text); }
+.x31-mk .mk-tag.deny { fill: var(--color-accent-2-700); }
+.x31-mk .mk-end { stroke: var(--color-text); stroke-width: 4; }
+.x31-mk .mk-e { font-size: 20px; font-style: italic; fill: color-mix(in srgb, var(--color-text) 65%, transparent); }
+.x31-mk .mk-gap { font-family: var(--font-heading); font-style: italic; font-weight: 700; font-size: 52px; fill: color-mix(in srgb, var(--color-text) 35%, transparent); }
+.x31-mk .mk-gs { font-size: 24px; fill: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x31-mk .mk-r { fill: color-mix(in srgb, var(--color-text) 65%, transparent); font-size: 18px; }
+.x31-mk .mk-link { fill: none; stroke: var(--color-accent-2); stroke-width: 4; stroke-dasharray: 12 9; }
+.x31-mk .mk-ah { fill: var(--color-accent-2); }
+.x31-mk .mk-l { font-size: 24px; font-weight: 700; fill: var(--color-accent-2-700); }
+.x31-mk-q { margin: 14px 0 0; font-size: var(--type-kicker); color: color-mix(in srgb, var(--color-text) 65%, transparent); }
+.x31-mk-q i { margin-right: 10px; color: var(--color-accent); }

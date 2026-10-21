@@ -160,3 +160,29 @@
 .x40-cc .src { margin: 22px 0 0; font-size: 22px; font-style: italic; color: var(--color-neutral-600); }
 .x40-cc-line { margin: calc(1.1 * var(--baseline)) 0 0; font-size: 40px; font-weight: 600; letter-spacing: -0.01em; }
 .x40-cc .col.kept .h { color: #17926F; }
+
+/* two kinds of checks · what upstream eval tools do today (trial, 2026-10-20: OpenLIT 1.45 SDK / 2.1 platform, Agent Health 0.8.0) */
+.x40-two-up { margin: 12px 0 0; font-size: var(--type-kicker); line-height: 1.4;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+.x40-two-up b { color: var(--color-text); }
+
+/* 38c · one violation, three graders: three rows, a verdict chip each; the vacuous PASS in magenta */
+.x40-g3-lede { margin: calc(0.6 * var(--baseline)) 0 0; font-size: 30px; }
+.x40-g3-lede .muted .code { font-size: 24px; }
+.x40-g3 { display: flex; flex-direction: column; gap: 16px; margin-top: 34px; }
+.x40-g3 .r { display: grid; grid-template-columns: 420px 1fr 170px 300px; align-items: center; gap: 30px; padding: 20px 30px;
+  border-radius: var(--radius-md); background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+.x40-g3 p { margin: 0; }
+.x40-g3 .who { font-family: var(--font-heading); font-weight: 700; font-size: 34px; }
+.x40-g3 .who span { display: block; font-family: var(--font-body); font-weight: 400; font-size: 22px; color: var(--color-neutral-600); }
+.x40-g3 .saw { font-size: 24px; line-height: 1.35; color: color-mix(in srgb, var(--color-text) 75%, transparent); }
+.x40-g3 .v { justify-self: start; padding: 8px 22px; border-radius: 999px; font-family: var(--font-mono); font-weight: 700; font-size: 28px; }
+.x40-g3 .why { font-size: 24px; font-weight: 600; }
+.x40-g3 .bad { background: var(--color-accent-2-100); }
+.x40-g3 .bad .v { background: var(--color-accent-2); color: var(--color-bg); }
+.x40-g3 .bad .why { color: var(--color-accent-2-700); }
+.x40-g3 .ok .v { background: var(--color-accent); color: var(--color-bg); }
+.x40-g3 .ok .why { color: var(--color-accent-700); }
+.x40-g3-line { margin: 40px 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 42px; }
+.x40-g3-cav { margin: 18px 0 0; font-size: 22px; color: color-mix(in srgb, var(--color-text) 65%, transparent); }
+.x40-g3-cav i { margin-right: 10px; color: var(--ocean-amber); }

@@ -41,6 +41,106 @@
   </div>
 </section>
 
+<!-- 01b · WILLIAM · the opening claim, from William's KCD Sofia 2026 keynote (The boundary problem is a platform problem, slide 2) -->
+<section class="slide content x10-tools x-dark" data-label="What its tools let it do">
+  <div class="rise">
+    <p class="x10-tl-q">An autonomous agent will do exactly what its tools let it do, <span class="x10-tl-n">and no more.</span></p>
+    <p class="x10-tl-s">The set of things its tools let it do is almost never the set anyone deliberately chose.</p>
+  </div>
+</section>
+
+
+<!-- 01c · WILLIAM · intent is not capability, from William's KCD Sofia 2026 keynote (slide 5), William's visual (99 green squares, one red; the instruction dashed, the tool binding solid), told as a generic payout agent that plants the demo's seeds (a €6,000 line, execute_payment, a human above it) without naming Northstar -->
+<section class="slide content" data-label="The agent cannot hold its own boundary">
+  <h2 class="slide-title">The agent cannot hold its own boundary</h2>
+  <div class="x10-ib rise">
+    <div class="x10-ib-l">
+      <p class="x10-ib-k">Adherence is probabilistic</p>
+      <div class="x10-ib-adh">
+        <div class="x10-dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="x"></i></div>
+        <div><p class="x10-ib-big">Holds 99 times.<br><span class="spot-2">Yields on the 100th.</span></p>
+        <p class="x10-ib-t">A strong suggestion with a failure rate. Weakest under novel inputs, adversarial phrasing and unusual state: where the boundary matters most.</p></div>
+      </div>
+    </div>
+    <div class="x10-ib-r">
+      <p class="x10-ib-k">Intent is not capability</p>
+      <div class="x10-ib-row"><span class="x10-ib-h">Instruction &middot; intent, in the prompt</span><span class="x10-ib-v">&ldquo;Never pay out more than &euro;6,000 without a human.&rdquo;</span></div>
+      <div class="x10-ib-row run"><span class="x10-ib-h">Tool binding &middot; capability, executes</span><span class="x10-ib-v"><code>execute_payment(amount)</code></span></div>
+      <p class="x10-ib-t">Only one of them runs. The &euro;6,000 line has to live <span class="spot-2">somewhere the agent can&rsquo;t argue with.</span></p>
+    </div>
+  </div>
+  <p class="x10-ib-line rise">When intent and capability disagree, capability wins.</p>
+</section>
+
+
+<!-- 01d · WILLIAM · an agent is a workload, from William's KCD Sofia 2026 keynote (slide 6) -->
+<section class="slide content" data-label="An agent is a workload">
+  <h2 class="slide-title">An agent is a workload</h2>
+  <div class="x10-wl rise">
+    <div><p class="x10-wl-h">A microservice</p><p class="x10-wl-b">will do whatever its identity, network access and permissions allow</p></div>
+    <div class="ag"><p class="x10-wl-h">An agent</p><p class="x10-wl-b">will do whatever its identity, network access and permissions allow</p><p class="x10-wl-x">with a non-deterministic control loop</p></div>
+  </div>
+  <p class="x10-wl-s rise">We spent fifteen years learning not to trust a workload to police itself.</p>
+  <p class="x10-wl-line rise">Bounded autonomy is a property of the platform, <span class="spot-2">not of the agent.</span></p>
+</section>
+
+
+<!-- 01e · WILLIAM · the agent in a box: the walls are the platform's guardrails, the things it could damage sit outside; one door, checked and recorded; every other path stops at the wall. The dashed inner box is a sandbox for what the agent's own code may touch (files, processes): not in this demo, the next layer if it runs code. Generic, plants the demo's seeds (payments through one gate, the agent can't edit its own rules) -->
+<section class="slide content" data-label="Put it in a box">
+  <h2 class="slide-title">Put the agent in a box</h2>
+  <figure class="x10-box rise">
+    <svg viewBox="0 0 1632 600" role="img" aria-label="An agent inside a box whose walls are the platform's guardrails. Arrows to model providers, other services, customer records and its own rules stop at the wall. One arrow to payments passes through a single checked, recorded door.">
+      <text class="bx-cap" x="816" y="34" text-anchor="middle">the walls are the platform&rsquo;s guardrails</text>
+      <rect class="bx-wall" x="576" y="70" width="480" height="380" rx="26"/>
+      <!-- the agent -->
+      <rect class="bx-sand" x="650" y="148" width="332" height="218" rx="20"/>
+      <text class="bx-sl" x="816" y="174" text-anchor="middle">sandbox &middot; what its code may touch</text>
+      <rect class="bx-agent" x="686" y="200" width="260" height="120" rx="18"/>
+      <text class="bx-ag" x="816" y="252" text-anchor="middle">agent</text>
+      <text class="bx-ags" x="816" y="292" text-anchor="middle">a model, tools, a loop</text>
+      <!-- outside -->
+      <g class="bx-card"><rect x="40" y="96" width="320" height="96" rx="14"/><text class="bx-t" x="68" y="138">Model providers</text><text class="bx-s" x="68" y="172">the open internet</text></g>
+      <g class="bx-card"><rect x="40" y="330" width="320" height="96" rx="14"/><text class="bx-t" x="68" y="372">Other services</text><text class="bx-s" x="68" y="406">another team&rsquo;s API</text></g>
+      <g class="bx-card ok"><rect x="1272" y="96" width="320" height="96" rx="14"/><text class="bx-t" x="1300" y="138">Payments</text><text class="bx-s" x="1300" y="172">moves real money</text></g>
+      <g class="bx-card"><rect x="1272" y="330" width="320" height="96" rx="14"/><text class="bx-t" x="1300" y="372">Customer records</text><text class="bx-s" x="1300" y="406">someone&rsquo;s data</text></g>
+      <g class="bx-card"><rect x="656" y="490" width="320" height="96" rx="14"/><text class="bx-t" x="684" y="532">Its own rules</text><text class="bx-s" x="684" y="566">permissions, policy</text></g>
+      <!-- stopped at the wall -->
+      <line class="bx-try" x1="686" y1="236" x2="582" y2="160"/><line class="bx-ghost" x1="570" y1="156" x2="364" y2="144"/>
+      <line class="bx-try" x1="686" y1="290" x2="582" y2="372"/><line class="bx-ghost" x1="570" y1="376" x2="364" y2="378"/>
+      <line class="bx-try" x1="946" y1="290" x2="1050" y2="372"/><line class="bx-ghost" x1="1062" y1="376" x2="1268" y2="378"/>
+      <line class="bx-try" x1="816" y1="320" x2="816" y2="444"/><line class="bx-ghost" x1="816" y1="456" x2="816" y2="486"/>
+      <g class="bx-x"><path d="M566 146 l20 20 M586 146 l-20 20"/><path d="M566 362 l20 20 M586 362 l-20 20"/><path d="M1046 362 l20 20 M1066 362 l-20 20"/><path d="M806 440 l20 20 M826 440 l-20 20"/></g>
+      <!-- the one door -->
+      <line class="bx-go" x1="946" y1="236" x2="1268" y2="144"/>
+      <rect class="bx-door" x="1040" y="152" width="32" height="64" rx="6"/>
+      <text class="bx-dl" x="1096" y="240">one door</text>
+      <text class="bx-ds" x="1096" y="268">checked, recorded</text>
+    </svg>
+  </figure>
+  <p class="x10-box-line rise">Inside the box, it can do anything. <span class="spot-2">The box decides what reaches the outside.</span></p>
+</section>
+
+<!-- 11a · BOUNDED · The Safe Operating Model (Francesco Beltramini, ControlPlane), as William presents it: rings of least privilege, one question each, the keystone as the clasp beneath them. The data ring (Ring 3) is left out of this talk (William and Kasper, 2026-10-20): Northstar does not build it. The evidence line under the keystone is our addition (Kasper, 2026-10-20), marked as such in the credit. -->
+<section class="slide content" data-label="The Safe Operating Model">
+  <h2 class="slide-title">The Safe Operating Model</h2>
+  <p class="x10-bd-lede rise">Rings of least privilege. <span class="spot-2">Each outer ring depends on the one inside it.</span></p>
+  <div class="x10-bd rise">
+    <div class="x10-rings" aria-hidden="true">
+      <div class="r2"><span>Capability</span></div>
+      <div class="r1"><span>Reach</span></div>
+      <div class="r0"><span>Identity</span></div>
+    </div>
+    <div><dl class="x10-rq">
+      <dt>Core &middot; identity</dt><dd>What is acting?<span>attested workload identity</span></dd>
+      <dt>Ring 1 &middot; reach</dt><dd>What may it connect to?<span>the network, per connection</span></dd>
+      <dt>Ring 2 &middot; capability</dt><dd>What may it hold, and call?<span>admission and the tool gateway</span></dd>
+    </dl>
+    <p class="x10-key">Keystone &middot; the agent can never edit what defines its authority</p>
+    <p class="x10-ev"><i class="ph-duotone ph-path"></i><span><b>Around every ring, evidence:</b> each decision is a span, keyed by the same identity. What the agent actually did.</span></p></div>
+  </div>
+  <p class="x10-bd-by">The Safe Operating Model &middot; Francesco Beltramini, ControlPlane &middot; evidence line: our addition</p>
+</section>
+
 <!-- 02a · NEW · regulated domains: four sectors where an agent acts, one line on what it moves (Ch 10, Ch 14 "Who is in the room") -->
 <section data-cut class="slide content" data-label="When an agent acts">
   <h2 class="slide-title">When an agent acts, someone will ask</h2>
@@ -54,7 +154,7 @@
 </section>
 
 <!-- 02a+ · what "verticalizing" means: domain rules on top, one shared platform underneath -->
-<section class="slide content x10-vert x-dark" data-label="Verticalizing">
+<section data-cut class="slide content x10-vert x-dark" data-label="Verticalizing">
   <h2 class="slide-title">Verticalizing, in one picture</h2>
   <div class="x10-vcols rise">
     <div class="v-fin"><i class="ph-duotone ph-bank"></i><b>Fintech</b><span>DORA</span><span>Payment limits</span></div>
@@ -66,7 +166,18 @@
   <p class="x10-vline rise">The domain rules change. <span class="spot-2">The platform doesn’t.</span></p>
 </section>
 
-<!-- 02b · NEW · the auditor's five questions, big type, each tagged with the requirement behind it (Ch 10; Ch 14 slide 35 table). The table itself comes at "From requirement to artifact". -->
+<!-- 01f · NEW · autonomy is earned: trust as a dial the evidence turns, one notch at a time, and back. Generic; plants the demo's assisted (€0) and autonomous (€6,000) levels and the live flip -->
+<section class="slide content" data-label="Autonomy is earned">
+  <h2 class="slide-title">Autonomy is earned, one notch at a time</h2>
+  <div class="x10-tr rise">
+    <div class="s1"><p class="x10-tr-k">Assisted</p><p class="x10-tr-amt">&euro;0</p><p class="x10-tr-s">The agent proposes. A human signs every payout.</p></div>
+    <div class="s2"><p class="x10-tr-k">Autonomous, within a limit</p><p class="x10-tr-amt">&euro;6,000</p><p class="x10-tr-s">The agent pays up to the limit. Above it, a human.</p></div>
+    <div class="s3"><p class="x10-tr-k">Wider</p><p class="x10-tr-amt">more</p><p class="x10-tr-s">A higher limit, another tool. Only when the evidence says so.</p></div>
+  </div>
+  <p class="x10-tr-line rise">Trust is a dial, not a switch. <span class="spot-2">The evidence turns it, and it turns back.</span></p>
+</section>
+
+<!-- 02b · NEW · the auditor's five questions, big type, each tagged with the requirement behind it (Ch 10; Ch 14 slide 35 table). Answered after the demo, at "How the auditor works". -->
 <section class="slide content" data-label="The auditor’s questions">
   <h2 class="slide-title">The auditor&rsquo;s questions</h2>
   <ol class="x10-qs rise">
@@ -79,7 +190,7 @@
 </section>
 
 <!-- 02c · NEW · the stakes, as type: Ch 14 slide 09's title line -->
-<section class="slide content x10-stakes x-dark" data-label="Not an answer">
+<section data-cut class="slide content x10-stakes x-dark" data-label="Not an answer">
   <div class="rise">
     <p class="x10-st-q">&ldquo;We don&rsquo;t know what<br>the agent did.&rdquo;</p>
     <p class="x10-st-a">is not an answer.</p>
@@ -87,7 +198,7 @@
 </section>
 
 <!-- 02 · NEW · the cold open: a crop of the customer UI outcome block, €5,800 held for a person (M8: a hold, not a refusal) -->
-<section class="slide content" data-label="The agent proposed">
+<section data-cut class="slide content" data-label="The agent proposed">
   <h2 class="slide-title">The agent proposed. The platform decided.</h2>
   <figure class="x10-crop rise">
     <div class="shot x10-crop-win">
@@ -100,7 +211,7 @@
 </section>
 
 <!-- 04 · NEW · Act 1 divider -->
-<section class="slide divider" data-label="Act 1 — Agents change the nature of complexity">
+<section data-cut class="slide divider" data-label="Act 1 — Agents change the nature of complexity">
   <div class="press-field" aria-hidden="true"><i class="pf-y"></i><i class="pf-c"></i><i class="pf-m"></i></div>
   <div class="scale-color" aria-hidden="true"><i class="sc-c"></i><i class="sc-m"></i><i class="sc-y"></i><i class="sc-cm"></i><i class="sc-my"></i><i class="sc-cy"></i><i class="sc-cmy"></i><i class="sc-k"></i></div>
   <div class="scale-bw" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
@@ -179,12 +290,12 @@
 <!-- 06 · TAMING · the model draws the call graph: book Figure 1.4 (one prompt, three runs), lifted and cropped -->
 <section class="slide content" data-label="The model draws the call graph">
   <h2 class="slide-title">The call graph is no longer something you drew</h2>
-  <figure class="bfig rise x10-fig" style="--fig-h:560px"><svg viewBox="14 8 802 234" role="img" aria-label="The same prompt produces three different runs with different tool sequences and different token use.">
+  <figure class="bfig rise x10-fig" style="--fig-h:560px"><svg viewBox="14 8 802 234" role="img" aria-label="The same claim-settlement prompt produces three different runs: read the claim and pay, read the claim and ask a human, check the policy and pay; each uses different tokens.">
 <g font-family="Inter, sans-serif">
 <rect x="20" y="88" width="150" height="72" rx="8" fill="#F7F7F7" stroke="#9E9E9E"/>
 <text x="95" y="112" font-size="12" font-weight="700" text-anchor="middle" fill="#111111">Same prompt</text>
-<text x="95" y="131" font-size="10.5" text-anchor="middle" fill="#595959">&#8220;Remove the</text>
-<text x="95" y="146" font-size="10.5" text-anchor="middle" fill="#595959">free-plan accounts&#8221;</text>
+<text x="95" y="131" font-size="10.5" text-anchor="middle" fill="#595959">&#8220;Settle this</text>
+<text x="95" y="146" font-size="10.5" text-anchor="middle" fill="#595959">car-damage claim&#8221;</text>
 <path d="M170,124 C185,124 185,45 200,45" fill="none" stroke="#9E9E9E"/>
 <path d="M170,124 L200,125" fill="none" stroke="#9E9E9E"/>
 <path d="M170,124 C185,124 185,205 200,205" fill="none" stroke="#9E9E9E"/>
@@ -192,24 +303,24 @@
 <text x="200" y="23">RUN 1</text><text x="200" y="103">RUN 2</text><text x="200" y="183">RUN 3</text></g>
 <line x1="200" y1="45" x2="810" y2="45" stroke="#E8E8E8"/>
 <rect x="200" y="30" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="246" y="49" font-size="11" text-anchor="middle" fill="#111111">model</text>
-<rect x="302" y="30" width="92" height="30" rx="5" fill="#A8FBBE" stroke="#6AD186"/><text x="348" y="49" font-size="11" text-anchor="middle" fill="#18632F">list_records</text>
+<rect x="302" y="30" width="92" height="30" rx="5" fill="#A8FBBE" stroke="#6AD186"/><text x="348" y="49" font-size="11" text-anchor="middle" fill="#18632F">get_claim</text>
 <rect x="404" y="30" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="450" y="49" font-size="11" text-anchor="middle" fill="#111111">model</text>
-<rect x="506" y="30" width="96" height="30" rx="5" fill="#FCB6B8" stroke="#F8494D"/><text x="554" y="49" font-size="11" text-anchor="middle" fill="#111111">delete_records</text>
+<rect x="506" y="30" width="96" height="30" rx="5" fill="#FCB6B8" stroke="#F8494D"/><text x="554" y="49" font-size="10.5" text-anchor="middle" fill="#111111">execute_payment</text>
 <rect x="612" y="30" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="658" y="49" font-size="11" text-anchor="middle" fill="#111111">model</text>
 <rect x="714" y="30" width="92" height="30" rx="5" fill="#F7F7F7" stroke="#9E9E9E"/><text x="760" y="49" font-size="11" text-anchor="middle" fill="#212121">stop</text>
 <rect x="200" y="66" width="480" height="6" rx="3" fill="#FCB6B8"/>
 <line x1="200" y1="125" x2="810" y2="125" stroke="#E8E8E8"/>
 <rect x="200" y="110" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="246" y="129" font-size="11" text-anchor="middle" fill="#111111">model</text>
-<rect x="302" y="110" width="92" height="30" rx="5" fill="#A8FBBE" stroke="#6AD186"/><text x="348" y="129" font-size="11" text-anchor="middle" fill="#18632F">list_records</text>
+<rect x="302" y="110" width="92" height="30" rx="5" fill="#A8FBBE" stroke="#6AD186"/><text x="348" y="129" font-size="11" text-anchor="middle" fill="#18632F">get_claim</text>
 <rect x="404" y="110" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="450" y="129" font-size="11" text-anchor="middle" fill="#111111">model</text>
 <rect x="506" y="110" width="96" height="30" rx="5" fill="#FEF1F1" stroke="#F8494D"/><text x="554" y="129" font-size="11" text-anchor="middle" fill="#111111">asks a human</text>
 <rect x="612" y="110" width="92" height="30" rx="5" fill="#F7F7F7" stroke="#9E9E9E"/><text x="658" y="129" font-size="11" text-anchor="middle" fill="#212121">stop</text>
 <rect x="200" y="146" width="330" height="6" rx="3" fill="#FCB6B8"/>
 <line x1="200" y1="205" x2="810" y2="205" stroke="#E8E8E8"/>
 <rect x="200" y="190" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="246" y="209" font-size="11" text-anchor="middle" fill="#111111">model</text>
-<rect x="302" y="190" width="92" height="30" rx="5" fill="#A8FBBE" stroke="#6AD186"/><text x="348" y="209" font-size="11" text-anchor="middle" fill="#18632F">query</text>
+<rect x="302" y="190" width="92" height="30" rx="5" fill="#A8FBBE" stroke="#6AD186"/><text x="348" y="209" font-size="11" text-anchor="middle" fill="#18632F">check_policy</text>
 <rect x="404" y="190" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="450" y="209" font-size="11" text-anchor="middle" fill="#111111">model</text>
-<rect x="506" y="190" width="96" height="30" rx="5" fill="#FCB6B8" stroke="#F8494D"/><text x="554" y="209" font-size="11" text-anchor="middle" fill="#111111">delete_records</text>
+<rect x="506" y="190" width="96" height="30" rx="5" fill="#FCB6B8" stroke="#F8494D"/><text x="554" y="209" font-size="10.5" text-anchor="middle" fill="#111111">execute_payment</text>
 <rect x="612" y="190" width="92" height="30" rx="5" fill="#F7F7F7" stroke="#9E9E9E"/><text x="658" y="209" font-size="11" text-anchor="middle" fill="#212121">stop</text>
 <rect x="200" y="226" width="400" height="6" rx="3" fill="#FCB6B8"/>
 </g></svg></figure>
@@ -231,7 +342,7 @@
 </section>
 
 <!-- 07 · DID WHAT · anatomy of an agent: book Figure 1.3 (the agent loop, mermaid in the book) redrawn as SVG, inside Figure 1.2's harness -->
-<section class="slide content" data-label="Anatomy of an agent">
+<section data-cut class="slide content" data-label="Anatomy of an agent">
   <h2 class="slide-title">Anatomy of an agent</h2>
   <figure class="bfig rise x10-fig" style="--fig-h:470px"><svg viewBox="0 0 1000 360" role="img" aria-label="The agent loop inside its harness: a goal arrives, the agent builds context, the model is called, and the model decides between a tool call, which runs through MCP and loops back, and a final answer, which stops.">
 <defs><marker id="x10-ar-lp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#595959"/></marker></defs>
@@ -290,29 +401,46 @@
 </section>
 
 <!-- 06a · MCP and A2A as two business cards, side by side: what each is for, before the diagram of how they fit -->
+<!-- (2026-10-20: the static MCP/A2A cards became this looping SMIL animation, generated by a script; the cards live on, turned over, on the next slide) -->
 <section class="slide content" data-label="Meet MCP and A2A">
   <h2 class="slide-title">Two protocols, two jobs</h2>
-  <div class="x10-cards rise">
+  <figure class="x10-proto rise"><svg class="x10-pa" viewBox="0 -24 1632 584" role="img" aria-label="Animated. MCP: an agent asks a tool server for its tools, gets the list, calls execute_payment with an amount, gets a result. A2A: a claims agent reads the settlement agent's card, sends it a task; the task goes working, input-required, completed, and a push notification comes back."><g font-family="var(--font-body)"><text class="hd" x="0" y="34">MCP</text><text class="sb" x="0" y="70">reaches down: agent &#8594; tool</text><rect class="nd m" x="0" y="110" width="300" height="110" rx="20"/><text class="nt" x="150" y="175" text-anchor="middle">agent</text><rect class="nd m" x="0" y="430" width="300" height="110" rx="20"/><text class="nt" x="150" y="485" text-anchor="middle">tool server</text><text class="ns" x="150" y="516" text-anchor="middle">payments</text><path class="ln m" d="M120 220 V430"/><path class="ln m" d="M180 430 V220"/><g class="pk m" opacity="0"><animateTransform attributeName="transform" type="translate" dur="8.0s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.0375;0.2000;1" values="120 232;120 232;120 418;120 418"/><animate attributeName="opacity" dur="8.0s" repeatCount="indefinite" keyTimes="0;0.0365;0.0375;0.2000;0.2010;1" values="0;0;1;1;0;0"/><circle r="11" cx="0" cy="0"/><rect x="22" y="-22" width="210" height="44" rx="10"/><text x="127.0" y="8" text-anchor="middle">tools/list</text></g><g class="pk m back" opacity="0"><animateTransform attributeName="transform" type="translate" dur="8.0s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.2375;0.4125;1" values="180 418;180 418;180 232;180 232"/><animate attributeName="opacity" dur="8.0s" repeatCount="indefinite" keyTimes="0;0.2365;0.2375;0.4125;0.4135;1" values="0;0;1;1;0;0"/><circle r="11" cx="0" cy="0"/><rect x="22" y="-22" width="470" height="44" rx="10"/><text x="257.0" y="8" text-anchor="middle">execute_payment &#183; get_payment &#183; &#8230;</text></g><g class="pk m" opacity="0"><animateTransform attributeName="transform" type="translate" dur="8.0s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.4625;0.6500;1" values="120 232;120 232;120 418;120 418"/><animate attributeName="opacity" dur="8.0s" repeatCount="indefinite" keyTimes="0;0.4615;0.4625;0.6500;0.6510;1" values="0;0;1;1;0;0"/><circle r="11" cx="0" cy="0"/><rect x="22" y="-22" width="470" height="44" rx="10"/><text x="257.0" y="8" text-anchor="middle">tools/call execute_payment &#183; 5800</text></g><g class="pk m back" opacity="0"><animateTransform attributeName="transform" type="translate" dur="8.0s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.6875;0.8500;1" values="180 418;180 418;180 232;180 232"/><animate attributeName="opacity" dur="8.0s" repeatCount="indefinite" keyTimes="0;0.6865;0.6875;0.8500;0.8510;1" values="0;0;1;1;0;0"/><circle r="11" cx="0" cy="0"/><rect x="22" y="-22" width="130" height="44" rx="10"/><text x="87.0" y="8" text-anchor="middle">result</text></g><line class="sep" x1="800" y1="20" x2="800" y2="540"/><text class="hd" x="840" y="34">A2A</text><text class="sb" x="840" y="70">reaches across: agent &#8596; agent</text><rect class="nd a" x="840" y="300" width="260" height="110" rx="20"/><text class="nt" x="970" y="365" text-anchor="middle">claims agent</text><rect class="nd a" x="1372" y="300" width="260" height="110" rx="20"/><text class="nt" x="1502" y="365" text-anchor="middle">settlement agent</text><g class="card"><rect x="1422" y="130" width="160" height="104" rx="12"/><text class="ct" x="1502" y="168" text-anchor="middle">agent card</text><text class="cs" x="1502" y="198" text-anchor="middle">name &#183; skills</text><text class="cs" x="1502" y="222" text-anchor="middle">where to reach it</text></g><path class="ln a dash" d="M1502 234 V300"/><path class="ln a" d="M1100 338 H1372"/><path class="ln a" d="M1372 376 H1100"/><g class="pk a" opacity="0"><animateTransform attributeName="transform" type="translate" dur="10.0s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.0300;0.1600;1" values="970 288;970 288;1408 182;1408 182"/><animate attributeName="opacity" dur="10.0s" repeatCount="indefinite" keyTimes="0;0.0290;0.0300;0.1600;0.1610;1" values="0;0;1;1;0;0"/><circle r="11" cx="0" cy="0"/><rect x="-95.0" y="-74" width="190" height="44" rx="10"/><text x="0" y="-44" text-anchor="middle">read the card</text></g><g class="pk a" opacity="0"><animateTransform attributeName="transform" type="translate" dur="10.0s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.1900;0.3400;1" values="1110 338;1110 338;1362 338;1362 338"/><animate attributeName="opacity" dur="10.0s" repeatCount="indefinite" keyTimes="0;0.1890;0.1900;0.3400;0.3410;1" values="0;0;1;1;0;0"/><circle r="11" cx="0" cy="0"/><rect x="-165.0" y="-74" width="330" height="44" rx="10"/><text x="0" y="-44" text-anchor="middle">task: settle this claim</text></g><g class="st w" opacity="0"><animate attributeName="opacity" dur="10.0s" repeatCount="indefinite" keyTimes="0;0.3390;0.3400;0.5000;0.5010;1" values="0;0;1;1;0;0"/><rect x="1387.0" y="438" width="230" height="46" rx="23"/><text x="1502" y="469" text-anchor="middle">working</text></g><g class="st i" opacity="0"><animate attributeName="opacity" dur="10.0s" repeatCount="indefinite" keyTimes="0;0.4990;0.5000;0.6800;0.6810;1" values="0;0;1;1;0;0"/><rect x="1387.0" y="438" width="230" height="46" rx="23"/><text x="1502" y="469" text-anchor="middle">input-required</text></g><g class="st c" opacity="0"><animate attributeName="opacity" dur="10.0s" repeatCount="indefinite" keyTimes="0;0.6790;0.6800;0.9600;0.9610;1" values="0;0;1;1;0;0"/><rect x="1387.0" y="438" width="230" height="46" rx="23"/><text x="1502" y="469" text-anchor="middle">completed</text></g><g class="pk a back" opacity="0"><animateTransform attributeName="transform" type="translate" dur="10.0s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.7000;0.8600;1" values="1362 376;1362 376;1110 376;1110 376"/><animate attributeName="opacity" dur="10.0s" repeatCount="indefinite" keyTimes="0;0.6990;0.7000;0.8600;0.8610;1" values="0;0;1;1;0;0"/><circle r="11" cx="0" cy="0"/><rect x="-115.0" y="26" width="230" height="44" rx="10"/><text x="0" y="56" text-anchor="middle">push: completed</text></g></g></svg></figure>
+  <script>
+    /* restart the MCP/A2A loop from tools/list each time this slide comes up */
+    (() => {
+      const svg = document.currentScript.parentElement.querySelector('svg.x10-pa');
+      const sec = svg.closest('section');
+      new MutationObserver(() => { if (sec.hasAttribute('data-deck-active')) svg.setCurrentTime(0); })
+        .observe(sec, { attributes: true, attributeFilter: ['data-deck-active'] });
+    })();
+  </script>
+  <p class="x10-cards-foot rise">Both open, both in the Agentic AI Foundation. <span class="spot-2">Neither one decides what an agent may do.</span></p>
+</section>
+
+<!-- 03c · NEW · the cards, turned over: how each protocol works and where they differ (call a function vs hand over a job); flips on arrival -->
+<section class="slide content" data-label="MCP and A2A, turned over">
+  <h2 class="slide-title">Call a function, or hand over a job</h2>
+  <div class="x10-cards x10-flip rise">
     <article class="x10-card c-mcp">
-      <header><i class="ph-duotone ph-plugs-connected"></i><div><b>MCP</b><span>Model Context Protocol</span></div></header>
-      <p class="job">Gives an agent tools it didn’t ship with</p>
-      <dl>
-        <dt>Direction</dt><dd>Vertical · agent → tool</dd>
-        <dt>Says</dt><dd><code>tools/list</code> · <code>tools/call</code></dd>
-        <dt>In Northstar</dt><dd>settlement-agent → <code>execute_payment</code></dd>
-      </dl>
+      <header><i class="ph-duotone ph-plugs-connected"></i><div><b>MCP</b><span>agent &rarr; tool</span></div></header>
+      <ul class="x10-back">
+        <li><b>The tool shows its hand.</b> A server lists its tools, each with a schema for its arguments.</li>
+        <li><b>The model fills in the blanks.</b> It picks a tool and writes the arguments, like an amount.</li>
+        <li><b>One call, one answer.</b> Request, result, done. Seconds, not minutes.</li>
+      </ul>
+      <p class="x10-ask">Platform question: <b>which tool, which arguments, who is asking?</b></p>
     </article>
     <article class="x10-card c-a2a">
-      <header><i class="ph-duotone ph-handshake"></i><div><b>A2A</b><span>Agent2Agent</span></div></header>
-      <p class="job">Lets one agent hand work to another</p>
-      <dl>
-        <dt>Direction</dt><dd>Horizontal · agent ↔ agent</dd>
-        <dt>Says</dt><dd>a task: working · input-required · done</dd>
-        <dt>In Northstar</dt><dd>claims-agent → settlement-agent</dd>
-      </dl>
+      <header><i class="ph-duotone ph-handshake"></i><div><b>A2A</b><span>agent &harr; agent</span></div></header>
+      <ul class="x10-back">
+        <li><b>An agent card, like a business card.</b> Name, skills, where to reach it.</li>
+        <li><b>A goal, not a function.</b> You can&rsquo;t see the other agent&rsquo;s tools or its reasoning.</li>
+        <li><b>A task that lives.</b> Working, waiting for input, done. It can take minutes, and call you back.</li>
+      </ul>
+      <p class="x10-ask">Platform question: <b>who may delegate to whom, and does the identity survive the hand-off?</b></p>
     </article>
   </div>
-  <p class="x10-cards-foot rise">Both open, both in the Agentic AI Foundation. <span class="spot-2">Neither one decides what an agent may do.</span></p>
+  <p class="x10-cards-foot rise">MCP reaches down to a tool. A2A reaches across to a peer. <span class="spot-2">Every crossing is a place to check, and to trace.</span></p>
 </section>
 
 <!-- 08 · TAMING · MCP, A2A and Skills: book Figure 2.6 (vertical and horizontal) rebuilt with a skill folder, one dated fact each -->
@@ -387,23 +515,3 @@
   </div>
 </section>
 
-<!-- 11a · BOUNDED · bounded autonomy, the definition of Decide: William's four rings as concentric bands, one question each (William Rizzo, Bounded Agent Autonomy, OSFF 2026); Northstar's piece per ring waits for Act 3 -->
-<section class="slide content" data-label="Bounded autonomy">
-  <h2 class="slide-title">Bounded autonomy</h2>
-  <p class="x10-bd-lede rise">You don&rsquo;t trust an agent to remember its own authority limits. <span class="spot-2">You make the platform enforce them.</span></p>
-  <div class="x10-bd rise">
-    <div class="x10-rings" aria-hidden="true">
-      <div class="rk"><span>Keystone</span></div>
-      <div class="r2"><span>Capability</span></div>
-      <div class="r1"><span>Reach</span></div>
-      <div class="r0"><span>Identity</span></div>
-    </div>
-    <div><dl class="x10-rq">
-      <dt>Core &middot; Identity</dt><dd>who it is</dd>
-      <dt>Ring 1 &middot; Reach</dt><dd>what it connects to</dd>
-      <dt>Ring 2 &middot; Capability</dt><dd>what it may do</dd>
-      <dt class="k">Keystone</dt><dd class="k">it can never edit what constrains it</dd>
-    </dl>
-    <p class="x10-bd-by">After William Rizzo, <em>Bounded Agent Autonomy</em>, OSFF 2026</p></div>
-  </div>
-</section>

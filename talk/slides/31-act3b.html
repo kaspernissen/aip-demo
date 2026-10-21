@@ -162,7 +162,7 @@
 </section>
 
 <!-- 30 · NEW · two ways to say no, measured: a gateway guardrail in CEL (config only; the real rule from deploy/platform/agentgateway/config.yaml) beside the decision service, the table from the M8 spec §5; the ceiling is on the deck, not in the live demo (tests/e2e/test_gateway_ceiling.py) -->
-<section class="slide content" data-label="Two ways to say no">
+<section data-cut class="slide content" data-label="Two ways to say no">
   <h2 class="slide-title">Two ways to say no</h2>
   <div class="x31-cmp rise">
     <p class="h"></p><p class="h">The gateway, with one CEL line</p><p class="h">The decision service</p>
@@ -284,24 +284,37 @@ request.method != &quot;POST&quot;
 <!-- 33 · NEW · maker and checker: trace A (the agent's work, ending at the hand-off), trace B (a person released it through the gateway, the resume, the push), the span link from B's resume back to A, and how long humans take (northstar_approval_wait_duration_seconds, docs/telemetry-contract.md; runbook §5 Beat 4) -->
 <section class="slide content" data-label="Maker and checker">
   <h2 class="slide-title">The agent makes it. A human checks it.</h2>
-  <div class="x31-mc rise">
-    <div class="tr a">
-      <p class="k">Trace A &middot; the maker</p>
-      <p class="b">The agent proposes. The platform says a person decides.</p>
-      <p class="s">claim &rarr; agents &rarr; <span class="code">northstar.policy.decision</span> <b class="m">deny</b></p>
-      <p class="s">Trace A ends at the hand-off. Nothing polls while the claim waits.</p>
-    </div>
-    <div class="lnk"><span>span link</span><i></i></div>
-    <div class="tr b">
-      <p class="k">Trace B &middot; the checker</p>
-      <p class="b">A person approves it. It runs through the gateway.</p>
-      <p class="s"><span class="code">northstar.review.decision</span> &rarr; <span class="code">execute_payment</span> &rarr; <span class="code">northstar.a2a.resume</span> &rarr; push</p>
-      <p class="s">caller <span class="code">reviewer-ui</span> &middot; rule <span class="code">human-approved.execute</span> <b class="c">permit</b></p>
-    </div>
-  </div>
-  <p class="x31-mc-q rise"><span class="d">How long do humans take? Ask Prometheus, by autonomy level:</span>
-<span class="code">histogram_quantile(0.95, sum by (le, northstar_policy_autonomy_level) (rate(northstar_approval_wait_duration_seconds_bucket[1h])))</span></p>
+  <figure class="x31-mk rise">
+    <svg viewBox="0 0 1632 500" role="img" aria-label="Two trace waterfalls. Trace A, the maker: claim, settlement agent, execute_payment, policy decision deny, ending at the hand-off. A gap of human time where nothing polls. Trace B, the checker: review decision, execute_payment, policy decision permit under rule human-approved.execute, a2a resume. A dashed span link arcs from B's resume back to A.">
+      <!-- lane labels -->
+      <text class="mk-k" x="0" y="26">TRACE A &middot; THE MAKER</text>
+      <text class="mk-w" x="0" y="62">the agent</text>
+      <text class="mk-k" x="1632" y="26" text-anchor="end">TRACE B &middot; THE CHECKER</text>
+      <text class="mk-w" x="1632" y="62" text-anchor="end">a person</text>
+      <!-- trace A -->
+      <rect class="mk-s" x="0" y="126" width="560" height="44" rx="8"/><text class="mk-t" x="16" y="156">claim filed</text>
+      <rect class="mk-s" x="30" y="180" width="520" height="44" rx="8"/><text class="mk-t" x="46" y="210">settlement agent</text>
+      <rect class="mk-s" x="200" y="234" width="340" height="44" rx="8"/><text class="mk-t mono" x="216" y="264">execute_payment</text>
+      <rect class="mk-s deny" x="230" y="288" width="300" height="44" rx="8"/><text class="mk-t" x="246" y="318">policy decision</text><text class="mk-tag deny" x="520" y="318" text-anchor="end">deny</text>
+      <line class="mk-end" x1="572" y1="120" x2="572" y2="340"/>
+      <text class="mk-e" x="584" y="320">hand-off</text>
+      <!-- the human gap -->
+      <text class="mk-gap" x="822" y="200" text-anchor="middle">human time</text>
+      <text class="mk-gs" x="822" y="238" text-anchor="middle">minutes, hours. Nothing polls.</text>
+      <!-- trace B -->
+      <rect class="mk-s rev" x="1072" y="126" width="560" height="44" rx="8"/><text class="mk-t" x="1088" y="156">human review</text><text class="mk-tag" x="1616" y="156" text-anchor="end">approve</text>
+      <rect class="mk-s" x="1102" y="180" width="330" height="44" rx="8"/><text class="mk-t mono" x="1118" y="210">execute_payment</text>
+      <rect class="mk-s ok" x="1132" y="234" width="300" height="44" rx="8"/><text class="mk-t on" x="1148" y="264">policy decision</text><text class="mk-tag on" x="1422" y="264" text-anchor="end">permit</text>
+      <rect class="mk-s" x="1442" y="288" width="190" height="44" rx="8"/><text class="mk-t mono" x="1456" y="318">a2a.resume</text>
+      <text class="mk-r" x="1632" y="92" text-anchor="end">reviewer-ui &middot; rule human-approved.execute</text>
+      <!-- the span link -->
+      <path class="mk-link" d="M1442,310 C1250,420 760,420 540,336"/>
+      <path class="mk-ah" d="M540,336 l2,20 l14,-11 z"/>
+      <text class="mk-l" x="822" y="445" text-anchor="middle">span link: B points back to A</text>
+    </svg>
+  </figure>
   <p class="x31-line">A link, not a parent. <em>Work separated by human time is two traces and a link.</em></p>
+  <p class="x31-mk-q rise"><i class="ph-duotone ph-timer"></i>How long do humans take? <span class="code">northstar_approval_wait_duration_seconds</span>, p95 by autonomy level.</p>
 </section>
 
 <!-- 36 · NEW · optional: the same flip, with a UI: backstage-autonomy-assisted/flipped + customer-ui-autonomous-executed + jaeger-autonomy-change (runbook §5 Beat 7, the longer version) -->

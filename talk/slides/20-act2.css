@@ -87,3 +87,23 @@
 
 /* 23 · a statement in the quote layout: no hanging quote mark to indent for */
 .slide.quote blockquote.a2-stmt { text-indent: 0; }
+
+/* 16a · OpenTelemetry and Weaver: two columns, then one line */
+.x20-ow { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; margin-top: calc(0.8 * var(--baseline)); }
+.x20-ow header { display: flex; align-items: center; gap: 24px; }
+.x20-ow header img { width: 84px; height: 84px; }
+.x20-ow header i { font-size: 84px; line-height: 1; color: var(--color-accent-2); }
+.x20-ow p { margin: 0; }
+.x20-ow .n { font-family: var(--font-heading); font-weight: 700; font-size: 52px; line-height: 1; }
+.x20-ow .r { margin-top: 8px !important; font-size: var(--type-kicker); color: var(--color-accent-700); }
+.x20-ow .w .r { color: var(--color-accent-2-700); }
+.x20-ow ul { list-style: none; margin: 30px 0 0; padding: 0; display: flex; flex-direction: column; gap: 22px; font-size: 28px; line-height: 1.35; }
+.x20-ow ul li { padding-left: 26px; border-left: 4px solid var(--color-accent); }
+.x20-yaml { margin: 26px 0 0; padding: 18px 24px; border-radius: var(--radius-md); background: var(--color-accent-2-100);
+  font-family: var(--font-mono); font-size: 22px; line-height: 1.5; color: var(--color-text); white-space: pre; }
+.x20-yaml .k { color: var(--color-accent-2-700); }
+.x20-ow-steps { list-style: none; margin: 22px 0 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 28px; font-size: 24px; counter-reset: st; }
+.x20-ow-steps li { counter-increment: st; }
+.x20-ow-steps li::before { content: counter(st); display: inline-block; width: 34px; height: 34px; margin-right: 12px; border-radius: 50%;
+  background: var(--color-accent-2); color: var(--color-bg); text-align: center; line-height: 34px; font-size: 20px; font-weight: 700; }
+.x20-ow-line { margin: 48px 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 42px; }

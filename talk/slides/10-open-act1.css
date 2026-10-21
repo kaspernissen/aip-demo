@@ -108,29 +108,65 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x10-g { font-size: var(--type-subtitle); font-style: italic; margin: 0;
   color: color-mix(in srgb, var(--color-text) 60%, transparent); }
 
-/* 11a · bounded autonomy: four concentric bands beside the four questions.
-   Magenta ramp: these are governance boundaries. The keystone is the clasp around
-   the rest, so it is the outer ring, drawn as a full-strength stroke. */
+/* 11a · The Safe Operating Model (Francesco Beltramini, ControlPlane): three concentric bands
+   beside one question each. Magenta ramp: these are governance boundaries. The keystone is
+   not a ring: it is the clasp under the model, an ink bar beneath the questions. */
 .x10-bd-lede { margin: calc(0.75 * var(--baseline)) 0 0; max-width: 60ch; font-size: var(--type-subtitle); line-height: 1.25; }
 .x10-bd { display: grid; grid-template-columns: 440px 1fr; column-gap: 110px; align-items: center;
   margin-top: calc(1 * var(--baseline)); }
 .x10-rings { position: relative; width: 440px; height: 440px; }
 .x10-rings > div { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); border-radius: 50%;
   display: flex; justify-content: center; box-sizing: border-box; }
-.x10-rings span { font-size: 21px; letter-spacing: 0.04em; line-height: 1; padding-top: 14px; }
-.x10-rings .rk { width: 440px; height: 440px; background: var(--color-bg); box-shadow: inset 0 0 0 6px var(--color-accent-2); }
-.x10-rings .rk span { color: var(--color-accent-2-700); font-weight: 700; padding-top: 16px; }
-.x10-rings .r2 { width: 356px; height: 356px; background: var(--color-accent-2-100); }
-.x10-rings .r1 { width: 260px; height: 260px; background: var(--color-accent-2-200); }
-.x10-rings .r0 { width: 156px; height: 156px; background: var(--color-accent-2); align-items: center; }
+.x10-rings span { font-size: 21px; letter-spacing: 0.04em; line-height: 1; padding-top: 18px; }
+.x10-rings .r2 { width: 440px; height: 440px; background: var(--color-accent-2-100); }
+.x10-rings .r1 { width: 310px; height: 310px; background: var(--color-accent-2-200); }
+.x10-rings .r0 { width: 176px; height: 176px; background: var(--color-accent-2); align-items: center; }
 .x10-rings .r2 span, .x10-rings .r1 span { color: var(--color-accent-2-800); }
 .x10-rings .r0 span { color: var(--color-bg); font-weight: 700; padding-top: 0; }
-.x10-rq { display: grid; grid-template-columns: max-content 1fr; column-gap: 48px; row-gap: 28px; align-items: baseline; margin: 0; }
+.x10-rq { display: grid; grid-template-columns: max-content 1fr; column-gap: 48px; row-gap: 30px; align-items: baseline; margin: 0; }
 .x10-rq dt { font-size: var(--type-small); color: color-mix(in srgb, var(--color-text) 60%, transparent); }
 .x10-rq dd { margin: 0; font-family: var(--font-heading); font-weight: 700; font-size: 46px; line-height: 1.12; letter-spacing: -0.01em; }
-.x10-rq .k { color: var(--color-accent-2-700); }
-.x10-bd-by { margin: 40px 0 0; font-size: var(--type-kicker);
-  color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x10-rq dd span { display: block; margin-top: 6px; font-family: var(--font-body); font-weight: 400; font-size: var(--type-kicker);
+  letter-spacing: 0; color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x10-key { margin: 32px 0 0; padding: 18px 28px; border-radius: var(--radius-md); background: var(--color-text); color: var(--color-bg);
+  font-weight: 700; font-size: var(--type-small); }
+.x10-ev { display: flex; gap: 14px; align-items: baseline; margin: 20px 0 0; font-size: var(--type-kicker); line-height: 1.35; }
+.x10-ev i { color: var(--color-accent); font-size: 28px; transform: translateY(5px); }
+.x10-ev b { color: var(--color-accent-700); }
+.x10-bd-by { position: absolute; left: var(--pad-x, 120px); bottom: 110px; margin: 0; font-size: var(--type-kicker);
+  color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+
+/* 01b · William's opening claim as display type on ink, anchored like the stakes slide */
+.x10-tools { padding-top: var(--cap-anchor); }
+.x10-tl-q { font-family: var(--font-heading); font-weight: 700; font-size: 96px; line-height: 1.12; letter-spacing: -0.02em;
+  max-width: 22ch; margin: 0; text-box: trim-both cap alphabetic; }
+.x10-tl-n { color: var(--color-accent-2-400); }
+.x10-tl-s { margin: 70px 0 0; max-width: 72ch; font-size: var(--type-body); line-height: 1.4; color: var(--ocean-on-ink); }
+
+/* 01c · intent is not capability: two columns, then one line */
+.x10-ib { display: grid; grid-template-columns: 1.1fr 1fr; column-gap: 90px; margin-top: calc(1 * var(--baseline)); }
+.x10-ib-k { margin: 0 0 22px; font-size: var(--type-kicker); letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-accent-700); }
+.x10-ib-big { margin: 0; font-family: var(--font-heading); font-weight: 700; font-size: 46px; line-height: 1.12; letter-spacing: -0.01em; }
+.x10-ib-t { margin: 26px 0 0; font-size: var(--type-small); line-height: 1.35; color: color-mix(in srgb, var(--color-text) 75%, transparent); }
+.x10-ib-row { display: flex; flex-direction: column; gap: 6px; padding: 18px 26px; border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-text) 4%, transparent); border: 2px dashed color-mix(in srgb, var(--color-text) 30%, transparent); }
+.x10-ib-row + .x10-ib-row { margin-top: 16px; }
+.x10-ib-row.run { background: var(--color-accent-2-100); border: 3px solid var(--color-accent-2); }
+.x10-ib-h { font-size: var(--type-kicker); color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x10-ib-v { font-family: var(--font-heading); font-size: 40px; font-weight: 600; line-height: 1.2; }
+.x10-ib-v code { font-size: 34px; }
+.x10-ib-line { margin: calc(0.9 * var(--baseline)) 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 52px; }
+
+/* 01d · an agent is a workload: two near-identical cards, the agent's one extra line in magenta */
+.x10-wl { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; margin-top: calc(1 * var(--baseline)); }
+.x10-wl > div { padding: 34px 40px 38px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+.x10-wl > div.ag { background: var(--color-accent-100); box-shadow: inset 0 0 0 2px var(--color-accent); }
+.x10-wl-h { margin: 0; font-family: var(--font-heading); font-weight: 700; font-size: 46px; }
+.x10-wl-b { margin: 14px 0 0; font-size: var(--type-small); line-height: 1.35; }
+.x10-wl-x { margin: 22px 0 0; font-size: var(--type-small); font-weight: 700; color: var(--color-accent-2-700); }
+.x10-wl-s { margin: calc(1 * var(--baseline)) 0 0; font-size: var(--type-small); font-style: italic;
+  color: color-mix(in srgb, var(--color-text) 65%, transparent); }
+.x10-wl-line { margin: 24px 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 60px; line-height: 1.15; letter-spacing: -0.01em; max-width: 30ch; }
 
 /* 02a+ · verticalizing: four coloured domain columns standing on one platform bar */
 .x10-vcols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 36px; margin-top: calc(1.5 * var(--baseline)); }
@@ -169,3 +205,93 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 /* company logos under the role (2026-10-19) */
 .x10-me .x10-co { display: block; height: 38px; width: auto; margin-top: 12px; }
 .x10-me .x10-co.mir { height: 24px; margin-top: 19px; margin-bottom: 7px; }
+
+/* 01e · the agent in a box: magenta wall = guardrails, cyan = the one checked door */
+.content > figure.x10-box { margin-top: 20px; }
+.x10-box svg { width: 1520px; height: auto; display: block; font-family: var(--font-body); }
+.x10-box .bx-cap { font-size: 24px; letter-spacing: 0.04em; fill: var(--color-accent-2-700); }
+.x10-box .bx-wall { fill: color-mix(in srgb, var(--color-accent-2) 5%, transparent); stroke: var(--color-accent-2); stroke-width: 10; }
+.x10-box .bx-sand { fill: none; stroke: color-mix(in srgb, var(--color-text) 45%, transparent); stroke-width: 3; stroke-dasharray: 10 8; }
+.x10-box .bx-sl { font-size: 18px; letter-spacing: 0.03em; fill: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x10-box .bx-agent { fill: var(--color-accent-100); stroke: var(--color-accent); stroke-width: 3; }
+.x10-box .bx-ag { font-family: var(--font-heading); font-weight: 700; font-size: 44px; fill: var(--color-text); }
+.x10-box .bx-ags { font-size: 22px; fill: color-mix(in srgb, var(--color-text) 65%, transparent); }
+.x10-box .bx-card rect { fill: var(--color-bg); stroke: color-mix(in srgb, var(--color-text) 25%, transparent); stroke-width: 2; }
+.x10-box .bx-card.ok rect { stroke: var(--color-accent); stroke-width: 3; }
+.x10-box .bx-t { font-family: var(--font-heading); font-weight: 700; font-size: 30px; fill: var(--color-text); }
+.x10-box .bx-s { font-size: 22px; fill: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x10-box .bx-try { stroke: var(--color-text); stroke-width: 3; }
+.x10-box .bx-ghost { stroke: color-mix(in srgb, var(--color-text) 30%, transparent); stroke-width: 2.5; stroke-dasharray: 6 8; }
+.x10-box .bx-x path { stroke: var(--color-accent-2); stroke-width: 6; stroke-linecap: round; fill: none; }
+.x10-box .bx-go { stroke: var(--color-accent); stroke-width: 5; }
+.x10-box .bx-door { fill: var(--color-bg); stroke: var(--color-accent); stroke-width: 5; }
+.x10-box .bx-dl { font-weight: 700; font-size: 24px; fill: var(--color-accent-700); }
+.x10-box .bx-ds { font-size: 20px; fill: var(--color-accent-700); }
+.x10-box-line { margin: 16px 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 40px; }
+.x10-ib-adh { display: grid; grid-template-columns: 300px 1fr; column-gap: 40px; align-items: start; }
+.x10-dots { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; width: 300px; }
+.x10-dots i { aspect-ratio: 1; border-radius: 3px; background: var(--color-accent); }
+.x10-dots i.x { background: var(--color-accent-2); }
+
+/* 01f · autonomy is earned: the same box, three sizes, stepping up; evidence moves it, and it moves back */
+.x10-tr { display: grid; grid-template-columns: repeat(3, 1fr); column-gap: 120px; align-items: end; margin-top: calc(0.75 * var(--baseline)); }
+.x10-tr > div { position: relative; display: flex; flex-direction: column; justify-content: flex-end; gap: 10px;
+  padding: 28px 32px; border: 8px solid var(--color-accent-2); border-radius: 22px;
+  background: color-mix(in srgb, var(--color-accent-2) 5%, transparent); }
+.x10-tr .s1 { height: 250px; } .x10-tr .s2 { height: 340px; } .x10-tr .s3 { height: 430px; border-style: dashed; border-width: 6px; }
+.x10-tr-k { margin: 0; font-size: var(--type-kicker); letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-accent-2-700); }
+.x10-tr-amt { margin: 0; font-family: var(--font-heading); font-weight: 700; font-size: 72px; line-height: 1; }
+.x10-tr-s { margin: 0; font-size: var(--type-kicker); line-height: 1.35; color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+.x10-tr > div + div::before { content: "evidence \2192"; position: absolute; left: -120px; bottom: 40px; width: 120px; text-align: center;
+  font-size: 22px; font-weight: 700; color: var(--color-accent-700); white-space: nowrap; }
+.x10-tr-line { margin: calc(0.75 * var(--baseline)) 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 44px; }
+
+/* 03c · the cards turned over: a one-time flip when the slide becomes active */
+.x10-back { margin: 30px 0 0; padding: 26px 0 0; border-top: 1px solid var(--color-divider); list-style: none;
+  display: flex; flex-direction: column; gap: 18px; font-size: 26px; line-height: 1.35; }
+.x10-back b { display: block; font-size: 30px; }
+.x10-ask { margin: 26px 0 0; font-size: 24px; color: var(--color-neutral-600); }
+.x10-ask b { color: var(--c); }
+.x10-flip { perspective: 2200px; }
+[data-deck-active] .x10-flip .x10-card { animation: x10-flip 0.8s cubic-bezier(.3,.7,.3,1) both; backface-visibility: hidden; }
+[data-deck-active] .x10-flip .x10-card.c-a2a { animation-delay: 0.15s; }
+@keyframes x10-flip { from { transform: rotateY(-180deg); } to { transform: rotateY(0); } }
+@media (prefers-reduced-motion: reduce) { [data-deck-active] .x10-flip .x10-card { animation: none; } }
+.x10-flip { margin-top: calc(0.8 * var(--baseline)); }
+.x10-flip .x10-card { padding: 30px 40px 30px 54px; }
+.x10-flip .x10-card header i { font-size: 60px; }
+.x10-flip .x10-card header b { font-size: 54px; }
+.x10-flip .x10-card header span { font-size: 24px; margin-top: 4px; }
+.x10-flip .x10-back { margin-top: 22px; padding-top: 20px; gap: 14px; font-size: 23px; line-height: 1.3; }
+.x10-flip .x10-back b { font-size: 27px; }
+.x10-flip .x10-ask { margin-top: 20px; font-size: 22px; }
+.x10-flip + .x10-cards-foot { margin-top: 36px; font-size: 34px; }
+
+/* 03b · MCP and A2A, animated (SMIL, looping): MCP reaches down, A2A reaches across.
+   Teal = MCP, violet = A2A; packets carry their message as a label. */
+.content > figure.x10-proto { margin-top: 30px; }
+.x10-pa { width: 100%; height: auto; display: block; }
+.x10-pa .hd { font-family: var(--font-heading); font-weight: 700; font-size: 56px; fill: var(--ocean-teal); }
+.x10-pa .hd ~ .hd { fill: var(--ocean-violet); }
+.x10-pa .sb { font-size: 24px; fill: var(--color-neutral-600); }
+.x10-pa .nd { fill: #fff; stroke-width: 3; }
+.x10-pa .nd.m { stroke: var(--ocean-teal); } .x10-pa .nd.a { stroke: var(--ocean-violet); }
+.x10-pa .nt { font-family: var(--font-heading); font-weight: 700; font-size: 27px; fill: var(--color-text); }
+.x10-pa .ns { font-size: 20px; fill: var(--color-neutral-600); }
+.x10-pa .ln { fill: none; stroke-width: 2.5; stroke-opacity: 0.45; }
+.x10-pa .ln.m { stroke: var(--ocean-teal); } .x10-pa .ln.a { stroke: var(--ocean-violet); }
+.x10-pa .ln.dash { stroke-dasharray: 6 8; }
+.x10-pa .sep { stroke: var(--color-divider); stroke-width: 2; }
+.x10-pa .pk circle { stroke: none; }
+.x10-pa .pk.m circle { fill: var(--ocean-teal); } .x10-pa .pk.a circle { fill: var(--ocean-violet); }
+.x10-pa .pk rect { stroke-width: 2; }
+.x10-pa .pk.m rect { fill: color-mix(in srgb, var(--ocean-teal) 12%, #fff); stroke: var(--ocean-teal); }
+.x10-pa .pk.a rect { fill: color-mix(in srgb, var(--ocean-violet) 12%, #fff); stroke: var(--ocean-violet); }
+.x10-pa .pk text { font-family: var(--font-mono); font-size: 21px; fill: var(--color-text); }
+.x10-pa .card rect { fill: color-mix(in srgb, var(--ocean-violet) 10%, #fff); stroke: var(--ocean-violet); stroke-width: 2; }
+.x10-pa .ct { font-weight: 700; font-size: 22px; fill: var(--color-text); }
+.x10-pa .cs { font-size: 17px; fill: var(--color-neutral-600); }
+.x10-pa .st text { font-family: var(--font-mono); font-size: 22px; font-weight: 700; }
+.x10-pa .st.w rect { fill: var(--color-accent-100); } .x10-pa .st.w text { fill: var(--color-accent-800); }
+.x10-pa .st.i rect { fill: color-mix(in srgb, var(--ocean-amber) 25%, #fff); } .x10-pa .st.i text { fill: var(--color-text); }
+.x10-pa .st.c rect { fill: color-mix(in srgb, var(--ocean-mint) 25%, #fff); } .x10-pa .st.c text { fill: var(--color-text); }

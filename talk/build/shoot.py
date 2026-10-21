@@ -60,7 +60,7 @@ def main():
         pg.wait_for_timeout(800)
         for n in range(lo, hi + 1):
             pg.evaluate(f"document.querySelector('deck-stage').goTo({n - 1})")
-            pg.wait_for_timeout(500)
+            pg.wait_for_timeout(1100)
             pg.screenshot(path=str(out / f"{n:02d}.png"))
         if deck != "index.html":
             b.close()

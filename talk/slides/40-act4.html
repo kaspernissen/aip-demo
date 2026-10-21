@@ -1,5 +1,5 @@
 <!-- 38 · NEW · Act 4 divider. The act title is Ch 14's alternative subtitle. -->
-<section class="slide divider" data-label="Act 4 — How you prove it">
+<section data-cut class="slide divider" data-label="Act 4 — How you prove it">
   <div class="press-field" aria-hidden="true"><i class="pf-y"></i><i class="pf-c"></i><i class="pf-m"></i></div>
   <div class="scale-color" aria-hidden="true"><i class="sc-c"></i><i class="sc-m"></i><i class="sc-y"></i><i class="sc-cm"></i><i class="sc-my"></i><i class="sc-cy"></i><i class="sc-cmy"></i><i class="sc-k"></i></div>
   <div class="scale-bw" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
@@ -49,7 +49,7 @@
 </section>
 
 <!-- 39 · NEW · the evidence view, in Jaeger (2026-10-19, replaces the OpenSearch dashboard capture): trace B of an approved claim, the northstar.review.decision span open with its link -->
-<section class="slide content" data-label="The evidence view">
+<section data-cut class="slide content" data-label="The evidence view">
   <h2 class="slide-title">No new application code</h2>
   <figure class="shot x40-ev-shot hl-marks rise"><img src="assets/shots/jaeger-evidence-approval.png" alt="Jaeger: trace B of an approved claim, rooted at reviewer-ui northstar.review.decision, with its tags (decision approve, reviewer id, reviewer SPIFFE id, wait duration 6.359 s) and one reference, a span in another trace">
     <span class="hl-mark" style="--x:1%;--y:35.5%;--w:61%;--h:14%"><b>who, as which identity</b></span>
@@ -162,6 +162,19 @@
   <p class="x40-same rise">Same output: <span class="code">gen_ai.evaluation.*</span>, beside the trace it judged</p>
 </section>
 
+<!-- 38c · NEW · one violation, three graders: AgentEvals 0.11.0 per trace (vacuous PASS), AgentEvals grouped by claim (FAIL, caught), eval-scorer following the span link (FAIL, with rule and identity). Measured 2026-10-21 on synthetic Northstar fixtures (scratchpad agentevals-trial/), not the live cluster; caveats on the face -->
+<section class="slide content" data-label="One violation, three graders">
+  <h2 class="slide-title">Grade the claim, not the trace</h2>
+  <p class="x40-g3-lede rise">The agent was refused, then tried to pay again from a second trace. <span class="muted">Check: <span class="code">stopped_when_refused</span></span></p>
+  <div class="x40-g3 rise">
+    <div class="r bad"><p class="who">AgentEvals<span>one trace at a time</span></p><p class="saw">sees trace A: refused, stopped. Trace B on its own.</p><p class="v">PASS</p><p class="why">missed it</p></div>
+    <div class="r ok"><p class="who">AgentEvals<span>grouped by claim id</span></p><p class="saw">sees both traces as one run</p><p class="v">FAIL</p><p class="why">caught it</p></div>
+    <div class="r ok"><p class="who">our eval-scorer<span>follows the span link</span></p><p class="saw">sees both traces, plus the policy decision and who called</p><p class="v">FAIL</p><p class="why">caught it, named the rule</p></div>
+  </div>
+  <p class="x40-g3-line rise">A partial trajectory always reads higher. <span class="spot-2">Group by the claim before you grade.</span></p>
+  <p class="x40-g3-cav rise"><i class="ph-duotone ph-warning"></i>AgentEvals 0.11.0 on synthetic Northstar traces, not this cluster. It sees agent spans only: no policy decision, no human approval, no caller identity, and it doesn&rsquo;t follow span links yet.</p>
+</section>
+
 <!-- 41a · NEW · two kinds of checks on the model itself: quality evals and topic guardrails (OpenLIT docs, 2026-10-19); neither is in the demo -->
 <section class="slide content" data-label="Two kinds of checks">
   <h2 class="slide-title">Two kinds of checks on the model</h2>
@@ -187,11 +200,12 @@
       </ul>
     </div>
   </div>
-  <p class="x40-two-f rise">Record either one as <span class="code">gen_ai.evaluation.*</span>, beside the trace it judged. <span class="muted">Neither is in the demo.</span></p>
+  <p class="x40-two-f rise">Record either one as <span class="code">gen_ai.evaluation.result</span>, beside the trace it judged. <span class="muted">Neither is in the demo.</span></p>
+  <p class="x40-two-up rise"><b>Upstream, today:</b> OpenLIT judges one model call. Agent Health scores runs it starts itself. AgentEvals scores your OTel traces and writes <span class="code">gen_ai.evaluation.result</span> back, but sees only what the agent did, not what the platform decided. So our five policy checks stay ours.</p>
 </section>
 
 <!-- 42 · NEW · Content capture, simplified (2026-10-19 "a lot of text"): what survives with capture off, what is lost; the measured counts stay in the note -->
-<section class="slide content" data-label="Content capture, a matched pair">
+<section data-cut class="slide content" data-label="Content capture, a matched pair">
   <h2 class="slide-title">Turn off content capture. <span class="spot-2">The audit trail survives.</span></h2>
   <div class="x40-cc rise">
     <div class="col kept">
@@ -224,7 +238,7 @@
 </section>
 
 <!-- 44 · NEW · Requirement → artifact, Ch 14's six-row table; walk two rows (Art. 86 / C-203/22 and DORA) -->
-<section class="slide content" data-label="From requirement to artifact">
+<section data-cut class="slide content" data-label="From requirement to artifact">
   <h2 class="slide-title">From requirement to artifact</h2>
   <p class="x40-read muted"><b>Read across:</b> the law, what it asks, what Northstar shows. We walk rows <span class="ink-2">1</span> and <span class="ink-2">2</span>.</p>
   <table class="x40-tbl rise">

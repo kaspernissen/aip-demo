@@ -1,5 +1,5 @@
 <!-- 19 · NEW · Act 3 divider -->
-<section class="slide divider" data-label="Act 3 — Northstar, live">
+<section data-cut class="slide divider" data-label="Act 3 — Northstar, live">
   <div class="press-field" aria-hidden="true"><i class="pf-y"></i><i class="pf-c"></i><i class="pf-m"></i></div>
   <div class="scale-color" aria-hidden="true"><i class="sc-c"></i><i class="sc-m"></i><i class="sc-y"></i><i class="sc-cm"></i><i class="sc-my"></i><i class="sc-cy"></i><i class="sc-cmy"></i><i class="sc-k"></i></div>
   <div class="scale-bw" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
@@ -12,7 +12,7 @@
 </section>
 
 <!-- 20 · NEW · the abstract's five building blocks on Ch 11's blueprint (Figure 11.1, cropped; numbered 1–5 by the abstract's five building blocks, 4 = policy (4a) + evals (4b)); under it, where William's four rings land -->
-<section class="slide content" data-label="What a governed foundation needs">
+<section data-cut class="slide content" data-label="What a governed foundation needs">
   <h2 class="slide-title">What a governed foundation needs</h2>
   <div class="x30-fd rise">
     <div><i class="ph-duotone ph-robot"></i><b>Agent runtime</b><span>kagent, agent-sandbox</span><em class="x30-chip">Partial</em></div>
@@ -52,13 +52,13 @@
     <div class="st s4"><p class="nm">Observable</p><i class="bar"></i><p class="pf">prove why, from telemetry alone</p><p class="ad">OpenSearch, Prometheus, eval-scorer</p><div class="rgs"></div></div>
     <div class="st s5"><p class="nm">Progressive autonomy</p><i class="bar"></i><p class="pf">one live value, no redeploy</p><p class="ad">OpenFeature, flagd, FeatureFlag</p><div class="rgs"><p class="rg">Ring 2 &middot; Capability</p></div></div>
     <div class="st s6"><p class="nm">Golden path</p><i class="bar"></i><p class="pf">Backstage is just the view</p><p class="ad">Backstage, autonomy card</p><div class="rgs"></div></div>
-    <div class="st s7"><p class="nm">Bounded</p><i class="bar"></i><p class="pf">the agent can&rsquo;t edit what constrains it</p><p class="ad">Kyverno, keystone policy</p><div class="rgs"><p class="rg">Keystone</p></div></div>
+    <div class="st s7"><p class="nm">Bounded</p><i class="bar"></i><p class="pf">the agent can&rsquo;t edit what defines its authority</p><p class="ad">Kyverno, keystone policy</p><div class="rgs"><p class="rg">Keystone</p></div></div>
   </div>
 </section>
 
 <!-- 21 · NEW · Meet Northstar: Ch 4 Figure 4.5, claim path only -->
 <section class="slide content" data-label="Meet Northstar">
-  <h2 class="slide-title">Meet Northstar</h2>
+  <h2 class="slide-title x30-ns-t"><img class="x30-ns" src="assets/logos/northstar.svg" alt="">Meet Northstar <span class="x30-ns-s">Insurance</span></h2>
   <figure class="bfig rise x30-tight" style="--fig-h:620px"><svg viewBox="0 2 880 354" role="img" aria-label="Northstar architecture at stage 7: namespaces northstar-agents, northstar-platform, northstar-tools, northstar-systems, observability, with Cilium underneath">
 <g font-family="Inter, sans-serif">
 <defs>
@@ -217,6 +217,25 @@
   </div>
 </section>
 
+<!-- 22c0 · NEW · concept before the passport: what SPIFFE and SPIRE are (the standard and the issuer), and how a pod gets an identity without a secret: deploy/platform/spire/registration.yaml (k8s:ns + k8s:sa selectors, the SPIFFE CSI driver socket) -->
+<section class="slide content" data-label="What SPIFFE and SPIRE are">
+  <p class="ring">Core &middot; Identity</p>
+  <h2 class="slide-title">SPIFFE and SPIRE, in one minute</h2>
+  <div class="x30-sp rise">
+    <div class="col"><img src="assets/logos/spiffe.svg" alt=""><div><p class="n">SPIFFE</p><p class="r">the standard &middot; what a passport looks like</p>
+      <p class="d">An ID for a workload, not a person: <span class="code">spiffe://northstar.local/ns/&hellip;/sa/&hellip;</span>, carried in a short-lived signed document, the <b>SVID</b>.</p></div></div>
+    <div class="col"><img src="assets/logos/spire.svg" alt=""><div><p class="n">SPIRE</p><p class="r">the issuer &middot; the passport office</p>
+      <p class="d">An agent on every node checks <em>where</em> a pod runs before the server signs: its namespace, its service account.</p></div></div>
+  </div>
+  <ol class="x30-sp-flow rise">
+    <li><i class="ph-duotone ph-cube"></i><b>A pod asks</b><span>over a local socket, no secret</span></li>
+    <li><i class="ph-duotone ph-magnifying-glass"></i><b>SPIRE checks</b><span>namespace, service account</span></li>
+    <li><i class="ph-duotone ph-seal-check"></i><b>SPIRE signs</b><span>an SVID that expires soon</span></li>
+    <li><i class="ph-duotone ph-identification-card"></i><b>The pod shows it</b><span>at the gateway, on every call</span></li>
+  </ol>
+  <p class="x30-sp-line rise">No password to leak. <span class="spot-2">The identity is proven by where it runs, not by what it says.</span></p>
+</section>
+
 <!-- 22c · NEW · SPIFFE/SPIRE: how settlement-agent gets its JWT-SVID (deploy/platform/spire/*, architecture.md "Workload identity" and "Identity with teeth", agents/settlement-agent/svid.py) -->
 <section class="slide content" data-label="Workload identity: SPIFFE/SPIRE">
   <p class="ring">Core &middot; Identity</p>
@@ -312,6 +331,42 @@
   </div>
 </section>
 
+<!-- 22d1 · NEW · what CEL decides, and when the gateway delegates: the gateway's three checks in order (jwtAuth -> the route's CEL authorization -> mcpGuardrails `kind: remote`, the ExtMCP gRPC call to the decision service, failClosed), from deploy/platform/agentgateway/config.yaml; CEL's reach measured on agentgateway v1.6.0 (2026-10-20 spike) -->
+<section class="slide content" data-label="CEL, and when to delegate">
+  <p class="ring">Ring 2 &middot; Capability</p>
+  <h2 class="slide-title">What CEL decides, and when the gateway asks</h2>
+  <ol class="x30-dg-flow rise">
+    <li><b>Who is calling?</b><span><span class="code">jwtAuth</span> &middot; the SPIFFE ID</span></li>
+    <li class="cel"><b>What the request proves</b><span>CEL on the route &middot; tool, arguments</span></li>
+    <li class="del"><b>What needs a lookup</b><span><span class="code">mcpGuardrails</span> &middot; asks the decision service</span></li>
+    <li class="tool"><b>The tool</b><span>only on a yes</span></li>
+  </ol>
+  <div class="x30-dg rise">
+    <div class="col cel">
+      <p class="k">CEL, inside the gateway</p>
+      <ul>
+        <li>who is calling, which tool, <b>how much</b></li>
+        <li>a limit per identity, a hard ceiling for everyone</li>
+        <li>no code to run, config reloads in seconds</li>
+      </ul>
+      <pre class="x30-dg-code">mcp.tool.name != "execute_payment"
+  || mcp.tool.arguments.amount &lt;= 50000</pre>
+      <p class="no">Can&rsquo;t look anything up. Its no is <span class="code m">403 authorization failed</span>.</p>
+    </div>
+    <div class="col del">
+      <p class="k">Delegated, to a decision service</p>
+      <ul>
+        <li>the <b>live autonomy level</b>, from OpenFeature</li>
+        <li>the <b>ledger</b>: the agent pays only what it proposed, a human only what waits</li>
+        <li>a <b>refusal the agent can explain</b>, rule and limit</li>
+        <li>its own span: <span class="code c">northstar.policy.decision</span></li>
+      </ul>
+      <p class="no">If it can&rsquo;t answer, the answer is no: <span class="code">failClosed</span>.</p>
+    </div>
+  </div>
+  <p class="x30-dg-line rise">CEL for what the request can prove. <span class="spot-2">Delegate when the answer has to look something up.</span></p>
+</section>
+
 <!-- 22e · NEW · the decision and the live policy: pds/rules.py EXECUTE_LIMITS, pds/autonomy.py (flagd on localhost:8013), deploy/platform/openfeature/featureflag.yaml -->
 <section class="slide content" data-label="The decision and the live policy">
   <p class="ring">Ring 2 &middot; Capability</p>
@@ -341,7 +396,8 @@
 <!-- 26 · NEW · the demo: one dark sheet while the terminal is up; no commands on the face (Kasper, 2026-10-19). The run-sheet is the note. -->
 <section class="slide content x30-live x-dark" data-label="Live: Northstar">
   <div class="rise">
-    <p class="x30-live-k">Live</p>
+    <p class="x30-live-k"><i class="ph-duotone ph-broadcast"></i>Live</p>
+    <p class="x30-live-d">Demo time.</p>
     <p class="x30-live-t">A customer files a claim.<br>Agents prepare the payment.<br><span class="x30-live-m">The platform decides who may release it.</span></p>
   </div>
 </section>

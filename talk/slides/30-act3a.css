@@ -233,7 +233,9 @@
 .x30-live { padding-top: var(--cap-anchor); }
 .x30-live p { margin: 0; }
 .x30-live-k { font-size: var(--type-kicker); letter-spacing: 0.2em; text-transform: uppercase; color: var(--color-accent-2-400); }
-.x30-live-t { margin-top: 48px !important; font-family: var(--font-heading); font-weight: 700; font-size: 76px; line-height: 1.15; letter-spacing: -0.015em; }
+.x30-live-k i { margin-right: 14px; font-size: 1.3em; vertical-align: -0.2em; }
+.x30-live-d { margin-top: 30px !important; font-family: var(--font-heading); font-weight: 700; font-size: 168px; line-height: 1; letter-spacing: -0.03em; }
+.x30-live-t { margin-top: 64px !important; font-family: var(--font-heading); font-weight: 600; font-size: 54px; color: var(--ocean-on-ink); line-height: 1.15; letter-spacing: -0.015em; }
 .x30-live-m { color: var(--color-accent-2-400); }
 
 /* What a governed foundation needs (Kasper, 2026-10-19: icons, not the book's nine-box
@@ -350,3 +352,54 @@
 .x30-pv .deny i, .x30-pv .out i { font-size: 36px; }
 .x30-pv .out { --icon: var(--ocean-teal); }
 .x30-pv .out code { background: var(--color-accent-100); color: var(--ocean-teal); padding: 2px 8px; border-radius: 6px; font-size: 22px; }
+
+/* 22e · why not just CEL: one line under the rule, measured on agentgateway v1.6.0 (2026-10-20 spike) */
+.x30-cel { margin: 24px 0 0; font-size: var(--type-kicker); line-height: 1.4;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+.x30-cel b { color: var(--color-text); }
+
+/* Meet Northstar: the insurer's mark beside the title (assets/logos/northstar.svg) */
+.x30-ns-t { display: flex; align-items: center; gap: 26px; }
+.x30-ns { width: 72px; height: 72px; flex: none; }
+.x30-ns-s { font-weight: 400; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+
+/* 22c0 · SPIFFE and SPIRE in one minute: the standard and the issuer, then four steps */
+.x30-sp { display: grid; grid-template-columns: 1fr 1fr; gap: 70px; margin-top: calc(0.8 * var(--baseline)); }
+.x30-sp .col { display: grid; grid-template-columns: 96px 1fr; gap: 28px; align-items: start; }
+.x30-sp img { width: 96px; height: 96px; object-fit: contain; }
+.x30-sp p { margin: 0; }
+.x30-sp .n { font-family: var(--font-heading); font-weight: 700; font-size: 52px; line-height: 1; }
+.x30-sp .r { margin-top: 8px !important; font-size: var(--type-kicker); color: var(--color-accent-700); }
+.x30-sp .d { margin-top: 16px !important; font-size: 26px; line-height: 1.4; }
+.x30-sp .d .code { font-size: 21px; }
+.x30-sp-flow { list-style: none; margin: 56px 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; counter-reset: sp; }
+.x30-sp-flow li { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 22px 26px; border-radius: var(--radius-md);
+  background: var(--color-accent-100); }
+.x30-sp-flow li + li::before { content: "\2192"; position: absolute; left: -22px; top: 50%; transform: translateY(-50%);
+  font-size: 26px; color: var(--color-accent-700); }
+.x30-sp-flow li:nth-child(4) { background: var(--color-accent-2-100); }
+.x30-sp-flow i { font-size: 40px; color: var(--color-accent-700); }
+.x30-sp-flow li:nth-child(4) i { color: var(--color-accent-2-700); }
+.x30-sp-flow b { font-size: 28px; }
+.x30-sp-flow span { font-size: 22px; color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+.x30-sp-line { margin: 44px 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 40px; }
+
+/* 22d1 · CEL, and when the gateway delegates: four checks in order, then two columns */
+.x30-dg-flow { list-style: none; margin: calc(0.6 * var(--baseline)) 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; }
+.x30-dg-flow li { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 16px 22px; border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+.x30-dg-flow li + li::before { content: "\2192"; position: absolute; left: -20px; top: 50%; transform: translateY(-50%); font-size: 24px;
+  color: color-mix(in srgb, var(--color-text) 50%, transparent); }
+.x30-dg-flow li.cel { background: var(--color-accent-100); }
+.x30-dg-flow li.del { background: var(--color-accent-2-100); }
+.x30-dg-flow b { font-size: 26px; }
+.x30-dg-flow span { font-size: 20px; color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+.x30-dg { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; margin-top: 34px; }
+.x30-dg p { margin: 0; }
+.x30-dg .k { font-size: var(--type-kicker); letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-accent-700); }
+.x30-dg .del .k { color: var(--color-accent-2-700); }
+.x30-dg ul { margin: 14px 0 0; padding-left: 26px; display: flex; flex-direction: column; gap: 8px; font-size: 25px; line-height: 1.3; }
+.x30-dg-code { margin: 16px 0 0; padding: 12px 18px; border-radius: var(--radius-md); background: var(--color-accent-100);
+  font-family: var(--font-mono); font-size: 19px; line-height: 1.45; white-space: pre; font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+.x30-dg .no { margin-top: 14px !important; font-size: 22px; color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+.x30-dg-line { margin: 34px 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 34px; }

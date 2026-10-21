@@ -5,17 +5,18 @@ The talk deck for KubeCon + CloudNativeCon North America 2026, Salt Lake City. I
 follower, and a folio with the speaker's handles.
 
 - Subtitle and thesis: **If you can't trace it, you can't govern it.**
-- 74 slides, 51:10 of content: the **long cut**, for a 30-minute slot (Wed 11 Nov, 11:00–11:30). Kasper cuts
-  it down himself. The live demo is five commands in one terminal (`./scripts/demo`, about 5 minutes with
+- 33 slides, 30:50 of content including the demo: the **30-minute cut** (Wed 11 Nov, 11:00–11:30;
+  2026-10-20). The long cut's slides stay in the fragments as `data-cut`. The live demo is five commands in one terminal (`./scripts/demo`, about 5 minutes with
   narration) against Northstar at stage 7. No slide shows a command (2026-10-19): one dark "Live" slide stays up
   during the demo and carries the whole run-sheet in its note, and `slides/30-live.html` is one visual summary,
   "What you just saw". The old per-step slides and their transcript fallbacks are in git history (before this
   change). A few statement slides are dark sheets (`.x-dark`, in `ocean/ocean.css`). The deck ends at "Thank you"; the operator
   checklists (pre-flight, reset, triage) live in `docs/demo-runbook.md`.
-- "Decide" is defined by William's *Bounded Agent Autonomy* (OSFF 2026): the platform enforces an agent's
-  authority limits, in four rings (Core · Identity, Ring 1 · Reach, Ring 2 · Capability, Keystone). Slides
-  derived from his demo carry the origin tag `BOUNDED` in `PLAN.md`; Act 3's tools slides carry their ring
-  as a `.ring` marker.
+- "Decide" is defined by **The Safe Operating Model** (Francesco Beltramini, ControlPlane), as William
+  presents it: rings of least privilege (Core · identity, Ring 1 · reach, Ring 2 · capability, and the
+  Keystone beneath them); the data ring is left out of this talk. The deck opens on three of William's KCD
+  Sofia 2026 intro slides, set on Northstar (origin tag `WILLIAM`). Slides derived from his OSFF demo carry
+  the origin tag `BOUNDED` in `PLAN.md`; Act 3's tools slides carry their ring as a `.ring` marker.
 - `PLAN.md` is the slide-by-slide plan: timing, origin (reused or new), visual and point. Its table is
   generated: after `python3 build/build.py`, run `python3 build/plan.py` (`--check` exits 1 if it is stale). It implements
   Ch 14 of the research book *If You Can't Trace It*, plus one slide that maps the CFP abstract's five
