@@ -577,7 +577,7 @@ def test_the_prometheus_chart_version_agrees_between_script_and_values():
     """`scripts/setup-kind.sh` installs a version; the values file's header
     documents one, with the two-source evidence this repo requires. A drift
     between them means the documented evidence is about a chart nobody
-    installs -- the same drift `tests/unit/test_stage2_cilium_config.py` and
+    installs -- the same drift `tests/unit/test_stage2_linkerd_config.py` and
     `test_stage2_spire_config.py` pin for Cilium and SPIRE.
     """
     script = "\n".join(

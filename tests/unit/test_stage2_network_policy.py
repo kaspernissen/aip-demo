@@ -20,7 +20,7 @@ caller that chooses to cooperate.
 heavily commented, and those comments contain every string a naive guard would
 search for -- `payments-mcp`, `agentgateway`, `8000`, `northstar-platform`.
 A `"agentgateway" in text` assertion would stay green with the entire `spec`
-deleted. This is the inert-guard class `test_stage2_cilium_config.py` had to
+deleted. This is the inert-guard class `test_stage2_linkerd_config.py` had to
 fix five times; it is cheaper to not create it. Every assertion below therefore
 walks the parsed structure, and the one assertion about `setup-kind.sh` uses
 that module's comment-stripping helper for the same reason.
@@ -36,7 +36,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.unit.test_stage2_cilium_config import _effective_script
+from tests.unit._setup_script import effective_script as _effective_script
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 POLICY = REPO_ROOT / "deploy" / "platform" / "cilium-policies.yaml"
@@ -197,33 +197,12 @@ def test_the_policy_does_not_reach_beyond_payments_mcp():
 
 
 # --- The setup script applies it --------------------------------------------
-
-
-def test_stage_two_applies_the_policy():
-    """A manifest nothing applies protects nothing.
-
-    Uses the comment-stripped script so the assertion cannot be satisfied by
-    the block comment that explains the apply.
-    """
-    script = _effective_script()
-    assert "cilium-policies.yaml" in script, (
-        "setup-kind.sh --stage 2 must apply deploy/platform/cilium-policies.yaml"
-    )
-
-
-def test_stage_one_does_not_apply_the_policy():
-    """Stage 1 has no Cilium, so the CRD does not exist and the apply fails.
-
-    Asserted by locating the reference inside a `STAGE -ge 2` guard rather than
-    by running the script, which the cilium module already covers behaviourally.
-    """
-    script = _effective_script()
-    idx = script.index("cilium-policies.yaml")
-    preceding = script[:idx]
-    assert '"${STAGE}" -ge 2' in preceding, (
-        "the policy apply must sit inside a stage-2 guard; stage 1 has no "
-        "cilium.io/v2 CRD and the apply would fail the whole script"
-    )
+#
+# M12 Task 1 removed `test_stage_two_applies_the_policy` and
+# `test_stage_one_does_not_apply_the_policy` here: Cilium and its CRDs are gone,
+# so scripts/setup-kind.sh no longer applies cilium-policies.yaml (the apply is
+# commented out until Task 2 replaces it with the reach files). Task 2 deletes
+# this module and asserts the reach files' apply in tests/unit/test_reach_policy.py.
 
 
 @pytest.mark.parametrize("stray", ["kind: NetworkPolicy"])

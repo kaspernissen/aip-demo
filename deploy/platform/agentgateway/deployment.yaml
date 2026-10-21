@@ -36,6 +36,10 @@ spec:
       labels:
         app: agentgateway
         northstar.io/plane: platform
+      annotations:
+        # Meshed by Linkerd (M12): a pod-level opt-in, because the platform
+        # namespace is not.
+        linkerd.io/inject: enabled
     spec:
       serviceAccountName: agentgateway
       containers:

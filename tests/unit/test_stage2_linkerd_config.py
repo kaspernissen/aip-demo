@@ -1,53 +1,28 @@
-"""Guards the stage-2 configuration: the create-time CNI flag, the Cilium
-values, and the ordering `setup-kind.sh --stage 2` must preserve.
+"""Guards the stage-2 configuration: kind's default CNI stays, Linkerd is
+pinned and installed before any workload, the mesh annotations are where the
+design says, and proxy tracing is off.
 
 Every assertion here exists because getting it wrong costs a cluster recreate
 to find out.
 
 Guards over raw script text are easy to make inert: a guard that greps for
-`"stage2.yaml" in text`, `"kindnet" in text`, or `"northstar-platform" in
-text` can pass on a nearby comment alone even after the real assignment,
-check, or `kubectl apply` behind it is gone. The same risk holds for
-`str.find` ordering checks -- an explanatory comment naming a step can
-satisfy the ordering before the real step actually runs -- and for
-version-pin checks that only ask whether a version string appears
-*somewhere* in a file that mentions it more than once, so a half-done
-version bump can leave one mention unedited and still pass.
+`"linkerd" in text` can pass on a nearby comment alone even after the real
+install behind it is gone. The same risk holds for `str.find` ordering checks
+-- an explanatory comment naming a step can satisfy the ordering before the
+real step actually runs -- and for version-pin checks that only ask whether a
+version string appears *somewhere* in a file that mentions it more than once.
 
 Two defences, applied together:
 
-1. **`_effective_script()`** strips the shebang and every whole-line comment,
-   so no assertion below can be satisfied by prose. Trailing (end-of-line)
-   comments are deliberately *not* stripped -- doing that safely needs a shell
-   parser, since `#` is an ordinary character inside strings -- so the
-   assertions are additionally written specifically enough that a trailing
-   comment cannot supply them.
-2. **Behavioural tests** for the load-bearing behaviours, which is stronger
-   than any text assertion: `_run_setup_kind` copies the real script into a
+1. **`effective_script()`** (tests/unit/_setup_script.py) strips the shebang
+   and every whole-line comment, so no assertion below can be satisfied by
+   prose.
+2. **Behavioural tests**: `_run_setup_kind` copies the real script into a
    throwaway tree with fake `kind`/`kubectl`/`docker`/`helm` on `PATH`, runs
-   it, and asserts on *what it actually invoked*. Those tests cannot be
-   satisfied by any text anywhere, comment or not.
+   it, and asserts on *what it actually invoked*.
 
-**Why the values assertions are phrased as they are.** `deploy/platform/
-cilium-values.yaml` is checked against `helm show values cilium/cilium
---version 1.20.1`:
-
-1. `dnsPolicy` is a **string** in this chart (`dnsPolicy: ""`, line 291 of the
-   rendered default values, documented as "DNS policy for Cilium agent pods"
-   with a ref to the Kubernetes pod-DNS-policy docs) -- the Kubernetes pod DNS
-   policy for the cilium-agent pods, nothing to do with Cilium's DNS proxy. A
-   map there is a type error.
-2. The DNS proxy toFQDNs depends on is gated by `l7Proxy`, which is already
-   `true` by default (line 2449). The chart's `dnsProxy` block (line 4315) has
-   **no `enabled` key** at all -- only tuning knobs (`socketLingerTimeout`,
-   `dnsRejectResponseCode`, `enableDnsCompression`, `endpointMaxIpPerHostname`,
-   `minTtl`, `preAllocateIdentities`, ...). So
-   `test_values_do_not_carry_the_briefs_dnspolicy_type_error` pins the absence
-   of both, rather than letting a later reader "restore" either block.
-
-The values-file guards all parse the YAML with `yaml.safe_load`, which
-discards comments before any assertion runs, so they carry none of the risk
-described above.
+The YAML guards parse with `yaml.safe_load`, which discards comments before any
+assertion runs.
 """
 import ast
 import os
@@ -61,220 +36,176 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.unit._setup_script import effective_script as _effective_script
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STAGE1 = REPO_ROOT / "deploy" / "kind" / "stage1.yaml"
 STAGE2 = REPO_ROOT / "deploy" / "kind" / "stage2.yaml"
 STAGE3 = REPO_ROOT / "deploy" / "kind" / "stage3.yaml"
-CILIUM_VALUES = REPO_ROOT / "deploy" / "platform" / "cilium-values.yaml"
+LINKERD_VALUES = REPO_ROOT / "deploy" / "platform" / "linkerd" / "values.yaml"
+LINKERD_CERTS_SCRIPT = REPO_ROOT / "scripts" / "linkerd-certs.sh"
 SETUP_KIND = REPO_ROOT / "scripts" / "setup-kind.sh"
 
-# Resolved from `helm search repo cilium/cilium --versions`: newest stable 1.x,
-# appVersion 1.20.1 (previous minor was 1.19.7).
-PINNED_CILIUM_CHART_VERSION = "1.20.1"
+# Read off `helm search repo linkerd-edge --versions` and
+# https://helm.linkerd.io/edge/index.yaml on 2026-10-21: the chart version is
+# NOT the app version, and linkerd-crds / linkerd-control-plane share it.
+PINNED_LINKERD_CHART_VERSION = "2026.10.1"
+PINNED_LINKERD_APP_VERSION = "edge-26.10.1"
+PINNED_GATEWAY_API_VERSION = "v1.5.1"
 
 
 def _yaml(path: Path) -> dict:
     return yaml.safe_load(path.read_text())
 
 
-def _effective_script() -> str:
-    """`setup-kind.sh` with the shebang and every whole-line comment removed.
+def _docs(path: Path) -> list:
+    return [d for d in yaml.safe_load_all(path.read_text()) if d]
 
-    This is what makes the text assertions below non-inert: a comment cannot
-    satisfy any of them, since it is stripped out before the regex runs.
-    """
-    return "\n".join(
-        line
-        for line in SETUP_KIND.read_text().splitlines()
-        if not line.lstrip().startswith("#")
+
+# --- The kind configs: the default CNI stays -------------------------------
+
+
+def test_no_kind_config_disables_the_default_cni():
+    """kindnet is what enforces the egress NetworkPolicies (kind >= 0.24).
+    Asserts against `yaml.dump` of the parsed documents, so a comment
+    mentioning the flag cannot trip it either way."""
+    for path in (STAGE1, STAGE2, STAGE3):
+        assert "disableDefaultCNI" not in yaml.dump(_yaml(path)), (
+            f"{path.name} must not disable the default CNI: Cilium is gone, "
+            "and without kindnet nothing enforces NetworkPolicy"
+        )
+
+
+def test_stage2_is_structurally_stage1():
+    """The registry wiring and all three host port mappings must survive
+    byte-for-byte: 8080/16686/4318 are what the host-side tests and the demo
+    talk to. Structural, not textual: it compares parsed documents."""
+    assert _yaml(STAGE2) == _yaml(STAGE1)
+
+
+def test_stage3_is_stage2_plus_exactly_the_reviewer_ui_port():
+    s2, s3 = _yaml(STAGE2), _yaml(STAGE1)
+    s3 = _yaml(STAGE3)
+    ports2 = s2["nodes"][0]["extraPortMappings"]
+    ports3 = s3["nodes"][0]["extraPortMappings"]
+    assert ports3[: len(ports2)] == ports2
+    assert [p["hostPort"] for p in ports3[len(ports2):]] == [8081]
+    s3["nodes"][0]["extraPortMappings"] = ports2
+    assert s3 == s2
+
+
+def test_cilium_values_are_gone():
+    assert not (REPO_ROOT / "deploy" / "platform" / "cilium-values.yaml").exists()
+
+
+# --- Pins -------------------------------------------------------------------
+
+
+def test_setup_kind_pins_the_linkerd_chart_version_exactly():
+    """Comment-stripped, exactly one assignment each, so neither a comment nor
+    a second stale assignment can satisfy it."""
+    text = _effective_script()
+    for name, want in (
+        ("LINKERD_CHART_VERSION", PINNED_LINKERD_CHART_VERSION),
+        ("LINKERD_APP_VERSION", PINNED_LINKERD_APP_VERSION),
+        ("GATEWAY_API_VERSION", PINNED_GATEWAY_API_VERSION),
+    ):
+        found = re.findall(rf'^{name}="([^"]+)"', text, re.MULTILINE)
+        assert found == [want], f"{name}: expected exactly [{want!r}], found {found}"
+    assert text.count('--version "${LINKERD_CHART_VERSION}"') == 2, (
+        "both linkerd-crds and linkerd-control-plane must install at the pinned "
+        "chart version; an unpinned `helm install` floats"
     )
+    assert "GATEWAY_API_MANIFEST=" in text and "${GATEWAY_API_VERSION}" in text
 
 
-# --- The create-time CNI flag ----------------------------------------------
-
-
-def test_stage2_disables_the_default_cni():
-    """`networking.disableDefaultCNI` is create-time: this flag is the entire
-    reason stage 2 needs its own kind config and a cluster recreate."""
-    cfg = _yaml(STAGE2)
-    assert cfg.get("networking", {}).get("disableDefaultCNI") is True, (
-        "stage2.yaml must set networking.disableDefaultCNI: true — without it "
-        "kind installs kindnet and Cilium ends up layered on a cluster that "
-        "already has a CNI"
+def test_the_pinned_versions_are_recorded_in_the_values_header():
+    header = "\n".join(
+        line for line in LINKERD_VALUES.read_text().splitlines()[:6] if line.startswith("#")
     )
+    assert PINNED_LINKERD_CHART_VERSION in header
+    assert PINNED_LINKERD_APP_VERSION in header
 
 
-def test_stage1_keeps_its_default_cni():
-    """Stage 1 must stay bring-up-able without Cilium, so it must not acquire
-    the flag.
+# --- The values: proxy tracing stays off -----------------------------------
 
-    Asserts against `yaml.dump` of the *parsed* document, so a comment
-    mentioning the flag cannot trip it either way.
-    """
-    cfg = _yaml(STAGE1)
-    assert "disableDefaultCNI" not in yaml.dump(cfg), (
-        "stage1.yaml must not disable the default CNI — stage 1 has no Cilium "
-        "install, so a stage-1 cluster with no CNI would never become Ready"
+
+def test_proxy_tracing_is_off_explicitly():
+    """Never sample, never drop a span, and do not change the trace's shape:
+    proxy tracing would add ~140 proxy spans per run. Parsed YAML, so a
+    comment cannot satisfy it; the value must be written, not merely defaulted."""
+    values = _yaml(LINKERD_VALUES)
+    assert values["proxy"]["tracing"]["enabled"] is False
+    assert values["controller"]["tracing"]["enabled"] is False
+    assert "collector" not in values["proxy"]["tracing"], "no collector endpoint may be set"
+
+
+def test_identity_material_is_not_committed_in_the_values():
+    text = yaml.dump(_yaml(LINKERD_VALUES))
+    for key in ("identityTrustAnchorsPEM", "crtPEM", "keyPEM", "BEGIN"):
+        assert key not in text, f"{key} must come from --set-file, not the committed values"
+
+
+def test_identity_material_is_passed_with_set_file_from_the_ignored_dir():
+    text = _effective_script()
+    for key in (
+        "identityTrustAnchorsPEM",
+        "identity.issuer.tls.crtPEM",
+        "identity.issuer.tls.keyPEM",
+    ):
+        assert f"--set-file {key}=" in text, f"{key} must be passed with --set-file"
+    assert ".demo/linkerd-certs" in text
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", ".demo/linkerd-certs/ca.key"], cwd=REPO_ROOT
     )
+    assert ignored.returncode == 0, ".demo/ must be git-ignored: the issuer key lives there"
 
 
-def test_stage2_is_stage1_plus_exactly_the_networking_block():
-    """The registry wiring and all three host port mappings must survive the
-    recreate byte-for-byte: the shared `kind-registry` container is wired in by
-    `containerdConfigPatches`, and 8080/16686/4318 are what the host-side tests
-    and the demo itself talk to.
+def test_the_certificate_script_makes_p256_cas_with_the_right_constraints(tmp_path):
+    """Runs the real script into a tmp dir and inspects the result with
+    openssl: ECDSA P-256 on both, anchor CA 10 years, issuer a pathlen:0
+    intermediate CA for one year signed by the anchor; and a second run reuses
+    the files instead of rotating them."""
+    out = tmp_path / "certs"
+    subprocess.run(["bash", str(LINKERD_CERTS_SCRIPT), str(out)], check=True,
+                   capture_output=True, timeout=60)
 
-    Structural, not textual — it compares parsed documents, and mutation
-    testing turns it RED on all four independent mutations thrown at it
-    (missing flag, added `podSubnet`, changed `hostPort`, dropped registry
-    wiring).
-    """
-    s1, s2 = _yaml(STAGE1), _yaml(STAGE2)
-    networking = s2.pop("networking", None)
-    assert networking == {"disableDefaultCNI": True}, (
-        "stage 2 should differ from stage 1 by the disableDefaultCNI flag and "
-        f"nothing else in `networking`; found {networking!r}. In particular no "
-        "podSubnet (kind's default 10.244.0.0/16 is what makes ipam.mode: "
-        "kubernetes coherent) and no kubeProxyMode (kube-proxy stays in place)."
-    )
-    assert s2 == s1, (
-        "stage2.yaml must otherwise be stage1.yaml exactly — the "
-        "containerdConfigPatches registry wiring and every extraPortMapping "
-        "included"
-    )
+    def text(name):
+        return subprocess.run(["openssl", "x509", "-in", str(out / name), "-noout", "-text"],
+                              check=True, capture_output=True, text=True).stdout
 
-
-# --- The Cilium values -----------------------------------------------------
-
-
-def test_kube_proxy_replacement_stays_off():
-    """Cilium's kube-proxy replacement is not required here — DNS-aware egress
-    denial is ordinary CiliumNetworkPolicy and works with kube-proxy present —
-    and enabling it on kind invites cgroup-v2 and kernel-version problems."""
-    values = _yaml(CILIUM_VALUES)
-    assert values["kubeProxyReplacement"] in (False, "false"), (
-        "kubeProxyReplacement must stay off; got "
-        f"{values.get('kubeProxyReplacement')!r}"
-    )
-
-
-def test_ipam_mode_is_kubernetes():
-    """Deliberate deviation from the chart default `cluster-pool`: in
-    `kubernetes` mode Cilium allocates out of the node podCIDRs kind carves
-    from its default 10.244.0.0/16, so pod addressing matches what kind
-    reports."""
-    assert _yaml(CILIUM_VALUES)["ipam"]["mode"] == "kubernetes"
-
-
-def test_values_do_not_carry_the_briefs_dnspolicy_type_error():
-    """See the module docstring: `dnsPolicy` is a string in this chart, and the
-    toFQDNs support it was supposed to provide is gated by `l7Proxy` (default
-    true) instead. Nothing belongs here."""
-    values = _yaml(CILIUM_VALUES)
-    assert "dnsPolicy" not in values, (
-        "`dnsPolicy` in cilium/cilium is a *string* (the Kubernetes pod DNS "
-        "policy for cilium-agent pods, default \"\"), not a {enabled: bool} "
-        "map. It is also not what toFQDNs needs — that is `l7Proxy`, already "
-        "true by default. Setting it here is a schema error with no upside."
-    )
-    assert "dnsProxy" not in values, (
-        "the chart's `dnsProxy` block has no `enabled` key — its children are "
-        "tuning knobs only — so there is nothing to enable here"
-    )
-
-
-def test_hubble_is_off_and_the_operator_is_single_replica():
-    values = _yaml(CILIUM_VALUES)
-    assert values["hubble"]["enabled"] is False
-    assert values["operator"]["replicas"] == 1
-
-
-def test_the_pinned_chart_version_is_recorded_in_the_values_header():
-    """Nothing floats: the version the script installs must be stated in the
-    values file too, so the two cannot drift apart silently.
-
-    The header mentions the version twice ("pinned to 1.20.1" and "appVersion
-    1.20.1"), so this requires the pin sentence specifically, and requires
-    *every* version-shaped string in the file to agree with it, so a
-    half-done bump fails.
-    """
-    text = CILIUM_VALUES.read_text()
-    assert re.search(rf"pinned to {re.escape(PINNED_CILIUM_CHART_VERSION)}\b", text), (
-        f"cilium-values.yaml's header must state 'pinned to "
-        f"{PINNED_CILIUM_CHART_VERSION}'"
-    )
-    # `(?<![\d.])...(?![\d.])` keeps dotted quads out: the header's
-    # `10.244.0.0/16` (kind's default podSubnet) is not a chart version.
-    found = set(re.findall(r"(?<![\d.])\d+\.\d+\.\d+(?![\d.])", text))
-    assert found == {PINNED_CILIUM_CHART_VERSION}, (
-        f"every version-shaped string in cilium-values.yaml must be "
-        f"{PINNED_CILIUM_CHART_VERSION}; found {sorted(found)} — a partial "
-        f"version bump is the failure mode this catches"
-    )
+    anchor, issuer = text("ca.crt"), text("issuer.crt")
+    for t in (anchor, issuer):
+        assert "prime256v1" in t and "ecdsa-with-SHA256" in t
+        assert "CA:TRUE" in t
+    assert "Subject: CN=root.linkerd.cluster.local" in anchor or "Subject: CN = root.linkerd.cluster.local" in anchor
+    assert "identity.linkerd.cluster.local" in issuer
+    assert "pathlen:0" in issuer and "pathlen" not in anchor
+    verify = subprocess.run(["openssl", "verify", "-CAfile", str(out / "ca.crt"), str(out / "issuer.crt")],
+                            capture_output=True, text=True)
+    assert verify.returncode == 0, verify.stdout + verify.stderr
+    before = (out / "issuer.key").read_bytes()
+    subprocess.run(["bash", str(LINKERD_CERTS_SCRIPT), str(out)], check=True,
+                   capture_output=True, timeout=60)
+    assert (out / "issuer.key").read_bytes() == before, "second run must reuse, not rotate"
 
 
 # --- The stage-2 dispatch in setup-kind.sh (text, comment-stripped) --------
 
 
-def test_setup_kind_pins_the_cilium_chart_version_exactly():
-    """Asserted against comment-stripped effective code, and requires exactly
-    one assignment, so neither a comment nor a second stale assignment can
-    satisfy it."""
-    text = _effective_script()
-    assignments = re.findall(r'CILIUM_CHART_VERSION="([^"]+)"', text)
-    assert len(assignments) == 1, (
-        f"expected exactly one effective CILIUM_CHART_VERSION assignment, "
-        f"found {len(assignments)}: {assignments}"
-    )
-    assert assignments[0] == PINNED_CILIUM_CHART_VERSION, (
-        f"setup-kind.sh pins Cilium {assignments[0]}, this guard and "
-        f"cilium-values.yaml say {PINNED_CILIUM_CHART_VERSION}"
-    )
-    assert '--version "${CILIUM_CHART_VERSION}"' in text, (
-        "the helm install must pass the pinned version explicitly; an "
-        "unpinned `helm install` floats to whatever the repo cache holds"
-    )
-
-
 def test_stage2_uses_the_stage2_kind_config():
-    """The single most load-bearing behaviour here: stage 2 must create the
-    cluster from the config that carries `disableDefaultCNI`.
-
-    Asserts on the assignment itself in comment-stripped code, with no
-    disjunct a stray comment could satisfy, and
+    """Stage 2 must select its config by stage, never hardcode stage1.yaml.
+    Comment-stripped, and
     `test_stage_two_creates_the_cluster_from_stage2_yaml_when_run` below
-    proves the same thing behaviourally.
-    """
+    proves the same thing behaviourally."""
     text = _effective_script()
     assert re.search(
         r'KIND_CONFIG="\$ROOT/deploy/kind/stage\$\{STAGE\}\.yaml"', text
-    ), (
-        "the stage-2 path must select its kind config by stage — expected an "
-        "effective assignment of KIND_CONFIG to "
-        '"$ROOT/deploy/kind/stage${STAGE}.yaml"; a hardcoded stage1.yaml here '
-        "would build a kindnet cluster and then install Cilium on top of it"
-    )
+    ), "the stage-2 path must select its kind config by stage"
     assert not re.search(r'KIND_CONFIG="[^"]*stage1\.yaml"', text), (
         "KIND_CONFIG must not be hardcoded to stage1.yaml"
     )
-    assert 'kind create cluster --config "$KIND_CONFIG"' in text, (
-        "the cluster must actually be created from KIND_CONFIG"
-    )
-
-
-def test_stage2_is_no_longer_the_not_implemented_stub():
-    """A prose-staleness guard, and deliberately nothing more: it pins that the
-    refusal message does not claim stage 2 is unimplemented. The *behaviour*
-    — that stage 2 dispatches and stages above it do not — is proven by
-    `test_stages_above_the_implemented_one_still_refuse_to_run` and
-    `test_an_unimplemented_stage_actually_exits_nonzero` below, not here."""
-    text = SETUP_KIND.read_text()
-    assert "implement stage 1 only" not in text, (
-        "setup-kind.sh still claims only stage 1 is implemented"
-    )
-    assert "Cilium arrives at stage 2 via a cluster recreate" not in text, (
-        "setup-kind.sh still points forward to a recreate that has happened"
-    )
+    assert 'kind create cluster --config "$KIND_CONFIG"' in text
 
 
 def test_stages_above_the_implemented_one_still_refuse_to_run():
@@ -297,31 +228,74 @@ def test_stages_above_the_implemented_one_still_refuse_to_run():
     )
 
 
-def test_cilium_is_ready_before_any_workload_is_deployed():
-    """A pod scheduled before cilium-agent is ready comes up with no
-    networking. That failure presents as a mysteriously broken demo, not as a
-    failed install, so the ordering is asserted rather than assumed.
-
-    Computed over comment-stripped code, so an explanatory comment naming
-    `rollout status daemonset/cilium` cannot satisfy the ordering while the
-    real waits sit after the deploy.
-    """
+def test_linkerd_is_ready_before_any_workload_is_deployed():
+    """A pod admitted before the injector webhook is serving comes up WITHOUT
+    its proxy and nothing says so. Computed over comment-stripped code, so an
+    explanatory comment cannot satisfy the ordering while the real steps sit
+    after the deploy. The order inside the install matters too: Gateway API
+    CRDs, then linkerd-crds, then the control plane, then the Available wait."""
     text = _effective_script()
-    ds_wait = text.find("rollout status daemonset/cilium")
-    op_wait = text.find("rollout status deployment/cilium-operator")
+    gw = text.find('apply --server-side -f "${GATEWAY_API_MANIFEST}"')
+    crds = text.find("upgrade --install linkerd-crds")
+    cp = text.find("upgrade --install linkerd-control-plane")
+    wait = text.find("-n linkerd wait")
     deploy = text.find("rebuild-and-deploy.sh")
     jaeger = text.find("jaeger.yaml")
-    assert ds_wait != -1, "must wait for the cilium DaemonSet rollout"
-    assert op_wait != -1, "must wait for the cilium-operator Deployment rollout"
-    assert deploy != -1 and jaeger != -1
-    assert ds_wait < jaeger and op_wait < jaeger, (
-        "both Cilium readiness waits must come before the observability "
-        "manifests are applied"
-    )
-    assert ds_wait < deploy and op_wait < deploy, (
-        "both Cilium readiness waits must come before stage 1's workloads are "
-        "built and deployed"
-    )
+    namespaces = text.find("deploy/k8s/namespaces.yaml")
+    assert -1 not in (gw, crds, cp, wait, deploy, jaeger, namespaces)
+    assert gw < crds < cp < wait, "Gateway API CRDs, linkerd-crds, control plane, then wait"
+    assert "--for=condition=Available deployment --all" in text[wait:wait + 200]
+    assert wait < namespaces, "the meshed namespaces must not exist before the injector does"
+    assert wait < jaeger and wait < deploy
+    assert "Linkerd ${LINKERD_APP_VERSION} is ready" in text
+
+
+def test_namespaces_and_pods_are_meshed_where_the_design_says():
+    """The three app namespaces by namespace annotation; agentgateway and the
+    policy-decision-service by pod annotation. Nothing in observability,
+    spire*, kyverno, flagd/OpenFeature, cert-manager, kube-system or linkerd."""
+    namespaces = {d["metadata"]["name"]: d for d in _docs(REPO_ROOT / "deploy/k8s/namespaces.yaml")}
+    meshed = {
+        n for n, d in namespaces.items()
+        if d["metadata"].get("annotations", {}).get("linkerd.io/inject") == "enabled"
+    }
+    assert meshed == {"northstar-agents", "northstar-tools", "northstar-systems"}
+
+    for rel, kind in (
+        ("deploy/platform/agentgateway/deployment.yaml", "Deployment"),
+        ("deploy/k8s/policy-decision-service.yaml", "Deployment"),
+    ):
+        deployments = [d for d in _docs(REPO_ROOT / rel) if d.get("kind") == kind]
+        assert deployments, rel
+        for d in deployments:
+            ann = d["spec"]["template"]["metadata"].get("annotations", {})
+            assert ann.get("linkerd.io/inject") == "enabled", f"{rel}: pod template not meshed"
+
+    # And nothing else under deploy/ opts in: an annotation is invisible in a
+    # green suite, so the whole tree is swept.
+    offenders = []
+    for path in sorted((REPO_ROOT / "deploy").rglob("*.yaml")):
+        if path.name == "values.yaml" or "linkerd.io/inject" not in path.read_text():
+            continue
+        offenders.append(path.relative_to(REPO_ROOT).as_posix())
+    assert sorted(offenders) == [
+        "deploy/k8s/namespaces.yaml",
+        "deploy/k8s/policy-decision-service.yaml",
+        "deploy/platform/agentgateway/deployment.yaml",
+    ], offenders
+
+
+def test_no_cilium_survives_in_effective_setup_code_except_the_refusal():
+    """Comment-stripped. The only effective lines that may name Cilium are the
+    existing-cluster check and its two refusal messages."""
+    lines = [l for l in _effective_script().splitlines() if "cilium" in l.lower()]
+    assert lines, "the existing-cluster refusal for a Cilium cluster is gone"
+    for line in lines:
+        assert (
+            "get daemonset cilium" in line
+            or "still runs Cilium" in line
+            or "Until M12" in line
+        ), f"unexpected Cilium reference in effective setup-kind.sh code: {line.strip()}"
 
 
 def test_stage2_creates_the_northstar_platform_namespace():
@@ -365,31 +339,18 @@ def test_the_model_key_set_empty_reporting_survives():
     )
 
 
-def test_an_existing_cluster_is_not_silently_reused_for_stage_2():
-    """`disableDefaultCNI` is create-time, so re-running `--stage 2` against a
-    cluster that already exists cannot apply it. Without a guard the script
-    would happily install Cilium on top of kindnet and report success — the
-    single worst outcome available here, because it looks like it worked.
-
-    Asserts on the `kubectl ... get daemonset kindnet` probe and on the
-    `exit 1` that must follow it, in comment-stripped code so neither a
-    comment nor the refusal message alone can satisfy it, and
-    `test_stage_two_refuses_an_existing_kindnet_cluster_when_run` below proves
-    the behaviour directly.
-    """
+def test_an_existing_cilium_cluster_is_not_silently_reused_for_stage_2():
+    """A pre-M12 cluster was created with `disableDefaultCNI` and runs Cilium;
+    the flag is create-time, so it cannot be converted and the script must not
+    report success on it. Asserts on the `kubectl ... get daemonset cilium`
+    probe and the `exit 1` that must follow it, in comment-stripped code, and
+    `test_stage_two_refuses_an_existing_cilium_cluster_when_run` proves the
+    behaviour directly."""
     text = _effective_script()
-    probe = re.search(r"kubectl[^\n]*-n kube-system get daemonset kindnet", text)
-    assert probe, (
-        "the stage-2 path must probe for the default CNI's DaemonSet with "
-        "`kubectl -n kube-system get daemonset kindnet` in effective code — "
-        "the word 'kindnet' appearing in a comment or an error message proves "
-        "nothing about whether the check runs"
-    )
+    probe = re.search(r"kubectl[^\n]*-n kube-system get daemonset cilium", text)
+    assert probe, "the stage-2 path must probe for Cilium's DaemonSet in effective code"
     tail = text[probe.end():]
-    assert "exit 1" in tail.split("fi")[0], (
-        "the kindnet probe must lead to `exit 1` — detecting the wrong CNI and "
-        "continuing is the silent-success outcome this guard exists to prevent"
-    )
+    assert "exit 1" in tail.split("fi")[0], "detecting Cilium and continuing is the silent-success outcome"
 
 
 # --- Behavioural tests: run the real script with fakes on PATH ------------
@@ -429,8 +390,8 @@ echo "kubectl $*" >> "$FAKE_LOG"
 for arg in "$@"; do
   if [[ "$arg" == "cluster-info" ]]; then exit 1; fi
 done
-if [[ "$*" == *"get daemonset kindnet"* ]]; then
-  [[ -n "${FAKE_KINDNET_PRESENT:-}" ]] && exit 0
+if [[ "$*" == *"get daemonset cilium"* ]]; then
+  [[ -n "${FAKE_CILIUM_PRESENT:-}" ]] && exit 0
   exit 1
 fi
 exit 0
@@ -442,7 +403,7 @@ exit 0
 }
 
 
-def _run_setup_kind(stage, cluster_exists, kindnet_present, tmp_path):
+def _run_setup_kind(stage, cluster_exists, cilium_present, tmp_path):
     """Copy the real script into a throwaway tree and run it against fakes.
 
     Returns (returncode, combined_output, invocations).
@@ -459,7 +420,6 @@ def _run_setup_kind(stage, cluster_exists, kindnet_present, tmp_path):
     # static committed file, and copying it for stages that never read it
     # costs nothing.
     shutil.copy2(STAGE3, tree / "deploy" / "kind" / "stage3.yaml")
-    shutil.copy2(CILIUM_VALUES, tree / "deploy" / "platform" / "cilium-values.yaml")
     # A fake .env with only the one variable the script requires. The repo's
     # real .env is never read, and no secret is involved.
     (tree / ".env").write_text("OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE=fake/collector:0\n")
@@ -478,8 +438,8 @@ def _run_setup_kind(stage, cluster_exists, kindnet_present, tmp_path):
     env["FAKE_LOG"] = str(log)
     if cluster_exists:
         env["FAKE_CLUSTER_EXISTS"] = "1"
-    if kindnet_present:
-        env["FAKE_KINDNET_PRESENT"] = "1"
+    if cilium_present:
+        env["FAKE_CILIUM_PRESENT"] = "1"
     # Never let a real credential reach the subprocess.
     env.pop("ANTHROPIC_API_KEY", None)
     env.pop("DASH0_AUTH_TOKEN", None)
@@ -507,8 +467,7 @@ def test_stage_two_creates_the_cluster_from_stage2_yaml_when_run(tmp_path):
     config = creates[0].split("--config", 1)[1].strip()
     assert Path(config).name == "stage2.yaml", (
         f"`--stage 2` created the cluster from {Path(config).name!r}, not "
-        "stage2.yaml — only stage2.yaml carries disableDefaultCNI, so this "
-        "would have built a kindnet cluster and then installed Cilium on top"
+        "stage2.yaml -- each stage selects its own kind config by name"
     )
 
 
@@ -522,8 +481,7 @@ def test_stage_one_creates_the_cluster_from_stage1_yaml_when_run(tmp_path):
     assert creates, f"`kind create cluster` was never invoked; output:\n{out}"
     config = creates[0].split("--config", 1)[1].strip()
     assert Path(config).name == "stage1.yaml", (
-        f"`--stage 1` created the cluster from {Path(config).name!r}; stage 1 "
-        "must keep its default CNI"
+        f"`--stage 1` created the cluster from {Path(config).name!r}"
     )
 
 
@@ -559,44 +517,32 @@ def test_stage_six_creates_the_cluster_from_stage3_yaml_when_cold(tmp_path):
 
 
 @pytestmark_bash
-def test_stage_two_refuses_an_existing_kindnet_cluster_when_run(tmp_path):
+def test_stage_two_refuses_an_existing_cilium_cluster_when_run(tmp_path):
     """The behavioural counterpart to
-    `test_an_existing_cluster_is_not_silently_reused_for_stage_2`, and the only
-    assertion here that could not have been satisfied by the refusal message
-    alone: with an existing cluster whose kindnet DaemonSet is present,
-    `--stage 2` must exit non-zero and must not proceed."""
+    `test_an_existing_cilium_cluster_is_not_silently_reused_for_stage_2`: with
+    an existing cluster whose Cilium DaemonSet is present, `--stage 2` must
+    exit non-zero with the delete-and-recreate hint, and must not proceed."""
     rc, out, calls = _run_setup_kind("2", True, True, tmp_path)
     assert rc != 0, (
-        "`--stage 2` over an existing kindnet cluster exited 0 — the "
-        "create-time disableDefaultCNI flag cannot be applied to an existing "
-        f"cluster, so this is the silent-success failure mode. Output:\n{out}"
+        "`--stage 2` over an existing Cilium cluster exited 0 -- that cluster "
+        f"was created with disableDefaultCNI and cannot be converted. Output:\n{out}"
     )
-    assert "still running the default CNI" in out, (
-        f"expected the refusal to name the reason; got:\n{out}"
-    )
-    assert not [c for c in calls if c.startswith("kind create cluster")], (
-        "the script must not create a cluster on this path"
-    )
+    assert "still runs Cilium" in out, f"expected the refusal to name the reason; got:\n{out}"
+    assert "kind delete cluster --name northstar" in out, "the refusal must carry the recreate hint"
+    assert not [c for c in calls if c.startswith("kind create cluster")]
     assert not [c for c in calls if c.startswith("helm upgrade")], (
-        "the script must refuse BEFORE installing Cilium — installing it on "
-        "top of a live kindnet is exactly what this guard prevents"
+        "the script must refuse BEFORE installing anything"
     )
 
 
 @pytestmark_bash
-def test_stage_two_proceeds_when_the_existing_cluster_has_no_kindnet(tmp_path):
-    """The guard must refuse a *kindnet* cluster specifically, not every
-    existing cluster — otherwise re-running `--stage 2` against the Cilium
-    cluster it just built would fail, and the guard would be a nuisance rather
-    than a safety net. Same inputs as the test above except the kindnet probe
-    fails."""
+def test_stage_two_proceeds_when_the_existing_cluster_has_no_cilium(tmp_path):
+    """The guard must refuse a *Cilium* cluster specifically, not every
+    existing cluster: a stage-1 cluster upgraded to stage 2 has the same CNI
+    and is fine. Same inputs as above except the Cilium probe fails."""
     _, out, _ = _run_setup_kind("2", True, False, tmp_path)
-    assert "still running the default CNI" not in out, (
-        f"the guard fired against a cluster with no kindnet DaemonSet:\n{out}"
-    )
-    assert "Cluster already exists, skipping creation." in out, (
-        f"expected the script to reuse the existing Cilium cluster; got:\n{out}"
-    )
+    assert "still runs Cilium" not in out, f"the guard fired against a cluster with no Cilium:\n{out}"
+    assert "Cluster already exists, skipping creation." in out
 
 
 def test_no_operator_facing_instruction_still_points_at_an_older_stage():

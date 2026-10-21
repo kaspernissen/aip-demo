@@ -1,3 +1,7 @@
+# northstar-agents, northstar-tools and northstar-systems are meshed by Linkerd
+# (M12): the namespace annotation makes the injector add a proxy to every pod
+# created in them. It is inert at stage 1 (no Linkerd, no injector). `observability`
+# is deliberately not meshed, and nor is any infrastructure namespace.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -7,13 +11,19 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: northstar-agents
+  annotations:
+    linkerd.io/inject: enabled
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: northstar-tools
+  annotations:
+    linkerd.io/inject: enabled
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: northstar-systems
+  annotations:
+    linkerd.io/inject: enabled

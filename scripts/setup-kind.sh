@@ -5,12 +5,22 @@ CLUSTER_NAME="northstar"
 REGISTRY_NAME="kind-registry"
 REGISTRY_PORT="5001"
 STAGE=1
-# Nothing floats. Resolved from `helm search repo cilium/cilium --versions`:
-# newest stable 1.x, appVersion 1.20.1 (previous minor 1.19.7). The same
-# version is recorded in deploy/platform/cilium-values.yaml's header and
-# pinned by tests/unit/test_stage2_cilium_config.py so the two cannot drift.
-CILIUM_CHART_VERSION="1.20.1"
-CILIUM_HELM_REPO="https://helm.cilium.io/"
+# Linkerd. Nothing floats. OSS Linkerd ships edge releases only; edge-26.10.1
+# (2026-10-05) is the newest, read off `helm search repo linkerd-edge --versions`
+# and cross-checked against https://helm.linkerd.io/edge/index.yaml: the chart
+# version string is NOT the app version (2026.10.1, not edge-26.10.1), and the
+# two charts below are versioned together. Recorded in
+# deploy/platform/linkerd/values.yaml's header and pinned by
+# tests/unit/test_stage2_linkerd_config.py so they cannot drift.
+#
+# Gateway API CRDs go in first (linkerd-crds has installGatewayAPI: false):
+# Linkerd's HTTPRoute-based per-route authorization needs them. Standard
+# channel, v1.5.1 -- inside the 1.2.1-1.5.1 range Linkerd 2.20 supports.
+LINKERD_CHART_VERSION="2026.10.1"
+LINKERD_APP_VERSION="edge-26.10.1"
+LINKERD_HELM_REPO="https://helm.linkerd.io/edge"
+GATEWAY_API_VERSION="v1.5.1"
+GATEWAY_API_MANIFEST="https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/standard-install.yaml"
 # SPIRE. Two charts, and the ORDER MATTERS -- `spiffe/spire`
 # installed on its own fails on the missing spire.spiffe.io CRDs, which its own
 # bundled spire-controller-manager needs before it can reconcile a single
@@ -33,7 +43,7 @@ SPIFFE_HELM_REPO="https://spiffe.github.io/helm-charts-hardened/"
 # cache -- Artifact Hub's opensearch-project-helm-charts/opensearch package
 # (version AND app_version both "3.8.0") and
 # https://api.github.com/repos/opensearch-project/helm-charts/releases (tag
-# opensearch-3.8.0, prerelease: false, the newest entry). Unlike Cilium/SPIRE
+# opensearch-3.8.0, prerelease: false, the newest entry). Unlike Linkerd/SPIRE
 # this chart's tags equal its appVersion. The same number and the same
 # evidence are recorded in deploy/observability/opensearch/values.yaml and
 # dashboards-values.yaml's headers.
@@ -102,9 +112,9 @@ Usage: setup-kind.sh [--stage N]
 
   --stage 1   Connected:  agents, tools, systems, customer UI, collector, Jaeger
                           [installs]
-  --stage 2   Governed:   stage 1, on a Cilium dataplane -- the cluster is
-                          created with kind's default CNI disabled
-                          [installs Cilium, SPIFFE/SPIRE, agentgateway and
+  --stage 2   Governed:   stage 1, meshed by Linkerd -- kind's default CNI
+                          (kindnet) stays, and enforces NetworkPolicy
+                          [installs Linkerd, SPIFFE/SPIRE, agentgateway and
                           the Policy Decision Service. The gateway sits in
                           the MCP path, verifies a SPIRE-issued JWT-SVID on
                           every MCP call, and asks the PDS for a permit/deny
@@ -193,7 +203,7 @@ Usage: setup-kind.sh [--stage N]
                           or northstar-tools) may not create, update or delete
                           the objects that define its own authority (the
                           autonomy FeatureFlag, the gateway's ConfigMap,
-                          Cilium policies, RBAC, Kyverno's own policy and
+                          network policies, RBAC, Kyverno's own policy and
                           exceptions). It fails closed. Runs on stage 3's
                           cluster config UNCHANGED -- see the KIND_CONFIG
                           note below -- nothing it installs needs a host
@@ -205,15 +215,17 @@ Usage: setup-kind.sh [--stage N]
 Each stage installs only what that stage of the demo needs, so the laptop
 runs exactly one stage at a time.
 
-Stages 2 and up all need `networking.disableDefaultCNI`, a create-time
-kind flag: it cannot be applied to a cluster that already exists, so the
-cluster must be created FROM a kind config that sets it -- deploy/kind/
-stage2.yaml or deploy/kind/stage3.yaml (whose only difference from stage 2's
-is the reviewer-ui port reservation; stages 4 to 7 all reuse stage 3's, see
-below) -- and this script refuses rather than layering Cilium on a running
-default CNI. Note that --stage defaults to 1, so a bare
-`./scripts/setup-kind.sh` builds a stage-1 (kindnet) cluster -- pass --stage
-2 or higher explicitly for the Cilium dataplane.
+Stages 2 and up run on kind's default CNI (kindnet, which enforces core
+NetworkPolicy since kind 0.24) with Linkerd meshing the app namespaces. Each
+stage still brings its own kind config -- deploy/kind/stage2.yaml or
+deploy/kind/stage3.yaml (whose only difference from stage 2's is the
+reviewer-ui port reservation; stages 4 to 7 all reuse stage 3's, see below).
+Until M12 the dataplane was Cilium, installed on a cluster created with
+`networking.disableDefaultCNI`; such a cluster cannot be converted in place
+(that flag is create-time), so this script refuses to reuse one and tells you
+to delete and recreate it. Note that --stage defaults to 1, so a bare
+`./scripts/setup-kind.sh` builds a stage-1 cluster -- pass --stage 2 or higher
+explicitly for the governed one.
 
 Stage 4 is the first exception to "each stage brings its own deploy/kind/
 stageN.yaml": there is deliberately no stage4.yaml. OpenSearch Dashboards
@@ -250,7 +262,7 @@ if ! [[ "$STAGE" =~ ^[0-9]+$ ]]; then
 fi
 
 if [[ "${STAGE}" -gt 7 ]]; then
-  echo "Stage $STAGE is not implemented yet. Stages 1 (Connected), 2 (Governed: Cilium), 3 (Supervised), 4 (Observable), 5 (Progressive autonomy), 6 (Golden path) and 7 (Bounded) are implemented." >&2
+  echo "Stage $STAGE is not implemented yet. Stages 1 (Connected), 2 (Governed: Linkerd), 3 (Supervised), 4 (Observable), 5 (Progressive autonomy), 6 (Golden path) and 7 (Bounded) are implemented." >&2
   exit 1
 fi
 
@@ -270,7 +282,7 @@ command_exists docker || { echo -e "${RED}docker is required${NC}" >&2; exit 1; 
 command_exists kind || { echo -e "${RED}kind is required: brew install kind${NC}" >&2; exit 1; }
 command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1; }
 if [[ "${STAGE}" -ge 2 ]]; then
-  command_exists helm || { echo -e "${RED}helm is required for stage 2 (Cilium): brew install helm${NC}" >&2; exit 1; }
+  command_exists helm || { echo -e "${RED}helm is required for stage 2 (Linkerd): brew install helm${NC}" >&2; exit 1; }
 fi
 : "${OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE:?OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE not set in .env}"
 
@@ -328,17 +340,17 @@ fi
 [[ -f "$KIND_CONFIG" ]] || { echo -e "${RED}Error: ${KIND_CONFIG} not found.${NC}" >&2; exit 1; }
 
 if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
-  # `disableDefaultCNI` cannot be applied to a cluster that already exists, so
-  # re-running `--stage 2` over a stage-1 cluster would install Cilium on top
-  # of a live kindnet — two CNIs, and a script that reports success. That is
-  # the worst outcome available here precisely because it looks like it
-  # worked, so detect it and refuse. The check reads the cluster rather than
-  # trusting a marker file: kindnet's DaemonSet is present if and only if kind
-  # installed the default CNI.
+  # A cluster built before M12 was created with `disableDefaultCNI` and runs
+  # Cilium instead of kindnet. That flag is create-time, so the cluster cannot
+  # be converted: it has no kindnet, and layering Linkerd and NetworkPolicy on
+  # a Cilium dataplane would report success on a shape nothing here tests. So
+  # detect it and refuse. The check reads the cluster rather than trusting a
+  # marker file: Cilium's DaemonSet is present if and only if Cilium was
+  # installed. A stage-1 cluster upgraded to stage 2 is fine (same CNI).
   if [[ "${STAGE}" -ge 2 ]] \
-    && kubectl --context "kind-${CLUSTER_NAME}" -n kube-system get daemonset kindnet >/dev/null 2>&1; then
-    echo -e "${RED}Error: cluster '${CLUSTER_NAME}' already exists and is still running the default CNI (the kube-system/kindnet DaemonSet is present).${NC}" >&2
-    echo "networking.disableDefaultCNI is a create-time kind flag, so stage ${STAGE} cannot be applied to this cluster." >&2
+    && kubectl --context "kind-${CLUSTER_NAME}" -n kube-system get daemonset cilium >/dev/null 2>&1; then
+    echo -e "${RED}Error: cluster '${CLUSTER_NAME}' already exists and still runs Cilium (the kube-system/cilium DaemonSet is present).${NC}" >&2
+    echo "It was created with networking.disableDefaultCNI, a create-time kind flag, so stage ${STAGE} (Linkerd on kindnet) cannot be applied to it." >&2
     echo "Recreate it deliberately:" >&2
     echo "  kind delete cluster --name ${CLUSTER_NAME} && ./scripts/setup-kind.sh --stage ${STAGE}" >&2
     exit 1
@@ -350,33 +362,50 @@ fi
 kubectl cluster-info --context "kind-${CLUSTER_NAME}"
 
 if [[ "${STAGE}" -ge 2 ]]; then
-  echo -e "${BLUE}Step 2b/9 (stage 2+): Installing Cilium ${CILIUM_CHART_VERSION}...${NC}"
-  # With disableDefaultCNI the node stays NotReady and coredns stays Pending
-  # until a CNI arrives, so this must run before anything is scheduled. The
-  # API server itself is host-networked and already reachable above.
-  helm repo add cilium "${CILIUM_HELM_REPO}" --force-update >/dev/null
-  helm repo update cilium >/dev/null
-  helm upgrade --install cilium cilium/cilium \
-    --version "${CILIUM_CHART_VERSION}" \
-    --namespace kube-system \
+  echo -e "${BLUE}Step 2b/9 (stage 2+): Installing Linkerd ${LINKERD_APP_VERSION} (chart ${LINKERD_CHART_VERSION})...${NC}"
+  # kindnet is the CNI (kind's default), so the node is Ready already; what
+  # must not be skipped is the order. Linkerd's injector is a mutating webhook:
+  # a pod admitted before it is serving comes up WITHOUT its proxy and nothing
+  # says so. So the control plane is installed, and every Deployment in the
+  # `linkerd` namespace is Available, before any workload is applied.
+  # Ordering asserted by
+  # tests/unit/test_stage2_linkerd_config.py::test_linkerd_is_ready_before_any_workload_is_deployed.
+  kubectl --context "kind-${CLUSTER_NAME}" wait --for=condition=Ready nodes --all --timeout=300s
+  kubectl --context "kind-${CLUSTER_NAME}" -n kube-system rollout status deployment/coredns --timeout=300s
+
+  # 1. Gateway API CRDs (standard channel). linkerd-crds has
+  #    installGatewayAPI: false, and Linkerd's per-route authorization uses
+  #    gateway.networking.k8s.io HTTPRoutes. Server-side apply: these CRDs are
+  #    larger than the client-side last-applied annotation allows.
+  kubectl --context "kind-${CLUSTER_NAME}" apply --server-side -f "${GATEWAY_API_MANIFEST}"
+
+  # 2. The identity certificates (openssl, ECDSA P-256), idempotent, into a
+  #    git-ignored directory.
+  LINKERD_CERTS="$ROOT/.demo/linkerd-certs"
+  "$ROOT/scripts/linkerd-certs.sh" "${LINKERD_CERTS}"
+
+  # 3. Linkerd's CRDs, then the control plane.
+  helm repo add linkerd-edge "${LINKERD_HELM_REPO}" --force-update >/dev/null
+  helm repo update linkerd-edge >/dev/null
+  helm upgrade --install linkerd-crds linkerd-edge/linkerd-crds \
+    --version "${LINKERD_CHART_VERSION}" \
+    --namespace linkerd --create-namespace \
     --kube-context "kind-${CLUSTER_NAME}" \
-    --values "$ROOT/deploy/platform/cilium-values.yaml" \
+    --wait --timeout 5m
+  helm upgrade --install linkerd-control-plane linkerd-edge/linkerd-control-plane \
+    --version "${LINKERD_CHART_VERSION}" \
+    --namespace linkerd \
+    --kube-context "kind-${CLUSTER_NAME}" \
+    --values "$ROOT/deploy/platform/linkerd/values.yaml" \
+    --set-file identityTrustAnchorsPEM="${LINKERD_CERTS}/ca.crt" \
+    --set-file identity.issuer.tls.crtPEM="${LINKERD_CERTS}/issuer.crt" \
+    --set-file identity.issuer.tls.keyPEM="${LINKERD_CERTS}/issuer.key" \
     --wait --timeout 10m
 
-  # Cilium must be *ready*, not merely installed, before any workload is
-  # applied: a pod scheduled while cilium-agent is still starting comes up
-  # without networking, which presents as a broken demo rather than a failed
-  # install. Ordering asserted by
-  # tests/unit/test_stage2_cilium_config.py::test_cilium_is_ready_before_any_workload_is_deployed.
-  kubectl --context "kind-${CLUSTER_NAME}" -n kube-system rollout status daemonset/cilium --timeout=300s
-  kubectl --context "kind-${CLUSTER_NAME}" -n kube-system rollout status deployment/cilium-operator --timeout=300s
-  kubectl --context "kind-${CLUSTER_NAME}" wait --for=condition=Ready nodes --all --timeout=300s
-  # coredns was created before the CNI existed and sat Pending; it only
-  # schedules once Cilium is up. Wait for it too — every service in this repo
-  # resolves its peers by DNS name, so a workload deployed while coredns is
-  # still coming up fails on name resolution, not on networking.
-  kubectl --context "kind-${CLUSTER_NAME}" -n kube-system rollout status deployment/coredns --timeout=300s
-  echo -e "${GREEN}Cilium ${CILIUM_CHART_VERSION} is ready.${NC}"
+  # 4. Every control-plane Deployment Available, not merely installed.
+  kubectl --context "kind-${CLUSTER_NAME}" -n linkerd wait \
+    --for=condition=Available deployment --all --timeout=300s
+  echo -e "${GREEN}Linkerd ${LINKERD_APP_VERSION} is ready.${NC}"
 fi
 
 echo -e "${BLUE}Step 3/9: Configuring registry access on cluster nodes...${NC}"
@@ -423,19 +452,17 @@ metadata:
 EOF
 
   # The network policy that makes the choke point real rather than
-  # conventional -- only agentgateway may reach payments-mcp on 8000. See
-  # deploy/platform/cilium-policies.yaml for the measurement that motivated it
-  # (claims-agent reached the tool directly and got HTTP 200).
+  # conventional -- only agentgateway may reach payments-mcp on 8000 -- was a
+  # CiliumNetworkPolicy file applied here. Cilium is gone (M12 Task 1) and its
+  # CRDs with it, so `kubectl apply -f deploy/platform/cilium-policies.yaml`
+  # would now fail stage 2. The apply is commented out, not removed, and the
+  # file still exists: Task 2 of M12 deletes it and applies
+  # deploy/platform/reach/linkerd-policies.yaml and network-policies.yaml in
+  # this spot. UNTIL THEN a cluster built from this commit has NO ingress or
+  # egress policy on the money path; it is not a state to demo or gate.
   #
-  # Applied HERE, before Step 9 deploys any workload, and not next to the
-  # gateway install at Step 9b where it would read more naturally. A
-  # CiliumNetworkPolicy selects endpoints by label and does not require its
-  # targets to exist yet, so applying it early costs nothing and closes the
-  # window in which payments-mcp is running but unprotected. The CRD it needs
-  # was installed with Cilium at Step 2b, which is why this cannot move any
-  # earlier than this block.
-  kubectl --context "kind-${CLUSTER_NAME}" apply \
-    -f "$ROOT/deploy/platform/cilium-policies.yaml"
+  # kubectl --context "kind-${CLUSTER_NAME}" apply \
+  #   -f "$ROOT/deploy/platform/cilium-policies.yaml"
 fi
 
 # settlement-agent's decision is a real model call, so it needs a model
@@ -621,7 +648,7 @@ if [[ "${STAGE}" -ge 2 ]]; then
     -f "$ROOT/deploy/platform/spire/metrics.yaml"
 
   # SPIRE must be *ready*, not merely installed, before the workloads that
-  # mount its socket are applied -- same rule Cilium follows above, for the
+  # mount its socket are applied -- same rule Linkerd follows above, for the
   # same reason. `helm --wait` already waited on the server and the CSI
   # driver, but the spire-agent DaemonSet has to have attested to its node
   # before it can answer a single Workload API call, and that happens after
@@ -778,13 +805,10 @@ if [[ "${STAGE}" -ge 4 ]]; then
   # of its own gets no identity at all and nothing says so -- verified against
   # the live cluster with `spire-server entry show` rather than assumed.
   #
-  # deploy/platform/cilium-policies.yaml, on the other hand, names no
-  # rule selecting it, so -- in Cilium, where policy is per-endpoint and an
-  # endpoint no rule selects is unrestricted -- it reaches OpenSearch and the
-  # collector without one. That is a known posture gap, not an oversight:
-  # writing an egress allow-list makes the endpoint default-deny, which is the
-  # hazard that file's own header names twice, and it is the kind of change
-  # that cannot be safely verified without recreating the cluster.
+  # The reach policies (M12: Linkerd Servers and NetworkPolicy, under
+  # deploy/platform/reach/) name no rule selecting it, and it is not meshed:
+  # a pod no policy selects is unrestricted, so it reaches OpenSearch and the
+  # collector without one. That is a known posture gap, not an oversight.
   echo -e "${BLUE}Step 8e/9 (stage 4): Building and deploying eval-scorer...${NC}"
   "$ROOT/scripts/rebuild-and-deploy.sh" eval-scorer
   echo -e "${GREEN}eval-scorer is up on 8300, reading ss4o_traces-default-namespace.${NC}"
@@ -804,7 +828,7 @@ if [[ "${STAGE}" -ge 5 ]]; then
   # at admission time. A PDS pod created before that webhook exists gets no
   # sidecar injected and no error either -- an annotation a webhook does not
   # yet exist to act on is just metadata -- so the ordering is load-bearing in
-  # the same "wrong order fails silently" way Cilium-before-workloads and
+  # the same "wrong order fails silently" way Linkerd-before-workloads and
   # SPIRE-before-workloads already are above.
   echo -e "${BLUE}Step 8f/9 (stage 5): Installing cert-manager ${CERT_MANAGER_VERSION}...${NC}"
   # cert-manager itself needs no `--kube-context`: this releases's own
@@ -1033,20 +1057,17 @@ if [[ "${STAGE}" -ge 3 ]]; then
   # apply/restart/rollout-status sequence the blocks above rely on.
   #
   # Its identity is named in-tree (deploy/platform/spire/registration.yaml,
-  # northstar-reviewer-ui) and its network policy is in
-  # deploy/platform/cilium-policies.yaml, both applied above.
+  # northstar-reviewer-ui); it has no ingress restriction (see
+  # deploy/platform/reach/ once M12 Task 2 lands).
   echo -e "${BLUE}Step 9d/9 (stage 3): Deploying the supervised workloads...${NC}"
   # M8 retired senior-settlement-agent: a human approval is now reviewer-ui's
   # own execute_payment through the gateway. `kubectl apply` never prunes, so a
   # cluster that ran an earlier stage 3 still has its Deployment, Service,
-  # ServiceAccount and the two CiliumNetworkPolicies. Deleting them here keeps
+  # and ServiceAccount. Deleting them here keeps
   # "senior is gone" true on a re-run, not only on a fresh cluster.
   kubectl --context "kind-${CLUSTER_NAME}" -n northstar-agents delete \
     deployment/senior-settlement-agent service/senior-settlement-agent \
     serviceaccount/senior-settlement-agent --ignore-not-found
-  kubectl --context "kind-${CLUSTER_NAME}" -n northstar-agents delete \
-    ciliumnetworkpolicy/senior-settlement-agent-egress-allowlist \
-    ciliumnetworkpolicy/senior-settlement-agent-ingress-allowlist --ignore-not-found
   "$ROOT/scripts/rebuild-and-deploy.sh" reviewer-ui
   echo -e "${GREEN}reviewer-ui is up on 8081 (NodePort, mapped by deploy/kind/stage3.yaml); it releases approved payments through the gateway under its own identity.${NC}"
 fi
@@ -1103,17 +1124,17 @@ echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payment
 
 echo ""
 if [[ "${STAGE}" -eq 7 ]]; then
-  echo -e "${GREEN}Stage 7 (Bounded) is up: stage 6's workloads and backends, unchanged, plus Kyverno ${KYVERNO_CHART_VERSION} (app ${KYVERNO_APP_VERSION}) tracing to the collector, and the keystone policy agents-cannot-edit-their-own-authority (ValidatingPolicy, failurePolicy Fail): a northstar-agents or northstar-tools ServiceAccount cannot create, update or delete the autonomy FeatureFlag, the gateway's ConfigMap, Cilium policies, RBAC or Kyverno's own policy and exceptions -- even if RBAC were wrong. Beats: ./scripts/beat-reach.sh and ./scripts/beat-keystone.sh. Run ./scripts/start-demo.sh to reach Backstage at http://localhost:7007.${NC}"
+  echo -e "${GREEN}Stage 7 (Bounded) is up: stage 6's workloads and backends, unchanged, plus Kyverno ${KYVERNO_CHART_VERSION} (app ${KYVERNO_APP_VERSION}) tracing to the collector, and the keystone policy agents-cannot-edit-their-own-authority (ValidatingPolicy, failurePolicy Fail): a northstar-agents or northstar-tools ServiceAccount cannot create, update or delete the autonomy FeatureFlag, the gateway's ConfigMap, network policies, RBAC or Kyverno's own policy and exceptions -- even if RBAC were wrong. Beats: ./scripts/beat-reach.sh and ./scripts/beat-keystone.sh. Run ./scripts/start-demo.sh to reach Backstage at http://localhost:7007.${NC}"
 elif [[ "${STAGE}" -eq 6 ]]; then
   echo -e "${GREEN}Stage 6 (Golden path) is up: stage 5's workloads and backends, unchanged, plus Backstage in northstar-platform on SQLite. Its read-only ServiceAccount is wired to the Kubernetes plugin (get/list/watch on Pods, Deployments, ReplicaSets, Services, ConfigMaps and the other default object types; no Secrets, no write verbs) and its own, separate ServiceAccount carries the one narrow write grant (get/list/patch, resourceNames: [northstar-autonomy], no delete -- deploy/k8s/backstage.yaml). The catalog covers this repo's own eight components (agent cards linked, not restated) plus Backstage itself, each showing its live workload; the autonomy card reads northstar-autonomy live, per identity, and can change it from a UI instead of kubectl. Run ./scripts/start-demo.sh to reach it, unauthenticated at http://localhost:7007 once forwarded.${NC}"
 elif [[ "${STAGE}" -eq 5 ]]; then
   echo -e "${GREEN}Stage 5 (Progressive autonomy) is up: stage 4's workloads and backends, unchanged, plus cert-manager ${CERT_MANAGER_VERSION}, the Open Feature Operator ${OPENFEATURE_CHART_VERSION}, and the northstar-autonomy FeatureFlag/FeatureFlagSource pair. The PDS pod carries a flagd sidecar answering on localhost:8013 inside it, serving flag 'autonomy-level' (variants assisted/autonomous, targeted on evaluation-context key spiffeId) -- still resolved nowhere yet, since this stage stands up the machinery only.${NC}"
 elif [[ "${STAGE}" -eq 4 ]]; then
-  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workload (reviewer-ui) on the same Cilium ${CILIUM_CHART_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- unchanged -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them with the evidence view already imported, prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone, and eval-scorer scoring a settlement's trajectory against the five policy-adherence properties and emitting each score back into the trace it judges. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port, and the evidence view is at http://localhost:5601/app/dashboards#/view/northstar-evidence.${NC}"
+  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workload (reviewer-ui) on the same Linkerd ${LINKERD_APP_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- unchanged -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them with the evidence view already imported, prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone, and eval-scorer scoring a settlement's trajectory against the five policy-adherence properties and emitting each score back into the trace it judges. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port, and the evidence view is at http://localhost:5601/app/dashboards#/view/northstar-evidence.${NC}"
 elif [[ "${STAGE}" -eq 3 ]]; then
-  echo -e "${GREEN}Stage 3 (Supervised) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity, plus reviewer-ui -- so a payment the agent may not release now has a human who can release it.${NC}"
+  echo -e "${GREEN}Stage 3 (Supervised) is up: stage 1's workloads meshed by Linkerd ${LINKERD_APP_VERSION}, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity, plus reviewer-ui -- so a payment the agent may not release now has a human who can release it.${NC}"
 elif [[ "${STAGE}" -ge 2 ]]; then
-  echo -e "${GREEN}Stage 2 (Governed) is up: stage 1's workloads on a Cilium ${CILIUM_CHART_VERSION} dataplane, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity.${NC}"
+  echo -e "${GREEN}Stage 2 (Governed) is up: stage 1's workloads meshed by Linkerd ${LINKERD_APP_VERSION}, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity.${NC}"
 else
   echo -e "${GREEN}Stage 1 (Connected) is up.${NC}"
 fi

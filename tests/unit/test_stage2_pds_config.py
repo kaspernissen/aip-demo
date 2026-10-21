@@ -59,7 +59,7 @@ from pathlib import Path
 
 import yaml
 
-from tests.unit.test_stage2_cilium_config import _effective_script
+from tests.unit._setup_script import effective_script as _effective_script
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GATEWAY_CONFIG = REPO_ROOT / "deploy" / "platform" / "agentgateway" / "config.yaml"

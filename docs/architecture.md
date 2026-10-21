@@ -1,4 +1,4 @@
-# Northstar Architecture — M10 (span links), on M9 (Weaver registry) and M8's Human in the loop
+# Northstar Architecture — M12 (Linkerd for reach, in progress), on M10 (span links), on M9 (Weaver registry) and M8's Human in the loop
 
 > **M8 change, read this first.** `senior-settlement-agent` was **retired in
 > M8**. Wherever this document, written milestone by milestone, describes it,
@@ -64,7 +64,7 @@
 >   `awaitingSince` to the decision. It is not sampled, and it reaches Prometheus as
 >   `northstar_approval_wait_duration_seconds_*` (measured; see the contract).
 
-Status: **M10 (Span links)**, in progress on branch `m10-span-links`: a claim that waits for a person is two traces and a link (trace A ends at the hand-off; trace B carries the release, the resume and the A2A push). Before it came **M9 (Weaver registry)**, on branch `m9-weaver-registry`: the registry in `telemetry/registry/` defines every owned telemetry name (all of them `northstar.*`, renamed everywhere at once), Weaver live-check checks the cluster's telemetry against it, and the demo reads Jaeger. This document uses the new names; the generated tables in `docs/telemetry-contract.md` are the attribute, span and metric inventory. Before it came **M8 (Human in the loop)**, on branch `m8-human-in-the-loop`, on top of **M7 (Bounded)**, which sat on **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
+Status: **M12 (Linkerd for reach)**, in progress on branch `m12-linkerd`: Cilium leaves the cluster; Linkerd authorizes ingress by workload identity and core NetworkPolicy (enforced by kindnet) denies egress. This document still describes the Cilium reach layer until M12's docs task rewrites it. Before it came **M10 (Span links)**, on branch `m10-span-links`: a claim that waits for a person is two traces and a link (trace A ends at the hand-off; trace B carries the release, the resume and the A2A push). Before it came **M9 (Weaver registry)**, on branch `m9-weaver-registry`: the registry in `telemetry/registry/` defines every owned telemetry name (all of them `northstar.*`, renamed everywhere at once), Weaver live-check checks the cluster's telemetry against it, and the demo reads Jaeger. This document uses the new names; the generated tables in `docs/telemetry-contract.md` are the attribute, span and metric inventory. Before it came **M8 (Human in the loop)**, on branch `m8-human-in-the-loop`, on top of **M7 (Bounded)**, which sat on **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
 autonomy) merged 2026-09-15 at `e62238f`, tagged `m5-verified`** -- read that
 tag's own message before trusting it, it claims less than its predecessors.
 Bumped in M6's first commit rather than left to a doc pass: this line went

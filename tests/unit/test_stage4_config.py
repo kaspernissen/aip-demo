@@ -3,7 +3,7 @@
 Stage 4 has no stage4.yaml: Dashboards' host port mapping can only be added
 at cluster CREATION (`extraPortMappings`), the same create-time rule that
 already governs `disableDefaultCNI` (see
-tests/unit/test_stage2_cilium_config.py). So stage 4 runs on stage 3's
+tests/unit/test_stage2_linkerd_config.py). So stage 4 runs on stage 3's
 cluster config unchanged, and OpenSearch Dashboards is reached by
 port-forward via `scripts/start-demo.sh`.
 
@@ -83,7 +83,7 @@ ARCHITECTURE = REPO_ROOT / "docs/architecture.md"
 def _without_comments(path: Path) -> str:
     """`path` with the shebang and every whole-line comment removed.
 
-    The same tool `tests/unit/test_stage2_cilium_config.py::_effective_script`
+    The same tool `tests/unit/test_stage2_linkerd_config.py::_effective_script`
     introduced, and for the same reason: a comment must not be able to satisfy
     an assertion. Trailing comments are deliberately not stripped (doing that
     safely needs a shell parser), so the assertions below are additionally

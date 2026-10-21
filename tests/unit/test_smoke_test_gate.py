@@ -30,7 +30,7 @@ def _script_text() -> str:
 def _effective_script() -> str:
     """The gate with the shebang and every whole-line comment removed.
 
-    Same tool, and the same reason, as `test_stage2_cilium_config.py` and
+    Same tool, and the same reason, as `test_stage2_linkerd_config.py` and
     `test_stage4_config.py`: a comment must not be able to satisfy an
     assertion. The stage-4 check below is described at length in a comment
     block that names the Service, so without this the assertion would pass

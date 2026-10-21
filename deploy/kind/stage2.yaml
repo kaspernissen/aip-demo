@@ -1,32 +1,23 @@
-# Stage 2 (Governed) kind cluster: identical to stage1.yaml except that the
-# default CNI is disabled so Cilium can own the dataplane.
+# Stage 2 (Governed) kind cluster. Since M12 it is structurally identical to
+# stage1.yaml: kind's default CNI (kindnet) stays, because kindnet (kind >=
+# 0.24, kube-network-policies) enforces core NetworkPolicy, and Linkerd meshes
+# the app namespaces on top of it. Until M12 this file set
+# `networking.disableDefaultCNI: true` so Cilium could own the dataplane; that
+# flag is create-time, so a cluster built from the old file cannot be reused
+# (scripts/setup-kind.sh refuses it and says to delete and recreate).
 #
-# WHY THIS IS A SEPARATE FILE, AND MUST NOT BE MERGED BACK INTO stage1.yaml:
-# `networking.disableDefaultCNI` is a **create-time** kind flag. kind writes it
-# into the node's kubeadm/CNI bootstrap when the container is created, so it
-# cannot be flipped on a running cluster -- switching to Cilium therefore
-# requires deleting and recreating `northstar`. Stage 1 must keep its default
-# CNI (kindnet) so stage 1 remains bring-up-able on its own without Cilium.
+# The file is kept, rather than letting stage 2 reuse stage1.yaml, so each
+# stage still selects its own kind config by name and tests/unit pin that.
 #
 # Deliberately NOT set here:
-#   - `podSubnet`: left at kind's default 10.244.0.0/16. Cilium runs with
-#     `ipam.mode: kubernetes` (deploy/platform/cilium-values.yaml), which
-#     allocates from the node podCIDRs kind carves out of that default. Setting
-#     a podSubnet here would have to be kept in sync with that by hand for no
-#     gain.
-#   - `kubeProxyMode`: kube-proxy stays in place. Cilium's kube-proxy
-#     replacement is not required for this demo -- the DNS-aware egress denial
-#     is ordinary CiliumNetworkPolicy (`toFQDNs`) and works with kube-proxy
-#     present -- and enabling it on kind invites cgroup-v2 and kernel-version
-#     problems.
+#   - `podSubnet`: left at kind's default 10.244.0.0/16.
+#   - `kubeProxyMode`: kube-proxy stays in place.
 #
 # Everything below (containerdConfigPatches for the shared `kind-registry`, and
 # all three extraPortMappings) is byte-for-byte stage1.yaml.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: northstar
-networking:
-  disableDefaultCNI: true
 containerdConfigPatches:
   - |-
     [plugins."io.containerd.grpc.v1.cri".registry]

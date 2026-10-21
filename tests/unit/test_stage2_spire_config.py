@@ -15,7 +15,7 @@ SVIDs, and still verify them -- against `spiffe://example.org/...`. That is a
 system that passes its own tests while proving nothing about this platform.
 
 Design constraints that shape every check below (see
-`tests/unit/test_stage2_cilium_config.py`'s module docstring for the same
+`tests/unit/test_stage2_linkerd_config.py`'s module docstring for the same
 family of guards applied to the cluster bring-up script):
 
 1. **No assertion here can be satisfied by a comment.** Every check either
@@ -1225,7 +1225,7 @@ def test_setup_kind_uses_the_hardened_charts_repo():
 # `kind`/`kubectl`/`docker`/`helm` ahead of it on PATH, and asserts on what it
 # actually invoked.
 #
-# These fakes differ from `test_stage2_cilium_config.py`'s in one deliberate
+# These fakes differ from `test_stage2_linkerd_config.py`'s in one deliberate
 # way: `kubectl cluster-info` SUCCEEDS here, so the script runs on past cluster
 # creation and reaches the SPIRE step this module is about. It then dies at
 # Step 9, because `scripts/rebuild-and-deploy.sh` is not copied into the
@@ -1267,10 +1267,11 @@ exit 0
 
 _COPIED = [
     Path("scripts/setup-kind.sh"),
+    Path("scripts/linkerd-certs.sh"),
     Path("deploy/kind/stage1.yaml"),
     Path("deploy/kind/stage2.yaml"),
     Path("deploy/k8s/namespaces.yaml"),
-    Path("deploy/platform/cilium-values.yaml"),
+    Path("deploy/platform/linkerd/values.yaml"),
     Path("deploy/platform/spire/values.yaml"),
     Path("deploy/platform/spire/registration.yaml"),
     Path("deploy/platform/spire/metrics.yaml"),
