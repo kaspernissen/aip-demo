@@ -174,6 +174,10 @@ WEAVER_AVAILABLE=""
 if service_exists observability weaver-live-check; then
   WEAVER_AVAILABLE=1
 fi
+AGENTEVALS_AVAILABLE=""
+if service_exists observability agentevals; then
+  AGENTEVALS_AVAILABLE=1
+fi
 
 # flagd has no Service of its own (it is a sidecar injected into
 # policy-decision-service's own pod, not a separate Deployment -- measured, no
@@ -355,6 +359,19 @@ else
   echo -e "${YELLOW}  - weaver live-check: SKIPPED, svc/weaver-live-check does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 7)${NC}"
 fi
 
+# AgentEvals (M11): its UI and REST API, where `scripts/demo evals` asks it to
+# score the claims it has seen. Stage 4 and up, the same `service_exists` guard.
+# 18001 -> 8001 follows the 1xxxx offset convention of the tool ports.
+AGENTEVALS_PID=""
+if [[ -n "$AGENTEVALS_AVAILABLE" ]]; then
+  echo "  - AgentEvals         (18001 -> 8001)"
+  kubectl -n observability port-forward svc/agentevals 18001:8001 >/dev/null 2>&1 &
+  AGENTEVALS_PID=$!
+  PIDS+=("$AGENTEVALS_PID")
+else
+  echo -e "${YELLOW}  - AgentEvals: SKIPPED, svc/agentevals does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 7)${NC}"
+fi
+
 # flagd's own metrics, on its "management" port (8014) alongside `/healthz`
 # -- both flagd's own naming, not this project's
 # (deploy/k8s/policy-decision-service.yaml's openfeature.dev/* annotations
@@ -453,6 +470,10 @@ if [[ -n "$WEAVER_PID" ]]; then
     WEAVER_PID=""
   fi
 fi
+if [[ -n "$AGENTEVALS_PID" ]]; then
+  # `/api/health` is the route its own chart probes with.
+  verify_owned_forward 18001 "${AGENTEVALS_PID}" agentevals "/api/health"
+fi
 if [[ -n "$FLAGD_METRICS_PID" ]]; then
   # `/healthz`, not `/metrics`: flagd's management port serves both, and
   # `/healthz` is the cheap, dedicated liveness route every other surface
@@ -493,7 +514,7 @@ else
 fi
 
 echo ""
-if [[ -n "$DASHBOARDS_AVAILABLE" && -n "$REVIEWER_UI_AVAILABLE" && -n "$PROMETHEUS_AVAILABLE" && -n "$EVAL_SCORER_AVAILABLE" && -n "$WEAVER_AVAILABLE" && -n "$FLAGD_AVAILABLE" && -n "$BACKSTAGE_AVAILABLE" ]]; then
+if [[ -n "$DASHBOARDS_AVAILABLE" && -n "$REVIEWER_UI_AVAILABLE" && -n "$PROMETHEUS_AVAILABLE" && -n "$EVAL_SCORER_AVAILABLE" && -n "$WEAVER_AVAILABLE" && -n "$AGENTEVALS_AVAILABLE" && -n "$FLAGD_AVAILABLE" && -n "$BACKSTAGE_AVAILABLE" ]]; then
   echo -e "${GREEN}All surfaces verified up.${NC}"
 else
   echo -e "${GREEN}Every surface this cluster has is verified up.${NC}"
@@ -525,6 +546,9 @@ if [[ -n "$EVAL_SCORER_PID" ]]; then
 fi
 if [[ -n "$WEAVER_PID" ]]; then
   echo "  weaver live-check (admin): http://localhost:18400"  #tool-port
+fi
+if [[ -n "$AGENTEVALS_PID" ]]; then
+  echo "  AgentEvals:                http://localhost:18001"  #surface
 fi
 if [[ -n "$FLAGD_METRICS_PID" ]]; then
   # `#tool-port`, not `#surface`: like eval-scorer's own POST endpoint above,

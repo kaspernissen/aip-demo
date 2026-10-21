@@ -2438,6 +2438,7 @@ calling the tracer directly.
 | OpenSearch Dashboards — the evidence view (stage 4) | http://localhost:5601 |
 | Prometheus — the metrics half of stage 4 | http://localhost:9090 |
 | Backstage — the catalog and the autonomy card (stage 6) | http://localhost:7007 |
+| AgentEvals — what the agent did, scored (stage 4) | http://localhost:18001 |
 
 The first three are kind host ports mapped at cluster creation and need no
 port-forward. The rest do, and `./scripts/start-demo.sh` is what starts them

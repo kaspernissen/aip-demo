@@ -150,6 +150,22 @@ async def test_reply_amount_comes_from_the_ledger_not_from_the_model():
     assert result["paymentId"] == "PAY-000001"
 
 
+async def test_the_claim_id_is_the_runs_conversation_id(monkeypatch):
+    """AgentEvals groups live traces into sessions by `gen_ai.conversation.id`,
+    which PydanticAI sets on the invoke_agent span from `conversation_id`. Without
+    it every claim is an anonymous one-trace session (M11)."""
+    seen = {}
+    original = type(settlement_agent).run
+
+    async def spy(self, *args, **kwargs):
+        seen["conversation_id"] = kwargs.get("conversation_id")
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(type(settlement_agent), "run", spy)
+    await _run(CLAIM, FakePayments(), _script())
+    assert seen["conversation_id"] == "CLM-1842"
+
+
 async def test_narrative_comes_from_the_model():
     payments = FakePayments()
     result = await _run(CLAIM, payments, _script(narrative="Rear-end collision, covered."))

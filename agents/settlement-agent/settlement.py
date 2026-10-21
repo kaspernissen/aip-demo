@@ -262,9 +262,13 @@ async def decide_settlement(claim: dict[str, Any], payments: Any) -> dict[str, A
         claim={"claimId": claim_id, "amount": amount, "currency": currency},
     )
 
+    # The claim id is the run's conversation id: PydanticAI puts it on the
+    # invoke_agent span as `gen_ai.conversation.id`, which is the key AgentEvals
+    # groups live traces into one session by (M11). One claim, one session.
     result = await settlement_agent.run(
         f"Claim {claim_id} is assessed as covered for {amount:.0f} {currency}. Settle it.",
         deps=deps,
+        conversation_id=claim_id,
     )
 
     executed = deps.record.executed

@@ -99,7 +99,8 @@ def test_the_flip_patches_the_path_backstage_patches():
 
 def test_the_subcommands_are_the_m8_flow_plus_reset_and_the_ceiling():
     out = subprocess.run([str(SCRIPTS / "demo"), "--help"], capture_output=True, text=True, timeout=30)
-    for command in ("guard", "claim", "approve", "reject", "autonomy", "keystone", "evidence", "reset", "ceiling"):
+    for command in ("guard", "claim", "approve", "reject", "autonomy", "keystone", "evidence", "reset", "ceiling",
+                    "evals"):
         assert command in out.stdout, out.stdout
 
 
@@ -510,3 +511,83 @@ def test_a_claim_filed_in_the_skew_margin_before_the_run_is_not_this_runs(monkey
     assert seen == {"w": state["window_start_ms"], "f": state["run_started_ms"]}
     adopted = demo.start_run({}, 5_000)
     assert adopted["run_started_ms"] == adopted["window_start_ms"] == 5_000
+
+
+# --- evals: AgentEvals (M11) ---------------------------------------------------------
+
+
+def test_the_evaluators_evals_asks_for_are_the_ones_the_pod_mounts():
+    """`demo evals` names each evaluator by its path in the agentevals pod, which
+    is the ConfigMap setup-kind.sh builds from this directory."""
+    demo = _driver()
+    shipped = {p.stem for p in (REPO_ROOT / "deploy/observability/agentevals/evaluators").glob("*.py")}
+    assert set(demo.AGENTEVALS_EVALUATORS) == shipped
+
+
+class _Response:
+    def __init__(self, data):
+        self._data = data
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return {"data": self._data, "error": None}
+
+
+def _evals_fakes(monkeypatch, demo, results, sessions=None):
+    sent = {}
+    sessions = sessions if sessions is not None else [
+        {"sessionId": "CLM-DEMO-AAAAAA", "isComplete": True, "startedAt": "2026-10-21T10:00:00Z"},
+        {"sessionId": "CLM-DEMO-BBBBBB", "isComplete": True, "startedAt": "2026-10-21T10:05:00Z"},
+        {"sessionId": "CLM-DEMO-CCCCCC", "isComplete": False, "startedAt": "2026-10-21T10:06:00Z"},
+    ]
+    monkeypatch.setattr(demo.requests, "get", lambda url, timeout: _Response(sessions))
+
+    def post(url, json, timeout):
+        sent.update(url=url, body=json)
+        return _Response({"goldenSessionId": json["golden_session_id"], "evalSetId": "northstar",
+                          "results": results})
+    monkeypatch.setattr(demo.requests, "post", post)
+    return sent
+
+
+def test_evals_scores_every_finished_claim_with_the_mounted_evaluators(monkeypatch, capsys):
+    demo = _driver()
+    monkeypatch.setattr(demo, "STATE_FILE", Path("/nonexistent/state.json"))
+    metric = lambda name, status, why: {"metricName": name, "evalStatus": status, "score": 1.0,
+                                        "details": {"explanation": why}}
+    sent = _evals_fakes(monkeypatch, demo, [{"sessionId": "CLM-DEMO-AAAAAA", "metricResults": [
+        metric("took_a_known_path", "PASSED", "held path: propose_payment -> execute_payment -> refuse_payment"),
+        metric("narrative_states_no_amount", "FAILED", "the narrative states an amount: 5800"),
+    ]}])
+    assert demo.main(["evals"]) == 0
+    assert sent["url"].endswith("/api/streaming/evaluate-sessions")
+    assert sent["body"]["golden_session_id"] == "CLM-DEMO-BBBBBB"  # the latest finished one
+    assert [e["path"] for e in sent["body"]["evaluators"] if e["type"] == "code"] == [
+        f"/evaluators/{name}.py" for name in demo.AGENTEVALS_EVALUATORS]
+    builtins = {e["name"] for e in sent["body"]["evaluators"] if e["type"] == "builtin"}
+    # The metrics that need Google Cloud are never asked for: there is none here.
+    assert not builtins & {"safety_v1", "response_evaluation_score", "multi_turn_task_success_v1",
+                           "multi_turn_trajectory_quality_v1", "multi_turn_tool_use_quality_v1"}
+    printed = capsys.readouterr().out
+    assert "held path" in printed and "states an amount: 5800" in printed
+    assert "1 failing check" in printed
+
+
+def test_evals_with_no_finished_claim_is_a_failure_that_says_what_to_run(monkeypatch, capsys):
+    demo = _driver()
+    _evals_fakes(monkeypatch, demo, [], sessions=[])
+    assert demo.main(["evals"]) == 1
+    assert "scripts/demo claim" in capsys.readouterr().err
+
+
+def test_evals_compares_against_the_latest_claim_the_agent_settled(monkeypatch, tmp_path):
+    demo = _driver()
+    state = tmp_path / "state.json"
+    state.write_text('{"claims": [{"id": "CLM-DEMO-AAAAAA", "status": "executed"},'
+                     ' {"id": "CLM-DEMO-BBBBBB", "status": "awaiting_approval"}]}')
+    monkeypatch.setattr(demo, "STATE_FILE", state)
+    sent = _evals_fakes(monkeypatch, demo, [])
+    assert demo.main(["evals"]) == 0
+    assert sent["body"]["golden_session_id"] == "CLM-DEMO-AAAAAA"

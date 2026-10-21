@@ -195,6 +195,15 @@ exporters:
     retry_on_failure: {enabled: true}
   # END stage-4-only
 
+  # BEGIN stage-4-only
+  # A COPY of every trace for AgentEvals (M11). Identical to
+  # collector-config.yaml's; see that file for why.
+  otlp_http/agentevals:
+    endpoint: http://agentevals.observability.svc.cluster.local:4318
+    sending_queue: {enabled: true}
+    retry_on_failure: {enabled: true}
+  # END stage-4-only
+
 # BEGIN stage-4-only
 # The `forward/` connector tee. Identical to collector-config.yaml's; see
 # that file for why.
@@ -215,6 +224,7 @@ service:
         # BEGIN stage-4-only
         - forward/opensearch
         - otlp_grpc/weaver
+        - otlp_http/agentevals
         # END stage-4-only
         - otlp_grpc/dash0
         - debug

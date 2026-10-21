@@ -524,7 +524,7 @@ if [[ "${STAGE}" -lt 4 ]]; then
   COLLECTOR_CONFIG_APPLIED="$(mktemp -t collector-config.XXXXXX)"
   trap 'rm -f "$COLLECTOR_CONFIG_APPLIED"' EXIT
   sed "$STAGE4_ONLY_STRIP" "$COLLECTOR_CONFIG" > "$COLLECTOR_CONFIG_APPLIED"
-  echo -e "${YELLOW}Stage ${STAGE}: dropping every stage-4-only region from the collector config -- the OpenSearch trace branch, the Prometheus metrics exporter and the Weaver live-check copy (all three backends are installed at stage 4 only).${NC}"
+  echo -e "${YELLOW}Stage ${STAGE}: dropping every stage-4-only region from the collector config -- the OpenSearch trace branch, the Prometheus metrics exporter, the Weaver live-check copy and the AgentEvals copy (all four backends are installed at stage 4 only).${NC}"
 fi
 
 kubectl create configmap otel-collector-config \
@@ -552,6 +552,27 @@ if (( STAGE >= 4 )); then
   # ConfigMap changes do not reach a running pod's process: restart it so a
   # rebuild loads the registry and policy in this checkout.
   kubectl -n observability rollout restart deployment/weaver-live-check
+
+  # AgentEvals (M11), the collector's `otlp_http/agentevals` copy: same stages,
+  # same reason to come before the collector. Its two code evaluators are this
+  # checkout's, mounted from a ConfigMap; a restart loads them (and empties its
+  # in-memory sessions, which a rebuild does anyway).
+  # The judge for AgentEvals' LLM metrics (hallucinations, the rubric metrics) is
+  # Claude, through LiteLLM, with the demo's own key: a copy of the model secret
+  # in this namespace. `optional: true` on the Deployment's secretKeyRef, so no
+  # key means the code evaluators still run and only the judged metrics fail.
+  if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+    kubectl create secret generic northstar-model \
+      --namespace observability \
+      --from-literal=ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  fi
+  kubectl create configmap agentevals-evaluators \
+    --namespace observability \
+    --from-file="$ROOT/deploy/observability/agentevals/evaluators" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  kubectl apply -f "$ROOT/deploy/observability/agentevals.yaml"
+  kubectl -n observability rollout restart deployment/agentevals
 fi
 
 kubectl apply -f "$ROOT/deploy/observability/jaeger.yaml"

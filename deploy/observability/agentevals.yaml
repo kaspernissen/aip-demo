@@ -1,0 +1,127 @@
+# AgentEvals (M11): scores what the agent did, from the traces it already emits.
+# https://aevals.ai, github.com/agentevals-dev/agentevals, Apache-2.0.
+#
+#   agents --> otel-collector --(copy of every trace)--> agentevals  (UI + REST on 8001)
+#                    ^                                        |
+#                    +---- gen_ai.evaluation.result logs -----+  --> OpenSearch, Weaver
+#
+# The collector sends it a COPY of every trace (exporter `otlp_http/agentevals`,
+# stage-4-only), as it does for Weaver live-check. AgentEvals groups the copies
+# into one session per `gen_ai.conversation.id`, which settlement-agent sets to
+# the claim id: one claim, one session. Nothing scores on its own: `scripts/demo
+# evals` (or Run Evaluation in its UI) asks it to, and each result goes back to
+# the collector as a `gen_ai.evaluation.result` log event attached to the agent's
+# invoke_agent span (AGENTEVALS_EVALUATION_EVENTS).
+#
+# What it can and cannot see is the talk's caveat, measured 2026-10-21 on 0.11.0:
+# the agent's GenAI spans only (tool calls, tool results, the final answer). Not
+# the policy decision, not the reviewer's approval, not the caller's identity; it
+# does not follow span links. eval-scorer stays the judge of those.
+#
+# The two code evaluators are this repo's, from the ConfigMap
+# `agentevals-evaluators` that scripts/setup-kind.sh builds from
+# deploy/observability/agentevals/evaluators. Sessions live in memory: a restart
+# empties the UI (the results already sent are in OpenSearch).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentevals
+  namespace: observability
+spec:
+  # Live sessions are held in the memory of the process that receives them:
+  # never more than one replica (the upstream chart pins this too).
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agentevals
+  template:
+    metadata:
+      labels:
+        app: agentevals
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: agentevals
+          image: ghcr.io/agentevals-dev/agentevals:0.11.0
+          # The image's own CMD without `--mcp-port`: left out, the MCP server does
+          # not start (cli.py: `if mcp_port is not None`); this demo does not use it.
+          args: ["agentevals", "serve", "--host", "0.0.0.0", "--port", "8001",
+                 "--otlp-http-port", "4318", "--otlp-grpc-port", "4317"]
+          env:
+            # A read-only root filesystem, so scratch and HOME live on the /tmp
+            # emptyDir, as the upstream chart sets them.
+            - name: TMPDIR
+              value: /tmp
+            - name: HOME
+              value: /tmp/agentevals-home
+            - name: AGENTEVALS_EVALUATION_EVENTS
+              value: "true"
+            # The explanation names what the evaluator found (for the narrative
+            # check, the amount it saw). Prompts and answers are already in this
+            # demo's traces (content capture is on, docs/telemetry-contract.md).
+            - name: AGENTEVALS_EVALUATION_EVENTS_EXPLANATION
+              value: "true"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_SERVICE_NAME
+              value: agentevals
+            # The judge for the LLM metrics `scripts/demo evals` asks for
+            # (hallucinations_v1 and the two rubric metrics): Claude through
+            # LiteLLM, which reads this variable. setup-kind.sh copies the model
+            # secret into this namespace. Optional, as on settlement-agent: no key,
+            # and only the judged metrics fail.
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: northstar-model
+                  key: ANTHROPIC_API_KEY
+                  optional: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+          resources:
+            requests: {cpu: 50m, memory: 256Mi}
+            limits: {cpu: "1", memory: 2Gi}
+          ports:
+            - name: http
+              containerPort: 8001
+            - name: otlp-http
+              containerPort: 4318
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 3
+            failureThreshold: 60
+          volumeMounts:
+            - name: evaluators
+              mountPath: /evaluators
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: evaluators
+          configMap:
+            name: agentevals-evaluators
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentevals
+  namespace: observability
+spec:
+  selector:
+    app: agentevals
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318

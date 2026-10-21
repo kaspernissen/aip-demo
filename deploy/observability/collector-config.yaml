@@ -264,6 +264,19 @@ exporters:
     retry_on_failure: {enabled: true}
   # END stage-4-only
 
+  # BEGIN stage-4-only
+  # A COPY of every trace for AgentEvals (M11), which scores what the agent did
+  # and sends each score back here as a `gen_ai.evaluation.result` log event
+  # (deploy/observability/agentevals.yaml). Traces only: PydanticAI puts message
+  # content on spans, not in log events, and the scores it sends back are logs,
+  # so nothing it emits can loop back to it. Never sampled: AgentEvals needs
+  # whole traces.
+  otlp_http/agentevals:
+    endpoint: http://agentevals.observability.svc.cluster.local:4318
+    sending_queue: {enabled: true}
+    retry_on_failure: {enabled: true}
+  # END stage-4-only
+
 # BEGIN stage-4-only
 # The `forward/` connector tee: the OpenSearch branch reuses the main traces
 # pipeline's receivers and processors instead of re-declaring them, so it
@@ -286,6 +299,7 @@ service:
         # BEGIN stage-4-only
         - forward/opensearch
         - otlp_grpc/weaver
+        - otlp_http/agentevals
         # END stage-4-only
         - debug
     # BEGIN stage-4-only
