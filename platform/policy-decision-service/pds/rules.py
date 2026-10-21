@@ -34,9 +34,9 @@ EXECUTE_LIMITS: dict[tuple[str, str], float] = {
 # (pds/ledger.py) for every known caller of execute_payment.
 #
 # The same reasoning depends on a second fact, which is network and not code:
-# reviewer-ui's Cilium L7 egress to payments-api allows only list, get and
-# reject (deploy/platform/cilium-policies.yaml), so it cannot write a payment's
-# status either. Loosen that egress and the widening above stops being safe.
+# payments-api's Linkerd ingress policy authorizes reviewer-ui for only list,
+# get and reject (deploy/platform/reach/linkerd-policies.yaml), so it cannot
+# write a payment's status either. Loosen that policy and the widening above stops being safe.
 HUMAN_APPROVERS: frozenset[str] = frozenset({
     "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui",
 })

@@ -25,7 +25,7 @@
     <div><i class="ph-duotone ph-cpu"></i><b>Models</b><span>KServe, llm-d, hosted APIs</span></div>
     <div><i class="ph-duotone ph-check-circle"></i><b>Evals</b><span>scores on the trace</span><em class="x30-chip x30-chip-on">Shown</em></div>
   </div>
-  <p class="x30-rg"><span><b>Core &middot; Identity</b> SPIRE, checked at the gateway</span><span><b>Ring 1 &middot; Reach</b> Cilium, under the gateway</span><span><b>Ring 2 &middot; Capability</b> gateway + policy</span><span><b>Keystone</b> Kyverno, guards the rest</span></p>
+  <p class="x30-rg"><span><b>Core &middot; Identity</b> SPIRE, checked at the gateway</span><span><b>Ring 1 &middot; Reach</b> Linkerd + NetworkPolicy, under the gateway</span><span><b>Ring 2 &middot; Capability</b> gateway + policy</span><span><b>Keystone</b> Kyverno, guards the rest</span></p>
 </section>
 
 <!-- 20a · NEW · we've done this before: Ch 1 Figure 1.8 (what cloud native built, extended to agents), widened to six rows with the Northstar piece of each -->
@@ -47,7 +47,7 @@
   <h2 class="slide-title">Connected is not governed</h2>
   <div class="x30-lad rise">
     <div class="st s1"><p class="nm">Connected</p><i class="bar"></i><p class="pf">one trace exists</p><p class="ad">agents, MCP, collector, Jaeger</p><div class="rgs"></div></div>
-    <div class="st s2"><p class="nm">Governed</p><i class="bar"></i><p class="pf">identity is an input to the decision</p><p class="ad">Cilium, SPIRE, agentgateway, PDS</p><div class="rgs"><p class="rg">Core &middot; Identity</p><p class="rg">Ring 1 &middot; Reach</p><p class="rg">Ring 2 &middot; Capability</p></div><p class="x30-lad-mark">the platform starts deciding</p></div>
+    <div class="st s2"><p class="nm">Governed</p><i class="bar"></i><p class="pf">identity is an input to the decision</p><p class="ad">Linkerd, SPIRE, agentgateway, PDS</p><div class="rgs"><p class="rg">Core &middot; Identity</p><p class="rg">Ring 1 &middot; Reach</p><p class="rg">Ring 2 &middot; Capability</p></div><p class="x30-lad-mark">the platform starts deciding</p></div>
     <div class="st s3"><p class="nm">Supervised</p><i class="bar"></i><p class="pf">a human can overturn</p><p class="ad">reviewer UI, human approval</p><div class="rgs"></div></div>
     <div class="st s4"><p class="nm">Observable</p><i class="bar"></i><p class="pf">prove why, from telemetry alone</p><p class="ad">OpenSearch, Prometheus, eval-scorer</p><div class="rgs"></div></div>
     <div class="st s5"><p class="nm">Progressive autonomy</p><i class="bar"></i><p class="pf">one live value, no redeploy</p><p class="ad">OpenFeature, flagd, FeatureFlag</p><div class="rgs"><p class="rg">Ring 2 &middot; Capability</p></div></div>
@@ -59,7 +59,7 @@
 <!-- 21 · NEW · Meet Northstar: Ch 4 Figure 4.5, claim path only -->
 <section class="slide content" data-label="Meet Northstar">
   <h2 class="slide-title x30-ns-t"><img class="x30-ns" src="assets/logos/northstar.svg" alt="">Meet Northstar <span class="x30-ns-s">Insurance</span></h2>
-  <figure class="bfig rise x30-tight" style="--fig-h:620px"><svg viewBox="0 2 880 354" role="img" aria-label="Northstar architecture at stage 7: namespaces northstar-agents, northstar-platform, northstar-tools, northstar-systems, observability, with Cilium underneath">
+  <figure class="bfig rise x30-tight" style="--fig-h:620px"><svg viewBox="0 2 880 354" role="img" aria-label="Northstar architecture at stage 7: namespaces northstar-agents, northstar-platform, northstar-tools, northstar-systems, observability, with Linkerd and NetworkPolicy underneath">
 <g font-family="Inter, sans-serif">
 <defs>
 <marker id="x30-ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#111111"/></marker>
@@ -125,12 +125,12 @@
 <text x="585" y="136" font-size="11.5" fill="#595959" text-anchor="middle">permit only</text>
 <!-- egress to model -->
 <path d="M340,92 L340,26 L578,26" fill="none" stroke="#FD6F40" stroke-width="1.3" stroke-dasharray="5 3" marker-end="url(#x30-ar2o)"/>
-<text x="350" y="19" font-size="12" fill="#FD6F40">model egress (Cilium toFQDNs)</text>
+<text x="350" y="19" font-size="12" fill="#FD6F40">model egress (NetworkPolicy, Anthropic's range)</text>
 <!-- floors -->
 <rect x="16" y="274" width="848" height="34" rx="8" fill="#F7F7F7" stroke="#9E9E9E"/>
 <text x="30" y="296" font-size="13" fill="#212121"><tspan font-weight="600">OTel Collector</tspan>  ·  OTLP from every service  →  Jaeger · OpenSearch · Prometheus  ·  100%, no sampler</text>
 <rect x="16" y="316" width="848" height="34" rx="8" fill="#FBE997" stroke="#595959" stroke-opacity="0.6"/>
-<text x="30" y="338" font-size="13" fill="#111111"><tspan font-weight="600">Cilium 1.20.1</tspan>  ·  NetworkPolicy under every hop  ·  payments-mcp admits only agentgateway</text>
+<text x="30" y="338" font-size="13" fill="#111111"><tspan font-weight="600">Linkerd + NetworkPolicy</tspan>  ·  egress denied per agent pod  ·  payments-mcp admits only agentgateway</text>
 </g></svg></figure>
 </section>
 
@@ -202,7 +202,7 @@
   <div class="x30-box rise">
     <p class="band m">On the claim path</p>
     <div class="cell"><p class="job m"><i class="ph-duotone ph-chats-circle"></i>Protocols</p><div class="lgs"><i class="ph-duotone ph-plugs-connected"></i></div><p class="tn">A2A SDK + MCP</p><p class="ow">LF · AAIF</p><p class="use">agents talk A2A; tools answer MCP</p></div>
-    <div class="cell"><p class="job m"><i class="ph-duotone ph-graph"></i>Network</p><div class="lgs"><img src="assets/logos/cilium.svg" alt="cilium"></div><p class="tn">Cilium</p><p class="ow">CNCF</p><p class="use">the gateway is the only road to the tool</p></div>
+    <div class="cell"><p class="job m"><i class="ph-duotone ph-graph"></i>Network</p><div class="lgs"><img src="assets/logos/linkerd.svg" alt="linkerd"></div><p class="tn">Linkerd</p><p class="ow">CNCF</p><p class="use">+ NetworkPolicy: the gateway is the only road to the tool</p></div>
     <div class="cell"><p class="job m"><i class="ph-duotone ph-identification-card"></i>Identity</p><div class="lgs"><img src="assets/logos/spiffe.svg" alt="spiffe"><img src="assets/logos/spire.svg" alt="spire"></div><p class="tn">SPIFFE / SPIRE</p><p class="ow">CNCF</p><p class="use">a signed ID for each agent pod</p></div>
     <div class="cell"><p class="job m"><i class="ph-duotone ph-door-open"></i>Gateway</p><div class="lgs"><i class="ph-duotone ph-door-open"></i></div><p class="tn">agentgateway</p><p class="ow">LF · AAIF</p><p class="use">checks the ID, asks, then forwards</p></div>
     <div class="cell"><p class="job m"><i class="ph-duotone ph-scales"></i>Decision</p><div class="lgs"><i class="ph-duotone ph-scales"></i></div><p class="tn">Decision service</p><p class="ow own">this repo</p><p class="use">permit or deny, and writes why</p></div>
@@ -242,7 +242,7 @@
   <h2 class="slide-title">A passport, not a name tag</h2>
   <div class="x30-air rise">
     <div class="end"><i class="ph-duotone ph-robot"></i><span>the agent</span></div>
-    <div class="g"><i class="ph-duotone ph-path"></i><b>Corridor</b><span>Cilium · reach</span><span class="lgr"><img class="lg" src="assets/logos/cilium.svg" alt="Cilium"></span></div>
+    <div class="g"><i class="ph-duotone ph-path"></i><b>Corridor</b><span>Linkerd · reach</span><span class="lgr"><img class="lg" src="assets/logos/linkerd.svg" alt="Linkerd"></span></div>
     <div class="g here"><i class="ph-duotone ph-identification-card"></i><b>Passport</b><span>SPIFFE/SPIRE · identity</span><span class="lgr"><img class="lg" src="assets/logos/spiffe.svg" alt="SPIFFE"><img class="lg" src="assets/logos/spire.svg" alt="SPIRE"></span></div>
     <div class="g"><i class="ph-duotone ph-scan"></i><b>Scanner</b><span>agentgateway + policy</span></div>
     <div class="g"><i class="ph-duotone ph-user-check"></i><b>Gate staff</b><span>a reviewer · a human</span></div>

@@ -65,8 +65,9 @@ text part: `claimId`, `policyNumber`, `paymentId`, `amount`, `currency`,
   `input-required`, so trace A holds no push and no `customer-ui-server` span.
   The push goes only to a URL on the
   exact-match allowlist (SSRF guard), the receiver checks the token in
-  `X-A2A-Notification-Token`, and Cilium allows this one call (`POST /a2a/push`)
-  and nothing else from claims-agent to customer-ui. `tasks/pushNotificationConfig/get`,
+  `X-A2A-Notification-Token`, and customer-ui's Linkerd policy lets only claims-agent's identity
+  make this one call (`POST /a2a/push`; any other caller gets a 403). Unlike
+  the Cilium rule it replaced, it does not stop claims-agent reaching customer-ui's other paths. `tasks/pushNotificationConfig/get`,
   `/list` and `/delete` are refused (JSON-RPC -32004): `get` would hand the token
   to anyone holding the task id, and the customer-ui never needs them.
 - A claim must be submitted with `message/stream` and a push config. The

@@ -9,7 +9,7 @@
 #   * `https://api.github.com/repos/opensearch-project/helm-charts/releases`:
 #     `opensearch-3.8.0`, prerelease: false -- the newest tag in the list
 #     (2.38.0 published one release earlier is the 2.x line, not newer).
-# appVersion is also 3.8.0: unlike Cilium/SPIRE, this chart's releases are
+# appVersion is also 3.8.0: unlike SPIRE, this chart's releases are
 # tagged 1:1 with the OpenSearch version it installs.
 #
 # SINGLE NODE: `singleNode: true` forces `discovery.type: single-node` and the

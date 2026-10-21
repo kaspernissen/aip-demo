@@ -29,7 +29,7 @@ presents it: *rings of least privilege; each outer ring depends on the one insid
 is a property of the platform, not of the agent. The data ring (Ring 3) is left out of this talk:
 Northstar does not build it. The rings structure Act 3,
 and every tools-section slide carries its ring as margin furniture (`.ring`, top right):
-**Core · Identity** (what is acting? SPIFFE/SPIRE), **Ring 1 · Reach** (what may it connect to? Cilium,
+**Core · Identity** (what is acting? SPIFFE/SPIRE), **Ring 1 · Reach** (what may it connect to? Linkerd for ingress and NetworkPolicy for egress,
 step 1), **Ring 2 · Capability** (what may it hold, and call? agentgateway, the decision service,
 OpenFeature), and the **Keystone** (the agent can never edit what defines its authority: Kyverno, step 4). Steps 1 and 4 need stage 7
 (M7, `docs/superpowers/specs/2026-10-12-northstar-m7-bounded-design.md`).

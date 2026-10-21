@@ -6175,6 +6175,18 @@ the pods. No Cilium telemetry is asserted as a span anywhere, and none was
 invented — which is the same rule this document applies to agentgateway and
 SPIRE, applied to a third component that also has no OTel story.
 
+*M12 update (2026-10-21, design and expected behaviour; the demo cluster had not
+yet run on Linkerd).* Cilium is gone, so the paragraph above is the record of
+M2.2 to M11. What replaces it: an ingress refusal is now an HTTP 403 (a gRPC
+`PERMISSION_DENIED` at the PDS) **counted** by the destination proxy as
+`inbound_http_authz_deny_total{srv_name, route_name, client_id}`. It is still
+**not a span**: proxy tracing is off on purpose (it would add about 140 proxy
+spans per run, and the MCP and ExtMCP proxy spans would be dead-end siblings),
+so the trace keeps the shape M11 measured. An egress drop (NetworkPolicy,
+enforced by kindnet) is silent: nothing counts it. Every network claim now rests
+on an HTTP status plus that counter, or on a probe from inside a pod. No Linkerd
+telemetry is asserted as a span anywhere.
+
 **10. `tests/unit` is no longer self-sufficient on a fresh clone: it needs one
 generated artifact that only a script outside it produces.** Rewritten, not
 retired, in the M2.2 final-review fix round — and the rewrite is the point, so
@@ -6253,9 +6265,10 @@ its four-package closure, none of which `pds/server.py`
 imports: `grpcio-tools` is needed only at build time, by the `RUN
 ./gen-stubs.sh python` layer six lines below, and `pytest` is needed only by a
 developer running the suite from the source tree. The service's ingress is
-otherwise carefully minimised — its own Cilium document admits exactly two
-sources to 9100, agentgateway and the node's kubelet probe (ruling R6), and
-nothing else in the cluster — so this is the one place the component is broader
+otherwise carefully minimised — its own policy (a Cilium document until M12,
+which admitted agentgateway and the node's kubelet probe, ruling R6; since M12 a
+Linkerd Server that admits only agentgateway's identity) lets nothing else in the
+cluster reach 9100 — so this is the one place the component is broader
 than it needs to be. It is recorded rather than fixed because every fix is a real
 restructuring with its own cost: a multi-stage build that generates the stubs
 in a builder image and copies them forward would re-open the image/repo

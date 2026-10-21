@@ -67,7 +67,7 @@ def test_playwright_is_pinned_to_the_version_the_browser_tests_use():
 #
 # The helm chart is not in the venv, so it cannot be asserted from an installed
 # tree the way the packages above are. The pin lives in `scripts/setup-kind.sh`
-# beside Cilium's, SPIRE's and the rest, and is read back out of that file's
+# beside Linkerd's, SPIRE's and the rest, and is read back out of that file's
 # ASSIGNMENT lines (whole-line comments cannot satisfy these: the regex anchors
 # at the start of the line, so a comment that merely quotes the version does
 # not count).

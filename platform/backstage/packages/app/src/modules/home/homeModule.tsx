@@ -111,7 +111,7 @@ needs. Stage 6 is the whole thing, and is what you are looking at.
 | | Stage | What it proves | Added |
 |---|---|---|---|
 | 1 | Connected | they can talk to each other, and one trace says so | the agents, the MCP servers, Jaeger |
-| 2 | Governed | the platform decides, not the agent — and identity is an *input* to that decision | Cilium, SPIFFE/SPIRE, agentgateway, the policy decision service |
+| 2 | Governed | the platform decides, not the agent — and identity is an *input* to that decision | Linkerd, SPIFFE/SPIRE, agentgateway, the policy decision service |
 | 3 | Supervised | a refusal is not the end; a human can overturn one | the reviewer console, which releases the money itself |
 | 4 | Observable | why €5,800 was paid, from telemetry alone and no new app code | OpenSearch, Prometheus, the eval scorer |
 | 5 | Progressive autonomy | one live value changes what the platform permits — no redeploy, no restart | Open Feature Operator, the \`FeatureFlag\` |

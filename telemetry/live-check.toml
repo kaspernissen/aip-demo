@@ -4,7 +4,7 @@
 #
 # Why overrides rather than a clean registry-wide check: live-check judges every
 # signal the collector copies to it, and most of that traffic is OpenTelemetry
-# semantic conventions, Kyverno, Cilium, SPIRE and agentgateway names that this
+# semantic conventions, Kyverno, Linkerd, SPIRE and agentgateway names that this
 # repo does not own. Those must not fail the gate. The names we own, and the
 # retired un-prefixed namespaces we must no longer emit, must.
 #

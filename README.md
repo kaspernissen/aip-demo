@@ -60,7 +60,7 @@ is; the runbook is the script.
   judge) stay in the stack for the longer slot.
 - **An agent can never edit what constrains it.** Kyverno denies an agent
   ServiceAccount any write to the autonomy flag, the gateway's config, the
-  Cilium policy, RBAC or its own policy, even when an over-broad RBAC grant
+  reach policy (NetworkPolicy and Linkerd), RBAC or its own policy, even when an over-broad RBAC grant
   would allow it. It fails closed.
 - **The platform API has a face.** Backstage shows the catalog and an autonomy
   card that reads the flag live and can flip it, through a ServiceAccount that
@@ -122,8 +122,9 @@ flowchart LR
 | `platform/eval-scorer` | Scores a settlement's trajectory against five policy-adherence checks |
 | `platform/backstage` | Catalog, TechDocs and the autonomy-contract card |
 
-Platform pieces installed from upstream: Cilium (network policy, and the only
-route to the payments tool), SPIRE (workload identity), agentgateway (the
+Platform pieces installed from upstream: Linkerd (ingress authorized by
+workload identity, so the gateway is the only route to the payments tool; core
+NetworkPolicy, enforced by kind's kindnet, denies egress), SPIRE (workload identity), agentgateway (the
 enforcement point), the Open Feature Operator and flagd (the autonomy flag),
 Kyverno (the keystone),
 and the OpenTelemetry Collector, Jaeger, OpenSearch with Dashboards, and
@@ -139,7 +140,7 @@ keystone idea comes from. Each ring answers one question:
 | Ring | Question | Northstar |
 |---|---|---|
 | Core · Identity | who is it | SPIRE JWT-SVIDs, verified on every call |
-| Ring 1 · Reach | what can it connect to | Cilium: the gateway is the only way into `payments-mcp` |
+| Ring 1 · Reach | what can it connect to | Linkerd by identity, NetworkPolicy for egress: the gateway is the only way into `payments-mcp` |
 | Ring 2 · Capability | what may it do | agentgateway and the Policy Decision Service, fail-closed; the autonomy flag |
 | Keystone | can it edit what constrains it | Kyverno: no |
 
@@ -158,7 +159,7 @@ needs. Each stage adds to the one before.
 | Stage | Name | Adds |
 |---|---|---|
 | 1 | Connected | Agents, MCP server, payments system, customer UI, Collector, Jaeger |
-| 2 | Governed | Cilium, SPIRE, agentgateway and the Policy Decision Service |
+| 2 | Governed | Linkerd, SPIRE, agentgateway and the Policy Decision Service |
 | 3 | Supervised | Reviewer UI, which releases the money itself |
 | 4 | Observable | OpenSearch, OpenSearch Dashboards with the evidence view, Prometheus, eval-scorer |
 | 5 | Progressive autonomy | Open Feature Operator, flagd and the `northstar-autonomy` flag |

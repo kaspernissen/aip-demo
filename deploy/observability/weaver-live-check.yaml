@@ -9,7 +9,7 @@
 #
 # The semconv v1.44.0 dependency (telemetry/registry/manifest.yaml) is fetched
 # from GitHub when the pod starts, so the pod needs egress to github.com. No
-# Cilium policy selects this pod, so its egress is unrestricted; if one is ever
+# NetworkPolicy selects this pod, so its egress is unrestricted; if one is ever
 # added, github.com:443 must be allowed or the pod never gets Ready.
 #
 # Admin port 4320 (not the OTLP port): GET /health, POST /stop, GET /report

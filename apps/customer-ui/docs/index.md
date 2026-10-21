@@ -52,8 +52,8 @@ single-replica, so a customer-ui restart loses the tokens.
 
 The server is its own service, `customer-ui-server` (the browser keeps
 `customer-ui`), and exports OTLP to the collector. No token is recorded on any
-span. Cilium allows claims-agent to reach customer-ui on `8080` for
-`POST /a2a/push` only.
+span. Linkerd lets only claims-agent's identity call `POST /a2a/push` on `8080` (any
+other caller gets a 403); the page and the other paths stay open.
 
 ## A note for anyone editing the form
 

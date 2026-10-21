@@ -5,8 +5,9 @@ reviewer-ui reads and rejects on payments-api directly: `GET
 /payments/{id}/reject` are plain REST routes payments-api itself serves
 (systems/payments-api/handlers.go), not MCP tools, and none of them moves
 money. reviewer-ui **releases** money only through gateway.py, the governed
-path where the Policy Decision Service decides. `deploy/platform/cilium-
-policies.yaml`'s reviewer-ui egress allowlist reflects exactly this:
+path where the Policy Decision Service decides. `deploy/platform/reach/`'s
+reviewer-ui egress allowlist (network-policies.yaml) and payments-api's
+per-route ingress policy (linkerd-policies.yaml) reflect exactly this:
 payments-api (read, reject) and agentgateway (release), nothing else.
 
 Every dict this module returns is decoded straight from payments-api's own

@@ -2,9 +2,9 @@
 
 A push URL is supplied by the client. An agent that POSTs wherever it is told
 is a server-side request forgery hole, so the URL is checked here, before the
-task starts, against an exact list from the Deployment's env. Cilium's Reach
-rule (deploy/platform/cilium-policies.yaml) enforces the same thing on the
-wire; this is the application's half.
+task starts, against an exact list from the Deployment's env. On the
+wire, customer-ui accepts POST /a2a/push only from claims-agent's identity
+(deploy/platform/reach/linkerd-policies.yaml); this is the application's half.
 
 a2a-sdk 0.3.7: a ServerError raised from a handler method is turned into a
 JSON-RPC error response by JSONRPCHandler (error.code -32602 for

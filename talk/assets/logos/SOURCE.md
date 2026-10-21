@@ -13,3 +13,4 @@ Trademarks of their projects; used to name the project on the slide.
 - `northstar.svg`: the demo insurer's eight-point star, the same paths as
   `apps/customer-ui/src/app/layout.tsx` and the Backstage `LogoIcon.tsx`; the outer star takes the
   brand navy `--navy-900` #0a2342 (white there, on a navy header) so it reads on the paper slide.
+- `linkerd.svg` (2026-10-21): the Linkerd icon from the same repo, `projects/linkerd/icon/color/linkerd-icon-color.svg` (main), unmodified. `cilium.svg` was removed when Cilium left the deck (M12).

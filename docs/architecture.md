@@ -36,8 +36,9 @@
 > path for a human approval**. The PDS reads the ledger status for every
 > `execute_payment` (agent and human; unreadable denies), so the maker cannot release
 > a payment it routed to a human. payments-api has no caller authentication, so the
-> reviewer-ui's egress to it is L7 (Cilium `rules.http`: list, get and reject only),
-> and a direct `POST .../execute` from that pod is refused by the proxy with 403.
+> payments-api's own ingress policy authorizes reviewer-ui for list, get and reject only
+> (Linkerd, by workload identity; M7 to M11 did this as Cilium `rules.http` on reviewer-ui's egress),
+> and a direct `POST .../execute` from that pod is refused by payments-api's proxy with a counted 403.
 > Only the reviewer-ui is in `HUMAN_APPROVERS`, and the
 > Kyverno keystone policy refuses an agent the verbs to run a pod as, or mint a
 > token for, that ServiceAccount.
@@ -64,7 +65,7 @@
 >   `awaitingSince` to the decision. It is not sampled, and it reaches Prometheus as
 >   `northstar_approval_wait_duration_seconds_*` (measured; see the contract).
 
-Status: **M12 (Linkerd for reach)**, in progress on branch `m12-linkerd`: Cilium leaves the cluster; Linkerd authorizes ingress by workload identity and core NetworkPolicy (enforced by kindnet) denies egress. This document still describes the Cilium reach layer until M12's docs task rewrites it. Before it came **M10 (Span links)**, on branch `m10-span-links`: a claim that waits for a person is two traces and a link (trace A ends at the hand-off; trace B carries the release, the resume and the A2A push). Before it came **M9 (Weaver registry)**, on branch `m9-weaver-registry`: the registry in `telemetry/registry/` defines every owned telemetry name (all of them `northstar.*`, renamed everywhere at once), Weaver live-check checks the cluster's telemetry against it, and the demo reads Jaeger. This document uses the new names; the generated tables in `docs/telemetry-contract.md` are the attribute, span and metric inventory. Before it came **M8 (Human in the loop)**, on branch `m8-human-in-the-loop`, on top of **M7 (Bounded)**, which sat on **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
+Status: **M12 (Linkerd for reach)**, in progress on branch `m12-linkerd`: Cilium leaves the cluster; Linkerd authorizes ingress by workload identity and core NetworkPolicy (enforced by kindnet) denies egress. The Reach sections below describe that layer; the parts of this document that tell the M2 to M11 story keep the Cilium words as dated history. Nothing in M12 had run on the demo cluster when this was written (it still ran Cilium; the recreate was pending): what is recorded as measured is the five measurements on a throwaway cluster (see the M12 plan), and the first live run is the gate. Before it came **M10 (Span links)**, on branch `m10-span-links`: a claim that waits for a person is two traces and a link (trace A ends at the hand-off; trace B carries the release, the resume and the A2A push). Before it came **M9 (Weaver registry)**, on branch `m9-weaver-registry`: the registry in `telemetry/registry/` defines every owned telemetry name (all of them `northstar.*`, renamed everywhere at once), Weaver live-check checks the cluster's telemetry against it, and the demo reads Jaeger. This document uses the new names; the generated tables in `docs/telemetry-contract.md` are the attribute, span and metric inventory. Before it came **M8 (Human in the loop)**, on branch `m8-human-in-the-loop`, on top of **M7 (Bounded)**, which sat on **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
 autonomy) merged 2026-09-15 at `e62238f`, tagged `m5-verified`** -- read that
 tag's own message before trusting it, it claims less than its predecessors.
 Bumped in M6's first commit rather than left to a doc pass: this line went
@@ -240,7 +241,7 @@ listed these here as notes *outside* the hop-by-hop text, because that text
 was deliberately a record of M1.1's shape. M2.1 Task 5 folded them in
 instead, so the document describes the system that is actually deployed:
 
-1. **Task 1** replaced kind's default CNI with **Cilium 1.20.1** (a
+1. **Task 1** (M2.1; Cilium left in M12) replaced kind's default CNI with **Cilium 1.20.1** (a
    create-time `disableDefaultCNI` in `deploy/kind/stage2.yaml`). It sits
    underneath every hop below and changes none of them: the trace survived
    the swap with all 61 distinct `(service, operation, kind, parent)` rows
@@ -269,7 +270,7 @@ instead, so the document describes the system that is actually deployed:
 names where it is described.
 
 1. **`d17309c`** made the choke point enforceable rather than conventional: a
-   `CiliumNetworkPolicy` on `payments-mcp`'s **ingress** admitting only
+   a `CiliumNetworkPolicy` (M12 replaced it with a Linkerd `Server`) on `payments-mcp`'s **ingress** admitting only
    agentgateway. Before it, `claims-agent` could POST an MCP `initialize`
    straight at `payments-mcp:8000` and get HTTP 200 — measured. See "Hop 3".
 2. **The Policy Decision Service** (`platform/policy-decision-service`), a
@@ -282,7 +283,7 @@ names where it is described.
 4. **A terminal denial path in `agents/settlement-agent/mcp_tools.py`**, so
    the model sees a refusal it cannot retry and narrates it. See "The decision
    logic".
-5. **Cilium `toFQDNs` egress policies** on all three `northstar-agents`
+5. **Cilium `toFQDNs` egress policies** (M12: NetworkPolicy) on all three `northstar-agents`
    workloads, so the model provider is reachable from exactly one pod and the
    gateway is the only path to a tool. See "The network, as the second
    defence".
@@ -533,7 +534,7 @@ agents' namespace even though it isn't itself an agent.
 the cluster (`kubectl get ns` confirms it)", which was already an
 undersell of the literal command even at M4 (kind's own `default`,
 `kube-system`, `kube-public`, `kube-node-lease`, `local-path-storage`, plus
-Cilium's `cilium-secrets`, were always present alongside the five named
+Cilium's `cilium-secrets` (then; Cilium left in M12), were always present alongside the five named
 above) and became flatly false once M5's `setup-kind.sh` added two more
 project-relevant namespaces of its own: `cert-manager` (Step 8f) and
 `open-feature-operator-system` (Step 8g) — both described in their own right
@@ -544,7 +545,7 @@ under "The platform components M2.1 through M5 add" below.** Measured live,
 $ kubectl get ns
 NAME                           STATUS
 cert-manager                   Active
-cilium-secrets                 Active
+cilium-secrets                 Active   (2026-09-15; gone since M12)
 default                        Active
 kube-node-lease                Active
 kube-public                    Active
@@ -560,7 +561,7 @@ open-feature-operator-system     Active
 
 **13**, not five. Of those, **seven** are project-relevant (the five named
 above, plus `cert-manager` and `open-feature-operator-system`) and six are
-kind's own defaults or Cilium's, present regardless of what this project
+kind's own defaults or Cilium's (until M12), present regardless of what this project
 adds. The corrected claim, so a future reader does not have to re-derive
 which count the sentence meant: **seven project-relevant namespaces**, and
 **13** if `kubectl get ns` is read literally as the sentence itself invited.
@@ -635,6 +636,7 @@ the six SPIRE sub-images, including the one carrying the hazard recorded under
 
 | Component | What it is | Version / image | Role in this system |
 |---|---|---|---|
+| `linkerd` (M12) | CNCF service mesh (graduated). Control plane in namespace `linkerd`; a `linkerd-proxy` native sidecar in each meshed pod. Authorizes **ingress** to the money path by workload identity (403, counted); egress is NetworkPolicy, not Linkerd. Proxy tracing is off on purpose | Helm `linkerd-crds` and `linkerd-control-plane`, `edge-26.10.1` (proxy v2.370.0); the exact chart version is pinned in `scripts/setup-kind.sh`. Not yet measured on the demo cluster | The Reach ring's ingress half: `deploy/platform/reach/linkerd-policies.yaml`. Replaces Cilium |
 | `agentgateway` | Rust MCP/A2A/LLM proxy. A **Linux Foundation** project — **not** CNCF | `cr.agentgateway.dev/agentgateway:v1.5.0` (note the leading `v`; the tag `1.5.0` does not exist on that registry, though the binary reports `1.5.0` as its internal version) | Interposed on the MCP hop. Verifies the caller's JWT-SVID (`jwtAuth`), asks the Policy Decision Service about every `tools/call` (`mcpGuardrails`), and forwards to `payments-mcp` **only** if the answer is permit. |
 | `policy-decision-service` | **This project's own code** (Python 3.13, `grpcio`), not third-party — listed here because it is platform machinery rather than an application component. Serves agentgateway's `agentgateway.dev.ext_mcp.ExtMcp` contract, from a proto vendored verbatim at v1.5.0 (`platform/policy-decision-service/proto/ext_mcp.proto`, `d459d88`) | `localhost:5001/northstar/policy-decision-service:dev`, `policy-decision-service.northstar-platform.svc.cluster.local:9100` | Answers permit or deny on caller identity plus amount. Holds the milestone's one rule and emits the `northstar.policy.decision` span. Makes no Kubernetes API calls and holds no RBAC; nothing in `northstar-agents` can reach it. |
 | `eval-scorer` **(M4; row added M5 Task 6)** | **This project's own code** (Python 3.13, standard library only — no web framework, no third-party OTel SDK dependency beyond what `platform/eval-scorer/requirements.txt` pins), not third-party — the same reason `policy-decision-service` has a row here rather than in the application table | `localhost:5001/northstar/eval-scorer:dev`, `eval-scorer.northstar-platform.svc.cluster.local:8300` | Scores a settled trajectory's identity authority against its own independent copy of the policy table (`scorer/authority.py`) and its own independent copy of the contract's currently-published autonomy level (`scorer/contract.py`'s `CURRENT_LEVEL`), never by re-reading the `northstar.policy.decision` span's own claim — the anti-vacuity argument `scorer/contract.py`'s own module docstring makes at length. `CURRENT_LEVEL` is a static constant checked at build time against the committed `deploy/platform/openfeature/featureflag.yaml`, deliberately blind to a live `kubectl patch` against the deployed `FeatureFlag` object (M5-R29/M5-R31) — the two are independent by design, not by oversight, which is exactly what let Task 6 flip the live contract without touching this service or its tests. |
@@ -710,7 +712,7 @@ contract and in `agents/claims-agent/NOTES.md` are dated M8 history.
   id. The claims-agent does not trust that message: a non-user-role resume is
   refused, it reads the reply from the metadata it wrote itself, and it reads the
   payment from payments-api (one `GET /payments/{id}`, allowed by an L7 Cilium
-  rule) and reports what the ledger says. A resume the ledger does not back is
+  rule then; payments-api's Linkerd route since M12) and reports what the ledger says. A resume the ledger does not back is
   refused and the task keeps waiting. The resume runs under
   `northstar.a2a.resume`, with one span link back to the hand-off span in trace A
   (`northstar.a2a.link.reason = resume`).
@@ -720,8 +722,8 @@ contract and in `agents/claims-agent/NOTES.md` are dated M8 history.
   `x-claim-token` header). The customer-ui is now a small Python Starlette server
   (`customer-ui-server`) that serves the static export. Guardrails on the push:
   an exact-match URL allowlist in claims-agent (SSRF), the token check in the
-  receiver, and Cilium allowing claims-agent to customer-ui:8080 `POST /a2a/push`
-  only.
+  receiver, and customer-ui's Linkerd policy letting only claims-agent's identity `POST /a2a/push`
+  (Cilium did this on claims-agent's egress until M12).
 - **A decline is `completed`, not A2A's `rejected`.** In A2A `rejected` means
   the agent refused the task. Here the agent did the work and a person declined
   the payment.
@@ -877,7 +879,7 @@ to do:**
 
 - It is enforced entirely in-process, in claims-agent's own Python. There is
   no gateway, mTLS, or Kubernetes `NetworkPolicy` anywhere in this cluster
-  (`deploy/` has no `NetworkPolicy` resource at all, confirmed by search) —
+  (`deploy/` had no `NetworkPolicy` resource at all when this was written, M1; reach policy arrived in M2.2 and was rewritten in M12) —
   nothing stops any other pod in the cluster from calling settlement-agent's
   Service directly, bypassing claims-agent and this check entirely.
   Symmetrically, `mcp_tools.py`'s docstring states "settlement-agent is the
@@ -1429,51 +1431,125 @@ the model still proposes exactly €6,200, and the platform now refuses to
 execute it. What was an observation about a model's behaviour is now the input
 to a decision something else makes.
 
-## The network, as the second defence — M2.2
+## The network, as the second defence — M2.2, rebuilt in M12
 
 Everything above is enforced at the application layer, by a proxy an agent
-chooses to talk to. M2.2's last task makes that choice not a choice, in both
-directions, with `CiliumNetworkPolicy` on a Cilium 1.20.1 dataplane
-(`deploy/platform/cilium-policies.yaml`, **nine** documents -- `grep -c 'kind: CiliumNetworkPolicy'`; this said "five" until M4's final review, and the table below has always been a selection rather than the whole file):
+chooses to talk to. M2.2's last task made that choice not a choice, in both
+directions. **Until M12 that was Cilium** (a `CiliumNetworkPolicy` per workload
+on a Cilium 1.20.1 dataplane, `deploy/platform/cilium-policies.yaml`, with
+`toFQDNs` for the model provider). **Since M12 it is two layers**, each doing
+the half it is good at:
+
+- **Ingress (who gets in) is Linkerd**, at the destination's proxy, by workload
+  identity. `deploy/platform/reach/linkerd-policies.yaml` holds five `Server`s
+  (payments-mcp:8000, policy-decision-service:9100, settlement-agent:9002,
+  payments-api:8080, customer-ui:8080), their `HTTPRoute`s,
+  `AuthorizationPolicy`s and `MeshTLSAuthentication`s (plus two
+  `NetworkAuthentication`s for the probe and catch-all routes). The identity is
+  `<serviceaccount>.<namespace>.serviceaccount.identity.linkerd.cluster.local`,
+  taken from the caller's mTLS certificate, which is why claims-agent,
+  customer-ui, payments-mcp and payments-api each got a dedicated ServiceAccount
+  (two workloads shared `default`, and a policy cannot name `default`).
+- **Egress (who gets out) is core NetworkPolicy**, enforced in the node by
+  kindnet (kind's default CNI, kube-network-policies, on since kind 0.24).
+  `deploy/platform/reach/network-policies.yaml` holds four documents, one per
+  `northstar-agents` workload that has an egress inventory (settlement-agent,
+  claims-agent, customer-ui, reviewer-ui). Linkerd cannot do egress alone: its
+  `EgressNetwork` is namespace-wide, matches on SNI, and any pod that skips its
+  proxy skips it. NetworkPolicy works whether or not the workload cooperates.
+
+The meshed workloads are the three app namespaces (`northstar-agents`,
+`northstar-tools`, `northstar-systems`) plus agentgateway and the
+policy-decision-service. Everything else (observability, SPIRE, Kyverno, flagd,
+Backstage, eval-scorer, `kube-system`) is not meshed: this milestone is about
+reach. Linkerd's default inbound policy stays `all-unauthenticated`, so only a
+port that has a `Server` is restricted. Proxy tracing is **off**, on purpose:
+the trace keeps exactly the shape M11 measured.
 
 | Direction | Policy | What it makes impossible |
 |---|---|---|
-| **Ingress** (`d17309c`) | `payments-mcp` admits agentgateway and the kubelet probe, nothing else | A workload reaching the tool without crossing the policy hook. Measured before it existed: `claims-agent` POSTed an MCP `initialize` at `payments-mcp:8000` and got **HTTP 200** |
-| **Egress** (`50fac07`) | one document per workload in `northstar-agents` — `settlement-agent` may reach DNS, agentgateway:3000, the collector:4318 and `api.anthropic.com:443` by name; `claims-agent` may reach DNS, settlement-agent:9002, the collector and, from M8, payments-api:8080 for one L7 read (`GET /payments/{id}`, the ledger read on resume); `customer-ui` may reach DNS only | An agent reaching the model provider, the ledger, the tool or the PDS directly. Two of the three workloads had unrestricted outbound egress before this, including to the model provider — measured, which is why the policy covers the namespace rather than the one agent the criterion names |
+| **Ingress** | `payments-mcp:8000` and the PDS:9100 admit agentgateway's identity and nothing else | A workload reaching the tool, or the policy decision point, without crossing the gateway. Measured under Cilium before the policy existed: `claims-agent` POSTed an MCP `initialize` at `payments-mcp:8000` and got HTTP 200 |
+| **Ingress, per route** | payments-api authorizes each route (propose, execute, refuse, get, list, reject, probe) for the identities that call it; `execute` is payments-mcp's alone. customer-ui authorizes `POST /a2a/push` for claims-agent alone | reviewer-ui or claims-agent POSTing `/payments/{id}/execute` straight at the ledger, skipping the gateway and the PDS. (Cilium did this as L7 on each *caller's* egress; NetworkPolicy has no L7, so it moved to the callee) |
+| **Ingress** | settlement-agent:9002 admits claims-agent's identity | Anything else calling an A2A port that can execute a proposed payment |
+| **Egress** | one document per workload in `northstar-agents`. `settlement-agent` may reach DNS, agentgateway:3000, the collector:4318, the Linkerd control plane and, by `ipBlock`, Anthropic's published range (`160.79.104.0/23`, `2607:6bc0::/48`, TCP 443); `claims-agent` may reach DNS, settlement-agent:9002, payments-api:8080, the collector and the control plane; `customer-ui` and `reviewer-ui` have their own short lists | An agent reaching the model provider (all but settlement-agent), the ledger, the tool or the PDS directly |
 
-Four things about that table are measurements and not design intent:
+Facts about that table that are measurements, from the five M12 measurements on
+a throwaway kind cluster (kindnet, Linkerd edge-26.10.1), **not** from the demo
+cluster, which had not been recreated on Linkerd when this was written:
 
-- **The denials are `TimeoutError`, not `ConnectionRefusedError`.** A Cilium
-  drop discards the packet, so there is no RST. A test written to expect a
-  refusal would fail against a working policy.
-- **DNS still resolves for hosts the policy will not let you reach.**
-  `api.anthropic.com` resolves inside `claims-agent` while the connection to
-  it is dropped. That is correct: the L4 DNS rule permits the lookup, and
-  enforcement happens on the connect.
-- **`toFQDNs` needs Cilium's DNS proxy, and the proxy is visible in the
-  datapath.** `settlement-agent`'s two port-53 rules carry a `PROXY PORT`
-  in the BPF policy map; the other two agents' do not, because they have no
-  `toFQDNs` rule to feed. That difference is asserted, and it catches a
-  mutation the behavioural probe cannot: stripping `rules.dns` leaves the
-  connection to `api.anthropic.com` working, because Cilium retains the
-  already-derived FQDN identity from earlier lookups.
-- **The model-provider allowance is a per-name identity, not "external is
-  fine".** Its BPF row carries `fqdn:api.anthropic.com` *and*
-  `reserved:world` on 443/TCP, so "no egress row mentions `reserved:world`"
-  would fail on a *correct* policy. The assertion that separates the two cases
-  is that every world-bearing row is also FQDN-labelled and port-scoped.
+- **A refusal is now a visible HTTP 403**, empty body, no `l5d-proxy-error`
+  header, and counted: `inbound_http_authz_deny_total{srv_name, route_name,
+  client_id}` on the destination proxy's `:4191/metrics`. A request that matches
+  no route on a Server that has routes is a 404 from the proxy. Under Cilium a
+  refusal was a silent drop that appeared nowhere. (A gRPC `PERMISSION_DENIED`
+  at the PDS was not measured; it is owed to the first live run.)
+- **A meshed pod's TCP connect proves nothing.** Its own outbound proxy accepts
+  every connect locally. The egress verdict shows only above TCP: a TLS
+  handshake or HTTP request to an allowed address completes, to a denied one it
+  is reset (or the proxy answers 504). From an *unmeshed* pod a connect timeout
+  is still the oracle, and it is the kernel dropping the packet.
+- **Every egress rule to a meshed peer must allow the service port and TCP
+  4143** (the peer proxy's inbound port); only the service port gives HTTP 504,
+  `service in fail-fast`. The Linkerd control plane needs TCP 8080 (identity),
+  8086 (destination) and 8090 (policy) in namespace `linkerd`.
+- **`kubectl port-forward` bypasses the proxy**, so a port-forward to a port
+  behind a denying Server is *not* refused. No reach test probes through one;
+  the demo's counter is read through the API server's pod proxy instead.
+- **A Server with routes refuses kubelet probes** unless a probe route is
+  authorized (all networks). A Server *without* routes authorizes `GET` on the
+  probe path for every caller, so a probe path must never be an API path.
+  `tcpSocket` probes pass behind a denying Server (the PDS and payments-mcp use
+  them).
 
-**No Cilium telemetry is asserted as a span, and none was invented.**
-`enable-hubble: false` in this cluster's `cilium-config` — read live — so
-there are no Hubble flows here at all. The evidence for every claim in this
-section is a read of the BPF policy map or a TCP probe from inside a pod.
+**What we lose against Cilium, said plainly:**
 
-**`toFQDNs` is only as good as the SDK default it names.**
-`api.anthropic.com` is configured nowhere in this repository; it is the
-`anthropic` client's own hardcoded `base_url`. If that default ever moves,
-this policy fails **closed** — the model call breaks rather than a new host
-being silently permitted. That is the right direction, and it is still a
-coupling to a third-party constant.
+- **Egress by name becomes egress by address range.** `toFQDNs` followed DNS;
+  `ipBlock` follows Anthropic's published range, which is static and "will not
+  change without notice". Any other host in that /23 is also reachable from
+  settlement-agent, and a provider address change shows up as a TLS reset from
+  settlement-agent, not as a policy message.
+- **No DNS-proxy evidence.** Cilium let a test see the DNS proxy port on
+  settlement-agent only; there is no equivalent.
+- **Egress enforcement is kind's.** The policy objects are portable, the
+  enforcement is not: a production cluster needs a CNI that enforces
+  NetworkPolicy.
+- **TCP connect no longer means reach.** Every probe that asserted "connect
+  timed out" had to move to an HTTP status (ingress) or keep the timeout only
+  where NetworkPolicy drops (egress, unmeshed).
+- **claims-agent can reach more of customer-ui than before.** Cilium allowed
+  `POST /a2a/push` and nothing else on that port. The Linkerd rule restricts who
+  may call that route; a catch-all route (the browser and the probe need it)
+  keeps the rest of customer-ui open to everyone, claims-agent included.
+- **More moving parts:** a proxy in each meshed pod, a control plane, and a
+  certificate chain (openssl, P-256, generated by `setup-kind.sh` into a
+  git-ignored directory). OSS Linkerd ships edge releases only; `edge-26.10.1`
+  is pinned.
+
+**What we gain:** refusals you can show (a 403 and a counter per policy);
+reach keyed by the same identity (namespace and ServiceAccount) SPIRE attests,
+not by pod labels anyone with a Deployment can set; mTLS between meshed
+workloads; and the host-network gap closes (Cilium's `fromEntities: host`
+admitted a host-network pod to payments-mcp and the PDS; such a pod has no mesh
+identity).
+
+**One identity, two credentials.** A settlement-agent pod holds Linkerd's
+certificate (may it *connect*) and the SPIRE SVID (may it *call this tool*).
+They do not wrap each other: agentgateway still checks the SVID JWT in the
+request; Linkerd checks the TLS peer.
+
+**No reach telemetry is asserted as a span, and none was invented.** Refusals
+are *counted* by the proxy, not traced. An egress drop is silent. The evidence
+for every claim in this section is an HTTP status plus the deny counter, or a
+probe from inside a pod. (Under Cilium it was a read of the BPF policy map;
+`enable-hubble` was false and there were no flows.)
+
+**The model-provider range is only as good as Anthropic's publication.** The
+host `api.anthropic.com` is configured nowhere in this repository (it is the
+`anthropic` client's own hardcoded `base_url`), and the range it resolves to is
+now written into `network-policies.yaml`. If either moves, the policy fails
+**closed**: the model call breaks rather than a new range being silently
+permitted. That is the right direction, and it is still a coupling to a
+third-party fact.
 
 ## Workload identity: what is real and what is deferred
 
@@ -1569,7 +1645,7 @@ SPIFFE ID is the **audience** settlement-agent's token is minted for, so that
 string has to name a real registered identity rather than an invented label.
 The PDS's entry exists for the same class of reason and one more: the ExtMCP
 hop between the gateway and the PDS is **plain gRPC today**, protected by a
-`CiliumNetworkPolicy` rather than by mTLS, and this entry is what makes the
+a Linkerd `Server` (M12; a `CiliumNetworkPolicy` before it) rather than by this hop's own mTLS, and this entry is what makes the
 PDS's own certificate possible the day that hop is hardened — as well as being
 the identity a future audit record would name as the decider. `eval-scorer`'s
 entry exists for the narrower reason its own CR comment gives: it is the
@@ -1841,14 +1917,18 @@ enforce them.
 | Ring | Question | Northstar's answer | Stage |
 |---|---|---|:---:|
 | Core · Identity | who it is | SPIRE JWT-SVIDs, verified by the gateway on every call | 2 |
-| Ring 1 · Reach | what it connects to | Cilium: the gateway is the only way into `payments-mcp` | 2 |
+| Ring 1 · Reach | what it connects to | Linkerd (ingress, by identity) and NetworkPolicy (egress): the gateway is the only way into `payments-mcp` | 2 |
 | Ring 2 · Capability | what it may do | agentgateway → ExtMCP → policy-decision-service, `failClosed`; the autonomy flag | 2, 5 |
 | Keystone | it cannot edit what constrains it | Kyverno `ValidatingPolicy` | **7** |
 
-M7 deliberately does not port William's other choices. Linkerd would duplicate
-SPIRE on identity (the M2 rationale stands), and his static CEL
+M7 deliberately did not port William's other choices: Linkerd would duplicate
+SPIRE on identity (the M2 rationale then), and his static CEL
 `mcpAuthorization` allowlist is the approach the decision service replaced.
 Those are two layers, "hide" versus "refuse and record", not a disagreement.
+M12 later brought Linkerd in for **reach only** (ingress authorization by
+workload identity), not for identity: SPIRE still issues the SVID the gateway
+verifies, and Linkerd's certificate answers a different question. See "The
+network, as the second defence".
 
 ### The keystone policy
 
@@ -1870,7 +1950,9 @@ v1.18.1 uses; same rule, current type.
   identity:
   - Capability: `FeatureFlag` and `FeatureFlagSource` in `northstar-platform`;
     the `agentgateway-config` ConfigMap.
-  - Reach: `CiliumNetworkPolicy` and `CiliumClusterwideNetworkPolicy`.
+  - Reach: `NetworkPolicy` (`networking.k8s.io`), every `policy.linkerd.io`
+    resource, and Gateway API `HTTPRoute` (M7 to M11 protected the two
+    `cilium.io` kinds). The namespaces too, because the mesh annotation lives there.
   - Identity: SPIRE's `ClusterSPIFFEID`, `ClusterStaticEntry` and
     `ClusterFederatedTrustDomain`.
   - RBAC: `Role`, `RoleBinding`, `ClusterRole`, `ClusterRoleBinding`.
@@ -1892,7 +1974,7 @@ v1.18.1 uses; same rule, current type.
   `northstar-tools` prefixes. No Northstar agent creates a workload or holds any
   RBAC to: no RoleBinding names an agent ServiceAccount, and no agent imports a
   Kubernetes client. Each of the objects above has a live test in
-  `tests/e2e/test_keystone.py` (pod, cluster-wide Cilium policy, ClusterSPIFFEID,
+  `tests/e2e/test_keystone.py` (pod, NetworkPolicy and Linkerd AuthorizationPolicy, ClusterSPIFFEID,
   legacy ClusterPolicy, PolicyException, token) and was mutation-checked by
   removing its rule from the live policy and watching the test go red.
 - **What Kyverno cannot cover, so it is RBAC-only:**
@@ -1968,9 +2050,11 @@ the live stage-7 cluster, Kyverno chart 3.9.1 / app v1.19.1:
 | Noise | Kyverno traces its own webhook self-checks (`ADMISSION POST /verifymutate`, a `Lease` update) about six times a minute, so the service is mostly noise. Search by operation `VALIDATE ...` or by `admission.request.user.name`. |
 
 So the answer for the deck: the gateway's decision is in the claim's trace;
-Kyverno's refusal is in Jaeger, attributable, but standalone; **Cilium's drops
-are in no trace**, because Hubble is not installed. That last one is stated, not
-fixed. `tests/e2e/test_keystone.py::test_the_denial_reaches_jaeger_as_a_standalone_kyverno_trace`
+Kyverno's refusal is in Jaeger, attributable, but standalone; **Linkerd's refusals are a
+counted 403 (`inbound_http_authz_deny_total`) but not a span**, because proxy
+tracing is off on purpose, and **an egress drop is silent**: NetworkPolicy
+counts nothing here. (Until M12 the line read "Cilium's drops are in no trace,
+because Hubble is not installed".) That last one is stated, not fixed. `tests/e2e/test_keystone.py::test_the_denial_reaches_jaeger_as_a_standalone_kyverno_trace`
 asserts the first two (and fails if the trace ever stops being standalone, so
 the claim cannot silently go stale).
 
@@ -2110,8 +2194,8 @@ live spans:
   still checks a target *name*, exactly as described at Hop 2 above, and
   `customer-ui` reaches `claims-agent` with no credential at all. The
   reachability half of this changed in M3 without the identity half changing:
-  both settlement Deployments now have Cilium ingress allowlists (claims-agent
-  and reviewer-ui respectively), so "anything in the cluster can call
+  both settlement Deployments got ingress allowlists (Cilium then, Linkerd identity
+  policy since M12; claims-agent and reviewer-ui respectively), so "anything in the cluster can call
   `settlement-agent`'s Service directly" — true and measured through M2.2 — is
   no longer accurate. What reaches them presents no credential all the same.
 - **payments-mcp performs no check of its own** before calling payments-api,

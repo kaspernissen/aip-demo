@@ -94,7 +94,7 @@ had three of the four; M7 adds the keystone and makes Reach a live beat.
 | Ring | Question | Northstar's answer | Where it is shown |
 |---|---|---|---|
 | Core · Identity | who is it | SPIRE JWT-SVIDs, verified by the gateway on every call | beat 3 |
-| Ring 1 · Reach | what can it connect to | Cilium: the gateway is the only way into `payments-mcp` | **Beat R** |
+| Ring 1 · Reach | what can it connect to | Linkerd (ingress, by workload identity) and NetworkPolicy (egress): the gateway is the only way into `payments-mcp` | **Beat R** |
 | Ring 2 · Capability | what may it do | agentgateway → policy-decision-service, fail-closed; the autonomy flag | beats 1, 4, 7 |
 | **Keystone** | can it edit what constrains it | Kyverno: **no** | **Beat K** |
 
@@ -160,8 +160,8 @@ flowchart TD
       failurePolicy: Fail`"]
     end
     kv -.->|"`denies an agent identity's write to
-      the flag, the gateway config, Cilium
-      policy, RBAC and Kyverno itself`"| ff
+      the flag, the gateway config, the reach
+      policies, RBAC and Kyverno itself`"| ff
     bs -->|"`ServiceAccount backstage —
       get/list/watch only`"| ff
     bs -->|"`ServiceAccount backstage-autonomy-writer —
@@ -169,7 +169,7 @@ flowchart TD
       no more`"| ff
 </pre>
 
-Underneath all of it: **Cilium** (dataplane) · **SPIFFE/SPIRE** (workload
+Underneath all of it: **Linkerd** (ingress authorized by workload identity) and **NetworkPolicy** on kind's kindnet (egress) · **SPIFFE/SPIRE** (workload
 identity, trust domain `northstar.local`) — every MCP call carries a
 SPIRE-minted JWT-SVID the gateway verifies before anything else happens.
 
@@ -215,7 +215,7 @@ everything below it.
 | Stage | Name | Adds | Run this stage if the talk is about… |
 |:---:|---|---|---|
 | 1 | Connected | agents, MCP servers, systems of record, customer UI, collector, Jaeger | distributed tracing across an agent chain |
-| 2 | Governed | Cilium, SPIFFE/SPIRE, agentgateway, Policy Decision Service | authorization and workload identity |
+| 2 | Governed | Linkerd, NetworkPolicy, SPIFFE/SPIRE, agentgateway, Policy Decision Service | authorization and workload identity |
 | 3 | Supervised | reviewer-ui | human-in-the-loop |
 | 4 | Observable | OpenSearch + Dashboards, Prometheus, eval-scorer | evidence and evaluation |
 | 5 | Progressive autonomy | cert-manager, Open Feature Operator, flagd sidecar, the `FeatureFlag` | policy as a live value |
@@ -227,13 +227,18 @@ everything below it.
 
 **Two things about stages that will bite you:**
 
-1. Stages **2–7 all need `networking.disableDefaultCNI`**, which is a
-   *create-time* kind flag. You cannot layer Cilium onto a running default
-   CNI. Going from stage 1 → stage 2 therefore needs the cluster recreated;
-   the script refuses rather than doing something broken.
+1. **A cluster built before M12 runs Cilium and must be recreated.** Until
+   M12, stages 2–7 used `networking.disableDefaultCNI`, a *create-time* kind
+   flag, and Cilium owned the dataplane. Since M12 the CNI is kind's default
+   (kindnet, which enforces NetworkPolicy) and Linkerd goes on top, so stage 2
+   no longer needs a different cluster from stage 1. But a stage >= 2 run on an
+   old Cilium cluster is refused by the script (the `kube-system/cilium`
+   DaemonSet is the marker): `kind delete cluster --name northstar`, then
+   `./scripts/setup-kind.sh --stage 7`. Nothing in M12 has run on the demo
+   cluster yet; that recreate is pending.
 2. Stages **4, 5, 6 and 7 all reuse stage 3's cluster config unchanged** —
    there is deliberately no `stage4.yaml`, `stage5.yaml`, `stage6.yaml` or
-   `stage7.yaml`. So **3 → 4 → 5 → 6 → 7 needs no recreate.** You can climb the
+   `stage7.yaml`. So **3 → 4 → 5 → 6 → 7 needs no recreate** (and, on a post-M12 cluster, neither does 1 → 2). You can climb the
    ladder live. (Stage 7 on top of a running stage 4 cluster was how this one
    was brought up the first time, and is the supported path.)
 
@@ -503,7 +508,10 @@ only the road the money would take.
   $ GET   settlement-agent:9002   (the one peer it may call: the control)
   -> [REACHED]  200  (the network works)
   $ POST  payments-mcp:8000/mcp  initialize, straight to the tool, 8s timeout
-  -> [DROPPED]  no answer, no 401. The packet never arrived.
+  -> [DROPPED (timeout)]  no answer, no 401. The node dropped the packets.
+  From inside reviewer-ui: it may reach payments-api, but not as the tool.
+  $ POST  payments-api:8080/payments/<id>/execute  straight to the ledger, skipping gateway and PDS
+  -> [REFUSED 403 by payments-api/<route> (deny counter +1)]
 
 3  With settlement-agent's identity
   $ spire-server jwt mint   sub=settlement-agent  aud=agentgateway
@@ -518,19 +526,24 @@ only the road the money would take.
 
 > "Three ways to reach the payment tool. With no identity, the gateway says
 > 401 and forwards nothing. Going around the gateway, straight at the tool,
-> does not get a no, it gets silence: Cilium drops the packet. And with the
-> identity SPIRE issued to this one agent, I can see the tools. All four,
+> does not get a no, it gets silence: the node drops the packet. And where a
+> workload may reach the service but not do that thing, the answer is a counted
+> 403 from the service's own proxy. With the identity SPIRE issued to this one
+> agent, I can see the tools. All four,
 > including the one that moves money. Seeing a tool is not being allowed to use
 > it. That comes next."
 
 **Land:** the 8 seconds of waiting on the DROPPED line is the point. Say so out
 loud: "That wait is the drop. There is no error to read, because nothing
-answered." Cilium drops are **not** in the trace (Hubble is not installed); this
-terminal line is the evidence, and the slide says so.
+answered." Neither is in the trace. The egress drop is silent
+(nothing counts it); the ingress 403 is counted by the proxy
+(`inbound_http_authz_deny_total`) but it is a counter, not a span (proxy tracing
+is off on purpose). This terminal line is the evidence, and the slide says so.
+*Expected output; first live run on Linkerd pending.*
 
 **If it fails** — `FAIL ... the control did not answer`: the network is down, not
 the policy; `kubectl -n northstar-agents get pods`. `FAIL ... was not dropped`:
-the Cilium policy is not enforcing, see §8. No SPIRE token: `kubectl -n
+the NetworkPolicy is not enforcing, see §8. No SPIRE token: `kubectl -n
 northstar-platform get pod spire-server-0`. Fallback: none on the deck any more (the
 transcript slides left it on 2026-10-19); say what the step proves and move on.
 
@@ -978,8 +991,11 @@ span for `execute_payment`, and **no** `payments-api` execute span.
 
 ### Beat R — the only way in · *stage 7* · ~2 min
 
-The Reach ring: a workload with no business at the tool cannot even open a
-connection to it. No model call, no browser, no cost.
+The Reach ring has two enforcement points. **Egress** is core NetworkPolicy,
+enforced in the node by kindnet: a workload with no business at the tool cannot
+get a packet to it. **Ingress** is Linkerd, at the destination's proxy, by
+workload identity: a workload that may reach a service but not do that thing
+there gets a 403, and the proxy counts it. No model call, no browser, no cost.
 
 **DO**
 
@@ -987,41 +1003,69 @@ connection to it. No model call, no browser, no cost.
 ./scripts/beat-reach.sh
 ```
 
-**SHOW** — the output below is a real run. Step 1 is the control (the same
-pod reaches the one peer it exists to call); step 2 is the point.
+**SHOW** — *expected output; first live run on Linkerd pending (the demo cluster
+still runs Cilium until it is recreated; the shape below is what the script
+prints, not a recorded run).* Step 1 is the control (the same pod reaches the
+one peer it exists to call); step 2 is the egress drop; step 3 is the ingress
+refusal and its counter.
 
 ```
 === Beat R: the only way in ===
-Probing from inside claims-agent-57fcb4b7f9-d7q47 (claims-agent: no SVID, no MCP client, no business at the tool).
+Egress is NetworkPolicy in the node; ingress is Linkerd, by workload identity.
 
 1. Control: claims-agent calls settlement-agent, the one peer it exists to call
 $ GET http://settlement-agent.northstar-agents.svc.cluster.local:9002/.well-known/agent-card.json
   -> REACHED 200
-  reachable, as it should be.
+  REACHED. reachable, as it should be.
 
-2. Around the gateway: claims-agent sends an MCP initialize straight to payments-mcp
-$ POST http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp   (initialize, 8s connect timeout)
-  -> DROPPED timeout
-  DROPPED. Nothing answered: not a 401, not a refusal. The packet never arrived.
+2. Egress: claims-agent sends an MCP initialize straight to payments-mcp, around the gateway
+$ POST http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp   (initialize, 8s timeout)
+  -> DROPPED (proxy error: the node dropped the packets, this pod's proxy answered 504)
+  DROPPED. Nothing answered: not a 401, not a 403. The packets never arrived.
 
-Beat R holds: the gateway is the only route to payments-mcp.
-(Cilium drops are not in the trace; Hubble is not installed.)
+3. Ingress: reviewer-ui calls payments-api's execute route directly, skipping the gateway and the PDS
+$ POST http://payments-api.northstar-systems.svc.cluster.local:8080/payments/PAY-000000/execute
+  -> REFUSED 403 by payments-api/<route> (deny counter +1)
+  REFUSED. By the proxy, by identity, and counted.
+
+Beat R holds: the gateway is the only route to payments-mcp, and only payments-mcp's identity may execute at payments-api.
+(Refusals are counted at the destination proxy, not traced.)
 ```
+
+The egress verdict is read above TCP. A meshed pod's own proxy accepts every
+connect locally, so a connect never fails; the HTTP request does (a TLS reset or
+the proxy's own 504). That is why the line says DROPPED with a reason, never
+"connection refused".
 
 **SAY**
 
 > "`claims-agent` is a real neighbour in the agents' own namespace. It has no
-> identity of its own and no business at the payments tool. Step one: it can
-> reach the one thing it is for. Step two: it tries to talk to the tool
-> directly, around the gateway. Not a 401. Not a refusal. **Nothing answers.**
-> Cilium dropped the packet, so the only way into `payments-mcp` is the
-> gateway, and the gateway is where the policy decision happens."
+> business at the payments tool. Step one: it can reach the one thing it is
+> for. Step two: it tries to talk to the tool directly, around the gateway. Not
+> a 401. Not a refusal. **Nothing answers.** The node dropped the packet, so
+> the only way into `payments-mcp` is the gateway, and the gateway is where the
+> policy decision happens. Step three is the other layer: `reviewer-ui` is
+> allowed to talk to the ledger, it lists and rejects there, but its identity is
+> not the one allowed to execute. Linkerd answers 403, and counts it."
 
-**Say the limit out loud.** Cilium drops are **not** in the trace: Hubble is
-not installed, so this refusal is on the terminal and nowhere in Jaeger. The
-script exits non-zero if the control fails or if the direct call is *not*
-dropped (a refusal, i.e. a reset, also fails it: that would mean something
-answered).
+**Say the limits out loud.** Neither refusal is in the trace. The egress drop
+is silent: nothing counts it. The ingress 403 is counted
+(`inbound_http_authz_deny_total` on the destination proxy) but it is a counter,
+not a span: proxy tracing is off on purpose, so the trace keeps the shape it
+had. Say also what Linkerd cost us against Cilium: egress is now an address
+range (Anthropic's published `160.79.104.0/23` and `2607:6bc0::/48`) rather than
+a name, so any other host in that range is also reachable from settlement-agent;
+the enforcement of egress is kind's kindnet, and a production cluster needs a CNI
+that enforces NetworkPolicy; and a TCP connect no longer proves reach. The script
+exits non-zero if the control fails, if the direct call is not dropped, or if
+the 403 is not counted.
+
+**Read the counter yourself** (through the API server, never a port-forward:
+a port-forward bypasses the proxy):
+
+```bash
+kubectl get --raw /api/v1/namespaces/northstar-systems/pods/<payments-api-pod>:4191/proxy/metrics | grep inbound_http_authz_deny_total
+```
 
 ---
 
@@ -1302,7 +1346,7 @@ policy.
 > "That is its **own** trace, not part of the claim's. `kubectl` does not
 > carry a trace context, so nothing joins them. Which refusals the trace can
 > see: the gateway's decision, yes, inside the claim. Kyverno's, yes, but
-> standalone. Cilium's, no."
+> standalone. Linkerd's is a counted 403, not a span, and an egress drop is silent."
 
 The script removes the over-grant on every exit path, including Ctrl-C.
 **If you abort the room's patience some other way, check §7 item 2.**
@@ -1319,7 +1363,7 @@ and naming them first is worth more than the features.
 | **The keystone fails closed only while Kyverno is registered** | Measured. `failurePolicy: Fail` means an *unreachable* Kyverno (webhook registered, no endpoints) **refuses** an over-granted agent's write (`connection refused`). But a *graceful stop* of the admission controller makes Kyverno delete its own webhook configurations, and then the same write **succeeds**: fail-open. Pre-flight and the gate check the registration for this reason. **Backstage's flip is unaffected either way** (and so are humans and CI), because the API server evaluates the identity condition before calling Kyverno. |
 | **Kyverno cannot guard webhook configurations, or RBAC itself** | `ValidatingWebhookConfiguration` and `MutatingWebhookConfiguration` objects are **RBAC-only**: the API server never sends admission for them to webhooks, so an agent allowed to edit one could remove Kyverno's registration and only RBAC would stop it. Agents hold no such grant. Likewise anything RBAC grants an agent that the policy's list does not name, and Kyverno's default `namespaceSelector` skips `kube-system` and `kyverno`. |
 | **The PDS execute limits are not covered by it** | They live in code (`pds/rules.py`) and change only by a reviewed commit and a rebuild. There is no cluster object for the policy to guard. |
-| **What the keystone does cover** | Every ring's configuration (the flag, the gateway ConfigMap, Cilium policies namespaced and cluster-wide, SPIRE's `ClusterSPIFFEID`/`ClusterStaticEntry`/`ClusterFederatedTrustDomain`, RBAC, **all** Kyverno policy kinds and exceptions) and the routes to another identity: workloads (pods, deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs) and `serviceaccounts/token`. |
+| **What the keystone does cover** | Every ring's configuration (the flag, the gateway ConfigMap, NetworkPolicies and Linkerd policy objects, SPIRE's `ClusterSPIFFEID`/`ClusterStaticEntry`/`ClusterFederatedTrustDomain`, RBAC, **all** Kyverno policy kinds and exceptions) and the routes to another identity: workloads (pods, deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs) and `serviceaccounts/token`. |
 | **Backstage here is unauthenticated** | Be precise, because the sloppy version is wrong: the backend API **does** check a credential — a bare `curl` to it gets HTTP 401. What makes it unauthenticated is that **anyone can mint that credential, unchallenged**, through the guest flow. So: anyone who can reach 7007 can flip the contract. What keeps it honest is **not a login** — it is the narrowness of the one write it can make: `get`/`list`/`patch` on `resourceNames: [northstar-autonomy]`, no delete, no create, separate from the read-only ServiceAccount the Kubernetes plugin uses. **Anyone reaching this port can flip the contract and nothing else.** |
 | **No scaffolder** | M1's claim — "a platform team could add a service in an afternoon through the same API" — is **half** demonstrated. The platform API exists as a real object with a real UI. Nothing here generates a new agent from it. |
 | **The catalog is static** | It reflects committed `catalog-info.yaml` files staged into the image, not a discovered repository — **there is no git remote** for Backstage's discovery processors to point at. A component added without its own file does not appear until the image is rebuilt, and a unit test catches that drift before a demo does. |
@@ -1425,7 +1469,10 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 | Backstage's flip answers with an admission error mentioning `kyverno` | the policy's `matchConditions` now match Backstage's identity (a Kyverno outage alone cannot do this: measured, Backstage is unaffected by one) | Backstage's identity is `backstage-autonomy-writer` in `northstar-platform`; the policy matches only `northstar-agents` and `northstar-tools` prefixes. `kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg -o yaml` and read the `matchConditions` |
 | `start-demo.sh` refuses: *over-grant is still applied* | an earlier beat-keystone run was killed hard (SIGKILL) | `kubectl delete -f deploy/demo/keystone-overgrant.yaml` |
 | `beat-keystone.sh` step 3 prints `Forbidden` instead of the Kyverno message | the over-grant did not take effect yet | re-run; the script waits for `auth can-i` to say `yes` first, so this means RBAC is not what it was |
-| `beat-reach.sh` step 2 prints `REFUSED` or `REACHED` | the Cilium policy is not enforcing | `kubectl -n northstar-tools get cnp`; `tests/e2e/test_gateway_is_the_only_route.py` reads the datapath |
+| `beat-reach.sh` step 2 prints `REFUSED` or `REACHED` | the egress NetworkPolicy is not enforcing (kindnet), or the pod was not dropped | `kubectl get networkpolicy -A`; `tests/e2e/test_egress_policy.py` |
+| `beat-reach.sh` step 3 does not print `REFUSED 403` | payments-api's Linkerd policy is missing or not holding, or the deny counter did not rise | `kubectl get servers,httproutes.policy.linkerd.io,authorizationpolicies -A`; `kubectl get --raw /api/v1/namespaces/northstar-systems/pods/<pod>:4191/proxy/metrics \| grep inbound_http_authz_deny_total`; `tests/e2e/test_gateway_is_the_only_route.py` |
+| `setup-kind.sh` refuses: *already exists and still runs Cilium* | the cluster predates M12 (it was created with `disableDefaultCNI`) | `kind delete cluster --name northstar`, then `./scripts/setup-kind.sh --stage 7` |
+| settlement-agent's model call dies with a TLS reset | Anthropic's address range is static in `network-policies.yaml`; a provider address change lands outside it | compare `api.anthropic.com` with 160.79.104.0/23 and 2607:6bc0::/48 and update the `ipBlock`s |
 | EUR 5,800 comes back `executed` at the start of step 2 | **contract left flipped from a previous run** | `scripts/demo reset`, or §7 |
 | The customer tab never flips to "Settled" after the approve | the customer-ui's stream to claims-agent is down (a dead forward), or the page lost the task | check `scripts/start-demo.sh`'s claims-agent forward (`localhost:19001`), then finish from the terminal: `scripts/demo approve last` (the stage fallback). The payment is settled either way; only the tab is stale |
 | A claims-agent restart while a claim waits | waiting tasks live in claims-agent's memory, by design: a restart loses them | the re-send above cannot help (the task is gone). Reject the stranded approvals with `scripts/demo reset` and file the claim again |

@@ -5,7 +5,7 @@ executable half of that claim: the collector sends a COPY of every span, metric
 and log to the weaver-live-check pod (`deploy/observability/weaver-live-check.yaml`),
 and this test reads its report and fails on any finding at `violation` about a
 name this project owns (`northstar.*`, and the retired un-prefixed namespaces).
-Everything else the cluster emits -- Kyverno, Cilium, SPIRE, agentgateway, the
+Everything else the cluster emits -- Kyverno, Linkerd, SPIRE, agentgateway, the
 GenAI instrumentation -- is reported at `information` by `telemetry/live-check.toml`
 and does not fail anything; what the registry does not describe is listed in the
 output, not judged.

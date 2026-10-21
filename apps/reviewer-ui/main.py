@@ -2,7 +2,7 @@
 
 The settlement agent prepares every payment; above its band it leaves the
 payment `awaiting_approval`, and a human decides here. Two peers, and no
-other egress (deploy/platform/cilium-policies.yaml's reviewer-ui-egress-
+other egress (deploy/platform/reach/network-policies.yaml's reviewer-ui egress
 allowlist is the enforced version of that): payments-api (ledger.py, plain
 REST: read the queue, reject) and agentgateway (gateway.py: release the
 money, as an `execute_payment` tool call under this workload's own SPIFFE

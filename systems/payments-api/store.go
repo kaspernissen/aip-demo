@@ -26,8 +26,8 @@ import (
 // payment (and within its limit), the reviewer-ui only an `awaiting_approval`
 // one, and an unreadable status denies both. A caller that reaches this service
 // without the gateway is outside that guarantee, which is why the reviewer-ui's
-// egress to this service is restricted at L7 to list, get and reject
-// (deploy/platform/cilium-policies.yaml).
+// identity is authorized at this service's ingress for list, get and reject
+// only (deploy/platform/reach/linkerd-policies.yaml).
 const (
 	StatusProposed         = "proposed"
 	StatusAwaitingApproval = "awaiting_approval"

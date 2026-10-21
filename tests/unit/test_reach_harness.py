@@ -109,8 +109,8 @@ METRICS = """\
 inbound_http_authz_allow_total{target_addr="10.244.0.12:8080",srv_name="web-http",route_name="web-x",authz_name="web-x-allowed",tls="true",client_id="allowed.src.serviceaccount.identity.linkerd.cluster.local"} 2
 # HELP inbound_http_authz_deny_total The total number of inbound HTTP requests that could not be processed due to a proxy error.
 # TYPE inbound_http_authz_deny_total counter
-inbound_http_authz_deny_total{target_addr="10.244.0.12:8080",target_ip="10.244.0.12",target_port="8080",srv_group="policy.linkerd.io",srv_kind="server",srv_name="web-http",srv_port="8080",route_group="policy.linkerd.io",route_kind="HTTPRoute",route_name="web-x",tls="no_identity",no_tls_reason="no_tls_from_remote"} 1
-inbound_http_authz_deny_total{target_addr="10.244.0.12:8080",target_ip="10.244.0.12",target_port="8080",srv_group="policy.linkerd.io",srv_kind="server",srv_name="web-http",srv_port="8080",route_group="policy.linkerd.io",route_kind="HTTPRoute",route_name="web-x",tls="true",client_id="client.src.serviceaccount.identity.linkerd.cluster.local"} 2
+inbound_http_authz_deny_total{target_addr="10.244.0.12:8080",target_ip="10.244.0.12",target_port="8080",srv_kind="server",srv_name="web-http",srv_port="8080",route_kind="HTTPRoute",route_name="web-x",tls="no_identity",no_tls_reason="no_tls_from_remote"} 1
+inbound_http_authz_deny_total{target_addr="10.244.0.12:8080",target_ip="10.244.0.12",target_port="8080",srv_kind="server",srv_name="web-http",srv_port="8080",route_kind="HTTPRoute",route_name="web-x",tls="true",client_id="client.src.serviceaccount.identity.linkerd.cluster.local"} 2
 inbound_http_authz_deny_total{target_addr="10.244.0.17:8000",srv_kind="server",srv_name="tcp-http",route_kind="default",route_name="default",tls="true",client_id="client.src.serviceaccount.identity.linkerd.cluster.local"} 1
 """
 
