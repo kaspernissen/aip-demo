@@ -33,6 +33,15 @@
 #     only the service port yields an HTTP 504 (`l5d-proxy-error: ... service
 #     in fail-fast`). agentgateway, claims-agent, settlement-agent, customer-ui
 #     and payments-api are all meshed.
+#   * Because of that 4143, EGRESS BETWEEN MESHED PODS IS PER POD, NOT PER PORT
+#     (M7, measured). Between meshed pods, egress is decided per pod, not per
+#     port: a pod allowed to reach a peer's proxy (4143) can reach any port on
+#     that peer that listens on the pod IP. Which ports actually answer is
+#     decided by the peer's Linkerd Servers (per port, per identity). The port
+#     numbers written beside 4143 below are what the service uses, and they
+#     bind a pod that skips the proxy (an unmeshed pod is held to the listed
+#     ports); for a meshed pod 4143 alone is the gate. Cilium's rules were per
+#     port: this is a weakening and it is stated here on purpose.
 #   * The collector is NOT meshed (nothing in `observability` is), so it is
 #     reached on its plain port, 4318, with no 4143 beside it.
 #
@@ -115,7 +124,7 @@ spec:
         - protocol: TCP
           port: 3000
         - protocol: TCP
-          port: 4143
+          port: 4143  # M7: with this, a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 3. The OTLP collector. THE RULE WHOSE ABSENCE IS WORST: the BatchSpanProcessor
     # exports on a background thread and swallows failure, so settlements would keep
     # succeeding while every span from this service vanished, in a milestone whose
@@ -226,7 +235,7 @@ spec:
         - protocol: TCP
           port: 9002
         - protocol: TCP
-          port: 4143
+          port: 4143  # M7: with this, a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 3. payments-api, for the resume's ledger read. L4 here; payments-api's own
     # Server decides which routes this identity may use (the read, never execute).
     - to:
@@ -240,7 +249,7 @@ spec:
         - protocol: TCP
           port: 8080
         - protocol: TCP
-          port: 4143
+          port: 4143  # M7: with this, a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 4. The OTLP collector, http/protobuf on 4318. This service owns the entry span
     # of the A2A chain: losing its export would not empty the trace, it would
     # decapitate it.
@@ -268,7 +277,7 @@ spec:
         - protocol: TCP
           port: 8080
         - protocol: TCP
-          port: 4143
+          port: 4143  # M7: with this, a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 6. The Linkerd control plane.
     - to:
         - namespaceSelector:
@@ -404,7 +413,7 @@ spec:
         - protocol: TCP
           port: 8080
         - protocol: TCP
-          port: 4143
+          port: 4143  # M7: with this, a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 2b. claims-agent, on its A2A port, to resume the customer's waiting task.
     - to:
         - namespaceSelector:
@@ -417,7 +426,7 @@ spec:
         - protocol: TCP
           port: 9001
         - protocol: TCP
-          port: 4143
+          port: 4143  # M7: with this, a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 3. agentgateway, on the MCP port: gateway.py's one outbound peer for the release
     # of an approved payment.
     - to:
@@ -431,7 +440,7 @@ spec:
         - protocol: TCP
           port: 3000
         - protocol: TCP
-          port: 4143
+          port: 4143  # M7: with this, a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 4. The OTLP collector.
     - to:
         - namespaceSelector:

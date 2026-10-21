@@ -4,9 +4,11 @@
 # (deploy/platform/reach/linkerd-policies.yaml authorizes callers by it), and
 # until now this pod ran as `default`, which every other pod in `northstar-agents` that
 # names no account shares: a policy naming it would admit them all. It grants no
-# RBAC; this pod makes no Kubernetes API calls. No SPIRE ClusterSPIFFEID selects
-# this workload (deploy/platform/spire/registration.yaml), so no SPIFFE ID
-# changes with this account.
+# RBAC; this pod makes no Kubernetes API calls. No named ClusterSPIFFEID selects
+# this workload, but SPIRE's catch-all fallback does
+# (deploy/platform/spire/registration.yaml), so its SPIFFE ID DOES change with this
+# account: from `.../sa/default` to `.../sa/claims-agent`. Nothing in the repo
+# references the old ID.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

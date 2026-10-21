@@ -373,6 +373,11 @@ FAKES = {
 echo "docker $*" >> "$FAKE_LOG"
 case "$1" in
   inspect) echo "true"; exit 0 ;;
+  port)
+    echo "6443/tcp -> 127.0.0.1:41234"
+    echo "30080/tcp -> 0.0.0.0:8080"
+    [[ -z "${FAKE_NO_8081:-}" ]] && echo "30081/tcp -> 0.0.0.0:8081"
+    exit 0 ;;
 esac
 exit 0
 """,
@@ -403,7 +408,7 @@ exit 0
 }
 
 
-def _run_setup_kind(stage, cluster_exists, cilium_present, tmp_path):
+def _run_setup_kind(stage, cluster_exists, cilium_present, tmp_path, host_port_8081=True):
     """Copy the real script into a throwaway tree and run it against fakes.
 
     Returns (returncode, combined_output, invocations).
@@ -440,6 +445,8 @@ def _run_setup_kind(stage, cluster_exists, cilium_present, tmp_path):
         env["FAKE_CLUSTER_EXISTS"] = "1"
     if cilium_present:
         env["FAKE_CILIUM_PRESENT"] = "1"
+    if not host_port_8081:
+        env["FAKE_NO_8081"] = "1"
     # Never let a real credential reach the subprocess.
     env.pop("ANTHROPIC_API_KEY", None)
     env.pop("DASH0_AUTH_TOKEN", None)
@@ -542,6 +549,33 @@ def test_stage_two_proceeds_when_the_existing_cluster_has_no_cilium(tmp_path):
     and is fine. Same inputs as above except the Cilium probe fails."""
     _, out, _ = _run_setup_kind("2", True, False, tmp_path)
     assert "still runs Cilium" not in out, f"the guard fired against a cluster with no Cilium:\n{out}"
+    assert "Cluster already exists, skipping creation." in out
+
+
+@pytestmark_bash
+@pytest.mark.parametrize("stage", ["3", "7"])
+def test_stage_three_plus_refuses_an_existing_cluster_without_host_port_8081(stage, tmp_path):
+    """A stage-1/2 cluster has no 8081 mapping (create-time), so upgrading it to
+    stage >= 3 must refuse with the delete-and-recreate hint, before installing."""
+    rc, out, calls = _run_setup_kind(stage, True, False, tmp_path, host_port_8081=False)
+    assert rc != 0, f"exited 0 over a cluster with no host port 8081. Output:\n{out}"
+    assert "8081" in out and "kind delete cluster --name northstar" in out, out
+    assert not [c for c in calls if c.startswith("kind create cluster")]
+    assert not [c for c in calls if c.startswith("helm upgrade")], (
+        "the script must refuse BEFORE installing anything")
+
+
+@pytestmark_bash
+def test_stage_three_proceeds_when_the_existing_cluster_has_host_port_8081(tmp_path):
+    rc, out, _ = _run_setup_kind("3", True, False, tmp_path, host_port_8081=True)
+    assert "no host port 8081" not in out, out
+    assert "Cluster already exists, skipping creation." in out
+
+
+@pytestmark_bash
+def test_stage_two_does_not_need_host_port_8081(tmp_path):
+    _, out, _ = _run_setup_kind("2", True, False, tmp_path, host_port_8081=False)
+    assert "no host port 8081" not in out, out
     assert "Cluster already exists, skipping creation." in out
 
 

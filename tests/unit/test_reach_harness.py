@@ -5,8 +5,8 @@ probe's output MEANS do not, so they live in `tests/harness/reach.py` and are
 pinned here. Every sample below is a real output captured on 2026-10-21 from
 the throwaway kind cluster `m12-spike` (kindnet + Linkerd edge-26.10.1), using
 the exact probe source the e2e files run. The gRPC samples are the one
-exception: PERMISSION_DENIED at the PDS is unmeasured until the first live run
-(plan M6), so they are shaped from the protocol, and marked as such.
+exception: they are shaped from the protocol (the real PERMISSION_DENIED at the
+PDS was measured in the final review, plan M7, but not recorded as a sample).
 """
 import json
 
@@ -21,12 +21,15 @@ APP_200 = '{"status": 200, "headers": {"server": "SimpleHTTP/0.6 Python/3.12.15"
 APP_403_WITH_BODY = '{"status": 403, "headers": {"content-length": "17"}, "body_len": 17, "error": null, "stage": "done"}'
 PROXY_504 = '{"status": 504, "headers": {"l5d-proxy-error": "endpoint 10.244.0.99:8080: client error (Connect)", "connection": "close", "l5d-proxy-connection": "close", "content-length": "0"}, "body_len": 0, "error": null, "stage": "done"}'
 PROXY_403_WITH_ERROR_HEADER = '{"status": 403, "headers": {"l5d-proxy-error": "x"}, "body_len": 0, "error": null, "stage": "done"}'
+PEER_PROXY_502 = '{"status": 502, "headers": {"content-length": "0"}, "body_len": 0, "error": null, "stage": "done"}'
+APP_502_WITH_BODY = '{"status": 502, "headers": {"content-length": "11"}, "body_len": 11, "error": null, "stage": "done"}'
+PROXY_502_WITH_ERROR = '{"status": 502, "headers": {"l5d-proxy-error": "x", "content-length": "0"}, "body_len": 0, "error": null, "stage": "done"}'
 TLS_OK = '{"status": 404, "headers": {"server": "cloudflare", "cf-ray": "a4e326e87b94bc36-WAW"}, "body_len": 0, "error": null, "stage": "done"}'
 TLS_RESET = '{"status": null, "headers": {}, "body_len": null, "error": "ConnectionResetError", "stage": "tls"}'
 CONNECT_TIMEOUT = '{"status": null, "headers": {}, "body_len": null, "error": "TimeoutError", "stage": "connect"}'
 TCP_CONNECTED = '{"status": null, "headers": {}, "body_len": null, "error": null, "stage": "connected"}'
 TCP_REFUSED = '{"status": null, "headers": {}, "body_len": null, "error": "ConnectionRefusedError", "stage": "connect"}'
-# Shaped from the protocol, NOT measured (plan M6).
+# Shaped from the protocol; the refusal was measured at the PDS in the final review (plan M7: PERMISSION_DENIED).
 GRPC_STATUS_7 = '{"status": 200, "headers": {"grpc-status": "7", "content-type": "application/grpc"}, "body_len": 0, "error": null, "stage": "done"}'
 GRPC_HTTP_403 = REFUSED_403
 
@@ -79,6 +82,9 @@ def test_grpc_refusal_accepts_either_form(sample, expected):
         (TLS_RESET, ("dropped", "reset")),
         (CONNECT_TIMEOUT, ("dropped", "timeout")),
         (PROXY_504, ("dropped", "proxy-error")),
+        (PEER_PROXY_502, ("reached", "peer-proxy-502")),  # M7: not a drop
+        (APP_502_WITH_BODY, ("reached", "answered")),  # an app speaking
+        (PROXY_502_WITH_ERROR, ("dropped", "proxy-error")),
         ('{"status": null, "headers": {}, "body_len": null, "error": "SSLError", "stage": "tls"}',
          ("dropped", "other:SSLError")),
     ],
@@ -198,7 +204,7 @@ def test_the_probe_source_compiles_and_has_a_connect_only_mode():
     ],
 )
 def test_grpc_classification(result, expected):
-    """Shaped from the protocol: PERMISSION_DENIED at the PDS is unmeasured until the first live run."""
+    """Shaped from the protocol; the real refusal was measured in the final review (plan M7)."""
     assert reach.classify_grpc(result) == expected
 
 
@@ -282,3 +288,13 @@ def test_throwaway_meshed_pod_gets_its_own_service_account():
     assert pod["spec"]["serviceAccountName"] == "reach-probe-wrongid"
     assert pod["metadata"]["annotations"] == {"linkerd.io/inject": "enabled"}
     assert pod["spec"]["containers"][0]["name"] == "probe"
+
+
+def test_a_never_ready_throwaway_cannot_join_service_endpoints():
+    """The bypass pod carries `app=claims-agent`, so without a failing readiness
+    probe it would become an endpoint of the real claims-agent Service."""
+    (pod,) = reach.throwaway_manifests("p", "ns", "img", {"app": "x"}, meshed=False,
+                                       never_ready=True)
+    assert pod["spec"]["containers"][0]["readinessProbe"]["exec"]["command"] == ["false"]
+    (plain,) = reach.throwaway_manifests("p", "ns", "img", {"app": "x"}, meshed=False)
+    assert "readinessProbe" not in plain["spec"]["containers"][0]

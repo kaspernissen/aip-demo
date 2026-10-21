@@ -38,10 +38,15 @@ row that says `deny-403`, `deny-404-no-route` or `drop`.
 * a MeshTLSAuthentication admits exactly its listed identities (an unmeshed
   caller has none); a NetworkAuthentication admits by source CIDR and nothing
   else; a policy with both requires both;
-* a meshed workload calling a meshed peer under an egress policy needs the
-  peer's service port AND TCP 4143, the peer proxy's inbound port (M2: with
-  the service port alone the call is a 504), and the Linkerd control plane on
-  8080, 8086 and 8090.
+* a meshed workload calling a meshed peer under an egress policy needs TCP
+  4143, the peer proxy's inbound port (M2: with the service port alone the
+  call is a 504), and the Linkerd control plane on 8080, 8086 and 8090. And
+  4143 is ALL it needs (M7): the client proxy tunnels through 4143 and the
+  peer's inbound proxy forwards to whatever port was asked for, so for meshed
+  sources egress to a meshed peer is per POD, not per port. Port rules still
+  bind an UNMESHED source (no proxy, so the kernel sees the real port). Which
+  ports actually answer is the peer's Servers' job (ingress, per port and per
+  identity).
 
 Workloads, namespaces, service accounts and probes are read from the real
 manifests under `deploy/k8s/` (and the gateway's), not retyped here, so the
@@ -405,16 +410,19 @@ def _np_egress_allows(src: Workload, dst, dst_ip, port, proto="TCP") -> bool:
     return False
 
 
-def egress_outcome(src_name, dst_name=None, port=None, *, ip=None, proto="TCP"):
+def egress_outcome(src_name, dst_name=None, port=None, *, ip=None, proto="TCP",
+                   unmeshed=False):
+    """`unmeshed=True` evaluates the same pod's labels as a pod with no proxy
+    (the e2e bypass pod): then the port rules bind exactly as written."""
     src = WORKLOADS[src_name]
     if ip is not None:
         return "allow" if _np_egress_allows(src, None, ip, port, proto) else "drop"
     dst = ALL_PODS[dst_name]
-    ok = _np_egress_allows(src, dst, None, port, proto)
-    if ok and src.meshed and dst.meshed:
-        # M2: a meshed peer is reached through its proxy's inbound port.
-        ok = _np_egress_allows(src, dst, None, PROXY_INBOUND_PORT, "TCP")
-    return "allow" if ok else "drop"
+    if src.meshed and dst.meshed and not unmeshed:
+        # M2 + M7: a meshed peer is reached through its proxy's inbound port,
+        # and a rule that admits 4143 admits EVERY port of that peer.
+        return "allow" if _np_egress_allows(src, dst, None, PROXY_INBOUND_PORT, "TCP") else "drop"
+    return "allow" if _np_egress_allows(src, dst, None, port, proto) else "drop"
 
 
 # --- THE REACH MATRIX ---------------------------------------------------------
@@ -559,6 +567,12 @@ EGRESS = [
     ("claims-agent", "payments-mcp", 8000, None, "drop"),  # direct bypass of the gateway
     ("claims-agent", "agentgateway", 3000, None, "drop"),
     ("claims-agent", "reviewer-ui", 8080, None, "drop"),
+    # M7: egress to a meshed peer is per pod. 4143 is allowed to these peers, so
+    # every port of them is allowed for a meshed claims-agent; the peer's Servers
+    # decide what answers. These rows document the limitation, they do not bless it.
+    ("claims-agent", "customer-ui", 9090, None, "allow"),
+    ("claims-agent", "settlement-agent", 9999, None, "allow"),
+    ("claims-agent", "payments-api", 9999, None, "allow"),
     # customer-ui (Cilium: customer-ui-egress-allowlist).
     ("customer-ui", "kube-dns", 53, None, "allow"),
     ("customer-ui", "otel-collector", 4318, None, "allow"),
@@ -596,6 +610,36 @@ def test_egress_reach_matrix(src, dst, port, ip, expected):
 @pytest.mark.parametrize("src", ["settlement-agent", "claims-agent", "customer-ui", "reviewer-ui"])
 def test_dns_is_open_on_udp_and_tcp(src, proto):
     assert egress_outcome(src, "kube-dns", 53, proto=proto) == "allow"
+
+
+@pytest.mark.parametrize(
+    "src,dst,port",
+    [("claims-agent", "customer-ui", 9090), ("claims-agent", "settlement-agent", 9999),
+     ("claims-agent", "payments-api", 9999)],
+)
+def test_m7_port_rules_bind_an_unmeshed_source_but_not_a_meshed_one(src, dst, port):
+    """The same labels, with and without a proxy: a pod that skips the proxy is
+    held to the ports written in the rule; a meshed pod is held to 4143 only."""
+    assert egress_outcome(src, dst, port) == "allow"
+    assert egress_outcome(src, dst, port, unmeshed=True) == "drop"
+    assert egress_outcome(src, dst, 4143, unmeshed=True) == "allow"
+
+
+def test_m7_a_meshed_peer_is_reached_on_4143_alone():
+    """No rule lists port 9090 or 9999 for these peers, yet a meshed source gets
+    through: 4143 is the whole gate."""
+    for dst in ("customer-ui", "settlement-agent", "payments-api"):
+        listed = {
+            p["port"]
+            for pol in _network_policies()
+            if pol["metadata"]["name"] == "claims-agent-egress"
+            for rule in pol["spec"]["egress"]
+            for peer in rule.get("to", [])
+            if _peer_matches(peer, ALL_PODS[dst], None, "northstar-agents")
+            for p in rule["ports"]
+        }
+        assert 4143 in listed and 9999 not in listed
+        assert egress_outcome("claims-agent", dst, 9999) == "allow"
 
 
 @pytest.mark.parametrize("src", ["settlement-agent", "claims-agent", "customer-ui", "reviewer-ui"])

@@ -108,6 +108,10 @@ PROBE_TIMEOUT = 8
 
 WRONG_ID_SA = "reach-probe-wrongid"
 
+# Carried by the throwaway pod that borrows a real workload's `app` label (the
+# bypass pod), and by nothing else, so `_pod()` never selects it by accident.
+THROWAWAY_LABEL = "reach-throwaway"
+
 RESOLVE = r"""
 import json, socket, sys
 out = {}
@@ -122,7 +126,7 @@ print(json.dumps(out))
 
 def _pod(app: str, namespace: str = AGENT_NS) -> str:
     proc = reach.kubectl(
-        KUBE_CONTEXT, "-n", namespace, "get", "pod", "-l", f"app={app}",
+        KUBE_CONTEXT, "-n", namespace, "get", "pod", "-l", f"app={app},!{THROWAWAY_LABEL}",
         "-o", "jsonpath={.items[0].metadata.name}",
     )
     assert proc.returncode == 0 and proc.stdout.strip(), (
@@ -166,7 +170,10 @@ def bypass_pod(reach_objects):
     """
     with reach.throwaway_pod(
         KUBE_CONTEXT, AGENT_NS, "reach-bypass-claims", _image("settlement-agent"),
-        {"app": "claims-agent"}, meshed=False,
+        {"app": "claims-agent", THROWAWAY_LABEL: "true"}, meshed=False,
+        # Labelled like claims-agent, so it must never join the claims-agent
+        # Service's endpoints and take a share of real traffic.
+        never_ready=True,
     ) as pod:
         yield pod.name
 
@@ -337,20 +344,25 @@ def test_the_model_agent_still_reaches_the_gateway_and_the_collector(
 
 
 @pytest.mark.parametrize(
-    "host,port,path",
-    [(PEER_HOST, PEER_PORT, "/.well-known/agent-card.json"),
-     (COLLECTOR_HOST, COLLECTOR_PORT, "/")],
+    "host,port,method,path",
+    [(PEER_HOST, PEER_PORT, "POST", "/"),
+     (COLLECTOR_HOST, COLLECTOR_PORT, "GET", "/")],
 )
 def test_claims_agent_still_reaches_its_peer_and_the_collector(
-    host, port, path, reach_objects
+    host, port, method, path, reach_objects
 ):
     """Control for the claims-agent denials, on the two things it actually does.
 
     `NORTHSTAR_ALLOWED_AGENTS` names `settlement-agent:9002` as its single
     delegation target; losing it would break every claim.
+
+    The peer is probed with `POST /`, never the agent card: Linkerd's default
+    probe route opens `GET /.well-known/agent-card.json` to every caller (M5),
+    so it would pass for any identity. A POST needs claims-agent's identity;
+    any app answer (an A2A JSON-RPC error body included) is "reached".
     """
-    result = _http("claims-agent", host, port, "GET", path)
-    assert reach.classify_egress(result) == ("reached", "answered"), (
+    result = _http("claims-agent", host, port, method, path)
+    assert reach.classify_egress(result)[0] == "reached", (
         f"claims-agent cannot reach {host}:{port} ({result}), so the "
         "model-provider denial above proves an outage rather than a policy"
     )
@@ -475,24 +487,60 @@ def test_claims_agent_may_use_the_rest_of_customer_ui_and_that_is_documented(rea
         f"claims-agent's GET / on customer-ui was not simply answered: {result}")
 
 
-def test_claims_agent_cannot_reach_another_customer_ui_port(reach_objects):
-    """A port other than 8080 on the customer-ui POD is dropped.
-
-    The Service exposes only 8080, so a probe through the Service name would
-    fail with or without the policy. This probes the pod IP. A meshed pod's
-    connect always succeeds (M1), so the verdict is the HTTP request: with the
-    rule admitting only 8080 (and 4143) the node drops the proxy's packets and
-    the request fails.
-    """
+def _customer_ui_pod_ip() -> str:
     proc = reach.kubectl(
         KUBE_CONTEXT, "-n", AGENT_NS, "get", "pod", "-l", "app=customer-ui",
         "-o", "jsonpath={.items[0].status.podIP}")
     pod_ip = proc.stdout.strip()
     assert pod_ip, f"could not read the customer-ui pod IP: {proc.stderr.strip()}"
-    result = _http("claims-agent", pod_ip, 9090)
-    assert reach.egress_is_dropped(result), (
-        f"claims-agent got an answer from customer-ui pod {pod_ip}:9090 "
-        f"({result}): the push rule is wider than one port")
+    return pod_ip
+
+
+def test_an_unmeshed_claims_agent_cannot_reach_another_customer_ui_port(bypass_pod):
+    """The NetworkPolicy port rule genuinely applies to UNMESHED traffic.
+
+    The pod IP is probed, not the Service (which exposes only 8080). The bypass
+    pod has no proxy, so the kernel sees the real destination port: a connect to
+    customer-ui's pod IP on 9090 is outside the rule (8080 and 4143) and times
+    out. Control: the same pod connects to the allowed port 8080. This is the
+    only place the egress port rule can be shown to bind; for a MESHED source it
+    does not (next test, plan M7).
+    """
+    pod_ip = _customer_ui_pod_ip()
+    denied = reach.exec_probe(
+        KUBE_CONTEXT, AGENT_NS, bypass_pod, "probe", pod_ip, 9090,
+        timeout=PROBE_TIMEOUT, mode="tcp")
+    assert reach.classify_tcp(denied) == "timeout", (
+        f"an unmeshed claims-agent-labelled pod connected to customer-ui pod "
+        f"{pod_ip}:9090 ({denied}): the egress port rule does not bind")
+    control = reach.exec_probe(
+        KUBE_CONTEXT, AGENT_NS, bypass_pod, "probe", pod_ip, PUSH_PORT,
+        timeout=PROBE_TIMEOUT, mode="tcp")
+    assert reach.classify_tcp(control) == "connected", (
+        f"the bypass pod cannot connect to customer-ui {pod_ip}:{PUSH_PORT} either "
+        f"({control}); the drop above proves an outage, not a port rule")
+
+
+def test_a_meshed_claims_agent_reaches_every_port_of_customer_ui_documented_limitation(
+    reach_objects,
+):
+    """DOCUMENTS A LIMITATION (plan M7), it does not bless it.
+
+    Between meshed pods, egress is decided per pod, not per port: claims-agent
+    is allowed to reach customer-ui's proxy (4143), and the client proxy tunnels
+    through 4143 to ANY port the peer pod listens on. Port 9090 has nothing
+    listening, so what comes back is the peer's inbound proxy answering 502 with
+    an empty body and no `l5d-proxy-error`: the pod IS reachable on a port the
+    rule never listed. Which ports actually answer is decided by the peer's
+    Linkerd Servers. If this flips to a drop, the egress model changed (a CNI
+    that sees through the mesh, or the rule lost 4143) and the docs that state
+    this limitation need rewriting.
+    """
+    result = _http("claims-agent", _customer_ui_pod_ip(), 9090)
+    assert reach.classify_egress(result) == ("reached", "peer-proxy-502"), (
+        f"claims-agent's request to customer-ui pod:9090 was not the peer proxy's "
+        f"502 ({result}); M7 measured that a meshed source reaches every port "
+        "of a peer it may tunnel to")
 
 
 # --- The objects, not just the behaviour ----------------------------------------

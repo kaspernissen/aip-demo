@@ -278,6 +278,14 @@ spec:
 # Gateway API route precedence: an Exact path match beats a PathPrefix, so the
 # push route wins for that one request and the catch-all never sees it.
 # (Verified against the installed Linkerd; see the Task 2 report.)
+#
+# PERCENT-ENCODING, said plainly: `/a2a/%70ush` does not match the Exact route
+# (the proxy compares the raw path), so it falls to the open catch-all and
+# uvicorn then decodes it to `/a2a/push`. The route rule is therefore NOT the
+# push's guard; the push token is (the handler answers 401 without it). Not a
+# regression against Cilium: customer-ui's ingress was open to every pod that was
+# not on an allowlist. payments-api has no catch-all, so a mangled path there is
+# a proxy 404, not an open door.
 apiVersion: policy.linkerd.io/v1beta3
 kind: Server
 metadata:

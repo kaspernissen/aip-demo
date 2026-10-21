@@ -66,8 +66,12 @@ GATEWAY_IDENTITY = reach.client_id("agentgateway", "northstar-platform")
 # control, so a refusal below cannot be an outage. `settlement-agent:9002` is
 # what claims-agent is *for* (NORTHSTAR_ALLOWED_AGENTS names it as its single
 # delegation target) and it is authorized for claims-agent's identity.
+# The control is `POST /`, never `GET /.well-known/agent-card.json`: Linkerd's
+# default probe route opens that path to EVERY caller of a route-less Server
+# (plan M5), so a GET there would pass for any identity and prove nothing.
 CONTROL_HOST = "settlement-agent.northstar-agents.svc.cluster.local"
 CONTROL_PORT = 9002
+CONTROL_METHOD, CONTROL_PATH = "POST", "/"
 
 PROBE_TIMEOUT = 8
 
@@ -76,7 +80,7 @@ WRONG_ID_SA = "reach-probe-wrongid"
 
 def _pod(namespace: str, app: str) -> str:
     proc = reach.kubectl(
-        KUBE_CONTEXT, "-n", namespace, "get", "pod", "-l", f"app={app}",
+        KUBE_CONTEXT, "-n", namespace, "get", "pod", "-l", f"app={app},!reach-throwaway",
         "-o", "jsonpath={.items[0].metadata.name}",
     )
     assert proc.returncode == 0 and proc.stdout.strip(), (
@@ -194,10 +198,10 @@ def test_the_pds_refuses_every_caller_but_the_gateway(wrong_identity_pod):
     The PDS is fail-closed and the gateway's ExtMCP hook is its only client; a
     workload that could call it could probe the ruleset. gRPC refusal is
     PERMISSION_DENIED (an HTTP 403 at the HTTP/2 layer, or `grpc-status: 7`;
-    a client library reports both as the same code). **UNMEASURED until the
-    first live run** (plan M6): the HTTP-layer 403 and the counter were measured
-    on a route-less HTTP Server, not on a gRPC one. If this fails on the first
-    run, look at the code before the policy.
+    a client library reports both as the same code). Measured on the spike in
+    the final review (plan M7): `PERMISSION_DENIED`, counter
+    `route_name="default"`, `tls="true"`, `client_id` present. If this fails,
+    look at the code before the policy.
     """
     cid = reach.client_id(WRONG_ID_SA, AGENT_NS)
     dst_pod = _pod("northstar-platform", "policy-decision-service")
@@ -217,7 +221,9 @@ def test_the_pds_refuses_every_caller_but_the_gateway(wrong_identity_pod):
     )
 
 
-def test_claims_agent_cannot_reach_the_tool_directly_and_the_tool_never_hears_of_it():
+def test_claims_agent_cannot_reach_the_tool_directly_and_the_tool_never_hears_of_it(
+    reach_objects,
+):
     """claims-agent is stopped at its own egress, before payments-mcp's policy.
 
     `claims-agent-egress` does not list payments-mcp, so the node drops the
@@ -253,12 +259,36 @@ def test_the_block_is_targeted_and_the_cluster_is_otherwise_healthy(reach_object
     claims = _pod(AGENT_NS, "claims-agent")
     result = reach.exec_probe(
         KUBE_CONTEXT, AGENT_NS, claims, "claims-agent",
-        CONTROL_HOST, CONTROL_PORT, "GET", "/.well-known/agent-card.json", PROBE_TIMEOUT)
-    assert reach.classify_egress(result) == ("reached", "answered"), (
+        CONTROL_HOST, CONTROL_PORT, CONTROL_METHOD, CONTROL_PATH, PROBE_TIMEOUT)
+    assert reach.classify_egress(result)[0] == "reached", (
         f"claims-agent could not reach {CONTROL_HOST}:{CONTROL_PORT} either "
         f"({result}), so the previous test proves an outage rather than a policy"
     )
-    assert result["status"] == 200, result
+    # Any app answer counts (an A2A JSON-RPC error body is fine); a proxy 403 or
+    # 404 would mean claims-agent's identity is NOT authorized at settlement-agent.
+    assert reach.classify_ingress(result) == "answered", (
+        f"settlement-agent's proxy refused claims-agent's POST /: {result}")
+
+
+def test_the_wrong_identity_cannot_post_to_settlement_agent(wrong_identity_pod):
+    """The refusal that pairs with the control above, on the same request.
+
+    The control is claims-agent's `POST /`, answered. This is a meshed pod with
+    an identity no policy names making the same `POST /`: a counted 403 against
+    Server settlement-agent. (Never the agent-card path: the probe route opens
+    that to everyone, M5.)
+    """
+    cid = reach.client_id(WRONG_ID_SA, AGENT_NS)
+    kind, result, delta, by = _refusal(
+        wrong_identity_pod, CONTROL_HOST, CONTROL_PORT, CONTROL_METHOD, CONTROL_PATH,
+        AGENT_NS, "settlement-agent", srv_name="settlement-agent", client_id=cid,
+    )
+    assert kind == "refused-403", (
+        f"the wrong identity's POST / to settlement-agent:9002 was not refused 403: "
+        f"{kind}, {result}")
+    assert delta >= 1, (
+        f"inbound_http_authz_deny_total{{srv_name=settlement-agent}} for client_id={cid} "
+        f"did not rise ({delta}); the 403 is not attributable to the identity policy")
 
 
 @pytest.mark.parametrize(

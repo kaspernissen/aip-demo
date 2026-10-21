@@ -131,8 +131,8 @@ def classify_ingress(result: dict) -> str:
 def grpc_refused(result: dict) -> bool:
     """gRPC PERMISSION_DENIED, in either form it can arrive.
 
-    UNMEASURED until the first live run (M6): a refusal at the HTTP/2 layer is
-    an HTTP 403, a gRPC-aware refusal is `grpc-status: 7`. Accept both, and
+    Measured at the PDS in the final review (M7: `PERMISSION_DENIED`). A refusal
+    at the HTTP/2 layer is an HTTP 403, a gRPC-aware refusal is `grpc-status: 7`. Accept both, and
     require no `l5d-proxy-error` so a proxy failure is not mistaken for it.
     """
     if result.get("status") is None or _proxy_error(result):
@@ -148,10 +148,18 @@ def classify_egress(result: dict) -> tuple[str, str]:
     """(verdict, how). verdict is `reached` or `dropped`.
 
     `reached` = a status line came back (the TLS handshake, if any, completed
-    and the server answered). `dropped` = anything else; `how` names it:
+    and the server answered). A 502 with an empty body and no `l5d-proxy-error`
+    is `("reached", "peer-proxy-502")`: the peer's inbound proxy answered for a
+    port with no listener (M7), so the pod, not the port, was what the policy let in. `dropped` = anything else; `how` names it:
     `timeout`, `reset`, `proxy-error` (the pod's own proxy could not reach the
     peer, e.g. the node dropped its packets) or `other:<ExceptionName>`.
     """
+    if (result.get("status") == 502 and not result.get("body_len")
+            and not _proxy_error(result)):
+        # M7: a meshed client got through to the peer POD's proxy, which found
+        # nothing listening on the port it was asked for. Reached, deliberately:
+        # the packets were not dropped, so egress to this pod is open on every port.
+        return "reached", "peer-proxy-502"
     if result.get("status") is not None and not _proxy_error(result):
         return "reached", "answered"
     if result.get("status") is not None:
@@ -349,7 +357,7 @@ def classify_grpc(result: dict) -> str:
 
     A client library maps an HTTP 403 at the HTTP/2 layer and a `grpc-status: 7`
     trailer to the same PERMISSION_DENIED, so one name covers both forms.
-    UNMEASURED until the first live run (plan M6).
+    Measured on the spike in the final review (plan M7).
     """
     code = result.get("grpc_code")
     if code is None:
@@ -470,11 +478,17 @@ def egress_drift(expected_doc: dict, live_doc: dict) -> list[str]:
 
 
 def throwaway_manifests(name: str, namespace: str, image: str, labels: dict,
-                        meshed: bool, service_account: str | None = None) -> list[dict]:
+                        meshed: bool, service_account: str | None = None,
+                        never_ready: bool = False) -> list[dict]:
     """A sleeping pod (and its ServiceAccount) for the tests that need a caller
     the cluster does not already run: an unmeshed pod (`linkerd.io/inject:
     disabled`, so no proxy and no mesh identity), or a meshed one with an
     identity of its own that no policy names. Created and deleted by the test.
+
+    `never_ready` gives the container a readiness probe that always fails, for a
+    pod that carries a Service-selected label (`app=claims-agent`): it must
+    never become an endpoint of the real Service and take a share of its
+    traffic. Such a pod is waited on for `Running`, not `Ready`.
     """
     pod: dict = {
         "apiVersion": "v1",
@@ -493,6 +507,8 @@ def throwaway_manifests(name: str, namespace: str, image: str, labels: dict,
                 "image": image,
                 "imagePullPolicy": "IfNotPresent",
                 "command": ["python3", "-c", "import time; time.sleep(3600)"],
+                **({"readinessProbe": {"exec": {"command": ["false"]}, "periodSeconds": 5}}
+                   if never_ready else {}),
             }],
         },
     }
@@ -509,11 +525,12 @@ class throwaway_pod:
     """Context manager: apply the manifests, wait for Ready, delete on exit."""
 
     def __init__(self, context, namespace, name, image, labels, meshed,
-                 service_account=None):
+                 service_account=None, never_ready=False):
         self.context, self.namespace, self.name = context, namespace, name
         self.service_account = service_account
+        self.never_ready = never_ready
         self.docs = throwaway_manifests(
-            name, namespace, image, labels, meshed, service_account)
+            name, namespace, image, labels, meshed, service_account, never_ready)
 
     def __enter__(self):
         payload = json.dumps({"apiVersion": "v1", "kind": "List", "items": self.docs})
@@ -522,7 +539,9 @@ class throwaway_pod:
             input=payload, capture_output=True, text=True, timeout=60)
         if proc.returncode != 0:
             raise ProbeError(f"could not create throwaway pod {self.name}: {proc.stderr.strip()}")
-        wait = kubectl(self.context, "-n", self.namespace, "wait", "--for=condition=Ready",
+        condition = ("--for=jsonpath={.status.phase}=Running" if self.never_ready
+                     else "--for=condition=Ready")
+        wait = kubectl(self.context, "-n", self.namespace, "wait", condition,
                        f"pod/{self.name}", "--timeout=120s", timeout=150)
         if wait.returncode != 0:
             self.__exit__()

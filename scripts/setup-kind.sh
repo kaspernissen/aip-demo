@@ -355,6 +355,18 @@ if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
     echo "  kind delete cluster --name ${CLUSTER_NAME} && ./scripts/setup-kind.sh --stage ${STAGE}" >&2
     exit 1
   fi
+  # Host ports are create-time too. Stage 3 added one (8081, reviewer-ui, see
+  # deploy/kind/stage3.yaml). A cluster created at stage 1 or 2 has no such
+  # mapping and can never get it without being recreated, so a stage >= 3 run
+  # against it would "succeed" with reviewer-ui unreachable from the host.
+  if [[ "${STAGE}" -ge 3 ]] \
+    && ! docker port "${CLUSTER_NAME}-control-plane" 2>/dev/null | grep -Eq ':8081$'; then
+    echo -e "${RED}Error: cluster '${CLUSTER_NAME}' already exists but its control-plane container has no host port 8081 (reviewer-ui).${NC}" >&2
+    echo "It was created before stage 3, and host port mappings are a create-time kind setting, so stage ${STAGE} cannot add it." >&2
+    echo "Recreate it deliberately:" >&2
+    echo "  kind delete cluster --name ${CLUSTER_NAME} && ./scripts/setup-kind.sh --stage ${STAGE}" >&2
+    exit 1
+  fi
   echo -e "${YELLOW}Cluster already exists, skipping creation.${NC}"
 else
   kind create cluster --config "$KIND_CONFIG"
@@ -1054,7 +1066,7 @@ if [[ "${STAGE}" -ge 3 ]]; then
   #
   # Its identity is named in-tree (deploy/platform/spire/registration.yaml,
   # northstar-reviewer-ui); it has no ingress restriction (see
-  # deploy/platform/reach/ once M12 Task 2 lands).
+  # deploy/platform/reach/linkerd-policies.yaml: no Server selects it).
   echo -e "${BLUE}Step 9d/9 (stage 3): Deploying the supervised workloads...${NC}"
   # M8 retired senior-settlement-agent: a human approval is now reviewer-ui's
   # own execute_payment through the gateway. `kubectl apply` never prunes, so a

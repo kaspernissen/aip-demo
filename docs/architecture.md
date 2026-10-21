@@ -1471,7 +1471,7 @@ the trace keeps exactly the shape M11 measured.
 | **Ingress** | `payments-mcp:8000` and the PDS:9100 admit agentgateway's identity and nothing else | A workload reaching the tool, or the policy decision point, without crossing the gateway. Measured under Cilium before the policy existed: `claims-agent` POSTed an MCP `initialize` at `payments-mcp:8000` and got HTTP 200 |
 | **Ingress, per route** | payments-api authorizes each route (propose, execute, refuse, get, list, reject, probe) for the identities that call it; `execute` is payments-mcp's alone. customer-ui authorizes `POST /a2a/push` for claims-agent alone | reviewer-ui or claims-agent POSTing `/payments/{id}/execute` straight at the ledger, skipping the gateway and the PDS. (Cilium did this as L7 on each *caller's* egress; NetworkPolicy has no L7, so it moved to the callee) |
 | **Ingress** | settlement-agent:9002 admits claims-agent's identity | Anything else calling an A2A port that can execute a proposed payment |
-| **Egress** | one document per workload in `northstar-agents`. `settlement-agent` may reach DNS, agentgateway:3000, the collector:4318, the Linkerd control plane and, by `ipBlock`, Anthropic's published range (`160.79.104.0/23`, `2607:6bc0::/48`, TCP 443); `claims-agent` may reach DNS, settlement-agent:9002, payments-api:8080, the collector and the control plane; `customer-ui` and `reviewer-ui` have their own short lists | An agent reaching the model provider (all but settlement-agent), the ledger, the tool or the PDS directly |
+| **Egress** (per pod between meshed peers, per port otherwise: see below) | one document per workload in `northstar-agents`. `settlement-agent` may reach DNS, agentgateway:3000, the collector:4318, the Linkerd control plane and, by `ipBlock`, Anthropic's published range (`160.79.104.0/23`, `2607:6bc0::/48`, TCP 443); `claims-agent` may reach DNS, settlement-agent:9002, payments-api:8080, the collector and the control plane; `customer-ui` and `reviewer-ui` have their own short lists | An agent reaching the model provider (all but settlement-agent), the ledger, the tool or the PDS directly |
 
 Facts about that table that are measurements, from the five M12 measurements on
 a throwaway kind cluster (kindnet, Linkerd edge-26.10.1), **not** from the demo
@@ -1482,7 +1482,9 @@ cluster, which had not been recreated on Linkerd when this was written:
   client_id}` on the destination proxy's `:4191/metrics`. A request that matches
   no route on a Server that has routes is a 404 from the proxy. Under Cilium a
   refusal was a silent drop that appeared nowhere. (A gRPC `PERMISSION_DENIED`
-  at the PDS was not measured; it is owed to the first live run.)
+  at the PDS was measured in the final review: `PERMISSION_DENIED`, counter
+  `route_name="default"`, `tls="true"` with `client_id`, `tls="no_identity"` from
+  an unmeshed caller.)
 - **A meshed pod's TCP connect proves nothing.** Its own outbound proxy accepts
   every connect locally. The egress verdict shows only above TCP: a TLS
   handshake or HTTP request to an allowed address completes, to a denied one it
@@ -1490,7 +1492,10 @@ cluster, which had not been recreated on Linkerd when this was written:
   is still the oracle, and it is the kernel dropping the packet.
 - **Every egress rule to a meshed peer must allow the service port and TCP
   4143** (the peer proxy's inbound port); only the service port gives HTTP 504,
-  `service in fail-fast`. The Linkerd control plane needs TCP 8080 (identity),
+  `service in fail-fast`. **And 4143 is the whole gate (M7):** a meshed client
+  that may reach a meshed peer's 4143 can reach any non-loopback port on that
+  peer pod (a port with nothing listening answers 502, empty body, no
+  `l5d-proxy-error`; the peer's admin port 4191 answers 504). The Linkerd control plane needs TCP 8080 (identity),
   8086 (destination) and 8090 (policy) in namespace `linkerd`.
 - **`kubectl port-forward` bypasses the proxy**, so a port-forward to a port
   behind a denying Server is *not* refused. No reach test probes through one;
@@ -1510,6 +1515,10 @@ cluster, which had not been recreated on Linkerd when this was written:
   settlement-agent, not as a policy message.
 - **No DNS-proxy evidence.** Cilium let a test see the DNS proxy port on
   settlement-agent only; there is no equivalent.
+- **Egress between meshed pods is per pod, not per port.** Between meshed pods, egress is decided per pod, not per port: a pod allowed to reach a peer's proxy (4143) can reach any port on that peer that listens on the pod IP. Which ports actually answer is decided by the peer's Linkerd Servers (per port, per identity). The port
+  rules in `network-policies.yaml` still bind a pod that skips the proxy (the e2e
+  bypass pod times out on an unlisted port), but a meshed pod gets through on
+  4143 alone. Cilium's rule was per port.
 - **Egress enforcement is kind's.** The policy objects are portable, the
   enforcement is not: a production cluster needs a CNI that enforces
   NetworkPolicy.

@@ -102,10 +102,9 @@ JAEGER_UI = os.environ.get("JAEGER_UI_URL", "http://localhost:16686")
 AGENTS_NS = "northstar-agents"
 TOOLS_NS = "northstar-tools"
 PLATFORM_NS = "northstar-platform"
-CONTROL_URL = (
-    "http://settlement-agent.northstar-agents.svc.cluster.local:9002"
-    "/.well-known/agent-card.json"
-)
+# POST /, not the agent card: Linkerd's default probe route opens the card path to
+# every caller (plan M5), so only a POST proves claims-agent's identity is authorized.
+CONTROL_URL = "http://settlement-agent.northstar-agents.svc.cluster.local:9002/"
 DIRECT_URL = "http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp"
 INGRESS_URL = (
     "http://payments-api.northstar-systems.svc.cluster.local:8080"
@@ -408,8 +407,8 @@ def cmd_guard(_: argparse.Namespace) -> None:
         if not pod:
             raise Fail("no claims-agent pod found")
         say("From inside claims-agent: no SVID, no business at the tool.")
-        doing("GET   settlement-agent:9002   (the one peer it may call: the control)")
-        control = probe_from_claims_agent(pod, CONTROL_URL, "GET")
+        doing("POST  settlement-agent:9002/   (the one peer it may call: the control)")
+        control = probe_from_claims_agent(pod, CONTROL_URL, "POST")
         if not control.startswith("REACHED"):
             raise Fail(
                 f"the control did not answer ({control}), so a drop below would prove "

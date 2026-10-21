@@ -40,7 +40,11 @@ set -euo pipefail
 
 CONTEXT="kind-northstar"
 NAMESPACE="northstar-agents"
-CONTROL_URL="http://settlement-agent.northstar-agents.svc.cluster.local:9002/.well-known/agent-card.json"
+# POST /, not GET /.well-known/agent-card.json: Linkerd's default probe route opens
+# the agent-card path to EVERY caller of a route-less Server (plan M5), so a GET
+# there proves nothing about claims-agent's identity. A POST to the A2A endpoint
+# needs it: any app answer (even a JSON-RPC error) means the identity is authorized.
+CONTROL_URL="http://settlement-agent.northstar-agents.svc.cluster.local:9002/"
 DIRECT_URL="http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp"
 INGRESS_URL="http://payments-api.northstar-systems.svc.cluster.local:8080/payments/PAY-000000/execute"
 # A dropped request ends as a timeout, a reset, or the proxy's own 504. Long
@@ -96,8 +100,8 @@ echo -e "${BLUE}=== Beat R: the only way in ===${NC}"
 echo "Egress is NetworkPolicy in the node; ingress is Linkerd, by workload identity."
 
 step "1. Control: claims-agent calls settlement-agent, the one peer it exists to call"
-echo "\$ GET ${CONTROL_URL}"
-CONTROL="$(probe "$POD" claims-agent "$CONTROL_URL" GET)"
+echo "\$ POST ${CONTROL_URL}"
+CONTROL="$(probe "$POD" claims-agent "$CONTROL_URL" POST)"
 echo "  -> ${CONTROL}"
 if [[ "$CONTROL" != REACHED\ * ]]; then
   echo -e "${RED}FAIL: the control did not answer, so the next steps would prove an outage rather than a policy.${NC}" >&2

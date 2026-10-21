@@ -505,7 +505,7 @@ only the road the money would take.
 
 2  Around the gateway
   From inside claims-agent: no SVID, no business at the tool.
-  $ GET   settlement-agent:9002   (the one peer it may call: the control)
+  $ POST  settlement-agent:9002/  (the one peer it may call: the control)
   -> [REACHED]  200  (the network works)
   $ POST  payments-mcp:8000/mcp  initialize, straight to the tool, 8s timeout
   -> [DROPPED (timeout)]  no answer, no 401. The node dropped the packets.
@@ -1014,7 +1014,7 @@ refusal and its counter.
 Egress is NetworkPolicy in the node; ingress is Linkerd, by workload identity.
 
 1. Control: claims-agent calls settlement-agent, the one peer it exists to call
-$ GET http://settlement-agent.northstar-agents.svc.cluster.local:9002/.well-known/agent-card.json
+$ POST http://settlement-agent.northstar-agents.svc.cluster.local:9002/
   -> REACHED 200
   REACHED. reachable, as it should be.
 
@@ -1056,7 +1056,7 @@ had. Say also what Linkerd cost us against Cilium: egress is now an address
 range (Anthropic's published `160.79.104.0/23` and `2607:6bc0::/48`) rather than
 a name, so any other host in that range is also reachable from settlement-agent;
 the enforcement of egress is kind's kindnet, and a production cluster needs a CNI
-that enforces NetworkPolicy; and a TCP connect no longer proves reach. The script
+that enforces NetworkPolicy; a TCP connect no longer proves reach; and between meshed pods egress is per pod, not per port (a pod allowed to reach a peer's proxy on 4143 can reach any port that listens on that pod's IP; the peer's Linkerd Servers decide which ports answer, per port and per identity). The script
 exits non-zero if the control fails, if the direct call is not dropped, or if
 the 403 is not counted.
 
