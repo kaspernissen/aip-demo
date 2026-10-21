@@ -237,7 +237,7 @@
 </section>
 
 <!-- 22c · NEW · SPIFFE/SPIRE: how settlement-agent gets its JWT-SVID (deploy/platform/spire/*, architecture.md "Workload identity" and "Identity with teeth", agents/settlement-agent/svid.py) -->
-<section class="slide content" data-label="Workload identity: SPIFFE/SPIRE">
+<section data-cut class="slide content" data-label="Workload identity: SPIFFE/SPIRE">
   <p class="ring">Core &middot; Identity</p>
   <h2 class="slide-title">A passport, not a name tag</h2>
   <div class="x30-air rise">
@@ -390,6 +390,34 @@
       <p class="deny"><i class="ph-duotone ph-prohibit"></i>Any other caller: no row, so deny</p>
       <p class="out"><i class="ph-duotone ph-path"></i><span>Every answer writes <code>northstar.policy.decision</code>: rule, limit, amount, caller, level</span></p>
     </div>
+  </div>
+</section>
+
+<!-- 22f · NEW · the guardrails are config: the exact lines in five files that restrain the agent, one per ring. Generated from scripts/demo.py GUARDRAIL_CONFIG (the same lines `demo config` prints); tests/unit/test_guardrail_config.py holds every line on this slide to its file -->
+<section class="slide content" data-label="The guardrails are config">
+  <h2 class="slide-title">The guardrails are config</h2>
+  <div class="x30-gc rise">
+    <div class="cell"><p class="ring-k">Core · Identity</p><p class="gl">who it is: SPIRE issues this ID to the pod, from where it runs</p>
+      <pre class="x30-gc-code" data-src="deploy/platform/spire/registration.yaml">spiffeIDTemplate: &quot;spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}&quot;
+app: settlement-agent</pre><p class="src">registration.yaml</p></div>
+    <div class="cell"><p class="ring-k">Ring 1 · Reach</p><p class="gl">the only way out: the model provider, by name</p>
+      <pre class="x30-gc-code" data-src="deploy/platform/cilium-policies.yaml">- toFQDNs:
+- matchName: api.anthropic.com</pre><p class="src">cilium-policies.yaml</p></div>
+    <div class="cell"><p class="ring-k">Ring 2 · Capability</p><p class="gl">the gateway: who, how much, and the delegated decision</p>
+      <pre class="x30-gc-code" data-src="deploy/platform/agentgateway/config.yaml">mode: strict
+- allow: &#x27;request.method != &quot;POST&quot; || mcp.methodName != &quot;tools/call&quot; || mcp.tool.name != &quot;execute_payment&quot; || (mcp.tool.arguments.amount &gt; 0 &amp;&amp; mcp.tool.arguments.amount &lt;= 50000)&#x27;
+- kind: remote
+host: policy-decision-service.northstar-platform.svc.cluster.local:9100
+failureMode: failClosed</pre><p class="src">config.yaml</p></div>
+    <div class="cell"><p class="ring-k">Ring 2 · the live level</p><p class="gl">how free: one value, for one identity</p>
+      <pre class="x30-gc-code" data-src="deploy/platform/openfeature/featureflag.yaml">defaultVariant: assisted
+- var: spiffeId
+- - &quot;spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent&quot;</pre><p class="src">featureflag.yaml</p></div>
+    <div class="cell"><p class="ring-k">Keystone</p><p class="gl">the agent can never edit what defines its authority</p>
+      <pre class="x30-gc-code" data-src="deploy/platform/kyverno/keystone-policy.yaml">request.userInfo.username.startsWith(&#x27;system:serviceaccount:northstar-agents:&#x27;) ||
+resources: [&quot;featureflags&quot;, &quot;featureflagsources&quot;]
+- expression: &quot;!variables.isProtected&quot;</pre><p class="src">keystone-policy.yaml</p></div>
+    <div class="cell end"><p>Five files, a few lines each. <span class="spot-2">The agent can change none of them.</span></p><p class="sub"><span class="code">scripts/demo config</span> prints them live.</p></div>
   </div>
 </section>
 

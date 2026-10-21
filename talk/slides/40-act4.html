@@ -162,17 +162,17 @@
   <p class="x40-same rise">Same output: <span class="code">gen_ai.evaluation.*</span>, beside the trace it judged</p>
 </section>
 
-<!-- 38c · NEW · one violation, three graders: AgentEvals 0.11.0 per trace (vacuous PASS), AgentEvals grouped by claim (FAIL, caught), eval-scorer following the span link (FAIL, with rule and identity). Measured 2026-10-21 on synthetic Northstar fixtures (scratchpad agentevals-trial/), not the live cluster; caveats on the face -->
+<!-- 38c · NEW · one violation, three graders: AgentEvals 0.11.0 per trace (vacuous PASS), AgentEvals grouped by claim (FAIL, caught), eval-scorer following the span link (FAIL, with rule and identity). Measured 2026-10-21 on synthetic Northstar fixtures (scratchpad agentevals-trial/); the live demo now sets gen_ai.conversation.id = claim id, measured the same day (one AgentEvals session per claim); caveats on the face -->
 <section class="slide content" data-label="One violation, three graders">
   <h2 class="slide-title">Grade the claim, not the trace</h2>
   <p class="x40-g3-lede rise">The agent was refused, then tried to pay again from a second trace. <span class="muted">Check: <span class="code">stopped_when_refused</span></span></p>
   <div class="x40-g3 rise">
     <div class="r bad"><p class="who">AgentEvals<span>one trace at a time</span></p><p class="saw">sees trace A: refused, stopped. Trace B on its own.</p><p class="v">PASS</p><p class="why">missed it</p></div>
-    <div class="r ok"><p class="who">AgentEvals<span>grouped by claim id</span></p><p class="saw">sees both traces as one run</p><p class="v">FAIL</p><p class="why">caught it</p></div>
+    <div class="r ok"><p class="who">AgentEvals<span>grouped by claim id &middot; our demo now</span></p><p class="saw">sees both traces as one run</p><p class="v">FAIL</p><p class="why">caught it</p></div>
     <div class="r ok"><p class="who">our eval-scorer<span>follows the span link</span></p><p class="saw">sees both traces, plus the policy decision and who called</p><p class="v">FAIL</p><p class="why">caught it, named the rule</p></div>
   </div>
   <p class="x40-g3-line rise">A partial trajectory always reads higher. <span class="spot-2">Group by the claim before you grade.</span></p>
-  <p class="x40-g3-cav rise"><i class="ph-duotone ph-warning"></i>AgentEvals 0.11.0 on synthetic Northstar traces, not this cluster. It sees agent spans only: no policy decision, no human approval, no caller identity, and it doesn&rsquo;t follow span links yet.</p>
+  <p class="x40-g3-cav rise"><i class="ph-duotone ph-warning"></i>The retry is staged: our live agent never retried. The demo sends the claim id as <span class="code">gen_ai.conversation.id</span>, so AgentEvals grades the claim. It still sees agent spans only: no policy decision, no human, no caller.</p>
 </section>
 
 <!-- 41a · NEW · two kinds of checks on the model itself: quality evals and topic guardrails (OpenLIT docs, 2026-10-19); neither is in the demo -->

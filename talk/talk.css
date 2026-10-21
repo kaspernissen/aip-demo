@@ -1606,15 +1606,30 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x30-dg .no { margin-top: 14px !important; font-size: 22px; color: color-mix(in srgb, var(--color-text) 70%, transparent); }
 .x30-dg-line { margin: 34px 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 34px; }
 
+/* 22f · the guardrails are config: six cells, five files and the takeaway */
+.x30-gc { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: calc(0.6 * var(--baseline)); }
+.x30-gc .cell { display: flex; flex-direction: column; gap: 6px; padding: 18px 22px; border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-text) 4%, transparent); min-width: 0; }
+.x30-gc p { margin: 0; }
+.x30-gc .ring-k { font-size: 20px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-accent-2-700); }
+.x30-gc .gl { font-size: 21px; font-weight: 600; line-height: 1.25; }
+.x30-gc-code { margin: 8px 0 0; padding: 10px 14px; border-radius: var(--radius-sm); background: var(--color-text); color: var(--color-bg);
+  font-family: var(--font-mono); font-size: 15px; line-height: 1.45; white-space: pre-wrap; word-break: break-all;
+  font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+.x30-gc .src { font-family: var(--font-mono); font-size: 15px; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x30-gc .cell.end { justify-content: center; background: var(--color-accent-2-100); }
+.x30-gc .cell.end p { font-family: var(--font-heading); font-weight: 700; font-size: 32px; line-height: 1.2; }
+.x30-gc .cell.end .sub { font-family: var(--font-body); font-weight: 400; font-size: 20px; margin-top: 12px; }
+
 /* ===== 30-live.css ===== */
 /* 30-live (Broadsheet): "What you just saw", the demo's five steps as outcomes. Everything is x3l-*.
    Magenta chips are the platform saying no or holding; cyan chips are what went through. */
-.x3l-saw { display: grid; grid-template-columns: repeat(5, 1fr); gap: 48px; margin-top: calc(2 * var(--baseline)); }
+.x3l-saw { display: grid; grid-template-columns: repeat(6, 1fr); gap: 36px; margin-top: calc(2 * var(--baseline)); }
 .x3l-saw > div { display: flex; flex-direction: column; }
 .x3l-saw p { margin: 0; }
-.x3l-saw i { font-size: 96px; line-height: 1; color: var(--color-neutral-700); }
+.x3l-saw i { font-size: 80px; line-height: 1; color: var(--color-neutral-700); }
 .x3l-saw .rg { margin-top: 28px; font-size: var(--type-kicker); letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-accent-2-700); }
-.x3l-saw .h { margin-top: 12px; font-size: 38px; line-height: 1.12; font-weight: 700; letter-spacing: -0.01em; min-height: 2.3em; }
+.x3l-saw .h { margin-top: 12px; font-size: 32px; line-height: 1.12; font-weight: 700; letter-spacing: -0.01em; min-height: 2.3em; }
 .x3l-saw .o { min-height: 108px; align-content: flex-start; }
 .x3l-saw .o { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 10px; }
 .x3l-saw .o span { font-size: var(--type-kicker); font-weight: 600; padding: 6px 14px; border-radius: var(--radius-sm); }

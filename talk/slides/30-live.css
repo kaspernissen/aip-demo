@@ -1,11 +1,11 @@
 /* 30-live (Broadsheet): "What you just saw", the demo's five steps as outcomes. Everything is x3l-*.
    Magenta chips are the platform saying no or holding; cyan chips are what went through. */
-.x3l-saw { display: grid; grid-template-columns: repeat(5, 1fr); gap: 48px; margin-top: calc(2 * var(--baseline)); }
+.x3l-saw { display: grid; grid-template-columns: repeat(6, 1fr); gap: 36px; margin-top: calc(2 * var(--baseline)); }
 .x3l-saw > div { display: flex; flex-direction: column; }
 .x3l-saw p { margin: 0; }
-.x3l-saw i { font-size: 96px; line-height: 1; color: var(--color-neutral-700); }
+.x3l-saw i { font-size: 80px; line-height: 1; color: var(--color-neutral-700); }
 .x3l-saw .rg { margin-top: 28px; font-size: var(--type-kicker); letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-accent-2-700); }
-.x3l-saw .h { margin-top: 12px; font-size: 38px; line-height: 1.12; font-weight: 700; letter-spacing: -0.01em; min-height: 2.3em; }
+.x3l-saw .h { margin-top: 12px; font-size: 32px; line-height: 1.12; font-weight: 700; letter-spacing: -0.01em; min-height: 2.3em; }
 .x3l-saw .o { min-height: 108px; align-content: flex-start; }
 .x3l-saw .o { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 10px; }
 .x3l-saw .o span { font-size: var(--type-kicker); font-weight: 600; padding: 6px 14px; border-radius: var(--radius-sm); }

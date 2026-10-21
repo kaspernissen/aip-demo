@@ -5,7 +5,7 @@ The talk deck for KubeCon + CloudNativeCon North America 2026, Salt Lake City. I
 follower, and a folio with the speaker's handles.
 
 - Subtitle and thesis: **If you can't trace it, you can't govern it.**
-- 33 slides, 30:50 of content including the demo: the **30-minute cut** (Wed 11 Nov, 11:00–11:30;
+- 31 slides, 29:25 of content including the demo: the **30-minute cut** (Wed 11 Nov, 11:00–11:30;
   2026-10-20). The long cut's slides stay in the fragments as `data-cut`. The live demo is five commands in one terminal (`./scripts/demo`, about 5 minutes with
   narration) against Northstar at stage 7. No slide shows a command (2026-10-19): one dark "Live" slide stays up
   during the demo and carries the whole run-sheet in its note, and `slides/30-live.html` is one visual summary,
