@@ -627,8 +627,11 @@ def test_an_over_granted_agent_cannot_patch_its_namespaces_mesh_annotation(
     outside every Linkerd policy. `namespaces` is a keystone ring for exactly
     that reason; this asserts the UPDATE, not just the CREATE, is refused."""
     try:
+        # `get` as well: `kubectl annotate` reads the object before it patches,
+        # and without it RBAC refuses the read and Kyverno never sees the UPDATE.
         _over_grant_cluster_wide(
-            [{"apiGroups": [""], "resources": ["namespaces"], "verbs": ["patch"]}],
+            [{"apiGroups": [""], "resources": ["namespaces"],
+              "verbs": ["get", "patch"]}],
             can_i=["patch", "namespaces", "-A"],
         )
         proc = _as_agent(

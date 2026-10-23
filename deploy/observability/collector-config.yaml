@@ -148,7 +148,7 @@ exporters:
 
   # BEGIN stage-4-only
   # The trace-ingest path. The opensearchexporter for this pinned collector
-  # image (otel/opentelemetry-collector-contrib:0.160.0, see .env) supports
+  # image (otel/opentelemetry-collector-contrib:0.162.0, see .env) supports
   # Traces in its default `ss4o` mapping mode, so no Data Prepper is needed.
   #
   # The exporter alone does not survive the attribute collision the
@@ -226,7 +226,7 @@ exporters:
   # listener exists.
   #
   # `otlp_http/`, not `otlphttp/`: the pinned collector image
-  # (otel/opentelemetry-collector-contrib:0.160.0, see .env) accepts both and
+  # (otel/opentelemetry-collector-contrib:0.162.0, see .env) accepts both and
   # says so on startup, verbatim from
   # `kubectl -n observability logs deploy/otel-collector`:
   #

@@ -18,7 +18,7 @@
 # the policy decision, not the reviewer's approval, not the caller's identity; it
 # does not follow span links. eval-scorer stays the judge of those.
 #
-# The two code evaluators are this repo's, from the ConfigMap
+# The three code evaluators are this repo's, from the ConfigMap
 # `agentevals-evaluators` that scripts/setup-kind.sh builds from
 # deploy/observability/agentevals/evaluators. Sessions live in memory: a restart
 # empties the UI (the results already sent are in OpenSearch).
