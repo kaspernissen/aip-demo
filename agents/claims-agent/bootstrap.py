@@ -13,6 +13,11 @@ a2a-sdk 0.3.7's own telemetry does not extract inbound W3C trace context;
 StarletteInstrumentor (applied to the built app in main.py, since the
 a2a-sdk's Starlette instance doesn't exist until then) is what does that,
 using the global propagator configured below.
+
+M13: claims-agent runs a model (extraction.py, the free-text intake), so this
+file now does what settlement-agent's bootstrap does for its model:
+`HTTPX2ClientInstrumentor` for the model's own outbound hop, and PydanticAI's
+instrumentation with the same settings and the same content-capture switch.
 """
 from __future__ import annotations
 
@@ -22,7 +27,10 @@ from opentelemetry import metrics, trace
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.instrumentation.httpx import (
+    HTTPX2ClientInstrumentor,
+    HTTPXClientInstrumentor,
+)
 from opentelemetry.propagate import set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
 from opentelemetry.sdk.metrics import MeterProvider
@@ -75,6 +83,15 @@ def configure() -> None:
     # NOTES.md for the captured attribute spelling and confirmation that the
     # injected header actually reaches settlement-agent.
     HTTPXClientInstrumentor().instrument()
+    # The intake model's hop to api.anthropic.com. anthropic==1.4.0 is built
+    # on httpx2, a separate distribution HTTPXClientInstrumentor does not
+    # cover; without this the model call is only pydantic-ai's `chat` span,
+    # with no HTTP status, retry or wire latency under it. Same reasoning, in
+    # full, in agents/settlement-agent/bootstrap.py (docs/telemetry-contract.md
+    # Gap 7).
+    HTTPX2ClientInstrumentor().instrument()
+
+    _instrument_pydantic_ai()
 
 
 def _metric_reader() -> PeriodicExportingMetricReader:
@@ -97,15 +114,50 @@ def _configure_metrics(resource: Resource) -> None:
     rather than a second copy that can drift from it;
     `tests/unit/test_metrics_wiring.py` asserts the five copies stay identical.
 
-    **Why this service gets one even though it runs no model.** Whether
+    **Why this service had one even before it ran a model.** Whether
     `a2a-sdk` or the httpx instrumentation emit any GenAI metrics is only
     worth reporting as "none" if it was actually measured. Without a
     provider here, claims-agent emitting nothing would say nothing about
     those instrumentations -- it would only say this process had nowhere to
-    put a measurement. The absence is only meaningful if it's real.
+    put a measurement. The absence is only meaningful if it's real. Since
+    M13 the intake model's PydanticAI histograms land here too, which is why
+    this must run before `_instrument_pydantic_ai()` (see settlement-agent's
+    copy for that ordering).
     """
     metrics.set_meter_provider(
         MeterProvider(resource=resource, metric_readers=[_metric_reader()])
+    )
+
+
+
+def capture_content_enabled() -> bool:
+    """Whether to record prompts, completions and tool arguments in spans.
+
+    Defaults to ON, read from the same `NORTHSTAR_CAPTURE_CONTENT` variable
+    as settlement-agent's identical function, so one switch covers both
+    agents' model calls. For the intake that content is the customer's own
+    description of the accident; docs/telemetry-contract.md's "Content
+    capture" section carries the trade-off.
+    """
+    raw = os.environ.get("NORTHSTAR_CAPTURE_CONTENT")
+    if raw is None:
+        return True
+    return raw.strip().lower() not in {"false", "0", "no", "off"}
+
+
+def _instrument_pydantic_ai() -> None:
+    """Turn on PydanticAI's own OTel instrumentation, exactly as
+    agents/settlement-agent/bootstrap.py does (its docstring has the
+    verification against pydantic-ai-slim 2.42.0): `Agent.instrument_all`,
+    because `Agent(..., instrument=...)` does not exist at that version;
+    `include_content` from the capture switch; `version=5` pinned.
+    `tests/test_instrumentation_settings.py` holds the two copies equal.
+    """
+    from pydantic_ai import Agent
+    from pydantic_ai.models.instrumented import InstrumentationSettings
+
+    Agent.instrument_all(
+        InstrumentationSettings(include_content=capture_content_enabled(), version=5)
     )
 
 

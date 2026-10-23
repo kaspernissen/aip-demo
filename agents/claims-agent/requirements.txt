@@ -52,6 +52,28 @@ pytest-asyncio==1.4.0
 # clean venv (house style: nothing floats).
 pygments==2.21.0
 
+# M13: the intake is a real model call (extraction.py), via
+# `pydantic-ai-slim[anthropic]`, at EXACTLY the versions
+# agents/settlement-agent/requirements.txt pins -- that file carries the
+# rationale for 2.42.0 and for not taking the `[mcp]` extra. Copied, not
+# re-resolved to newer releases: a version refresh is its own milestone, and
+# two agents on two PydanticAI versions would publish two `gen_ai.*`
+# inventories under one contract. `tests/test_pins.py` holds the pair equal.
+pydantic-ai-slim[anthropic]==2.42.0
+# Transitive pins pulled in by pydantic-ai-slim[anthropic], the same list
+# and the same versions settlement-agent pins (house style: nothing floats).
+anthropic==1.4.0
+docstring-parser==0.18.0
+genai-prices==0.1.6
+griffelib==2.3.0
+httpcore2==2.12.0
+httpx2==2.12.0
+jiter==0.16.0
+logfire-api==5.0.0
+pydantic-graph==2.42.0
+sniffio==1.3.1
+truststore==0.10.4
+
 # The rest of this file's transitive closure, confirmed by re-resolving into
 # a clean venv (`uv venv --python 3.13` + `uv pip install -r
 # requirements.txt` in a scratchpad dir) and diffing the result against what
