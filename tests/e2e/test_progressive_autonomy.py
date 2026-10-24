@@ -36,25 +36,7 @@ away.**
    called at the top of both files' `denial_run` fixture, which fails loudly
    and immediately, naming this file by name, if the live contract is ever
    not `assisted` when a denial-shaped fixture is about to drive one.
-2. `platform/eval-scorer/scorer/contract.py`'s `CURRENT_LEVEL` is **not**
-   touched by this file, on purpose, and that is a deliberate design choice,
-   not an oversight. `CURRENT_LEVEL` must move in the same commit as any
-   change to `deploy/platform/openfeature/featureflag.yaml`'s *committed*
-   targeting branches -- a live-only patch through this file is not such a
-   change, by construction (point above). The honest consequence, stated
-   rather than hidden: if anything ever scored a decision made during this
-   file's brief `AUTONOMOUS` window, the audit's independent `CURRENT_LEVEL`
-   (still `"assisted"`, since the committed file never moved) would
-   disagree with the live decision and report `level-does-not-match-contract`.
-   That is the design working correctly -- the audit trusts the *published*
-   contract, not a transient live patch -- not a defect this file needs to
-   route around. Nothing in this repo's scoring path runs against this
-   file's own traffic today (`test_policy_scores.py` sorts before this file
-   and drives its own, separate claims), so the disagreement is never
-   actually triggered, but it is recorded here so a future reader who wires
-   scoring into this flow does not mistake the mismatch for a bug in either
-   module.
-3. This file itself must not be vacuous, which is the point a docstring
+2. This file itself must not be vacuous, which is the point a docstring
    cannot prove -- run `scripts/mutate-guard.sh` against it, and disbelieve
    the paragraph above until you have seen that evidence.
 
@@ -97,8 +79,7 @@ AGENTS_NAMESPACE = "northstar-agents"
 # cluster" -- distinct from `featureflag/northstar-autonomy` and from the
 # policy-decision-service pod this file's real target lives inside, the same
 # "a different object than the thing under test" discipline
-# `test_policy_scores.py::stage_4_or_a_reason` and
-# `test_gateway_config_drift.py` both already hold themselves to.
+# `test_gateway_config_drift.py` already holds itself to.
 OFO_NAMESPACE = "open-feature-operator-system"
 OFO_DEPLOYMENT = "open-feature-operator-controller-manager"
 

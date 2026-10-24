@@ -95,7 +95,7 @@ def test_claims_filed_before_the_run_are_not_this_runs(monkeypatch):
 
 
 def test_the_driver_never_mentions_opensearch():
-    # OpenSearch left the demo (it stays in the stack for the eval-scorer):
+    # OpenSearch left the demo (it stays in the stack for the evidence view):
     # not a call, not a help string, not a line printed to the room.
     from pathlib import Path
     driver = (Path(__file__).resolve().parents[2] / "scripts" / "demo.py").read_text()

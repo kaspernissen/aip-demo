@@ -1,9 +1,9 @@
-# The System the repo's eight catalog components belong to -- declared at the
+# The System the repo's seven catalog components belong to -- declared at the
 # repo root since a System is not owned by any one component. The catalog is
 # static (no git discovery): this file is never read straight out of its real
 # path by the running Backstage instance -- the Docker build context for
 # platform/backstage/ is that directory alone, so
-# scripts/rebuild-and-deploy.sh stages a copy of this file (and the eight
+# scripts/rebuild-and-deploy.sh stages a copy of this file (and the seven
 # components' own catalog-info.yaml files) into
 # platform/backstage/.catalog-stage/ before `docker build`. See that script's
 # own comment on the "backstage" branch, and platform/backstage/Dockerfile's
@@ -18,10 +18,9 @@ metadata:
   description: >-
     The Northstar claims-settlement demo: two agents (claims-agent,
     settlement-agent), two UIs (customer-ui, reviewer-ui), the policy
-    decision service, the eval scorer, the payments API and the payments MCP
-    tool. Eight components, kept honest by
-    tests/unit/test_catalog_matches_the_tree.py, which reddens if a ninth is
-    added with no catalog-info.yaml of its own.
+    decision service, the payments API and the payments MCP tool. Seven
+    components, kept honest by tests/unit/test_catalog_matches_the_tree.py,
+    which reddens if an eighth is added with no catalog-info.yaml of its own.
   annotations:
     # The solution documentation -- ../mkdocs.yml and ../docs/ at the repo
     # root, staged beside this file. The nine components each document
@@ -176,7 +175,7 @@ metadata:
   name: opensearch
   description: >-
     Spans as queryable data, in `ss4o_traces-default-namespace`. This is what
-    eval-scorer audits against, and what the evidence view reads -- the same
+    the evidence view reads -- the same
     traces as Jaeger, but addressable by query rather than by eye.
   annotations:
     backstage.io/kubernetes-namespace: observability

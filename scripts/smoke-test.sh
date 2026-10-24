@@ -44,7 +44,7 @@ command_exists npx || { echo -e "${RED}npx (Node.js) is required${NC}" >&2; exit
 #   cannot run without the PDS being set up regardless of this check; the
 #   stubs themselves are generated below, and the PDS's own suite is run
 #   alongside the rest.
-# * `apps/reviewer-ui` and `platform/eval-scorer` -- `tests/unit/
+# * `apps/reviewer-ui` and `apps/customer-ui/server` -- `tests/unit/
 #   test_telemetry_contract_counts.py` (which Step 2/2 below runs, since it
 #   runs the whole `tests/` tree) calls `_pytest_collected_count` against
 #   each service's directory, and that helper asserts
@@ -53,7 +53,7 @@ command_exists npx || { echo -e "${RED}npx (Node.js) is required${NC}" >&2; exit
 #   test about a contract count rather than about a missing prerequisite.
 #   docs/telemetry-contract.md's per-service row publishes each suite's
 #   count, and that same test module re-measures it -- not restated here.
-for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui platform/eval-scorer apps/customer-ui/server; do
+for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui apps/customer-ui/server; do
   [[ -x "$ROOT/$svc/.venv/bin/python" ]] || {
     echo -e "${RED}Error: $ROOT/$svc/.venv not found.${NC}" >&2
     echo "Create it: (cd $svc && uv venv --python 3.13 .venv && uv pip install -r requirements.txt)" >&2
@@ -285,18 +285,6 @@ echo -e "${YELLOW}customer-ui server${NC}"
 # no count is restated here.
 echo -e "${YELLOW}reviewer-ui${NC}"
 (cd "$ROOT/apps/reviewer-ui" && .venv/bin/python -m pytest tests -q)
-
-# eval-scorer's own suite. Sub-second, and every test is either a pure
-# function over a span list or a request to a handler on an ephemeral port --
-# no cluster, no collector, no OpenSearch, no model. The count lives in
-# docs/telemetry-contract.md's per-service row, which
-# tests/unit/test_telemetry_contract_counts.py re-measures against the suite,
-# so it is not restated here. The anti-vacuity half lives in
-# tests/test_anti_vacuity.py: the same trajectory with one call moved scores
-# 1.0 and 0.0, so a scorer that regressed to always-compliant reddens on
-# every commit rather than at the next live demo.
-echo -e "${YELLOW}eval-scorer${NC}"
-(cd "$ROOT/platform/eval-scorer" && .venv/bin/python -m pytest tests -q)
 
 # backstage's own suite: six autonomy-contract plugin test files (evaluate,
 # k8sClient, router, telemetry, index, AutonomyContractPage) carry, among

@@ -175,8 +175,8 @@ async def test_the_review_decision_span_carries_exactly_the_spec_attributes(trac
         "northstar.review.reviewer.id": "alex.mercer",
         "northstar.review.reviewer.spiffe_id": REVIEWER_SPIFFE_ID,
         "northstar.review.wait.duration": 5.0,
-        # Not in the spec's list: the join key the evidence view and
-        # eval-scorer read a claim's trajectory by, which the retired
+        # Not in the spec's list: the join key the evidence view reads a
+        # claim's trajectory by, which the retired
         # settlement.execute_approved span used to carry into trace B.
         "northstar.claim.id": "CLM-1842",
     }

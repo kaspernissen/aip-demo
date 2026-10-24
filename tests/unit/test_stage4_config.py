@@ -435,11 +435,11 @@ def test_the_stage_4_completion_message_names_everything_stage_4_installs():
     (`opensearch`); a release whose name is genuinely absent from the message
     fails regardless of case.
 
-    **"Installs" covers more than Helm.** The block also deploys a workload
-    that is not a chart at all -- `scripts/rebuild-and-deploy.sh eval-scorer`,
-    a container image built, pushed and applied -- and a helm-only derivation
-    cannot see it. Components deployed through `rebuild-and-deploy.sh`
-    *inside this block* are derived too. Only inside it: the unconditional
+    **"Installs" covers more than Helm.** A workload that is not a chart (a
+    component built, pushed and applied by `scripts/rebuild-and-deploy.sh`)
+    is invisible to a helm-only derivation, so components deployed through
+    `rebuild-and-deploy.sh` *inside this block* are derived too (there are
+    none today). Only inside it: the unconditional
     `rebuild-and-deploy.sh payments-api ...` line deploys the stage-1
     workloads at every stage, and requiring the stage-4 message to name those
     would be requiring it to restate the whole system.
@@ -1076,11 +1076,11 @@ def test_start_demo_forwards_the_stage_4_surfaces_when_they_do_exist(tmp_path):
     assert "http://localhost:7007" in output, output
 
 
-def test_the_all_verified_banner_requires_eval_scorer_and_flagd_too(tmp_path):
+def test_the_all_verified_banner_requires_agentevals_and_flagd_too(tmp_path):
     """The "All surfaces verified up." gate must check every stage-gated
     surface, not a subset of them.
 
-    `EVAL_SCORER_AVAILABLE` and `FLAGD_AVAILABLE` are forwarded and verified
+    `AGENTEVALS_AVAILABLE` and `FLAGD_AVAILABLE` are forwarded and verified
     earlier in the same script, with their own real SKIPPED branches, so a
     gate that checked only `DASHBOARDS_AVAILABLE`, `REVIEWER_UI_AVAILABLE`
     and `PROMETHEUS_AVAILABLE` could print two YELLOW `SKIPPED` lines
@@ -1088,16 +1088,16 @@ def test_the_all_verified_banner_requires_eval_scorer_and_flagd_too(tmp_path):
     contradiction the else-branch exists to prevent.
 
     Dashboards, reviewer-ui and Prometheus are all present here, so this
-    isolates eval-scorer and flagd: they alone must turn the banner over to
+    isolates AgentEvals and flagd: they alone must turn the banner over to
     the honest branch.
     """
     output, _ = _run_start_demo(
-        tmp_path, absent_services="eval-scorer northstar-autonomy",
+        tmp_path, absent_services="agentevals northstar-autonomy",
     )
-    assert "eval-scorer: SKIPPED" in output, output
+    assert "AgentEvals: SKIPPED" in output, output
     assert "flagd metrics: SKIPPED" in output, output
     assert "All surfaces verified up." not in output, (
-        "the gate printed the all-clear banner while eval-scorer and flagd "
+        "the gate printed the all-clear banner while AgentEvals and flagd "
         f"were both SKIPPED just above it:\n{output}"
     )
     assert "Every surface this cluster has is verified up." in output, output
@@ -1153,7 +1153,7 @@ def test_start_demo_skips_backstage_when_its_service_does_not_exist(tmp_path):
 def test_the_all_verified_banner_requires_backstage_too(tmp_path):
     """The "All surfaces verified up." gate must include `BACKSTAGE_AVAILABLE`
     along with every other stage-gated condition. Every other stage-gated
-    surface -- Dashboards, reviewer-ui, Prometheus, eval-scorer, flagd -- is
+    surface -- Dashboards, reviewer-ui, Prometheus, AgentEvals, flagd -- is
     present here; Backstage alone is absent, so a gate that forgot to add it
     would print the all-clear banner directly under a YELLOW
     `Backstage: SKIPPED` line.

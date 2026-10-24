@@ -89,8 +89,6 @@ catalog:
     - type: file
       target: ./catalog/apps/reviewer-ui/catalog-info.yaml
     - type: file
-      target: ./catalog/platform/eval-scorer/catalog-info.yaml
-    - type: file
       target: ./catalog/platform/policy-decision-service/catalog-info.yaml
     - type: file
       target: ./catalog/systems/payments-api/catalog-info.yaml

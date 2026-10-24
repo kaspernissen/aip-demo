@@ -17,8 +17,9 @@
                           reach, what the gateway checks and delegates, the live level,
                           the keystone. A line that has moved is a failure, not a guess
     evals [--quick]       AgentEvals scores what the agent did, from its own traces. On
-                          stage --quick: our three checks (the path it took, stopped when
-                          refused, no amount in the narrative), seconds. Without it, also
+                          stage --quick: our four checks (the path it took, stopped when
+                          refused, executed the proposed amount, no amount in the
+                          narrative), seconds. Without it, also
                           its built-in metrics with an LLM judge (AGENTEVALS_JUDGE), minutes
     reset                 rejects open approvals as demo-reset, flag assisted,
                           over-grant absent, state cleared
@@ -133,13 +134,14 @@ REFUSE_HOP = "POST /payments/{paymentId}/refuse"
 REJECT_HOP = "POST /payments/{paymentId}/reject"
 
 # AgentEvals (M11): start-demo.sh forwards its UI and REST API here. It holds one
-# session per claim (settlement-agent's `gen_ai.conversation.id`), and the three
+# session per claim (settlement-agent's `gen_ai.conversation.id`), and the
 # code evaluators below live in its pod at /evaluators, from
 # deploy/observability/agentevals/evaluators (tests/unit/test_demo_driver.py
 # compares the two lists).
 AGENTEVALS_URL = os.environ.get("AGENTEVALS_URL", "http://localhost:18001")
-AGENTEVALS_EVALUATORS = ("took_a_known_path", "stopped_when_refused", "narrative_states_no_amount")
-# Every built-in metric agentevals 0.11.0 can run here, beside our three. The judge
+AGENTEVALS_EVALUATORS = ("took_a_known_path", "stopped_when_refused", "amount_executed_matches_proposed",
+                         "narrative_states_no_amount")
+# Every built-in metric agentevals 0.11.0 can run here, beside our own. The judge
 # is Claude through LiteLLM (ANTHROPIC_API_KEY in the pod). Left out, because they
 # need Google Cloud (Vertex AI): safety_v1, response_evaluation_score and the three
 # multi_turn_*_v1 metrics; rubric_based_multi_turn_trajectory_quality_v1 reports
@@ -1141,7 +1143,7 @@ def cmd_ceiling(_: argparse.Namespace) -> None:
 def cmd_evals(args: argparse.Namespace) -> None:
     quick = getattr(args, "quick", False)
     title("EVALS  AgentEvals scores what the agent did, from the traces it emitted")
-    say("One session per claim. Three of our own checks, run by AgentEvals as code evaluators.")
+    say(f"One session per claim. {len(AGENTEVALS_EVALUATORS)} checks of our own, run by AgentEvals as code evaluators.")
     say("It reads the agent's spans only: not the policy decision, not the human, not the caller.")
     doing(f"GET {AGENTEVALS_URL}/api/streaming/sessions")
     sessions = requests.get(f"{AGENTEVALS_URL}/api/streaming/sessions", timeout=10)
@@ -1151,7 +1153,7 @@ def cmd_evals(args: argparse.Namespace) -> None:
         raise Fail("AgentEvals has no finished claim yet: run `scripts/demo claim <amount>` first "
                    "(a session is complete a few seconds after its last span)")
     complete.sort(key=lambda s: s.get("startedAt") or "")
-    # The endpoint scores every complete session against a golden one. Our three
+    # The endpoint scores every complete session against a golden one. Our own
     # evaluators ignore it; the comparison metrics use it. The reference is the
     # latest claim this run saw the agent settle, else simply the latest session.
     ids = {s["sessionId"] for s in complete}
@@ -1168,9 +1170,9 @@ def cmd_evals(args: argparse.Namespace) -> None:
     doing(f"POST {AGENTEVALS_URL}/api/streaming/evaluate-sessions  {len(complete)} claim(s), "
           f"{len(body['evaluators'])} metrics, golden {golden}")
     if quick:
-        say("Our three checks, deterministic: the same answer every run, in seconds.")
+        say(f"Our {len(AGENTEVALS_EVALUATORS)} checks, deterministic: the same answer every run, in seconds.")
     else:
-        say(f"Our three checks, plus {len(AGENTEVALS_BUILTINS)} of AgentEvals' own, judged by {AGENTEVALS_JUDGE}.")
+        say(f"Our {len(AGENTEVALS_EVALUATORS)} checks, plus {len(AGENTEVALS_BUILTINS)} of AgentEvals' own, judged by {AGENTEVALS_JUDGE}.")
         say("Not here: safety_v1 and the multi-turn metrics, which need Google Cloud.")
     scored = requests.post(f"{AGENTEVALS_URL}/api/streaming/evaluate-sessions", json=body,
                            timeout=AGENTEVALS_TIMEOUT_S)
@@ -1209,8 +1211,8 @@ def cmd_evals(args: argparse.Namespace) -> None:
     say("back through the collector to every backend the traces already go to.")
     out(f"  AgentEvals UI  {AGENTEVALS_URL}")
     out()
-    out(paint(f"{failed} failing check(s). What the agent did; the platform's side is eval-scorer's."
-              if failed else "Every check passed. What the agent did; the platform's side is eval-scorer's.", "bold"))
+    out(paint(f"{failed} failing check(s). What the agent did, from its own spans."
+              if failed else "Every check passed. What the agent did, from its own spans.", "bold"))
 
 
 # --- config: what restrains the agent, read from the files that do it -----------
@@ -1304,7 +1306,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("ceiling", help="the gateway's own CEL ceiling (not in the five-minute flow)").set_defaults(fn=cmd_ceiling)
     evals = sub.add_parser("evals", help="AgentEvals scores what the agent did, from its own traces")
     evals.add_argument("--quick", action="store_true",
-                       help="our three deterministic checks only (the stage version, seconds)")
+                       help="our own deterministic checks only (the stage version, seconds)")
     evals.set_defaults(fn=cmd_evals)
     sub.add_parser("config", help="the restraining config, read live from the repo").set_defaults(fn=cmd_config)
     args = parser.parse_args(argv)

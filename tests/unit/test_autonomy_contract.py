@@ -58,9 +58,7 @@ def _load_featureflag() -> dict:
 def _parse_execute_limits() -> list[tuple[str, str]]:
     """`EXECUTE_LIMITS`'s keys as `pds/rules.py` literally declares them.
 
-    Parsed with `ast`, never imported -- the same technique
-    `platform/eval-scorer/tests/test_authority_matches_the_policy.py` uses on
-    the same file, and for the same reason: `ast.parse` discards comments, so
+    Parsed with `ast`, never imported: `ast.parse` discards comments, so
     a comment quoting a stale row cannot satisfy this, and this suite gains no
     import-time dependency on the PDS's own package.
     """
@@ -123,13 +121,8 @@ def _targeting_branches() -> tuple[str, str]:
 
 
 def test_the_targeted_branch_is_the_restrictive_variant_today():
-    """`platform/eval-scorer/scorer/contract.py`'s
-    `set(branches) == {CURRENT_LEVEL}` is the only thing that currently
-    guards this branch, and it is scheduled to be rewritten the day a real
-    flip ships (see that constant's own failure message) -- taking this
-    protection with it. This file already parses the YAML for
-    `defaultVariant` and does not need the audit's coupling constant to keep
-    guarding the targeted branch too.
+    """This file already parses the YAML for `defaultVariant`, so it guards
+    the targeted branch too.
 
     This resource ships with BOTH branches "assisted" on purpose -- a real
     flip is a one-word diff on this branch alone, and this pins the current,
@@ -148,13 +141,9 @@ def test_the_untargeted_branch_is_still_the_restrictive_variant():
     """The untargeted branch -- every caller the contract does NOT name --
     is not covered by `test_every_variant_has_a_row_in_the_policy_table` or
     `test_the_contract_defaults_to_the_restrictive_variant`, since neither
-    reads the targeting branches themselves. Only
-    `platform/eval-scorer/scorer/contract.py`'s `CURRENT_LEVEL` coupling
-    would catch a flip here, and that guard's own failure message says it is
-    scheduled to be rewritten the day a real flip becomes real, at which
-    point it would stop coupling the two branches together and this would be
-    the only thing standing between a typo and every unnamed caller silently
-    gaining autonomous execution.
+    reads the targeting branches themselves. This is the only thing
+    standing between a typo and every unnamed caller silently gaining
+    autonomous execution.
     """
     _then_branch, else_branch = _targeting_branches()
     assert else_branch == "assisted", (

@@ -35,8 +35,8 @@
  * "100% telemetry, never sampled" (this repo's standing rule) means an
  * export failure must not be swallowed silently: `emitContractChangeSpan`
  * never throws (a telemetry outage must not block a policy-contract write,
- * the same "an auditor that can stop a payment is not an auditor" tradeoff
- * eval-scorer's own manifest argues), but it always reports success or
+ * the "an auditor that can stop a payment is not an auditor" tradeoff), but
+ * it always reports success or
  * failure back to the caller so the caller can log it loudly instead.
  */
 import * as crypto from 'crypto';

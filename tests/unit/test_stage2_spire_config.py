@@ -129,33 +129,6 @@ PDS_SPIFFE_ID = (
 # than widening the list -- makes the document less true while the guard
 # stays green.
 REVIEWER_UI_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/reviewer-ui"
-# The sixth registered workload, and the third in `northstar-platform`.
-#
-# Unlike the two identities above, this one is not covered by the chart's
-# catch-all `default` CR: that CR's namespace selector excludes
-# `northstar-platform` by name (`NotIn [northstar-platform, spire-server,
-# spire-system]`, read off the live CR). A workload placed in that namespace
-# without a ClusterSPIFFEID of its own gets no identity at all, silently --
-# `spire-server entry show` lists an entry for every other workload and none
-# for it. `deploy/platform/spire/registration.yaml` carries an explicit
-# non-fallback ClusterSPIFFEID for it, like agentgateway's and the PDS's.
-#
-# Adding a workload and its allow-list entry belong in the same change: an
-# allow-list that lags a real new identity rejects the correct new SPIFFE ID
-# in any document that publishes it, and the fix that suggests itself --
-# editing the document to match the test -- makes the document less true
-# while the guard stays green.
-#
-# Registered, but NOT fetched, the same relationship
-# `policy-decision-service` has with its own: eval-scorer's pod carries no
-# Workload API mount, because it presents no credential to anything -- it
-# reads OpenSearch (security plugin off on this cluster) and writes OTLP to
-# the collector (unauthenticated). The identity exists so that the day
-# something does check one, the answer is this workload's own name rather than
-# `.../sa/default`.
-EVAL_SCORER_SPIFFE_ID = (
-    f"spiffe://{TRUST_DOMAIN}/ns/northstar-platform/sa/eval-scorer"
-)
 
 # Every ClusterSPIFFEID `deploy/platform/spire/registration.yaml` must contain,
 # by CR name -> (namespace, service account, the ID its template must render).
@@ -179,9 +152,6 @@ REGISTERED_CLUSTER_SPIFFEIDS = {
     ),
     "northstar-policy-decision-service": (
         "northstar-platform", "policy-decision-service", PDS_SPIFFE_ID,
-    ),
-    "northstar-eval-scorer": (
-        "northstar-platform", "eval-scorer", EVAL_SCORER_SPIFFE_ID,
     ),
 }
 # The workload-facing Workload API socket, as READ from the pinned chart's
@@ -901,7 +871,6 @@ def test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures(doc):
         GATEWAY_SPIFFE_ID,
         PDS_SPIFFE_ID,
         REVIEWER_UI_SPIFFE_ID,
-        EVAL_SCORER_SPIFFE_ID,
     }
     offenders = sorted({one for one in found if one not in permitted})
     assert not offenders, (

@@ -70,9 +70,8 @@ ATTR_LEDGER_STATUS = "northstar.policy.ledger.status"
 # in the stable `opentelemetry.semconv.attributes` namespace -- checked by
 # import, not assumed) rather than retyped as a string literal. Placed here,
 # on `northstar.policy.decision`, and not only on the `feature_flag.evaluation` log
-# record: the eval-scorer audit already reads this span to establish
-# `northstar.policy.rule`, and must not have that same determination for *ruleset
-# version* depend on the logs pipeline as well.
+# record: the span is where a reader establishes `northstar.policy.rule`, and
+# the *ruleset version* should not depend on the logs pipeline either.
 ATTR_FLAG_VERSION = FEATURE_FLAG_VERSION
 
 _TRACER_NAME = "northstar.policy-decision-service"

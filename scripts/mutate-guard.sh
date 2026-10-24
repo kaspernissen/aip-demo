@@ -24,7 +24,7 @@
 #     mutation's reason.
 #
 # The fastest suites are the most exposed, because an edit-run-revert cycle
-# fits comfortably inside one second: `platform/eval-scorer`'s runs in 0.15s.
+# fits comfortably inside one second: `apps/reviewer-ui`'s runs in about 0.4s.
 # pytest's own rewritten test-module caches invalidate on the same pair, so
 # mutating a test file is exposed too.
 #
@@ -39,9 +39,9 @@
 #
 #   scripts/mutate-guard.sh <file> <old-text> <new-text> <test command...>
 #
-#   scripts/mutate-guard.sh platform/eval-scorer/scorer/authority.py \
-#     '"assisted"): 6000.0' '"assisted"): 6500.0' \
-#     bash -c 'cd platform/eval-scorer && .venv/bin/python -m pytest tests -q'
+#   scripts/mutate-guard.sh platform/policy-decision-service/pds/rules.py \
+#     '"assisted"): 0.0' '"assisted"): 1.0' \
+#     bash -c 'cd platform/policy-decision-service && .venv/bin/python -m pytest tests -q'
 #
 # <file> is relative to the repo root. <old-text> must occur EXACTLY ONCE in
 # it. The file is restored on every exit path, including a failed or

@@ -59,7 +59,6 @@ _RAW_RETURNCODE_SKIPS_ALLOWED = {
     # discriminator beneath it, which is what makes the stage skip's message a
     # true statement whenever it fires.
     ("test_evidence_view.py", "stage_4_or_a_reason"),
-    ("test_policy_scores.py", "stage_4_or_a_reason"),
     ("test_progressive_autonomy.py", "stage_5_or_a_reason"),
     ("test_autonomy_writer_live_rbac.py", "stage_6_with_the_write_grant_applied_or_a_reason"),
     ("test_backstage_image_matches_head.py", "stage_6_backstage_deployed_or_a_reason"),

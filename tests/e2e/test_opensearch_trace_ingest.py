@@ -25,7 +25,7 @@ published in docs/telemetry-contract.md, where a guard checks it against
    survived and a set difference names what did not;
 2. the `northstar.policy.decision` span is in OpenSearch by name, by service, and with
    its decision attribute readable -- that single span is what the evidence
-   view and the eval-scorer's policy-adherence scoring exist to query;
+   view exists to query;
 3. no attribute key the driven trace actually carries collides uncovered --
    the unit guard reads this repo's own sources, and this reads what Jaeger
    holds, which is the only end that sees third-party library keys;

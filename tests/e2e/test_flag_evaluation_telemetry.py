@@ -38,11 +38,9 @@ value is absent, never zero or invented, `emit_evaluation_event` OMITS both
 attributes entirely rather than writing `null` or `""` -- matching the
 `northstar.policy.decision` span's own convention for the same field
 (`server.py`: `if resolution.version is not None: span.set_attribute(...)`).
-The eval-scorer routes around this: it reads `feature_flag.version` off the
-`northstar.policy.decision` SPAN (also absent, same reason) and resolves the *current*
-contract version from flagd directly, so its correctness does not depend on
-this logs pipeline. This log event stays the human-readable record and the
-parity target here, not a dependency of any score.
+The `northstar.policy.decision` span carries `feature_flag.version` too (also
+absent, same reason). This log event is the human-readable record and the
+parity target here.
 
 **Emitting a log record with no explicit `timestamp=` is a live trap.** It
 measured `"@timestamp": "1970-01-01T00:00:00Z"` in
@@ -549,9 +547,8 @@ def test_the_live_event_carries_no_fabricated_version_or_set_id(driven_claim):
     the hermetic suite: `featureflag.yaml`'s `autonomy-level` flag defines
     no `flag_metadata`, so `feature_flag.set.id`/`feature_flag.version` must
     be ABSENT from the real record -- not `null`, not `""`. If this ever
-    reddens because the contract grew `flag_metadata`, that is good news for
-    the eval-scorer's audit and this assertion should be updated to match,
-    not silently deleted."""
+    reddens because the contract grew `flag_metadata`, this assertion should
+    be updated to match, not silently deleted."""
     documents = _opensearch_log_documents(driven_claim.trace_id, expected=1)
     attributes = documents[0]["attributes"]
     for key in ("feature_flag.set.id", "feature_flag.version"):

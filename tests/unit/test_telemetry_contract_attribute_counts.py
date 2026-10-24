@@ -538,12 +538,6 @@ REQUIRED_ATTRIBUTE_SECTIONS = (
     # docs/telemetry-contract.md), so a deletion here would un-close a gap
     # this document declares closed.
     "`northstar.review.decision`",
-    # The policy-adherence score span. Checked for ambiguity against every
-    # current heading before being added, which is what the len(matched) > 1
-    # branch below demands: "score span" is a substring of no other
-    # `Attributes on ...` heading, and none of the markers above is a
-    # substring of this one.
-    "score span",
 )
 
 _KEY_COUNT_CLAIM_RE = re.compile(r"\b(?:(\d+)|([A-Za-z][A-Za-z-]*))\s+keys\b")

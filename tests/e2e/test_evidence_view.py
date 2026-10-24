@@ -543,10 +543,8 @@ def test_the_contract_signals_reach_the_decision_panel(denied_claim, permitted_c
     `featureflag.yaml` publishes no flag `metadata`, so flagd never returns
     one. If this assertion ever reddens
     because a real version appeared, that means route 1 has been taken for
-    real -- update it and `platform/eval-scorer/scorer/contract.py`'s
-    `CURRENT_CONTRACT_VERSION` together, the same discipline that module's
-    own `test_the_currently_published_contract_version_is_none` holds itself
-    to; do not silently widen this assertion to tolerate a string.
+    real -- update it deliberately; do not silently widen this assertion to
+    tolerate a string.
     """
     denied = evidence_for(DENIED_CLAIM_ID)
     permitted = evidence_for(permitted_claim_id)

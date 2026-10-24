@@ -55,9 +55,9 @@ is; the runbook is the script.
   took, with a link to the trace; every one of those is an attribute on a span
   the system already emits. The names of those attributes (all `northstar.*`)
   are defined in a Weaver registry, `telemetry/registry/`, and the cluster's
-  telemetry is checked against it by Weaver live-check. OpenSearch Dashboards
-  and `eval-scorer` (policy-adherence scores written back into the trace they
-  judge) stay in the stack for the longer slot.
+  telemetry is checked against it by Weaver live-check. AgentEvals scores what
+  the agent did from its own spans (`scripts/demo evals`). OpenSearch
+  Dashboards stays in the stack for the longer slot.
 - **An agent can never edit what constrains it.** Kyverno denies an agent
   ServiceAccount any write to the autonomy flag, the gateway's config, the
   reach policy (NetworkPolicy and Linkerd), RBAC or its own policy, even when an over-broad RBAC grant
@@ -119,7 +119,6 @@ flowchart LR
 | `systems/payments-api` | Go system of record for payments; records facts, decides nothing |
 | `platform/policy-decision-service` | Permits or denies each `tools/call`, keyed by caller identity and autonomy level |
 | `apps/reviewer-ui` | Where a human reads a refusal and approves or rejects it |
-| `platform/eval-scorer` | Scores a settlement's trajectory against five policy-adherence checks |
 | `platform/backstage` | Catalog, TechDocs and the autonomy-contract card |
 
 Platform pieces installed from upstream: Linkerd (ingress authorized by
@@ -161,7 +160,7 @@ needs. Each stage adds to the one before.
 | 1 | Connected | Agents, MCP server, payments system, customer UI, Collector, Jaeger |
 | 2 | Governed | Linkerd, SPIRE, agentgateway and the Policy Decision Service |
 | 3 | Supervised | Reviewer UI, which releases the money itself |
-| 4 | Observable | OpenSearch, OpenSearch Dashboards with the evidence view, Prometheus, eval-scorer |
+| 4 | Observable | OpenSearch, OpenSearch Dashboards with the evidence view, Prometheus, Weaver live-check, AgentEvals |
 | 5 | Progressive autonomy | Open Feature Operator, flagd and the `northstar-autonomy` flag |
 | 6 | Golden path | Backstage |
 | 7 | Bounded | Kyverno and the keystone policy |
@@ -238,7 +237,7 @@ root, one per Python service, and a Playwright Chromium:
 
 ```bash
 uv venv --python 3.13 .venv && uv pip install -r tests/requirements.txt && .venv/bin/playwright install chromium
-for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui platform/eval-scorer apps/customer-ui/server; do
+for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui apps/customer-ui/server; do
   # requirements-dev.txt (runtime + test packages) where a service has one
   (cd "$svc" && uv venv --python 3.13 .venv && uv pip install -r "$([ -f requirements-dev.txt ] && echo requirements-dev.txt || echo requirements.txt)")
 done

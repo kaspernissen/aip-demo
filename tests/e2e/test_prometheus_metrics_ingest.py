@@ -70,8 +70,8 @@ those markers' own comments) rather than relying on some other file's traffic
 to have supplied it by accident.
 
 All nine carry the same `RUN_BROWSER_TESTS=1` flag `scripts/smoke-test.sh`
-sets unconditionally, so a full gated run -- in which `test_policy_scores.py`
-drives settlements immediately before this file -- is unaffected. This is not
+sets unconditionally, so a full gated run -- in which `test_policy_denial.py`
+drives settlements shortly before this file -- is unaffected. This is not
 a guard skipping on the object it guards: the object is the metrics path, and
 the flag gates the *traffic* the control needs, not the Prometheus state it
 reads. An absence assertion whose positive control cannot be satisfied is not
@@ -85,7 +85,7 @@ tests/`.
 The reviewer-ui row of the per-service control is the exception: there is no
 ungated traffic to reviewer-ui at all. Every e2e file that reaches
 reviewer-ui's `GET /` or `POST /review/{id}` (`test_evidence_view.py`,
-`test_policy_scores.py`, `test_supervised.py` criteria 1-6) is itself gated
+`test_human_in_the_loop.py`, `test_demo_flow.py`) is itself gated
 behind `RUN_BROWSER_TESTS=1`, and reviewer-ui's readiness probe deliberately
 makes no ledger call, so this row needs its own gate,
 `_REVIEWER_UI_TRAFFIC_REQUIRED`, rather than settlement-agent's; see that
@@ -383,8 +383,8 @@ def test_prometheus_itself_scrapes_nothing(prometheus_url):
 # happen to drive settlements too, but this row does not rely on that
 # accident: it states its own precondition instead of inheriting one from
 # file ordering. In a full run with `RUN_BROWSER_TESTS=1` set,
-# `test_policy_scores.py` and `test_policy_denial.py` drive settlements
-# immediately before this file, so the precondition holds. The claims-agent
+# `test_policy_denial.py` drives settlements shortly before this file, so the
+# precondition holds. The claims-agent
 # and payments-mcp rows stay ungated: their metrics come from ordinary HTTP
 # traffic that the ungated e2e files still generate.
 _MODEL_TRAFFIC_REQUIRED = pytest.mark.skipif(
@@ -408,8 +408,8 @@ _MODEL_TRAFFIC_REQUIRED = pytest.mark.skipif(
 # "probe traffic must not need the thing it is proving" reason
 # `systems/payments-api/handlers.go` gives for its own `/healthz`), so no
 # probe ever produces this metric. Every e2e file that reaches `GET /` or
-# `POST /review/{id}` --  `test_evidence_view.py`, `test_policy_scores.py`,
-# and `test_supervised.py` criteria 1-6 -- is itself gated behind
+# `POST /review/{id}` --  `test_evidence_view.py`, `test_human_in_the_loop.py`
+# and `test_demo_flow.py` -- is itself gated behind
 # `RUN_BROWSER_TESTS=1` (grepped: no other file references
 # `reviewer_ui_route`'s HTTP paths). So unlike claims-agent and payments-mcp,
 # there is no ungated traffic source for this row at all, and it fails a bare
@@ -419,8 +419,8 @@ _REVIEWER_UI_TRAFFIC_REQUIRED = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
     reason=(
         "needs reviewer-ui's own HTTP call to payments-api, which only "
-        "test_evidence_view.py, test_policy_scores.py and test_supervised.py "
-        "criteria 1-6 cause -- all three gated behind the same "
+        "test_evidence_view.py, test_human_in_the_loop.py and test_demo_flow.py "
+        "cause -- all three gated behind the same "
         "RUN_BROWSER_TESTS=1 flag scripts/smoke-test.sh sets unconditionally; "
         "reviewer-ui's own readiness probe deliberately makes no ledger call"
     ),

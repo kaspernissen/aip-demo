@@ -24,7 +24,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Not "the eight components" -- the five directories any of them could live
+# Not "the seven components" -- the five directories any of them could live
 # under. Adding a ninth component never touches this list; it only ever adds
 # a directory beneath one of these five, which the walk below picks up on its
 # own.
@@ -100,8 +100,8 @@ def test_every_component_directory_has_its_own_catalog_info_yaml():
 def test_the_guard_reddens_when_a_ninth_component_has_no_catalog_entry(tmp_path):
     """Self-contained RED demonstration, the same shape every other guard in
     this suite carries (see tests/unit/test_rebuild_and_deploy_guard.py's own
-    "goes red" tests): builds a sandbox tree with the same five groups, eight
-    compliant directories and a ninth that is missing its catalog-info.yaml,
+    "goes red" tests): builds a sandbox tree with the same five groups, the
+    seven compliant directories and one more that is missing its catalog-info.yaml,
     and proves `_component_dirs` + the existence check above actually catch
     it -- not merely that they would in principle.
 
@@ -116,7 +116,6 @@ def test_the_guard_reddens_when_a_ninth_component_has_no_catalog_entry(tmp_path)
         ("agents", "settlement-agent"),
         ("apps", "customer-ui"),
         ("apps", "reviewer-ui"),
-        ("platform", "eval-scorer"),
         ("platform", "policy-decision-service"),
         ("systems", "payments-api"),
         ("tools", "payments-mcp"),

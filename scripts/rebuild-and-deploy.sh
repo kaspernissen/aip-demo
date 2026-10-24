@@ -68,26 +68,13 @@ COMPONENTS=(
   # outside this list keeps running whatever image happened to be pushed
   # last, silently.
   "reviewer-ui:apps/reviewer-ui:northstar-agents"
-  # eval-scorer. Registered here for the same reason
-  # policy-decision-service's own addition comment argues -- a component
-  # outside this list keeps running whatever image happened to be pushed last,
-  # silently, and this one's source is the audit.
-  #
-  # It is a STAGE 4 component (it reads `ss4o_traces-default-namespace`, which
-  # does not exist below stage 4), which is why scripts/setup-kind.sh names it
-  # inside the `STAGE -ge 4` block rather than adding it to the stage-1 list
-  # at Step 9. A bare `./scripts/rebuild-and-deploy.sh` with no arguments does
-  # still build it, exactly as it still builds policy-decision-service: this
-  # script has no notion of stages and never has, and against a stage-1
-  # cluster this component's apply would fail on the missing namespace.
-  "eval-scorer:platform/eval-scorer:northstar-platform"
-  # Backstage. Registered here for the same reason eval-scorer's
+  # Backstage. Registered here for the same reason policy-decision-service's
   # own addition comment argues -- a component outside this list keeps running
   # whatever image happened to be pushed last, silently, and this one's source
   # is the platform-API view over the rest of this system.
   #
   # It is a STAGE 6 component (the catalog it serves reads
-  # `contracts/agent-cards/` and the eight component directories baked into
+  # `contracts/agent-cards/` and the seven component directories baked into
   # its own image, none of which exist below stage 6 in any meaningful sense),
   # which is why scripts/setup-kind.sh names it inside a `STAGE -ge 6` block
   # rather than adding it to the stage-1 list. A bare

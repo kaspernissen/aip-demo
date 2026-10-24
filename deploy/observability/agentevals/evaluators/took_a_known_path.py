@@ -13,11 +13,34 @@ a path nobody designed. This is the deterministic stand-in for AgentEvals' own
 tool_trajectory_avg_score, which compares tool arguments too (claim ids, amounts)
 and, at agentevals 0.11.0, exposes no switch to ignore them: against a golden run
 of another claim it fails every claim.
+
+claims-agent's intake extraction returns its draft through a tool call of its
+own (PydanticAI's output tool), so it is skipped (see is_intake).
 """
 import json
 import sys
 
 PATH = ["propose_payment", "execute_payment"]
+
+# claims-agent's intake extraction runs under the same gen_ai.conversation.id
+# (the claim id) as the settlement, so AgentEvals files it in the claim's session.
+# Its prompt opens with this prefix (agents/claims-agent/extraction.py); such an
+# invocation is not a settlement and is not judged here.
+INTAKE_PROMPT_PREFIX = "First notice of loss"
+
+
+def _text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        return " ".join(_text(p) for p in content.get("parts") or []) or str(content.get("text") or "")
+    if isinstance(content, list):
+        return " ".join(_text(p) for p in content)
+    return ""
+
+
+def is_intake(inv: dict) -> bool:
+    return _text(inv.get("user_content")).lstrip().startswith(INTAKE_PROMPT_PREFIX)
 
 
 def refused(response: dict) -> bool:
@@ -29,6 +52,8 @@ def main() -> None:
     invocations = inp.get("invocations") or []
     path, execute_refused = [], False
     for inv in invocations:
+        if is_intake(inv):
+            continue
         inter = inv.get("intermediate_steps") or {}
         responses = {r.get("id"): r for r in inter.get("tool_responses") or []}
         for call in inter.get("tool_calls") or []:

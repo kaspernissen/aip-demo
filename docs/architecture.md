@@ -77,33 +77,10 @@ moment a new plan lands. It did, on its first day.
 `m4-observable` until this whole-branch review's fix wave (finding J5), while
 the sections beneath them had already grown the flagd sidecar diagram and
 four platform-component rows — +105 lines M5 added to this file. Second
-consecutive recurrence**: the paragraph immediately below already records
-this exact defect happening to this exact line once before, for M3 → M4.
+consecutive recurrence**: the same defect hit this line once before, for
+M3 → M4.
 Recorded rather than silently corrected, per the convention the rest of this
 file follows.
-
-**This header and the line below it said "M3 (Supervised)" until M4 Task 5's
-doc pass, while the sections beneath them had already grown `eval-scorer`'s
-SPIFFE ID and SPIRE entry, the stage-4 surfaces and "See it yourself" step
-9** — the same stale-prose class this document's own intro records catching a
-few paragraphs down, this time in the one line a reader reads first. Recorded
-rather than silently corrected, per the convention the rest of this file
-follows.
-
-That sentence also said "**its Cilium** and SPIRE entries" until M4's final
-review. `eval-scorer` has **no** Cilium policy — `grep -c eval-scorer
-deploy/platform/cilium-policies.yaml` is 0, and `scripts/setup-kind.sh`
-records the absence as a posture gap in its stage-4 eval-scorer block (the
-paragraph beginning "deploy/platform/cilium-policies.yaml, on the other hand,
-names no rule selecting it" — cited by its text rather than by a line number,
-because the line number this correction first used was already three lines off
-when it was written), and spec §9's carried-debt entry (ruling
-M4-R17) names `eval-scorer` as one of the unenforced `northstar-platform`
-endpoints owned by M5. Two committed documents from the same milestone
-disagreeing about whether the milestone's new service sits behind a network
-policy is worse than either being wrong alone, and the one that was wrong is
-the one a reader opens first — so the correction is recorded rather than
-quietly applied.
 
 The M4 content was written and checked by that milestone's tasks against the
 live `kind-northstar` **stage-4** cluster as each was written, and M4 Task 5
@@ -484,22 +461,7 @@ the two is an identity rather than a program. The alternative — mentioning it
 only in a footnote to `settlement-agent`'s row — would have hidden the thing
 the milestone is about.
 
-### The application components — five at M1.1, seven as of M3, and one more in `northstar-platform` since M4
-
-**M4 added an eighth first-party component, `platform/eval-scorer`, and for
-two milestones it was in neither inventory** (M4 re-review, finding L9). It
-was deliberately absent from the table below rather than forgotten: this
-table is the *application* plane, and eval-scorer runs in `northstar-platform`
-beside the platform components. But the section below that one used to open
-"none is this project's code", which eval-scorer falsified — so it had no row
-in either inventory for the whole of M4. **M5 Task 6 closed this**: that
-section's opening sentence was rewritten (it no longer claims "none is this
-project's code" — see "The platform components M2.1 through M5 add" below,
-which now names `eval-scorer` as one of two rows that are this project's own
-code), and eval-scorer was given its row there. Left standing here, past
-tense, rather than deleted, per this document's own convention for a gap that
-has since been closed — a reader counting components from this heading no
-longer comes up one short.
+### The application components — five at M1.1, seven as of M3
 
 
 Namespaces, ports, and service DNS names below are read directly from
@@ -617,12 +579,10 @@ What each component is explicitly **not** responsible for:
 All of these live in `northstar-platform` (or a namespace of their own, for
 the two M5 controllers below); most are third-party infrastructure this
 project configures but does not write — the no-invented-telemetry rule
-applies to that majority without exception. **Two rows are this project's
-own code, and each says so in its own cell rather than being folded into
-this heading's old, now-false claim**: `policy-decision-service` (M2.2) and
-`eval-scorer` (M4, given a row here in M5 Task 6 — see the note under the
-application-components heading above for why it was left out of both
-inventories for two milestones). **M6 adds a third, partial case**:
+applies to that majority without exception. **One row is this project's
+own code, and it says so in its own cell rather than being folded into
+this heading's old, now-false claim**: `policy-decision-service` (M2.2).
+**M6 adds a partial case**:
 `backstage` itself is third-party framework code this project configures,
 same as agentgateway or SPIRE, but one plugin inside it
 (`autonomyContract/`) is this project's own — the same distinction the
@@ -639,9 +599,8 @@ the six SPIRE sub-images, including the one carrying the hazard recorded under
 | `linkerd` (M12) | CNCF service mesh (graduated). Control plane in namespace `linkerd`; a `linkerd-proxy` native sidecar in each meshed pod. Authorizes **ingress** to the money path by workload identity (403, counted); egress is NetworkPolicy, not Linkerd. Proxy tracing is on: each proxy sends OTLP spans to the collector, which is meshed for that reason | Helm `linkerd-crds` and `linkerd-control-plane`, `edge-26.10.1` (proxy v2.370.0); the exact chart version is pinned in `scripts/setup-kind.sh`. Not yet measured on the demo cluster | The Reach ring's ingress half: `deploy/platform/reach/linkerd-policies.yaml`. Replaces Cilium |
 | `agentgateway` | Rust MCP/A2A/LLM proxy. A **Linux Foundation** project — **not** CNCF | `cr.agentgateway.dev/agentgateway:v1.5.0` (note the leading `v`; the tag `1.5.0` does not exist on that registry, though the binary reports `1.5.0` as its internal version) | Interposed on the MCP hop. Verifies the caller's JWT-SVID (`jwtAuth`), asks the Policy Decision Service about every `tools/call` (`mcpGuardrails`), and forwards to `payments-mcp` **only** if the answer is permit. |
 | `policy-decision-service` | **This project's own code** (Python 3.13, `grpcio`), not third-party — listed here because it is platform machinery rather than an application component. Serves agentgateway's `agentgateway.dev.ext_mcp.ExtMcp` contract, from a proto vendored verbatim at v1.5.0 (`platform/policy-decision-service/proto/ext_mcp.proto`, `d459d88`) | `localhost:5001/northstar/policy-decision-service:dev`, `policy-decision-service.northstar-platform.svc.cluster.local:9100` | Answers permit or deny on caller identity plus amount. Holds the milestone's one rule and emits the `northstar.policy.decision` span. Makes no Kubernetes API calls and holds no RBAC; nothing in `northstar-agents` can reach it. |
-| `eval-scorer` **(M4; row added M5 Task 6)** | **This project's own code** (Python 3.13, standard library only — no web framework, no third-party OTel SDK dependency beyond what `platform/eval-scorer/requirements.txt` pins), not third-party — the same reason `policy-decision-service` has a row here rather than in the application table | `localhost:5001/northstar/eval-scorer:dev`, `eval-scorer.northstar-platform.svc.cluster.local:8300` | Scores a settled trajectory's identity authority against its own independent copy of the policy table (`scorer/authority.py`) and its own independent copy of the contract's currently-published autonomy level (`scorer/contract.py`'s `CURRENT_LEVEL`), never by re-reading the `northstar.policy.decision` span's own claim — the anti-vacuity argument `scorer/contract.py`'s own module docstring makes at length. `CURRENT_LEVEL` is a static constant checked at build time against the committed `deploy/platform/openfeature/featureflag.yaml`, deliberately blind to a live `kubectl patch` against the deployed `FeatureFlag` object (M5-R29/M5-R31) — the two are independent by design, not by oversight, which is exactly what let Task 6 flip the live contract without touching this service or its tests. |
 | Kyverno **(M7)** | Kyverno, chart `kyverno/kyverno` **3.9.1**, installed in the `kyverno` namespace by `setup-kind.sh --stage 7` with `deploy/platform/kyverno/values.yaml` (OTLP tracing on the admission controller; read-only RBAC on the kinds the policy matches) | appVersion **v1.19.1**; one `ValidatingPolicy` (`policies.kyverno.io/v1`, CEL), `deploy/platform/kyverno/keystone-policy.yaml`, named `agents-cannot-edit-their-own-authority` | The keystone: refuses an agent identity's create, update or delete of the objects that define its own authority. See "The rings, and the keystone" below. `failurePolicy: Fail`. |
-| `backstage` **(M6)** | Backstage backend, `@backstage/backend-defaults@^0.17.7` and siblings — third-party framework, plus **this project's own code** in one plugin: `platform/backstage/packages/backend/src/plugins/autonomyContract/` (router, k8s client, evaluator, telemetry), the same reason `policy-decision-service` and `eval-scorer` have rows here rather than in the application table, scaled down to one plugin rather than a whole service | `localhost:5001/northstar/backstage:dev`, `backstage.northstar-platform.svc.cluster.local:7007` | Serves the software catalog (nine `Component` entities: the eight in the tree plus Backstage itself, derived from `catalog-info.yaml` files staged into the image at build time — see "Known limitations" below) and the autonomy-contract card, the one UI in this system with a write path of its own: `POST /api/autonomy-contract/variant` flips `northstar-autonomy`'s `targeting.if[1]` through a second, narrower ServiceAccount (`backstage-autonomy-writer`) than the one the Kubernetes plugin reads with. |
+| `backstage` **(M6)** | Backstage backend, `@backstage/backend-defaults@^0.17.7` and siblings — third-party framework, plus **this project's own code** in one plugin: `platform/backstage/packages/backend/src/plugins/autonomyContract/` (router, k8s client, evaluator, telemetry), the same reason `policy-decision-service` has a row here rather than in the application table, scaled down to one plugin rather than a whole service | `localhost:5001/northstar/backstage:dev`, `backstage.northstar-platform.svc.cluster.local:7007` | Serves the software catalog (eight `Component` entities: the seven in the tree plus Backstage itself, derived from `catalog-info.yaml` files staged into the image at build time — see "Known limitations" below) and the autonomy-contract card, the one UI in this system with a write path of its own: `POST /api/autonomy-contract/variant` flips `northstar-autonomy`'s `targeting.if[1]` through a second, narrower ServiceAccount (`backstage-autonomy-writer`) than the one the Kubernetes plugin reads with. |
 | SPIRE server / agent | SPIFFE runtime, chart `spiffe/spire` 0.30.2 from the hardened repo | appVersion SPIRE **1.15.3**; `ghcr.io/spiffe/spire-server:1.15.3`, `spire-agent:1.15.3` | Issues the JWT-SVID. Trust domain `northstar.local`, cluster name `northstar`. |
 | SPIRE CRDs | chart `spiffe/spire-crds` 0.6.1, installed first | — | The `spire.spiffe.io` CRDs the `ClusterSPIFFEID` resources need. |
 | `spire-controller-manager` | ships inside the SPIRE chart | `ghcr.io/spiffe/spire-controller-manager:0.7.0` | Reconciles `ClusterSPIFFEID` resources into real registration entries. |
@@ -1461,7 +1420,7 @@ the half it is good at:
 The meshed workloads are the three app namespaces (`northstar-agents`,
 `northstar-tools`, `northstar-systems`) plus agentgateway and the
 policy-decision-service, and the OpenTelemetry collector. Everything else
-(the rest of observability, SPIRE, Kyverno, flagd, Backstage, eval-scorer,
+(the rest of observability, SPIRE, Kyverno, flagd, Backstage,
 `kube-system`) is not meshed. Linkerd's default inbound policy stays
 `all-unauthenticated`, so only a port that has a `Server` is restricted. Proxy
 tracing is **on**: every proxy sends a span per traced HTTP request to the
@@ -1579,9 +1538,8 @@ What is installed, pinned (`deploy/platform/spire/`):
 | trust domain | `northstar.local` | every SPIFFE ID in this system |
 | cluster name | `northstar` | the k8s node attestor's cluster |
 
-**Four** identities are registered, declaratively, as `ClusterSPIFFEID`
-resources — two from M2.1 Task 4, a third added by M2.2 and a fourth by M4
-Task 4, all in `deploy/platform/spire/registration.yaml`, all rendered from the
+**Three** identities are registered, declaratively, as `ClusterSPIFFEID`
+resources — two from M2.1 Task 4 and a third added by M2.2, all in `deploy/platform/spire/registration.yaml`, all rendered from the
 same
 `spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}`
 template. Read back off the live SPIRE server's own entry list, not from the
@@ -1591,10 +1549,9 @@ manifest alone:
 spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent
 spiffe://northstar.local/ns/northstar-platform/sa/agentgateway
 spiffe://northstar.local/ns/northstar-platform/sa/policy-decision-service
-spiffe://northstar.local/ns/northstar-platform/sa/eval-scorer
 ```
 
-All four are attested on namespace **and** Kubernetes service account
+All three are attested on namespace **and** Kubernetes service account
 (`k8s:ns:...` plus `k8s:sa:...` selectors on the entry, alongside the
 controller-manager's own `k8s:pod-uid:`), which is why each workload got a
 dedicated ServiceAccount: without one, each attested as `.../sa/default`, and
@@ -1603,14 +1560,11 @@ policy can decide on. That is not hypothetical — it is what SPIRE minted for
 `settlement-agent`'s pod, on this cluster, before it was given a
 ServiceAccount of its own.
 
-**Why the fourth one had to be an explicit CR, which is the part that is easy
+**Why a `northstar-platform` workload needs an explicit CR, which is the part that is easy
 to get wrong.** The chart's catch-all fallback CR selects namespaces `NotIn
 [northstar-platform, spire-server, spire-system]` — read off the live CR — so a
 workload placed in `northstar-platform` with no CR of its own gets **no
-identity at all**, and nothing says so. M4 Task 4 proved that the expensive
-way: `eval-scorer` ran with a dedicated ServiceAccount and a SPIFFE ID written
-into this repo's own allow-list while `spire-server entry show` listed an
-entry for every other workload and none for it. The two M3 identities below are the misleading
+identity at all**, and nothing says so. The two M3 identities below are the misleading
 precedent — they need no CR because they are in `northstar-agents`, which the
 fallback does cover. **Namespace decides, not the ServiceAccount.**
 
@@ -1628,11 +1582,9 @@ spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui
 ```
 
 **But the entries are not the same shape, and that is worth knowing before
-anyone relies on one.** The four explicit entries carry `k8s:ns:` **and**
+anyone relies on one.** The three explicit entries carry `k8s:ns:` **and**
 `k8s:sa:` selectors; the two fallback entries carry only `k8s:pod-uid:`
-(measured — `spire-server entry show` on the live server, M3 Task 5B;
-re-measured for `eval-scorer`'s entry in M4 Task 4, `k8s:ns:northstar-platform`
-+ `k8s:sa:eval-scorer` + the controller-manager's `k8s:pod-uid:`). The
+(measured — `spire-server entry show` on the live server, M3 Task 5B). The
 resulting SPIFFE ID is identical either way, so nothing downstream behaves
 differently today, and it is the reason the Task 3 review's decision to make
 "senior" an *identity* works at all. What it means is that these two are
@@ -1640,7 +1592,7 @@ attested to a pod instance rather than to a namespace-plus-service-account
 pair. Hardening them into explicit non-fallback entries is a one-manifest
 change nobody has needed yet.
 
-**Three of the six mount the Workload API socket; the other three are
+**Three of the five mount the Workload API socket; the other two are
 registered on purpose rather than by accident.** `settlement-agent` mounts the
 Workload API socket
 and fetches a JWT-SVID; so does `senior-settlement-agent`, which is the same
@@ -1650,9 +1602,9 @@ rather than a label, since the socket answers with whatever ID the calling
 pod attests to. `reviewer-ui` also mounts the socket, but for a narrower
 purpose and never as a credential: it reads its *own* ID back for the
 `northstar.review.decision` span's `northstar.review.reviewer.spiffe_id` attribute
-(`apps/reviewer-ui/identity.py`) and presents it to nothing. None of
-agentgateway, the Policy Decision Service and `eval-scorer` has a
-`csi.spiffe.io` mount, and none presents an SVID to anything. The gateway's
+(`apps/reviewer-ui/identity.py`) and presents it to nothing. Neither
+agentgateway nor the Policy Decision Service has a
+`csi.spiffe.io` mount, and neither presents an SVID to anything. The gateway's
 entry exists because its
 SPIFFE ID is the **audience** settlement-agent's token is minted for, so that
 string has to name a real registered identity rather than an invented label.
@@ -1660,12 +1612,8 @@ The PDS's entry exists for the same class of reason and one more: the ExtMCP
 hop between the gateway and the PDS is **plain gRPC today**, protected by a
 a Linkerd `Server` (M12; a `CiliumNetworkPolicy` before it) rather than by this hop's own mTLS, and this entry is what makes the
 PDS's own certificate possible the day that hop is hardened — as well as being
-the identity a future audit record would name as the decider. `eval-scorer`'s
-entry exists for the narrower reason its own CR comment gives: it is the
-service whose whole job is to judge what other identities did, and an auditor
-that cannot itself be named is a poor auditor. An identity nothing registers is
-a string, not an identity — which M4 Task 4 confirmed literally, having written
-one down in three places before noticing SPIRE had never minted it.
+the identity a future audit record would name as the decider. An identity
+nothing registers is a string, not an identity.
 
 **A guard exists for these strings specifically**, because a published
 identity nothing checks is a published identity that can go stale in the
@@ -2501,13 +2449,6 @@ run.) On 2026-09-14 it returns **five** call sites, one span each:
     grep for the literal string does not find it). This is the span every
     scorer in M4 reads and the evidence view's second panel renders.
 
-There is a **sixth first-party source of spans that this grep cannot find**:
-`platform/eval-scorer` emits its `gen_ai.evaluation.*` spans through the
-evaluation SDK's `score(...)` — imported as `sdk_score` and called inside
-`emit()` in `scorer/emit.py` — which calls the tracer on
-the service's behalf. So "hand-written" and "first-party" are not the same set,
-and any future count has to say which it means.
-
 **The earlier version of this paragraph said "exactly two", scoped to `agents/`,
 `tools/` and `systems/` — and then named a file in `apps/` as one of the two.**
 Inside its own stated scope there was exactly one. That is why the count above
@@ -2681,11 +2622,9 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
    model, and are gated behind `RUN_BROWSER_TESTS=1`.
 
    That file port-forwards to the gateway itself (on an ephemeral local port
-   it asks `kubectl` for, so it cannot collide with the **seven** forwards
-   `scripts/start-demo.sh` establishes — 19001, 19002, 18000, 18080, 5601,
-   9090 and 18300; this said "four" until M4's final review and "six" until
-   the fix wave added the seventh 160 lines away in the same commit, which is
-   why the ports are listed rather than counted), mints real JWT-SVIDs from
+   it asks `kubectl` for, so it cannot collide with any forward
+   `scripts/start-demo.sh` establishes; the ports are listed there, not
+   counted here), mints real JWT-SVIDs from
    SPIRE, and asserts both that a valid
    one executes a tool end to end and that invalid ones are refused: **5
    refusal cases from 4 refusal functions** (one, the untrusted-issuer check,
@@ -2817,58 +2756,10 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
    silently goes blank because instrumentation regressed is worse than no
    dashboard, so the fields it renders redden a test instead.
 
-   **There is no score panel on this dashboard, and that is deliberate** — the
-   dashboard's own top-left readme panel says so. The scores are step 10.
+   **There is no score panel on this dashboard, and that is deliberate.** The
+   AgentEvals checks run on demand with `scripts/demo evals`.
 
-10. **Ask the auditor what it thought of the trajectory.** M4's other half is
-    `platform/eval-scorer`: five policy-adherence scores per settlement,
-    written back into the same trace they judge as
-    `gen_ai.evaluation.*` spans, so the judgement travels with the evidence
-    instead of in a separate system.
-
-    `./scripts/start-demo.sh` forwards it at **18300 → 8300** (stage 4 only; it
-    prints a SKIPPED line below stage 4). It is pull-only — nothing scores a
-    settlement automatically as it happens — so the scores exist when you ask
-    for them:
-
-    ```bash
-    curl -s localhost:18300/score -X POST \
-      -H 'content-type: application/json' \
-      -d '{"claimId": "CLM-1842", "emit": false}' | python3 -m json.tool
-    ```
-
-    `"emit": false` reads without writing spans, which is how to look without
-    changing what you are looking at. Check `spanCount` and `decisionCount`
-    first: OpenSearch is near-real-time, and a claim scored the instant a
-    settlement returns can be scored half-written. When those stop moving, ask
-    once more without `emit` and the five scores land in the trace.
-
-    For `CLM-1842` — the supervised €6,200 pair — the one worth reading is
-    `stopped_when_refused`. It is **1.0 compliant** for the real run and
-    **0.0 retry-after-refusal** for a deliberately mis-routed trajectory. That
-    difference is spec §7.4's anti-vacuity criterion: a scorer that returns 1.0
-    for everything proves nothing.
-
-    **Read the other four carefully, because "the other four are unchanged" is
-    a claim this repo has now had to retire twice.** Of the five scorers, the
-    mis-routed run only *exercises* three: the platform refuses the mis-routed
-    execution, so nothing executes, and `amount_executed_matches_approved` and
-    `identity_had_authority` come back `1.0 **not-applicable**` — against
-    `1.0 **compliant**` on the run that did execute. Their **values** match and
-    their **labels** do not, which is why comparing values alone was the wrong
-    shape: a scorer that silently regressed to "I had nothing to judge" would
-    have read as agreement. Among the three both runs do exercise, exactly one
-    differs — `stopped_when_refused` — and the other two,
-    `proposed_before_executed` and `narrated_the_refusal`, are the genuine
-    controls: exercised and compliant on both sides.
-
-    `tests/e2e/test_policy_scores.py` asserts all of that against the live
-    cluster on `(value, label)` pairs rather than on values, derives the
-    unexercised set from the labels rather than hard-coding it, and separately
-    checks that the two set-aside scorers *are* exercised by the compliant run
-    — otherwise setting them aside would be hiding a scorer that never runs.
-
-11. **Finally, open Backstage — M6's part of the walkthrough, and the first
+10. **Finally, open Backstage — M6's part of the walkthrough, and the first
     step in this list that is not about the money hop at all.** Run
     `./scripts/start-demo.sh` (it forwards `svc/backstage` at 7007, gated on
     stage 6's own presence — a cluster below stage 6 prints
@@ -2878,8 +2769,8 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
     that absence is itself the first thing worth noticing, not a rough edge to
     look past (see "Known limitations" below).
 
-    - Open **Catalog** in the left nav. Nine `Component` entities are listed —
-      the eight this repo's own directory tree has (`agents/`, `apps/`,
+    - Open **Catalog** in the left nav. Eight `Component` entities are listed —
+      the seven this repo's own directory tree has (`agents/`, `apps/`,
       `platform/`, `systems/`, `tools/`, each with its own `catalog-info.yaml`)
       plus `backstage` itself, cataloguing its own plugin. This list is not
       typed by hand anywhere, on either side: the live catalog is built from

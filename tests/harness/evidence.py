@@ -2,7 +2,7 @@
 attributes, so `scripts/demo evidence` reads Jaeger and nothing else.
 
 It answers the same questions `live.evidence_for` answers from OpenSearch (that
-module still serves the dashboard test and the eval-scorer's longer slot) and
+module still serves the dashboard test) and
 returns the same row shape, so the driver's printing did not change.
 
 The join is the one `live.trace_ids_for_claim` documents (GAP 4): a claim id is

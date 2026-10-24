@@ -30,8 +30,8 @@ One run covers both changed behaviours:
    must still be *running* after the script has exited -- proving the EXIT
    trap did not fire and kill them.
 
-The four stage-gated surfaces (OpenSearch Dashboards, reviewer-ui,
-Prometheus, eval-scorer) are reported absent throughout (fake kubectl's
+The stage-gated surfaces (OpenSearch Dashboards, reviewer-ui, Prometheus and
+the rest) are reported absent throughout (fake kubectl's
 `get svc/...` always exits 1), which keeps this test to exactly the four
 unconditional stage-1 forwards the two behaviours above need and nothing
 else.

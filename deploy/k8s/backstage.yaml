@@ -1,7 +1,7 @@
 # Backstage: the view over the platform API.
 #
-# It lives in `northstar-platform`, with the gateway, SPIRE, the PDS and
-# eval-scorer, for the same reason all four of those do: platform machinery,
+# It lives in `northstar-platform`, with the gateway, SPIRE and the PDS, for
+# the same reason all three of those do: platform machinery,
 # not a tool an agent may call and not an agent's own dependency. No agent
 # knows this exists.
 #
@@ -12,16 +12,15 @@
 #
 # No SPIRE ClusterSPIFFEID is registered for this pod. Nothing Backstage does
 # is on the SPIFFE-verified path (it calls the Kubernetes API with this
-# ServiceAccount's own bearer token, not through agentgateway), so -- unlike
-# eval-scorer, which took one purely so the answer would be its own name if
-# something ever did check -- nothing here checks one either. Revisit if
+# ServiceAccount's own bearer token, not through agentgateway), so nothing
+# here checks one either. Revisit if
 # Backstage is ever put behind SPIRE-verified ingress.
 ---
 # A dedicated ServiceAccount, for the same reason every workload in
-# this repo has one (see deploy/k8s/eval-scorer.yaml's identical note): a pod
-# running as `default` attests as `.../sa/default`, an identity that verifies
-# perfectly and identifies nothing. This one additionally CARRIES RBAC, unlike
-# eval-scorer's or the PDS's own ServiceAccount -- see the ClusterRole below.
+# this repo has one: a pod running as `default` attests as `.../sa/default`,
+# an identity that verifies perfectly and identifies nothing. This one
+# additionally CARRIES RBAC, unlike the PDS's own ServiceAccount -- see the
+# ClusterRole below.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -306,8 +305,7 @@ spec:
             - name: NORTHSTAR_AUTONOMY_FLAG_NAME
               value: northstar-autonomy
             # The same three OTLP variables every other service in this
-            # cluster sets (deploy/k8s/eval-scorer.yaml, deploy/k8s/policy-
-            # decision-service.yaml, ...), read by
+            # cluster sets (deploy/k8s/policy-decision-service.yaml, ...), read by
             # plugins/autonomyContract/telemetry.ts through the standard
             # `OTEL_EXPORTER_OTLP_*` names. The read-only Kubernetes plugin
             # makes no decision and changes nothing, so it emits nothing; the

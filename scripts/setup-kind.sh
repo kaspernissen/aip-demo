@@ -136,7 +136,7 @@ Usage: setup-kind.sh [--stage N]
                           already, since they are code in payments-api and
                           the Policy Decision Service rather than separate
                           workloads]
-  --stage 4   Observable:           + OpenSearch, Prometheus, eval-scorer
+  --stage 4   Observable:           + OpenSearch, Prometheus, AgentEvals
                           [OpenSearch (single node, security plugin off) and
                           OpenSearch Dashboards are installed, and the
                           trace-ingest path into OpenSearch is live.
@@ -147,10 +147,9 @@ Usage: setup-kind.sh [--stage N]
                           imported into Dashboards from
                           deploy/observability/dashboards/evidence.ndjson, so
                           it survives a cluster recreate instead of living
-                          only in a pod's volume. eval-scorer is deployed
-                          here too -- the service that scores a settlement's
-                          trajectory against the five policy-adherence
-                          properties. Runs on stage 3's cluster config
+                          only in a pod's volume. AgentEvals and Weaver
+                          live-check receive a copy of every trace. Runs on
+                          stage 3's cluster config
                           UNCHANGED -- see the KIND_CONFIG note below --
                           Dashboards is reached by port-forward
                           (./scripts/start-demo.sh), never by a kind host
@@ -589,7 +588,7 @@ if (( STAGE >= 4 )); then
   kubectl -n observability rollout restart deployment/weaver-live-check
 
   # AgentEvals (M11), the collector's `otlp_http/agentevals` copy: same stages,
-  # same reason to come before the collector. Its two code evaluators are this
+  # same reason to come before the collector. Its code evaluators are this
   # checkout's, mounted from a ConfigMap; a restart loads them (and empties its
   # in-memory sessions, which a rebuild does anyway).
   # The judge for AgentEvals' LLM metrics (hallucinations, the rubric metrics) is
@@ -788,38 +787,6 @@ if [[ "${STAGE}" -ge 4 ]]; then
   kubectl -n observability rollout restart deployment/otel-collector
   kubectl -n observability rollout status deployment/otel-collector --timeout=180s
   echo -e "${GREEN}OpenSearch ${OPENSEARCH_CHART_VERSION} is up (single node, security plugin off, heap and resources set in deploy/observability/opensearch/values.yaml); Dashboards is up, reached by port-forward, with the evidence view imported into it from deploy/observability/dashboards/evidence.ndjson; Prometheus ${PROMETHEUS_CHART_VERSION} is up on OTLP ingest alone; the collector has been restarted against both.${NC}"
-
-  # eval-scorer, the component that scores a settlement's
-  # trajectory against the five policy-adherence properties.
-  #
-  # Deployed HERE, at the end of the stage-4 block, rather than after Step 9
-  # with the other workloads. Both of the things it needs were made ready in
-  # the lines directly above -- the OpenSearch it reads trajectories out of,
-  # and the collector it emits score spans into -- and nothing between here
-  # and the end of this script asks it for a score, so neither order would
-  # leave a real request failing. This order means the window does not exist
-  # if a future step ever does. What it needs from the earlier steps (the kind
-  # registry, Step 1; the `northstar-platform` namespace, Step 6) has existed
-  # since long before this block.
-  #
-  # Its SPIFFE ID comes from an explicit ClusterSPIFFEID in
-  # deploy/platform/spire/registration.yaml, applied by the stage-2 block
-  # above and so already in place by the time this runs.
-  #
-  # **Not** from the SPIRE chart's catch-all `default` CR. That CR's
-  # namespaceSelector excludes `northstar-platform` by name, which makes
-  # reviewer-ui (in `northstar-agents`) the
-  # wrong precedent for anything deployed here: a platform workload with no CR
-  # of its own gets no identity at all and nothing says so -- verified against
-  # the live cluster with `spire-server entry show` rather than assumed.
-  #
-  # The reach policies (M12: Linkerd Servers and NetworkPolicy, under
-  # deploy/platform/reach/) name no rule selecting it, and it is not meshed:
-  # a pod no policy selects is unrestricted, so it reaches OpenSearch and the
-  # collector without one. That is a known posture gap, not an oversight.
-  echo -e "${BLUE}Step 8e/9 (stage 4): Building and deploying eval-scorer...${NC}"
-  "$ROOT/scripts/rebuild-and-deploy.sh" eval-scorer
-  echo -e "${GREEN}eval-scorer is up on 8300, reading ss4o_traces-default-namespace.${NC}"
 fi
 
 if [[ "${STAGE}" -ge 5 ]]; then
@@ -879,14 +846,12 @@ if [[ "${STAGE}" -ge 6 ]]; then
   # from source like every other one (it is registered in that script's
   # COMPONENTS list) -- deploy/k8s/backstage.yaml is a single manifest
   # carrying its ServiceAccount, its read-only ClusterRole/ClusterRoleBinding,
-  # its Deployment and its Service, applied together the same way
-  # eval-scorer's own manifest is.
+  # its Deployment and its Service, applied together.
   #
   # Deployed here, in its own stage-6 block, rather than folded into Step 9
   # below: Step 9 is stage-1's own block (it names its five components by
   # hand, unconditionally), and every later stage's addition -- the PDS at
-  # `-ge 2`, the stage-3 workloads at `-ge 3`, eval-scorer inside the `-ge 4`
-  # block above -- gets its own guarded block for the same reason. Nothing
+  # `-ge 2`, the stage-3 workloads at `-ge 3` -- gets its own guarded block for the same reason. Nothing
   # here needs anything Step 9 provides that is not already true by
   # `-ge 6` (`northstar-platform` has existed since `-ge 2`), so there is no
   # ordering constraint forcing this before or after it; it is placed here,
@@ -1138,7 +1103,7 @@ elif [[ "${STAGE}" -eq 6 ]]; then
 elif [[ "${STAGE}" -eq 5 ]]; then
   echo -e "${GREEN}Stage 5 (Progressive autonomy) is up: stage 4's workloads and backends, unchanged, plus cert-manager ${CERT_MANAGER_VERSION}, the Open Feature Operator ${OPENFEATURE_CHART_VERSION}, and the northstar-autonomy FeatureFlag/FeatureFlagSource pair. The PDS pod carries a flagd sidecar answering on localhost:8013 inside it, serving flag 'autonomy-level' (variants assisted/autonomous, targeted on evaluation-context key spiffeId) -- still resolved nowhere yet, since this stage stands up the machinery only.${NC}"
 elif [[ "${STAGE}" -eq 4 ]]; then
-  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workload (reviewer-ui) on the same Linkerd ${LINKERD_APP_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- unchanged -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them with the evidence view already imported, prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone, and eval-scorer scoring a settlement's trajectory against the five policy-adherence properties and emitting each score back into the trace it judges. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port, and the evidence view is at http://localhost:5601/app/dashboards#/view/northstar-evidence.${NC}"
+  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workload (reviewer-ui) on the same Linkerd ${LINKERD_APP_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- unchanged -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them with the evidence view already imported, and prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port, and the evidence view is at http://localhost:5601/app/dashboards#/view/northstar-evidence.${NC}"
 elif [[ "${STAGE}" -eq 3 ]]; then
   echo -e "${GREEN}Stage 3 (Supervised) is up: stage 1's workloads meshed by Linkerd ${LINKERD_APP_VERSION}, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity, plus reviewer-ui -- so a payment the agent may not release now has a human who can release it.${NC}"
 elif [[ "${STAGE}" -ge 2 ]]; then

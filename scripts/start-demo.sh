@@ -146,7 +146,7 @@ verify_existing_surface() {
 # leave the operator with no port-forwards at all.
 #
 # So the stage-gated surfaces -- reviewer-ui, OpenSearch Dashboards, Prometheus
-# and eval-scorer -- are asked for rather than assumed, one `service_exists`
+# and the rest below -- are asked for rather than assumed, one `service_exists`
 # call each below. The stage-1 surfaces below are NOT optional -- a cluster
 # without them is broken, not merely younger -- and nothing here is silently
 # skipped: each skip prints the stage that would provide it.
@@ -165,10 +165,6 @@ fi
 PROMETHEUS_AVAILABLE=""
 if service_exists observability prometheus; then
   PROMETHEUS_AVAILABLE=1
-fi
-EVAL_SCORER_AVAILABLE=""
-if service_exists northstar-platform eval-scorer; then
-  EVAL_SCORER_AVAILABLE=1
 fi
 WEAVER_AVAILABLE=""
 if service_exists observability weaver-live-check; then
@@ -310,28 +306,6 @@ else
   echo -e "${YELLOW}  - Prometheus: SKIPPED, svc/prometheus does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 7)${NC}"
 fi
 
-# eval-scorer's policy scores are one of this system's headline outputs, and
-# `docs/telemetry-contract.md` documents the `POST /score` surface -- so this
-# forward is what lets the demo path show it, rather than leaving each reader
-# to invent a port-forward by hand.
-#
-# Stage 4 only, on Dashboards' and Prometheus' `service_exists` guard rather
-# than one of the unconditional forwards: the Deployment reads
-# `ss4o_traces-default-namespace`, which exists only at stage 4.
-#
-# 18300 -> 8300 follows the 1xxxx offset convention of the tool ports above,
-# not Prometheus' identity mapping: no committed command queries port 8300 on
-# the host, so there is nothing to keep identical.
-EVAL_SCORER_PID=""
-if [[ -n "$EVAL_SCORER_AVAILABLE" ]]; then
-  echo "  - eval-scorer        (18300 -> 8300)"
-  kubectl -n northstar-platform port-forward svc/eval-scorer 18300:8300 >/dev/null 2>&1 &
-  EVAL_SCORER_PID=$!
-  PIDS+=("$EVAL_SCORER_PID")
-else
-  echo -e "${YELLOW}  - eval-scorer: SKIPPED, svc/eval-scorer does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 7)${NC}"
-fi
-
 # Weaver live-check's admin port (M9): the operator's door to the registry
 # conformance report (`curl localhost:18400/report` after POST /stop). The gate
 # does NOT use this forward -- a restart of the pod kills it, so
@@ -446,14 +420,6 @@ if [[ -n "$PROMETHEUS_PID" ]]; then
   # is what Prometheus itself documents as its liveness path.
   verify_owned_forward 9090 "${PROMETHEUS_PID}" prometheus "/-/healthy"
 fi
-if [[ -n "$EVAL_SCORER_PID" ]]; then
-  # `/healthz` is the same route the Deployment's own readiness probe uses
-  # (deploy/k8s/eval-scorer.yaml), and it deliberately does not touch
-  # OpenSearch -- so this checks that the forward carries a request, which is
-  # what verify_owned_forward is for, and does not silently become a store
-  # health check.
-  verify_owned_forward 18300 "${EVAL_SCORER_PID}" eval-scorer "/healthz"
-fi
 if [[ -n "$WEAVER_PID" ]]; then
   # `/health` is Weaver's own admin liveness route (the Deployment's readiness
   # probe uses it too). Weaver is the gate's, not a demo surface (the gate opens
@@ -514,7 +480,7 @@ else
 fi
 
 echo ""
-if [[ -n "$DASHBOARDS_AVAILABLE" && -n "$REVIEWER_UI_AVAILABLE" && -n "$PROMETHEUS_AVAILABLE" && -n "$EVAL_SCORER_AVAILABLE" && -n "$WEAVER_AVAILABLE" && -n "$AGENTEVALS_AVAILABLE" && -n "$FLAGD_AVAILABLE" && -n "$BACKSTAGE_AVAILABLE" ]]; then
+if [[ -n "$DASHBOARDS_AVAILABLE" && -n "$REVIEWER_UI_AVAILABLE" && -n "$PROMETHEUS_AVAILABLE" && -n "$WEAVER_AVAILABLE" && -n "$AGENTEVALS_AVAILABLE" && -n "$FLAGD_AVAILABLE" && -n "$BACKSTAGE_AVAILABLE" ]]; then
   echo -e "${GREEN}All surfaces verified up.${NC}"
 else
   echo -e "${GREEN}Every surface this cluster has is verified up.${NC}"
@@ -541,9 +507,6 @@ echo "  claims-agent (A2A):        http://localhost:19001"  #tool-port
 echo "  settlement-agent (A2A):    http://localhost:19002"  #tool-port
 echo "  payments-mcp:              http://localhost:18000/mcp"  #tool-port
 echo "  payments-api:              http://localhost:18080"  #tool-port
-if [[ -n "$EVAL_SCORER_PID" ]]; then
-  echo "  eval-scorer (POST /score): http://localhost:18300"  #tool-port
-fi
 if [[ -n "$WEAVER_PID" ]]; then
   echo "  weaver live-check (admin): http://localhost:18400"  #tool-port
 fi
@@ -551,8 +514,7 @@ if [[ -n "$AGENTEVALS_PID" ]]; then
   echo "  AgentEvals:                http://localhost:18001"  #surface
 fi
 if [[ -n "$FLAGD_METRICS_PID" ]]; then
-  # `#tool-port`, not `#surface`: like eval-scorer's own POST endpoint above,
-  # nothing in docs/architecture.md's "See it yourself" walkthrough opens
+  # `#tool-port`, not `#surface`: nothing in docs/architecture.md's "See it yourself" walkthrough opens
   # this URL in a browser -- it is a diagnostic port for an operator who
   # wants to `curl` `feature_flag_flagd_impression_total` directly.
   echo "  flagd metrics:             http://localhost:18014/metrics"  #tool-port
