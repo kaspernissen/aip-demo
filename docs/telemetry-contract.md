@@ -2294,9 +2294,10 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (all ten run by `smoke-test.sh`, before any e2e test):
-claims-agent 57, settlement-agent 100, payments-mcp 16, payments-api (Go) 39,
+claims-agent 124, settlement-agent 101, payments-mcp 16, payments-api (Go) 39,
 customer-ui (vitest) 29, customer-ui server (pytest) 16, policy-decision-service 156,
 reviewer-ui 103, eval-scorer 166, backstage (jest) 37 — all passing.
+(**2026-10-24: claims-agent 57 → 124, settlement-agent 100 → 101.** The claims-agent's free-text intake (`extraction.py`) and the wait for missing information added 67 tests; settlement-agent gained one (a claim carrying a `description` settles and the description reaches no one). The row had not been updated in that commit.)
 (**M11 (AgentEvals): settlement-agent 99 → 100.** One test: the claim id is the agent run's `conversation_id`, which PydanticAI writes as `gen_ai.conversation.id` on the invoke_agent span and AgentEvals groups sessions by.)
 (**M10 final-review fix wave: claims-agent 46 → 57, and a new row, customer-ui server (pytest) 16.** The claims-agent gains eleven tests in `test_push.py` (a non-terminal task is not pushed, a terminal one is, the stream pushes only the outcome, push-config get/list/delete are refused); the customer-ui's Python server suite, which the gate did not run before, is now in `smoke-test.sh` and counted here. The collection under `tests/` is unchanged (616, gated 107), so the predicted gate figure stays `615 passed, 1 xfailed`.)
 (**2026-10-15, M8 final-review fix wave: claims-agent 30 → 32, reviewer-ui 95 → 101.** The claims-agent gains two lifecycle tests (a second resume while the first publishes is refused; a ledger read that fails once leaves the task waiting for the retry); the reviewer-ui gains six healing tests in `test_review.py` (a decision already on the ledger re-sends the resume and moves no money, for approve and reject; a contradicting decision stays a 409; a task no longer waiting stays a 409; another resend failure is reported; no task id stays a 409). The policy-decision-service stays at 157: one parametrised test split in two.)
