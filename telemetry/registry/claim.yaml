@@ -32,9 +32,16 @@ groups:
           members:
             - {id: failed, value: failed, stability: development, brief: The task failed.}
             - {id: completed, value: completed, stability: development, brief: The task completed.}
-            - {id: input_required, value: input-required, stability: development, brief: The task waits for a human.}
+            - {id: input_required, value: input-required, stability: development, brief: The task waits for a reviewer or for the customer; northstar.a2a.parked_reason says which.}
         stability: development
         brief: The A2A task state claims-agent reported on its span.
+      - id: northstar.a2a.parked_reason
+        type:
+          members:
+            - {id: awaiting_approval, value: awaiting_approval, stability: development, brief: The payment waits for a reviewer to approve or reject it.}
+            - {id: needs_information, value: needs_information, stability: development, brief: The claim waits for the customer to answer a question about something missing from their description.}
+        stability: development
+        brief: Why claims-agent parked the task at input-required, on the span that parked it and on the span that resumed it.
       - id: northstar.a2a.link.reason
         type:
           members:
@@ -63,8 +70,9 @@ groups:
     span_kind: internal
     stability: development
     name: northstar.a2a.resume
-    brief: The resume of a claim that waited for a human. Runs in the human's trace (B) and carries one link back to the span that parked the claim in trace A, with northstar.a2a.link.reason on the link.
+    brief: The resume of a claim that waited, either for a reviewer's decision or for the customer's answer to a question. Runs in that person's trace and carries one link back to the span that parked the claim, with northstar.a2a.link.reason on the link.
     attributes:
       - {ref: northstar.claim.id, requirement_level: recommended}
       - {ref: northstar.a2a.task.id, requirement_level: recommended}
       - {ref: northstar.a2a.task.state, requirement_level: recommended}
+      - {ref: northstar.a2a.parked_reason, requirement_level: recommended}
