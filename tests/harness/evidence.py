@@ -79,6 +79,11 @@ def _search(service: str, *, operation: str | None = None, tags: dict[str, str] 
     return found
 
 
+def search_traces(service: str, tags: dict[str, str], since_ms: int) -> list[Trace]:
+    """Every trace with a `service` span matching `tags` since `since_ms`, whole."""
+    return [_client().get_trace(tid) for tid in _search(service, tags=tags, since_ms=since_ms)]
+
+
 def _claim_traces(claim_id: str, since_ms: int | None, lookback_s: int = 24 * 3600) -> list[Trace]:
     """Every trace the claim id is on, whole (re-fetched by id: a search result
     can be cut short), oldest first."""
