@@ -83,8 +83,6 @@ kind: NetworkPolicy
 metadata:
   name: settlement-agent-egress
   namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m12
 spec:
   podSelector:
     matchLabels:
@@ -203,8 +201,6 @@ kind: NetworkPolicy
 metadata:
   name: claims-agent-egress
   namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m12
 spec:
   podSelector:
     matchLabels:
@@ -330,8 +326,6 @@ kind: NetworkPolicy
 metadata:
   name: customer-ui-egress
   namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m12
 spec:
   podSelector:
     matchLabels:
@@ -400,8 +394,6 @@ kind: NetworkPolicy
 metadata:
   name: reviewer-ui-egress
   namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m12
 spec:
   podSelector:
     matchLabels:

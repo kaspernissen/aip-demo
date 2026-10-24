@@ -63,8 +63,6 @@ kind: Server
 metadata:
   name: payments-mcp
   namespace: northstar-tools
-  labels:
-    northstar.io/milestone: m12
 spec:
   podSelector:
     matchLabels:
@@ -83,8 +81,6 @@ kind: MeshTLSAuthentication
 metadata:
   name: agentgateway
   namespace: northstar-tools
-  labels:
-    northstar.io/milestone: m12
 spec:
   identities:
     - agentgateway.northstar-platform.serviceaccount.identity.linkerd.cluster.local
@@ -97,8 +93,6 @@ kind: AuthorizationPolicy
 metadata:
   name: payments-mcp-gateway-only
   namespace: northstar-tools
-  labels:
-    northstar.io/milestone: m12
 spec:
   targetRef:
     group: policy.linkerd.io
@@ -140,8 +134,6 @@ kind: Server
 metadata:
   name: policy-decision-service
   namespace: northstar-platform
-  labels:
-    northstar.io/milestone: m12
 spec:
   podSelector:
     matchLabels:
@@ -158,8 +150,6 @@ kind: MeshTLSAuthentication
 metadata:
   name: agentgateway
   namespace: northstar-platform
-  labels:
-    northstar.io/milestone: m12
 spec:
   identities:
     - agentgateway.northstar-platform.serviceaccount.identity.linkerd.cluster.local
@@ -171,8 +161,6 @@ kind: AuthorizationPolicy
 metadata:
   name: policy-decision-service-gateway-only
   namespace: northstar-platform
-  labels:
-    northstar.io/milestone: m12
 spec:
   targetRef:
     group: policy.linkerd.io
@@ -204,8 +192,6 @@ kind: Server
 metadata:
   name: settlement-agent
   namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m12
 spec:
   podSelector:
     matchLabels:
@@ -222,8 +208,6 @@ kind: MeshTLSAuthentication
 metadata:
   name: claims-agent
   namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m12
 spec:
   identities:
     - claims-agent.northstar-agents.serviceaccount.identity.linkerd.cluster.local
@@ -236,8 +220,6 @@ kind: AuthorizationPolicy
 metadata:
   name: settlement-agent-claims-agent-only
   namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m12
 spec:
   targetRef:
     group: policy.linkerd.io
@@ -279,8 +261,6 @@ kind: Server
 metadata:
   name: customer-ui
   namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m12
 spec:
   podSelector:
     matchLabels:
@@ -296,8 +276,6 @@ kind: HTTPRoute
 metadata:
   name: customer-ui-push
   namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m12
 spec:
   parentRefs:
     - group: policy.linkerd.io
@@ -318,8 +296,6 @@ kind: HTTPRoute
 metadata:
   name: customer-ui-everything-else
   namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m12
 spec:
   parentRefs:
     - group: policy.linkerd.io
@@ -339,8 +315,6 @@ kind: AuthorizationPolicy
 metadata:
   name: customer-ui-push-claims-agent-only
   namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m12
 spec:
   targetRef:
     group: policy.linkerd.io
@@ -360,8 +334,6 @@ kind: NetworkAuthentication
 metadata:
   name: all-networks
   namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m12
 spec:
   networks:
     - cidr: 0.0.0.0/0
@@ -374,8 +346,6 @@ kind: AuthorizationPolicy
 metadata:
   name: customer-ui-everything-else-open
   namespace: northstar-agents
-  labels:
-    northstar.io/milestone: m12
 spec:
   targetRef:
     group: policy.linkerd.io
@@ -425,8 +395,6 @@ kind: Server
 metadata:
   name: payments-api
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   podSelector:
     matchLabels:
@@ -443,8 +411,6 @@ kind: MeshTLSAuthentication
 metadata:
   name: payments-mcp
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   identities:
     - payments-mcp.northstar-tools.serviceaccount.identity.linkerd.cluster.local
@@ -456,8 +422,6 @@ kind: MeshTLSAuthentication
 metadata:
   name: reviewer-ui
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   identities:
     - reviewer-ui.northstar-agents.serviceaccount.identity.linkerd.cluster.local
@@ -469,8 +433,6 @@ kind: MeshTLSAuthentication
 metadata:
   name: payment-readers
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   identities:
     - payments-mcp.northstar-tools.serviceaccount.identity.linkerd.cluster.local
@@ -486,8 +448,6 @@ kind: NetworkAuthentication
 metadata:
   name: all-networks
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   networks:
     - cidr: 0.0.0.0/0
@@ -500,8 +460,6 @@ kind: HTTPRoute
 metadata:
   name: payments-api-propose
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   parentRefs:
     - group: policy.linkerd.io
@@ -521,8 +479,6 @@ kind: AuthorizationPolicy
 metadata:
   name: payments-api-propose-payments-mcp
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   targetRef:
     group: policy.linkerd.io
@@ -542,8 +498,6 @@ kind: HTTPRoute
 metadata:
   name: payments-api-execute
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   parentRefs:
     - group: policy.linkerd.io
@@ -564,8 +518,6 @@ kind: AuthorizationPolicy
 metadata:
   name: payments-api-execute-payments-mcp
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   targetRef:
     group: policy.linkerd.io
@@ -584,8 +536,6 @@ kind: HTTPRoute
 metadata:
   name: payments-api-refuse
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   parentRefs:
     - group: policy.linkerd.io
@@ -605,8 +555,6 @@ kind: AuthorizationPolicy
 metadata:
   name: payments-api-refuse-payments-mcp
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   targetRef:
     group: policy.linkerd.io
@@ -626,8 +574,6 @@ kind: HTTPRoute
 metadata:
   name: payments-api-get
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   parentRefs:
     - group: policy.linkerd.io
@@ -647,8 +593,6 @@ kind: AuthorizationPolicy
 metadata:
   name: payments-api-get-readers
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   targetRef:
     group: policy.linkerd.io
@@ -666,8 +610,6 @@ kind: HTTPRoute
 metadata:
   name: payments-api-list
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   parentRefs:
     - group: policy.linkerd.io
@@ -687,8 +629,6 @@ kind: AuthorizationPolicy
 metadata:
   name: payments-api-list-reviewer-ui
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   targetRef:
     group: policy.linkerd.io
@@ -706,8 +646,6 @@ kind: HTTPRoute
 metadata:
   name: payments-api-reject
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   parentRefs:
     - group: policy.linkerd.io
@@ -727,8 +665,6 @@ kind: AuthorizationPolicy
 metadata:
   name: payments-api-reject-reviewer-ui
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   targetRef:
     group: policy.linkerd.io
@@ -750,8 +686,6 @@ kind: HTTPRoute
 metadata:
   name: payments-api-probe
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   parentRefs:
     - group: policy.linkerd.io
@@ -771,8 +705,6 @@ kind: AuthorizationPolicy
 metadata:
   name: payments-api-probe-open
   namespace: northstar-systems
-  labels:
-    northstar.io/milestone: m12
 spec:
   targetRef:
     group: policy.linkerd.io
