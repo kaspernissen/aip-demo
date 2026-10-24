@@ -35,12 +35,12 @@
       <p class="x31-tw-s">identity, at the destination</p>
       <p class="x31-tw-l">Every bypass of payments-mcp and the PDS: <span class="code m">HTTP 403</span></p>
       <p class="x31-tw-l">Pods with no proxy, or skipping it: <span class="code m">403</span> too</p>
-      <p class="x31-tw-l">Every refusal is <b>counted</b>, per policy &mdash; a counter, not a span</p>
+      <p class="x31-tw-l">Every refusal is <b>counted</b>, per policy, and the proxy can add a span</p>
     </div>
     <div>
       <p class="x31-tw-k">NetworkPolicy</p>
       <p class="x31-tw-s">in the node, by address range</p>
-      <p class="x31-tw-l">Only settlement-agent reaches Anthropic&rsquo;s <span class="code">160.79.104.0/23</span></p>
+      <p class="x31-tw-l">Only the two model agents reach Anthropic&rsquo;s <span class="code">160.79.104.0/23</span></p>
       <p class="x31-tw-l">Linkerd&rsquo;s egress rule can&rsquo;t say that: namespace-wide, and it matches the SNI only</p>
     </div>
   </div>

@@ -35,20 +35,20 @@
   </div>
 </section>
 
-<!-- 38b · BOUNDED · which refusals the trace can see: one row per ring, measured in M7 (gateway 401 spans; reach refusal has no span (a Linkerd 403 is counted, an egress drop is silent), proxy tracing off; northstar.policy.decision in the claim trace; Kyverno denial as its own trace, no traceparent from kubectl) -->
+<!-- 38b · BOUNDED · which refusals the trace can see: one row per ring, measured in M7 (gateway 401 spans; reach refusal: a Linkerd 403 is a proxy span when the request has a traceparent; northstar.policy.decision in the claim trace; Kyverno denial as its own trace, no traceparent from kubectl) -->
 <section data-cut class="slide content" data-label="Which refusals the trace can see">
   <h2 class="slide-title">Which refusals the trace can see</h2>
   <div class="x40-rt rise">
     <p class="x40-rh">Ring</p><p class="x40-rh">The refusal</p><p class="x40-rh">In the trace?</p><p class="x40-rh">Where</p>
     <p class="x40-rg">Core &middot; Identity</p><p>agentgateway 401</p><p class="x40-y">yes</p><p class="x40-w">gateway span &middot; <span class="code">401</span> &middot; <span class="code">reason=JwtAuth</span></p>
-    <p class="x40-rg">Ring 1 &middot; Reach</p><p>Linkerd 403, egress drop</p><p class="x40-n0">no</p><p class="x40-w">a 403 is <em>counted</em>, not traced; an egress drop is silent</p>
+    <p class="x40-rg">Ring 1 &middot; Reach</p><p>Linkerd 403, egress drop</p><p class="x40-n0">partly</p><p class="x40-w">a 403 is a proxy span when the request carries a <span class="code">traceparent</span>; an egress drop is silent</p>
     <p class="x40-rg">Ring 2 &middot; Capability</p><p>policy deny</p><p class="x40-y">yes</p><p class="x40-w">inside the claim&rsquo;s trace &middot; <span class="code m">northstar.policy.decision</span></p>
     <p class="x40-rg">Keystone</p><p>Kyverno denial</p><p class="x40-y">yes, alone</p><p class="x40-w">its own trace &middot; <span class="code m">allowed=false</span> &middot; no <span class="code">traceparent</span></p>
   </div>
-  <p class="x40-th">Traced everywhere except where reach refuses it. <span class="spot-2">The gap is named, not hidden.</span></p>
+  <p class="x40-th">Traced everywhere except the egress drop. <span class="spot-2">The gap is named, not hidden.</span></p>
 </section>
 
-<!-- 39 · NEW · the evidence view, in Jaeger (2026-10-19, replaces the OpenSearch dashboard capture): trace B of an approved claim, the northstar.review.decision span open with its link -->
+<!-- 39 · NEW · the evidence view, in Jaeger (2026-10-19): trace B of an approved claim, the northstar.review.decision span open with its link -->
 <section data-cut class="slide content" data-label="The evidence view">
   <h2 class="slide-title">No new application code</h2>
   <figure class="shot x40-ev-shot hl-marks rise"><img src="assets/shots/jaeger-evidence-approval.png" alt="Jaeger: trace B of an approved claim, rooted at reviewer-ui northstar.review.decision, with its tags (decision approve, reviewer id, reviewer SPIFFE id, wait duration 6.359 s) and one reference, a span in another trace">
@@ -109,39 +109,16 @@
   </div>
 </section>
 
-<!-- 39b · NEW · How the auditor works: eval-scorer's loop, OpenTelemetry in and OpenTelemetry out (platform/eval-scorer/README.md; scorer/emit.py; scorer/opensearch.py TrajectoryTruncated; M4 design spec §5) -->
+<!-- 39b · NEW · How the auditor works: AgentEvals reads the agents' own traces, four code evaluators, grades written back as gen_ai.evaluation.result (deploy/observability/agentevals.yaml; deploy/observability/agentevals/evaluators/) -->
 <section class="slide content" data-label="How the auditor works">
   <h2 class="slide-title">How the auditor works</h2>
   <ol class="x40-loop rise">
-    <li><i>1</i><b>Spans land</b><span>every service &rarr; OTel Collector &rarr; OpenSearch, the same copy Jaeger gets</span></li>
-    <li><i>2</i><b>Read back</b><span><span class="code">POST /score</span> one claim; a truncated trajectory is refused, never scored</span></li>
-    <li><i>3</i><b>Five checks, plain code</b><span>proposed first &middot; stopped when refused &middot; narrated it &middot; amount matches &middot; identity had authority</span></li>
-    <li class="hot"><i>4</i><b>Written back</b><span>one span per score, <span class="code m">gen_ai.evaluation.*</span>, parented into the trace it judged</span></li>
+    <li><i>1</i><b>Spans land</b><span>every service &rarr; OTel Collector &rarr; AgentEvals, a copy of what Jaeger gets</span></li>
+    <li><i>2</i><b>One session per claim</b><span>the claim id is the conversation id; it scores when asked, not on its own</span></li>
+    <li><i>3</i><b>Four checks, plain code</b><span>took a known path &middot; stopped when refused &middot; amount matches proposed &middot; narrative states no amount</span></li>
+    <li class="hot"><i>4</i><b>Written back</b><span>one <span class="code m">gen_ai.evaluation.result</span> event per check, on the agent&rsquo;s own span</span></li>
   </ol>
-  <p class="x40-same rise">OpenTelemetry in, OpenTelemetry out. <span class="muted">No second pipeline, no second store.</span></p>
-</section>
-
-<!-- 40 · NEW · A score that can go to zero (longer-demo beat 6, as a slide): 1.0 vs 0.0 (Fig 9.3) plus jaeger-eval-scores.png -->
-<section data-cut class="slide content" data-label="A score that can go to zero">
-  <div class="beat x40-asslide"><span class="dot"></span>Longer demo &middot; shown as slide</div>
-  <h2 class="slide-title">A score that can go to zero</h2>
-  <div class="x40-sc rise">
-    <div class="x40-pair">
-      <div class="x40-n">
-        <div class="x40-num cmyk-num"><span class="paper">1.0</span><span class="plate plate-c" aria-hidden="true">1.0</span><span class="plate plate-m" aria-hidden="true">1.0</span><span class="plate plate-y" aria-hidden="true">1.0</span></div>
-        <p>compliant run</p>
-      </div>
-      <div class="x40-n">
-        <div class="x40-num cmyk-num"><span class="paper">0.0</span><span class="plate plate-c" aria-hidden="true">0.0</span><span class="plate plate-m" aria-hidden="true">0.0</span><span class="plate plate-y" aria-hidden="true">0.0</span></div>
-        <p class="spot-2">misrouted approval</p>
-      </div>
-      <p class="x40-what"><span class="code m">stopped_when_refused</span></p>
-    </div>
-    <figure class="x40-scshot">
-      <div class="shot"><img src="assets/shots/jaeger-eval-scores.png" alt="Jaeger: five eval-scorer evaluation spans inside the judged trace; stopped_when_refused reads 0, retry-after-refusal"></div>
-      <figcaption class="shot-cap">Each score is a span in the trace it judges. (Captured before M9: the root span now reads <span class="code">northstar.claim.submit</span>.)</figcaption>
-    </figure>
-  </div>
+  <p class="x40-same rise">OpenTelemetry in, OpenTelemetry out. <span class="muted">The agent is never touched.</span></p>
 </section>
 
 <!-- 41 · DID WHAT · "Enter LLM-as-judge", rebuilt as judge vs auditor on one output format (Ch 3 Fig 3.13, Ch 9 "What Northstar does not have") -->
@@ -155,24 +132,23 @@
     </div>
     <div>
       <h3 class="spot-2">&ldquo;Did it follow policy?&rdquo;</h3>
-      <p class="ink-2"><b>The auditor: eval-scorer</b></p>
-      <p class="muted">pure functions over spans; same input, same score; pull-only</p>
+      <p class="ink-2"><b>The auditor: code evaluators</b></p>
+      <p class="muted">plain code over the agent&rsquo;s tool calls; same input, same score; runs when asked</p>
     </div>
   </div>
   <p class="x40-same rise">Same output: <span class="code">gen_ai.evaluation.*</span>, beside the trace it judged</p>
 </section>
 
-<!-- 38c · NEW · one violation, three graders: AgentEvals 0.11.0 per trace (vacuous PASS), AgentEvals grouped by claim (FAIL, caught), eval-scorer following the span link (FAIL, with rule and identity). Measured 2026-10-21 on synthetic Northstar fixtures (scratchpad agentevals-trial/); the live demo now sets gen_ai.conversation.id = claim id, measured the same day (one AgentEvals session per claim); caveats on the face -->
-<section class="slide content" data-label="One violation, three graders">
+<!-- 38c · NEW · grade the claim, not the trace: AgentEvals 0.11.0 per trace (vacuous PASS) against grouped by claim (FAIL, caught). Measured 2026-10-21 on synthetic Northstar fixtures (scratchpad agentevals-trial/); the live demo sets gen_ai.conversation.id = claim id (one AgentEvals session per claim); caveats on the face -->
+<section class="slide content" data-label="Grade the claim, not the trace">
   <h2 class="slide-title">Grade the claim, not the trace</h2>
   <p class="x40-g3-lede rise">The agent was refused, then tried to pay again from a second trace. <span class="muted">Check: <span class="code">stopped_when_refused</span></span></p>
   <div class="x40-g3 rise">
     <div class="r bad"><p class="who">AgentEvals<span>one trace at a time</span></p><p class="saw">sees trace A: refused, stopped. Trace B on its own.</p><p class="v">PASS</p><p class="why">missed it</p></div>
-    <div class="r ok"><p class="who">AgentEvals<span>grouped by claim id &middot; our demo now</span></p><p class="saw">sees both traces as one run</p><p class="v">FAIL</p><p class="why">caught it</p></div>
-    <div class="r ok"><p class="who">our eval-scorer<span>follows the span link</span></p><p class="saw">sees both traces, plus the policy decision and who called</p><p class="v">FAIL</p><p class="why">caught it, named the rule</p></div>
+    <div class="r ok"><p class="who">AgentEvals<span>grouped by claim id &middot; our demo</span></p><p class="saw">sees both traces as one run</p><p class="v">FAIL</p><p class="why">caught it</p></div>
   </div>
   <p class="x40-g3-line rise">A partial trajectory always reads higher. <span class="spot-2">Group by the claim before you grade.</span></p>
-  <p class="x40-g3-cav rise"><i class="ph-duotone ph-warning"></i>The retry is staged: our live agent never retried. The demo sends the claim id as <span class="code">gen_ai.conversation.id</span>, so AgentEvals grades the claim. It still sees agent spans only: no policy decision, no human, no caller.</p>
+  <p class="x40-g3-cav rise"><i class="ph-duotone ph-warning"></i>The retry is staged: our live agent never retried. The demo sends the claim id as <span class="code">gen_ai.conversation.id</span>, so AgentEvals grades the claim. It sees agent spans only: no policy decision, no human, no caller. Those are read in Jaeger.</p>
 </section>
 
 <!-- 41a · NEW · two kinds of checks on the model itself: quality evals and topic guardrails (OpenLIT docs, 2026-10-19); neither is in the demo -->
@@ -201,7 +177,7 @@
     </div>
   </div>
   <p class="x40-two-f rise">Record either one as <span class="code">gen_ai.evaluation.result</span>, beside the trace it judged. <span class="muted">Neither is in the demo.</span></p>
-  <p class="x40-two-up rise"><b>Upstream, today:</b> OpenLIT judges one model call. Agent Health scores runs it starts itself. AgentEvals scores your OTel traces and writes <span class="code">gen_ai.evaluation.result</span> back, but sees only what the agent did, not what the platform decided. So our five policy checks stay ours.</p>
+  <p class="x40-two-up rise"><b>Upstream, today:</b> OpenLIT judges one model call. Agent Health scores runs it starts itself. AgentEvals scores your OTel traces and writes <span class="code">gen_ai.evaluation.result</span> back, but sees only what the agent did, not what the platform decided. So the platform&rsquo;s side is read in the trace, not graded.</p>
 </section>
 
 <!-- 42 · NEW · Content capture, simplified (2026-10-19 "a lot of text"): what survives with capture off, what is lost; the measured counts stay in the note -->
@@ -234,7 +210,7 @@
 <!-- 43 · TAMING · "More Telemetry ≠ Better Telemetry" (p.40), reworked: the 142 vs 139 defect -->
 <section data-cut class="slide hero x-dark" data-label="Never sample the decisions">
   <div class="hero-num cmyk-num rise"><span class="paper">142 vs 139</span><span class="plate plate-c" aria-hidden="true">142 vs 139</span><span class="plate plate-m" aria-hidden="true">142 vs 139</span><span class="plate plate-y" aria-hidden="true">142 vs 139</span></div>
-  <p class="hero-caption x40-hc">Spans in Jaeger vs OpenSearch. The missing three were exactly the decisions. <span class="spot-2">Never sample them.</span></p>
+  <p class="hero-caption x40-hc">Spans in Jaeger vs a second backend. The missing three were exactly the decisions. <span class="spot-2">Never sample them.</span></p>
 </section>
 
 <!-- 44 · NEW · Requirement → artifact, Ch 14's six-row table; walk two rows (Art. 86 / C-203/22 and DORA) -->
@@ -248,7 +224,7 @@
       <tr><td>EU AI Act Art. 14</td><td>Humans can override, reverse, stop</td><td>Reviewer approval via a governed identity; the autonomy contract&rsquo;s refusing resting state</td></tr>
       <tr class="hi"><td><b>1</b>EU AI Act Art. 86; GDPR (C-203/22)</td><td>Per-decision explanation of the procedure actually applied</td><td>Rule name, limit, amount and caller on the decision span; evidence view</td></tr>
       <tr><td>FINRA 2026 report</td><td>Prompt and output logs, model version, agent action tracking, human in the loop</td><td>GenAI spans (capture ON), <span class="code">gen_ai.request.model</span>, gateway spans, <span class="code">northstar.review.decision</span></td></tr>
-      <tr class="hi"><td><b>2</b>DORA RTS Art. 12</td><td>Logging procedures, tamper protection, detect logging failure</td><td>Span-count parity guard between Jaeger and OpenSearch; <span class="spot-2">no tamper protection</span></td></tr>
+      <tr class="hi"><td><b>2</b>DORA RTS Art. 12</td><td>Logging procedures, tamper protection, detect logging failure</td><td>A test asserts nothing samples; <span class="spot-2">no lost-span detection, no tamper protection</span></td></tr>
       <tr><td>ISO/IEC 24970 (FDIS)</td><td>An information model for AI event logs</td><td><span class="spot-2">Nothing yet:</span> the OTel GenAI &rarr; 24970 mapping is unwritten</td></tr>
     </tbody>
   </table>
