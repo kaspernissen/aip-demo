@@ -80,7 +80,7 @@ flowchart TD
 > *The platform API is the resource. Backstage is just the view a human uses
 > to read and change it.*
 
-Stage 7 adds the line that makes that safe to say out loud:
+The keystone adds the line that makes that safe to say out loud:
 
 > *The agent can never edit what constrains it.*
 
@@ -127,14 +127,14 @@ flowchart TD
       a Kubernetes object`"]]
     fd -->|reads| ff
 
-    subgraph humanhop["THE HUMAN HOP · stage 3"]
+    subgraph humanhop["THE HUMAN HOP"]
         hb["`browser · human
       :8081`"] --> ru["`reviewer-ui
       Python`"]
     end
     ru -->|"MCP — execute_payment under its own identity, the same gateway"| gw
 
-    subgraph evidence["THE EVIDENCE PLANE · stage 4"]
+    subgraph evidence["THE EVIDENCE PLANE"]
         svc["every service"] -->|OTLP| col["`OpenTelemetry Collector
       OTLP ingest ONLY — all 10 default
       scrape jobs are disabled`"]
@@ -144,13 +144,13 @@ flowchart TD
       scores the agent's own spans`"]
     end
 
-    subgraph view["THE VIEW · stage 6"]
+    subgraph view["THE VIEW"]
         bs["`Backstage :7007
       catalog, 8 Components
       + the Autonomy contract card`"]
     end
 
-    subgraph keystone["THE KEYSTONE · stage 7"]
+    subgraph keystone["THE KEYSTONE"]
         kv["`Kyverno ValidatingPolicy
       agents-cannot-edit-their-own-authority
       failurePolicy: Fail`"]
@@ -186,13 +186,13 @@ ways** (the longer-slot version), and each one makes a different point:
 <pre class="mermaid">
 flowchart LR
     r(["€6,200 refused"])
-    r -->|"stage 3"| a["`approved by a human on the reviewer UI
+    r -->|"a human"| a["`approved by a human on the reviewer UI
       different **IDENTITY**:
       reviewer-ui, rule human-approved.execute`"]
-    r -->|"stage 5"| b["`contract flipped to autonomous by kubectl
+    r -->|"kubectl"| b["`contract flipped to autonomous by kubectl
       same identity,
       different **LIMIT TABLE ROW**`"]
-    r -->|"stage 6"| c["`contract flipped to autonomous in Backstage
+    r -->|"Backstage"| c["`contract flipped to autonomous in Backstage
       identical to the above —
       and that is the point`"]
 </pre>
@@ -765,7 +765,7 @@ matters; the numbers on screen are the live ones.
 
 ---
 
-### Beat 1 — the refusal · *stage 1–2* · ~3 min
+### Beat 1 — the refusal · ~3 min
 
 **DO** — http://localhost:8080. The form is pre-filled: claim `CLM-1842`,
 policy `POL-77120`, **€6,200**. Click **Submit claim**.
@@ -866,7 +866,7 @@ span for `execute_payment`, and **no** `payments-api` execute span.
 
 ---
 
-### Beat R — the only way in · *stage 7* · ~2 min
+### Beat R — the only way in · ~2 min
 
 The Reach ring has two enforcement points. **Egress** is core NetworkPolicy,
 enforced in the node by kindnet: a workload with no business at the tool cannot
@@ -923,7 +923,7 @@ kubectl get --raw /api/v1/namespaces/northstar-systems/pods/<payments-api-pod>:4
 
 ---
 
-### Beat 4 — the human releases it · *stage 3* · ~5 min
+### Beat 4 — the human releases it · ~5 min
 
 This is step 2 of the flow, taken slowly.
 
@@ -984,7 +984,7 @@ flowchart LR
 
 ---
 
-### Beat 5 — prove why the money moved · *stage 4* · ~2 min
+### Beat 5 — prove why the money moved · ~2 min
 
 **DO**
 
@@ -1011,7 +1011,7 @@ scripts/demo evidence
 
 ---
 
-### Beat 6 — ask what the agent did · *stage 4* · ~3 min
+### Beat 6 — ask what the agent did · ~3 min
 
 ```bash
 scripts/demo evals --quick
@@ -1035,7 +1035,7 @@ scripts/demo evals --quick
 
 ---
 
-### Beat 7 — the golden path · *stage 6* · ~6 min · **THE PUNCHLINE**
+### Beat 7 — the golden path · ~6 min · **THE PUNCHLINE**
 
 **DO** — http://localhost:7007 → **Guest → Enter**.
 
@@ -1121,7 +1121,7 @@ claim again. (Do not use €6,200 here: it is above the `autonomous` limit of
 
 ---
 
-### Beat K — the keystone · *stage 7* · ~4 min
+### Beat K — the keystone · ~4 min
 
 Run this **after** beat 7, with the contract resting at `assisted` (§7 item 1).
 No model call.
