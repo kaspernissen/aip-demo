@@ -25,6 +25,13 @@ export type ClaimResult = {
   /** Set when status is needs_information: the claim fields still missing. */
   missing?: string[];
   error?: string;
+  /** What claims-agent took the claim to be (a free-text claim's draft so far, while it asks). */
+  claim?: {
+    policyNumber?: string | null;
+    estimatedAmount?: number | null;
+    incidentDate?: string | null;
+    description?: string | null;
+  };
 };
 
 /** A claim as the form's fields, or as the customer's own words. */

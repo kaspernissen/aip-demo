@@ -178,6 +178,36 @@ async def test_a_draft_the_validator_rejects_is_never_delegated():
     assert body["question"] == "Roughly how much will the repair cost, in euro?"
 
 
+async def test_the_reply_says_what_claims_agent_took_the_claim_to_be():
+    # Settlement reports the amount it proposed; the reply also carries the
+    # amount the customer claimed, so the two can be compared.
+    handler, _ = _handler({**_executed(), "amount": 4000.0})
+    with intake_agent.override(model=FunctionModel(ScriptedModel(COMPLETE))):
+        _, events = await _file(handler)
+    body = _body(events[-1])
+    assert body["amount"] == 4000.0
+    assert body["claim"] == {"policyNumber": "POL-77120", "estimatedAmount": 5800.0,
+                             "incidentDate": "2026-10-20",
+                             "description": "Reversed into in a car park"}
+
+
+async def test_a_json_claims_reply_carries_the_claim_as_read_with_no_incident_date():
+    handler, _ = _handler()
+    with intake_agent.override(model=FunctionModel(_model_must_not_run)):
+        events = await _stream(handler, _msg(json.dumps(JSON_CLAIM)))
+    assert _body(events[-1])["claim"] == {"policyNumber": "POL-1", "estimatedAmount": 5800.0,
+                                          "incidentDate": None, "description": ""}
+
+
+async def test_a_question_carries_the_draft_so_far():
+    handler, _ = _handler()
+    with intake_agent.override(model=FunctionModel(ScriptedModel(NO_POLICY))):
+        _, events = await _file(handler)
+    assert _body(events[-1])["claim"] == {"policyNumber": None, "estimatedAmount": 5800,
+                                          "incidentDate": "2026-10-20",
+                                          "description": "Reversed into in a car park"}
+
+
 # --- The information wait -----------------------------------------------------
 
 

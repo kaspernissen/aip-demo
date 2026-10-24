@@ -194,6 +194,13 @@ def _kept_draft(draft: dict[str, Any]) -> dict[str, Any]:
     return kept
 
 
+def _claim_as_read(fields: dict[str, Any]) -> dict[str, Any]:
+    """What claims-agent took the claim to be, for the reply: the customer can
+    check it, and a free-text claim's amount can be compared with what
+    settlement proposed. The JSON path has no incident date."""
+    return {key: fields.get(key) for key in DRAFT_FIELDS}
+
+
 def _question(draft: dict[str, Any], missing: list[str]) -> str:
     """The model's question, when it asked about something that is really
     missing; otherwise the code's own question for the first missing field.
@@ -302,6 +309,7 @@ class ClaimsAgentExecutor(AgentExecutor):
             "currency": settlement.get("currency"), "status": settlement.get("status"),
             "narrative": settlement.get("narrative"), "rule": settlement.get("rule"),
             "limit": settlement.get("limit"), "decision": None,
+            "claim": _claim_as_read(claim),
         }
         if reply["status"] == REFUSAL_UNRECORDED:
             reply["narrative"] = UNROUTED_NARRATIVE
@@ -392,7 +400,7 @@ class ClaimsAgentExecutor(AgentExecutor):
             "claimId": claim_id, "policyNumber": kept.get("policyNumber"), "paymentId": None,
             "amount": None, "currency": SETTLEMENT_CURRENCY, "status": NEEDS_INFORMATION,
             "narrative": question, "question": question, "missing": missing,
-            "rule": None, "limit": None, "decision": None,
+            "rule": None, "limit": None, "decision": None, "claim": _claim_as_read(kept),
         }
         logger.info("claim %s: missing %s; asking the customer", claim_id, missing)
         span.set_attribute("northstar.a2a.task.state", TaskState.input_required.value)
