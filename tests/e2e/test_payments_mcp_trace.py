@@ -109,10 +109,12 @@ def executed_call():
 
     deadline = time.time() + 30
     while time.time() < deadline:
+        # The Linkerd proxies between the two export on their own schedule,
+        # so the payments-api span can land before its proxy parents do.
         if any(
             s.service == "payments-api" and "execute" in s.operation
             for s in trace.spans
-        ):
+        ) and not trace.orphans():
             break
         time.sleep(1)
         trace = client.get_trace(trace_id)

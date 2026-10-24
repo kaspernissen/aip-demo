@@ -264,18 +264,19 @@ HAND_OFF_SLACK_US = 2_000_000
 def test_trace_a_is_finished_at_the_hand_off():
     """A claim that waits for a human no longer holds trace A open.
 
-    Read trace A once its policy span is in, again after the batch processors
-    have flushed (the baseline), and a third time 12 s later with nobody having
-    decided: the span count must not move, and no span may start later than the
+    Read trace A once its span count holds steady (the baseline), and again
+    12 s later with nobody having decided: the span count must not move, and no span may start later than the
     `input-required` hand-off span's end plus 2 s. The claim is released after.
     """
     run = _claim(AMOUNT)
     assert run["state"] == "input-required", run
     try:
         client = JaegerClient(JAEGER_URL)
-        client.wait_for_trace_id(run["trace_id"], operation="northstar.policy.decision", timeout=90)
-        time.sleep(8)    # past the slowest export batch (5 s)
-        baseline = client.get_trace(run["trace_id"])
+        # The baseline is the trace once its span count has held steady: the
+        # Linkerd proxies export on their own schedule, later than the SDKs' 5 s batch.
+        baseline = client.wait_for_trace_id(
+            run["trace_id"], operation="northstar.policy.decision", timeout=120,
+            services={"claims-agent", "settlement-agent"})
         time.sleep(12)
         later = client.get_trace(run["trace_id"])
         assert later.span_count == baseline.span_count, (
