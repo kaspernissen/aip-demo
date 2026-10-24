@@ -98,8 +98,8 @@ OVERGRANT = ROOT / "deploy" / "demo" / "keystone-overgrant.yaml"
 REACH_PROBE = ROOT / "scripts" / "reach-probe.py"
 
 JAEGER_API = os.environ.get("JAEGER_URL", "http://localhost:16686")
-# The host URL setup-kind.sh and start-demo.sh print for Jaeger: a kind host
-# port, not a forward. Overridable for a laptop that maps it elsewhere.
+# The host URL setup-kind.sh prints for Jaeger (a kind host port).
+# Overridable for a laptop that maps it elsewhere.
 JAEGER_UI = os.environ.get("JAEGER_UI_URL", "http://localhost:16686")
 
 AGENTS_NS = "northstar-agents"
@@ -135,7 +135,7 @@ PROPOSE_HOP = "POST /payments/propose"
 REFUSE_HOP = "POST /payments/{paymentId}/refuse"
 REJECT_HOP = "POST /payments/{paymentId}/reject"
 
-# AgentEvals (M11): start-demo.sh forwards its UI and REST API here. It holds one
+# AgentEvals: its UI and REST API, on a kind host port. It holds one
 # session per claim (settlement-agent's `gen_ai.conversation.id`), and the
 # code evaluators below live in its pod at /evaluators, from
 # deploy/observability/agentevals/evaluators (tests/unit/test_demo_driver.py
@@ -1024,7 +1024,7 @@ def cmd_keystone(_: argparse.Namespace) -> None:
     if ready != "true":
         raise Fail(
             f"validatingpolicy/{POLICY} is not Ready (got {ready!r}). "
-            "Stage 7 not up? ./scripts/setup-kind.sh --stage 7"
+            "Kyverno not up? ./scripts/preflight.sh says why; ./scripts/setup-kind.sh installs it"
         )
     if overgrant_present():
         raise Fail(

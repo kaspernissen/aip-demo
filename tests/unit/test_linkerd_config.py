@@ -1,49 +1,24 @@
-"""Guards the stage-2 configuration: kind's default CNI stays, Linkerd is
-pinned and installed before any workload, the mesh annotations are where the
-design says, and proxy tracing is on and points at the collector.
+"""Guards the Linkerd configuration: the chart is pinned and installed before
+any workload, the mesh annotations are where the design says, and proxy
+tracing is on and points at the collector.
 
 Every assertion here exists because getting it wrong costs a cluster recreate
-to find out.
-
-Guards over raw script text are easy to make inert: a guard that greps for
-`"linkerd" in text` can pass on a nearby comment alone even after the real
-install behind it is gone. The same risk holds for `str.find` ordering checks
--- an explanatory comment naming a step can satisfy the ordering before the
-real step actually runs -- and for version-pin checks that only ask whether a
-version string appears *somewhere* in a file that mentions it more than once.
-
-Two defences, applied together:
-
-1. **`effective_script()`** (tests/unit/_setup_script.py) strips the shebang
-   and every whole-line comment, so no assertion below can be satisfied by
-   prose.
-2. **Behavioural tests**: `_run_setup_kind` copies the real script into a
-   throwaway tree with fake `kind`/`kubectl`/`docker`/`helm` on `PATH`, runs
-   it, and asserts on *what it actually invoked*.
-
-The YAML guards parse with `yaml.safe_load`, which discards comments before any
-assertion runs.
+to find out. Assertions over `scripts/setup-kind.sh` read the comment-stripped
+script (`effective_script()` in tests/unit/_setup_script.py), so prose cannot
+satisfy them. The YAML guards parse with `yaml.safe_load`, which discards
+comments before any assertion runs.
 """
-import os
 import re
-import shutil
-import stat
 import subprocess
-import sys
 from pathlib import Path
 
-import pytest
 import yaml
 
 from tests.unit._setup_script import effective_script as _effective_script
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-STAGE1 = REPO_ROOT / "deploy" / "kind" / "stage1.yaml"
-STAGE2 = REPO_ROOT / "deploy" / "kind" / "stage2.yaml"
-STAGE3 = REPO_ROOT / "deploy" / "kind" / "stage3.yaml"
 LINKERD_VALUES = REPO_ROOT / "deploy" / "platform" / "linkerd" / "values.yaml"
 LINKERD_CERTS_SCRIPT = REPO_ROOT / "scripts" / "linkerd-certs.sh"
-SETUP_KIND = REPO_ROOT / "scripts" / "setup-kind.sh"
 
 # Read off `helm search repo linkerd-edge --versions` and
 # https://helm.linkerd.io/edge/index.yaml on 2026-10-21: the chart version is
@@ -61,43 +36,8 @@ def _docs(path: Path) -> list:
     return [d for d in yaml.safe_load_all(path.read_text()) if d]
 
 
-# --- The kind configs: the default CNI stays -------------------------------
-
-
-def test_no_kind_config_disables_the_default_cni():
-    """kindnet is what enforces the egress NetworkPolicies (kind >= 0.24).
-    Asserts against `yaml.dump` of the parsed documents, so a comment
-    mentioning the flag cannot trip it either way."""
-    for path in (STAGE1, STAGE2, STAGE3):
-        assert "disableDefaultCNI" not in yaml.dump(_yaml(path)), (
-            f"{path.name} must not disable the default CNI: Cilium is gone, "
-            "and without kindnet nothing enforces NetworkPolicy"
-        )
-
-
-def test_stage2_is_structurally_stage1():
-    """The registry wiring and all three host port mappings must survive
-    byte-for-byte: 8080/16686/4318 are what the host-side tests and the demo
-    talk to. Structural, not textual: it compares parsed documents."""
-    assert _yaml(STAGE2) == _yaml(STAGE1)
-
-
-def test_stage3_is_stage2_plus_exactly_the_reviewer_ui_port():
-    s2, s3 = _yaml(STAGE2), _yaml(STAGE1)
-    s3 = _yaml(STAGE3)
-    ports2 = s2["nodes"][0]["extraPortMappings"]
-    ports3 = s3["nodes"][0]["extraPortMappings"]
-    assert ports3[: len(ports2)] == ports2
-    assert [p["hostPort"] for p in ports3[len(ports2):]] == [8081]
-    s3["nodes"][0]["extraPortMappings"] = ports2
-    assert s3 == s2
-
-
 def test_cilium_values_are_gone():
     assert not (REPO_ROOT / "deploy" / "platform" / "cilium-values.yaml").exists()
-
-
-# --- Pins -------------------------------------------------------------------
 
 
 def test_setup_kind_pins_the_linkerd_chart_version_exactly():
@@ -116,9 +56,6 @@ def test_setup_kind_pins_the_linkerd_chart_version_exactly():
         "chart version; an unpinned `helm install` floats"
     )
     assert "GATEWAY_API_MANIFEST=" in text and "${GATEWAY_API_VERSION}" in text
-
-
-# --- The values: proxy tracing is on ---------------------------------------
 
 
 def test_proxy_tracing_exports_to_the_collector_over_otlp():
@@ -195,44 +132,6 @@ def test_the_certificate_script_makes_p256_cas_with_the_right_constraints(tmp_pa
     assert (out / "issuer.key").read_bytes() == before, "second run must reuse, not rotate"
 
 
-# --- The stage-2 dispatch in setup-kind.sh (text, comment-stripped) --------
-
-
-def test_stage2_uses_the_stage2_kind_config():
-    """Stage 2 must select its config by stage, never hardcode stage1.yaml.
-    Comment-stripped, and
-    `test_stage_two_creates_the_cluster_from_stage2_yaml_when_run` below
-    proves the same thing behaviourally."""
-    text = _effective_script()
-    assert re.search(
-        r'KIND_CONFIG="\$ROOT/deploy/kind/stage\$\{STAGE\}\.yaml"', text
-    ), "the stage-2 path must select its kind config by stage"
-    assert not re.search(r'KIND_CONFIG="[^"]*stage1\.yaml"', text), (
-        "KIND_CONFIG must not be hardcoded to stage1.yaml"
-    )
-    assert 'kind create cluster --config "$KIND_CONFIG"' in text
-
-
-def test_stages_above_the_implemented_one_still_refuse_to_run():
-    """Unimplemented stages must exit rather than silently building the last
-    implemented cluster shape. Comment-stripped, so the threshold cannot be
-    supplied by prose.
-
-    The threshold here must track the stage gate in `setup-kind.sh` exactly:
-    raising the gate without raising this test's expected value reddens this
-    test, which is the intent -- the gate's threshold is a claim about what
-    exists, and it should not be possible to change one without the other.
-    """
-    text = _effective_script()
-    assert re.search(r'"\$\{STAGE\}" -gt 7', text), (
-        "the stage gate must refuse stages above 7; expected an effective "
-        '`"${STAGE}" -gt 7` test'
-    )
-    assert not re.search(r'"\$\{?STAGE\}?" -gt 6', text), (
-        "the stage gate must not refuse stage 7, which is implemented"
-    )
-
-
 def test_linkerd_is_ready_before_any_workload_is_deployed():
     """A pod admitted before the injector webhook is serving comes up WITHOUT
     its proxy and nothing says so. Computed over comment-stripped code, so an
@@ -293,23 +192,10 @@ def test_namespaces_and_pods_are_meshed_where_the_design_says():
     ], offenders
 
 
-def test_no_cilium_survives_in_effective_setup_code_except_the_refusal():
-    """Comment-stripped. The only effective lines that may name Cilium are the
-    existing-cluster check and its two refusal messages."""
-    lines = [l for l in _effective_script().splitlines() if "cilium" in l.lower()]
-    assert lines, "the existing-cluster refusal for a Cilium cluster is gone"
-    for line in lines:
-        assert (
-            "get daemonset cilium" in line
-            or "still runs Cilium" in line
-            or "Until M12" in line
-        ), f"unexpected Cilium reference in effective setup-kind.sh code: {line.strip()}"
-
-
-def test_stage2_creates_the_northstar_platform_namespace():
+def test_setup_creates_the_northstar_platform_namespace():
     """`deploy/k8s/namespaces.yaml` creates four namespaces (observability,
     northstar-agents, northstar-tools, northstar-systems) and no
-    `northstar-platform`, so stage 2 creates it here instead.
+    `northstar-platform`, so setup-kind.sh creates it itself.
 
     Requires the manifest's own `name:` line in comment-stripped code, and
     that it be applied — a comment explaining why the namespace is created
@@ -317,7 +203,7 @@ def test_stage2_creates_the_northstar_platform_namespace():
     """
     text = _effective_script()
     assert re.search(r"^\s*name: northstar-platform\s*$", text, re.MULTILINE), (
-        "stage 2 must create the northstar-platform namespace — "
+        "setup-kind.sh must create the northstar-platform namespace — "
         "deploy/k8s/namespaces.yaml does not — and the manifest's own "
         "`name: northstar-platform` line must be present in effective code, "
         "not only in a comment explaining the intent"
@@ -347,254 +233,7 @@ def test_the_model_key_set_empty_reporting_survives():
     )
 
 
-def test_an_existing_cilium_cluster_is_not_silently_reused_for_stage_2():
-    """A pre-M12 cluster was created with `disableDefaultCNI` and runs Cilium;
-    the flag is create-time, so it cannot be converted and the script must not
-    report success on it. Asserts on the `kubectl ... get daemonset cilium`
-    probe and the `exit 1` that must follow it, in comment-stripped code, and
-    `test_stage_two_refuses_an_existing_cilium_cluster_when_run` proves the
-    behaviour directly."""
-    text = _effective_script()
-    probe = re.search(r"kubectl[^\n]*-n kube-system get daemonset cilium", text)
-    assert probe, "the stage-2 path must probe for Cilium's DaemonSet in effective code"
-    tail = text[probe.end():]
-    assert "exit 1" in tail.split("fi")[0], "detecting Cilium and continuing is the silent-success outcome"
-
-
-# --- Behavioural tests: run the real script with fakes on PATH ------------
-#
-# Stronger than any text assertion, because nothing written in the file --
-# comment, string literal or error message -- can satisfy them. Each builds a
-# throwaway tree containing the real `setup-kind.sh`, runs it with fake
-# `kind`/`kubectl`/`docker`/`helm` ahead of it on PATH, and asserts on what it
-# actually invoked.
-#
-# The fake `kubectl` fails on `cluster-info`, which is the first thing the
-# script does after the cluster-creation step, so every run stops a few lines
-# past the behaviour under test. Nothing here touches a real cluster, a real
-# registry, Docker, the network, or the repo's own `.env`.
-
-FAKES = {
-    # `docker inspect` succeeds and reports the registry as already running, so
-    # the script takes its "already running" branch and never runs a container.
-    "docker": r"""#!/usr/bin/env bash
-echo "docker $*" >> "$FAKE_LOG"
-case "$1" in
-  inspect) echo "true"; exit 0 ;;
-  port)
-    echo "6443/tcp -> 127.0.0.1:41234"
-    echo "30080/tcp -> 0.0.0.0:8080"
-    [[ -z "${FAKE_NO_8081:-}" ]] && echo "30081/tcp -> 0.0.0.0:8081"
-    exit 0 ;;
-esac
-exit 0
-""",
-    "kind": r"""#!/usr/bin/env bash
-echo "kind $*" >> "$FAKE_LOG"
-if [[ "$1 $2" == "get clusters" ]]; then
-  [[ -n "${FAKE_CLUSTER_EXISTS:-}" ]] && echo northstar
-  exit 0
-fi
-if [[ "$1 $2" == "get nodes" ]]; then echo northstar-control-plane; exit 0; fi
-exit 0
-""",
-    "kubectl": r"""#!/usr/bin/env bash
-echo "kubectl $*" >> "$FAKE_LOG"
-for arg in "$@"; do
-  if [[ "$arg" == "cluster-info" ]]; then exit 1; fi
-done
-if [[ "$*" == *"get daemonset cilium"* ]]; then
-  [[ -n "${FAKE_CILIUM_PRESENT:-}" ]] && exit 0
-  exit 1
-fi
-exit 0
-""",
-    "helm": r"""#!/usr/bin/env bash
-echo "helm $*" >> "$FAKE_LOG"
-exit 0
-""",
-}
-
-
-def _run_setup_kind(stage, cluster_exists, cilium_present, tmp_path, host_port_8081=True):
-    """Copy the real script into a throwaway tree and run it against fakes.
-
-    Returns (returncode, combined_output, invocations).
-    """
-    tree = tmp_path / "tree"
-    (tree / "scripts").mkdir(parents=True)
-    (tree / "deploy" / "kind").mkdir(parents=True)
-    (tree / "deploy" / "platform").mkdir(parents=True)
-    shutil.copy2(SETUP_KIND, tree / "scripts" / "setup-kind.sh")
-    shutil.copy2(STAGE1, tree / "deploy" / "kind" / "stage1.yaml")
-    shutil.copy2(STAGE2, tree / "deploy" / "kind" / "stage2.yaml")
-    # stage3.yaml too, for the stage-6 cold-path test below. Copied
-    # unconditionally rather than only when a stage-6 test runs -- it is a
-    # static committed file, and copying it for stages that never read it
-    # costs nothing.
-    shutil.copy2(STAGE3, tree / "deploy" / "kind" / "stage3.yaml")
-    # A fake .env with only the one variable the script requires. The repo's
-    # real .env is never read, and no secret is involved.
-    (tree / ".env").write_text("OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE=fake/collector:0\n")
-
-    bindir = tmp_path / "fakebin"
-    bindir.mkdir()
-    for name, body in FAKES.items():
-        p = bindir / name
-        p.write_text(body)
-        p.chmod(p.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-
-    log = tmp_path / "invocations.log"
-    log.write_text("")
-    env = dict(os.environ)
-    env["PATH"] = f"{bindir}:{env['PATH']}"
-    env["FAKE_LOG"] = str(log)
-    if cluster_exists:
-        env["FAKE_CLUSTER_EXISTS"] = "1"
-    if cilium_present:
-        env["FAKE_CILIUM_PRESENT"] = "1"
-    if not host_port_8081:
-        env["FAKE_NO_8081"] = "1"
-    # Never let a real credential reach the subprocess.
-    env.pop("ANTHROPIC_API_KEY", None)
-    env.pop("DASH0_AUTH_TOKEN", None)
-
-    proc = subprocess.run(
-        ["bash", str(tree / "scripts" / "setup-kind.sh"), "--stage", stage],
-        capture_output=True, text=True, env=env, timeout=120,
-    )
-    return proc.returncode, proc.stdout + proc.stderr, log.read_text().splitlines()
-
-
-pytestmark_bash = pytest.mark.skipif(sys.platform == "win32", reason="bash-only harness")
-
-
-@pytestmark_bash
-def test_stage_two_creates_the_cluster_from_stage2_yaml_when_run(tmp_path):
-    """The behavioural counterpart to `test_stage2_uses_the_stage2_kind_config`,
-    and the one no comment can satisfy: run `--stage 2` with no existing
-    cluster and assert the config `kind create cluster` was actually handed is
-    stage2.yaml."""
-    _, out, calls = _run_setup_kind("2", False, False, tmp_path)
-    creates = [c for c in calls if c.startswith("kind create cluster")]
-    assert creates, f"`kind create cluster` was never invoked; output:\n{out}"
-    assert len(creates) == 1, f"expected one create, got {creates}"
-    config = creates[0].split("--config", 1)[1].strip()
-    assert Path(config).name == "stage2.yaml", (
-        f"`--stage 2` created the cluster from {Path(config).name!r}, not "
-        "stage2.yaml -- each stage selects its own kind config by name"
-    )
-
-
-@pytestmark_bash
-def test_stage_one_creates_the_cluster_from_stage1_yaml_when_run(tmp_path):
-    """The same selection, the other way round: stage 1 must still get
-    stage1.yaml, so the by-stage config lookup is genuinely parameterised
-    rather than hardcoded to whichever file this task cared about."""
-    _, out, calls = _run_setup_kind("1", False, False, tmp_path)
-    creates = [c for c in calls if c.startswith("kind create cluster")]
-    assert creates, f"`kind create cluster` was never invoked; output:\n{out}"
-    config = creates[0].split("--config", 1)[1].strip()
-    assert Path(config).name == "stage1.yaml", (
-        f"`--stage 1` created the cluster from {Path(config).name!r}"
-    )
-
-
-@pytestmark_bash
-def test_stage_six_creates_the_cluster_from_stage3_yaml_when_cold(tmp_path):
-    """Cold-path proof for the one part of `--stage 6` that a warm,
-    already-running cluster cannot exercise: the create-time KIND_CONFIG
-    selection. A warm cluster takes the "cluster already exists, skipping
-    creation" branch, which never re-evaluates KIND_CONFIG at all (the same
-    caveat stage 5's own header in `scripts/setup-kind.sh` states about
-    itself), and with no git remote a cold rebuild is this repo's only
-    recovery path if the real cluster is ever lost.
-
-    Recreating the real cluster to exercise this branch live needs explicit
-    operator permission each time, so this hermetic harness is the
-    substitute: no real cluster, registry, or network is touched, and the
-    assertion is on the literal `kind create cluster --config ...` invocation
-    a genuinely cold `--stage 6` would issue.
-    """
-    _, out, calls = _run_setup_kind("6", False, False, tmp_path)
-    creates = [c for c in calls if c.startswith("kind create cluster")]
-    assert creates, f"`kind create cluster` was never invoked; output:\n{out}"
-    assert len(creates) == 1, f"expected one create, got {creates}"
-    config = creates[0].split("--config", 1)[1].strip()
-    assert Path(config).name == "stage3.yaml", (
-        f"`--stage 6` created the cluster from {Path(config).name!r}, not "
-        "stage3.yaml. There is deliberately no stage6.yaml (Backstage needs "
-        "no new host port, same reasoning stages 4 and 5 already established) "
-        "-- if this reads anything else, a cold "
-        "`--stage 6` either builds the wrong cluster shape or dies at the "
-        "`[[ -f \"$KIND_CONFIG\" ]]` check on a file that does not exist."
-    )
-
-
-@pytestmark_bash
-def test_stage_two_refuses_an_existing_cilium_cluster_when_run(tmp_path):
-    """The behavioural counterpart to
-    `test_an_existing_cilium_cluster_is_not_silently_reused_for_stage_2`: with
-    an existing cluster whose Cilium DaemonSet is present, `--stage 2` must
-    exit non-zero with the delete-and-recreate hint, and must not proceed."""
-    rc, out, calls = _run_setup_kind("2", True, True, tmp_path)
-    assert rc != 0, (
-        "`--stage 2` over an existing Cilium cluster exited 0 -- that cluster "
-        f"was created with disableDefaultCNI and cannot be converted. Output:\n{out}"
-    )
-    assert "still runs Cilium" in out, f"expected the refusal to name the reason; got:\n{out}"
-    assert "kind delete cluster --name northstar" in out, "the refusal must carry the recreate hint"
-    assert not [c for c in calls if c.startswith("kind create cluster")]
-    assert not [c for c in calls if c.startswith("helm upgrade")], (
-        "the script must refuse BEFORE installing anything"
-    )
-
-
-@pytestmark_bash
-def test_stage_two_proceeds_when_the_existing_cluster_has_no_cilium(tmp_path):
-    """The guard must refuse a *Cilium* cluster specifically, not every
-    existing cluster: a stage-1 cluster upgraded to stage 2 has the same CNI
-    and is fine. Same inputs as above except the Cilium probe fails."""
-    _, out, _ = _run_setup_kind("2", True, False, tmp_path)
-    assert "still runs Cilium" not in out, f"the guard fired against a cluster with no Cilium:\n{out}"
-    assert "Cluster already exists, skipping creation." in out
-
-
-@pytestmark_bash
-@pytest.mark.parametrize("stage", ["3", "7"])
-def test_stage_three_plus_refuses_an_existing_cluster_without_host_port_8081(stage, tmp_path):
-    """A stage-1/2 cluster has no 8081 mapping (create-time), so upgrading it to
-    stage >= 3 must refuse with the delete-and-recreate hint, before installing."""
-    rc, out, calls = _run_setup_kind(stage, True, False, tmp_path, host_port_8081=False)
-    assert rc != 0, f"exited 0 over a cluster with no host port 8081. Output:\n{out}"
-    assert "8081" in out and "kind delete cluster --name northstar" in out, out
-    assert not [c for c in calls if c.startswith("kind create cluster")]
-    assert not [c for c in calls if c.startswith("helm upgrade")], (
-        "the script must refuse BEFORE installing anything")
-
-
-@pytestmark_bash
-def test_stage_three_proceeds_when_the_existing_cluster_has_host_port_8081(tmp_path):
-    rc, out, _ = _run_setup_kind("3", True, False, tmp_path, host_port_8081=True)
-    assert "no host port 8081" not in out, out
-    assert "Cluster already exists, skipping creation." in out
-
-
-@pytestmark_bash
-def test_stage_two_does_not_need_host_port_8081(tmp_path):
-    _, out, _ = _run_setup_kind("2", True, False, tmp_path, host_port_8081=False)
-    assert "no host port 8081" not in out, out
-    assert "Cluster already exists, skipping creation." in out
-
-
-@pytestmark_bash
-def test_an_unimplemented_stage_actually_exits_nonzero():
-    """Behavioural, and needs no fakes at all: the stage gate runs before the
-    script loads `.env` or touches anything, so the real script can be invoked
-    directly with no side effects whatsoever."""
-    proc = subprocess.run(
-        ["bash", str(SETUP_KIND), "--stage", "8"],
-        capture_output=True, text=True, cwd=REPO_ROOT, timeout=60,
-    )
-    assert proc.returncode != 0, "stage 8 must not be accepted"
-    assert "not implemented yet" in proc.stdout + proc.stderr
+def test_no_cilium_survives_in_effective_setup_code():
+    """Cilium is gone; kindnet enforces NetworkPolicy and Linkerd meshes."""
+    lines = [l for l in _effective_script().splitlines() if "cilium" in l.lower()]
+    assert not lines, f"unexpected Cilium reference in setup-kind.sh: {lines}"

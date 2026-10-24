@@ -53,112 +53,12 @@ done
   exit 1
 }
 command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1; }
-kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
-  echo -e "${RED}Error: cannot reach the 'kind-northstar' cluster.${NC}" >&2
-  echo "Run ./scripts/setup-kind.sh --stage 7 first." >&2
-  exit 1
-}
-# The gate must PROVE it is running on a stage-7 cluster rather than be told
-# so by a README: tests/e2e/test_keystone.py skips when Kyverno's CRD is absent (a
-# coherently-below-stage-7 cluster), and a skip is invisible in a green gate --
-# the zero-skips check at the end would catch it, but only after ten minutes.
-# Ask the cluster now: the keystone policy must exist and be Ready, and Kyverno's
-# resource webhook must be REGISTERED. The second is not redundant: a graceful
-# stop of the admission controller removes the registration while the policy
-# object stays Ready-looking, and an agent's write then passes (measured).
-[[ "$(kubectl --context kind-northstar get validatingpolicy agents-cannot-edit-their-own-authority -o jsonpath='{.status.conditionStatus.ready}' 2>/dev/null)" == "true" ]] || {
-  echo -e "${RED}Error: validatingpolicy/agents-cannot-edit-their-own-authority is missing or not Ready.${NC}" >&2
-  echo "This cluster is below stage 7, or Kyverno is not up. The gate runs scripts/demo keystone and tests/e2e/test_keystone.py." >&2
-  echo "Run ./scripts/setup-kind.sh --stage 7 first." >&2
-  exit 1
-}
-[[ -n "$(kubectl --context kind-northstar get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg --ignore-not-found -o name 2>/dev/null)" ]] || {
-  echo -e "${RED}Error: Kyverno's resource webhook configuration is not registered, so the keystone is not enforcing.${NC}" >&2
-  echo "Scale deploy/kyverno-admission-controller in the kyverno namespace back to 1 and wait for it." >&2
-  exit 1
-}
-# The e2e/browser assertions below need all five ports up. Four are
-# `kubectl port-forward`s that die after any redeploy and simply need
-# re-establishing; the fifth (reviewer-ui) is normally kept alive by kind's
-# own host-port mapping instead (deploy/kind/stage3.yaml), but the check
-# below asks the same liveness question of it regardless — check for that
-# now, so a stale/missing port fails in a second, not after minutes of test
-# timeouts that look like a broken chain.
-#
-# TWO checks per port, and the second one is the one that matters.
-# `lsof -sTCP:LISTEN` answers "is a socket bound", which is NOT the same
-# question: a `kubectl port-forward` whose target pod has been replaced
-# keeps its listening socket open forever -- measured directly: three of four
-# forwards were dead while `lsof` called all four healthy. `lsof` alone would
-# pass on a set of dead forwards, and the gate would then spend minutes in
-# e2e timeouts — the precise outcome the paragraph above exists to prevent.
-#
-# The liveness check is therefore an actual HTTP request through the forward,
-# which is what `tests/e2e/test_policy_denial.py::_claims_agent_alive` already
-# does and documents ("a dead kubectl port-forward keeps its listening socket,
-# so both lsof and a bare TCP connect report healthy against a forward that
-# will refuse every request"). Any HTTP response counts as alive: this is a
-# liveness probe, not a contract check. `payments-mcp`'s `/mcp` answers `400`
-# to a bare GET with no MCP session, and that is a perfectly good proof that
-# the forward carries a request. What fails is curl not getting an HTTP
-# response at all — refused, reset, empty reply or timeout — which is what a
-# dead forward produces.
-#
-# `lsof` is kept ahead of it only because it separates two operator actions:
-# "start the forward" from "restart the dead forward". Both messages name the
-# command.
-command_exists curl || { echo -e "${RED}curl is required (the port-forward liveness check uses it)${NC}" >&2; exit 1; }
-# port:service:path — the path is any endpoint that answers HTTP without
-# authentication or a session. The two agents serve their A2A agent card; the
-# ledger serves /healthz; payments-mcp answers /mcp with 400 and that is fine.
-#
-# reviewer-ui joins this loop as the fifth port. Unlike the four
-# above (plain ClusterIP Services, each reached only through an ephemeral
-# `kubectl port-forward`), reviewer-ui's own Service is NodePort and
-# deploy/kind/stage3.yaml maps host port 8081 straight to it, so in the
-# ordinary case this finds it already alive without anyone having started a
-# forward for it. The probe asks the same two questions either way, and the
-# remedy line below still names a `kubectl port-forward` as the fallback fix
-# — reaching the Service that way (`kubectl -n northstar-agents port-forward
-# svc/reviewer-ui 8081:8080`) works regardless of whether the NodePort mapping
-# is what's actually missing.
-for probe in \
-  "19001:claims-agent:/.well-known/agent-card.json" \
-  "19002:settlement-agent:/.well-known/agent-card.json" \
-  "18000:payments-mcp:/mcp" \
-  "18080:payments-api:/healthz" \
-  "8081:reviewer-ui:/healthz"; do
-  port="${probe%%:*}"
-  rest="${probe#*:}"
-  name="${rest%%:*}"
-  path="${rest#*:}"
-  lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1 || {
-    echo -e "${RED}Error: nothing is listening on port ${port} (${name}).${NC}" >&2
-    # scripts/start-demo.sh owns every port-forward this demo needs (and
-    # re-verifies each one with this same lsof-then-curl shape), so the
-    # remedy the echo below names is one command, not a line an operator has
-    # to assemble by hand and get right five times. This file still creates
-    # no port-forwards itself; only the remedy text below points at the
-    # script that does.
-    #
-    # A comment must not be able to satisfy a guard: the remedy at the end of
-    # the `curl` branch below also names the script, and
-    # tests/unit/test_stage4_config.py strips whole-line comments and
-    # requires BOTH remedies to name it by their own text, so reverting
-    # either one goes red on its own.
-    echo "Port-forwards die after a redeploy and need re-establishing: ./scripts/start-demo.sh (or re-run ./scripts/setup-kind.sh --stage 7 first if the cluster itself is gone)." >&2
-    exit 1
-  }
-  # -o /dev/null: the body is irrelevant, only whether one arrived.
-  # -m 5: a live forward answers these paths in milliseconds; five seconds is
-  # far past that and still a second per port in the worst case.
-  curl -s -o /dev/null -m 5 "http://localhost:${port}${path}" || {
-    echo -e "${RED}Error: port ${port} (${name}) is LISTENING but carries no request.${NC}" >&2
-    echo "This is a dead kubectl port-forward: its target pod was replaced, the socket stayed bound, and lsof still calls it healthy. Nothing here is broken in the cluster." >&2
-    echo "Re-establish every forward, verified live rather than merely bound: ./scripts/start-demo.sh" >&2
-    exit 1
-  }
-done
+command_exists curl || { echo -e "${RED}curl is required${NC}" >&2; exit 1; }
+# The cluster must be complete before ten minutes of tests start: the keystone
+# armed (tests/e2e/test_keystone.py would otherwise skip, and a skip is
+# invisible until the zero-skips check at the very end) and every localhost URL
+# answering, so a missing UI fails here in seconds rather than as test timeouts.
+"$ROOT/scripts/preflight.sh"
 
 echo ""
 echo -e "${BLUE}--- Step 1/2: Unit tests ---${NC}"
@@ -245,14 +145,13 @@ echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included 
 # beats and before the e2e run, so its report covers exactly the traffic
 # Step 2 drives: every span, metric and log the collector copies to it. The
 # restart is `kubectl rollout restart` plus a wait for Ready, done by the
-# harness, which also opens its own port-forward to read the admin API -- a
-# rollout kills the operator forward on localhost:18400, and this file creates
-# no port-forwards (tests/harness/livecheck.py says why). An unreachable
-# live-check fails the gate.
+# harness, which also opens its own port-forward to read the admin API
+# (tests/harness/livecheck.py says why). An unreachable live-check fails the
+# gate.
 echo -e "${YELLOW}weaver live-check: restarting for an empty report${NC}"
 PYTHONPATH="$ROOT" "$ROOT/.venv/bin/python" -m tests.harness.livecheck restart || {
   echo -e "${RED}Error: weaver live-check is unreachable or did not restart.${NC}" >&2
-  echo "It needs deploy/weaver-live-check in the observability namespace: kubectl -n observability get pods -l app=weaver-live-check (or ./scripts/setup-kind.sh --stage 7)." >&2
+  echo "It needs deploy/weaver-live-check in the observability namespace: kubectl -n observability get pods -l app=weaver-live-check (or re-run ./scripts/setup-kind.sh)." >&2
   exit 1
 }
 # This system's headline claim is that ONE trace spans the browser down
@@ -270,7 +169,7 @@ PYTHONPATH="$ROOT" "$ROOT/.venv/bin/python" -m tests.harness.livecheck restart |
 # A narrower `tests/e2e`-only invocation would silently drop harness coverage
 # the e2e assertions themselves rely on being correct.
 #
-# A skip is invisible in a green gate. The stage-7 refusal above covers
+# A skip is invisible in a green gate. The preflight above covers
 # Kyverno, but the pytest invocation itself carries nothing that fails on a
 # skip, while several modules running inside it hold reachable `pytest.skip`
 # calls on conditions that refusal does not cover (test_egress_policy.py,
@@ -342,7 +241,7 @@ if [[ "$SKIPPED" -ne 0 ]]; then
   echo "A skip inside this gate is invisible in a green run: the gate's" >&2
   echo "assertions simply do not execute and the summary still says 'passed'." >&2
   echo "Every gated module is unskipped here by RUN_BROWSER_TESTS=1, and the" >&2
-  echo "stage-7 refusal above covers the cluster, so a skip means a condition" >&2
+  echo "preflight above covers the cluster, so a skip means a condition" >&2
   echo "nobody accounted for. The skipped tests and their reasons:" >&2
   grep -E "^[^ ]+::[^ ]+ SKIPPED" "$SKIP_LOG" >&2 || true
   echo "" >&2

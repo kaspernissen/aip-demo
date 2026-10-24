@@ -15,7 +15,7 @@ SVIDs, and still verify them -- against `spiffe://example.org/...`. That is a
 system that passes its own tests while proving nothing about this platform.
 
 Design constraints that shape every check below (see
-`tests/unit/test_stage2_linkerd_config.py`'s module docstring for the same
+`tests/unit/test_linkerd_config.py`'s module docstring for the same
 family of guards applied to the cluster bring-up script):
 
 1. **No assertion here can be satisfied by a comment.** Every check either
@@ -61,14 +61,13 @@ says.
 import ast
 import os
 import re
-import shutil
-import stat
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 import yaml
+
+from tests.unit._setup_script import run_setup_kind
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SETUP_KIND = REPO_ROOT / "scripts" / "setup-kind.sh"
@@ -336,37 +335,17 @@ def test_spires_own_prometheus_telemetry_is_enabled_on_both_server_and_agent():
         assert prom.get("podMonitor", {}).get("enabled") is False, (
             f"{chart}.telemetry.prometheus.podMonitor must stay disabled -- it "
             "needs the Prometheus Operator CRD, which this cluster does not "
-            "have (Prometheus is stage 4). The collector scrapes directly."
+            "have. The collector scrapes directly."
         )
 
 
-def test_cert_manager_is_not_installed_below_stage_5():
-    """cert-manager is included in this system only to the extent something
-    actually needs it. The pinned SPIRE chart needs it for nothing this
-    install enables -- the OIDC provider's ingress TLS, spire-server
-    federation TLS, and the `certManager` upstreamAuthority, all off -- so
-    SPIRE's own values must never configure it.
-
-    The Open Feature Operator's webhooks (stage 5+) do need cert-manager for
-    TLS, so `scripts/setup-kind.sh` installs it, pinned
-    (`CERT_MANAGER_VERSION`), inside the `"${STAGE}" -ge 5` block. SPIRE
-    (stage 2+) still needs no certManager-backed feature, and nothing below
-    stage 5 may invoke cert-manager tooling -- installing it a stage early
-    would be a "component installed because a document named it" defect, just
-    at an earlier stage than the one that actually needs it.
-
-    Scoped to *invocations* rather than to any mention of the string, on
-    purpose. `setup-kind.sh --help` says out loud when cert-manager arrives
-    and why, and that sentence is the kind of honest operator text this repo
-    wants to keep; a guard that forbade the word would forbid saying so. The
-    counterpart behavioural check (`test_stage_two_installs_no_cert_manager`)
-    is the one nothing textual can satisfy.
-    """
-    # Walked over the parsed values rather than searched for in the file text.
-    # As a text search this was defeatable in the harmless direction and
-    # trippable in the annoying one: a comment explaining why cert-manager is
-    # not needed would have failed it, which is the same mistake as banning the
-    # word in the script (below).
+def test_spire_configures_no_cert_manager_feature():
+    """The pinned SPIRE chart needs cert-manager for nothing this install
+    enables (the OIDC provider's ingress TLS, federation TLS and the
+    `certManager` upstreamAuthority are all off). cert-manager is in the
+    cluster only for the Open Feature Operator's webhooks, so it is installed,
+    pinned, before that operator and never configured from SPIRE's values.
+    Walked over the parsed values, so a comment cannot trip it."""
     def _cert_manager_keys(node, path="values"):
         if isinstance(node, dict):
             for key, value in node.items():
@@ -384,41 +363,11 @@ def test_cert_manager_is_not_installed_below_stage_5():
     )
 
     text = _effective_script()
-    installs = [
-        line
-        for line in text.splitlines()
-        if re.search(r"cert-?[Mm]anager", line)
-        and re.search(r"\b(helm|kubectl|jetstack)\b", line)
-    ]
-    assert installs, (
-        "setup-kind.sh installs no cert-manager tooling at all -- if that "
-        "install was removed, this guard's other half (SPIRE must configure "
-        "no certManager feature) still applies, but this half should be "
-        "deleted or rewritten rather than trivially satisfied"
-    )
-
-    # Every such line must sit inside the `-ge 5` gate, not merely somewhere
-    # in the file: a stage-5-only feature installed unconditionally would
-    # bring cert-manager to a stage-2/3/4 cluster too, silently.
-    gate = re.search(
-        r'if \[\[ "\$\{STAGE\}" -ge 5 \]\]; then\n(.*?)\nfi\n', text, re.DOTALL
-    )
-    assert gate, (
-        "expected an effective `if [[ \"${STAGE}\" -ge 5 ]]; then ... fi` "
-        "block -- cert-manager's install must be gated behind it"
-    )
-    gated_lines = set(gate.group(1).splitlines())
-    ungated = [line for line in installs if line not in gated_lines]
-    assert not ungated, (
-        "these cert-manager invocations sit outside the `-ge 5` gate, so a "
-        "cluster below stage 5 would install cert-manager too:\n  "
-        + "\n  ".join(line.strip() for line in ungated)
-    )
-
-    assert 'CERT_MANAGER_VERSION="' in text, (
-        "cert-manager's version must be a pinned variable, not a literal "
-        "inlined into the install line -- the same convention every other "
-        "chart/release version in this script follows"
+    assert 'CERT_MANAGER_VERSION="' in text, "cert-manager's version must be a pinned variable"
+    cert_manager = text.find("cert-manager/releases/download/v${CERT_MANAGER_VERSION}")
+    ofo = text.find("upgrade --install openfeature")
+    assert -1 not in (cert_manager, ofo) and cert_manager < ofo, (
+        "cert-manager must be installed (pinned) before the Open Feature Operator, whose webhooks need it"
     )
 
 
@@ -832,7 +781,7 @@ def test_the_gateway_trusts_exactly_the_issuer_spire_is_configured_to_mint():
 
 def test_the_gateway_carries_only_the_reviewed_authorization_mechanism():
     """This gateway's only authorization mechanism is `mcpGuardrails`, checked
-    key by key in `tests/unit/test_stage2_pds_config.py` (including that it is
+    key by key in `tests/unit/test_pds_config.py` (including that it is
     fail-closed). A native `mcpAuthorization` CEL rule, a generic
     `authorization` block or an `extAuthz` hook would each be a second,
     independent place a payment could be permitted or denied -- with no test
@@ -865,7 +814,7 @@ def test_the_gateway_carries_only_the_reviewed_authorization_mechanism():
         offenders.append(f"frontendPolicies: {present}")
     assert not offenders, (
         "this gateway's only authorization mechanism is `mcpGuardrails`, which "
-        "tests/unit/test_stage2_pds_config.py asserts key by key -- including "
+        "tests/unit/test_pds_config.py asserts key by key -- including "
         "that it is fail-closed. Found a second, unasserted one at:\n  "
         + "\n  ".join(offenders)
         + "\nA second place a payment can be permitted is a second place the "
@@ -1021,111 +970,20 @@ def test_setup_kind_uses_the_hardened_charts_repo():
 # --- Behavioural: run the real script against fakes ----------------------
 #
 # Stronger than any text assertion, because nothing written in the file --
-# comment, string literal or echo -- can satisfy these. Each builds a throwaway
-# tree containing the real `setup-kind.sh`, runs it with fake
-# `kind`/`kubectl`/`docker`/`helm` ahead of it on PATH, and asserts on what it
-# actually invoked.
-#
-# These fakes differ from `test_stage2_linkerd_config.py`'s in one deliberate
-# way: `kubectl cluster-info` SUCCEEDS here, so the script runs on past cluster
-# creation and reaches the SPIRE step this module is about. It then dies at
-# Step 9, because `scripts/rebuild-and-deploy.sh` is not copied into the
-# throwaway tree -- which is also what makes the ordering assertion below
-# meaningful: anything logged before the script died necessarily ran before the
-# workloads would have been deployed.
-#
-# Nothing here touches a real cluster, a real registry, Docker, the network, or
-# the repo's own `.env`.
-
-FAKES = {
-    "docker": r"""#!/usr/bin/env bash
-echo "docker $*" >> "$FAKE_LOG"
-case "$1" in
-  inspect) echo "true"; exit 0 ;;
-esac
-exit 0
-""",
-    "kind": r"""#!/usr/bin/env bash
-echo "kind $*" >> "$FAKE_LOG"
-if [[ "$1 $2" == "get clusters" ]]; then exit 0; fi
-if [[ "$1 $2" == "get nodes" ]]; then echo northstar-control-plane; exit 0; fi
-exit 0
-""",
-    # Succeeds on everything, including `cluster-info`, so the script proceeds
-    # to the SPIRE step. The kindnet probe fails (exit 1), i.e. "no default CNI
-    # present", which is the stage-2 path.
-    "kubectl": r"""#!/usr/bin/env bash
-echo "kubectl $*" >> "$FAKE_LOG"
-if [[ "$*" == *"get daemonset kindnet"* ]]; then exit 1; fi
-cat >/dev/null 2>&1 || true
-exit 0
-""",
-    "helm": r"""#!/usr/bin/env bash
-echo "helm $*" >> "$FAKE_LOG"
-exit 0
-""",
-}
-
-_COPIED = [
-    Path("scripts/setup-kind.sh"),
-    Path("scripts/linkerd-certs.sh"),
-    Path("deploy/kind/stage1.yaml"),
-    Path("deploy/kind/stage2.yaml"),
-    Path("deploy/k8s/namespaces.yaml"),
-    Path("deploy/platform/linkerd/values.yaml"),
-    Path("deploy/platform/spire/values.yaml"),
-    Path("deploy/platform/spire/registration.yaml"),
-    Path("deploy/platform/spire/metrics.yaml"),
-    # setup-kind.sh reads the collector config (it strips the stage-4-only
-    # regions below stage 4), so a tree without these files makes
-    # the script die at Step 7 under `set -e` before it ever reaches the SPIRE
-    # step these tests assert on. The ConfigMap creation itself is faked.
-    Path("deploy/observability/collector-config.yaml"),
-    Path("deploy/observability/collector-dash0-overlay.yaml"),
-    Path("deploy/observability/collector.yaml"),
-]
+# comment, string literal or echo -- can satisfy these. The harness
+# (`run_setup_kind` in tests/unit/_setup_script.py) runs the real script with
+# fake tools on PATH. Here `kubectl cluster-info` succeeds, so the script runs
+# past cluster creation and through the SPIRE step, then dies at the first
+# `scripts/rebuild-and-deploy.sh` call (not copied into the throwaway tree):
+# anything logged before that ran before any workload would have been
+# deployed.
 
 
-def _run_setup_kind(stage, tmp_path):
-    """Copy the real script into a throwaway tree and run it against fakes.
-
-    Returns (returncode, combined_output, invocations).
-    """
-    tree = tmp_path / "tree"
-    for relative in _COPIED:
-        destination = tree / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(REPO_ROOT / relative, destination)
-    # A fake .env with only the one variable the script requires. The repo's
-    # real .env is never read, and no secret is involved.
-    (tree / ".env").write_text(
-        "OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE=fake/collector:0\n"
-    )
-
-    bindir = tmp_path / "fakebin"
-    bindir.mkdir()
-    for name, body in FAKES.items():
-        path = bindir / name
-        path.write_text(body)
-        path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-
-    log = tmp_path / "invocations.log"
-    log.write_text("")
-    env = dict(os.environ)
-    env["PATH"] = f"{bindir}:{env['PATH']}"
-    env["FAKE_LOG"] = str(log)
-    # Never let a real credential reach the subprocess.
-    env.pop("ANTHROPIC_API_KEY", None)
-    env.pop("DASH0_AUTH_TOKEN", None)
-
-    proc = subprocess.run(
-        ["bash", str(tree / "scripts" / "setup-kind.sh"), "--stage", stage],
-        capture_output=True, text=True, env=env, timeout=180,
-    )
-    combined = proc.stdout + proc.stderr
-    invocations = log.read_text().splitlines()
-    _write_capture(tmp_path, stage, proc.returncode, combined, invocations)
-    return proc.returncode, combined, invocations
+def _run_setup_kind(tmp_path):
+    """Run the real script against fakes. Returns (returncode, output, calls)."""
+    rc, combined, invocations = run_setup_kind(tmp_path, cluster_info_ok=True)
+    _write_capture(tmp_path, rc, combined, invocations)
+    return rc, combined, invocations
 
 
 def _capture_path(tmp_path):
@@ -1135,10 +993,10 @@ def _capture_path(tmp_path):
     return tmp_path / "setup-kind-capture.txt"
 
 
-def _write_capture(tmp_path, stage, returncode, combined, invocations):
+def _write_capture(tmp_path, returncode, combined, invocations):
     """Persist the sandboxed run's whole output next to the test that caused it.
 
-    `test_stage_two_installs_spire_with_the_pinned_versions_and_values` can
+    `test_setup_installs_spire_with_the_pinned_versions_and_values` can
     fail intermittently, and its assertion message already interpolates this
     script's entire captured output -- but a failing run's scrollback is easy
     to lose if the only record kept is the line number, and the natural
@@ -1162,7 +1020,7 @@ def _write_capture(tmp_path, stage, returncode, combined, invocations):
     """
     try:
         _capture_path(tmp_path).write_text(
-            f"# scripts/setup-kind.sh --stage {stage}, sandboxed harness\n"
+            "# scripts/setup-kind.sh, sandboxed harness\n"
             f"# returncode: {returncode}\n"
             f"# {len(invocations)} faked tool invocations\n"
             "\n--- invocations (docker/kind/kubectl/helm, in order) ---\n"
@@ -1196,12 +1054,12 @@ def _helm_installs(calls):
 
 
 @_bash_only
-def test_stage_two_installs_the_crds_chart_before_the_spire_chart(tmp_path):
+def test_setup_installs_the_crds_chart_before_the_spire_chart(tmp_path):
     """The ordering the chart itself requires: `spiffe/spire` on its own fails
     on the missing spire.spiffe.io CRDs, which its own bundled
     spire-controller-manager needs before it can reconcile a single
     ClusterSPIFFEID. Proven by what the script invoked, not by reading it."""
-    _, out, calls = _run_setup_kind("2", tmp_path)
+    _, out, calls = _run_setup_kind(tmp_path)
     installs = _helm_installs(calls)
     crds = [i for i, c in enumerate(installs) if "spiffe/spire-crds" in c]
     spire = [
@@ -1226,7 +1084,7 @@ def test_stage_two_installs_the_crds_chart_before_the_spire_chart(tmp_path):
 
 
 @_bash_only
-def test_stage_two_installs_spire_with_the_pinned_versions_and_values(tmp_path):
+def test_setup_installs_spire_with_the_pinned_versions_and_values(tmp_path):
     """Pins reach `helm` as arguments, not merely as shell variables.
 
     Checks **every** matching invocation rather than the first. `next(...)` was
@@ -1235,7 +1093,7 @@ def test_stage_two_installs_spire_with_the_pinned_versions_and_values(tmp_path):
     that actually determined the installed version, and the assertion would
     have been about the earlier one.
     """
-    _, out, calls = _run_setup_kind("2", tmp_path)
+    _, out, calls = _run_setup_kind(tmp_path)
     installs = _helm_installs(calls)
     crds = [c for c in installs if "spiffe/spire-crds" in c]
     spire = [c for c in installs if "spiffe/spire " in c and "spire-crds" not in c]
@@ -1266,7 +1124,7 @@ def test_spire_is_installed_before_the_workloads_that_mount_its_socket(tmp_path)
     workloads would wedge settlement-agent and block the script on `rollout
     status`. The behavioural proof is that the script died at Step 9 with the
     SPIRE install already logged."""
-    rc, out, calls = _run_setup_kind("2", tmp_path)
+    rc, out, calls = _run_setup_kind(tmp_path)
     assert rc != 0, (
         "this harness expects the run to stop at Step 9 (rebuild-and-deploy.sh "
         f"is not copied into the throwaway tree); it exited 0 instead:\n{out}"
@@ -1281,37 +1139,8 @@ def test_spire_is_installed_before_the_workloads_that_mount_its_socket(tmp_path)
     assert any("spiffe/spire" in c for c in _helm_installs(calls))
     applies = [c for c in calls if c.startswith("kubectl") and "registration.yaml" in c]
     assert applies, (
-        "the registration entries must be applied as part of the stage-2 "
+        "the registration entries must be applied as part of the SPIRE "
         f"install; kubectl was invoked as:\n" + "\n".join(
             c for c in calls if c.startswith("kubectl")
         )
-    )
-
-
-@_bash_only
-def test_stage_two_installs_no_cert_manager(tmp_path):
-    """The behavioural half of `test_cert_manager_is_not_installed_below_stage_5`.
-
-    That one reads the script and so could in principle be satisfied by
-    something textual; this one asserts on what the script actually invoked,
-    which nothing written in a comment or a `--help` heredoc can supply.
-    """
-    _, out, calls = _run_setup_kind("2", tmp_path)
-    offenders = [c for c in calls if re.search(r"cert-?manager|jetstack", c)]
-    assert not offenders, (
-        "`--stage 2` invoked cert-manager tooling:\n"
-        + "\n".join(offenders)
-        + f"\n{out}"
-    )
-
-
-@_bash_only
-def test_stage_one_installs_no_spire_at_all(tmp_path):
-    """Stage 1 must stay bring-up-able without any of this: the whole point of
-    the stage profiling is that a laptop runs exactly one stage's worth of
-    components."""
-    _, out, calls = _run_setup_kind("1", tmp_path)
-    spire_calls = [c for c in calls if "spiffe" in c or "spire" in c]
-    assert not spire_calls, (
-        f"`--stage 1` touched SPIRE:\n" + "\n".join(spire_calls) + f"\n{out}"
     )

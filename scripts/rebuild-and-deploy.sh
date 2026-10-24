@@ -32,9 +32,7 @@ command_exists docker || { echo -e "${RED}docker is required${NC}" >&2; exit 1; 
 command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1; }
 
 if ! docker ps --format '{{.Names}}' | grep -qx kind-registry; then
-  # Points at the current stage, so an operator who lost the registry rebuilds
-  # a cluster with everything this repo now needs, rather than an older one.
-  echo -e "${RED}kind-registry is not running. Run scripts/setup-kind.sh --stage 7 first.${NC}" >&2
+  echo -e "${RED}kind-registry is not running. Run scripts/setup-kind.sh first.${NC}" >&2
   exit 1
 fi
 
@@ -43,18 +41,8 @@ fi
 # this repo has no bash 4+ available, so the map is an indexed array of
 # "name:context:namespace" triples instead. Append new components here.
 #
-# policy-decision-service is registered here rather than applied by hand so
-# it is rebuilt exactly like the others: a component outside this list is a
-# component that silently keeps running last week's image after someone
-# edits its source, and this one's source is the policy.
-#
-# It is a STAGE 2 component (northstar-platform does not exist at stage 1),
-# which is why scripts/setup-kind.sh names it inside a `STAGE -ge 2` block
-# rather than adding it to the stage-1 list at Step 9. A bare
-# `./scripts/rebuild-and-deploy.sh` with no arguments does still build it: this
-# script has no notion of stages and never has, and against a stage-1 cluster
-# this component's apply would fail on the missing namespace exactly as
-# agentgateway's ConfigMap would.
+# Every component is rebuilt from source through this list: a component outside
+# it would silently keep running whichever image was pushed last.
 COMPONENTS=(
   "payments-api:systems/payments-api:northstar-systems"
   "payments-mcp:tools/payments-mcp:northstar-tools"
@@ -62,30 +50,7 @@ COMPONENTS=(
   "claims-agent:agents/claims-agent:northstar-agents"
   "customer-ui:apps/customer-ui:northstar-agents"
   "policy-decision-service:platform/policy-decision-service:northstar-platform"
-  # reviewer-ui: a genuinely new image built from its own apps/reviewer-ui
-  # context, so it belongs in this list the same way
-  # policy-decision-service's own addition comment argues: a component
-  # outside this list keeps running whatever image happened to be pushed
-  # last, silently.
   "reviewer-ui:apps/reviewer-ui:northstar-agents"
-  # Backstage. Registered here for the same reason policy-decision-service's
-  # own addition comment argues -- a component outside this list keeps running
-  # whatever image happened to be pushed last, silently, and this one's source
-  # is the platform-API view over the rest of this system.
-  #
-  # It is a STAGE 6 component (the catalog it serves reads
-  # `contracts/agent-cards/` and the seven component directories baked into
-  # its own image, none of which exist below stage 6 in any meaningful sense),
-  # which is why scripts/setup-kind.sh names it inside a `STAGE -ge 6` block
-  # rather than adding it to the stage-1 list. A bare
-  # `./scripts/rebuild-and-deploy.sh` with no arguments does still build it
-  # (this script has no notion of stages and never has), and against a
-  # stage-1..5 cluster this component's apply would fail on the missing
-  # `northstar-platform` namespace exactly as policy-decision-service's would
-  # -- except `northstar-platform` exists from stage 2 on, so in practice it
-  # would simply come up two stages before the catalog it is meant to serve
-  # has anything real in it. That is a cosmetic gap, not a functional one:
-  # nothing here reads a catalog-info.yaml file that does not yet exist.
   "backstage:platform/backstage:northstar-platform"
 )
 

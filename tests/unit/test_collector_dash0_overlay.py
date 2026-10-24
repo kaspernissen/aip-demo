@@ -3,21 +3,17 @@
 setup-kind.sh passes `collector-dash0-overlay.yaml` as a second `--config`
 after `collector-config.yaml`. The collector merges maps and replaces lists, so
 the overlay restates each pipeline's exporter list. This checks the merged
-result, at stage 4+ and with the stage-4-only regions stripped.
+result.
 """
 from __future__ import annotations
 
-import re
-import subprocess
 from pathlib import Path
 
-import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE = REPO_ROOT / "deploy" / "observability" / "collector-config.yaml"
 OVERLAY = REPO_ROOT / "deploy" / "observability" / "collector-dash0-overlay.yaml"
-SETUP_KIND = REPO_ROOT / "scripts" / "setup-kind.sh"
 DASH0 = "otlp_grpc/dash0"
 
 
@@ -31,19 +27,13 @@ def _merge(base, overlay):
     return overlay
 
 
-def _load(path: Path, strip: bool) -> dict:
-    if not strip:
-        return yaml.safe_load(path.read_text())
-    expression = re.search(r"^STAGE4_ONLY_STRIP='([^']+)'$", SETUP_KIND.read_text(), re.M).group(1)
-    return yaml.safe_load(
-        subprocess.run(["sed", expression, str(path)], capture_output=True, text=True, check=True).stdout
-    )
+def _load(path: Path) -> dict:
+    return yaml.safe_load(path.read_text())
 
 
-@pytest.mark.parametrize("strip", [False, True], ids=["stage-4+", "below-stage-4"])
-def test_the_overlay_adds_dash0_to_every_pipeline_and_nothing_else(strip):
-    base = _load(BASE, strip)
-    merged = _merge(base, _load(OVERLAY, strip))
+def test_the_overlay_adds_dash0_to_every_pipeline_and_nothing_else():
+    base = _load(BASE)
+    merged = _merge(base, _load(OVERLAY))
     base_pipelines = base["service"]["pipelines"]
     merged_pipelines = merged["service"]["pipelines"]
     assert merged_pipelines.keys() == base_pipelines.keys()

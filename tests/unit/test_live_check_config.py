@@ -7,7 +7,6 @@ asserted by tests/e2e/test_registry_live_check.py against the running cluster.
 from __future__ import annotations
 
 import re
-import subprocess
 import tomllib
 from pathlib import Path
 
@@ -91,21 +90,6 @@ def test_every_pipeline_sends_the_weaver_copy_and_none_samples_it(config):
         assert not any("sampl" in p for p in pipeline.get("processors", [])), pipeline
 
 
-@pytest.mark.parametrize("config", COLLECTOR_CONFIGS, ids=lambda p: p.name)
-def test_below_stage_4_the_weaver_exporter_is_stripped(config):
-    """A pre-stage-4 cluster has no live-check pod; the collector must not name it."""
-    setup = SETUP_KIND.read_text()
-    expression = re.search(r"^STAGE4_ONLY_STRIP='([^']+)'$", setup, re.MULTILINE).group(1)
-    stripped = subprocess.run(
-        ["sed", expression, str(config)], capture_output=True, text=True, check=True
-    ).stdout
-    assert "weaver" not in stripped.lower()
-    parsed = yaml.safe_load(stripped)
-    for pipeline in parsed["service"]["pipelines"].values():
-        for exporter in pipeline["exporters"]:
-            assert exporter in parsed["exporters"], exporter
-
-
 def test_the_manifest_pins_weaver_and_probes_the_admin_port():
     docs = list(yaml.safe_load_all(MANIFEST.read_text()))
     deployment = next(d for d in docs if d["kind"] == "Deployment")
@@ -120,7 +104,7 @@ def test_the_manifest_pins_weaver_and_probes_the_admin_port():
     assert {p["port"] for p in service["spec"]["ports"]} == {4317, 4320}
 
 
-def test_setup_kind_builds_both_configmaps_from_the_repo_at_stage_4_and_up():
+def test_setup_kind_builds_both_configmaps_from_the_repo():
     setup = "\n".join(
         l for l in SETUP_KIND.read_text().splitlines() if not l.lstrip().startswith("#")
     )
@@ -276,7 +260,7 @@ def test_legacy_span_names_is_empty_for_a_clean_report():
 
 def test_the_weaver_limit_covers_a_measured_idle_day_between_recycles():
     """Idle growth was measured at about 220 MiB/hour (see the manifest comment);
-    the pod is recycled at every start-demo and every gate, so the limit must
+    the pod is recycled at every setup-kind run and every gate, so the limit must
     cover well over the 8 hours of a demo day, not the old 768Mi (about 3.5 h)."""
     deployment = next(d for d in yaml.safe_load_all(MANIFEST.read_text()) if d["kind"] == "Deployment")
     limit = deployment["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"]["memory"]

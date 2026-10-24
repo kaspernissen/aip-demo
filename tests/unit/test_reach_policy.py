@@ -933,11 +933,3 @@ def test_setup_applies_the_reach_directory_after_the_namespaces_exist():
     )
     # Linkerd's CRDs must be installed before the Servers can apply.
     assert script.index("linkerd-control-plane") < apply.start()
-
-
-def test_the_reach_apply_is_gated_on_stage_two():
-    script = _effective_script()
-    apply_at = re.search(r"apply[^\n]*deploy/platform/reach", script).start()
-    guard = script.rfind('if [[ "${STAGE}" -ge 2 ]]', 0, apply_at)
-    assert guard != -1
-    assert "\nfi\n" not in script[guard:apply_at], "the apply escaped its stage-2 block"

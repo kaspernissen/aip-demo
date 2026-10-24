@@ -1,7 +1,7 @@
 """No unit test may export telemetry to a real endpoint.
 
 Nothing here builds an exporter today, but an OTLP exporter defaults to
-localhost:4318, which during a demo is a port-forward to the live collector.
+localhost:4318, which is a kind host port onto the live collector.
 Each unit test runs with the exporters off and the OTLP endpoint pointed at a
 closed local port. Scoped to tests/unit: the e2e tests export to the cluster
 on purpose.

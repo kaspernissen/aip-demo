@@ -4,7 +4,7 @@
 identity cannot change the objects that define its own authority. Everything
 here parses the YAML (`yaml.safe_load`), so no assertion can be satisfied by a
 comment; the behavioural proof that Kyverno actually refuses is
-`tests/e2e/test_keystone.py`, which needs the live stage-7 cluster.
+`tests/e2e/test_keystone.py`, which needs the live cluster.
 
 Why these particular properties, each of which is a way the ring quietly stops
 being one:
@@ -34,7 +34,7 @@ POLICY = REPO_ROOT / "deploy" / "platform" / "kyverno" / "keystone-policy.yaml"
 LINKERD_GROUP = "policy.linkerd.io"
 OVERGRANT = REPO_ROOT / "deploy" / "demo" / "keystone-overgrant.yaml"
 SETUP_KIND = REPO_ROOT / "scripts" / "setup-kind.sh"
-START_DEMO = REPO_ROOT / "scripts" / "start-demo.sh"
+PREFLIGHT = REPO_ROOT / "scripts" / "preflight.sh"
 
 
 def _policy() -> dict:
@@ -295,14 +295,16 @@ def test_kyverno_can_read_every_kind_the_policy_matches_or_it_never_becomes_read
         )
 
 
-def test_start_demos_preflight_checks_the_overgrant_is_absent():
-    effective = _effective(START_DEMO)
+def test_the_preflight_checks_the_policy_is_ready_and_the_overgrant_is_absent():
+    effective = _effective(PREFLIGHT)
+    assert "validatingpolicy/agents-cannot-edit-their-own-authority" in effective
+    assert "conditionStatus.ready" in effective
     assert "keystone-demo-overgrant" in effective
 
 
-def test_start_demos_preflight_also_asks_for_the_webhook_registration_and_endpoints():
+def test_the_preflight_also_asks_for_the_webhook_registration_and_endpoints():
     """Measured: a graceful stop of Kyverno deletes its webhook configs and the
     keystone goes fail-open while the policy object still says Ready."""
-    effective = _effective(START_DEMO)
+    effective = _effective(PREFLIGHT)
     assert "kyverno-resource-validating-webhook-cfg" in effective
     assert "kubernetes.io/service-name=kyverno-svc" in effective

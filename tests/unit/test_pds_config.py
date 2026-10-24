@@ -98,7 +98,7 @@ def _gateway_config() -> dict:
 def _all_routes() -> list[tuple[str, dict]]:
     """Every route across every bind and every listener, with a path to each.
 
-    Deliberately duplicated from `test_stage2_spire_config.py` rather than
+    Deliberately duplicated from `test_spire_config.py` rather than
     imported: that module's copy exists to enumerate *authentication*, and
     coupling the authorization guards to it would mean a future edit made for
     one could silently change the enumeration unit of the other.
@@ -733,7 +733,7 @@ def test_the_pds_is_a_registered_rebuildable_component():
     )
 
 
-def test_stage_two_deploys_the_pds_before_the_gateway_that_calls_it():
+def test_setup_deploys_the_pds_before_the_gateway_that_calls_it():
     """Ordering, over the comment-stripped script so a comment explaining the
     ordering cannot satisfy it.
 
@@ -758,7 +758,7 @@ def test_stage_two_deploys_the_pds_before_the_gateway_that_calls_it():
         if "rebuild-and-deploy.sh" in line and APP in line
     ]
     assert invocations, (
-        "setup-kind.sh --stage 2 must hand policy-decision-service to "
+        "setup-kind.sh must hand policy-decision-service to "
         "scripts/rebuild-and-deploy.sh; the gateway is fail-closed and "
         "refuses every payment without a PDS. (An echo naming the component "
         "does not count and is not looked at.)"
@@ -769,14 +769,12 @@ def test_stage_two_deploys_the_pds_before_the_gateway_that_calls_it():
     assert pds < gateway, (
         "the PDS must be deployed before the gateway that calls it"
     )
-    preceding = script[:pds]
-    assert '"${STAGE}" -ge 2' in preceding, (
-        "the PDS deploy must sit inside a stage-2 guard: northstar-platform "
-        "does not exist at stage 1, so the apply would fail the whole script"
+    assert script.find("name: northstar-platform") < pds, (
+        "northstar-platform must exist before the PDS is deployed into it"
     )
 
 
-def test_stage_two_restarts_the_gateway_after_updating_its_configmap():
+def test_setup_restarts_the_gateway_after_updating_its_configmap():
     """The failure this prevents looks exactly like success.
 
     This config is mounted as a volume and agentgateway reads it once at
