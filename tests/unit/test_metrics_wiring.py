@@ -44,7 +44,6 @@ SETUP_KIND = REPO_ROOT / "scripts/setup-kind.sh"
 PROMETHEUS_VALUES = REPO_ROOT / "deploy/observability/prometheus/values.yaml"
 COLLECTOR_CONFIGS = [
     REPO_ROOT / "deploy/observability/collector-config.yaml",
-    REPO_ROOT / "deploy/observability/collector-config-dash0.yaml",
 ]
 
 # Every Python service that gets a MeterProvider, and the module that installs
@@ -151,10 +150,9 @@ def test_the_five_copies_of_the_metrics_wiring_have_not_drifted():
     and that sentence is only honest if the code they point at is the code they
     run.
 
-    This is the same argument `tests/unit/test_collector_configs_in_sync.py`
-    makes for the two collector configs: a near-identical block copied N times
-    is a block that drifts in N-1 of them, and a guard that diffs them is a
-    better fix than a one-time correction.
+    A near-identical block copied N times is a block that drifts in N-1 of
+    them, and a guard that diffs them is a better fix than a one-time
+    correction.
     """
     bodies = {}
     for service, path in sorted(METRICS_BOOTSTRAPS.items()):

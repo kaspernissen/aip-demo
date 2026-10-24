@@ -1,0 +1,47 @@
+# Dash0, as an overlay on collector-config.yaml. scripts/setup-kind.sh passes
+# it as a second `--config` when DASH0_AUTH_TOKEN is set; the endpoint and
+# credentials come from the optional dash0-secrets Secret
+# (deploy/observability/collector.yaml).
+#
+# The collector merges the two files: maps merge, lists are replaced. So each
+# pipeline's exporter list is restated in full here, as collector-config.yaml's
+# list plus `otlp_grpc/dash0`. Change both files together;
+# tests/unit/test_collector_dash0_overlay.py checks that they agree.
+#
+# Dash0 is on the main traces pipeline, which renames no attribute, so it gets
+# the same names Jaeger does.
+exporters:
+  otlp_grpc/dash0:
+    endpoint: ${env:DASH0_GRPC_HOSTNAME}:${env:DASH0_GRPC_PORT}
+    headers:
+      Authorization: "Bearer ${env:DASH0_AUTH_TOKEN}"
+      Dash0-Dataset: "${env:DASH0_DATASET}"
+
+service:
+  pipelines:
+    traces:
+      exporters:
+        - otlp_grpc/jaeger
+        # BEGIN stage-4-only
+        - forward/opensearch
+        - otlp_grpc/weaver
+        - otlp_http/agentevals
+        # END stage-4-only
+        - otlp_grpc/dash0
+        - debug
+    metrics:
+      exporters:
+        # BEGIN stage-4-only
+        - otlp_http/prometheus
+        - otlp_grpc/weaver
+        # END stage-4-only
+        - otlp_grpc/dash0
+        - debug
+    logs:
+      exporters:
+        # BEGIN stage-4-only
+        - opensearch/logs
+        - otlp_grpc/weaver
+        # END stage-4-only
+        - otlp_grpc/dash0
+        - debug

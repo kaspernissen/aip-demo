@@ -496,9 +496,13 @@ fi
 
 echo -e "${BLUE}Step 7/9: Installing observability backbone...${NC}"
 COLLECTOR_CONFIG="$ROOT/deploy/observability/collector-config.yaml"
+DASH0_OVERLAY="$ROOT/deploy/observability/collector-dash0-overlay.yaml"
+# The collector's args: the base config, plus the Dash0 overlay as a second
+# `--config` (the collector merges the two) only when DASH0_AUTH_TOKEN is set.
+COLLECTOR_ARGS='"--config=/conf/collector-config.yaml"'
 if [[ -n "${DASH0_AUTH_TOKEN:-}" ]]; then
   echo -e "${GREEN}DASH0_AUTH_TOKEN present: enabling the Dash0 exporter alongside Jaeger.${NC}"
-  COLLECTOR_CONFIG="$ROOT/deploy/observability/collector-config-dash0.yaml"
+  COLLECTOR_ARGS="${COLLECTOR_ARGS}, \"--config=/conf/collector-dash0-overlay.yaml\""
   kubectl create secret generic dash0-secrets \
     --namespace observability \
     --from-literal=dash0-authorization-token="$DASH0_AUTH_TOKEN" \
@@ -522,7 +526,8 @@ fi
 # repo exists to avoid.
 #
 # The rule is one line of sed and one marker convention, not a YAML rewriter:
-# every region of both collector configs that is stage-4-only is bracketed by
+# every region of the collector config and its Dash0 overlay that is
+# stage-4-only is bracketed by
 # `# BEGIN stage-4-only` / `# END stage-4-only`. Two backends share the
 # convention, and it is named after the stage rather than after either one
 # for exactly that reason:
@@ -533,8 +538,7 @@ fi
 #   * metrics -- the `otlp_http/prometheus` exporter and its entry in the
 #     metrics pipeline's exporter list.
 # Both entries are why those exporter lists are written one-per-line. Deleting
-# the bracketed regions yields the exact below-stage-4 config -- verified by
-# round-tripping both files through PyYAML.
+# the bracketed regions yields the exact below-stage-4 config.
 #
 # tests/unit/test_stage4_config.py runs this same sed program (it reads the
 # expression out of this file, so the two cannot drift) and asserts, per
@@ -546,6 +550,7 @@ fi
 # turns the next third region into a red test instead of a stale sentence.
 STAGE4_ONLY_STRIP='/^[[:space:]]*# BEGIN stage-4-only$/,/^[[:space:]]*# END stage-4-only$/d'
 COLLECTOR_CONFIG_APPLIED="$COLLECTOR_CONFIG"
+DASH0_OVERLAY_APPLIED="$DASH0_OVERLAY"
 if [[ "${STAGE}" -lt 4 ]]; then
   # `.XXXXXX`, not a bare prefix. BSD/macOS `mktemp -t` appends its own
   # random suffix to whatever prefix it is given, so a bare `collector-config`
@@ -555,14 +560,17 @@ if [[ "${STAGE}" -lt 4 ]]; then
   # explicit template works on both, at no cost even though this repo is
   # macOS-only today (it documents bash 3.2 and no `declare -A`).
   COLLECTOR_CONFIG_APPLIED="$(mktemp -t collector-config.XXXXXX)"
-  trap 'rm -f "$COLLECTOR_CONFIG_APPLIED"' EXIT
+  DASH0_OVERLAY_APPLIED="$(mktemp -t collector-dash0-overlay.XXXXXX)"
+  trap 'rm -f "$COLLECTOR_CONFIG_APPLIED" "$DASH0_OVERLAY_APPLIED"' EXIT
   sed "$STAGE4_ONLY_STRIP" "$COLLECTOR_CONFIG" > "$COLLECTOR_CONFIG_APPLIED"
+  sed "$STAGE4_ONLY_STRIP" "$DASH0_OVERLAY" > "$DASH0_OVERLAY_APPLIED"
   echo -e "${YELLOW}Stage ${STAGE}: dropping every stage-4-only region from the collector config -- the OpenSearch trace branch, the Prometheus metrics exporter, the Weaver live-check copy and the AgentEvals copy (all four backends are installed at stage 4 only).${NC}"
 fi
 
 kubectl create configmap otel-collector-config \
   --namespace observability \
   --from-file=collector-config.yaml="$COLLECTOR_CONFIG_APPLIED" \
+  --from-file=collector-dash0-overlay.yaml="$DASH0_OVERLAY_APPLIED" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Weaver live-check (M9) is applied BEFORE the collector, at stage 4 and up, the
@@ -613,7 +621,8 @@ kubectl apply -f "$ROOT/deploy/observability/jaeger.yaml"
 # does not reach a running pod: restart it. Jaeger is in-memory, so this also
 # starts a rebuild with an empty trace store.
 kubectl -n observability rollout restart deployment/jaeger
-kubectl apply -f "$ROOT/deploy/observability/collector.yaml"
+sed "s|args: \[\"--config=/conf/collector-config.yaml\"\]|args: [${COLLECTOR_ARGS}]|" \
+  "$ROOT/deploy/observability/collector.yaml" | kubectl apply -f -
 # The manifest's `image:` literal is a documented default; the deployed image genuinely
 # derives from OPENTELEMETRY_COLLECTOR_CONTAINER_IMAGE (.env), not the literal.
 kubectl -n observability set image deployment/otel-collector \

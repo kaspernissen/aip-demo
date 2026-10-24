@@ -22,7 +22,6 @@ MANIFEST = REPO_ROOT / "deploy" / "observability" / "weaver-live-check.yaml"
 SETUP_KIND = REPO_ROOT / "scripts" / "setup-kind.sh"
 COLLECTOR_CONFIGS = [
     REPO_ROOT / "deploy" / "observability" / "collector-config.yaml",
-    REPO_ROOT / "deploy" / "observability" / "collector-config-dash0.yaml",
 ]
 
 

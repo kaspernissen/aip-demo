@@ -82,7 +82,6 @@ SVID_MODULE = REPO_ROOT / "agents" / "settlement-agent" / "svid.py"
 MCP_TOOLS_MODULE = REPO_ROOT / "agents" / "settlement-agent" / "mcp_tools.py"
 COLLECTOR_CONFIGS = (
     REPO_ROOT / "deploy" / "observability" / "collector-config.yaml",
-    REPO_ROOT / "deploy" / "observability" / "collector-config-dash0.yaml",
 )
 # Resolved from `helm search repo spiffe/spire --versions` against the HARDENED
 # charts repo, and cross-checked against that repo's upstream releases API
@@ -923,10 +922,9 @@ def test_both_collector_configs_scrape_spires_metrics_services():
     them; if those two files stop agreeing, the scrape silently returns
     nothing.
 
-    Both collector configs are checked, because `setup-kind.sh` picks one
-    wholesale depending on whether a Dash0 token is present -- editing one is
-    the drift `test_collector_configs_in_sync.py` exists for, and this is the
-    same class of check one level down.
+    The Dash0 overlay leaves receivers alone
+    (tests/unit/test_collector_dash0_overlay.py), so the base config is the
+    one to check.
 
     Every port of every Service is enumerated, not `ports[0]`: a Service may
     declare several, and with first-port-only indexing a second port would be
@@ -1083,7 +1081,8 @@ _COPIED = [
     # the script die at Step 7 under `set -e` before it ever reaches the SPIRE
     # step these tests assert on. The ConfigMap creation itself is faked.
     Path("deploy/observability/collector-config.yaml"),
-    Path("deploy/observability/collector-config-dash0.yaml"),
+    Path("deploy/observability/collector-dash0-overlay.yaml"),
+    Path("deploy/observability/collector.yaml"),
 ]
 
 

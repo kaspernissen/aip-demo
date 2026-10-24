@@ -58,7 +58,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SETUP_KIND = REPO_ROOT / "scripts/setup-kind.sh"
 COLLECTOR_CONFIGS = [
     REPO_ROOT / "deploy/observability/collector-config.yaml",
-    REPO_ROOT / "deploy/observability/collector-config-dash0.yaml",
 ]
 PDS_TELEMETRY = REPO_ROOT / "platform/policy-decision-service/pds/telemetry.py"
 

@@ -267,116 +267,43 @@ not a network call our code happened to make.
 
 ## Export destinations: Jaeger, OpenSearch and Dash0, and they are not symmetric
 
-This has been live and correct since before M1.2 started, and was previously
-undocumented — recorded here rather than changed, because nothing about it
-needed changing. `scripts/setup-kind.sh`'s "Step 7/9: Installing observability
-backbone" switches the collector's own config on whether `DASH0_AUTH_TOKEN` is
-present (this used to cite "around line 159" as well; M2.1 Task 1 inserted the
-Cilium install above it and moved that line, so the fragile line number is
-dropped in favour of the step label, which is stable):
-
-```bash
-if [[ -n "${DASH0_AUTH_TOKEN:-}" ]]; then
-  COLLECTOR_CONFIG="$ROOT/deploy/observability/collector-config-dash0.yaml"
-  # ...creates dash0-secrets, then the collector loads this config...
-else
-  # exports to Jaeger only — the vendor-neutral default
-fi
-```
-
-Read directly from `deploy/observability/collector-config-dash0.yaml`'s own
-pipeline definitions, re-read after M4 Task 1 changed them — **the pipelines
-are not symmetric**:
+The collector runs `deploy/observability/collector-config.yaml`. When
+`DASH0_AUTH_TOKEN` is set, `scripts/setup-kind.sh` also passes
+`deploy/observability/collector-dash0-overlay.yaml` as a second `--config`.
+The collector merges the two: the overlay declares `otlp_grpc/dash0` and
+restates each main pipeline's exporter list with it added
+(`tests/unit/test_collector_dash0_overlay.py` checks the merged result).
+The pipelines, read from those two files:
 
 | Pipeline | Exporters |
 |---|---|
-| `traces` | `otlp_grpc/jaeger`, `forward/opensearch`, `otlp_grpc/weaver` (stage 4 only), `otlp_http/agentevals` (stage 4 only), `otlp_grpc/dash0`, `debug` |
+| `traces` | `otlp_grpc/jaeger`, `forward/opensearch` (stage 4 only), `otlp_grpc/weaver` (stage 4 only), `otlp_http/agentevals` (stage 4 only), `otlp_grpc/dash0` (with the overlay), `debug` |
 | `traces/opensearch` (stage 4 only) | `opensearch/trace` |
-| `metrics` | `otlp_http/prometheus` (stage 4 only), `otlp_grpc/weaver` (stage 4 only), `otlp_grpc/dash0`, `debug` |
-| `logs` | `opensearch/logs` (stage 4 only), `otlp_grpc/weaver` (stage 4 only), `otlp_grpc/dash0`, `debug` |
+| `metrics` | `otlp_http/prometheus` (stage 4 only), `otlp_grpc/weaver` (stage 4 only), `otlp_grpc/dash0` (with the overlay), `debug` |
+| `logs` | `opensearch/logs` (stage 4 only), `otlp_grpc/weaver` (stage 4 only), `otlp_grpc/dash0` (with the overlay), `debug` |
 
 **Traces go to Jaeger, OpenSearch and Dash0; metrics go to Prometheus and
-Dash0; logs go to OpenSearch and Dash0.** Every signal also goes, as a copy and never a sample, to
-Weaver live-check (`otlp_grpc/weaver`), which checks it against the registry
-(M9). Jaeger is a traces-only backend by design, so
-it was never a candidate for the other two signals — this is not an oversight,
-it is what "traces to a vendor-neutral OSS backend, everything else to whichever
-vendor is configured" looks like when the OSS backend genuinely can't carry
-metrics or logs. Prometheus and OpenSearch are the vendor-neutral OSS backends
-for the two signals Jaeger cannot take — Prometheus for metrics (added at M4
-Task 2), OpenSearch for logs (added at M5 Task 4, alongside the trace branch
-M4 Task 1 already gave it) — both stage-4 only; below stage 4 the `metrics`
-row is `otlp_grpc/dash0`, `debug` again and the `logs` row is likewise
-`otlp_grpc/dash0`, `debug` alone, because `scripts/setup-kind.sh` strips the
-stage-4-only region and a collector must not name a backend its cluster does
-not have (ruling M4-R8).
+Dash0; logs go to OpenSearch and Dash0.** Every signal also goes, as a copy
+and never a sample, to Weaver live-check (`otlp_grpc/weaver`), which checks it
+against the registry. Jaeger takes traces only. Below stage 4,
+`scripts/setup-kind.sh` strips every region of both files bracketed by
+`# BEGIN stage-4-only` / `# END stage-4-only`, because a collector must not
+name a backend its cluster does not have.
 
-**The metrics row read `otlp_grpc/dash0`, `debug` and this paragraph read
-"metrics and logs go to Dash0 only" until M4 Task 2**, which is the second time
-this exact table has been falsified by a change to the file it claims to be read
-from — review finding F4 recorded the first, one task earlier. The lesson stands
-where it was written: "read directly from" is a provenance claim, and it decays
-the moment the file it names changes. **Dash0 is still strictly richer than the
-on-stage Jaeger view**: anyone looking at Dash0 sees the same traces plus
-metrics and logs that never reach Jaeger at all.
+**Three things about the OpenSearch branch a reader needs:**
 
-**2026-09-15, whole-branch review C1: the `logs` row read `otlp_grpc/dash0`,
-`debug` and this section concluded "logs go to Dash0 only" until this fix
-wave**, which is the **third** time this exact table has been falsified by a
-change to the file it claims to be read from — the two paragraphs above
-record the first and second. M5 Task 4 added `opensearch/logs` to the logs
-pipeline in both collector configs
-(`deploy/observability/collector-config-dash0.yaml:203-213` and
-`deploy/observability/collector-config.yaml`'s equivalent pipeline), and the
-table went unfixed for the rest of the milestone: this document's own
-`:228-230` (also Task 4's) already said the record reaches OpenSearch, and
-`README.md` agreed, so the table contradicted the rest of its own file the
-whole time. Per the standing rule, correcting the row a third time is not
-enough — **the guard below derives this table from the two collector configs
-themselves**, so a fourth recurrence reddens a test instead of waiting for a
-fourth review to find it by reading.
-
-**This table said "Traces: `otlp_grpc/jaeger`, `otlp_grpc/dash0`, `debug`" and
-concluded "Traces go to both Jaeger and Dash0" until M4 Task 1's fix round.**
-That was true until M4 Task 1 added the OpenSearch branch to this very file,
-in the same commit that edited this document for the test counts — review
-finding F4, and the reason it is worth recording rather than silently
-correcting: "read directly from" is a provenance claim, and it decays the
-moment the file it names changes.
-
-**Three things about the OpenSearch branch a reader needs, none of them
-symmetric with the others:**
-
-* It is **stage 4 only**. `scripts/setup-kind.sh` strips every region of both
-  collector configs bracketed by `# BEGIN stage-4-only` / `# END
-  stage-4-only` when `--stage` is below 4, because OpenSearch is installed
-  only at stage 4 and a collector exporting to a backend that does not exist
-  fails permanently and silently (review finding F10, ruling M4-R8).
-* It is a **tee, not a fourth backend on the main pipeline**. The table above
-  does list `forward/opensearch` among the `traces` pipeline's exporters, and
-  that is not a contradiction: a connector is *declared* in an exporter list
-  and is not a destination. It hands the main `traces` pipeline's output to
-  the second pipeline, which is what stops the OpenSearch branch drifting from
-  what Jaeger and Dash0 receive. (This bullet read "not a fourth *exporter*"
-  until M4 Task 1's second fix round, which contradicted the table thirty
-  lines above it — re-review finding N8.)
+* It is **stage 4 only** (see above).
+* It is a **tee, not a fourth backend on the main pipeline**. `forward/opensearch`
+  is a connector: it is declared in the `traces` exporter list but hands the
+  main pipeline's output to the second pipeline, so the OpenSearch branch
+  cannot drift from what Jaeger and Dash0 receive.
 * It is the **only** place in this system where an attribute is renamed in
   flight. `traces/opensearch` runs `attributes/opensearch-compat`, which
-  rewrites Kyverno's `admission.request.kind.{group,kind,version}` for
-  OpenSearch only. OpenSearch expands dotted keys into nested objects at
-  index time, so a document carrying both `admission.request.kind` (a string)
-  and `admission.request.kind.group` would need one key to be a scalar and an
-  object at once; it answers `can't merge a non object mapping ... with an
-  object mapping` and rejects the
-  document permanently. Until M9 the same processor also rewrote our own
-  `policy.decision.retryable` to `policy.decision_retryable`, because that key
-  was a dotted prefix of `policy.decision`'s. The registry rename made the
-  collision impossible (`northstar.policy.retryable` is a sibling of
-  `northstar.policy.decision`, not a child) and the rewrite is gone. Jaeger and Dash0 export upstream of the tee and keep
-  the canonical name this document defines. See "The policy decision, as
-  measured (M2.2) — Gap 3, closed" for the attribute itself, and
-  `tests/e2e/test_opensearch_trace_ingest.py` for the guard that asserts both
-  halves against the live cluster.
+  rewrites Kyverno's `admission.request.kind.{group,kind,version}` and
+  agentgateway's `error.type` for OpenSearch only: OpenSearch expands dotted
+  keys into nested objects and rejects a document that needs a key to be a
+  scalar and an object at once. Jaeger and Dash0 export upstream of the tee
+  and keep the canonical names.
 
 Verified live, not inferred, 2026-09-08: `dash0-secrets` present with all
 four keys; the collector pod carries all four `DASH0_*` env vars; the
