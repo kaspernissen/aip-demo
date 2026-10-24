@@ -565,8 +565,15 @@ EGRESS = [
     ("claims-agent", "customer-ui", 8080, None, "allow"),
     ("claims-agent", "otel-collector", 4318, None, "allow"),
     ("claims-agent", "linkerd-control-plane", 8086, None, "allow"),
-    ("claims-agent", None, 443, ANTHROPIC_HOST, "drop"),
+    # The intake model: claims-agent reaches the model provider's range, and
+    # nothing else on the internet.
+    ("claims-agent", None, 443, ANTHROPIC_HOST, "allow"),
+    ("claims-agent", None, 443, OTHER_ANTHROPIC_HOST, "allow"),
+    ("claims-agent", None, 443, "2607:6bc0::10", "allow"),
     ("claims-agent", None, 443, EXAMPLE_COM, "drop"),
+    ("claims-agent", None, 443, "160.79.106.1", "drop"),
+    ("claims-agent", None, 80, ANTHROPIC_HOST, "drop"),
+    ("claims-agent", None, 443, "2607:6bc1::10", "drop"),
     ("claims-agent", "payments-mcp", 8000, None, "drop"),  # direct bypass of the gateway
     ("claims-agent", "agentgateway", 3000, None, "drop"),
     ("claims-agent", "reviewer-ui", 8080, None, "drop"),
@@ -856,12 +863,21 @@ def test_the_collector_entry_matches_its_manifest():
                         "namespace": entry.namespace}
 
 
-def test_only_settlement_agent_may_reach_the_model_provider():
+MODEL_AGENTS = {"settlement-agent", "claims-agent"}
+
+
+def test_only_the_two_model_agents_may_reach_the_model_provider():
     for src in WORKLOADS:
         if WORKLOADS[src].namespace != "northstar-agents" or src not in EGRESS_SOURCES:
             continue
         outcome = egress_outcome(src, port=443, ip=ANTHROPIC_HOST)
-        assert outcome == ("allow" if src == "settlement-agent" else "drop"), src
+        assert outcome == ("allow" if src in MODEL_AGENTS else "drop"), src
+
+
+@pytest.mark.parametrize("src", sorted(MODEL_AGENTS))
+def test_a_model_agent_reaches_nothing_else_on_the_internet(src):
+    for ip in (EXAMPLE_COM, "1.1.1.1", "8.8.8.8", "160.79.106.1", "2607:6bc1::10"):
+        assert egress_outcome(src, port=443, ip=ip) == "drop", (src, ip)
 
 
 def test_the_anthropic_ranges_are_exactly_the_published_ones_on_443_only():
@@ -872,8 +888,8 @@ def test_the_anthropic_ranges_are_exactly_the_published_ones_on_443_only():
                 if "ipBlock" in peer:
                     blocks.append((p["metadata"]["name"], peer["ipBlock"]["cidr"], rule["ports"]))
                     assert not peer["ipBlock"].get("except")
-    assert sorted(b[1] for b in blocks) == sorted([ANTHROPIC_V4, ANTHROPIC_V6])
-    assert {b[0] for b in blocks} == {"settlement-agent-egress"}
+    assert sorted(b[1] for b in blocks) == sorted([ANTHROPIC_V4, ANTHROPIC_V6] * 2)
+    assert {b[0] for b in blocks} == {"settlement-agent-egress", "claims-agent-egress"}
     for _, _, ports in blocks:
         assert ports == [{"protocol": "TCP", "port": 443}]
 

@@ -83,6 +83,28 @@ spec:
               value: /app/agent-card.json
             - name: PORT
               value: "9001"
+            # The intake model: a claim that arrives as free text, not as a
+            # JSON object, is read into a draft by this model (extraction.py
+            # reads this variable, with the same literal as its default). A
+            # JSON claim never reaches it.
+            - name: NORTHSTAR_CLAIMS_MODEL
+              value: "anthropic:claude-sonnet-5"
+            # Prompt/completion capture, as on settlement-agent: bootstrap.py
+            # reads this (ON if unset). With it on, the intake's chat span
+            # carries the customer's own description of the claim. See
+            # docs/telemetry-contract.md, "Content capture".
+            - name: NORTHSTAR_CAPTURE_CONTENT
+              value: "true"
+            # The same Secret settlement-agent reads, created by
+            # scripts/setup-kind.sh from .env. Optional for the same reason:
+            # with no key the pod starts and JSON claims work; only a free-text
+            # claim fails, on the task, with the credential error in `error`.
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: northstar-model
+                  key: ANTHROPIC_API_KEY
+                  optional: true
           ports:
             - name: http
               containerPort: 9001

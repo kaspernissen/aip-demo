@@ -62,18 +62,18 @@
 # governs what may reach a port).
 #
 # WHAT THIS DOES NOT CLAIM. NetworkPolicy enforces reachability, not intent:
-# settlement-agent may still reach the model provider, because that is where
-# its own model call goes. The "gateway as the only path" clause is discharged
-# for *tools* (payments-mcp:8000 and the PDS:9100 are absent from every
-# allowlist, so the only route to a tool is agentgateway:3000), and for the
-# model provider as "one workload, not the namespace".
+# settlement-agent and claims-agent may still reach the model provider, because
+# that is where their own model calls go. The "gateway as the only path" clause
+# is discharged for *tools* (payments-mcp:8000 and the PDS:9100 are absent from
+# every allowlist, so the only route to a tool is agentgateway:3000), and for the
+# model provider as "the two agents that call a model, not the namespace".
 #
 # Enforcement is kind's. The objects are portable; a production cluster needs a
 # CNI that enforces NetworkPolicy. The refusal is a kernel drop: a pod's
 # connect times out and no counter records it.
 ---
-# Document 1 of 4: settlement-agent. The only workload in the cluster permitted
-# to reach the model provider, and the reason the requirement exists.
+# Document 1 of 4: settlement-agent. One of the two workloads permitted to reach
+# the model provider (claims-agent, document 2, is the other).
 #
 # Inventory, from deploy/k8s/settlement-agent.yaml and agents/settlement-agent/:
 # DNS; agentgateway:3000 (PAYMENTS_MCP_URL, the gateway being the only way to a
@@ -187,10 +187,11 @@ spec:
 ---
 # Document 2 of 4: claims-agent.
 #
-# The workload that makes the requirement's own sentence true: measured under
-# Cilium it reached api.anthropic.com:443. It holds no API key
-# (deploy/k8s/claims-agent.yaml sets no ANTHROPIC_API_KEY and no model
-# variable) and makes no model call, so it gets NO external reachability at all.
+# claims-agent calls a model to read a claim the customer wrote as free text
+# (extraction.py; NORTHSTAR_CLAIMS_MODEL and ANTHROPIC_API_KEY in
+# deploy/k8s/claims-agent.yaml). A claim sent as a JSON object never reaches the
+# model. So it gets exactly settlement-agent's model rule (rule 7) and no other
+# external reachability.
 #
 # Inventory, from its manifest and source: DNS; the one A2A peer it delegates to
 # (NORTHSTAR_ALLOWED_AGENTS: settlement-agent:9002); payments-api:8080 for one
@@ -199,7 +200,8 @@ spec:
 # ingress, where only claims-agent's identity on the read route is admitted);
 # the collector; customer-ui:8080 for the M10 push (claims-agent checks the URL
 # against an exact allowlist in push.py, and customer-ui's Server admits only
-# claims-agent on POST /a2a/push); the Linkerd control plane. There is no
+# claims-agent on POST /a2a/push); the Linkerd control plane; the model
+# provider, by the same address range as settlement-agent's. There is no
 # Kubernetes API client, no gateway call and no tool call anywhere in
 # agents/claims-agent/. In particular it has no route to payments-mcp:8000,
 # so the direct bypass of the gateway is closed from both ends.
@@ -303,6 +305,17 @@ spec:
           port: 8086
         - protocol: TCP
           port: 8090
+    # 7. The model provider, by address range, for the intake model. Copied from
+    # settlement-agent-egress rule 5; see there for where the range comes from
+    # and what it does and does not narrow.
+    - to:
+        - ipBlock:
+            cidr: 160.79.104.0/23
+        - ipBlock:
+            cidr: 2607:6bc0::/48
+      ports:
+        - protocol: TCP
+          port: 443
 ---
 # Document 3 of 4: customer-ui.
 #
