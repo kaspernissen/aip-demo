@@ -370,3 +370,21 @@ pre:empty::before {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ── how the claim is entered, and the answer to a question ── */
+.modes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.mode {
+  font: inherit;
+  font-size: .875rem;
+  padding: 6px 12px;
+  border: 1px solid var(--blue-200);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--navy-700);
+  cursor: pointer;
+}
+.mode.is-active { background: var(--blue-050); border-color: var(--blue-600); font-weight: 600; }
+.mode:disabled { cursor: progress; opacity: .7; }
+.field textarea.story { min-height: 9rem; }
+.fineprint.wide { grid-column: 1 / -1; margin: 0; font-size: .8125rem; }
+.answer { margin-top: 16px; }

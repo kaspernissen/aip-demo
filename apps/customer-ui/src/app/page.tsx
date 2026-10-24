@@ -1,9 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SpanStatusCode, context, trace, type SpanContext } from "@opentelemetry/api";
-import { awaitOutcome, getPushConfig, streamClaim, type Claim, type ClaimResult } from "../a2a";
-import { determinationView, formatElapsed, outcomeWord } from "../view";
+import { SpanStatusCode, context, trace, type Span, type SpanContext } from "@opentelemetry/api";
+import {
+  awaitOutcome,
+  getPushConfig,
+  streamClaim,
+  streamReply,
+  type Claim,
+  type ClaimInput,
+  type ClaimResult,
+  type TaskSnapshot,
+} from "../a2a";
+import { determinationView, formatElapsed, outcomeWord, questionOf } from "../view";
 import { getTracer, initTelemetry } from "../telemetry";
 
 const CLAIMS_AGENT_URL =
@@ -16,8 +25,30 @@ const DEFAULT_CLAIM: Claim = {
   estimatedAmount: 6200,
 };
 
+const DEFAULT_STORY =
+  "Someone reversed into my car in a car park yesterday. The rear bumper and a " +
+  "parking sensor need replacing; the garage quoted 1,450 euro. My policy is POL-77120.";
+
+/** How the claim is entered: the structured form, or the customer's own words. */
+type Mode = "form" | "text";
+
+/** A claim waiting for the customer's answer to the agent's question. */
+type Asking = {
+  taskId: string;
+  contextId: string;
+  token: string;
+  question: string;
+  claimId: string;
+  // The span of the round that asked: the answer's trace links back to it.
+  askedIn: SpanContext;
+};
+
 export default function Page() {
+  const [mode, setMode] = useState<Mode>("form");
   const [claim, setClaim] = useState<Claim>(DEFAULT_CLAIM);
+  const [story, setStory] = useState(DEFAULT_STORY);
+  const [asking, setAsking] = useState<Asking | null>(null);
+  const [answer, setAnswer] = useState("");
   // The amount is held as TEXT, not as a number, and parsed once at submit.
   //
   // Holding it as `value={claim.estimatedAmount}` against
@@ -42,22 +73,72 @@ export default function Page() {
     initTelemetry();
   }, []);
 
+  /**
+   * What to do once a stream (the claim's, or an answer's) has ended. Shared
+   * by both, because an answer can end exactly as a claim can: decided,
+   * waiting for a reviewer, or asking again.
+   */
+  function afterStream(snap: TaskSnapshot, span: Span, token: string): { taskId: string; context: SpanContext; token: string; claimId: string } | null {
+    if (snap.result) setResult(snap.result);
+    const claimId = snap.result?.claimId ?? "";
+    const question = questionOf(snap.state, snap.result);
+    if (question !== null) {
+      setAsking({
+        taskId: snap.taskId,
+        contextId: snap.contextId,
+        token,
+        question,
+        claimId,
+        askedIn: span.spanContext(),
+      });
+      setAnswer("");
+      setLog((entries) => [...entries, `Northstar asks: ${question}`]);
+      return null;
+    }
+    setAsking(null);
+    if (snap.state === "input-required") {
+      setWaitingSince(Date.now());
+      setLog((entries) => [...entries, "Waiting for a person to decide"]);
+      return { taskId: snap.taskId, context: span.spanContext(), token, claimId };
+    }
+    setLog((entries) => [...entries, `Claim ${outcomeWord(snap.result?.status, snap.state)}`]);
+    return null;
+  }
+
+  /** The claim's id and policy number go on the span once a snapshot names them. */
+  function nameClaim(span: Span, s: TaskSnapshot) {
+    if (s.result?.claimId) span.setAttribute("northstar.claim.id", s.result.claimId);
+    if (s.result?.policyNumber) span.setAttribute("northstar.claim.policy_number", s.result.policyNumber);
+  }
+
+  function failed(span: Span, error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    span.setStatus({ code: SpanStatusCode.ERROR, message });
+    setLog((entries) => [...entries, `Failed: ${message}`]);
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
     setResult(null);
-    setLog([`Submitting ${claim.claimId}…`]);
+    setAsking(null);
 
-    const submitted: Claim = { ...claim, estimatedAmount: Number(amountText) };
+    const submitted: ClaimInput =
+      mode === "text" ? story : { ...claim, estimatedAmount: Number(amountText) };
+    setLog([typeof submitted === "string" ? "Submitting your claim…" : `Submitting ${submitted.claimId}…`]);
 
     // The browser owns the root span. Everything downstream is its child.
     // startActiveSpan returns the callback's value, so awaiting it awaits the
     // whole submission. This span (trace A) ends when the claim stream first
     // returns: either the claim is decided, or it is waiting for a person.
-    let waiting: { taskId: string; context: SpanContext; token: string } | null = null;
+    let waiting: { taskId: string; context: SpanContext; token: string; claimId: string } | null = null;
     await getTracer().startActiveSpan("northstar.claim.submit", async (span) => {
-      span.setAttribute("northstar.claim.id", submitted.claimId);
-      span.setAttribute("northstar.claim.policy_number", submitted.policyNumber);
+      // A form claim names itself. A free-text claim gets its id from
+      // claims-agent, so the span is named when the first snapshot says it.
+      if (typeof submitted !== "string") {
+        span.setAttribute("northstar.claim.id", submitted.claimId);
+        span.setAttribute("northstar.claim.policy_number", submitted.policyNumber);
+      }
       try {
         // This server's own origin: it issues the push token and relays the push.
         const uiBase = window.location.origin;
@@ -65,61 +146,86 @@ export default function Page() {
         // The await above dropped the active context (Zone.js); re-enter this
         // span's so streamClaim's traceparent is trace A's, not nothing.
         const snap = await context.with(trace.setSpan(context.active(), span), () =>
-          streamClaim(CLAIMS_AGENT_URL, submitted, (s) => s.result && setResult(s.result), push),
+          streamClaim(CLAIMS_AGENT_URL, submitted, (s) => {
+            if (s.result) setResult(s.result);
+            if (typeof submitted === "string") nameClaim(span, s);
+          }, push),
         );
-        if (snap.result) setResult(snap.result);
-        if (snap.state === "input-required") {
-          waiting = { taskId: snap.taskId, context: span.spanContext(), token: push.token };
-          setWaitingSince(Date.now());
-          setLog((entries) => [...entries, "Waiting for a person to decide"]);
-        } else {
-          setLog((entries) => [...entries, `Claim ${outcomeWord(snap.result?.status, snap.state)}`]);
-        }
+        waiting = afterStream(snap, span, push.token);
       } catch (error) {
-        span.setStatus({
-          code: SpanStatusCode.ERROR,
-          message: error instanceof Error ? error.message : String(error),
-        });
-        setLog((entries) => [
-          ...entries,
-          `Failed: ${error instanceof Error ? error.message : String(error)}`,
-        ]);
+        failed(span, error);
       } finally {
         span.end();
       }
     });
 
-    // The wait is a second root span, its own trace, LINKED to the first, because the
-    // human decides minutes later and trace A has long since ended. The wait is
-    // one read of this server's events stream, fed by the claims-agent's push:
-    // no polling.
-    if (waiting) {
-      const { taskId, context: submitContext, token } = waiting as { taskId: string; context: SpanContext; token: string };
-      await getTracer().startActiveSpan(
-        "northstar.claim.wait",
-        { links: [{ context: submitContext }], attributes: { "northstar.claim.id": submitted.claimId } },
-        async (wait) => {
-          try {
-            const final = await awaitOutcome(
-              CLAIMS_AGENT_URL,
-              window.location.origin,
-              taskId,
-              token,
-              (s) => s.result && setResult(s.result),
-            );
-            if (final.result) setResult(final.result);
-            setLog((entries) => [...entries, `Claim ${outcomeWord(final.result?.status, final.state)}`]);
-          } catch (error) {
-            wait.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
-            setLog((entries) => [...entries, `Failed: ${String(error)}`]);
-          } finally {
-            wait.end();
-          }
-        },
-      );
-    }
-    setWaitingSince(null);
+    if (waiting) await waitForPerson(waiting);
     setBusy(false);
+  }
+
+  /**
+   * The customer answers the agent's question on the same task. Its own
+   * trace, LINKED to the span of the round that asked: the customer may take
+   * minutes to answer, and that round's trace has long since ended.
+   */
+  async function sendAnswer(event: React.FormEvent) {
+    event.preventDefault();
+    if (!asking || !answer.trim()) return;
+    const { taskId, contextId, token, claimId, askedIn } = asking;
+    const text = answer.trim();
+    setBusy(true);
+    setLog((entries) => [...entries, `You answered: ${text}`]);
+
+    let waiting: { taskId: string; context: SpanContext; token: string; claimId: string } | null = null;
+    await getTracer().startActiveSpan(
+      "northstar.claim.answer",
+      { links: [{ context: askedIn }], attributes: { "northstar.claim.id": claimId } },
+      async (span) => {
+        try {
+          const snap = await streamReply(CLAIMS_AGENT_URL, taskId, contextId, text, (s) => {
+            if (s.result) setResult(s.result);
+          });
+          waiting = afterStream(snap, span, token);
+        } catch (error) {
+          failed(span, error);
+        } finally {
+          span.end();
+        }
+      },
+    );
+
+    if (waiting) await waitForPerson(waiting);
+    setBusy(false);
+  }
+
+  // The wait is a second root span, its own trace, LINKED to the span that
+  // parked the claim, because the human decides minutes later and that trace
+  // has long since ended. The wait is one read of this server's events stream,
+  // fed by the claims-agent's push: no polling.
+  async function waitForPerson({ taskId, context: parkedIn, token, claimId }: { taskId: string; context: SpanContext; token: string; claimId: string }) {
+    await getTracer().startActiveSpan(
+      "northstar.claim.wait",
+      { links: [{ context: parkedIn }], attributes: { "northstar.claim.id": claimId } },
+      async (wait) => {
+        try {
+          const final = await awaitOutcome(
+            CLAIMS_AGENT_URL,
+            window.location.origin,
+            taskId,
+            token,
+            (s) => s.result && setResult(s.result),
+          );
+          if (final.result) setResult(final.result);
+          setLog((entries) => [...entries, `Claim ${outcomeWord(final.result?.status, final.state)}`]);
+        } catch (error) {
+          wait.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
+          setLog((entries) => [...entries, `Failed: ${String(error)}`]);
+        } finally {
+          wait.end();
+        }
+      },
+    );
+    setWaitingSince(null);
   }
 
   return (
@@ -138,7 +244,46 @@ export default function Page() {
           <span className="ref">Motor / First notification of loss</span>
         </div>
         <div className="panel-body">
+          {/* Buttons, not inputs or radios: the form's first <input> must stay
+              the claim reference (see below). */}
+          <div className="modes" role="group" aria-label="How to enter the claim">
+            <button
+              type="button"
+              className={mode === "form" ? "mode is-active" : "mode"}
+              aria-pressed={mode === "form"}
+              onClick={() => setMode("form")}
+              disabled={busy}
+            >
+              Fill in the form
+            </button>
+            <button
+              type="button"
+              className={mode === "text" ? "mode is-active" : "mode"}
+              aria-pressed={mode === "text"}
+              onClick={() => setMode("text")}
+              disabled={busy}
+            >
+              Describe it in your own words
+            </button>
+          </div>
           <form onSubmit={submit}>
+            {mode === "text" ? (
+              <div className="fields">
+                <label className="field wide">
+                  <span>Tell us what happened</span>
+                  <textarea
+                    className="story"
+                    value={story}
+                    onChange={(e) => setStory(e.target.value)}
+                    required
+                  />
+                </label>
+                <p className="fineprint wide">
+                  Include your policy number, the date, what was damaged and a
+                  rough cost in euro. If anything is missing, we will ask.
+                </p>
+              </div>
+            ) : (
             <div className="fields">
               {/* Claim reference is deliberately the FIRST <input> on the page:
                   tests/e2e/test_policy_denial.py addresses it as
@@ -203,6 +348,7 @@ export default function Page() {
                 <div className="static">EUR &mdash; euro</div>
               </div>
             </div>
+            )}
 
             <div className="actions">
               <button type="submit" disabled={busy}>
@@ -223,6 +369,25 @@ export default function Page() {
         </div>
         <div className="panel-body">
           <pre>{log.join("\n")}</pre>
+
+          {asking && (
+            <form className="answer" onSubmit={sendAnswer}>
+              <label className="field wide">
+                <span>{asking.question}</span>
+                <textarea
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  aria-label="Your answer"
+                  required
+                />
+              </label>
+              <div className="actions">
+                <button type="submit" disabled={busy || !answer.trim()}>
+                  {busy ? "Sending…" : "Send answer"}
+                </button>
+              </div>
+            </form>
+          )}
 
           {result && (
             <>
@@ -289,7 +454,10 @@ function Determination({
             Payment reference <span className="figure">{result.paymentId}</span>.{" "}
           </>
         )}
-        {result.narrative && <>&ldquo;{result.narrative}&rdquo;</>}
+        {result.narrative && result.status !== "needs_information" && <>&ldquo;{result.narrative}&rdquo;</>}
+        {result.status === "needs_information" && (
+          <>Claim reference <span className="figure">{result.claimId}</span>. Please answer the question below.</>
+        )}
         {waiting && (
           <p className="waiting">
             A person at Northstar is reviewing this payment.

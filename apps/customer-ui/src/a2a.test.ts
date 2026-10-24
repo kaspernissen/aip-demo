@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { context, trace, type SpanContext } from "@opentelemetry/api";
-import { awaitOutcome, buildStreamRequest, getPushConfig, streamClaim, type Claim } from "./a2a";
+import { awaitOutcome, buildReplyRequest, buildStreamRequest, getPushConfig, streamClaim, streamReply, type Claim } from "./a2a";
 import { getTracer, initTelemetry } from "./telemetry";
 
 const claim: Claim = {
@@ -35,6 +35,20 @@ describe("buildStreamRequest", () => {
     const push = { url: "http://ui/a2a/push", token: "tok" };
     expect(buildStreamRequest(claim, push).params.configuration).toEqual({ pushNotificationConfig: push });
     expect(buildStreamRequest(claim).params.configuration).toBeUndefined();
+  });
+  it("carries a free-text claim as typed, not as JSON", () => {
+    const story = "A branch fell on my car. Policy POL-77120.";
+    expect(buildStreamRequest(story).params.message.parts[0].text).toBe(story);
+  });
+});
+
+describe("buildReplyRequest", () => {
+  it("answers on the same task: taskId and contextId on the message, no push config", () => {
+    const request = buildReplyRequest("t1", "c1", "POL-77120");
+    expect(request.method).toBe("message/stream");
+    expect(request.params.message).toMatchObject({ role: "user", taskId: "t1", contextId: "c1" });
+    expect(request.params.message.parts).toEqual([{ kind: "text", text: "POL-77120" }]);
+    expect(request.params.configuration).toBeUndefined();
   });
 });
 
@@ -323,5 +337,58 @@ describe("traceparent", () => {
       const tp = (c[1].headers as Record<string, string>).traceparent;
       expect(tp, `no traceparent on ${c[0]}`).toContain(spanContext!.traceId);
     }
+  });
+});
+
+describe("streamReply", () => {
+  const asked = {
+    kind: "status-update",
+    taskId: "t1",
+    contextId: "c1",
+    final: false,
+    status: {
+      state: "input-required",
+      message: {
+        parts: [
+          { kind: "text", text: "What is your policy number?" },
+          { kind: "text", text: JSON.stringify({ claimId: "CLM-INTAKE-ABC123", status: "needs_information", question: "What is your policy number?", missing: ["policyNumber"] }) },
+        ],
+      },
+    },
+  };
+
+  it("reads the reply JSON from the LAST part, after the question's plain text", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(sseResponse([task("submitted"), asked])));
+    const snap = await streamClaim("http://agent", "my car was hit", () => {}, push);
+    expect(snap.state).toBe("input-required");
+    expect(snap.result).toMatchObject({ status: "needs_information", question: "What is your policy number?", missing: ["policyNumber"] });
+  });
+
+  it("sends the answer on the same task and reads that stream to its end", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      sseResponse([update("working", { claimId: "CLM-INTAKE-ABC123", status: "working" }), update("completed", { claimId: "CLM-INTAKE-ABC123", status: "executed" })]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const seen: string[] = [];
+    const snap = await streamReply("http://agent", "t1", "c1", "POL-77120", (s) => seen.push(s.state));
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.method).toBe("message/stream");
+    expect(body.params.message.taskId).toBe("t1");
+    expect(body.params.message.contextId).toBe("c1");
+    expect(body.params.message.parts[0].text).toBe("POL-77120");
+    expect(snap).toMatchObject({ taskId: "t1", state: "completed" });
+    expect(snap.result?.status).toBe("executed");
+    expect(seen).toEqual(["working", "completed"]);
+  });
+
+  it("sends a traceparent, so the answer's trace reaches claims-agent", async () => {
+    initTelemetry();
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse([asked]));
+    vi.stubGlobal("fetch", fetchMock);
+    await getTracer().startActiveSpan("northstar.claim.answer", async (span) => {
+      await streamReply("http://agent", "t1", "c1", "POL-77120", () => {});
+      span.end();
+    });
+    expect(fetchMock.mock.calls[0][1].headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/);
   });
 });

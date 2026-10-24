@@ -53,16 +53,24 @@ groups:
     span_kind: internal
     stability: development
     name: northstar.claim.submit
-    brief: The customer submits a claim. Root of the claim's first trace.
+    brief: The customer submits a claim. Root of the claim's first trace. A claim written as free text gets its id from claims-agent, so the id is set once the first reply names it, and the policy number only if the customer gave one.
     attributes:
       - {ref: northstar.claim.id, requirement_level: required}
-      - {ref: northstar.claim.policy_number, requirement_level: required}
+      - {ref: northstar.claim.policy_number, requirement_level: recommended}
+  - id: span.northstar.claim.answer
+    type: span
+    span_kind: internal
+    stability: development
+    name: northstar.claim.answer
+    brief: The customer answers claims-agent's question about a free-text claim, on the same A2A task. Its own trace, linked to the span of the round that asked.
+    attributes:
+      - {ref: northstar.claim.id, requirement_level: required}
   - id: span.northstar.claim.wait
     type: span
     span_kind: internal
     stability: development
     name: northstar.claim.wait
-    brief: The customer waits for a human decision. Its own trace, linked to the submit span.
+    brief: The customer waits for a human decision. Its own trace, linked to the span that sent the claim to review (the submit span, or the answer span of a free-text claim).
     attributes:
       - {ref: northstar.claim.id, requirement_level: required}
   - id: span.northstar.a2a.resume

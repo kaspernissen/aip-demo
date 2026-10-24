@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { determinationView, formatElapsed, outcomeWord } from "./view";
+import { determinationView, formatElapsed, outcomeWord, questionOf } from "./view";
 
 describe("determinationView", () => {
   it("says awaiting human approval while the task waits", () => {
@@ -45,5 +45,19 @@ describe("outcomeWord", () => {
   it("falls back to the state for a status it does not know", () => {
     expect(outcomeWord(undefined, "completed")).toBe("completed");
     expect(outcomeWord("surprise")).toBe("surprise");
+  });
+});
+
+describe("needs_information, the customer's own wait", () => {
+  const result = { claimId: "CLM-INTAKE-ABC123", status: "needs_information", question: "What is your policy number?", narrative: "What is your policy number?" };
+  it("is a waiting determination, not an error", () => {
+    expect(determinationView(result)).toEqual({ tone: "is-waiting", heading: "We need a little more information" });
+    expect(outcomeWord("needs_information")).toBe("waiting for your answer");
+  });
+  it("has a question only while the task is input-required and the reply says needs_information", () => {
+    expect(questionOf("input-required", result)).toBe("What is your policy number?");
+    expect(questionOf("failed", result)).toBeNull();
+    expect(questionOf("input-required", { claimId: "C", status: "awaiting_approval", narrative: "over the limit" })).toBeNull();
+    expect(questionOf("input-required", null)).toBeNull();
   });
 });

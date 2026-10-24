@@ -4,6 +4,8 @@ export function determinationView(result: ClaimResult): { tone: string; heading:
   switch ((result.status ?? "").toLowerCase()) {
     case "awaiting_approval":
       return { tone: "is-waiting", heading: "Awaiting human approval" };
+    case "needs_information":
+      return { tone: "is-waiting", heading: "We need a little more information" };
     case "executed":
       return { tone: "is-executed", heading: "Settled" };
     case "rejected":
@@ -35,7 +37,19 @@ export function outcomeWord(status?: string, state?: string): string {
       return "failed";
     case "awaiting_approval":
       return "awaiting human approval";
+    case "needs_information":
+      return "waiting for your answer";
     default:
       return status || state || "recorded";
   }
+}
+
+/**
+ * The agent's question, when the claim waits for the customer: the task is
+ * input-required AND its reply says needs_information. The other wait
+ * (awaiting_approval) is for a reviewer, and has no question.
+ */
+export function questionOf(state: string | undefined, result: ClaimResult | null): string | null {
+  if (state !== "input-required" || result?.status !== "needs_information") return null;
+  return result.question || result.narrative || null;
 }

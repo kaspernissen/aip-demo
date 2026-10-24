@@ -9,7 +9,10 @@ export type Claim = {
 
 export type ClaimResult = {
   claimId: string;
-  paymentId?: string;
+  policyNumber?: string | null;
+  description?: string | null;
+  incidentDate?: string | null;
+  paymentId?: string | null;
   amount?: number;
   currency?: string;
   status?: string;
@@ -17,7 +20,15 @@ export type ClaimResult = {
   rule?: string | null;
   limit?: number | null;
   decision?: string | null;
+  /** Set when status is needs_information: what the agent asks the customer. */
+  question?: string;
+  /** Set when status is needs_information: the claim fields still missing. */
+  missing?: string[];
+  error?: string;
 };
+
+/** A claim as the form's fields, or as the customer's own words. */
+export type ClaimInput = Claim | string;
 
 type TextPart = { kind: "text"; text: string };
 
@@ -34,6 +45,8 @@ export type JsonRpcRequest = {
       role: "user";
       messageId: string;
       parts: TextPart[];
+      taskId?: string;
+      contextId?: string;
     };
   };
 };
@@ -42,7 +55,13 @@ function newId(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
 
-export function buildStreamRequest(claim: Claim, push?: PushConfig): JsonRpcRequest {
+/**
+ * A new claim. The form's fields go as a JSON object, which claims-agent
+ * handles with no model; free text goes as it was typed, for its intake
+ * model to read.
+ */
+export function buildStreamRequest(claim: ClaimInput, push?: PushConfig): JsonRpcRequest {
+  const text = typeof claim === "string" ? claim : JSON.stringify(claim);
   return {
     jsonrpc: "2.0",
     id: newId(),
@@ -51,9 +70,31 @@ export function buildStreamRequest(claim: Claim, push?: PushConfig): JsonRpcRequ
       message: {
         role: "user",
         messageId: newId(),
-        parts: [{ kind: "text", text: JSON.stringify(claim) }],
+        parts: [{ kind: "text", text }],
       },
       ...(push ? { configuration: { pushNotificationConfig: push } } : {}),
+    },
+  };
+}
+
+/**
+ * The customer's answer to the agent's question, on the SAME task: the task
+ * id and context id say which claim it answers. No push config: the one sent
+ * with the claim is kept for the task.
+ */
+export function buildReplyRequest(taskId: string, contextId: string, answer: string): JsonRpcRequest {
+  return {
+    jsonrpc: "2.0",
+    id: newId(),
+    method: "message/stream",
+    params: {
+      message: {
+        role: "user",
+        messageId: newId(),
+        parts: [{ kind: "text", text: answer }],
+        taskId,
+        contextId,
+      },
     },
   };
 }
@@ -151,12 +192,31 @@ export async function getPushConfig(uiBase: string): Promise<PushConfig> {
  */
 export async function streamClaim(
   baseUrl: string,
-  claim: Claim,
+  claim: ClaimInput,
   onEvent: (s: TaskSnapshot) => void,
   push?: PushConfig,
 ): Promise<TaskSnapshot> {
   const headers = injectContext({ "content-type": "application/json", accept: "text/event-stream" });
-  const response = await post(baseUrl, buildStreamRequest(claim, push), headers);
+  return readStream(await post(baseUrl, buildStreamRequest(claim, push), headers), onEvent);
+}
+
+/**
+ * Sends the customer's answer on the waiting task and reads that stream to
+ * its end, as streamClaim does: it ends when the agent asks again, parks the
+ * claim for a reviewer, or decides it.
+ */
+export async function streamReply(
+  baseUrl: string,
+  taskId: string,
+  contextId: string,
+  answer: string,
+  onEvent: (s: TaskSnapshot) => void,
+): Promise<TaskSnapshot> {
+  const headers = injectContext({ "content-type": "application/json", accept: "text/event-stream" });
+  return readStream(await post(baseUrl, buildReplyRequest(taskId, contextId, answer), headers), onEvent);
+}
+
+async function readStream(response: Response, onEvent: (s: TaskSnapshot) => void): Promise<TaskSnapshot> {
   let snap: TaskSnapshot | null = null;
   for await (const frame of frames(response)) {
     if (frame.error) throw new Error(frame.error.message);
