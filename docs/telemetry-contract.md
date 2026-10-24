@@ -119,9 +119,15 @@ paper over it with a bespoke convention.
 
 `tests/unit` is hermetic: no cluster, no API key, no network.
 
-A bare `pytest tests/` needs the cluster and the port-forwards that
-`./scripts/start-demo.sh` opens. Without them it fails with
-`httpx.ConnectError` and `kubectl` errors rather than skipping: a suite that
+A bare `pytest tests/` needs the cluster that `./scripts/setup-kind.sh` builds.
+The tests reach the UIs, Jaeger, Prometheus, AgentEvals and the collector
+through the same localhost ports the browser uses (kind host ports onto
+NodePorts, `deploy/kind/cluster.yaml`). payments-api, payments-mcp and
+settlement-agent have no host port, because their Linkerd Servers refuse a
+caller without a mesh identity, so the tests open a `kubectl port-forward` to
+each on first use (`tests/harness/live.py`) and close it when the run ends.
+Without the cluster the run fails with `httpx.ConnectError` and `kubectl`
+errors rather than skipping: a suite that
 skips when it cannot reach what it asserts on looks green while proving
 nothing. Every e2e module that spends Anthropic tokens or launches a browser
 sits behind `RUN_BROWSER_TESTS=1`, so a bare run costs no tokens and proves
@@ -278,18 +284,15 @@ The pipelines, read from those two files:
 
 | Pipeline | Exporters |
 |---|---|
-| `traces` | `otlp_grpc/jaeger`, `otlp_grpc/weaver` (stage 4 only), `otlp_http/agentevals` (stage 4 only), `otlp_grpc/dash0` (with the overlay), `debug` |
-| `metrics` | `otlp_http/prometheus` (stage 4 only), `otlp_grpc/weaver` (stage 4 only), `otlp_grpc/dash0` (with the overlay), `debug` |
-| `logs` | `otlp_grpc/weaver` (stage 4 only), `otlp_grpc/dash0` (with the overlay), `debug` |
+| `traces` | `otlp_grpc/jaeger`, `otlp_grpc/weaver`, `otlp_http/agentevals`, `otlp_grpc/dash0` (with the overlay), `debug` |
+| `metrics` | `otlp_http/prometheus`, `otlp_grpc/weaver`, `otlp_grpc/dash0` (with the overlay), `debug` |
+| `logs` | `otlp_grpc/weaver`, `otlp_grpc/dash0` (with the overlay), `debug` |
 
 **Traces go to Jaeger and Dash0; metrics go to Prometheus and Dash0; logs go
 to Dash0.** The logs are AgentEvals' `gen_ai.evaluation.result` events. Every
 signal also goes, as a copy and never a sample, to Weaver live-check
 (`otlp_grpc/weaver`), which checks it against the registry. No processor
-renames an attribute, so every destination gets the canonical names. Below
-stage 4, `scripts/setup-kind.sh` strips every region of both files bracketed
-by `# BEGIN stage-4-only` / `# END stage-4-only`, because a collector must not
-name a backend its cluster does not have.
+renames an attribute, so every destination gets the canonical names.
 
 Verified live, not inferred, 2026-09-08: `dash0-secrets` present with all
 four keys; the collector pod carries all four `DASH0_*` env vars; the
@@ -2498,7 +2501,7 @@ what it says.
   `memory.current` on the kind node), about 3.8 MB a minute or 220 MiB an hour,
   from 13 MiB at start. The former 768Mi limit would have been reached in about
   3.5 hours, so the limit is 4Gi (about 17 hours) and the pod is recycled at every
-  `scripts/start-demo.sh` and every gate run. Every weaver start also clones the
+  `scripts/setup-kind.sh` run and every gate run. Every weaver start also clones the
   semconv v1.44.0 dependency from github.com: the checkout lives in a temporary
   directory that is deleted after use (a container restart inside the same pod,
   with `/tmp` an `emptyDir` that survived, still created a new `repo*` directory),

@@ -150,8 +150,9 @@ agentgateway config alone; it is off the live demo (`scripts/demo ceiling`). The
 
 ## Stages
 
-The demo builds up in seven stages, so a shorter talk can stop at the idea it
-needs. Each stage adds to the one before.
+The demo tells its story in seven stages, one idea at a time. They are a way
+to explain the system, not separate installs: `scripts/setup-kind.sh` always
+builds all of it.
 
 | Stage | Name | Adds |
 |---|---|---|
@@ -163,14 +164,14 @@ needs. Each stage adds to the one before.
 | 6 | Golden path | Backstage |
 | 7 | Bounded | Kyverno and the keystone policy |
 
-Stage 7 is the complete demo. [`docs/demo-runbook.md`](docs/demo-runbook.md)
-§3 says which stage suits which talk length.
+[`docs/demo-runbook.md`](docs/demo-runbook.md) §3 says which stages suit
+which talk length.
 
 ## Quick start
 
 You need Docker, kind, kubectl, helm, [uv](https://docs.astral.sh/uv/) and an
-Anthropic API key. The cluster needs about 6 GB of memory at stage 6, measured before Kyverno
-was added.
+Anthropic API key. Give Docker at least 8 GB of memory: the cluster used about
+6 GB before Kyverno was added.
 
 ```bash
 cp .env.template .env
@@ -178,12 +179,13 @@ cp .env.template .env
 # the first claim fails at the model call. setup-kind.sh prints SET or EMPTY
 # for it. The DASH0_* variables are optional.
 
-./scripts/setup-kind.sh --stage 7
-./scripts/start-demo.sh
+./scripts/setup-kind.sh
 ```
 
-`./scripts/start-demo.sh` owns the port-forwards and checks that each one
-actually answers. Then open:
+`setup-kind.sh` creates the kind cluster, installs everything, and ends by
+checking that every URL below answers (`./scripts/preflight.sh` runs the same
+check again at any time). Each one is a kind host port onto a NodePort, so no
+`kubectl port-forward` is needed and a redeploy does not break them.
 
 | Surface | URL |
 |---|---|
@@ -191,6 +193,7 @@ actually answers. Then open:
 | Reviewer UI | http://localhost:8081 |
 | Jaeger | http://localhost:16686 |
 | Prometheus | http://localhost:9090 |
+| AgentEvals | http://localhost:18001 |
 | Backstage | http://localhost:7007 |
 
 File a claim for €5,800 in the customer UI. It shows "Awaiting human
@@ -250,12 +253,14 @@ The gate generates them itself. To run a suite on its own first, generate them:
 | Command | Cluster | Anthropic tokens |
 |---|---|---|
 | `.venv/bin/python -m pytest tests/unit -q` | not needed | none |
-| `.venv/bin/python -m pytest tests/ -q` | required, with `./scripts/start-demo.sh` running | none |
+| `.venv/bin/python -m pytest tests/ -q` | required | none |
 | `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | required | yes — the full gate |
 
 `tests/unit` is hermetic: no cluster, no key, no network. A bare
-`pytest tests/` needs the cluster and its port-forwards and fails with
-`httpx.ConnectError` without them, on purpose. Every test that drives a model
+`pytest tests/` needs the cluster and fails with `httpx.ConnectError` without
+it, on purpose. The tests reach the UIs through the same localhost ports; for
+the three services the mesh only lets named workloads call (payments-api,
+payments-mcp, settlement-agent) they open a `kubectl port-forward` of their own. Every test that drives a model
 call or a browser sits behind `RUN_BROWSER_TESTS=1`, so a bare run spends
 nothing.
 
@@ -276,7 +281,7 @@ it finds. See [`docs/telemetry-contract.md`](docs/telemetry-contract.md).
 - **Approval is one unauthenticated click.** There is no second approver and
   no expiry, and the reviewer id is a string the form supplies.
 - **Backstage is unauthenticated.** Anyone who can reach port 7007 can flip
-  the autonomy flag. What limits the damage is that the one write it can make
+  the autonomy flag (the port listens on the laptop's 127.0.0.1 only). What limits the damage is that the one write it can make
   is to that single object.
 - **No scaffolder, and a static catalog.** The platform API exists as a real
   object with a real UI, but nothing here generates a new agent from it.

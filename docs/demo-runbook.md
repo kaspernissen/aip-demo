@@ -100,7 +100,7 @@ had three of the four; M7 adds the keystone and makes Reach a live beat.
 
 ---
 
-## 2. The system at a glance (stage 7)
+## 2. The system at a glance
 
 <pre class="mermaid">
 flowchart TD
@@ -204,13 +204,13 @@ flowchart LR
 
 ## 3. What you can choose — the options
 
-### Option 1: which stage to bring up
+### Option 1: which stages to talk about
 
-`./scripts/setup-kind.sh --stage N`. Each stage installs **only** what it
-needs, so the laptop runs one stage at a time. Stage N always includes
-everything below it.
+There is one bring-up, `./scripts/setup-kind.sh`, and it always installs the
+whole system. The stages are the order the story adds things in, so a shorter
+talk can stop at the idea it needs while everything keeps running underneath.
 
-| Stage | Name | Adds | Run this stage if the talk is about… |
+| Stage | Name | Adds | Talk about this stage if the talk is about… |
 |:---:|---|---|---|
 | 1 | Connected | agents, MCP servers, systems of record, customer UI, collector, Jaeger | distributed tracing across an agent chain |
 | 2 | Governed | Linkerd, NetworkPolicy, SPIFFE/SPIRE, agentgateway, Policy Decision Service | authorization and workload identity |
@@ -218,36 +218,22 @@ everything below it.
 | 4 | Observable | Prometheus, Weaver live-check, AgentEvals | evidence and evaluation |
 | 5 | Progressive autonomy | cert-manager, Open Feature Operator, flagd sidecar, the `FeatureFlag` | policy as a live value |
 | 6 | Golden path | Backstage | the platform API and its UI |
-| 7 | **Bounded** | **Kyverno and the keystone policy** | **that an agent cannot edit its own limits — run this one** |
+| 7 | **Bounded** | **Kyverno and the keystone policy** | **that an agent cannot edit its own limits** |
 
-> **Default: `--stage 7`.** It is the complete demo. Lower stages exist for
-> shorter talks and for isolating one idea.
-
-**Two things about stages that will bite you:**
-
-1. **A cluster built before M12 runs Cilium and must be recreated.** Until
-   M12, stages 2–7 used `networking.disableDefaultCNI`, a *create-time* kind
-   flag, and Cilium owned the dataplane. Since M12 the CNI is kind's default
-   (kindnet, which enforces NetworkPolicy) and Linkerd goes on top, so stage 2
-   no longer needs a different cluster from stage 1. But a stage >= 2 run on an
-   old Cilium cluster is refused by the script (the `kube-system/cilium`
-   DaemonSet is the marker): `kind delete cluster --name northstar`, then
-   `./scripts/setup-kind.sh --stage 7`. Nothing in M12 has run on the demo
-   cluster yet; that recreate is pending.
-2. Stages **4, 5, 6 and 7 all reuse stage 3's cluster config unchanged** —
-   there is deliberately no `stage4.yaml`, `stage5.yaml`, `stage6.yaml` or
-   `stage7.yaml`. So **3 → 4 → 5 → 6 → 7 needs no recreate** (and, on a post-M12 cluster, neither does 1 → 2). You can climb the
-   ladder live. (Stage 7 on top of a running stage 4 cluster was how this one
-   was brought up the first time, and is the supported path.)
+**One thing that will bite you:** the localhost ports are fixed when the kind
+cluster is created (`extraPortMappings` in `deploy/kind/cluster.yaml`). If that
+file gains a port, an existing cluster cannot pick it up: `setup-kind.sh`
+refuses to run against it and tells you to recreate it with
+`./scripts/teardown.sh && ./scripts/setup-kind.sh`.
 
 ### Option 2: how long you have
 
-| Length | Stage | Beats to run | Cut |
-|---|:---:|---|---|
-| **5 min** | 7 | §5 "The five-minute flow": `scripts/demo` steps 1–5 | everything else: the longer beats below it |
-| **20 min** | 7 | beats 1–3, R, 6, 7, K | Beat 5 (the evidence); Beat R and K are a minute each |
-| **45 min** | 7 | all of §5 | nothing |
-| deep-dive | 7 | all of §5 + architecture.md's "See it yourself" | — |
+| Length | Beats to run | Cut |
+|---|---|---|
+| **5 min** | §5 "The five-minute flow": `scripts/demo` steps 1–5 | everything else: the longer beats below it |
+| **20 min** | beats 1–3, R, 6, 7, K | Beat 5 (the evidence); Beat R and K are a minute each |
+| **45 min** | all of §5 | nothing |
+| deep-dive | all of §5 + architecture.md's "See it yourself" | — |
 
 ### Option 3: environment switches
 
@@ -303,7 +289,7 @@ done
 ### T-30 — bring the cluster up
 
 ```bash
-./scripts/setup-kind.sh --stage 7
+./scripts/setup-kind.sh
 ```
 
 Watch for, at the end of the run:
@@ -313,24 +299,24 @@ Watch for, at the end of the run:
 - [ ] every component reporting installed, no rollout timeouts
 - [ ] `The keystone policy is Ready` — the script waits for it and fails
       rather than printing it if the policy never arms
+- [ ] the closing check: `Keystone: policy Ready, webhook registered, Kyverno
+      answering, over-grant absent.`, then `Every localhost URL answers.` and
+      the list of URLs
 
-### T-15 — start the surfaces, and leave this terminal alone
+Every URL is a kind host port onto a NodePort: nothing needs a port-forward,
+nothing has to stay running in a terminal, and a redeploy does not break a URL.
+
+### T-15 — re-check, any time
 
 ```bash
-./scripts/start-demo.sh      # owns EVERY port-forward. Ctrl+C stops them all.
+./scripts/preflight.sh
 ```
 
-It prints every URL it established. Confirm you see a `Backstage` line and not
-`Backstage: SKIPPED` — `SKIPPED` means the cluster is below stage 6. Its first
-line is the keystone pre-flight, and it must read:
-
-```
-Keystone pre-flight: policy Ready, over-grant absent.
-```
-
-It refuses to start (exit 1) if the policy is not Ready, if Kyverno's webhook
-registration is missing, if nothing answers behind `svc/kyverno-svc`, or if the
-beat's over-grant is still applied. The registration check matters because of a
+The same closing check `setup-kind.sh` ran, on its own. It changes nothing and
+takes seconds. It refuses (exit 1) if the keystone policy is not Ready, if
+Kyverno's webhook registration is missing, if nothing answers behind
+`svc/kyverno-svc`, if the beat's over-grant is still applied, or if any
+localhost URL does not answer. The registration check matters because of a
 measured failure mode: a **graceful stop** of Kyverno deletes its own webhook
 configurations, after which the keystone is **silently off** (an over-granted
 agent's write succeeds) while the policy object still exists. An *unreachable*
@@ -721,7 +707,7 @@ not caught up; run it again. **Never leave step 3 at `autonomous`:**
 asserts the policy name is in the message so an RBAC denial can never pass for
 the keystone. The over-grant is removed on every exit path, including Ctrl-C.
 
-**If it fails** — `FAIL ... is not Ready`: stage 7 is not up or Kyverno is down
+**If it fails** — `FAIL ... is not Ready`: Kyverno is down or the policy never armed
 (§8). `FAIL ... over-grant is already applied`: `scripts/demo reset`.
 `FAIL ... not by the keystone`: Kyverno did not fire and RBAC did; read §8's
 Kyverno rows. Fallback: none on the deck any more; say what the keystone proves and move on.
@@ -840,8 +826,8 @@ claim), which is the point of keeping the stage checks deterministic.
 
 **If it fails** — `FAIL ... no finished claim yet`: a session completes a few
 seconds after its last span; wait, re-run. Connection refused on 18001: the
-forward is dead (the pod restarted); re-run `scripts/start-demo.sh`. Fallback:
-the UI at http://localhost:18001, Local Development, expand a claim.
+AgentEvals pod is not Ready (`kubectl -n observability get pods -l app=agentevals`).
+Fallback: the UI at http://localhost:18001, Local Development, expand a claim.
 
 ---
 
@@ -1046,7 +1032,7 @@ kubectl get --raw /api/v1/namespaces/northstar-systems/pods/<payments-api-pod>:4
 
 This is step 2 of the five-minute flow, taken slowly.
 
-**DO** — http://localhost:8081 (a NodePort — needs no port-forward and
+**DO** — http://localhost:8081 (a kind host port, like every URL here: it
 survives a redeploy). The payment that is waiting is listed with **four
 facts**: the rule that fired, the limit the caller held, the amount
 requested, and the model's own narrative. Meanwhile the customer-ui shows
@@ -1161,8 +1147,8 @@ scripts/demo evals --quick
 **SAY** (immediately, before anyone asks)
 
 > "That login asked me for nothing. It is a real auth round-trip, but it is
-> unauthenticated by design on a laptop cluster reachable only through an
-> explicit port-forward. I'll come back to what actually keeps this safe."
+> unauthenticated by design on a laptop cluster that listens on 127.0.0.1
+> only. I'll come back to what actually keeps this safe."
 
 **SHOW — the catalog.** Left nav → **Catalog**. Eight `Component` entities.
 
@@ -1311,31 +1297,40 @@ and naming them first is worth more than the features.
 
 ---
 
-## 6. Every surface, and who owns it
+## 6. Every surface
 
-| Surface | URL | Stage | Reached by |
-|---|---|:---:|---|
-| Customer UI | http://localhost:8080 | 1+ | kind host port |
-| Reviewer UI | http://localhost:8081 | 3+ | kind host port (NodePort) |
-| Jaeger | http://localhost:16686 | 1+ | kind host port |
-| Prometheus | http://localhost:9090 | 4+ | `start-demo.sh` |
-| Backstage | http://localhost:7007 | 6+ | `start-demo.sh` |
+Every URL is a kind host port onto a NodePort (`deploy/kind/cluster.yaml`),
+listening on 127.0.0.1 only. They survive a redeploy, and `./scripts/preflight.sh`
+checks that each one answers.
 
-Plus the tool ports `start-demo.sh` also forwards, which the walkthrough never
-opens but which are useful when debugging live: `claims-agent` 19001,
-`settlement-agent` 19002, `payments-mcp` 18000, `payments-api` 18080,
-**flagd metrics** 18014.
+| Surface | URL |
+|---|---|
+| Customer UI | http://localhost:8080 |
+| Reviewer UI | http://localhost:8081 |
+| Jaeger | http://localhost:16686 |
+| Prometheus | http://localhost:9090 |
+| AgentEvals | http://localhost:18001 |
+| Backstage | http://localhost:7007 |
 
-> The **kind host ports survive a redeploy**; the port-forwards do not. If a
-> surface in the bottom two rows stops answering, the fix is almost always
-> to restart `start-demo.sh`, not to touch the cluster.
+Plus two the walkthrough never opens: `claims-agent`'s A2A endpoint on
+http://localhost:19001 (the customer UI calls it from the browser) and the
+collector's OTLP/HTTP receiver on http://localhost:4318 (the browser sends its
+spans there).
 
-**flagd's metrics port is the one place** that shows how many evaluations
-resolved `assisted` versus `autonomous` without querying Prometheus by
-hand:
+**Not on the host, on purpose:** payments-api, payments-mcp and
+settlement-agent. Their Linkerd Servers admit only named workload identities,
+and a request from the laptop has none. To call one by hand while debugging,
+forward it (the forward lands behind the pod's proxy):
+`kubectl -n northstar-systems port-forward svc/payments-api 18080:8080`.
+
+**flagd's metrics** are the one place that shows how many evaluations resolved
+`assisted` versus `autonomous` without querying Prometheus by hand. Read them
+through the API server, no forward needed:
 
 ```bash
-curl -s localhost:18014/metrics | grep feature_flag_flagd_impression_total
+POD=$(kubectl -n northstar-platform get pod -l app=policy-decision-service -o jsonpath='{.items[0].metadata.name}')
+kubectl get --raw "/api/v1/namespaces/northstar-platform/pods/${POD}:8014/proxy/metrics" \
+  | grep feature_flag_flagd_impression_total
 ```
 
 ---
@@ -1377,7 +1372,7 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
       without a human, and step 2 collapses.
 - [ ] **no approval is open**: `curl -s localhost:8081/api/awaiting` reads `[]`.
       `scripts/demo reset` rejects any open approval as `demo-reset`.
-- [ ] **the over-grant is absent** (`start-demo.sh` refuses to start if it is
+- [ ] **the over-grant is absent** (`./scripts/preflight.sh` refuses if it is
       still applied)
 - [ ] the ledger is per-process and in-memory — restart `payments-api` to
       clear old rows from the reviewer UI:
@@ -1392,22 +1387,21 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 
 | Symptom | Most likely cause | Fix, in order |
 |---|---|---|
-| `otlp_grpc/weaver` `Exporting failed` lines in the collector log | the weaver live-check pod was restarted or is starting (a gate run, `start-demo.sh`, a manual `report()`), so the collector's exporter to it retries in a burst for up to about a minute. **Live-check's, not demo telemetry loss**: Jaeger and Prometheus get their own copies through separate exporters and are unaffected | wait a minute; `kubectl -n observability get pods -l app=weaver-live-check`. If it stays failing, the pod is not Ready: `kubectl -n observability logs deploy/weaver-live-check`. Every weaver start clones the semconv dependency from github.com (measured: not cached, a new checkout each start), so a pod that never gets Ready usually has no egress to github.com |
+| `otlp_grpc/weaver` `Exporting failed` lines in the collector log | the weaver live-check pod was restarted or is starting (a gate run, `setup-kind.sh`, a manual `report()`), so the collector's exporter to it retries in a burst for up to about a minute. **Live-check's, not demo telemetry loss**: Jaeger and Prometheus get their own copies through separate exporters and are unaffected | wait a minute; `kubectl -n observability get pods -l app=weaver-live-check`. If it stays failing, the pod is not Ready: `kubectl -n observability logs deploy/weaver-live-check`. Every weaver start clones the semconv dependency from github.com (measured: not cached, a new checkout each start), so a pod that never gets Ready usually has no egress to github.com |
 | First claim submission errors | `ANTHROPIC_API_KEY` empty | it is a **model call**. Check `.env`, restart the agent deployments |
-| A surface at 9090 / 7007 does not answer | dead port-forward (a dead forward **keeps its socket bound** and still looks healthy to `lsof`) | Ctrl+C and re-run `./scripts/start-demo.sh` |
-| `Backstage: SKIPPED` in start-demo output | cluster is below stage 6 | `./scripts/setup-kind.sh --stage 7` — no recreate needed from stage 3+ |
-| `start-demo.sh` refuses: *keystone policy is not Ready* | the policy never armed (usually Kyverno cannot read a kind it matches) | `kubectl get validatingpolicy agents-cannot-edit-their-own-authority -o yaml` and read `status.conditionStatus.conditions`. Beat 7 is **not** affected: Backstage's flip works with Kyverno down |
-| `start-demo.sh` refuses: *webhook configuration is not registered* | Kyverno was stopped gracefully (scaled to 0, a rollout) and deleted its own registration: **the keystone is silently off** | `kubectl -n kyverno scale deploy/kyverno-admission-controller --replicas=1`, wait for `kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg`, re-run |
-| `start-demo.sh` refuses: *nothing answers behind svc/kyverno-svc* | Kyverno pods not Ready, webhook still registered: an agent's write is *refused* (fails closed) | `kubectl -n kyverno get pods`, logs |
+| A localhost URL does not answer | the workload behind it is not Ready (a rollout in progress, a crash loop) | `./scripts/preflight.sh` names it; `kubectl get pods -A \| grep -v Running` |
+| `setup-kind.sh` refuses: *does not publish host port(s)* | the cluster was created from an older kind config; host ports are fixed at creation | `./scripts/teardown.sh && ./scripts/setup-kind.sh` |
+| `preflight.sh` refuses: *keystone policy is not Ready* | the policy never armed (usually Kyverno cannot read a kind it matches) | `kubectl get validatingpolicy agents-cannot-edit-their-own-authority -o yaml` and read `status.conditionStatus.conditions`. Beat 7 is **not** affected: Backstage's flip works with Kyverno down |
+| `preflight.sh` refuses: *webhook configuration is not registered* | Kyverno was stopped gracefully (scaled to 0, a rollout) and deleted its own registration: **the keystone is silently off** | `kubectl -n kyverno scale deploy/kyverno-admission-controller --replicas=1`, wait for `kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg`, re-run |
+| `preflight.sh` refuses: *nothing answers behind svc/kyverno-svc* | Kyverno pods not Ready, webhook still registered: an agent's write is *refused* (fails closed) | `kubectl -n kyverno get pods`, logs |
 | Backstage's flip answers with an admission error mentioning `kyverno` | the policy's `matchConditions` now match Backstage's identity (a Kyverno outage alone cannot do this: measured, Backstage is unaffected by one) | Backstage's identity is `backstage-autonomy-writer` in `northstar-platform`; the policy matches only `northstar-agents` and `northstar-tools` prefixes. `kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg -o yaml` and read the `matchConditions` |
-| `start-demo.sh` refuses: *over-grant is still applied* | an earlier `scripts/demo keystone` run was killed hard (SIGKILL) | `kubectl delete -f deploy/demo/keystone-overgrant.yaml` |
+| `preflight.sh` refuses: *over-grant is still applied* | an earlier `scripts/demo keystone` run was killed hard (SIGKILL) | `kubectl delete -f deploy/demo/keystone-overgrant.yaml` |
 | `scripts/demo keystone` step 3 prints `Forbidden` instead of the Kyverno message | the over-grant did not take effect yet | re-run; it waits for `auth can-i` to say `yes` first, so this means RBAC is not what it was |
 | `scripts/demo guard` says claims-agent was not dropped on the way to payments-mcp | the egress NetworkPolicy is not enforcing (kindnet), or the pod was not dropped | `kubectl get networkpolicy -A`; `tests/e2e/test_egress_policy.py` |
 | `scripts/demo guard` says reviewer-ui's direct execute was not refused 403, or the counter did not rise | payments-api's Linkerd policy is missing or not holding, or the deny counter did not rise | `kubectl get servers,httproutes.policy.linkerd.io,authorizationpolicies -A`; `kubectl get --raw /api/v1/namespaces/northstar-systems/pods/<pod>:4191/proxy/metrics \| grep inbound_http_authz_deny_total`; `tests/e2e/test_gateway_is_the_only_route.py` |
-| `setup-kind.sh` refuses: *already exists and still runs Cilium* | the cluster predates M12 (it was created with `disableDefaultCNI`) | `kind delete cluster --name northstar`, then `./scripts/setup-kind.sh --stage 7` |
 | settlement-agent's model call dies with a TLS reset | Anthropic's address range is static in `network-policies.yaml`; a provider address change lands outside it | compare `api.anthropic.com` with 160.79.104.0/23 and 2607:6bc0::/48 and update the `ipBlock`s |
 | EUR 5,800 comes back `executed` at the start of step 2 | **contract left flipped from a previous run** | `scripts/demo reset`, or §7 |
-| The customer tab never flips to "Settled" after the approve | the customer-ui's stream to claims-agent is down (a dead forward), or the page lost the task | check `scripts/start-demo.sh`'s claims-agent forward (`localhost:19001`), then finish from the terminal: `scripts/demo approve last` (the stage fallback). The payment is settled either way; only the tab is stale |
+| The customer tab never flips to "Settled" after the approve | the customer-ui's stream to claims-agent is down, or the page lost the task | check claims-agent answers on `localhost:19001` (`./scripts/preflight.sh`), then finish from the terminal: `scripts/demo approve last` (the stage fallback). The payment is settled either way; only the tab is stale |
 | A claims-agent restart while a claim waits | waiting tasks live in claims-agent's memory, by design: a restart loses them | the re-send above cannot help (the task is gone). Reject the stranded approvals with `scripts/demo reset` and file the claim again |
 | `scripts/demo approve last` says no claim is waiting | the reviewer-ui's queue is empty: the claim already ended, or `reset` rejected it | `curl -s localhost:8081/api/awaiting` lists what is waiting; approve it in the reviewer tab. If the queue is empty and the customer tab still says "Awaiting human approval", the claim was decided and never told: `approve last` finds that too (next row) |
 | The money moved but the customer tab is stuck on "Awaiting human approval" (`demo approve` printed `the customer's claim could not be told`) | the decision is on the ledger, but the message to claims-agent was lost (a dropped answer, claims-agent unreachable for a moment) | **run the same command again**: `scripts/demo approve last` (or `reject last`; there is no button for a claim that has left the queue). `demo approve|reject <claim|last>` finds it even though it is no longer in `/api/awaiting`: it reads the ledger's executed and rejected payments and keeps the one whose task is still `input-required`. The reviewer-ui sees the decision is already on the ledger, takes no new money decision and tells the claim again. It only answers 409 if the claim is no longer waiting |
@@ -1534,8 +1528,8 @@ pins every part of this.
 
 ### `scripts/demo evals`: AgentEvals scores what the agent did (not in the five-minute flow)
 
-AgentEvals (`ghcr.io/agentevals-dev/agentevals:0.11.0`, `deploy/observability/agentevals.yaml`,
-stage 4 and up) receives a copy of every trace from the collector and holds one session per
+AgentEvals (`ghcr.io/agentevals-dev/agentevals:0.11.0`, `deploy/observability/agentevals.yaml`)
+receives a copy of every trace from the collector and holds one session per
 claim: settlement-agent sets the run's `gen_ai.conversation.id` to the claim id. Nothing scores
 on its own. `scripts/demo evals` asks it to score every finished claim with this repo's four
 code evaluators (`deploy/observability/agentevals/evaluators`), and prints one line per check:
@@ -1569,8 +1563,8 @@ hallucinations on three runs, nothing changed), and the built-in metrics export 
 A run of nine metrics over three claims takes about three minutes.
 
 Each score also goes back through the collector as a `gen_ai.evaluation.result` log event on
-the agent's `invoke_agent` span. Open the UI at http://localhost:18001 (start-demo.sh forwards
-it) to see the sessions and run evaluations by hand.
+the agent's `invoke_agent` span. Open the UI at http://localhost:18001 to see the sessions and run
+evaluations by hand.
 
 What it cannot see: only the agent's GenAI spans reach an evaluator. Not the policy decision, not the reviewer's approval, not the caller's identity,
 and it does not follow span links. Its built-in `tool_trajectory_avg_score` compares tool

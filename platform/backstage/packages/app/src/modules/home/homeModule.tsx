@@ -103,9 +103,8 @@ would not be.
  * stable.
  */
 const stages = `
-Each stage is a cluster you can bring up on its own with
-\`./scripts/setup-kind.sh --stage N\`, and each one adds exactly what its idea
-needs. Stage 6 is the whole thing, and is what you are looking at.
+The demo tells its story one idea at a time. All of it runs in this one
+cluster, and each stage below is the part that idea added.
 
 | | Stage | What it proves | Added |
 |---|---|---|---|

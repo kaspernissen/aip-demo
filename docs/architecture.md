@@ -214,7 +214,7 @@ was deliberately a record of M1.1's shape. M2.1 Task 5 folded them in
 instead, so the document describes the system that is actually deployed:
 
 1. **Task 1** (M2.1; Cilium left in M12) replaced kind's default CNI with **Cilium 1.20.1** (a
-   create-time `disableDefaultCNI` in `deploy/kind/stage2.yaml`). It sits
+   create-time `disableDefaultCNI` in that milestone's kind config). It sits
    underneath every hop below and changes none of them: the trace survived
    the swap with all 61 distinct `(service, operation, kind, parent)` rows
    identical pre and post. `kubeProxyReplacement` is deliberately off, and
@@ -471,7 +471,7 @@ Namespaces, ports, and service DNS names below are read directly from
 | `settlement-agent` | Python 3.13, `a2a-sdk[telemetry]==0.3.7` + Starlette + `mcp==2.2.0` client (2026-09-11; was `1.28.1`, and `1.9.4` before that) + `pydantic-ai-slim==2.42.0` (M1.2; 2.41.0 until 2026-09-11) | `northstar-agents` | `settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` | A2A server; MCP client. As of M1.2, the settlement decision itself is a real model call (see "The decision logic" below) — the model chooses whether and how to propose and execute the payment via payments-mcp. |
 | `payments-mcp` | Python 3.13, FastMCP 4.0.3 | `northstar-tools` | `payments-mcp.northstar-tools.svc.cluster.local:8000`, MCP endpoint at `/mcp` | `localhost:5001/northstar/payments-mcp:dev` | MCP server exposing **four** tools as of M3 — `propose_payment` and `execute_payment` since M1.1, plus `refuse_payment` and `get_payment` from M3 Task 3 (this row said "two tools" until M3 Task 5B, and `contracts/mcp/payments-mcp.json` still listed only two, which is what made the gate red). An adapter over payments-api — it owns no state of its own (`server.py`'s own docstring: "This is an adapter over payments-api, not a system of record."). |
 | `payments-api` | Go 1.27.1, `otelhttp v0.71.0` / otel core `v1.46.0` (**2026-09-11 (M3): was Go 1.24, `otelhttp v0.66.0` / otel core `v1.41.0`** — see Finding 11) | `northstar-systems` | `payments-api.northstar-systems.svc.cluster.local:8080` | `localhost:5001/northstar/payments-api:dev` | The system of record for payments. In-memory store, sequential IDs, no persistence. As of M3 it also records **why** a payout did not happen (`POST /refuse`) and lists them (`GET /payments`) — a record, not a gate. |
-| `reviewer-ui` **(M3 Task 4)** | Python 3.13, FastAPI 0.141.1 + uvicorn, server-rendered HTML strings — **no frontend toolchain and no build step**, deliberately unlike `customer-ui` | `northstar-agents` | `reviewer-ui.northstar-agents.svc.cluster.local:8080`, exposed as a `NodePort` (30081) mapped to host `8081` by `deploy/kind/stage3.yaml` | `localhost:5001/northstar/reviewer-ui:dev` | The page a human reads and clicks. Lists refusals straight from payments-api's REST API (never through the MCP path), and POSTs an approval to `senior-settlement-agent` over A2A. Emits the `northstar.review.decision` span. |
+| `reviewer-ui` **(M3 Task 4)** | Python 3.13, FastAPI 0.141.1 + uvicorn, server-rendered HTML strings — **no frontend toolchain and no build step**, deliberately unlike `customer-ui` | `northstar-agents` | `reviewer-ui.northstar-agents.svc.cluster.local:8080`, exposed as a `NodePort` (30081) mapped to host `8081` by `deploy/kind/cluster.yaml` | `localhost:5001/northstar/reviewer-ui:dev` | The page a human reads and clicks. Lists refusals straight from payments-api's REST API (never through the MCP path), and POSTs an approval to `senior-settlement-agent` over A2A. Emits the `northstar.review.decision` span. |
 | `senior-settlement-agent` **(M3 Task 3; retired in M8)** | **No image and no code of its own** — the `settlement-agent` image, byte-identical, in a second Deployment under a second ServiceAccount | `northstar-agents` | `senior-settlement-agent.northstar-agents.svc.cluster.local:9002` | `localhost:5001/northstar/settlement-agent:dev` (the same mutable `:dev` tag settlement-agent runs) | Executes what a human approved, under an identity the Policy Decision Service grants a higher limit. "Senior" is an *identity*, not a different program — which is the entire point, and the reason this row's Image cell repeats another row's. |
 
 **Namespace note, worth stating plainly:** `customer-ui` deploys into
@@ -598,7 +598,7 @@ the six SPIRE sub-images, including the one carrying the hazard recorded under
 | `linkerd` (M12) | CNCF service mesh (graduated). Control plane in namespace `linkerd`; a `linkerd-proxy` native sidecar in each meshed pod. Authorizes **ingress** to the money path by workload identity (403, counted); egress is NetworkPolicy, not Linkerd. Proxy tracing is on: each proxy sends OTLP spans to the collector, which is meshed for that reason | Helm `linkerd-crds` and `linkerd-control-plane`, `edge-26.10.1` (proxy v2.370.0); the exact chart version is pinned in `scripts/setup-kind.sh`. Not yet measured on the demo cluster | The Reach ring's ingress half: `deploy/platform/reach/linkerd-policies.yaml`. Replaces Cilium |
 | `agentgateway` | Rust MCP/A2A/LLM proxy. A **Linux Foundation** project — **not** CNCF | `cr.agentgateway.dev/agentgateway:v1.5.0` (note the leading `v`; the tag `1.5.0` does not exist on that registry, though the binary reports `1.5.0` as its internal version) | Interposed on the MCP hop. Verifies the caller's JWT-SVID (`jwtAuth`), asks the Policy Decision Service about every `tools/call` (`mcpGuardrails`), and forwards to `payments-mcp` **only** if the answer is permit. |
 | `policy-decision-service` | **This project's own code** (Python 3.13, `grpcio`), not third-party — listed here because it is platform machinery rather than an application component. Serves agentgateway's `agentgateway.dev.ext_mcp.ExtMcp` contract, from a proto vendored verbatim at v1.5.0 (`platform/policy-decision-service/proto/ext_mcp.proto`, `d459d88`) | `localhost:5001/northstar/policy-decision-service:dev`, `policy-decision-service.northstar-platform.svc.cluster.local:9100` | Answers permit or deny on caller identity plus amount. Holds the milestone's one rule and emits the `northstar.policy.decision` span. Makes no Kubernetes API calls and holds no RBAC; nothing in `northstar-agents` can reach it. |
-| Kyverno **(M7)** | Kyverno, chart `kyverno/kyverno` **3.9.1**, installed in the `kyverno` namespace by `setup-kind.sh --stage 7` with `deploy/platform/kyverno/values.yaml` (OTLP tracing on the admission controller; read-only RBAC on the kinds the policy matches) | appVersion **v1.19.1**; one `ValidatingPolicy` (`policies.kyverno.io/v1`, CEL), `deploy/platform/kyverno/keystone-policy.yaml`, named `agents-cannot-edit-their-own-authority` | The keystone: refuses an agent identity's create, update or delete of the objects that define its own authority. See "The rings, and the keystone" below. `failurePolicy: Fail`. |
+| Kyverno **(M7)** | Kyverno, chart `kyverno/kyverno` **3.9.1**, installed in the `kyverno` namespace by `setup-kind.sh` with `deploy/platform/kyverno/values.yaml` (OTLP tracing on the admission controller; read-only RBAC on the kinds the policy matches) | appVersion **v1.19.1**; one `ValidatingPolicy` (`policies.kyverno.io/v1`, CEL), `deploy/platform/kyverno/keystone-policy.yaml`, named `agents-cannot-edit-their-own-authority` | The keystone: refuses an agent identity's create, update or delete of the objects that define its own authority. See "The rings, and the keystone" below. `failurePolicy: Fail`. |
 | `backstage` **(M6)** | Backstage backend, `@backstage/backend-defaults@^0.17.7` and siblings — third-party framework, plus **this project's own code** in one plugin: `platform/backstage/packages/backend/src/plugins/autonomyContract/` (router, k8s client, evaluator, telemetry), the same reason `policy-decision-service` has a row here rather than in the application table, scaled down to one plugin rather than a whole service | `localhost:5001/northstar/backstage:dev`, `backstage.northstar-platform.svc.cluster.local:7007` | Serves the software catalog (eight `Component` entities: the seven in the tree plus Backstage itself, derived from `catalog-info.yaml` files staged into the image at build time — see "Known limitations" below) and the autonomy-contract card, the one UI in this system with a write path of its own: `POST /api/autonomy-contract/variant` flips `northstar-autonomy`'s `targeting.if[1]` through a second, narrower ServiceAccount (`backstage-autonomy-writer`) than the one the Kubernetes plugin reads with. |
 | SPIRE server / agent | SPIFFE runtime, chart `spiffe/spire` 0.30.2 from the hardened repo | appVersion SPIRE **1.15.3**; `ghcr.io/spiffe/spire-server:1.15.3`, `spire-agent:1.15.3` | Issues the JWT-SVID. Trust domain `northstar.local`, cluster name `northstar`. |
 | SPIRE CRDs | chart `spiffe/spire-crds` 0.6.1, installed first | — | The `spire.spiffe.io` CRDs the `ClusterSPIFFEID` resources need. |
@@ -607,7 +607,7 @@ the six SPIRE sub-images, including the one carrying the hazard recorded under
 | `spiffe-oidc-discovery-provider` (+ `nginx` sidecar) | ships inside the SPIRE chart | `ghcr.io/spiffe/oidc-discovery-provider:1.15.3`, `docker.io/nginxinc/nginx-unprivileged:1.30.0-alpine` | Publishes SPIRE's JWT signing keys as a JWKS, which the gateway fetches. Plain HTTP inside the cluster — recorded as a gap, not hidden. |
 | `cert-manager` (+ `cainjector`, `webhook`) **(M5 Task 2)** | Upstream Kubernetes certificate controller, applied straight from its release manifest (`kubectl apply -f cert-manager.yaml`), not Helm | `v1.21.2`; `quay.io/jetstack/cert-manager-controller:v1.21.2`, `-cainjector:v1.21.2`, `-webhook:v1.21.2` | Its own namespace, `cert-manager`, not `northstar-platform`. A prerequisite for the Open Feature Operator's admission webhook, which needs a signed TLS certificate to run; issues and rotates that certificate. Reads and writes no `northstar-*` resource. |
 | Open Feature Operator (OFO) | Helm chart `openfeature/open-feature-operator`, installed by `scripts/setup-kind.sh` | chart `v0.9.3`; `ghcr.io/open-feature/open-feature-operator:v0.9.3` | Its own namespace, `open-feature-operator-system`. Watches `FeatureFlag` and `FeatureFlagSource` custom resources (`core.openfeature.dev/v1beta1`) and, on a pod carrying the `openfeature.dev/enabled`/`openfeature.dev/featureflagsource` annotations, mutates that pod's spec at admission time to add a `flagd` sidecar — an `initContainer` with `restartPolicy: Always`, the mechanism that puts flagd inside `policy-decision-service`'s own pod below rather than behind a separate `Service`. |
-| `flagd` | Sidecar, not its own pod — injected by the Open Feature Operator into `policy-decision-service`'s pod as an `initContainer` (`kubectl -n northstar-platform get pod -l app=policy-decision-service` shows it under `initContainers`, confirmed live rather than assumed from the chart) | `ghcr.io/open-feature/flagd:v0.16.2` | Watches the `northstar-autonomy` `FeatureFlag` object (`provider: kubernetes`, a live Kubernetes API watch, not file-polling) and answers flag evaluations over gRPC on `localhost:8013` inside the PDS pod — the port `pds/autonomy.py` calls. Also exposes a management/`healthz`+`/metrics` port (`:8014`, forwarded by `scripts/start-demo.sh` as `flagd-metrics`) and an OFREP REST port (`:8016`, `POST /ofrep/v1/evaluate/flags/{key}`) used to resolve a flag from outside the pod without a gRPC client — the mechanism `tests/harness/contract.py` uses to confirm a live flip actually resolved, from an ephemeral port-forward, before any test trusts it. |
+| `flagd` | Sidecar, not its own pod — injected by the Open Feature Operator into `policy-decision-service`'s pod as an `initContainer` (`kubectl -n northstar-platform get pod -l app=policy-decision-service` shows it under `initContainers`, confirmed live rather than assumed from the chart) | `ghcr.io/open-feature/flagd:v0.16.2` | Watches the `northstar-autonomy` `FeatureFlag` object (`provider: kubernetes`, a live Kubernetes API watch, not file-polling) and answers flag evaluations over gRPC on `localhost:8013` inside the PDS pod — the port `pds/autonomy.py` calls. Also exposes a management/`healthz`+`/metrics` port (`:8014`, readable through the API server's pod proxy; `docs/demo-runbook.md` §6 has the command) and an OFREP REST port (`:8016`, `POST /ofrep/v1/evaluate/flags/{key}`) used to resolve a flag from outside the pod without a gRPC client — the mechanism `tests/harness/contract.py` uses to confirm a live flip actually resolved, from an ephemeral port-forward, before any test trusts it. |
 
 **Not the Helm chart, for agentgateway, and that was a real decision.** The
 gateway is a plain `Deployment` plus a ConfigMap-mounted `config.yaml`
@@ -768,8 +768,8 @@ The form (`apps/customer-ui/src/app/page.tsx`) pre-fills:
 ```
 
 **Real request, captured from a live Playwright-driven submission against
-the deployed pod** (`POST http://localhost:19001/`, i.e. the port-forwarded
-claims-agent):
+the deployed pod** (`POST http://localhost:19001/`, claims-agent's
+host port):
 
 Headers of interest: `content-type: application/json`,
 `traceparent: 00-ddf2747a385885345c0eeb25997d53ba-bd2489e913a5994b-01`
@@ -2022,7 +2022,7 @@ v1.18.1 uses; same rule, current type.
   graceful stop makes Kyverno delete its own webhook configurations on the way
   out, so the keystone silently stops enforcing while the policy object still
   exists. The guarantee is "fail closed while Kyverno is registered", not "fail
-  closed whenever Kyverno is down". `start-demo.sh` and the gate therefore check
+  closed whenever Kyverno is down". `scripts/preflight.sh` and the gate therefore check
   the webhook registration and the endpoints, not only the policy's `Ready`.
 - **Message,** shown live: `DENIED: agent identity '<username>' may not change
   the objects that define its own authority (<kind>/<name>). Authority changes
@@ -2038,7 +2038,7 @@ wrong. Northstar does not ship a standing over-grant to show it;
 `scripts/demo keystone` applies `deploy/demo/keystone-overgrant.yaml`
 ("someone made a mistake"), shows Kyverno refuse the same patch, and deletes
 it. `setup-kind.sh` never applies that file (pinned by a unit test), and
-`start-demo.sh` refuses to start if it is left behind.
+`scripts/preflight.sh` refuses if it is left behind.
 
 **Two more things measured while building it** (both would otherwise be assumed):
 
@@ -2530,35 +2530,19 @@ calling the tracer directly.
 | Surface | URL |
 |---|---|
 | Customer UI | http://localhost:8080 |
-| Reviewer UI (stage 3) | http://localhost:8081 |
+| Reviewer UI | http://localhost:8081 |
 | Jaeger | http://localhost:16686 |
-| Prometheus — the metrics half of stage 4 | http://localhost:9090 |
-| Backstage — the catalog and the autonomy card (stage 6) | http://localhost:7007 |
-| AgentEvals — what the agent did, scored (stage 4) | http://localhost:18001 |
+| Prometheus | http://localhost:9090 |
+| AgentEvals — what the agent did, scored | http://localhost:18001 |
+| Backstage — the catalog and the autonomy card | http://localhost:7007 |
 
-The first three are kind host ports mapped at cluster creation and need no
-port-forward. The rest do, and `./scripts/start-demo.sh` is what starts them
-— that script owns every forward this demo needs, and prints every URL in this
-table (plus the agent and tool ports the walkthrough does not open) at the end
-of its run. **Backstage was the one exception until M6 Task 4.** Task 1 shipped
-it reachable only by a manual `kubectl -n northstar-platform port-forward
-svc/backstage 7007:7007` (`scripts/setup-kind.sh`'s own stage-6 completion
-message said so in as many words), which is why this row could not be added
-until the script actually owned the forward — adding the row first would have
-been exactly the "See it yourself" table naming a surface the script could not
-reach, the class of drift the paragraph below exists to stop.
-
-`tests/unit/test_stage4_config.py` requires the two lists to agree **in both
-directions**, so a surface added to one and not the other reddens a test rather
-than ageing a table. That sentence was false when it was first written, and the
-row above it is why: the guard only checked table → script, M4 Task 2 had
-already added Prometheus to the script, and the table went four tasks without a
-Prometheus row while the guard stayed green and this paragraph claimed it
-could not. The reverse direction cannot simply be "every printed URL is in this
-table" — the script deliberately prints agent and tool ports the walkthrough
-never opens — so each printed line now declares itself `#surface` or
-`#tool-port` and the guard requires the `#surface` set to *equal* this table.
-An unmarked line fails; adding a URL is now a decision rather than an echo.
+Every one is a kind host port onto a NodePort Service, mapped when the cluster
+is created (`deploy/kind/cluster.yaml`, listening on 127.0.0.1 only), so none
+needs a `kubectl port-forward` and all of them survive a redeploy.
+`scripts/setup-kind.sh` ends by checking each one answers, and
+`./scripts/preflight.sh` repeats that check on its own.
+`tests/unit/test_cluster_config.py` keeps the kind config, the NodePort
+Services and the preflight's list in agreement.
 
 1. Open the Customer UI. The form is pre-filled with claim `CLM-1842`,
    policy `POL-77120`, €6,200. Click "Submit claim." Within a few seconds
@@ -2677,9 +2661,8 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
    model, and are gated behind `RUN_BROWSER_TESTS=1`.
 
    That file port-forwards to the gateway itself (on an ephemeral local port
-   it asks `kubectl` for, so it cannot collide with any forward
-   `scripts/start-demo.sh` establishes; the ports are listed there, not
-   counted here), mints real JWT-SVIDs from
+   it asks `kubectl` for, so it cannot collide with a fixed port), mints real
+   JWT-SVIDs from
    SPIRE, and asserts both that a valid
    one executes a tool end to end and that invalid ones are refused: **5
    refusal cases from 4 refusal functions** (one, the untrusted-issuer check,
@@ -2696,10 +2679,9 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
 
 7. **Then approve the refusal — this is M3's part of the walkthrough.** After
    step 1's €6,200 submission comes back `refused`, open the Reviewer UI at
-   http://localhost:8081. Unlike the Customer UI and Jaeger above it needs no
-   `kubectl port-forward` (Prometheus does): its Service is a `NodePort` and
-   `deploy/kind/stage3.yaml` maps host 8081 to it, so it also survives a
-   redeploy.
+   http://localhost:8081. Like every surface in the table above, its Service
+   is a `NodePort` that `deploy/kind/cluster.yaml` maps to a host port, so it
+   survives a redeploy.
 
    The page lists every payment whose status is `refused`, each showing the
    rule that fired, the limit the caller held, the amount
@@ -2778,10 +2760,8 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
    The AgentEvals checks run on demand with `scripts/demo evals`.
 
 10. **Finally, open Backstage — M6's part of the walkthrough, and the first
-    step in this list that is not about the money hop at all.** Run
-    `./scripts/start-demo.sh` (it forwards `svc/backstage` at 7007, gated on
-    stage 6's own presence — a cluster below stage 6 prints
-    `Backstage: SKIPPED` instead) and open http://localhost:7007. Unlike every
+    step in this list that is not about the money hop at all.** Open
+    http://localhost:7007. Unlike every
     other surface in this table, this one asks for a login. Click **Enter**
     under the Guest option — there is no username or password to type, and
     that absence is itself the first thing worth noticing, not a rough edge to
@@ -2855,9 +2835,9 @@ assume otherwise:
   is a genuine `POST /api/auth/guest/refresh` round trip, not a fake — but it
   asks nothing of the caller. Anyone who can reach port 7007 can open the
   catalog and flip the autonomy contract. That is acceptable for a laptop
-  demo cluster reached only through an explicit `kubectl port-forward` — there
-  is no Ingress, no LoadBalancer, no node port — and it would not be
-  acceptable anywhere else. What keeps this honest is the narrowness of the
+  demo cluster whose host ports listen on 127.0.0.1 only — there is no
+  Ingress and no LoadBalancer — and it would not be acceptable anywhere
+  else. What keeps this honest is the narrowness of the
   one write the UI can make, not a login: `backstage-autonomy-writer` holds
   `get`/`list`/`patch` on `resourceNames: [northstar-autonomy]` only, no
   `delete`, separate from the read-only ServiceAccount the Kubernetes plugin
