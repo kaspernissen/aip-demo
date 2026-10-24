@@ -87,8 +87,7 @@ OPENFEATURE_HELM_REPO="https://open-feature.github.io/open-feature-operator/"
 # Kyverno (stage 7). Chart 3.9.1 / app v1.19.1 -- the newest upstream release,
 # checked against `helm search repo kyverno/kyverno --versions` and the GitHub
 # releases API on 2026-10-12 (v1.19.1, 2026-09-10). The chart and app versions
-# are unrelated numbers, like SPIRE's. Both are pinned by
-# tests/unit/test_pins.py, which reads them back out of this file.
+# are unrelated numbers, like SPIRE's.
 KYVERNO_CHART_VERSION="3.9.1"
 KYVERNO_APP_VERSION="v1.19.1"
 KYVERNO_HELM_REPO="https://kyverno.github.io/kyverno/"

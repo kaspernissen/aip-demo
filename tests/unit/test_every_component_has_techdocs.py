@@ -184,11 +184,6 @@ def test_the_system_documents_the_solution():
     own TechDocs too. The same three links have to hold as for a
     component -- entity annotation, mkdocs.yml, docs entry point -- except the
     System's entity lives at the repo root, so `dir:.` resolves there.
-
-    The fourth link, staging the root mkdocs.yml and docs/ into the image
-    beside the staged system entity, is asserted by
-    `test_rebuild_and_deploy_guard.py`'s catalog-stage test, for the reason
-    this module's docstring gives.
     """
     system_entities = [
         d

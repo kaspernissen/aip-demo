@@ -62,7 +62,7 @@ pygments==2.21.0
 # rationale for 2.42.0 and for not taking the `[mcp]` extra. Copied, not
 # re-resolved to newer releases: a version refresh is its own milestone, and
 # two agents on two PydanticAI versions would publish two `gen_ai.*`
-# inventories under one contract. `tests/test_pins.py` holds the pair equal.
+# inventories under one contract.
 pydantic-ai-slim[anthropic]==2.42.0
 # Transitive pins pulled in by pydantic-ai-slim[anthropic], the same list
 # and the same versions settlement-agent pins (house style: nothing floats).

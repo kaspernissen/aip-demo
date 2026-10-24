@@ -98,9 +98,7 @@ def test_every_component_directory_has_its_own_catalog_info_yaml():
 
 
 def test_the_guard_reddens_when_a_ninth_component_has_no_catalog_entry(tmp_path):
-    """Self-contained RED demonstration, the same shape every other guard in
-    this suite carries (see tests/unit/test_rebuild_and_deploy_guard.py's own
-    "goes red" tests): builds a sandbox tree with the same five groups, the
+    """Self-contained RED demonstration: builds a sandbox tree with the same five groups, the
     seven compliant directories and one more that is missing its catalog-info.yaml,
     and proves `_component_dirs` + the existence check above actually catch
     it -- not merely that they would in principle.

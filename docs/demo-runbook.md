@@ -300,8 +300,7 @@ done
 ```
 
 > **Never install into an existing service venv.** Their contents are pinned
-> and asserted by `test_pins.py` in each service. If one is wrong, delete it
-> and recreate it from `requirements.txt`.
+> in `requirements.txt`. If one is wrong, delete it and recreate it.
 
 ### T-30 — bring the cluster up
 

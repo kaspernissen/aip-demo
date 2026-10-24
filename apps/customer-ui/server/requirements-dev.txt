@@ -6,8 +6,7 @@
 # Test client transport (tests/conftest.py's ASGITransport; Starlette's
 # TestClient also needs it). Version matches every other Python service.
 httpx==0.28.1
-# Test runner, gated by the same advisory-pin discipline as every other
-# service's test_pins.py.
+# Test runner, same pin as every other service.
 pytest==9.1.1
 pytest-asyncio==1.4.0
 

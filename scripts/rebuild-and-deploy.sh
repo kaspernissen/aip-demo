@@ -226,11 +226,8 @@ for component in "${targets[@]}"; do
   # docker warning about an unused arg, not a false sense of coverage.
   build_cmd=(docker build -t "$image" "$ROOT/$context")
   if [[ "$component" == "backstage" ]]; then
-    # `git -C ... || echo unknown`, not a bare `git rev-parse`: this script
-    # also runs inside test_rebuild_and_deploy_guard.py's sandboxes, which
-    # copy the script into a tmp dir that is NOT a git repository, and
-    # `set -e` would otherwise take the whole run down on a command
-    # substitution failure inside this array assignment (verified: it does).
+    # `git -C ... || echo unknown`, not a bare `git rev-parse`: under `set -e`
+    # a failing command substitution here (no git repo) would end the run.
     # A real checkout always resolves a real SHA; "unknown" only ever shows
     # up in a context that was never a git repo to begin with, and the image
     # revision guard (tests/e2e/test_backstage_image_matches_head.py) treats

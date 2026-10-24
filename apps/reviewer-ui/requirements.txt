@@ -38,8 +38,7 @@ opentelemetry-instrumentation-httpx==0.65b0
 # API contract, same chart).
 spiffe==0.3.1
 
-# --- test-only, gated by the same advisory-pin discipline as every other
-# service's test_pins.py (agents/settlement-agent/tests/test_pins.py) ---
+# --- test-only, same pins as every other service ---
 pytest==9.1.1
 pytest-asyncio==1.4.0
 

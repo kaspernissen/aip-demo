@@ -3558,8 +3558,8 @@ M3 Task 5B measurement below, which read five of each and predates
 original rows, and was missing the sixth (`eval-scorer`) entirely, until this
 fix wave.** M5 Task 1 bumped all seven of this repo's `requirements.txt` files
 (the six above, plus the root `tests/requirements.txt`) to `9.1.1`, clearing
-PYSEC-2026-1845; every venv, including the root one `tests/unit/test_pins.py`
-now guards (M5-R33), measures `pytest 9.1.1` today. The preamble's own
+PYSEC-2026-1845; every venv, including the root one, measures `pytest 9.1.1`
+today. The preamble's own
 provenance claim — "measured by reading all five Dockerfiles and all five
 requirements files" — decayed the same way the export-destinations table's
 did (C1): the moment the files it named moved, without the table it produced

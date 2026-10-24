@@ -75,8 +75,7 @@ kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
 # running weaker and saying nothing about it.
 #
 # Asked of the cluster, not of a flag or an env var: the Service either exists
-# or it does not. tests/unit/test_smoke_test_gate.py pins that this check is
-# here and that it is not conditional.
+# or it does not.
 kubectl --context kind-northstar -n observability get svc/opensearch-cluster-master >/dev/null 2>&1 || {
   echo -e "${RED}Error: svc/opensearch-cluster-master not found in the observability namespace.${NC}" >&2
   echo "This cluster is below stage 4. The gate runs tests/e2e/test_opensearch_trace_ingest.py -- the trace-ingest guard -- and on a cluster without OpenSearch every one of its assertions SKIPs, so the gate would pass while proving nothing about them." >&2

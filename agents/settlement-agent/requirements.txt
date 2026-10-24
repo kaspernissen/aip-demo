@@ -99,8 +99,7 @@ pem==23.1.0
 # The `[mcp]` extra is not taken: adopting `MCPToolset` would replace
 # `mcp_tools.py`'s hand-built `send_request` call — the one code path in this
 # repo that sets `params._meta` — with a convenience wrapper whose propagation
-# behaviour nothing here has measured. `tests/test_pins.py`'s
-# `test_no_fastmcp_in_this_service` enforces that directly.
+# behaviour nothing here has measured.
 #
 # 2.42.0 is the newest stable release, published 2026-09-09 (PyPI release
 # history for `pydantic-ai-slim`; the `v2.42.0` tag on

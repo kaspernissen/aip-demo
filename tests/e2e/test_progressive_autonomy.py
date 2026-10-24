@@ -37,8 +37,7 @@ away.**
    and immediately, naming this file by name, if the live contract is ever
    not `assisted` when a denial-shaped fixture is about to drive one.
 2. This file itself must not be vacuous, which is the point a docstring
-   cannot prove -- run `scripts/mutate-guard.sh` against it, and disbelieve
-   the paragraph above until you have seen that evidence.
+   cannot prove: break the behaviour it checks and watch it fail.
 
 **Cost.** Two live settlements (one refused, one executed), the same one a
 full run of `test_policy_denial.py` or `test_supervised.py` already spends

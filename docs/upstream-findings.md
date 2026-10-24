@@ -1947,6 +1947,9 @@ it is this entry's job, and the guard is a code change for whoever takes it.
 > was forward instead, to the current release, with the Go end fixed rather
 > than the Python end held back. What the paragraph actually asked for is what
 > shipped: the pin is no longer invisible at the point of edit.
+>
+> **2026-10-24:** the `test_pins.py` files were removed. The `==` pin in
+> `tools/payments-mcp/requirements.txt` is what holds the version now.
 
 **Why it matters, beyond this project.** Any fleet mixing OpenTelemetry Python
 ≥ 1.4x with OpenTelemetry Go ≤ v1.41.0 has this on every Python→Go hop, and

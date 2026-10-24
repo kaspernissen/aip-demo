@@ -263,23 +263,6 @@ The gate generates them itself. To run a suite on its own first, generate them:
 call or a browser sits behind `RUN_BROWSER_TESTS=1`, so a bare run spends
 nothing.
 
-### Mutation-testing a guard
-
-A guard here is trusted only once it has been mutated and seen to fail for the
-reason it names. Don't hand-roll the edit, run, revert loop; use:
-
-```bash
-./scripts/mutate-guard.sh <file> <old-text> <new-text> <test command...>
-```
-
-It restores the file on every exit path, refuses a replacement that changes
-nothing, and sets **`PYTHONDONTWRITEBYTECODE=1`** and clears `__pycache__`
-around the run. That last part matters: CPython checks a cached `.pyc` only
-against the source's size and whole-second mtime, so a same-length mutation
-written within the same second can run stale bytecode and report a false
-pass or a false failure. `tests/unit/test_mutation_protocol.py` pins this
-behaviour.
-
 ## Telemetry
 
 Everything is OTLP to an OpenTelemetry Collector, then Jaeger, OpenSearch and

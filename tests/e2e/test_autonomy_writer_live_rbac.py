@@ -105,8 +105,7 @@ def stage_6_with_the_write_grant_applied_or_a_reason():
     otherwise guards against.
 
     Three separate questions, deliberately not collapsed into one raw
-    exit-code check (`tests/unit/test_kube_helper.py` walks this file for
-    exactly that collapse): "can I talk to this cluster at
+    exit-code check: "can I talk to this cluster at
     all" has no `NotFound` shape to read (`cluster-info` names no object),
     so it stays a raw-returncode reachability probe -- the same shape
     `test_progressive_autonomy.py::stage_5_or_a_reason` uses and is

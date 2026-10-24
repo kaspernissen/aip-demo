@@ -4,9 +4,7 @@ M12 moved the reach guarantees from Cilium to Linkerd (ingress, by workload
 identity) and core NetworkPolicy (egress). Both change what a refusal looks
 like, so the oracles changed. They come from the measurements in
 `docs/superpowers/plans/2026-10-21-northstar-m12-linkerd.md` (M1-M6), and every
-decision the e2e files make is a pure function here, unit-tested against
-recorded real output in `tests/unit/test_reach_harness.py`, because the e2e
-files themselves need a live cluster that CI does not have.
+decision the e2e files make is a pure function here.
 
 **Ingress refused** = HTTP 403 (a matched route or a route-less Server, wrong
 identity) or a proxy 404 (no route matched on a Server that has routes), an
