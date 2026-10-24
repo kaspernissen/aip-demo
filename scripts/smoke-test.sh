@@ -24,7 +24,7 @@ command_exists() {
 # milestone does not have to remember to come here -- the guard reddens when
 # the spec lands. Both strings share the word "Northstar" so they match one
 # pattern instead of two.
-echo -e "${BLUE}=== Northstar M12 smoke test ===${NC}"
+echo -e "${BLUE}=== Northstar M13 smoke test ===${NC}"
 
 echo -e "${BLUE}--- Checking prerequisites ---${NC}"
 command_exists go || { echo -e "${RED}go is required${NC}" >&2; exit 1; }
@@ -435,4 +435,4 @@ if [[ "$SKIPPED" -ne 0 ]]; then
 fi
 
 echo ""
-echo -e "${GREEN}Northstar M12 smoke test passed.${NC}"
+echo -e "${GREEN}Northstar M13 smoke test passed.${NC}"
