@@ -213,7 +213,7 @@ def test_claim_id_reaches_claims_agents_own_spans_created_after_intake(correlate
             f"outbound A2A span missing/wrong {CLAIM_ID_KEY}: {span.attrs}"
         )
 
-    # M8: the task, then its input-required update, are each an enqueue_event
+    # The task, then its input-required update, are each an enqueue_event
     # span in this trace (the completion is published under the human's decision,
     # in the reviewer's trace). Every one of them carries the claim id.
     enqueues = trace.spans_named(
@@ -245,7 +245,7 @@ def test_trace_is_findable_by_claim_id(correlated_trace):
     found = client.find_traces(
         service="claims-agent", tags={CLAIM_ID_KEY: correlated_trace.claim_id}
     )
-    # M8: the human's decision is a second trace (the reviewer's) and its
+    # The human's decision is a second trace (the reviewer's) and its
     # claims-agent spans carry the claim id too, so a claim id now finds both,
     # and the newest is not necessarily the claim's own.
     assert correlated_trace.trace.trace_id in {t.trace_id for t in found}, (

@@ -2,41 +2,30 @@
 
 The criterion, verbatim: *"Direct egress from `northstar-agents` to the model
 provider is **denied**, with the gateway as the only path."* (Enforced by
-Cilium until M12; by core NetworkPolicy, in the node, since.)
+core NetworkPolicy, in the node.)
 
-**What was measured before any egress policy existed.** Probed from inside each
-of the three pods then in `northstar-agents`:
-
-    settlement-agent -> api.anthropic.com:443   reached
-    settlement-agent -> example.com:443         reached
-    claims-agent     -> api.anthropic.com:443   reached
-    claims-agent     -> example.com:443         reached
-    customer-ui      -> api.anthropic.com:443   reached
-
-So the criterion was false in three places, and scoping a policy to
-`settlement-agent` alone would have satisfied a test named for the criterion
-while leaving `claims-agent` and `customer-ui` as unrestricted outbound egress
-points. All four workloads in the namespace now carry an egress NetworkPolicy
-(`reviewer-ui` too, as it had one under Cilium), and this file asserts them.
+**Scope.** Three pods live in `northstar-agents` (settlement-agent,
+claims-agent, customer-ui) plus reviewer-ui. Scoping a policy to
+`settlement-agent` alone would satisfy a test named for the criterion while
+leaving the others as unrestricted outbound egress points, so every workload in
+the namespace carries an egress NetworkPolicy and this file asserts them.
 
 **The honest reading of "the gateway as the only path".** `settlement-agent`
 *must* reach `api.anthropic.com:443`: its own model call goes there, and
-agentgateway is an MCP proxy that does not carry model traffic. Since the
-intake work, `claims-agent` must too: it calls a model to read a claim the
+agentgateway is an MCP proxy that does not carry model traffic. `claims-agent` must too: it calls a model to read a claim the
 customer wrote as free text. So the criterion is discharged as two testable
 statements:
 
 1. **Two workloads, not the namespace.** Only `settlement-agent` and
    `claims-agent` are admitted to the model provider, and only to Anthropic's published ranges
-   (160.79.104.0/23 and 2607:6bc0::/48, TCP 443). The Cilium policy matched the
-   NAME `api.anthropic.com`; NetworkPolicy has no names, so an address range is
+   (160.79.104.0/23 and 2607:6bc0::/48, TCP 443). NetworkPolicy has no names, so an address range is
    the honest equivalent and a name that resolves elsewhere is dropped.
 2. **The gateway really is the only path to a tool**, from the egress side:
    `payments-mcp:8000`, `policy-decision-service:9100` and
    `payments-api:8080` appear in no agent's allowlist but the ones
    that need them.
 
-**The oracle changed, and why (plan M1).** From a *meshed* pod a TCP connect to
+**The oracle.** From a *meshed* pod a TCP connect to
 ANY address "succeeds": the pod's own outbound proxy accepts it locally. So
 nothing in this file asserts on a connect from a meshed pod. A meshed pod's
 egress is read above TCP: a TLS handshake plus an HTTP request. Allowed = a
@@ -46,7 +35,7 @@ From an *unmeshed* pod nothing intercepts the connect, so the kernel's drop
 shows as a connect timeout, and that is still the oracle there. The bypass
 tests below use exactly such a pod, to prove the node enforces egress and not
 the proxy. The decisions are pure functions in `tests/harness/reach.py`, unit
-tested against output recorded on the spike cluster.
+tested against recorded probe output.
 
 **Controls, because a blanket outage would otherwise read as a success.** Each
 denial is paired: both model agents must still reach the model provider;
@@ -57,8 +46,8 @@ is a `kubectl get networkpolicy` assertion on its own: a live-object comparison
 the verdicts are behaviour.
 
 **Not behind `RUN_BROWSER_TESTS=1`**: it spends no model tokens. **A skip is
-invisible in a green gate**: the fixture skips only below stage 2 and FAILS on a
-stage >= 2 cluster missing Linkerd or the reach objects.
+invisible in a green gate**: the fixture skips only on a cluster without the platform layer and FAILS on
+one that has it but lacks Linkerd or the reach objects.
 """
 
 import json
@@ -196,11 +185,9 @@ def wrong_identity_pod(reach_objects):
 def test_an_agent_with_no_model_call_cannot_reach_the_model_provider(app, reach_objects):
     """§9.7: direct egress from `northstar-agents` to the model provider.
 
-    Written against the workload measured reaching `api.anthropic.com:443`
-    before any policy existed that makes no model call (claims-agent was the
-    other, until it took on the intake model). It holds no `ANTHROPIC_API_KEY`,
+    Written against the workload that makes no model call. It holds no `ANTHROPIC_API_KEY`,
     so it loses nothing. A meshed pod's connect succeeds
-    regardless (M1), so the request is a TLS handshake plus an HTTP request and
+    regardless, so the request is a TLS handshake plus an HTTP request and
     the verdict is whether a status line came back.
     """
     result = _http(app, MODEL_HOST, MODEL_PORT, "HEAD", "/", tls=True)
@@ -361,7 +348,7 @@ def test_claims_agent_still_reaches_its_peer_and_the_collector(
     delegation target; losing it would break every claim.
 
     The peer is probed with `POST /`, never the agent card: Linkerd's default
-    probe route opens `GET /.well-known/agent-card.json` to every caller (M5),
+    probe route opens `GET /.well-known/agent-card.json` to every caller,
     so it would pass for any identity. A POST needs claims-agent's identity;
     any app answer (an A2A JSON-RPC error body included) is "reached".
     """
@@ -426,7 +413,7 @@ def test_every_agent_pod_is_still_ready(app, reach_objects):
         f"{app} is not Ready under the egress policy (got {proc.stdout!r})")
 
 
-# --- M10: the customer's push receiver --------------------------------------
+# --- the customer's push receiver --------------------------------------
 
 
 def test_claims_agent_reaches_the_push_receiver_and_the_server_answers(reach_objects):
@@ -448,9 +435,8 @@ def test_claims_agent_reaches_the_push_receiver_and_the_server_answers(reach_obj
 def test_an_identity_that_is_not_claims_agent_cannot_push(wrong_identity_pod):
     """Only claims-agent's identity may POST /a2a/push: the wrong one is a counted 403.
 
-    M11 asserted this for reviewer-ui. reviewer-ui is now stopped earlier, by its
-    own egress allowlist (asserted next), so the wrong caller is the throwaway
-    meshed pod. The refusal names the route `customer-ui-push`.
+    reviewer-ui is stopped earlier, by its own egress allowlist (asserted
+    next), so the wrong caller here is the throwaway meshed pod. The refusal names the route `customer-ui-push`.
     """
     cid = reach.client_id(WRONG_ID_SA, AGENT_NS)
     dst = _pod("customer-ui")
@@ -508,7 +494,7 @@ def test_an_unmeshed_claims_agent_cannot_reach_another_customer_ui_port(bypass_p
     customer-ui's pod IP on 9090 is outside the rule (8080 and 4143) and times
     out. Control: the same pod connects to the allowed port 8080. This is the
     only place the egress port rule can be shown to bind; for a MESHED source it
-    does not (next test, plan M7).
+    does not (next test).
     """
     pod_ip = _customer_ui_pod_ip()
     denied = reach.exec_probe(
@@ -528,7 +514,7 @@ def test_an_unmeshed_claims_agent_cannot_reach_another_customer_ui_port(bypass_p
 def test_a_meshed_claims_agent_reaches_every_port_of_customer_ui_documented_limitation(
     reach_objects,
 ):
-    """DOCUMENTS A LIMITATION (plan M7), it does not bless it.
+    """DOCUMENTS A LIMITATION, it does not bless it.
 
     Between meshed pods, egress is decided per pod, not per port: claims-agent
     is allowed to reach customer-ui's proxy (4143), and the client proxy tunnels

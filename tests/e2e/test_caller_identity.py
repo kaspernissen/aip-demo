@@ -454,9 +454,9 @@ def test_gateway_refuses_a_bearer_value_that_is_not_a_jwt(gateway_url):
 
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 
-# M8: the route's `authorization` ceiling runs BEFORE the MCP body is parsed, and
+# The route's `authorization` ceiling runs BEFORE the MCP body is parsed, and
 # a JSON-RPC array carries no `mcp.methodName`, so its allow rule errors and the
-# batch is answered `403 authorization failed`. Measured live, M8 Task 4. This is
+# batch is answered `403 authorization failed`. This is
 # pinned to exactly that: a 400 here would mean the ceiling no longer sees the
 # batch and the MCP layer's own rejection (OQ-U1 in docs/upstream-findings.md,
 # `400 mcp: fail to deserialize request body`) is the only thing left, which is a
@@ -465,7 +465,7 @@ JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 BATCH_REJECTED_BY_CEILING = 403
 BATCH_REJECTED_BODY = "authorization failed"
 
-# Over `settlement-agent`'s assisted allowance (0 since M8), so a batch that DID
+# Over `settlement-agent`'s assisted allowance (0), so a batch that DID
 # reach the guardrail would produce a `northstar.policy.decision` span -- and one that
 # bypassed it would execute a real over-limit payment. The probe cannot
 # produce a false negative by asking for something that was never decidable.

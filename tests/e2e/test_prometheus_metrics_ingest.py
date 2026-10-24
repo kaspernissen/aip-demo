@@ -32,8 +32,8 @@ the data crosses them:
      nothing about any framework -- it only proves that process had nowhere to
      put a measurement.
 
-**Stage gate, and why it is not a way to hide.** Skip only when the cluster is
-*coherently* below stage 4 -- Prometheus absent AND the deployed collector
+**Skip gate, and why it is not a way to hide.** Skip only when the cluster is
+*coherently* without metrics -- Prometheus absent AND the deployed collector
 config not naming the exporter. The incoherent middle (an exporter pointed at a
 Service that does not exist) fails here rather than skipping. "Absent" means
 the API server said `NotFound`, and every other way `kubectl` can exit
@@ -202,7 +202,7 @@ def _metrics_pipeline_exports_to_prometheus() -> bool:
 
 @pytest.fixture(scope="module", autouse=True)
 def stage_4_or_a_reason():
-    """Skip below stage 4; fail on the incoherent middle state."""
+    """Skip without Prometheus; fail on the incoherent middle state."""
     installed = _prometheus_is_installed()
     exports = _metrics_pipeline_exports_to_prometheus()
     if not installed and not exports:
@@ -371,7 +371,7 @@ def test_prometheus_itself_scrapes_nothing(prometheus_url):
 #
 # The `job` label is Prometheus's rendering of OTLP's `service.name` resource
 # attribute, so these are the service names, not Deployment names.
-# There is one settlement Deployment (the senior was retired in M8), so
+# There is one settlement Deployment, so
 # `settlement-agent` is the only job for that image.
 #
 # **The settlement-agent row carries the cost gate.** Its known metric is the

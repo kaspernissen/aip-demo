@@ -54,8 +54,8 @@ def _kubectl(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
 @pytest.fixture(scope="module", autouse=True)
 def stage_6_backstage_deployed_or_a_reason():
     """Skip if this is not even a live cluster; skip (not fail) if the
-    cluster is live but stage 6's Backstage Deployment does not exist --
-    that is an absence of stage 6, not a regression, the same discipline
+    cluster is live but the Backstage Deployment does not exist --
+    that is an absence of Backstage, not a regression, the same discipline
     `test_autonomy_writer_live_rbac.py`'s own fixture uses for the Role it
     depends on."""
     reachable = _kubectl("cluster-info", timeout=15)

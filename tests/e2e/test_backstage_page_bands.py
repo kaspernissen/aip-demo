@@ -11,7 +11,7 @@ a CSS cascade inside a build -- Backstage UI ships its component CSS in
 Nothing in the repo proves that; only the browser does.
 
 That division is this repo's most expensive lesson, recorded at length in
-`tests/e2e/test_golden_path.py`'s own docstring: five stage-6 defects survived
+`tests/e2e/test_golden_path.py`'s own docstring: five Backstage defects survived
 a Ready pod and a green suite, and every one was found by fetching the running
 thing. A band that silently stopped painting would look exactly like the state
 this work was done to fix, and would say nothing anywhere.
@@ -107,7 +107,7 @@ def _kubectl(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
 @pytest.fixture(scope="module", autouse=True)
 def stage_6_backstage_deployed_or_a_reason():
     """Skip if there is no live cluster, and skip if Backstage is simply not
-    deployed -- the absence of stage 6 is not this file's regression. Same
+    deployed -- the absence of Backstage is not this file's regression. Same
     shape as `test_golden_path.py`'s own fixture, minus the Role check, which
     nothing here depends on.
     """
@@ -122,7 +122,7 @@ def stage_6_backstage_deployed_or_a_reason():
     # "does this object exist?". A non-zero exit is a different question --
     # an unreachable API server, a wrong context and an expired credential all
     # land there, and reading the code alone turns each of them into a silent
-    # "stage 6 is not installed" skip.
+    # "Backstage is not installed" skip.
     deployment = _kubectl(
         "-n", PLATFORM_NAMESPACE, "get", "deployment", "backstage", "-o", "name",
     )
@@ -356,10 +356,9 @@ def test_every_page_wears_the_band_its_route_is_assigned(backstage_url):
                     # false report that the band is missing.
                     page.wait_for_selector(selector, timeout=60000)
                 except Exception:  # noqa: BLE001
-                    # One reload, then the same wait again. M10 gate run 2 lost
-                    # `/create` this way three minutes after a fresh rollout: the
-                    # scaffolder page rendered no plugin header within 60 s, and
-                    # the same test passed in 5 s on its own minutes later. A
+                    # One reload, then the same wait again. Right after a fresh
+                    # rollout the scaffolder page can render no plugin header
+                    # within 60 s and then render fine on a reload. A
                     # page that is really broken fails the second wait too.
                     _goto(page, f"{backstage_url}{route}")
                     try:

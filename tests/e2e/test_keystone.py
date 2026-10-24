@@ -1,7 +1,7 @@
 """Proves the keystone: an agent identity cannot change the objects that define
 its own authority, even when RBAC would let it.
 
-Needs the live stage-7 cluster and nothing else -- like
+Needs the live cluster and nothing else -- like
 `test_gateway_is_the_only_route.py` it spends no model tokens: it is a handful
 of `kubectl --as=...` calls against the real API server.
 
@@ -22,11 +22,11 @@ context whether or not the agent's patch (wrongly) landed. A test run that
 leaves a standing over-grant would be the very thing the ring exists to say
 never exists.
 
-**Present on a stage-7 cluster, or these tests FAIL -- never skip.** The same
+**Present on the cluster, or these tests FAIL -- never skip.** The same
 defect `test_gateway_is_the_only_route.py`'s `policy_present` fixture documents:
 a fixture that skips when the policy is missing turns "the policy is no longer
 applied" -- the one event this file exists to catch -- into a green run.
-`keystone_armed` therefore separates *not a stage-7 cluster* (no Kyverno CRD at
+`keystone_armed` therefore separates *not a cluster with Kyverno* (no Kyverno CRD at
 all: skip) from *Kyverno installed but the policy absent or not Ready* (the
 regression: fail, loudly). Verified by mutation: deleting the live policy turns
 these tests red, not skipped.
@@ -67,8 +67,7 @@ PATCH_ASSISTED = json.dumps(
 )
 
 
-# MEASURED on the live stage-7 cluster (Kyverno chart 3.9.1 / app v1.19.1),
-# not assumed: Kyverno's admission controller exports OTLP traces as the
+# Observed on the live cluster (Kyverno chart 3.9.1 / app v1.19.1): Kyverno's admission controller exports OTLP traces as the
 # service below, and a denied admission produces a span with this operation
 # name -- `VALIDATE <operation> <group>/<version>, Kind=<kind>`. The policy name
 # is not an attribute of its own; it is inside `admission.response.result.message`.
@@ -118,7 +117,7 @@ def _wait_until_agent_can_patch(timeout: float = 30.0) -> None:
 
 @pytest.fixture(scope="module")
 def keystone_armed():
-    """A stage-7 cluster with the keystone Ready, or the tests FAIL.
+    """A cluster with the keystone Ready, or the tests FAIL.
 
     See the module docstring: skipping on a missing policy would let the exact
     regression this file exists to catch leave the suite green.
@@ -418,7 +417,7 @@ CASES = {
     "pod-as-reviewer-ui": dict(
         # The identity edit: a pod running as another ServiceAccount is issued
         # that ServiceAccount's SVID, with no RBAC object touched at all. The
-        # target is reviewer-ui since M8: an agent that could run a pod as it
+        # target is reviewer-ui: an agent that could run a pod as it
         # could forge a human approval (the PDS permits that identity to
         # release a payment awaiting approval).
         rules=[{"apiGroups": [""], "resources": ["pods"], "verbs": ["create"]}],
@@ -439,7 +438,7 @@ CASES = {
         names="Pod/keystone-test-pod",
     ),
     "network-policy": dict(
-        # Reach ring, egress half (M12): core NetworkPolicy, enforced by the
+        # Reach ring, egress half: core NetworkPolicy, enforced by the
         # node. An agent that could add one could add an allow next to the
         # allowlist that keeps it off the model provider and the tools.
         rules=[{"apiGroups": ["networking.k8s.io"],
@@ -460,7 +459,7 @@ CASES = {
         names="NetworkPolicy/keystone-test-netpol",
     ),
     "linkerd-authorization-policy": dict(
-        # Reach ring, ingress half (M12): who may call the money path is a
+        # Reach ring, ingress half: who may call the money path is a
         # Linkerd AuthorizationPolicy. Every policy.linkerd.io kind is covered
         # (Server, HTTPRoute, the *Authentication kinds), this is the one that
         # would admit a caller.
@@ -597,7 +596,7 @@ def test_an_over_granted_agent_cannot_mint_another_serviceaccounts_token(
 ):
     """`serviceaccounts/token`: minting a token for reviewer-ui is
     acquiring its identity by a shorter route than creating a pod -- and that
-    identity is the one that releases human-approved payments (M8)."""
+    identity is the one that releases human-approved payments."""
     try:
         _over_grant_cluster_wide([{
             "apiGroups": [""], "resources": ["serviceaccounts/token"],

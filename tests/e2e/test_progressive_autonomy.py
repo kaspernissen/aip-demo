@@ -74,8 +74,8 @@ from tests.harness.live import get_payment as _get_payment  # same ledger-read h
 KUBE_CONTEXT = "kind-northstar"
 PLATFORM_NAMESPACE = "northstar-platform"
 AGENTS_NAMESPACE = "northstar-agents"
-# The clean, separate object that answers "is this at least a stage-5
-# cluster" -- distinct from `featureflag/northstar-autonomy` and from the
+# The clean, separate object that answers "is the Open Feature Operator
+# installed" -- distinct from `featureflag/northstar-autonomy` and from the
 # policy-decision-service pod this file's real target lives inside, the same
 # "a different object than the thing under test" discipline
 # `test_gateway_config_drift.py` already holds itself to.
@@ -96,15 +96,15 @@ def _kubectl(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
 
 @pytest.fixture(scope="module", autouse=True)
 def stage_5_or_a_reason():
-    """Skip below stage 5; fail on a stage-5 cluster missing the one thing
+    """Skip without the Open Feature Operator; fail on a cluster with it missing the one thing
     this file actually asserts on.
 
     The discriminator is the Open Feature Operator's own controller
     Deployment -- present the moment `./scripts/setup-kind.sh` has
     run, regardless of whether the `FeatureFlag` object or the flagd sidecar
-    this file drives are themselves healthy. A stage-5 cluster missing
+    this file drives are themselves healthy. A cluster with the operator missing
     either of *those* is this file's own regression and must fail, never
-    read as "not stage 5".
+    read as "not installed".
     """
     reachable = _kubectl("cluster-info", timeout=30)
     if reachable.returncode != 0:

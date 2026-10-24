@@ -191,7 +191,7 @@ def llm_settlement():
     traceparent = f"00-{trace_id}-{span_id}-01"
     claim_id = f"CLM-TEST-{uuid.uuid4().hex[:8]}"
 
-    # M8: the resting state (`assisted`) releases nothing, so a claim the agent
+    # The resting state (`assisted`) releases nothing, so a claim the agent
     # is to settle itself runs with the dial at `autonomous` -- always restored.
     with live.autonomy(contract.AUTONOMOUS):
         result = _send(

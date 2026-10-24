@@ -669,7 +669,7 @@ EGRESS_SOURCES = ["settlement-agent", "claims-agent", "customer-ui", "reviewer-u
 
 
 def test_the_agent_plane_workloads_have_the_expected_servers():
-    """Parity with Cilium (ruling 1): exactly the protected ports get a Server."""
+    """Parity with the earlier Cilium policy: exactly the protected ports get a Server."""
     servers = {
         (s["metadata"]["namespace"], s["spec"]["podSelector"]["matchLabels"]["app"], s["spec"]["port"])
         for s in _by_kind("Server")

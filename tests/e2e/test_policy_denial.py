@@ -346,7 +346,7 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
     )
 
     # A claim routed to a human is waiting, but trace A ends at the hand-off
-    # (M10: nothing polls and no span stays open while the claim waits). The
+    # (nothing polls and no span stays open while the claim waits). The
     # human decided above, with the page open; `ledger_record` is what the
     # ledger said while the claim waited.
     reply = json.loads(outcome["raw"])
@@ -404,7 +404,7 @@ def permit_run(claims_agent_route):
     mistaken for one another in a shared Jaeger, and so that the assertions
     below cannot accidentally read the other run's trace.
     """
-    # M8: at the resting `assisted` level nothing is released, so the permit
+    # At the resting `assisted` level nothing is released, so the permit
     # path runs with the dial at `autonomous` (restored on exit).
     with live.autonomy(contract.AUTONOMOUS):
         return _drive_browser(f"CLM-PERMIT-{uuid.uuid4().hex[:8]}", PERMITTED_AMOUNT)
@@ -575,7 +575,7 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
         decision.attrs.get(ATTR_POLICY_RULE)
         == "settlement-agent.assisted.execute_limit"
     ), decision.attrs
-    # M8: at `assisted` the agent's limit is nothing -- the dial is
+    # At `assisted` the agent's limit is nothing -- the dial is
     # maker-checker -- so the limit the denial states is 0.
     assert decision.attrs.get(ATTR_POLICY_LIMIT) == 0, decision.attrs
     assert decision.attrs.get(ATTR_POLICY_AMOUNT) == 6200, decision.attrs
@@ -951,10 +951,7 @@ ALLOWED_MONEY_COMPARISONS = {
     # `amountEpsilon`: a check that an instruction agrees with itself is a
     # CONFIRMATION OF INTENT, not a decision about whether the caller may pay.
     # None consults a caller, an autonomy level, or any number that a policy
-    # could configure; they are presence checks. (M8 retired two entries with
-    # the code they described: the A2A approval payload's presence check and
-    # `_verify_refusal`'s ledger-amount confirmation, both in the removed
-    # `execute_approved` path.)
+    # could configure; they are presence checks.
     ("settlement-agent", "settlement.py", "refused.limit is not None"): (
         "a presence check in _record_refusal, on a field of the PDS's own "
         "reported decision, immediately before writing it to the ledger "
@@ -1226,7 +1223,7 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
         )
         rule_names |= composed
 
-    # A `rule=` that names a module-level string constant (M8's
+    # A `rule=` that names a module-level string constant (e.g.
     # `rule=HUMAN_APPROVAL_RULE`) is resolved to that constant's literal value
     # -- read from the same tree, never retyped here -- so the vocabulary
     # still contains every rule `decide` can emit.
@@ -1257,8 +1254,8 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
     assert rule_names, "read no rule names out of rules.py; the guard is inert"
     vocabulary |= rule_names
 
-    # Zero is left out of the literal scan, and the reason is M8's: the
-    # `assisted` limit is now EUR 0, and `0` is also the guard against a
+    # Zero is left out of the literal scan, because the
+    # `assisted` limit is EUR 0, and `0` is also the guard against a
     # negative amount, a default for an unreported limit and a loop start --
     # a scan that flags every zero would be noise that teaches a reader to
     # extend the allowlist reflexively. A zero is not a *figure* the platform
@@ -1389,9 +1386,8 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
         # Workload API socket path, 0.30.1 -> 0.30.2). See this test's
         # docstring for the measured one-line diff.
         "agents/settlement-agent/svid.py",
-        # Docstring- and comment-only, from 97bc786 ("make comments describe
-        # the code, not its history"). Measured 2026-10-12: each file's AST
-        # with docstrings stripped is identical at m2.1-verified and HEAD.
+        # Docstring- and comment-only: each file's AST with docstrings
+        # stripped is unchanged from when its entry was reviewed.
         "agents/settlement-agent/correlation.py",
         "agents/settlement-agent/main.py",
         "tools/payments-mcp/correlation.py",
@@ -1534,7 +1530,7 @@ def test_criterion_5_the_decision_changes_when_the_callers_spiffe_id_changes(
         )
 
     # The authorised caller, at an amount inside its allowance: it executes.
-    # (M8: its allowance is nothing at `assisted`, so the dial is at
+    # (Its allowance is nothing at `assisted`, so the dial is at
     # `autonomous` for this one call.)
     with live.autonomy(contract.AUTONOMOUS):
         authorised = execute_as(valid_svid, "settlement-agent")

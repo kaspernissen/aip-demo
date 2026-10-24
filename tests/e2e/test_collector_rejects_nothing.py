@@ -45,7 +45,7 @@ PDS_SERVICE = "policy-decision-service"
 ATTR_RETRYABLE_CANONICAL = "northstar.policy.retryable"
 ATTR_DECISION = "northstar.policy.decision"
 
-# €6,200 against settlement-agent's assisted execute allowance (€0 since M8; it was €6,000) -- the
+# €6,200 against settlement-agent's assisted execute allowance (€0) -- the
 # same numbers `test_policy_denial.py`'s denial scenario uses, so this file
 # and the demo exercise the same rule.
 DENIED_AMOUNT = 6200

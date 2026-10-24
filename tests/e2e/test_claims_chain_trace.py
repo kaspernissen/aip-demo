@@ -28,7 +28,7 @@ FastMCP gap; see `tests/e2e/test_claim_correlation.py`.)
 PDS denies `execute_payment` above the €6,000 allowance for
 settlement-agent (`platform/policy-decision-service/pds/rules.py`), so
 `test_message_send_returns_the_settlement_json` below asserts
-`status == "awaiting_approval"` (M8; "refused" before it) — every other field of the documented reply unchanged,
+`status == "awaiting_approval"` — every other field of the documented reply unchanged,
 because a refusal is a full reply that claims-agent forwards field for field.
 `test_payment_was_executed_with_no_governance` is **retired**: its premise
 was the *absence* of governance, which no amount can restore, and
