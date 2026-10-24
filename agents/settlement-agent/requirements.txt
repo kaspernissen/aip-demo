@@ -25,8 +25,6 @@ sse-starlette==3.4.11
 mcp==2.2.0
 # `mcp-types` (imported as `mcp_types`) is v2's split-out wire-type package,
 # pinned exactly by `mcp`; `mcp.types` is a permanent alias for it.
-mcp-types==2.2.0`
-# in mcp 2.2.0's own metadata). `mcp.types` is a permanent alias for it.
 mcp-types==2.2.0
 uvicorn==0.34.0
 opentelemetry-sdk==1.44.0
@@ -38,11 +36,7 @@ opentelemetry-instrumentation-starlette==0.65b0
 # pinned here; 0.66b1 is newer but belongs to the 1.45 line.
 opentelemetry-processor-baggage==0.65b0
 # pytest 9 clears PYSEC-2026-1845 (pip-audit). pytest-asyncio 0.25.0 caps
-# pytest below 8.4, so it moves to 1.x alongside.
-pytest==9.1.1 clears PYSEC-2026-1845 (pip-audit). pytest-asyncio==1.4.0 is
-# paired with it: pytest-asyncio 0.25.0 only supports pytest<8.4 (its own
-# metadata), so pytest-asyncio needs a matching bump; 1.4.0 is its current
-# release and declares pytest<10,>=8.4, satisfied by 9.1.1.
+# pytest below 9, so it moves to 1.x alongside.
 pytest==9.1.1
 pytest-asyncio==1.4.0
 
