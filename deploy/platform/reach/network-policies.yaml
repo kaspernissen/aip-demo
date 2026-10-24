@@ -1,28 +1,25 @@
 # Egress allowlists on the agent plane, as core Kubernetes NetworkPolicy.
 #
-# This file replaces the egress half of the CiliumNetworkPolicy file M12
-# deleted (deploy/platform/cilium-policies.yaml at `main`). The ingress half,
-# who may call what, is Linkerd's, in linkerd-policies.yaml beside this file.
+# This file is the egress half of the reach policy. The ingress half, who may
+# call what, is Linkerd's, in linkerd-policies.yaml beside this file.
 # Egress is NetworkPolicy because Linkerd cannot do it alone: its EgressNetwork
 # is namespace-wide, matches on SNI and is bypassed by any pod that skips its
 # proxy. NetworkPolicy is enforced in the node (kindnet's kube-network-policies
 # on kind >= 0.24) and works whether or not the workload cooperates.
 #
-# THE REQUIREMENT, unchanged: "Direct egress from `northstar-agents` to the
+# THE REQUIREMENT: "Direct egress from `northstar-agents` to the
 # model provider is denied, with the gateway as the only path." Every workload
 # in the namespace is policied, one document each, because a workload no policy
-# selects is wholly unrestricted: measured under Cilium, all three then reached
-# api.anthropic.com:443 and example.com:443. One document per workload, not one
-# for the plane, so a shared baseline cannot grant customer-ui a path nothing
-# measured asked for.
+# selects is wholly unrestricted and can reach api.anthropic.com:443 and
+# example.com:443. One document per workload, not one for the plane, so a
+# shared baseline cannot grant customer-ui a path it does not need.
 #
 # THE HAZARD THIS FILE HAS TO GET RIGHT. A pod selected by ANY egress policy is
 # default-deny for egress: there is no partial application. Each document
 # therefore lists that workload's COMPLETE outbound inventory, from its own
 # manifest and source rather than from watching a pod run, so a destination
-# that is configured but rarely used is still present. M12 adds three entries
-# to every inventory that Cilium's did not need, all measured (M1, M2 in the
-# plan):
+# that is configured but rarely used is still present. Because the pods are
+# meshed, every inventory carries these entries:
 #
 #   * The Linkerd control plane (namespace `linkerd`, TCP 8080 identity, 8086
 #     destination, 8090 policy). Every meshed pod's proxy dials these; without
@@ -33,15 +30,14 @@
 #     only the service port yields an HTTP 504 (`l5d-proxy-error: ... service
 #     in fail-fast`). agentgateway, claims-agent, settlement-agent, customer-ui
 #     and payments-api are all meshed.
-#   * Because of that 4143, EGRESS BETWEEN MESHED PODS IS PER POD, NOT PER PORT
-#     (M7, measured). Between meshed pods, egress is decided per pod, not per
+#   * Because of that 4143, EGRESS BETWEEN MESHED PODS IS PER POD, NOT PER PORT.
+#     Between meshed pods, egress is decided per pod, not per
 #     port: a pod allowed to reach a peer's proxy (4143) can reach any port on
 #     that peer that listens on the pod IP. Which ports actually answer is
 #     decided by the peer's Linkerd Servers (per port, per identity). The port
 #     numbers written beside 4143 below are what the service uses, and they
 #     bind a pod that skips the proxy (an unmeshed pod is held to the listed
-#     ports); for a meshed pod 4143 alone is the gate. Cilium's rules were per
-#     port: this is a weakening and it is stated here on purpose.
+#     ports); for a meshed pod 4143 alone is the gate.
 #   * The collector IS meshed (the only meshed pod in `observability`), and
 #     every document allows it on three ports: 4318, where the app's OTLP
 #     exporter sends; 4143, because that export now goes proxy to proxy; and
@@ -49,7 +45,7 @@
 #     the collector directly (it is the proxy, there is no second hop), so that
 #     connection is seen on 4317 itself, not 4143.
 #
-# WHAT A MESHED POD'S TCP CONNECT NO LONGER MEANS. The pod's own proxy accepts
+# WHAT A MESHED POD'S TCP CONNECT MEANS. The pod's own proxy accepts
 # any outbound TCP connection locally, so "connect succeeded" proves nothing;
 # the real outcome shows only above TCP (a TLS handshake or HTTP request that
 # completes, or is reset). Nothing here is asserted by a connect.
@@ -99,7 +95,7 @@ spec:
     # 1. DNS. CoreDNS is selected by the label its pods carry (`k8s-app: kube-dns`), not
     # by the kube-dns ClusterIP: no manifest in this repo pins that address, so
     # hardcoding it would invent a pin and break resolution with a symptom that names
-    # neither this file nor the range. Both UDP and TCP, as the Cilium rule had.
+    # neither this file nor the range. Both UDP and TCP.
     # No FQDN machinery is needed or possible here.
     - to:
         - namespaceSelector:
@@ -116,7 +112,7 @@ spec:
     # 2. agentgateway, on the MCP port, and the whole of "the gateway is the only path"
     # from this side. Both the namespace and the label are required, so a pod that
     # labels itself `app: agentgateway` elsewhere does not inherit the gateway's
-    # place in the path. 4143 beside 3000: agentgateway is meshed (M2).
+    # place in the path. 4143 beside 3000: agentgateway is meshed.
     - to:
         - namespaceSelector:
             matchLabels:
@@ -128,11 +124,10 @@ spec:
         - protocol: TCP
           port: 3000
         - protocol: TCP
-          port: 4143  # M7: with this, a meshed source reaches EVERY port of the peer (per pod, not per port)
+          port: 4143  # a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 3. The OTLP collector. THE RULE WHOSE ABSENCE IS WORST: the BatchSpanProcessor
     # exports on a background thread and swallows failure, so settlements would keep
-    # succeeding while every span from this service vanished, in a milestone whose
-    # claim is that the decision is visible in one trace. 4318 is the app's OTLP
+    # succeeding while every span from this service vanished. 4318 is the app's OTLP
     # http/protobuf export, 4143 carries it once the collector is meshed, 4317 is
     # the Linkerd proxy's own span export.
     - to:
@@ -150,7 +145,7 @@ spec:
         - protocol: TCP
           port: 4143  # the collector is meshed: the app's export goes proxy to proxy
     # 4. The Linkerd control plane (identity 8080, destination 8086, policy 8090): the
-    # proxy dials it for its certificate and its routes (M2).
+    # proxy dials it for its certificate and its routes.
     - to:
         - namespaceSelector:
             matchLabels:
@@ -162,20 +157,18 @@ spec:
           port: 8086
         - protocol: TCP
           port: 8090
-    # 5. The model provider, by ADDRESS RANGE. This is what egress by name became.
+    # 5. The model provider, by ADDRESS RANGE.
     #
     # `api.anthropic.com` is not configured anywhere in this repo; it is the
     # pinned `anthropic` SDK's own default base_url, reached because settlement.py
-    # hands PydanticAI the model `anthropic:claude-sonnet-5`. Cilium followed the
-    # name through its DNS proxy (`toFQDNs`). NetworkPolicy cannot, so this is
-    # Anthropic's published API range, https://platform.claude.com/docs/en/api/ip-addresses:
+    # hands PydanticAI the model `anthropic:claude-sonnet-5`. NetworkPolicy cannot
+    # match by name, so this is Anthropic's published API range, https://platform.claude.com/docs/en/api/ip-addresses:
     # 160.79.104.0/23 (IPv4) and 2607:6bc0::/48 (IPv6), TCP 443 only. The
     # published range "will not change without notice", and any other host in
-    # it is also reachable: a loss of precision, said plainly in the design
-    # (spec section 3). The measured effect: from an unmeshed pod a connect to
+    # it is also reachable: a loss of precision. The effect: from an unmeshed pod a connect to
     # 160.79.104.0/23:443 succeeds and example.com:443 and 1.1.1.1:443 time out;
     # from this meshed pod the same shows as a TLS handshake that completes to
-    # api.anthropic.com and is reset to example.com (M1).
+    # api.anthropic.com and is reset to example.com.
     - to:
         - ipBlock:
             cidr: 160.79.104.0/23
@@ -198,7 +191,7 @@ spec:
 # read (ledger.py's GET /payments/{id}, made when a waiting task is resumed:
 # at L4 only here, the L7 narrowing to that one GET moved to payments-api's
 # ingress, where only claims-agent's identity on the read route is admitted);
-# the collector; customer-ui:8080 for the M10 push (claims-agent checks the URL
+# the collector; customer-ui:8080 for the push (claims-agent checks the URL
 # against an exact allowlist in push.py, and customer-ui's Server admits only
 # claims-agent on POST /a2a/push); the Linkerd control plane; the model
 # provider, by the same address range as settlement-agent's. There is no
@@ -246,7 +239,7 @@ spec:
         - protocol: TCP
           port: 9002
         - protocol: TCP
-          port: 4143  # M7: with this, a meshed source reaches EVERY port of the peer (per pod, not per port)
+          port: 4143  # a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 3. payments-api, for the resume's ledger read. L4 here; payments-api's own
     # Server decides which routes this identity may use (the read, never execute).
     - to:
@@ -260,7 +253,7 @@ spec:
         - protocol: TCP
           port: 8080
         - protocol: TCP
-          port: 4143  # M7: with this, a meshed source reaches EVERY port of the peer (per pod, not per port)
+          port: 4143  # a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 4. The OTLP collector, http/protobuf on 4318. This service owns the entry span
     # of the A2A chain: losing its export would not empty the trace, it would
     # decapitate it.
@@ -278,7 +271,7 @@ spec:
           port: 4317  # the Linkerd proxy's own span export (OTLP gRPC)
         - protocol: TCP
           port: 4143  # the collector is meshed: the app's export goes proxy to proxy
-    # 5. The customer's push receiver (M10): a claim decided by a human is pushed to
+    # 5. The customer's push receiver: a claim decided by a human is pushed to
     # customer-ui's /a2a/push. Only POST /a2a/push is admitted, by customer-ui's own
     # Server (the exact allowlist in push.py is the same fact in the client).
     - to:
@@ -292,7 +285,7 @@ spec:
         - protocol: TCP
           port: 8080
         - protocol: TCP
-          port: 4143  # M7: with this, a meshed source reaches EVERY port of the peer (per pod, not per port)
+          port: 4143  # a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 6. The Linkerd control plane.
     - to:
         - namespaceSelector:
@@ -392,8 +385,7 @@ spec:
 # Its COMPLETE outbound inventory, from apps/reviewer-ui/bootstrap.py,
 # ledger.py, gateway.py and identity.py: DNS; payments-api:8080 (ledger.py's
 # list, get and reject, direct REST calls that move no money: payments-api's own
-# Server refuses execute for this identity, which is the L7 the Cilium rule
-# carried here, M8 review I1); claims-agent:9001 (claims.py resumes the
+# Server refuses execute for this identity); claims-agent:9001 (claims.py resumes the
 # customer's waiting task once a payment is decided); agentgateway:3000
 # (gateway.py's execute_payment, the release of an approved payment under
 # reviewer-ui's own JWT-SVID, decided by the PDS like any other execute); the
@@ -443,7 +435,7 @@ spec:
         - protocol: TCP
           port: 8080
         - protocol: TCP
-          port: 4143  # M7: with this, a meshed source reaches EVERY port of the peer (per pod, not per port)
+          port: 4143  # a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 2b. claims-agent, on its A2A port, to resume the customer's waiting task.
     - to:
         - namespaceSelector:
@@ -456,7 +448,7 @@ spec:
         - protocol: TCP
           port: 9001
         - protocol: TCP
-          port: 4143  # M7: with this, a meshed source reaches EVERY port of the peer (per pod, not per port)
+          port: 4143  # a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 3. agentgateway, on the MCP port: gateway.py's one outbound peer for the release
     # of an approved payment.
     - to:
@@ -470,7 +462,7 @@ spec:
         - protocol: TCP
           port: 3000
         - protocol: TCP
-          port: 4143  # M7: with this, a meshed source reaches EVERY port of the peer (per pod, not per port)
+          port: 4143  # a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 4. The OTLP collector.
     - to:
         - namespaceSelector:
