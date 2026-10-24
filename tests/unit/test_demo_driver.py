@@ -696,3 +696,79 @@ def test_the_harness_answers_on_the_same_task_and_reads_the_reply_from_the_last_
     snap = live._snapshot(event, {})
     assert snap["state"] == "input-required" and snap["reply"] == {"status": "needs_information"}
     assert snap["task_id"] == "task-1" and snap["context_id"] == "ctx-1"
+
+
+# --- keystone: the command as it runs, the refusal as the API server wrote it -------
+
+RBAC_REFUSAL = ('Error from server (Forbidden): featureflags.core.openfeature.dev "northstar-autonomy" is '
+                'forbidden: User "system:serviceaccount:northstar-agents:settlement-agent" cannot get resource '
+                '"featureflags" in API group "core.openfeature.dev" in the namespace "northstar-platform"')
+KYVERNO_REFUSAL = ('Error from server: admission webhook "vpol.validate.kyverno.svc-fail-finegrained-'
+                   'agents-cannot-edit-their-own-authority" denied the request: Policy '
+                   'agents-cannot-edit-their-own-authority failed: DENIED: agent identity '
+                   "'system:serviceaccount:northstar-agents:settlement-agent' may not change the objects that "
+                   "define its own authority (FeatureFlag/northstar-autonomy). Authority changes go through a "
+                   "reviewed commit, never a runtime decision by the agent.")
+
+
+def test_a_command_is_laid_out_one_flag_per_line_and_still_pastes():
+    import shlex
+    demo = _driver()
+    argv = demo.kubectl_argv(*demo._patch_args("autonomous"), as_agent=True)
+    lines = demo.command_lines(argv)
+    assert lines[0] == "kubectl --context kind-northstar \\"
+    assert lines[1] == "--as=system:serviceaccount:northstar-agents:settlement-agent \\"
+    assert lines[2] == "-n northstar-platform \\"
+    assert lines[3] == "patch featureflag/northstar-autonomy \\"
+    assert lines[4] == "--type=json \\"
+    assert lines[5].startswith("-p '[{") and not lines[5].endswith("\\")
+    # Joined back up, it is exactly the argv that runs.
+    assert shlex.split(" ".join(line.rstrip("\\") for line in lines)) == argv
+
+
+def test_a_refusal_is_one_clause_per_line_with_nothing_dropped():
+    demo = _driver()
+    lines = demo.refusal_lines(KYVERNO_REFUSAL)
+    assert lines[0] == "Error from server:"
+    assert lines[1].startswith("admission webhook")
+    assert next(line for line in lines[1:] if not line.startswith("  ")) == lines[1], "a clause wraps indented"
+    assert "denied the request:" in lines
+    assert any(line.startswith("DENIED: agent identity") for line in lines)
+    assert lines[-1].strip().endswith("never a runtime decision by the agent.")
+    assert " ".join(" ".join(lines).split()) == KYVERNO_REFUSAL
+    rbac = demo.refusal_lines(RBAC_REFUSAL)
+    assert rbac[0] == "Error from server (Forbidden):" and rbac[1].endswith("is forbidden:")
+    assert all(len(line) <= demo.WIDTH - 6 for line in rbac)
+
+
+def test_keystone_prints_the_commands_it_runs_and_the_refusals_it_gets(monkeypatch, capsys):
+    import subprocess as sp
+    demo = _driver()
+    ran = []
+
+    def kubectl(*args, timeout=90, stdin=None):
+        ran.append(["kubectl", "--context", demo.live.KUBE_CONTEXT, *args])
+        if "validatingpolicy" in args:
+            return sp.CompletedProcess(args, 0, "true", "")
+        if "can-i" in args:
+            return sp.CompletedProcess(args, 0, "yes\n", "")
+        if "patch" in args:
+            patches = sum("patch" in r and "can-i" not in r for r in ran)
+            return sp.CompletedProcess(args, 1, "", RBAC_REFUSAL if patches == 1 else KYVERNO_REFUSAL)
+        return sp.CompletedProcess(args, 0, f"{args[0]}d\n", "")
+    monkeypatch.setattr(demo.live, "kubectl", kubectl)
+    monkeypatch.setattr(demo, "overgrant_present", lambda: False)
+    monkeypatch.setattr(demo, "flag_level", lambda: "assisted")
+    assert demo.main(["keystone"]) == 0
+    printed = capsys.readouterr().out
+    patch = [r for r in ran if "patch" in r and "can-i" not in r]
+    assert len(patch) == 2 and patch[0] == patch[1]
+    shown = demo.command_lines(patch[0])
+    for line in shown:
+        assert line in printed, line
+    assert "--as=system:serviceaccount:northstar-agents:settlement-agent" in patch[0]
+    assert "<- the API server answers  (exit status 1)" in printed
+    assert "Error from server ([Forbidden]):" in printed and "[RBAC says no]" in printed
+    assert "[DENIED]: agent identity" in printed and demo.POLICY in printed
+    flat = " ".join(printed.split())
+    assert "(FeatureFlag/northstar-autonomy)" in flat and "never a runtime decision by the agent" in flat

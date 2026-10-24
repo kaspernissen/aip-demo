@@ -68,6 +68,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import textwrap
@@ -994,8 +995,48 @@ def cmd_autonomy(args: argparse.Namespace) -> None:
 # --- keystone -------------------------------------------------------------------
 
 
-def _as_agent(*args: str, timeout: int = 60) -> subprocess.CompletedProcess:
-    return live.kubectl("--as", AGENT, *args, timeout=timeout)
+def kubectl_argv(*args: str, as_agent: bool = False) -> list[str]:
+    """The exact command line `live.kubectl` runs, impersonating the agent when asked."""
+    return ["kubectl", "--context", live.KUBE_CONTEXT, *([f"--as={AGENT}"] if as_agent else []), *args]
+
+
+def command_lines(argv: list[str]) -> list[str]:
+    """A command laid out for a room: one flag (with its value) or one run of
+    words per line, shell-quoted and joined with `\\`, so it reads top to bottom
+    and still pastes into a shell."""
+    groups: list[list[str]] = []
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        if token.startswith("-"):
+            takes_value = "=" not in token and i + 1 < len(argv) and not argv[i + 1].startswith("-")
+            groups.append(argv[i:i + 2] if takes_value else [token])
+            i += 2 if takes_value else 1
+            continue
+        if groups and not groups[-1][0].startswith("-"):
+            groups[-1].append(token)
+        else:
+            groups.append([token])
+        i += 1
+    # `kubectl --context <ctx>` is one line: the command and where it runs.
+    if len(groups) > 1 and groups[1][0] == "--context":
+        groups[:2] = [groups[0] + groups[1]]
+    lines = [" ".join(shlex.quote(t) for t in g) for g in groups]
+    return [line + (" \\" if n < len(lines) - 1 else "") for n, line in enumerate(lines)]
+
+
+def show_command(argv: list[str]) -> None:
+    lines = command_lines(argv)
+    out(paint(f"  $ {lines[0]}", "dim"))
+    for line in lines[1:]:
+        out(paint(f"      {line}", "dim"))
+
+
+def _run_shown(argv: list[str], timeout: int = 60) -> subprocess.CompletedProcess:
+    """Print the command, then run exactly that command."""
+    assert argv[:3] == ["kubectl", "--context", live.KUBE_CONTEXT], argv
+    show_command(argv)
+    return live.kubectl(*argv[3:], timeout=timeout)
 
 
 def _patch_args(level: str) -> list[str]:
@@ -1005,13 +1046,37 @@ def _patch_args(level: str) -> list[str]:
     return ["-n", PLATFORM_NS, "patch", FLAG, "--type=json", "-p", patch]
 
 
-def _show_kubectl_error(text: str) -> None:
-    """The API server's own words, wrapped, with the decisive word marked."""
-    text = text.strip()
-    for raw in text.splitlines():
-        for line in textwrap.wrap(raw, WIDTH - 4, break_on_hyphens=False) or [""]:
-            line = re.sub(r"(Forbidden|DENIED)", lambda m: word(m.group(1), "stop"), line, count=1)
-            out("    " + line)
+# Where the API server's message breaks for a reader: after who answered, after
+# what was refused, after the policy, and between sentences.
+_REFUSAL_BREAKS = (
+    r"(Error from server(?: \([A-Za-z]+\))?:) ",
+    r"(\") (?=denied the request:)",
+    r"(denied the request:) ",
+    r"(is forbidden:) ",
+    r"( failed:) ",
+    r"(\.) (?=[A-Z])",
+)
+
+
+def refusal_lines(text: str) -> list[str]:
+    """The API server's own words, one clause per line and wrapped, nothing
+    dropped or reworded."""
+    text = " ".join(text.split())
+    for pattern in _REFUSAL_BREAKS:
+        text = re.sub(pattern, "\\1\n", text)
+    lines = []
+    for clause in text.splitlines():
+        wrapped = textwrap.wrap(clause, WIDTH - 8, break_on_hyphens=False, break_long_words=False) or [""]
+        lines += [wrapped[0]] + ["  " + w for w in wrapped[1:]]
+    return lines
+
+
+def _show_kubectl_error(result: subprocess.CompletedProcess) -> None:
+    """The refusal as the API server wrote it, with the decisive word marked."""
+    out(f"  {paint('<- the API server answers', 'dim')}  (exit status {result.returncode})")
+    for line in refusal_lines(result.stderr or result.stdout):
+        line = re.sub(r"(Forbidden|DENIED)", lambda m: word(m.group(1), "stop"), line, count=1)
+        out("    " + line)
 
 
 def cmd_keystone(_: argparse.Namespace) -> None:
@@ -1034,45 +1099,45 @@ def cmd_keystone(_: argparse.Namespace) -> None:
     kv("acting as", AGENT, indent=2)
 
     try:
-        step("1  The agent tries to flip its own autonomy flag")
-        doing("kubectl --as=settlement-agent patch featureflag/northstar-autonomy  -> autonomous")
-        first = _as_agent(*_patch_args("autonomous"))
+        patch = kubectl_argv(*_patch_args("autonomous"), as_agent=True)
+        step("1  The agent tries to flip its own autonomy flag to autonomous")
+        say("The command, exactly as it runs: kubectl impersonating the agent's service account.")
+        first = _run_shown(patch)
         if first.returncode == 0:
             contract.set_targeted_branch(contract.ASSISTED)
             raise Fail("the agent patched the flag with no over-grant. RBAC is wider than it should be. Flag restored to assisted.")
-        _show_kubectl_error(first.stderr or first.stdout)
+        _show_kubectl_error(first)
         if "Forbidden" not in (first.stderr + first.stdout):
             raise Fail("expected an RBAC Forbidden, got something else")
         out(f"  -> {word('RBAC says no', 'stop')}  That is the first line.")
 
         step("2  Someone makes a mistake: the agent is over-granted patch on that one flag")
-        doing("kubectl apply -f deploy/demo/keystone-overgrant.yaml")
-        applied = live.kubectl("apply", "-f", str(OVERGRANT), timeout=60)
+        applied = _run_shown(kubectl_argv("apply", "-f", str(OVERGRANT)))
         if applied.returncode != 0:
             raise Fail(f"could not apply the over-grant: {applied.stderr.strip()}")
         for line in applied.stdout.strip().splitlines():
             out("    " + line)
         # RBAC changes are not instantaneous for an impersonated request; wait
         # until the authorizer agrees, so step 3 tests Kyverno and not a race.
+        can_i = kubectl_argv("-n", PLATFORM_NS, "auth", "can-i", "patch", FLAG, as_agent=True)
         deadline = time.time() + 20
         while time.time() < deadline:
-            can = _as_agent("-n", PLATFORM_NS, "auth", "can-i", "patch", FLAG, timeout=30)
+            can = live.kubectl(*can_i[3:], timeout=30)
             if can.stdout.strip() == "yes":
                 break
             time.sleep(1)
-        doing("kubectl auth can-i patch featureflag/northstar-autonomy --as=settlement-agent")
+        show_command(can_i)
         out(f"  -> {can.stdout.strip() or '?'}   RBAC would now allow it")
         if can.stdout.strip() != "yes":
             raise Fail("the over-grant never took effect, so step 3 would prove nothing about Kyverno")
 
         step("3  The same patch again. RBAC allows it. Kyverno does not.")
-        doing("kubectl --as=settlement-agent patch featureflag/northstar-autonomy  -> autonomous")
-        third = _as_agent(*_patch_args("autonomous"))
+        third = _run_shown(patch)
         if third.returncode == 0:
             contract.set_targeted_branch(contract.ASSISTED)
             raise Fail("the agent changed its own authority. The keystone did not fire. Flag restored to assisted.")
         text = third.stderr + third.stdout
-        _show_kubectl_error(text)
+        _show_kubectl_error(third)
         if POLICY not in text or "DENIED" not in text:
             raise Fail(
                 f"the patch was refused, but not by the keystone (no {POLICY!r} / DENIED in "
@@ -1083,8 +1148,7 @@ def cmd_keystone(_: argparse.Namespace) -> None:
         # Idempotent, and on every exit path including Ctrl-C: the over-grant
         # models a mistake and must never be left standing.
         step("4  Take the mistake back")
-        doing("kubectl delete -f deploy/demo/keystone-overgrant.yaml")
-        deleted = live.kubectl("delete", "-f", str(OVERGRANT), "--ignore-not-found", timeout=60)
+        deleted = _run_shown(kubectl_argv("delete", "-f", str(OVERGRANT), "--ignore-not-found"))
         for line in deleted.stdout.strip().splitlines():
             out("    " + line)
         if deleted.returncode != 0:
