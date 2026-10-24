@@ -105,7 +105,8 @@ echo -e "${YELLOW}claims-agent${NC}"
 (cd "$ROOT/agents/claims-agent" && .venv/bin/python -m pytest tests -q)
 
 # The suite covering the component that makes the policy decision. See the
-# venv loop's comment above and limitation 10 in docs/telemetry-contract.md.
+# venv loop's comment above, and the limitation on the generated gRPC stubs in
+# docs/telemetry-contract.md.
 echo -e "${YELLOW}policy-decision-service${NC}"
 (cd "$ROOT/platform/policy-decision-service" && .venv/bin/python -m pytest tests -q)
 
