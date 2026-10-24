@@ -36,8 +36,7 @@ human then releases it through the **reviewer-ui**, which calls `execute_payment
 itself, through the same gateway and the same policy decision, under its own
 identity. Nothing is overridden: the policy permits the reviewer-ui under
 `human-approved.execute`, and only for a payment the ledger shows awaiting
-approval. (A second Deployment, `senior-settlement-agent`, did this job until M8
-and has been removed.)
+approval.
 
 ## Interfaces
 
