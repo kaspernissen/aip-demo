@@ -1,4 +1,4 @@
-"""The restraining config is shown, never retyped (M11).
+"""The restraining config is shown, never retyped.
 
 `scripts/demo config` prints, and the deck's "The guardrails are config" slide
 shows, a few exact lines from five files. Both come from GUARDRAIL_CONFIG in

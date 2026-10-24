@@ -105,7 +105,7 @@ GATEWAY_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-platform/sa/agentgate
 PDS_SPIFFE_ID = (
     f"spiffe://{TRUST_DOMAIN}/ns/northstar-platform/sa/policy-decision-service"
 )
-# The reviewer-ui identity: a real ServiceAccount in `deploy/k8s/`. Since M8 it
+# The reviewer-ui identity: a real ServiceAccount in `deploy/k8s/`. It
 # releases money (the PDS permits it under `human-approved.execute`), so it
 # carries an explicit non-fallback ClusterSPIFFEID in registration.yaml.
 #
@@ -124,9 +124,9 @@ REVIEWER_UI_SPIFFE_ID = f"spiffe://{TRUST_DOMAIN}/ns/northstar-agents/sa/reviewe
 # and the second was a hand-written `== 3`, which is the shape that drifts.
 #
 # `reviewer-ui` is in `northstar-agents`, which the chart's catch-all fallback
-# CR also covers, so it did not NEED a registration of its own. M8 gave it one
-# anyway, because this identity now releases money and should be in-tree and
-# reviewable. (senior-settlement-agent, retired in M8, never had one.)
+# CR also covers, so it does not NEED a registration of its own. It has one
+# anyway, because this identity releases money and should be in-tree and
+# reviewable.
 REGISTERED_CLUSTER_SPIFFEIDS = {
     "northstar-settlement-agent": (
         "northstar-agents", "settlement-agent", SETTLEMENT_SPIFFE_ID,
@@ -801,7 +801,7 @@ def test_the_gateway_carries_only_the_reviewed_authorization_mechanism():
     offenders = []
     for where, node in _all_routes(config) + _all_listeners(config):
         policies = node.get("policies") or {}
-        # M8: a route-level `authorization` is permitted, and only because
+        # A route-level `authorization` is permitted, and only because
         # tests/unit/test_gateway_ceiling_config.py asserts its exact shape (one
         # allow rule, the ceiling). Listeners and every other key stay forbidden.
         allowed = ("authorization",) if where in {w for w, _ in _all_routes(config)} else ()

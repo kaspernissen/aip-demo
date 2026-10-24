@@ -316,7 +316,7 @@ def test_wait_for_trace_id_services_timeout_names_the_missing_service(monkeypatc
         )
 
 
-# --- span links, the root, and wait_for_operation (M8 Task 3) ----------------
+# --- span links, the root, and wait_for_operation ----------------
 
 
 def _linked_raw_trace():
@@ -378,7 +378,7 @@ def test_wait_for_operation_links_to_skips_traces_that_link_elsewhere(monkeypatc
     assert fetched == ["test-trace"]
 
 
-# --- the model-provider retry predicate (M8 gate run 4) ----------------------
+# --- the model-provider retry predicate ----------------------
 
 
 def test_only_a_payment_less_model_connection_failure_counts_as_upstream():

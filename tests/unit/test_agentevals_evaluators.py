@@ -2,7 +2,7 @@
 subprocess, one EvalInput document on stdin, one result on stdout.
 
 The input shape is the one agentevals-cli 0.11.0 sends (protocol 1.1), captured
-from a real run on 2026-10-21: invocations[] with final_response and
+from a real run: invocations[] with final_response and
 intermediate_steps.tool_calls / tool_responses paired by id.
 """
 from __future__ import annotations

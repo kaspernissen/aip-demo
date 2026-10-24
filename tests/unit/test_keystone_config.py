@@ -89,7 +89,7 @@ def test_it_covers_every_rings_configuration_and_the_identity_routes():
         ("core.openfeature.dev", "featureflags"),
         ("core.openfeature.dev", "featureflagsources"),
         ("", "configmaps"),
-        # Reach (M12): the egress allowlists, every Linkerd policy kind (who
+        # Reach: the egress allowlists, every Linkerd policy kind (who
         # may call what), a Gateway API route that could stand in for a Linkerd
         # one, and Namespaces, where the mesh annotation lives
         ("networking.k8s.io", "networkpolicies"),
@@ -124,7 +124,7 @@ def test_it_covers_every_rings_configuration_and_the_identity_routes():
 
 
 def test_no_cilium_kind_is_claimed_or_granted_any_more():
-    """Cilium left the cluster in M12; a rule for its CRDs would keep the
+    """Cilium is not part of the cluster; a rule for its CRDs would keep the
     ValidatingPolicy unready (Kyverno cannot read a kind that does not exist)
     while looking like a ring."""
     groups = {

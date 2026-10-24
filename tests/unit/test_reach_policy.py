@@ -20,18 +20,17 @@ row that says `deny-403`, `deny-404-no-route` or `drop`.
   (source workload, destination workload+port or CIDR+port) and the outcome
   is `allow` or `drop`.
 
-**What the reader models, and from where it learns it.** Linkerd semantics
-(M1-M5, `docs/superpowers/plans/2026-10-21-northstar-m12-linkerd.md`):
+**What the reader models, and from where it learns it.** Linkerd semantics:
 
 * a port without a `Server` is open (the default inbound policy is
   `all-unauthenticated`); a `Server` denies whatever no policy authorizes;
 * a Server with **no routes** has Linkerd's default `probe` route: `GET` on the
-  pod's own `httpGet` probe paths is open to every caller (M5), everything
+  pod's own `httpGet` probe paths is open to every caller, everything
   else needs an AuthorizationPolicy targeting the Server;
 * a Server **with routes** authorizes per route only: a request matching no
-  route is a 404 from the proxy (M4), a matched route needs an
+  route is a 404 from the proxy, a matched route needs an
   AuthorizationPolicy targeting that HTTPRoute, and the kubelet probe is
-  refused unless a route for its path is authorized for the node (M5);
+  refused unless a route for its path is authorized for the node;
 * route precedence follows Gateway API: Exact beats a regular expression
   beats a prefix, a longer prefix beats a shorter one, a route that names a
   method beats one that does not;
@@ -39,9 +38,9 @@ row that says `deny-403`, `deny-404-no-route` or `drop`.
   caller has none); a NetworkAuthentication admits by source CIDR and nothing
   else; a policy with both requires both;
 * a meshed workload calling a meshed peer under an egress policy needs TCP
-  4143, the peer proxy's inbound port (M2: with the service port alone the
+  4143, the peer proxy's inbound port (with the service port alone the
   call is a 504), and the Linkerd control plane on 8080, 8086 and 8090. And
-  4143 is ALL it needs (M7): the client proxy tunnels through 4143 and the
+  4143 is ALL it needs: the client proxy tunnels through 4143 and the
   peer's inbound proxy forwards to whatever port was asked for, so for meshed
   sources egress to a meshed peer is per POD, not per port. Port rules still
   bind an UNMESHED source (no proxy, so the kernel sees the real port). Which
@@ -336,7 +335,7 @@ def ingress_outcome(caller_name, dst, port, method, path):
     ns, sname = server["metadata"]["namespace"], server["metadata"]["name"]
     routes = _routes_of(server)
     if not routes:
-        # Linkerd's default probe route (M5): the pod's httpGet probe paths,
+        # Linkerd's default probe route: the pod's httpGet probe paths,
         # GET only, open to every caller.
         if method == "GET" and path in workload.http_probes.get(port, set()):
             return "allow"
@@ -419,7 +418,7 @@ def egress_outcome(src_name, dst_name=None, port=None, *, ip=None, proto="TCP",
         return "allow" if _np_egress_allows(src, None, ip, port, proto) else "drop"
     dst = ALL_PODS[dst_name]
     if src.meshed and dst.meshed and not unmeshed:
-        # M2 + M7: a meshed peer is reached through its proxy's inbound port,
+        # A meshed peer is reached through its proxy's inbound port,
         # and a rule that admits 4143 admits EVERY port of that peer.
         return "allow" if _np_egress_allows(src, dst, None, PROXY_INBOUND_PORT, "TCP") else "drop"
     return "allow" if _np_egress_allows(src, dst, None, port, proto) else "drop"
@@ -428,8 +427,7 @@ def egress_outcome(src_name, dst_name=None, port=None, *, ip=None, proto="TCP",
 # --- THE REACH MATRIX ---------------------------------------------------------
 #
 # (caller, destination workload, port, method, path) -> outcome.
-# Rows marked "Cilium:" reproduce a rule of deploy/platform/cilium-policies.yaml
-# at `main`; the rest are new in M12 and say why.
+# Rows marked "Cilium:" reproduce a rule of the earlier Cilium policy; the rest say why they exist.
 
 MCP = ("POST", "/mcp")
 PDS_CHECK = ("POST", "/envoy.service.ext_mcp.v1.ExtMcp/Check")
@@ -456,14 +454,13 @@ INGRESS = [
     ("reviewer-ui", "settlement-agent", 9002, "POST", "/", "deny-403"),
     ("customer-ui", "settlement-agent", 9002, "POST", "/", "deny-403"),
     ("unmeshed", "settlement-agent", 9002, "POST", "/", "deny-403"),
-    # The default probe route is open to everyone, by Linkerd's design (M5):
+    # The default probe route is open to everyone, by Linkerd's design:
     # kubelet needs it, and the path is the public agent card, a read.
     ("kubelet", "settlement-agent", 9002, *CARD, "allow"),
     ("reviewer-ui", "settlement-agent", 9002, *CARD, "allow"),
     ("kubelet", "settlement-agent", 9002, "GET", "/tasks", "deny-403"),
     # payments-api:8080 -- one route per (method, path) family, by caller identity.
-    # Cilium put these on each caller's egress; M12 puts them on payments-api's
-    # ingress (ruling 2). Callers per client file: tools/payments-mcp/payments_client.py,
+    # These rules sit on payments-api's ingress. Callers per client file: tools/payments-mcp/payments_client.py,
     # apps/reviewer-ui/ledger.py, agents/claims-agent/ledger.py, pds/ledger.py.
     ("payments-mcp", "payments-api", 8080, "POST", "/payments/propose", "allow"),
     ("payments-mcp", "payments-api", 8080, "POST", PID + "/execute", "allow"),
@@ -577,7 +574,7 @@ EGRESS = [
     ("claims-agent", "payments-mcp", 8000, None, "drop"),  # direct bypass of the gateway
     ("claims-agent", "agentgateway", 3000, None, "drop"),
     ("claims-agent", "reviewer-ui", 8080, None, "drop"),
-    # M7: egress to a meshed peer is per pod. 4143 is allowed to these peers, so
+    # Egress to a meshed peer is per pod. 4143 is allowed to these peers, so
     # every port of them is allowed for a meshed claims-agent; the peer's Servers
     # decide what answers. These rows document the limitation, they do not bless it.
     ("claims-agent", "customer-ui", 9090, None, "allow"),
@@ -654,7 +651,7 @@ def test_m7_a_meshed_peer_is_reached_on_4143_alone():
 
 @pytest.mark.parametrize("src", ["settlement-agent", "claims-agent", "customer-ui", "reviewer-ui"])
 def test_the_meshed_peer_needs_the_proxy_port_not_just_the_service_port(src):
-    """M2: allowing only a meshed peer's service port yields a 504. For every
+    """Allowing only a meshed peer's service port yields a 504. For every
     allowed meshed peer, both ports must be allowed."""
     for dst in ("agentgateway", "settlement-agent", "payments-api", "claims-agent", "customer-ui"):
         for port in WORKLOADS[dst].ports:

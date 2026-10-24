@@ -3,9 +3,8 @@
 The Python services copy their modules into the image one by one
 (`COPY a.py b.py ... ./`). A new module that is imported but not added to that
 line passes every unit test -- they run from the source tree -- and fails only
-when the pod starts. M10's first gate run lost its setup step that way:
-claims-agent's `push.py` was missing from the COPY line, the new pod crashed with
-`ModuleNotFoundError: No module named 'push'`, and the rollout timed out.
+when the pod starts: the pod crashes with `ModuleNotFoundError` and the
+rollout times out.
 """
 from __future__ import annotations
 
