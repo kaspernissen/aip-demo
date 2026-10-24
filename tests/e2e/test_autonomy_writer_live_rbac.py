@@ -126,7 +126,7 @@ def stage_6_with_the_write_grant_applied_or_a_reason():
     if not absent_or_fail(deployment, f"deployment/backstage in {NAMESPACE}"):
         pytest.skip(
             f"needs stage 6: deployment/backstage does not exist in "
-            f"{NAMESPACE}. Run ./scripts/setup-kind.sh --stage 6."
+            f"{NAMESPACE}. Run ./scripts/setup-kind.sh."
         )
 
     role = _kubectl(

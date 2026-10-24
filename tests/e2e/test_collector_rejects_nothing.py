@@ -64,7 +64,7 @@ def gateway_url():
 
     Same shape as `tests/e2e/test_caller_identity.py::gateway_url`: `:3000`
     with no local port makes kubectl choose a free one and print it, so this
-    cannot shadow one of the repo-managed forwards even by accident, and the
+    cannot shadow a fixed port even by accident, and the
     port is parsed out of kubectl's own line rather than guessed.
     """
     proc = subprocess.Popen(

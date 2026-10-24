@@ -19,18 +19,20 @@ import uuid
 import pytest
 import requests
 
+from tests.harness import live
 from tests.harness.jaeger import JaegerClient, assert_span_kind
 
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
-PAYMENTS_API_URL = os.environ.get("PAYMENTS_API_URL", "http://localhost:18080")
 
 
 @pytest.fixture(scope="module")
 def executed_payment():
     claim_id = f"CLM-TEST-{uuid.uuid4().hex[:8]}"
+    # Straight at the ledger, through its side door (no mesh identity needed).
+    payments_api = live.payments_api_url()
 
     proposed = requests.post(
-        f"{PAYMENTS_API_URL}/payments/propose",
+        f"{payments_api}/payments/propose",
         json={"claimId": claim_id, "amount": 6200, "currency": "EUR"},
         timeout=10,
     )
@@ -45,7 +47,7 @@ def executed_payment():
     traceparent = f"00-{trace_id}-{span_id}-01"
 
     executed = requests.post(
-        f"{PAYMENTS_API_URL}/payments/{payment_id}/execute",
+        f"{payments_api}/payments/{payment_id}/execute",
         # The execute call states what it is paying. payments-api confirms that
         # against the proposal it recorded and refuses a bodyless execution.
         json={"amount": 6200, "currency": "EUR"},

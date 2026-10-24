@@ -144,7 +144,7 @@ def stage_6_backstage_deployed_or_a_reason():
     if not absent_or_fail(deployment, f"deployment/backstage in {PLATFORM_NAMESPACE}"):
         pytest.skip(
             f"needs stage 6: deployment/backstage does not exist in "
-            f"{PLATFORM_NAMESPACE}. Run ./scripts/setup-kind.sh --stage 6."
+            f"{PLATFORM_NAMESPACE}. Run ./scripts/setup-kind.sh."
         )
 
     role = _kubectl(
@@ -163,8 +163,7 @@ def backstage_url():
     this file -- same convention `test_caller_identity.py::gateway_url` and
     `tests/harness/contract.py::_resolved_variant` both already use: `:PORT`
     with no local port lets `kubectl` choose a free one and print it, so this
-    can never collide with the repo-managed 7007 forward
-    `scripts/start-demo.sh` may already have established.
+    can never collide with the localhost:7007 host port.
     """
     proc = subprocess.Popen(
         [

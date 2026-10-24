@@ -187,7 +187,7 @@ def flow(tmp_path_factory):
     reachable = live.kubectl("cluster-info", timeout=30)
     assert reachable.returncode == 0, (
         f"needs the live stage-7 cluster: cannot reach {live.KUBE_CONTEXT} "
-        f"({reachable.stderr.strip()}); run ./scripts/setup-kind.sh --stage 7"
+        f"({reachable.stderr.strip()}); run ./scripts/setup-kind.sh"
     )
     state = Flow(tmp_path_factory.mktemp("demo-state"))
     state.ok("reset-before", "reset")

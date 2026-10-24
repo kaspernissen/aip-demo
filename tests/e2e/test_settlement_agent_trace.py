@@ -116,7 +116,6 @@ pytestmark = pytest.mark.skipif(
 )
 
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
-SETTLEMENT_URL = os.environ.get("SETTLEMENT_AGENT_URL", "http://localhost:19002")
 
 ENTRY_SPAN = "POST /"  # StarletteInstrumentor's ASGI server span
 
@@ -150,13 +149,13 @@ def send_message(text: str, traceparent: str | None = None) -> dict:
     # reports all of this file's tests as ERROR with a traceback rather than
     # one named failure -- aligned on the same reasoned value
     # test_settlement_llm_trace.py uses.
-    response = httpx.post(f"{SETTLEMENT_URL}/", json=payload, headers=headers, timeout=180)
+    response = httpx.post(f"{live.settlement_agent_url()}/", json=payload, headers=headers, timeout=180)
     response.raise_for_status()
     return response.json()
 
 
 def test_agent_card_is_served():
-    response = httpx.get(f"{SETTLEMENT_URL}/.well-known/agent-card.json", timeout=15)
+    response = httpx.get(f"{live.settlement_agent_url()}/.well-known/agent-card.json", timeout=15)
     response.raise_for_status()
     card = response.json()
     assert card["name"] == "settlement-agent"

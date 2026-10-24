@@ -51,12 +51,10 @@ no-model-tokens, not-behind-`RUN_BROWSER_TESTS=1` property — and building a
 second copy of that dance elsewhere is the thing this repo's own conventions
 argue against. See that test's own docstring for what it asserts and why.
 
-**Port-forward ownership.** The four forwards this repo manages —
-19001/19002/18000/18080, started and verified by `scripts/setup-kind.sh` — are
-none of this file's business and are never touched. The gateway has no
-repo-managed forward, so `gateway_url` starts one of its own and asks
-`kubectl` for an *ephemeral* local port (the bare `:3000` form), which cannot
-collide with a repo-managed port by construction. It is terminated in teardown.
+**Port-forward ownership.** The gateway has no host port, so `gateway_url`
+starts a forward of its own and asks `kubectl` for an *ephemeral* local port
+(the bare `:3000` form), which cannot collide with any fixed port by
+construction. It is terminated in teardown.
 
 **Credential hygiene.** Every token here is minted at runtime and none is
 committed, printed or logged. Failure messages carry claims (`sub`, `aud`,
@@ -123,7 +121,7 @@ UNTRUSTED_ISSUER = "http://issuer.invalid"
 def gateway_url():
     """A port-forward to `svc/agentgateway`, owned and cleaned up by this file
     (see `tests.harness.live.gateway_port_forward` for how the ephemeral port
-    is chosen and why it cannot shadow a repo-managed forward)."""
+    is chosen and why it cannot shadow a fixed port)."""
     with live.gateway_port_forward() as url:
         yield url
 
@@ -455,7 +453,6 @@ def test_gateway_refuses_a_bearer_value_that_is_not_a_jwt(gateway_url):
 # question is reopened deliberately rather than discovered later.
 
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
-PAYMENTS_API_URL = os.environ.get("PAYMENTS_API_URL", "http://localhost:18080")
 
 # M8: the route's `authorization` ceiling runs BEFORE the MCP body is parsed, and
 # a JSON-RPC array carries no `mcp.methodName`, so its allow rule errors and the
@@ -627,7 +624,7 @@ def test_a_jsonrpc_batch_is_rejected_before_the_policy_hook_and_changes_nothing(
     # 3. The ledger, first, because it is the primary evidence and it needs no
     # export delay to settle.
     record = requests.get(
-        f"{PAYMENTS_API_URL}/payments/{payment_id}", timeout=10
+        f"{live.payments_api_url()}/payments/{payment_id}", timeout=10
     )
     assert record.status_code == 200, (
         f"could not read {payment_id} back from the ledger: HTTP "

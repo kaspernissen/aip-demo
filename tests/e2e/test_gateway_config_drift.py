@@ -92,7 +92,7 @@ def live_gateway_config_text() -> str:
         pytest.skip(
             f"needs the live cluster: cannot reach {KUBE_CONTEXT} "
             f"({reachable.stderr.strip() or 'no output'}); "
-            "run ./scripts/setup-kind.sh --stage 7"
+            "run ./scripts/setup-kind.sh"
         )
 
     # The stage-2 probe, deliberately NOT the object under test. If the gateway
@@ -107,7 +107,7 @@ def live_gateway_config_text() -> str:
             f"no {GATEWAY_DEPLOYMENT} Deployment in {PLATFORM_NAMESPACE}, so "
             "this is not a stage-2 cluster and no gateway config is deployed "
             f"({deployment.stderr.strip() or 'no output'}); "
-            "run ./scripts/setup-kind.sh --stage 7"
+            "run ./scripts/setup-kind.sh"
         )
 
     proc = _kubectl(
@@ -123,7 +123,7 @@ def live_gateway_config_text() -> str:
         f"{CONFIGMAP_NAME} key {CONFIGMAP_KEY!r} is missing or empty. The "
         "gateway reads its config once at startup, so it is enforcing "
         "something -- and this repository has no way to see what. Re-run "
-        "./scripts/setup-kind.sh --stage 7 to recreate the ConfigMap from the "
+        "./scripts/setup-kind.sh to recreate the ConfigMap from the "
         f"committed file and restart the gateway ({proc.stderr.strip() or 'no output'})"
     )
     return proc.stdout
@@ -136,7 +136,7 @@ def test_the_live_gateway_configmap_parses_identically_to_the_committed_file(
 
     One assertion, on `yaml.safe_load` of both sides. If it fails, the cluster
     is running a gateway configuration that was never reviewed, and the fix is
-    `./scripts/setup-kind.sh --stage 7` (which recreates the ConfigMap from the
+    `./scripts/setup-kind.sh` (which recreates the ConfigMap from the
     committed file and restarts the deployment) or a deliberate commit of
     whatever the cluster is right about.
     """
@@ -165,7 +165,7 @@ def test_the_live_gateway_configmap_parses_identically_to_the_committed_file(
         f"  committed top-level keys: {sorted(committed)}\n"
         f"  live frontendPolicies:    {live.get('frontendPolicies')!r}\n"
         f"  committed frontendPolicies: {committed.get('frontendPolicies')!r}\n"
-        "Re-run ./scripts/setup-kind.sh --stage 7 to recreate the ConfigMap "
+        "Re-run ./scripts/setup-kind.sh to recreate the ConfigMap "
         "from the committed file and restart the gateway (the restart is "
         "mandatory: a mounted ConfigMap change is invisible to a running "
         "gateway), or commit the change the cluster is right about."

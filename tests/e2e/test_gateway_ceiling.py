@@ -92,7 +92,7 @@ def test_a_claim_over_the_ceiling_fails_and_nobody_is_asked(gateway):
     assert run["reply"]["status"] == "failed", run["reply"]
 
     # The ledger: the proposal is there, and it was never executed or sent to a human.
-    payments = httpx.get(f"{live.PAYMENTS_API_URL}/payments", timeout=10).json()
+    payments = httpx.get(f"{live.payments_api_url()}/payments", timeout=10).json()
     mine = [p for p in payments if p.get("claimId") == claim_id]
     assert [p["status"] for p in mine] == ["proposed"], mine
     assert live.get_payment(mine[0]["paymentId"])["status"] == "proposed"

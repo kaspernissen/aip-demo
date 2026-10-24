@@ -573,12 +573,12 @@ def require_reach(context: str):
     pds = kubectl(context, "-n", "northstar-platform", "get", "deployment",
                   "policy-decision-service", "-o", "name")
     if not absent_or_fail(pds, "deployment/policy-decision-service"):
-        pytest.skip("below stage 2 (no policy-decision-service); run ./scripts/setup-kind.sh --stage 7")
+        pytest.skip("below stage 2 (no policy-decision-service); run ./scripts/setup-kind.sh")
     ns = kubectl(context, "get", "namespace", "linkerd", "-o", "name")
     assert absent_or_fail(ns, "namespace/linkerd"), (
         "this is a stage >= 2 cluster and the `linkerd` namespace is missing, so "
         "nothing enforces ingress by identity and every reach test here would "
-        "prove nothing. Run ./scripts/setup-kind.sh --stage 7 (it creates the "
+        "prove nothing. Run ./scripts/setup-kind.sh (it creates the "
         "cluster with kindnet and installs Linkerd; a cluster that still runs "
         "Cilium must be deleted and recreated)")
     crd = kubectl(context, "get", "crd", "servers.policy.linkerd.io", "-o", "name")
@@ -591,5 +591,5 @@ def require_reach(context: str):
     assert not missing, (
         "the reach objects are NOT all applied, so the refusals below are not "
         f"enforced. Missing: {missing}. Re-apply deploy/platform/reach/ "
-        "(./scripts/setup-kind.sh --stage 7)")
+        "(./scripts/setup-kind.sh)")
     return json.loads(listing.stdout)["items"]

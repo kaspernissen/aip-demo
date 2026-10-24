@@ -129,7 +129,7 @@ def stage_6_backstage_deployed_or_a_reason():
     if not absent_or_fail(deployment, f"deployment/backstage in {PLATFORM_NAMESPACE}"):
         pytest.skip(
             f"needs stage 6: deployment/backstage does not exist in "
-            f"{PLATFORM_NAMESPACE}. Run ./scripts/setup-kind.sh --stage 6."
+            f"{PLATFORM_NAMESPACE}. Run ./scripts/setup-kind.sh."
         )
 
 
@@ -138,8 +138,7 @@ def backstage_url():
     """An ephemeral port-forward this file owns and tears down.
 
     `:PORT` with no local port lets kubectl pick a free one, so this can never
-    collide with the repo-managed 7007 forward `scripts/start-demo.sh` may
-    already hold -- the same convention `test_golden_path.py::backstage_url`
+    collide with the localhost:7007 host port -- the same convention `test_golden_path.py::backstage_url`
     and `tests/harness/contract.py` both already use.
     """
     proc = subprocess.Popen(

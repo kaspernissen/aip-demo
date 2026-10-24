@@ -45,16 +45,13 @@ with every other browser test here. Criteria 4 and 5 are *not* behind that flag:
 criterion 4 needs nothing, and criterion 5 needs only the cluster, which it
 fails rather than skips on (same rule as `tests/e2e/test_caller_identity.py`).
 
-**Port-forward ownership.** The browser reaches claims-agent at whatever
+**Routes.** The browser reaches claims-agent at whatever
 `NEXT_PUBLIC_CLAIMS_AGENT_URL` was baked into the customer-ui image at build
-time (`apps/customer-ui/Dockerfile`, default `http://localhost:19001`), so that
-port is not negotiable the way an ephemeral one would be. `claims_agent_route`
-below establishes it if it is not already up and tears down anything it
-started; liveness is checked with an HTTP request, never with `lsof`, because a
-dead `kubectl port-forward` keeps its listening socket and has already produced
-one false healthy report in this project. The gateway forward criterion 5 needs
-is `tests/e2e/test_caller_identity.py::gateway_url`'s, imported wholesale, and
-it asks kubectl for an ephemeral port.
+time (`apps/customer-ui/Dockerfile`, default `http://localhost:19001`), a kind
+host port onto claims-agent's NodePort. `claims_agent_route` below waits for it
+to answer. The gateway forward criterion 5 needs is
+`tests/e2e/test_caller_identity.py::gateway_url`'s, imported wholesale, and it
+asks kubectl for an ephemeral port.
 
 **Credential hygiene.** Criterion 5 mints real JWT-SVIDs. They are minted at
 runtime, never committed, and never printed: assertion messages carry decoded
@@ -69,7 +66,6 @@ import os
 import re
 import subprocess
 import time
-import urllib.parse
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -102,14 +98,6 @@ JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 HUMAN_TAKES_S = 6.0
 UI_URL = os.environ.get("CUSTOMER_UI_URL", "http://localhost:8080")
 CLAIMS_AGENT_URL = os.environ.get("CLAIMS_AGENT_URL", "http://localhost:19001")
-# The ledger itself, for criterion 1's read-back. Same env var and same default
-# `tests/e2e/test_payments_api_trace.py` already uses, and 18080 is one of the
-# four repo-managed port-forwards `scripts/smoke-test.sh` requires before it
-# runs anything, so this needs no fixture of its own.
-PAYMENTS_API_URL = os.environ.get("PAYMENTS_API_URL", "http://localhost:18080")
-
-KUBE_CONTEXT = "kind-northstar"
-AGENTS_NAMESPACE = "northstar-agents"
 
 TRACEPARENT_RE = re.compile(r"^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$")
 
@@ -190,78 +178,15 @@ PLATFORM_TEMPLATE_SENTENCE = (
 # --- browser drive ----------------------------------------------------------
 
 
-def _claims_agent_alive() -> bool:
-    """Whether claims-agent answers HTTP at the URL the browser will use.
-
-    An HTTP request, not `lsof` and not a bare TCP connect: a dead
-    `kubectl port-forward` keeps its listening socket open, so both of those
-    report healthy against a forward that will refuse every request. Any HTTP
-    status counts as alive — this is a liveness probe, not a contract check.
-    """
-    try:
-        requests.get(f"{CLAIMS_AGENT_URL}/.well-known/agent-card.json", timeout=3)
-    except requests.RequestException:
-        return False
-    return True
-
-
 @pytest.fixture(scope="module")
 def claims_agent_route():
-    """The route the *browser* uses to reach claims-agent.
+    """The URL the *browser* uses to reach claims-agent, once it answers.
 
-    Unlike every other forward in this file's neighbourhood this one cannot be
-    ephemeral: `NEXT_PUBLIC_CLAIMS_AGENT_URL` is a build-time `ARG` baked into
-    the customer-ui image (`apps/customer-ui/Dockerfile`), so the page's
-    JavaScript will POST to that exact host and port whatever this test would
-    prefer. The port is therefore read out of the URL rather than chosen.
-
-    Adopted if it is already up (the repo-managed forward `scripts/setup-kind.sh`
-    starts), established here if it is not — and in that case torn down again
-    when the module finishes, so this file leaves no forward behind.
+    Not negotiable: `NEXT_PUBLIC_CLAIMS_AGENT_URL` is a build-time `ARG` baked
+    into the customer-ui image, so the page posts to that exact host and port.
     """
-    if _claims_agent_alive():
-        yield CLAIMS_AGENT_URL
-        return
-
-    port = urllib.parse.urlsplit(CLAIMS_AGENT_URL).port
-    assert port, (
-        f"CLAIMS_AGENT_URL={CLAIMS_AGENT_URL!r} names no port, so this fixture "
-        "cannot establish the forward the browser needs"
-    )
-    proc = subprocess.Popen(
-        [
-            "kubectl",
-            "--context",
-            KUBE_CONTEXT,
-            "-n",
-            AGENTS_NAMESPACE,
-            "port-forward",
-            "svc/claims-agent",
-            f"{port}:9001",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    try:
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            if _claims_agent_alive():
-                break
-            time.sleep(1)
-        else:
-            raise AssertionError(
-                f"could not reach claims-agent at {CLAIMS_AGENT_URL} within 30s "
-                "after starting a port-forward -- is the kind-northstar cluster "
-                "up and claims-agent deployed? (this file needs the live "
-                "cluster and fails rather than skipping when it is absent)"
-            )
-        yield CLAIMS_AGENT_URL
-    finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+    with live.claims_agent_route(CLAIMS_AGENT_URL) as url:
+        yield url
 
 
 def _wait_for_browser_root(client: JaegerClient, trace_id: str, timeout: float) -> None:

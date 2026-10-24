@@ -62,7 +62,6 @@ from tests.harness import contract, live
 from tests.harness.jaeger import JaegerClient
 
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
-SETTLEMENT_URL = os.environ.get("SETTLEMENT_AGENT_URL", "http://localhost:19002")
 
 ENTRY_SPAN = "POST /"  # StarletteInstrumentor's ASGI server span
 
@@ -107,7 +106,7 @@ def _send(text: str, traceparent: str) -> dict:
         },
     }
     response = httpx.post(
-        f"{SETTLEMENT_URL}/", json=payload, headers={"traceparent": traceparent}, timeout=180
+        f"{live.settlement_agent_url()}/", json=payload, headers={"traceparent": traceparent}, timeout=180
     )
     response.raise_for_status()
     return response.json()

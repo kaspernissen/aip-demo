@@ -31,6 +31,7 @@ verifying it so a message can name the identity that was presented.
 """
 from __future__ import annotations
 
+import atexit
 import base64
 import contextlib
 import importlib.util
@@ -62,10 +63,9 @@ MCP_PROTOCOL_VERSION = "2025-06-18"
 # `text/plain` body, measured -- see `Outcome.refused`.
 UNAUTHORIZED = 401
 
+# claims-agent and the customer-ui server, reached the way the browser reaches
+# them: kind host ports onto NodePorts (deploy/kind/cluster.yaml).
 CLAIMS_AGENT_URL_DEFAULT = "http://localhost:19001"
-# The customer-ui server, reached the way the browser tests reach it: the kind
-# node's hostPort 8080 -> NodePort 30080 (deploy/kind/stage*.yaml). scripts/
-# start-demo.sh runs no port-forward for it, and this needs none.
 CUSTOMER_UI_URL_DEFAULT = os.environ.get("CUSTOMER_UI_URL", "http://localhost:8080")
 # A settlement is three sequential model turns plus MCP round trips; 180s
 # matches every other call site in this suite that drives one.
@@ -118,9 +118,7 @@ def kubectl(
 
 
 def claims_agent_alive(url: str = CLAIMS_AGENT_URL_DEFAULT) -> bool:
-    """Liveness by HTTP request, never by `lsof`: a dead `kubectl port-forward`
-    keeps its listening socket (this project has had one false healthy report
-    from exactly that)."""
+    """Liveness by HTTP request: any answer from the agent card counts."""
     try:
         requests.get(f"{url}/.well-known/agent-card.json", timeout=3)
     except requests.RequestException:
@@ -130,39 +128,104 @@ def claims_agent_alive(url: str = CLAIMS_AGENT_URL_DEFAULT) -> bool:
 
 @contextlib.contextmanager
 def claims_agent_route(url: str = CLAIMS_AGENT_URL_DEFAULT):
-    """claims-agent reachable at `url`: reuse a live forward, else own one.
+    """claims-agent answering at `url`, waited for up to 30s.
 
-    Anything this starts is terminated on exit; a forward that was already up
-    is never touched.
+    The default URL is a kind host port, so there is nothing to start here: a
+    redeploy of claims-agent only needs a moment to come back.
     """
-    if claims_agent_alive(url):
-        yield url
-        return
-    port = urllib.parse.urlsplit(url).port
-    assert port, f"{url!r} names no port, so no forward can be established for it"
-    proc = subprocess.Popen(
-        [
-            "kubectl", "--context", KUBE_CONTEXT, "-n", "northstar-agents",
-            "port-forward", "svc/claims-agent", f"{port}:9001",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    try:
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline and not claims_agent_alive(url):
-            time.sleep(1)
-        assert claims_agent_alive(url), (
-            f"could not reach claims-agent at {url} within 30s after starting a "
-            "port-forward -- is the kind-northstar cluster up?"
+    deadline = time.monotonic() + 30
+    while not claims_agent_alive(url):
+        assert time.monotonic() < deadline, (
+            f"claims-agent does not answer at {url} -- is the kind-northstar "
+            "cluster up? (./scripts/preflight.sh checks every localhost URL)"
         )
-        yield url
-    finally:
+        time.sleep(1)
+    yield url
+
+
+# --- side doors: the mesh-protected services -----------------------------------
+#
+# payments-api, payments-mcp and settlement-agent each have a Linkerd Server
+# that admits only named workload identities
+# (deploy/platform/reach/linkerd-policies.yaml). A request from the laptop has
+# no identity, so these three have no host port: through a NodePort they would
+# refuse it, which is the point. Tests and `scripts/demo` still read the ledger
+# and call these services directly, so they use `kubectl port-forward`, which
+# lands inside the pod behind its proxy. Each forward is opened on first use,
+# on the port its URL names, reused if that port already answers, and stopped
+# when the process exits.
+
+PAYMENTS_API_URL = os.environ.get("PAYMENTS_API_URL", "http://localhost:18080")
+PAYMENTS_MCP_URL = os.environ.get("PAYMENTS_MCP_URL", "http://localhost:18000/mcp")
+SETTLEMENT_AGENT_URL_DEFAULT = os.environ.get("SETTLEMENT_AGENT_URL", "http://localhost:19002")
+
+_SIDE_DOORS: dict[str, subprocess.Popen] = {}
+
+
+def _answers(url: str) -> bool:
+    try:
+        requests.get(url, timeout=3)
+    except requests.RequestException:
+        return False
+    return True
+
+
+def _close_side_doors() -> None:
+    for proc in _SIDE_DOORS.values():
         proc.terminate()
         try:
             proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired:  # pragma: no cover
             proc.kill()
+    _SIDE_DOORS.clear()
+
+
+atexit.register(_close_side_doors)
+
+
+def side_door(url: str, namespace: str, service: str, remote_port: int, probe_path: str) -> str:
+    """`url` answering, through a port-forward to `svc/<service>` if needed.
+
+    Returns `url` unchanged. Any HTTP answer on `probe_path` counts as up.
+    """
+    split = urllib.parse.urlsplit(url)
+    base = f"{split.scheme}://{split.netloc}"
+    if _answers(base + probe_path):
+        return url
+    if base not in _SIDE_DOORS or _SIDE_DOORS[base].poll() is not None:
+        assert split.port, f"{url!r} names no port, so no forward can be opened for it"
+        _SIDE_DOORS[base] = subprocess.Popen(
+            ["kubectl", "--context", KUBE_CONTEXT, "-n", namespace,
+             "port-forward", f"svc/{service}", f"{split.port}:{remote_port}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    deadline = time.monotonic() + 30
+    while not _answers(base + probe_path):
+        assert time.monotonic() < deadline, (
+            f"could not reach {service} at {base} within 30s of starting a "
+            f"port-forward to svc/{service} in {namespace} -- is the "
+            "kind-northstar cluster up, and is nothing else holding that port?"
+        )
+        time.sleep(1)
+    return url
+
+
+def payments_api_url() -> str:
+    """The ledger's base URL (GET /healthz answers without an identity)."""
+    return side_door(PAYMENTS_API_URL, "northstar-systems", "payments-api", 8080, "/healthz")
+
+
+def payments_mcp_url() -> str:
+    """payments-mcp's MCP endpoint, directly, not through the gateway."""
+    return side_door(PAYMENTS_MCP_URL, "northstar-tools", "payments-mcp", 8000, "/mcp")
+
+
+def settlement_agent_url() -> str:
+    """settlement-agent's A2A base URL, skipping claims-agent."""
+    return side_door(
+        SETTLEMENT_AGENT_URL_DEFAULT, "northstar-agents", "settlement-agent", 9002,
+        "/.well-known/agent-card.json",
+    )
 
 
 TERMINAL_STATES = {"completed", "failed", "canceled", "rejected"}
@@ -443,14 +506,11 @@ def autonomy(level: str):
         contract.set_targeted_branch(contract.ASSISTED)
 
 
-PAYMENTS_API_URL = os.environ.get("PAYMENTS_API_URL", "http://localhost:18080")
-
-
 def get_payment(payment_id: str) -> dict:
     """Read a payment straight back from the ledger it lives in -- the ledger
     is the authority on status, amount and the refusal record, never the reply
     a settlement or an approval happened to carry."""
-    response = httpx.get(f"{PAYMENTS_API_URL}/payments/{payment_id}", timeout=10)
+    response = httpx.get(f"{payments_api_url()}/payments/{payment_id}", timeout=10)
     assert response.status_code == 200, (
         f"could not read payment {payment_id} back from the ledger at "
         f"{PAYMENTS_API_URL} (HTTP {response.status_code}): {response.text[:300]}"
@@ -461,7 +521,7 @@ def get_payment(payment_id: str) -> dict:
 def list_payments(status: str) -> list[dict]:
     """Every ledger payment in `status`, as payments-api lists them
     (`GET /payments?status=`)."""
-    response = httpx.get(f"{PAYMENTS_API_URL}/payments", params={"status": status}, timeout=10)
+    response = httpx.get(f"{payments_api_url()}/payments", params={"status": status}, timeout=10)
     assert response.status_code == 200, (
         f"could not list {status!r} payments from the ledger at {PAYMENTS_API_URL} "
         f"(HTTP {response.status_code}): {response.text[:300]}"
@@ -762,8 +822,7 @@ def gateway_port_forward():
     """A port-forward to `svc/agentgateway`, owned and cleaned up by the caller.
 
     `:3000` (no local port) makes `kubectl` choose a free ephemeral port and
-    print it, so this cannot shadow one of the four repo-managed forwards even
-    by accident. The chosen port is parsed out of kubectl's own "Forwarding
+    print it, so this cannot shadow a port anything else uses. The chosen port is parsed out of kubectl's own "Forwarding
     from 127.0.0.1:<port> -> 3000" line rather than guessed.
     """
     proc = subprocess.Popen(
@@ -841,10 +900,9 @@ PROMETHEUS_SERVICE = "prometheus"
 def prometheus_port_forward():
     """An ephemeral port-forward to `svc/prometheus`; yields its base URL.
 
-    `:9090` with no local port makes kubectl choose a free one and print it, so
-    this cannot shadow `scripts/start-demo.sh`'s own 9090 forward: a stray
-    forward silently shadowing a host port has cost this project a measurement
-    before.
+    `:9090` with no local port makes kubectl choose a free one and print it.
+    Independent of the localhost:9090 host port, so a test still reads
+    Prometheus itself if that mapping is missing.
     """
     proc = subprocess.Popen(
         ["kubectl", "--context", KUBE_CONTEXT, "-n", OBSERVABILITY_NAMESPACE,
@@ -922,38 +980,6 @@ def prometheus_sum(selector: str, *, prometheus_url: str | None = None) -> float
 
 
 # --- settlement-agent (A2A), the violating path --------------------------------
-
-SETTLEMENT_AGENT_URL_DEFAULT = "http://localhost:19002"
-
-
-@contextlib.contextmanager
-def settlement_agent_route(url: str = SETTLEMENT_AGENT_URL_DEFAULT):
-    """settlement-agent's A2A endpoint reachable at `url` (its own forward,
-    owned and torn down here). Used only by the test that has to make the
-    refused identity act again."""
-    port = urllib.parse.urlsplit(url).port
-    proc = subprocess.Popen(
-        ["kubectl", "--context", KUBE_CONTEXT, "-n", "northstar-agents",
-         "port-forward", "svc/settlement-agent", f"{port}:9002"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    try:
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            try:
-                requests.get(f"{url}/.well-known/agent-card.json", timeout=3)
-                break
-            except requests.RequestException:
-                time.sleep(1)
-        else:
-            raise AssertionError(f"could not reach settlement-agent at {url} within 30s")
-        yield url
-    finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
 
 
 def send_claim_to_settlement_agent(

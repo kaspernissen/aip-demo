@@ -66,10 +66,10 @@ def _lost_resume(decision: str) -> dict:
     assert live.get_payment(payment_id).get("a2aTaskId") == run["task_id"], (
         "the ledger must carry the task id the heal re-sends to")
     if decision == "approve":
-        response = httpx.post(f"{live.PAYMENTS_API_URL}/payments/{payment_id}/execute",
+        response = httpx.post(f"{live.payments_api_url()}/payments/{payment_id}/execute",
                               json={"amount": AMOUNT, "currency": "EUR"}, timeout=15)
     else:
-        response = httpx.post(f"{live.PAYMENTS_API_URL}/payments/{payment_id}/reject",
+        response = httpx.post(f"{live.payments_api_url()}/payments/{payment_id}/reject",
                               json={"reviewerId": "lost-resume-test"}, timeout=15)
     assert response.status_code == 200, (response.status_code, response.text)
     # The state the customer is stuck in: decided on the ledger, task still waiting.

@@ -38,17 +38,17 @@ import mcp.types as types
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
+from tests.harness import live
 from tests.harness.jaeger import JaegerClient, assert_span_kind
 
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
-MCP_URL = os.environ.get("PAYMENTS_MCP_URL", "http://localhost:18000/mcp")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MCP_CONTRACT = REPO_ROOT / "contracts" / "mcp" / "payments-mcp.json"
 
 
 async def _call_tools(claim_id: str, traceparent: str) -> dict:
-    async with streamable_http_client(MCP_URL) as (read, write):
+    async with streamable_http_client(live.payments_mcp_url()) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             proposed = await session.call_tool(
@@ -230,7 +230,7 @@ def test_tool_schema_matches_the_committed_contract():
     import anyio
 
     async def _list_tools():
-        async with streamable_http_client(MCP_URL) as (read, write):
+        async with streamable_http_client(live.payments_mcp_url()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.list_tools()

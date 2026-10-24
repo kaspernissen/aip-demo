@@ -111,7 +111,7 @@ def _resolved_variant(pod: str, timeout: float = 30.0) -> str:
     the same "ask kubectl for a free port and parse its own announcement"
     convention `tests/e2e/test_caller_identity.py::gateway_url` established,
     reused rather than copied with a guessed local port that could collide
-    with a repo-managed forward."""
+    with a fixed one."""
     proc = subprocess.Popen(
         [
             "kubectl", "--context", KUBE_CONTEXT, "-n", PLATFORM_NAMESPACE,

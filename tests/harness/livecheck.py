@@ -12,12 +12,10 @@ of every span, metric and log. The pod serves its admin API on 4320:
 `owned_violations()` picks out the findings that fail the gate.
 
 **Why every call opens its own port-forward** (ephemeral local port, the same
-pattern as `live.gateway_port_forward`) instead of using the operator forward
-`scripts/start-demo.sh` keeps on `localhost:18400`. Both ways of emptying the
-pod's state kill that forward: a rollout replaces the pod the forward is bound
-to, and a container restart makes `kubectl port-forward` exit (measured). The
-gate would then be unable to read its own report, and `scripts/smoke-test.sh`
-creates no port-forwards of its own. A forward owned by the call cannot go
+pattern as `live.gateway_port_forward`): the admin port has no host port, and
+both ways of emptying the pod's state would kill a long-lived forward (a
+rollout replaces the pod it is bound to, and a container restart makes
+`kubectl port-forward` exit, measured). A forward owned by the call cannot go
 stale underneath it.
 
 Failure style: plain `assert`/`RuntimeError` with a message, like the other
@@ -118,7 +116,7 @@ def _forward():
             raise RuntimeError(
                 f"weaver live-check is unreachable: no port-forward to svc/{DEPLOYMENT} "
                 f"in {NAMESPACE}. Is deploy/{DEPLOYMENT} Ready? "
-                "(./scripts/setup-kind.sh --stage 7)"
+                "(./scripts/setup-kind.sh)"
             )
         yield f"http://127.0.0.1:{port}"
     finally:

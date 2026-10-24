@@ -1,7 +1,7 @@
 """No test in this suite may export telemetry to a real endpoint.
 
 The service's bootstrap builds OTLP exporters that default to
-localhost:4318, which during a demo is a port-forward to the live collector.
+localhost:4318, which is a kind host port onto the live collector.
 Before any test module imports the bootstrap, point every OTLP exporter at a
 sink in this process that accepts and discards everything. Tests that check
 spans add their own in-memory exporter; tests that check exporter settings

@@ -127,7 +127,7 @@ def keystone_armed():
     if not absent_or_fail(crd, f"the {POLICY_CRD} CRD"):
         pytest.skip(
             "not a stage-7 cluster (Kyverno's ValidatingPolicy CRD is absent); "
-            "run ./scripts/setup-kind.sh --stage 7"
+            "run ./scripts/setup-kind.sh"
         )
     policy = _kubectl(
         "get", "validatingpolicy", POLICY,

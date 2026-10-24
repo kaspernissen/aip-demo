@@ -210,7 +210,7 @@ def stage_4_or_a_reason():
             f"svc/{PROMETHEUS_SERVICE} is not installed and the deployed "
             f"collector config does not name {PROMETHEUS_EXPORTER_ID!r}, so "
             "this cluster is coherently below stage 4. Bring it up with "
-            "./scripts/setup-kind.sh --stage 7 to run these."
+            "./scripts/setup-kind.sh to run these."
         )
     assert installed, (
         f"the deployed collector ConfigMap names the {PROMETHEUS_EXPORTER_ID!r} "
@@ -227,7 +227,7 @@ def stage_4_or_a_reason():
         "Note this reads the PIPELINE, not the file: an exporter that is "
         "declared but listed in no pipeline is inert (see "
         "_metrics_pipeline_exports_to_prometheus's docstring). Re-run "
-        "./scripts/setup-kind.sh --stage 7, which applies the ConfigMap and "
+        "./scripts/setup-kind.sh, which applies the ConfigMap and "
         "restarts the collector."
     )
 
