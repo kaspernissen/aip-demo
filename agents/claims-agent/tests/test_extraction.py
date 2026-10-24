@@ -42,7 +42,7 @@ async def test_the_prompt_opens_with_the_prefix_the_evaluators_skip_and_carries_
 
 
 async def test_the_claim_id_is_the_runs_conversation_id(monkeypatch):
-    """As settlement-agent's: one claim, one AgentEvals session (M11)."""
+    """As settlement-agent's: one claim, one AgentEvals session."""
     seen = {}
     original = type(intake_agent).run
 

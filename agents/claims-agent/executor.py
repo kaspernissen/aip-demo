@@ -5,7 +5,7 @@ completes at once. If the platform routes the payment to a human, the task
 moves to input-required and execute() RETURNS. Nothing in this process waits
 for the human.
 
-Why it returns (M10): a parked execute() made a2a-sdk 0.3.7 add an
+Why it returns: a parked execute() made a2a-sdk 0.3.7 add an
 `EventQueue.dequeue_event` span every 0.5 s to the agent's trace for the whole
 wait. Returning ends trace A at the hand-off, with no polling. The reviewer-ui's
 resume is a `message/send` on the same task id; the SDK starts a fresh
@@ -28,8 +28,8 @@ A refusal the settlement-agent could not record on the ledger
 (`refusal_unrecorded`) is terminal here: there is no payment awaiting approval
 for a reviewer to find, so parking the task would wait for nobody.
 
-M13: the intake, and a second reason to wait. A claim that arrives as a JSON
-object takes the path above, unchanged and with no model. Anything else is a
+Intake, and a second reason to wait. A claim that arrives as a JSON
+object takes the path above, with no model. Anything else is a
 customer's first notice of loss in their own words: extraction.py's model
 reads it into a draft, intake.check_draft judges the draft as strictly as a
 JSON claim, and a draft that is not yet a claim parks the task at
@@ -50,7 +50,7 @@ keeps waiting. The task metadata is merged, never replaced, so the approval
 park writes its reason explicitly: a claim that waited for information and
 then for a person must not still read `needs_information`.
 
-The information wait follows the M10 rules: execute() returns when it parks,
+The information wait follows the same rules: execute() returns when it parks,
 and the resume span (`northstar.a2a.resume`, in the customer's reply trace)
 links back to the span that parked it.
 """
@@ -156,7 +156,7 @@ def _waiting_reply(task: Task) -> dict[str, Any]:
 def _parked_reason(task: Task) -> str:
     """Which wait this task is in, read ONLY from the metadata this agent wrote.
 
-    No key is the approval wait: every task parked before M13 is one. A key
+    No key is the approval wait: a task parked before the key existed is one. A key
     with any other value is refused rather than guessed at.
     """
     reason = (task.metadata or {}).get(PARKED_REASON_KEY, AWAITING_APPROVAL)
@@ -280,7 +280,7 @@ class ClaimsAgentExecutor(AgentExecutor):
     async def _settle(self, claim: dict[str, Any], task: Task, updater: TaskUpdater,
                       span: trace.Span) -> None:
         try:
-            # `description` rides along for M13's assessing agent; settlement-agent's
+            # `description` rides along for later assessment; settlement-agent's
             # _validate ignores keys it does not read (its tests hold that).
             settlement = await self._delegate("settlement-agent").send({
                 "claimId": claim["claimId"], "amount": claim["estimatedAmount"],
@@ -290,8 +290,7 @@ class ClaimsAgentExecutor(AgentExecutor):
             # execute() would abort the HTTP response mid-body ("incomplete
             # chunked read") and the customer would see a dropped connection.
             # Say what happened on the task instead: `failed`, with the real
-            # reason in `error` (the blocking message/send used to return it as
-            # a JSON-RPC error).
+            # reason in `error`.
             logger.exception("claim %s: settlement failed", claim["claimId"])
             span.set_attribute("northstar.a2a.task.state", TaskState.failed.value)
             failure = {

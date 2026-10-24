@@ -5,8 +5,7 @@
 # are in requirements-dev.txt.
 #
 # Direct dependencies, each pinned to the version actually installed and
-# tested against (house style: nothing floats). Resolved 2026-10-18 against
-# the live PyPI index (`pip index versions`), except where noted.
+# tested against. Resolved against the live PyPI index, except where noted.
 #
 # ASGI framework. 1.7.0 is the latest release. No FastAPI: three routes and a
 # static handler need no more than Starlette itself.

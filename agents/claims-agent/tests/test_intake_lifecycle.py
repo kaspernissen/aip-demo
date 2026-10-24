@@ -1,4 +1,4 @@
-"""The free-text intake and its information wait, through the real DefaultRequestHandler (M13).
+"""The free-text intake and its information wait, through the real DefaultRequestHandler.
 
 No HTTP, no cluster, no API key: InMemoryTaskStore, a fake settlement-agent, a
 fake ledger, and a FunctionModel standing in for Anthropic. The second half is

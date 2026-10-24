@@ -1,9 +1,9 @@
 """The claims-agent's task lifecycle, driven through the real DefaultRequestHandler.
 
 No HTTP and no cluster: InMemoryTaskStore, a fake settlement-agent, a fake ledger.
-Since M10, execute() returns at input-required and a resume is a fresh
+execute() returns at input-required and a resume is a fresh
 execute(); the first test below is the measurement of a2a-sdk 0.3.7 that the
-design rests on (spec §5).
+design rests on.
 """
 import asyncio
 import json
@@ -109,7 +109,7 @@ def span_exporter(monkeypatch):
 
 
 async def test_after_execute_returns_the_stream_ends_and_a_resume_runs_a_fresh_execute():
-    # Measurement for M10 (spec §5). If this fails, STOP: the design rests on it.
+    # Measurement the design rests on. If this fails, STOP: the design rests on it.
     handler, _ = _handler_with_ledger(status="executed")
     task, seen = await _until_input_required(handler)
     # The stream ended on its own: _until_input_required drained it to the end.

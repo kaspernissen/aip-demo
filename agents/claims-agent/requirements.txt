@@ -1,30 +1,16 @@
 a2a-sdk[telemetry]==0.3.7
-# **Held at 0.3.7 deliberately.** The newest installable release is 1.1.2
-# (2026-07-22 on PyPI; the project's GitHub releases go to v1.1.4 but v1.1.3
-# and v1.1.4 were never published to PyPI -- both /pypi/a2a-sdk/<v>/json
-# return 404 -- so 1.1.2 is "latest" for anything that can be pinned). It was
-# evaluated and NOT taken. Two reasons, both measured against the installed
-# 1.1.2 rather than read off a changelog:
-#
-#   * The thing that would have justified the risk is not there.
-#     docs/upstream-findings.md Finding 1 is precisely about this library
-#     not extracting inbound trace context and its spans carrying no
-#     attributes. At 1.1.2, `propagate`/`traceparent`/`TextMapPropagator` are
-#     still 0 hits across the package, and all 17 instrumented modules still
-#     carry a bare `@trace_class(kind=...)` with no `attributes=`. The
-#     StarletteInstrumentor workaround in main.py is still required.
-#   * 1.x is a protocol migration, not a bump. It implements A2A v1.0 with
-#     v0.3 behind an opt-in compat layer: the JSON-RPC method is `SendMessage`
-#     rather than `message/send` (this repo sends `message/send` from 13 files
-#     in three languages), `a2a.types.AgentCard` is a protobuf message that
-#     cannot parse this repo's own committed agent card, and
-#     `a2a.server.apps.A2AStarletteApplication` -- what main.py builds and
-#     what StarletteInstrumentor attaches to -- does not exist in 1.x.
-#
-# Recorded in full in docs/upstream-findings.md Finding 1 and
-# docs/telemetry-contract.md Gap 1. Adopting 1.x means reworking the
-# JSON-RPC method name, the agent card format, and the Starlette
-# integration together -- not a version bump.
+# Held at 0.3.7 deliberately. The newest installable release is 1.1.2; 1.x is
+# a protocol migration, not a bump:
+#   * It implements A2A v1.0 with v0.3 behind an opt-in compat layer. The
+#     JSON-RPC method is `SendMessage` rather than `message/send` (this repo
+#     sends `message/send` from 13 files in three languages),
+#     `a2a.types.AgentCard` is a protobuf message that cannot parse this
+#     repo's agent card, and `a2a.server.apps.A2AStarletteApplication` (what
+#     main.py builds and StarletteInstrumentor attaches to) does not exist.
+#   * 1.1.2 still does not extract inbound trace context and its spans carry
+#     no attributes, so the StarletteInstrumentor workaround in main.py is
+#     still required (docs/upstream-findings.md Finding 1,
+#     docs/telemetry-contract.md Gap 1).
 starlette==1.6.0
 sse-starlette==3.4.11
 httpx==0.28.1
@@ -37,35 +23,24 @@ opentelemetry-instrumentation-starlette==0.65b0
 # (correlation.py). 0.65b0 is the contrib release paired with the 1.44.0 core
 # pinned here; 0.66b1 is newer but belongs to the 1.45 line.
 opentelemetry-processor-baggage==0.65b0
-# pytest 8.3.4 -> 9.0.3 clears PYSEC-2026-1845 (pip-audit). This file's
-# runtime image installs the whole requirements.txt (Dockerfile), so the
-# advisory ships in the running claims-agent pod, not just a dev venv.
-# pytest-asyncio 0.25.0 -> 1.4.0 alongside it: 0.25.0 declares
-# `pytest<9,>=8.2` (its own Requires-Dist on PyPI, checked directly), so it
-# capped the pytest bump one minor short of 9.0.3; 1.4.0 declares
-# pytest<10,>=8.4, satisfied by 9.0.3. This is the same paired bump
-# agents/settlement-agent/requirements.txt makes for the same advisory.
+# pytest 9 clears PYSEC-2026-1845 (pip-audit); the runtime image installs this
+# whole file, so the advisory would otherwise ship in the running pod.
+# pytest-asyncio 1.x is required alongside it: 0.25.0 caps pytest below 9.
 pytest==9.1.1
 pytest-asyncio==1.4.0
-# pytest 9.0.3 declares pygments>=2.7.2 as an unconditional dependency, so it
-# is now a pinned transitive here. pytest==8.3.4 declared it too, but only
-# behind its unused `dev` extra (`pygments>=2.7.2; extra == "dev"`), so it was
-# never installed before this bump. Both checked against each version's own
-# Requires-Dist on PyPI.
-# Pinned exactly as resolved by `uv pip install -r requirements.txt` into a
-# clean venv (house style: nothing floats).
+# pygments is an unconditional dependency of pytest 9, so it is pinned here as
+# a transitive, exactly as resolved by `uv pip install -r requirements.txt`.
 pygments==2.21.0
 
-# M13: the intake is a real model call (extraction.py), via
-# `pydantic-ai-slim[anthropic]`, at EXACTLY the versions
-# agents/settlement-agent/requirements.txt pins -- that file carries the
-# rationale for 2.42.0 and for not taking the `[mcp]` extra. Copied, not
-# re-resolved to newer releases: a version refresh is its own milestone, and
-# two agents on two PydanticAI versions would publish two `gen_ai.*`
-# inventories under one contract.
+# The free-text intake is a real model call (extraction.py), via
+# `pydantic-ai-slim[anthropic]`, at exactly the versions
+# agents/settlement-agent/requirements.txt pins; that file carries the
+# rationale for 2.42.0 and for not taking the `[mcp]` extra. Two agents on two
+# PydanticAI versions would publish two `gen_ai.*` inventories under one
+# contract.
 pydantic-ai-slim[anthropic]==2.42.0
 # Transitive pins pulled in by pydantic-ai-slim[anthropic], the same list
-# and the same versions settlement-agent pins (house style: nothing floats).
+# and versions settlement-agent pins.
 anthropic==1.4.0
 docstring-parser==0.18.0
 genai-prices==0.1.6

@@ -215,7 +215,7 @@ async def decide(
         # The join key `scripts/demo evidence` reads a claim's whole
         # trajectory by: this decision happens minutes after, and in a
         # different trace from, the refusal, and the claim id is what ties the
-        # two together (Gap 4). Read off the ledger record, like everything
+        # two together. Read off the ledger record, like everything
         # else on this span.
         trace_id, span_id = refusal.get("refusedTraceId"), refusal.get("refusedSpanId")
         if trace_id and span_id:

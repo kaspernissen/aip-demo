@@ -175,9 +175,7 @@ async def test_the_review_decision_span_carries_exactly_the_spec_attributes(trac
         "northstar.review.reviewer.id": "alex.mercer",
         "northstar.review.reviewer.spiffe_id": REVIEWER_SPIFFE_ID,
         "northstar.review.wait.duration": 5.0,
-        # Not in the spec's list: the join key `scripts/demo evidence` reads a
-        # claim's trajectory by, which the retired
-        # settlement.execute_approved span used to carry into trace B.
+        # The join key `scripts/demo evidence` reads a claim's trajectory by.
         "northstar.claim.id": "CLM-1842",
     }
 
@@ -414,7 +412,7 @@ async def test_a_payment_with_no_task_id_resumes_nothing(traced):
     assert claims.calls == [] and result.resumed_state is None
 
 
-# ---- M8 Task 3: the span link, the claim baggage, the wait histogram ----
+# ---- the span link, the claim baggage, the wait histogram ----
 
 from opentelemetry import baggage
 from opentelemetry.sdk.metrics import MeterProvider
@@ -506,7 +504,7 @@ async def test_a_refused_execute_records_no_sample(traced, waits):
     assert result.error and waits() == []
 
 
-# ---- fix wave: a customer is never stranded by a lost resume ----
+# ---- a customer is never stranded by a lost resume ----
 
 from claims import TaskNotWaiting
 

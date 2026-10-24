@@ -3,8 +3,8 @@
 Deliberately strict and deterministic: this is the validated boundary for
 claim data, regardless of whatever handles free-text claims upstream.
 
-Two ways in since M13, one boundary. A JSON object goes through
-`parse_claim` exactly as before. Free text goes to the model
+Two ways in, one boundary. A JSON object goes through
+`parse_claim`. Free text goes to the model
 (extraction.py), and the draft it returns comes back HERE, through the same
 `validate_claim`, plus the few checks a first notice of loss needs that a
 JSON claim never had to pass (`check_draft`). The model's output is never
@@ -24,8 +24,8 @@ from typing import Any
 # the JSON claim's own, so a draft and a JSON claim are the same shape.
 DRAFT_FIELDS = ("policyNumber", "estimatedAmount", "incidentDate", "description")
 
-# Northstar settles in euro, and the delegation to settlement-agent has always
-# said "EUR" (executor.py). A free-text amount in another currency is not
+# Northstar settles in euro, and the delegation to settlement-agent always
+# says "EUR" (executor.py). A free-text amount in another currency is not
 # converted by anyone: it is treated as missing and the customer is asked for
 # the amount in euro.
 SETTLEMENT_CURRENCY = "EUR"
@@ -50,9 +50,8 @@ def is_json_object(text: str) -> bool:
     """Whether `text` takes the deterministic JSON path.
 
     Only a JSON *object* does. Anything else -- prose, a malformed object, a
-    bare number or list -- is free text for the model. Today's JSON path is
-    unchanged for every input it accepted, and the inputs it used to reject
-    as "not a JSON object" now get a model to read them instead.
+    bare number or list -- is free text for the model. A JSON object is parsed
+    deterministically; everything else gets a model to read it.
     """
     try:
         return isinstance(json.loads(text), dict)

@@ -47,8 +47,8 @@ def test_the_registered_trace_context_propagator_is_upstreams_own():
     )
     assert type(trace_context[0]) is TraceContextTextMapPropagator, (
         "reviewer-ui has a trace-context propagator that is a SUBCLASS of "
-        "upstream's rather than upstream's own -- which is the shape the "
-        f"retired flag-byte workaround had: {type(trace_context[0])!r}. See "
+        "upstream's rather than upstream's own -- which is the shape a "
+        f"flag-byte workaround has: {type(trace_context[0])!r}. See "
         "this module's docstring and docs/upstream-findings.md Finding 11 "
         "before adding another one."
     )

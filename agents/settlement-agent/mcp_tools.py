@@ -319,7 +319,7 @@ class PaymentsTools:
             # design (PEP 654) — so unwrap by hand instead and re-raise the
             # leaf exception the caller actually needs to see.
             #
-            # A policy denial is no longer a JSON-RPC error: agentgateway
+            # A policy denial is not a JSON-RPC error: agentgateway
             # v1.6.0 returns it as an `isError` tool result, which `_unwrap`
             # turns into a PolicyDenial inside the `async with`, so it arrives
             # here as a leaf like any ToolCallError. A JSON-RPC error from the
