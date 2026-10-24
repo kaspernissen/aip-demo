@@ -1,7 +1,7 @@
 {
   "protocolVersion": "0.3.0",
   "name": "claims-agent",
-  "description": "Front door for motor claims at Northstar Insurance. Coordinates policy, assessment and settlement agents.",
+  "description": "Front door for motor claims at Northstar Insurance. Takes a claim as JSON or in the customer's own words, asks for anything missing, and delegates the settlement.",
   "url": "http://claims-agent.northstar-agents.svc.cluster.local:9001/",
   "version": "0.1.0",
   "preferredTransport": "JSONRPC",
@@ -10,16 +10,40 @@
     "pushNotifications": true,
     "stateTransitionHistory": false
   },
-  "defaultInputModes": ["text/plain"],
-  "defaultOutputModes": ["text/plain"],
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
   "skills": [
     {
       "id": "file-claim",
-      "name": "File a motor claim",
-      "description": "Accept a vehicle-damage claim and drive it to a settlement decision.",
-      "tags": ["claims", "intake", "motor"],
+      "name": "File a motor claim as JSON",
+      "description": "Accept a vehicle-damage claim as a JSON object and drive it to a settlement decision. No model reads it.",
+      "tags": [
+        "claims",
+        "intake",
+        "motor"
+      ],
       "examples": [
         "{\"claimId\": \"CLM-1842\", \"policyNumber\": \"POL-77120\", \"description\": \"Rear-end collision at a junction\", \"estimatedAmount\": 6200}"
+      ]
+    },
+    {
+      "id": "claim-intake",
+      "name": "Report a claim in your own words",
+      "description": "Accept a first notice of loss as free text. A model reads it into a claim; anything missing or unclear (policy number, date, amount in euro, what happened) is asked for as a follow-up question, and the task waits at input-required until the customer answers on the same task. At most three questions.",
+      "tags": [
+        "claims",
+        "intake",
+        "motor",
+        "free-text",
+        "multi-turn"
+      ],
+      "examples": [
+        "Someone reversed into my car in a car park on 2026-10-20. The bumper needs replacing, the garage quoted 1,450 euro. My policy is POL-77120.",
+        "A tree branch fell on my car last night and cracked the windscreen."
       ]
     }
   ]
