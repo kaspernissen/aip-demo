@@ -206,7 +206,11 @@ def test_1_guard_no_identity_is_401_the_direct_road_is_dropped_and_the_svid_list
         "both the tools/list and the tools/call with no identity must answer 401:\n" + out
     )
     assert "[REACHED]" in out, "the reach control must answer, or the drop proves an outage:\n" + out
-    assert "[DROPPED]" in out and "never arrived" in out, out
+    # Egress is NetworkPolicy: the client's own proxy reports the drop as a
+    # proxy error, so the verdict reads "[DROPPED (proxy error)]".
+    assert "[DROPPED" in out and "dropped the packets" in out, out
+    # Ingress is Linkerd: payments-api's proxy refuses reviewer-ui by identity.
+    assert "[REFUSED 403" in out, out
     assert "[200]" in out, out
     # The tool names are read off the gateway's own tools/list for the minted
     # SVID, not typed into the driver.
