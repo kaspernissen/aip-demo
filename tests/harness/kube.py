@@ -70,7 +70,7 @@ def absent_or_fail(result: subprocess.CompletedProcess, what: str) -> bool:
     raise AssertionError(
         f"`kubectl` failed while checking whether {what} exists, and the "
         "failure is not 'it does not exist' -- so this file cannot tell "
-        "whether the cluster lacks the component or is simply unreachable, and it "
+        "whether the cluster is below stage 4 or simply unreachable, and it "
         "must not guess. Exit code "
         f"{result.returncode}; stderr:\n{stderr.strip() or '(empty)'}\n"
         f"Context in use: {_context_of(result)}."
