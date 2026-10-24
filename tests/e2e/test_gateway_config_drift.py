@@ -2,7 +2,7 @@
 
 **The gap this closes.** Every other guard in this repository catches a
 *consequence* of the deployed gateway config being wrong:
-`tests/unit/test_stage2_pds_config.py` reads the committed file,
+`tests/unit/test_pds_config.py` reads the committed file,
 `test_policy_denial.py::test_criterion_5_...` drives two SPIRE SVIDs at the
 deployed gateway and reddens if the live config dropped `mcpGuardrails`,
 flipped to `failOpen`, dropped `metadata.caller` or set `methods` to `off`, and
@@ -105,7 +105,7 @@ def live_gateway_config_text() -> str:
     if deployment.returncode != 0:
         pytest.skip(
             f"no {GATEWAY_DEPLOYMENT} Deployment in {PLATFORM_NAMESPACE}, so "
-            "this is not a stage-2 cluster and no gateway config is deployed "
+            "no gateway config is deployed "
             f"({deployment.stderr.strip() or 'no output'}); "
             "run ./scripts/setup-kind.sh"
         )
@@ -119,7 +119,7 @@ def live_gateway_config_text() -> str:
     # repository cannot read -- the divergence this file exists to catch.
     assert proc.returncode == 0 and proc.stdout.strip(), (
         f"THE DEPLOYED GATEWAY CONFIG CANNOT BE READ. {GATEWAY_DEPLOYMENT} is "
-        f"deployed in {PLATFORM_NAMESPACE}, so this IS a stage-2 cluster, but "
+        f"deployed in {PLATFORM_NAMESPACE}, so the gateway config should exist, but "
         f"{CONFIGMAP_NAME} key {CONFIGMAP_KEY!r} is missing or empty. The "
         "gateway reads its config once at startup, so it is enforcing "
         "something -- and this repository has no way to see what. Re-run "

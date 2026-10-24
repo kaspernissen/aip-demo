@@ -52,7 +52,7 @@ def _kubectl(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def stage_6_backstage_deployed_or_a_reason():
+def backstage_deployed_or_a_reason():
     """Skip if this is not even a live cluster; skip (not fail) if the
     cluster is live but the Backstage Deployment does not exist --
     that is an absence of Backstage, not a regression, the same discipline
@@ -68,7 +68,7 @@ def stage_6_backstage_deployed_or_a_reason():
     deployment = _kubectl("-n", NAMESPACE, "get", "deployment", "backstage", "-o", "name")
     if not absent_or_fail(deployment, f"deployment/backstage in {NAMESPACE}"):
         pytest.skip(
-            f"needs stage 6: deployment/backstage does not exist in {NAMESPACE}"
+            f"needs Backstage: deployment/backstage does not exist in {NAMESPACE}"
         )
 
 

@@ -646,8 +646,7 @@ def test_criterion_2_the_model_narrates_the_denial_and_never_retries(denial_run)
 
     **The narration half, and its honest limits.** The reply the browser
     rendered carries a `narrative`, and `settlement.py` sources that field from
-    `result.output` and nothing else -- so the assertion that closes this is
-    that the final assistant text in PydanticAI's message history, *recorded
+    `result.output` and nothing else -- so the assertion that closes this is    that the final assistant text in PydanticAI's message history, *recorded
     after* the failed `execute_payment` response, is byte-for-byte the narrative
     the customer was shown. That is what "in its own words" can be proven to
     mean: the model saw the refusal, spoke after it, and what it said is what

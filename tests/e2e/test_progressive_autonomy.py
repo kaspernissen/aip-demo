@@ -95,7 +95,7 @@ def _kubectl(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def stage_5_or_a_reason():
+def open_feature_operator_or_a_reason():
     """Skip without the Open Feature Operator; fail on a cluster with it missing the one thing
     this file actually asserts on.
 
@@ -120,8 +120,8 @@ def stage_5_or_a_reason():
     )
     if not absent_or_fail(ofo, f"deployment/{OFO_DEPLOYMENT} in {OFO_NAMESPACE}"):
         pytest.skip(
-            "the Open Feature Operator is not installed, so this is "
-            "coherently below stage 5. Bring it up with "
+            "the Open Feature Operator is not installed, so this cluster "
+            "coherently lacks it. Bring it up with "
             "./scripts/setup-kind.sh to run these."
         )
 

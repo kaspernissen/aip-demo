@@ -185,7 +185,7 @@ def flow(tmp_path_factory):
     crashed earlier run must not make the first claim execute."""
     reachable = live.kubectl("cluster-info", timeout=30)
     assert reachable.returncode == 0, (
-        f"needs the live stage-7 cluster: cannot reach {live.KUBE_CONTEXT} "
+        f"needs the live cluster: cannot reach {live.KUBE_CONTEXT} "
         f"({reachable.stderr.strip()}); run ./scripts/setup-kind.sh"
     )
     state = Flow(tmp_path_factory.mktemp("demo-state"))

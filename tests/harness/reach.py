@@ -570,10 +570,10 @@ def require_reach(context: str):
     pds = kubectl(context, "-n", "northstar-platform", "get", "deployment",
                   "policy-decision-service", "-o", "name")
     if not absent_or_fail(pds, "deployment/policy-decision-service"):
-        pytest.skip("below stage 2 (no policy-decision-service); run ./scripts/setup-kind.sh")
+        pytest.skip("policy-decision-service is not deployed; run ./scripts/setup-kind.sh")
     ns = kubectl(context, "get", "namespace", "linkerd", "-o", "name")
     assert absent_or_fail(ns, "namespace/linkerd"), (
-        "this is a stage >= 2 cluster and the `linkerd` namespace is missing, so "
+        "the policy-decision-service is deployed but the `linkerd` namespace is missing, so "
         "nothing enforces ingress by identity and every reach test here would "
         "prove nothing. Run ./scripts/setup-kind.sh (it creates the "
         "cluster with kindnet and installs Linkerd; a cluster that still runs "

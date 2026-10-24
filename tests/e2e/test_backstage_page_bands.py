@@ -105,7 +105,7 @@ def _kubectl(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def stage_6_backstage_deployed_or_a_reason():
+def backstage_deployed_or_a_reason():
     """Skip if there is no live cluster, and skip if Backstage is simply not
     deployed -- the absence of Backstage is not this file's regression. Same
     shape as `test_golden_path.py`'s own fixture, minus the Role check, which
@@ -128,7 +128,7 @@ def stage_6_backstage_deployed_or_a_reason():
     )
     if not absent_or_fail(deployment, f"deployment/backstage in {PLATFORM_NAMESPACE}"):
         pytest.skip(
-            f"needs stage 6: deployment/backstage does not exist in "
+            f"needs Backstage: deployment/backstage does not exist in "
             f"{PLATFORM_NAMESPACE}. Run ./scripts/setup-kind.sh."
         )
 

@@ -38,7 +38,7 @@ from tests.harness import livecheck
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
     reason=(
-        "needs the live stage-7 cluster and the traffic the rest of the gate "
+        "needs the live cluster and the traffic the rest of the gate "
         "drives; gated behind the same RUN_BROWSER_TESTS=1 flag "
         "scripts/smoke-test.sh sets unconditionally"
     ),

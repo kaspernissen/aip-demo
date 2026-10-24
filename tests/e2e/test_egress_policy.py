@@ -120,7 +120,7 @@ def _pod(app: str, namespace: str = AGENT_NS) -> str:
         "-o", "jsonpath={.items[0].metadata.name}",
     )
     assert proc.returncode == 0 and proc.stdout.strip(), (
-        f"no {app} pod in {namespace} on a stage >= 2 cluster "
+        f"no {app} pod in {namespace} on this cluster "
         f"({proc.stderr.strip() or 'no output'})"
     )
     return proc.stdout.strip()
@@ -145,7 +145,7 @@ def _http(app: str, host: str, port: int, method: str = "GET", path: str = "/",
 
 @pytest.fixture(scope="module")
 def reach_objects():
-    """Stage >= 2 with Linkerd and every reach object, or FAIL (never skip)."""
+    """A cluster with Linkerd and every reach object, or FAIL (never skip)."""
     return reach.require_reach(KUBE_CONTEXT)
 
 

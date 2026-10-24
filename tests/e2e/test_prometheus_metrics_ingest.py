@@ -201,7 +201,7 @@ def _metrics_pipeline_exports_to_prometheus() -> bool:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def stage_4_or_a_reason():
+def prometheus_or_a_reason():
     """Skip without Prometheus; fail on the incoherent middle state."""
     installed = _prometheus_is_installed()
     exports = _metrics_pipeline_exports_to_prometheus()
@@ -209,7 +209,7 @@ def stage_4_or_a_reason():
         pytest.skip(
             f"svc/{PROMETHEUS_SERVICE} is not installed and the deployed "
             f"collector config does not name {PROMETHEUS_EXPORTER_ID!r}, so "
-            "this cluster is coherently below stage 4. Bring it up with "
+            "this cluster coherently has no Prometheus. Bring it up with "
             "./scripts/setup-kind.sh to run these."
         )
     assert installed, (
@@ -217,7 +217,7 @@ def stage_4_or_a_reason():
         f"exporter but svc/{PROMETHEUS_SERVICE} does not exist in the "
         f"{OBSERVABILITY_NAMESPACE} namespace: a pipeline exporting to a "
         "backend this cluster does not have. scripts/setup-kind.sh strips the "
-        "stage-4-only regions of the collector config below stage 4 -- check "
+        "Prometheus-only regions of the collector config when Prometheus is absent -- check "
         "that it did."
     )
     assert exports, (

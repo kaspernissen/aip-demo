@@ -39,7 +39,7 @@ AMOUNT = 5800.0
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
     reason=(
-        "needs the live stage-7 cluster and spends one model settlement per claim; "
+        "needs the live cluster and spends one model settlement per claim; "
         "gated behind the same RUN_BROWSER_TESTS=1 flag scripts/smoke-test.sh sets "
         "unconditionally"
     ),

@@ -315,7 +315,7 @@ GATEWAY_TOOLS_CALL_SERVER_ATTRS = {
 
 # The caller's attested identity, as SPIRE mints it from
 # `deploy/platform/spire/registration.yaml`'s ID template: trust domain,
-# namespace, service account. `tests/unit/test_stage2_spire_config.py` pins
+# namespace, service account. `tests/unit/test_spire_config.py` pins
 # that the configuration renders this; this file pins that the gateway
 # actually *observed* it on the wire.
 SETTLEMENT_AGENT_SPIFFE_ID = (

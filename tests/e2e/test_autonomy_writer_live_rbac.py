@@ -86,7 +86,7 @@ def _can_i(
 
 
 @pytest.fixture(scope="module", autouse=True)
-def stage_6_with_the_write_grant_applied_or_a_reason():
+def backstage_with_the_write_grant_applied_or_a_reason():
     """Skip if this is not even a live cluster; skip (not fail) if the
     cluster is live but the Backstage Deployment does not exist -- that
     is an absence of Backstage, not a regression; FAIL, never skip, if
@@ -108,7 +108,7 @@ def stage_6_with_the_write_grant_applied_or_a_reason():
     exit-code check: "can I talk to this cluster at
     all" has no `NotFound` shape to read (`cluster-info` names no object),
     so it stays a raw-returncode reachability probe -- the same shape
-    `test_progressive_autonomy.py::stage_5_or_a_reason` uses and is
+    `test_progressive_autonomy.py::open_feature_operator_or_a_reason` uses and is
     allow-listed for. "Does the Deployment exist" and "does the Role exist"
     both DO name an object, so each goes through `absent_or_fail` rather than
     a second raw check.
@@ -125,7 +125,7 @@ def stage_6_with_the_write_grant_applied_or_a_reason():
     )
     if not absent_or_fail(deployment, f"deployment/backstage in {NAMESPACE}"):
         pytest.skip(
-            f"needs stage 6: deployment/backstage does not exist in "
+            f"needs Backstage: deployment/backstage does not exist in "
             f"{NAMESPACE}. Run ./scripts/setup-kind.sh."
         )
 
@@ -134,9 +134,9 @@ def stage_6_with_the_write_grant_applied_or_a_reason():
     )
     exists = absent_or_fail(role, f"role/backstage-autonomy-writer in {NAMESPACE}")
     assert exists, (
-        "Backstage is deployed (stage 6) but "
+        "Backstage is deployed but "
         "role/backstage-autonomy-writer is missing -- this is a regression, "
-        "not an absence of stage 6: run `kubectl apply -f deploy/k8s/backstage.yaml`"
+        "not an absence of Backstage: run `kubectl apply -f deploy/k8s/backstage.yaml`"
     )
 
 

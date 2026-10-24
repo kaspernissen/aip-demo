@@ -33,7 +33,7 @@ JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
     reason=(
-        "needs the live stage-7 cluster, spends one settlement's worth of "
+        "needs the live cluster, spends one settlement's worth of "
         "model tokens per claim and releases a real payment as the reviewer-ui; "
         "gated behind the same RUN_BROWSER_TESTS=1 flag "
         "scripts/smoke-test.sh sets unconditionally"

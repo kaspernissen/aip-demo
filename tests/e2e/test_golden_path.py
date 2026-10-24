@@ -122,7 +122,7 @@ def _kubectl(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def stage_6_backstage_deployed_or_a_reason():
+def backstage_deployed_or_a_reason():
     """Skip if this is not even a live cluster; skip if Backstage's own
     Deployment does not exist (absence of Backstage, not a regression); FAIL if
     Backstage exists but the write Role this whole file depends on does not
@@ -143,7 +143,7 @@ def stage_6_backstage_deployed_or_a_reason():
     )
     if not absent_or_fail(deployment, f"deployment/backstage in {PLATFORM_NAMESPACE}"):
         pytest.skip(
-            f"needs stage 6: deployment/backstage does not exist in "
+            f"needs Backstage: deployment/backstage does not exist in "
             f"{PLATFORM_NAMESPACE}. Run ./scripts/setup-kind.sh."
         )
 
@@ -151,9 +151,9 @@ def stage_6_backstage_deployed_or_a_reason():
         "-n", PLATFORM_NAMESPACE, "get", "role", "backstage-autonomy-writer", "-o", "name",
     )
     assert absent_or_fail(role, f"role/backstage-autonomy-writer in {PLATFORM_NAMESPACE}"), (
-        "Backstage is deployed (stage 6) but "
+        "Backstage is deployed but "
         "role/backstage-autonomy-writer is missing -- this is a regression, "
-        "not an absence of stage 6: run `kubectl apply -f deploy/k8s/backstage.yaml`"
+        "not an absence of Backstage: run `kubectl apply -f deploy/k8s/backstage.yaml`"
     )
 
 
