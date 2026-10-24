@@ -1,22 +1,20 @@
-# Northstar — Demo Runbook (M9, Weaver registry, on M8's Human in the loop)
+# Northstar — Demo Runbook
 
-Status: M9 (Weaver registry), on top of M8 (Human in the loop). The live flow reads Jaeger, and every telemetry name this runbook quotes is `northstar.*`, defined in `telemetry/registry/`. This is the **operator's** document: how the demo is
-brought up, how it is run in front of an audience, what to say at each beat,
-and what to say when something breaks.
+The **operator's** document: how the demo is brought up, how it is run in
+front of an audience, what to say at each beat, and what to say when something
+breaks. The live flow reads Jaeger, and every telemetry name this runbook
+quotes is `northstar.*`, defined in `telemetry/registry/`.
 
-> **M8 note.** `senior-settlement-agent` no longer exists, and the autonomy dial
-> is maker-checker: `assisted` lets the agent release nothing (limit EUR 0),
-> `autonomous` lets it release up to its limit. Above its limit, **a human
-> releases the payment** from the reviewer-ui, under the reviewer-ui's own
-> identity, through the gateway. The flow in §5 is written for that.
-> The longer beats further down were written for M7's amounts; Beat 4 is
-> rewritten, the others are marked where they differ.
+The autonomy dial is a maker-checker policy: `assisted` lets the agent release
+nothing (limit EUR 0), `autonomous` lets it release up to its limit. Above its
+limit, **a human releases the payment** from the reviewer-ui, under the
+reviewer-ui's own identity, through the gateway. The flow in §5 is written for
+that.
 
 It is deliberately **not** a second copy of the architecture. Where this
 document says *what to do*, [`docs/architecture.md`](architecture.md) says
 *why it works*, at span-level detail, in its "See it yourself" section. When
-the two disagree, architecture.md is right and this file is stale — it is the
-newer document and the one with fewer guards on it.
+the two disagree, architecture.md is right.
 
 ### About the numbers in this document
 
@@ -89,7 +87,7 @@ Stage 7 adds the line that makes that safe to say out loud:
 The idea, and the way it is organised, come from William Rizzo's *Bounded
 Agent Autonomy* demo (OSFF 2026). He draws an agent's limits as rings, each
 answering one question, and a keystone that holds the rings in place. Northstar
-had three of the four; M7 adds the keystone and makes Reach a live beat.
+has all four: Reach and the keystone are live beats.
 
 | Ring | Question | Northstar's answer | Where it is shown |
 |---|---|---|---|
@@ -183,8 +181,7 @@ Same claim id, same shape. **Showing both outcomes is mandatory**: a platform
 that sent everything to a human would look identical if you only ran A.
 
 Then a payment the agent could not release is made to succeed **three different
-ways** (this is the longer-slot version, kept from M7), and each one is a
-different milestone's point:
+ways** (the longer-slot version), and each one makes a different point:
 
 <pre class="mermaid">
 flowchart LR
@@ -241,7 +238,7 @@ refuses to run against it and tells you to recreate it with
 |---|---|---|
 | `ANTHROPIC_API_KEY` | **required** | The settlement decision is a **real model call**. Empty → every pod still comes up Running and fully traced, and the **first claim submission fails**. `setup-kind.sh` prints `SET`/`EMPTY` — **check for SET before going on stage.** |
 | `DASH0_AUTH_TOKEN` + 3 siblings | unset | Adds a second OTLP exporter. **No application code changes.** Good beat if the audience cares about vendor-neutrality. |
-| `NORTHSTAR_CAPTURE_CONTENT` | `true` | `false` → `scripts/demo evidence` loses **nothing** (every field it reads is emitted by the platform, not the model). What is lost is the agent's own statement of the amount. This is OQ-1, measured as a matched pair. |
+| `NORTHSTAR_CAPTURE_CONTENT` | `true` | `false` → `scripts/demo evidence` loses **nothing** (every field it reads is emitted by the platform, not the model). What is lost is the agent's own statement of the amount. Verified as a matched pair of runs. |
 | `RUN_BROWSER_TESTS=1` | unset | Unlocks the gated test modules (`docs/telemetry-contract.md` publishes how many) that spend model tokens or drive a browser, `tests/e2e/test_demo_flow.py` among them. **Only for the gate**, not for the demo. |
 
 ### Option 4: the four ways to flip the autonomy contract
@@ -249,7 +246,7 @@ refuses to run against it and tells you to recreate it with
 | Route | Command / click | Use it for |
 |---|---|---|
 | `scripts/demo autonomy <assisted\|autonomous>` | one command, verifies flagd resolved it and that no pod restarted | **the flow** (step 5) |
-| Backstage card | http://localhost:7007/autonomy-contract → **Set settlement-agent: autonomous** | the longer slot (Beat 7): it is the milestone |
+| Backstage card | http://localhost:7007/autonomy-contract → **Set settlement-agent: autonomous** | the longer slot (Beat 7): it is the punchline |
 | `kubectl` | `kubectl -n northstar-platform patch featureflag northstar-autonomy --type=json ...` | proving the card is not special |
 | the test | `pytest tests/e2e/test_progressive_autonomy.py` | proving it mechanically, restores itself |
 
@@ -317,7 +314,7 @@ takes seconds. It refuses (exit 1) if the keystone policy is not Ready, if
 Kyverno's webhook registration is missing, if nothing answers behind
 `svc/kyverno-svc`, if the beat's over-grant is still applied, or if any
 localhost URL does not answer. The registration check matters because of a
-measured failure mode: a **graceful stop** of Kyverno deletes its own webhook
+known failure mode: a **graceful stop** of Kyverno deletes its own webhook
 configurations, after which the keystone is **silently off** (an over-granted
 agent's write succeeds) while the policy object still exists. An *unreachable*
 Kyverno with the webhook still registered fails closed for agents. Neither
@@ -757,14 +754,14 @@ noise, not a failure: the claim completed.
 Everything from here to Beat 8 is the 20-, 45- and 90-minute version of the
 demo, and the only home of the surfaces the flow leaves out: the
 customer UI, the human approval, the reviewer UI, the scores and the
-Backstage card. They are unchanged by the flow.
+Backstage card.
 
-**M8 caveat for Beats 1, 2, 5, 6, 7 and K:** they use M7's amounts and the
-M7 limit table. Under M8 the agent's limit is EUR 0 at `assisted` and EUR 6,000
-at `autonomous` (read the live values from `scripts/demo claim`'s output, not
-from this file), so an EUR 6,200 claim at `assisted` **waits for a human**
-rather than being refused, and a claim at `autonomous` below the limit settles.
-The mechanism each beat shows is unchanged; the numbers on screen are not.
+**Amounts in Beats 1, 2, 5, 6, 7 and K:** the agent's limit is EUR 0 at
+`assisted` and EUR 6,000 at `autonomous` (read the live values from
+`scripts/demo claim`'s output, not from this file), so an EUR 6,200 claim at
+`assisted` **waits for a human**, and a claim at `autonomous` below the limit
+settles. Where a beat's text shows other numbers, the mechanism is what
+matters; the numbers on screen are the live ones.
 
 ---
 
@@ -909,7 +906,7 @@ the proxy's own 504). That is why the line says DROPPED with a reason, never
 is silent: nothing counts it. The ingress 403 is counted
 (`inbound_http_authz_deny_total` on the destination proxy) but it is a counter,
 not a span: the probe carries no `traceparent`, and the proxies only trace
-requests that do. Say also what Linkerd cost us against Cilium: egress is now an address
+requests that do. Say also the limits of this setup: egress is an address
 range (Anthropic's published `160.79.104.0/23` and `2607:6bc0::/48`) rather than
 a name, so any other host in that range is also reachable from settlement-agent;
 the enforcement of egress is kind's kindnet, and a production cluster needs a CNI
@@ -1178,12 +1175,12 @@ and naming them first is worth more than the features.
 
 | Limitation | The honest version |
 |---|---|
-| **The keystone fails closed only while Kyverno is registered** | Measured. `failurePolicy: Fail` means an *unreachable* Kyverno (webhook registered, no endpoints) **refuses** an over-granted agent's write (`connection refused`). But a *graceful stop* of the admission controller makes Kyverno delete its own webhook configurations, and then the same write **succeeds**: fail-open. Pre-flight and the gate check the registration for this reason. **Backstage's flip is unaffected either way** (and so are humans and CI), because the API server evaluates the identity condition before calling Kyverno. |
+| **The keystone fails closed only while Kyverno is registered** | `failurePolicy: Fail` means an *unreachable* Kyverno (webhook registered, no endpoints) **refuses** an over-granted agent's write (`connection refused`). But a *graceful stop* of the admission controller makes Kyverno delete its own webhook configurations, and then the same write **succeeds**: fail-open. Pre-flight and the gate check the registration for this reason. **Backstage's flip is unaffected either way** (and so are humans and CI), because the API server evaluates the identity condition before calling Kyverno. |
 | **Kyverno cannot guard webhook configurations, or RBAC itself** | `ValidatingWebhookConfiguration` and `MutatingWebhookConfiguration` objects are **RBAC-only**: the API server never sends admission for them to webhooks, so an agent allowed to edit one could remove Kyverno's registration and only RBAC would stop it. Agents hold no such grant. Likewise anything RBAC grants an agent that the policy's list does not name, and Kyverno's default `namespaceSelector` skips `kube-system` and `kyverno`. |
 | **The PDS execute limits are not covered by it** | They live in code (`pds/rules.py`) and change only by a reviewed commit and a rebuild. There is no cluster object for the policy to guard. |
 | **What the keystone does cover** | Every ring's configuration (the flag, the gateway ConfigMap, NetworkPolicies and Linkerd policy objects, SPIRE's `ClusterSPIFFEID`/`ClusterStaticEntry`/`ClusterFederatedTrustDomain`, RBAC, **all** Kyverno policy kinds and exceptions) and the routes to another identity: workloads (pods, deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs) and `serviceaccounts/token`. |
 | **Backstage here is unauthenticated** | Be precise, because the sloppy version is wrong: the backend API **does** check a credential — a bare `curl` to it gets HTTP 401. What makes it unauthenticated is that **anyone can mint that credential, unchallenged**, through the guest flow. So: anyone who can reach 7007 can flip the contract. What keeps it honest is **not a login** — it is the narrowness of the one write it can make: `get`/`list`/`patch` on `resourceNames: [northstar-autonomy]`, no delete, no create, separate from the read-only ServiceAccount the Kubernetes plugin uses. **Anyone reaching this port can flip the contract and nothing else.** |
-| **No scaffolder** | M1's claim — "a platform team could add a service in an afternoon through the same API" — is **half** demonstrated. The platform API exists as a real object with a real UI. Nothing here generates a new agent from it. |
+| **No scaffolder** | The claim "a platform team could add a service in an afternoon through the same API" is only **half** demonstrated. The platform API exists as a real object with a real UI. Nothing here generates a new agent from it. |
 | **The catalog is static** | It reflects committed `catalog-info.yaml` files staged into the image, not a discovered repository — **there is no git remote** for Backstage's discovery processors to point at. A component added without its own file does not appear until the image is rebuilt, and a unit test catches that drift before a demo does. |
 
 **SAY**
@@ -1285,14 +1282,14 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 
 | Symptom | Most likely cause | Fix, in order |
 |---|---|---|
-| `otlp_grpc/weaver` `Exporting failed` lines in the collector log | the weaver live-check pod was restarted or is starting (a gate run, `setup-kind.sh`, a manual `report()`), so the collector's exporter to it retries in a burst for up to about a minute. **Live-check's, not demo telemetry loss**: Jaeger and Prometheus get their own copies through separate exporters and are unaffected | wait a minute; `kubectl -n observability get pods -l app=weaver-live-check`. If it stays failing, the pod is not Ready: `kubectl -n observability logs deploy/weaver-live-check`. Every weaver start clones the semconv dependency from github.com (measured: not cached, a new checkout each start), so a pod that never gets Ready usually has no egress to github.com |
+| `otlp_grpc/weaver` `Exporting failed` lines in the collector log | the weaver live-check pod was restarted or is starting (a gate run, `setup-kind.sh`, a manual `report()`), so the collector's exporter to it retries in a burst for up to about a minute. **Live-check's, not demo telemetry loss**: Jaeger and Prometheus get their own copies through separate exporters and are unaffected | wait a minute; `kubectl -n observability get pods -l app=weaver-live-check`. If it stays failing, the pod is not Ready: `kubectl -n observability logs deploy/weaver-live-check`. Every weaver start clones the semconv dependency from github.com (not cached: a new checkout each start), so a pod that never gets Ready usually has no egress to github.com |
 | First claim submission errors | `ANTHROPIC_API_KEY` empty | it is a **model call**. Check `.env`, restart the agent deployments |
 | A localhost URL does not answer | the workload behind it is not Ready (a rollout in progress, a crash loop) | `./scripts/preflight.sh` names it; `kubectl get pods -A \| grep -v Running` |
 | `setup-kind.sh` refuses: *does not publish host port(s)* | the cluster was created from an older kind config; host ports are fixed at creation | `./scripts/teardown.sh && ./scripts/setup-kind.sh` |
 | `preflight.sh` refuses: *keystone policy is not Ready* | the policy never armed (usually Kyverno cannot read a kind it matches) | `kubectl get validatingpolicy agents-cannot-edit-their-own-authority -o yaml` and read `status.conditionStatus.conditions`. Beat 7 is **not** affected: Backstage's flip works with Kyverno down |
 | `preflight.sh` refuses: *webhook configuration is not registered* | Kyverno was stopped gracefully (scaled to 0, a rollout) and deleted its own registration: **the keystone is silently off** | `kubectl -n kyverno scale deploy/kyverno-admission-controller --replicas=1`, wait for `kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg`, re-run |
 | `preflight.sh` refuses: *nothing answers behind svc/kyverno-svc* | Kyverno pods not Ready, webhook still registered: an agent's write is *refused* (fails closed) | `kubectl -n kyverno get pods`, logs |
-| Backstage's flip answers with an admission error mentioning `kyverno` | the policy's `matchConditions` now match Backstage's identity (a Kyverno outage alone cannot do this: measured, Backstage is unaffected by one) | Backstage's identity is `backstage-autonomy-writer` in `northstar-platform`; the policy matches only `northstar-agents` and `northstar-tools` prefixes. `kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg -o yaml` and read the `matchConditions` |
+| Backstage's flip answers with an admission error mentioning `kyverno` | the policy's `matchConditions` now match Backstage's identity (a Kyverno outage alone cannot do this: Backstage is unaffected by one) | Backstage's identity is `backstage-autonomy-writer` in `northstar-platform`; the policy matches only `northstar-agents` and `northstar-tools` prefixes. `kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg -o yaml` and read the `matchConditions` |
 | `preflight.sh` refuses: *over-grant is still applied* | an earlier `scripts/demo keystone` run was killed hard (SIGKILL) | `kubectl delete -f deploy/demo/keystone-overgrant.yaml` |
 | `scripts/demo keystone` step 3 prints `Forbidden` instead of the Kyverno message | the over-grant did not take effect yet | re-run; it waits for `auth can-i` to say `yes` first, so this means RBAC is not what it was |
 | `scripts/demo guard` says claims-agent was not dropped on the way to payments-mcp | the egress NetworkPolicy is not enforcing (kindnet), or the pod was not dropped | `kubectl get networkpolicy -A`; `tests/e2e/test_egress_policy.py` |
@@ -1327,18 +1324,18 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 
 The gate checks the cluster's telemetry against the registry in
 `telemetry/registry/` (Weaver live-check, in-cluster). Read a green result for
-what it says; the measured limits are in `docs/telemetry-contract.md`, "What
+what it says; the known limits are in `docs/telemetry-contract.md`, "What
 live-check checks, and what it does not":
 
 - **A missing required attribute is not caught.** Live-check v0.28.0 with a v1
-  registry reported no finding when `northstar.policy.rule` was dropped from the
-  decision span (measured; four decision spans, no `required_attribute_not_present`).
+  registry reports no finding when `northstar.policy.rule` is dropped from the
+  decision span (no `required_attribute_not_present`).
   The behaviour tests pin the required attributes instead:
   `tests/e2e/test_policy_denial.py`, `tests/e2e/test_human_in_the_loop.py` and
   `tests/e2e/test_demo_flow.py`.
 - **Span names are not judged by live-check**, so the live-check test checks them:
-  it fails on any span name in the report that starts with a retired un-prefixed
-  prefix. A misspelled `northstar.claim.submit`, `northstar.claim.wait` or
+  it fails on any span name in the report that starts with an un-prefixed
+  legacy prefix. A misspelled `northstar.claim.submit`, `northstar.claim.wait` or
   `northstar.autonomy_contract.change` is still unchecked; the test pins only
   `northstar.policy.decision` and `northstar.review.decision` as seen.
 - **Standard names show as "does not exist in the registry"** at `information`
@@ -1377,11 +1374,11 @@ If the audience remembers nothing else:
 
 | Document | What it owns |
 |---|---|
-| [`README.md`](../README.md) | status per milestone, quick start, the stages table |
+| [`README.md`](../README.md) | what the system is, quick start, the stages table |
 | [`docs/architecture.md`](architecture.md) | the rings and the keystone, components, hops, protocols, the trace span by span, the full "See it yourself" walkthrough, and the authoritative limitations list |
-| [`docs/telemetry-contract.md`](telemetry-contract.md) | verified instrumentation, the published gaps, the pin table |
+| [`docs/telemetry-contract.md`](telemetry-contract.md) | the instrumentation contract and the published gaps |
 | [`docs/upstream-findings.md`](upstream-findings.md) | filing-ready findings against upstream projects — **none of them filed** |
-| [`docs/superpowers/specs/`](superpowers/specs/) | the design behind each milestone, including what was deliberately dropped |
+| [`docs/superpowers/specs/`](superpowers/specs/) | design specs, including what was deliberately dropped |
 | [`docs/superpowers/plans/`](superpowers/plans/) | the implementation plans |
 
 ---
@@ -1460,7 +1457,7 @@ with a golden one, the latest claim the agent settled (`tool_trajectory_avg_scor
 `response_match_score`, `final_response_match_v2`; across claims with different ids and amounts
 they mostly measure that difference, and the golden run is labelled because it scores itself 1.0).
 Not available: `safety_v1`, `response_evaluation_score` and the multi-turn metrics need Google
-Cloud. Measured 2026-10-21: the judge is not stable (one claim scored 0.60, 0.40, 0.40 for
+Cloud. The judge is not stable (one claim scored 0.60, 0.40, 0.40 for
 hallucinations on three runs, nothing changed), and the built-in metrics export no explanation.
 A run of nine metrics over three claims takes about three minutes.
 
