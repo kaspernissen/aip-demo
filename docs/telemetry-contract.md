@@ -768,14 +768,18 @@ what a dashboard or alert would be built on.
 ## Linkerd proxy spans
 
 Proxy tracing is on (`deploy/platform/linkerd/values.yaml`), so the Linkerd
-proxies add their own spans to the trace. What follows is read from the pinned
+proxies add their own spans to the trace. The table is read from the pinned
 proxy's source (linkerd2-proxy `v2.370.0`, shipped by `edge-26.10.1`:
 `linkerd/trace-context/src/service.rs`, `linkerd/app/core/src/http_tracing.rs`,
-`linkerd/app/src/env/trace.rs`) and the chart's templates, and has not been
-verified against a running cluster. The live checks to make are that proxy spans
-reach Jaeger under `linkerd-proxy`, that the names and attributes match, that no
-app span is orphaned once the trace settles, and that live-check reports no owned
-violation.
+`linkerd/app/src/env/trace.rs`) and the chart's templates. On a running cluster
+the proxy spans reach Jaeger under `linkerd-proxy` (148 of the 313 spans in one
+held claim's trace), the full gate passes with no app span orphaned once the trace
+settles, and live-check reports no owned violation.
+
+The proxies export on their own schedule, later than the SDKs' 5 s batch. A trace
+read too early can show an app span whose proxy parent has not landed yet, so a
+test that reads a trace waits for its span count to hold steady (or for its
+orphans to resolve) before asserting on it.
 
 | What | Value |
 |---|---|
