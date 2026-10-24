@@ -93,7 +93,7 @@ kubectl --context kind-northstar -n observability get svc/opensearch-cluster-mas
 # object stays Ready-looking, and an agent's write then passes (measured).
 [[ "$(kubectl --context kind-northstar get validatingpolicy agents-cannot-edit-their-own-authority -o jsonpath='{.status.conditionStatus.ready}' 2>/dev/null)" == "true" ]] || {
   echo -e "${RED}Error: validatingpolicy/agents-cannot-edit-their-own-authority is missing or not Ready.${NC}" >&2
-  echo "This cluster is below stage 7, or Kyverno is not up. The gate runs the keystone beat and tests/e2e/test_keystone.py." >&2
+  echo "This cluster is below stage 7, or Kyverno is not up. The gate runs scripts/demo keystone and tests/e2e/test_keystone.py." >&2
   echo "Run ./scripts/setup-kind.sh --stage 7 first." >&2
   exit 1
 }
@@ -256,21 +256,18 @@ echo -e "${YELLOW}backstage (jest)${NC}"
 (cd "$ROOT/platform/backstage" && CI=true node_modules/.bin/backstage-cli repo test --silent)
 
 echo ""
-echo -e "${BLUE}--- Stage 7: the two beat scripts, exactly as an operator runs them ---${NC}"
-# Run as the operator runs them, not re-implemented: the only check that the
-# beats' instructions work is running them. Each exits non-zero if its refusal
-# does NOT fire (Beat R: the direct call to payments-mcp must be dropped;
-# Beat K: RBAC must refuse, then Kyverno must refuse with the over-grant), and
-# `set -e` makes that fail the gate. beat-keystone.sh removes its over-grant
-# on every exit path. tests/e2e/test_keystone.py runs in Step 2 with the rest
-# of tests/.
-"$ROOT/scripts/beat-reach.sh"
-"$ROOT/scripts/beat-keystone.sh"
+echo -e "${BLUE}--- The guard and keystone beats, as the demo runs them ---${NC}"
+# `scripts/demo guard` and `scripts/demo keystone` exit non-zero if a refusal
+# does NOT fire, and `set -e` fails the gate. A throwaway state dir keeps the
+# gate's run out of an operator's rehearsal state. keystone removes its
+# over-grant on every exit path. tests/e2e/test_keystone.py runs in Step 2.
+DEMO_STATE_DIR="$(mktemp -d -t northstar-gate-demo-XXXXXX)" "$ROOT/scripts/demo" guard
+DEMO_STATE_DIR="$(mktemp -d -t northstar-gate-demo-XXXXXX)" "$ROOT/scripts/demo" keystone
 
 echo ""
 echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included ---${NC}"
 # Weaver live-check (M9) is emptied HERE, after the unit suites and the two
-# beat scripts and before the e2e run, so its report covers exactly the traffic
+# beats and before the e2e run, so its report covers exactly the traffic
 # Step 2 drives: every span, metric and log the collector copies to it. The
 # restart is `kubectl rollout restart` plus a wait for Ready, done by the
 # harness, which also opens its own port-forward to read the admin API -- a

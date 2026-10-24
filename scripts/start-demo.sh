@@ -205,7 +205,7 @@ fi
 #      also makes Backstage's flip of the autonomy flag (beat 7) fail, on
 #      stage, with an admission error that looks like a Backstage bug.
 #   2. The beat's over-grant is ABSENT. deploy/demo/keystone-overgrant.yaml
-#      models a mistake; scripts/beat-keystone.sh applies it and takes it back.
+#      models a mistake; scripts/demo keystone applies it and takes it back.
 #      One left behind by an aborted beat is a standing grant letting
 #      settlement-agent patch the flag, which is exactly what this demo exists
 #      to say never exists.
@@ -241,7 +241,7 @@ if [[ -n "$(kubectl get "$KEYSTONE_POLICY" --ignore-not-found -o name 2>/dev/nul
   fi
   if [[ -n "$(kubectl -n northstar-platform get role,rolebinding keystone-demo-overgrant --ignore-not-found -o name 2>/dev/null)" ]]; then
     echo -e "${RED}Error: the keystone demo over-grant is still applied (role/rolebinding keystone-demo-overgrant in northstar-platform).${NC}" >&2
-    echo "A previous beat-keystone.sh run was interrupted. It is a standing grant letting settlement-agent patch the autonomy flag. Remove it: kubectl delete -f deploy/demo/keystone-overgrant.yaml" >&2
+    echo "A previous scripts/demo keystone run was interrupted. It is a standing grant letting settlement-agent patch the autonomy flag. Remove it: kubectl delete -f deploy/demo/keystone-overgrant.yaml" >&2
     exit 1
   fi
   echo -e "${GREEN}Keystone pre-flight: policy Ready, over-grant absent.${NC}"

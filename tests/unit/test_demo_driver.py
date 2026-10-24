@@ -5,10 +5,10 @@ The driver has to know a handful of facts -- the reach URLs, the keystone
 policy's name, the over-grant's object names, the flag object and the path the
 flip patches. Retyping a fact in a second place is how a slide ends up saying
 something the cluster stopped doing, so each one is compared here with the file
-that actually owns it (the beat scripts the gate also runs, the policy, the
+that actually owns it (the policy, the
 fixture). A drift is a red unit test, not a wrong thing said on stage.
 
-Also pinned: the subcommand set is the M8 flow's plus `reset` and the off-stage `ceiling`, the driver and `beat-reach.sh` run the one probe file, the
+Also pinned: the subcommand set is the flow's plus `reset` and the off-stage `ceiling`, the driver runs the shared probe file, the
 shim is executable, and the run-state directory is git-ignored so a rehearsal's
 claim ids can never be committed.
 """
@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import importlib.util
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -40,27 +39,9 @@ def _driver(stub_untold: bool = True):
     return module
 
 
-def _shell_var(path: Path, name: str) -> str:
-    match = re.search(rf'^{name}="([^"]*)"', path.read_text(), re.MULTILINE)
-    assert match, f"{path.name} no longer defines {name}="
-    return match.group(1)
-
-
-def test_the_reach_urls_are_the_ones_beat_reach_probes():
-    driver = _driver()
-    beat = SCRIPTS / "beat-reach.sh"
-    assert driver.CONTROL_URL == _shell_var(beat, "CONTROL_URL")
-    assert driver.DIRECT_URL == _shell_var(beat, "DIRECT_URL")
-    assert driver.INGRESS_URL == _shell_var(beat, "INGRESS_URL")
-    assert f"CONNECT_TIMEOUT={driver.CONNECT_TIMEOUT_S}\n" in beat.read_text()
-
-
-def test_the_driver_and_beat_reach_run_one_probe_file():
+def test_the_driver_runs_the_shared_probe_file():
     driver = _driver()
     assert driver.REACH_PROBE == SCRIPTS / "reach-probe.py"
-    beat = (SCRIPTS / "beat-reach.sh").read_text()
-    assert "reach-probe.py" in beat, "beat-reach.sh must read the shared probe, not carry its own copy"
-    assert "urllib.request" not in beat, "a second copy of the probe has crept back into beat-reach.sh"
     probe = (SCRIPTS / "reach-probe.py").read_text()
     for outcome in ("REACHED", "DROPPED", "REFUSED"):
         assert outcome in probe
@@ -68,13 +49,8 @@ def test_the_driver_and_beat_reach_run_one_probe_file():
         assert outcome in (SCRIPTS / "demo.py").read_text()
 
 
-def test_the_keystone_names_are_the_ones_the_policy_and_the_beat_script_use():
+def test_the_keystone_policy_name_is_the_one_the_policy_uses():
     driver = _driver()
-    beat = SCRIPTS / "beat-keystone.sh"
-    assert driver.AGENT == _shell_var(beat, "AGENT")
-    assert driver.POLICY == _shell_var(beat, "POLICY")
-    assert driver.FLAG == _shell_var(beat, "FLAG")
-    assert driver.PLATFORM_NS == _shell_var(beat, "NS")
     policy = yaml.safe_load((REPO_ROOT / "deploy/platform/kyverno/keystone-policy.yaml").read_text())
     assert policy["metadata"]["name"] == driver.POLICY
 
@@ -87,15 +63,12 @@ def test_the_overgrant_objects_are_the_ones_the_fixture_defines():
 
 
 def test_the_flip_patches_the_path_backstage_patches():
-    """One path, one definition: `tests/harness/contract.py`'s, which the beat
-    script's own copy and Backstage's `k8sClient.ts` are already compared
-    with elsewhere. The driver imports it rather than restating it."""
-    from tests.harness import contract
-
+    """One path, one definition: `tests/harness/contract.py`'s, which
+    Backstage's `k8sClient.ts` is compared with elsewhere. The driver imports
+    it rather than restating it."""
     text = (SCRIPTS / "demo.py").read_text()
     assert "contract.TARGETING_THEN_PATH" in text
     assert "targeting/if/1" not in text, "the driver restated the flag path instead of importing it"
-    assert contract.TARGETING_THEN_PATH in (SCRIPTS / "beat-keystone.sh").read_text().replace("'", "")
 
 
 def test_the_subcommands_are_the_m8_flow_plus_reset_and_the_ceiling():

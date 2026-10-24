@@ -9,7 +9,7 @@
 # keystone is the SECOND line, the one that holds when the first is wrong. To
 # show it working you need the first to be wrong, and the honest way to do
 # that on a reference implementation is to make the mistake on stage, in
-# front of the audience, and take it back: scripts/beat-keystone.sh applies
+# front of the audience, and take it back: `scripts/demo keystone` applies
 # this file ("someone over-granted"), shows Kyverno refuse the patch anyway,
 # and deletes it. Northstar does not ship a standing over-grant.
 #

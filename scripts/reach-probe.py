@@ -1,7 +1,6 @@
 # The prober that runs INSIDE a meshed pod, as `python3 -c "$(cat this)"
-# <url> <GET|POST> <timeout>`. One file, two callers: scripts/beat-reach.sh and
-# scripts/demo (`demo guard`), so the stage path and the gate path ask the
-# cluster the same question with the same code.
+# <url> <GET|POST> <timeout>`. `scripts/demo guard` runs it, on stage and in
+# the gate.
 #
 # Prints exactly one line:
 #   REACHED <http status>   -- something answered: a status line came back (a
@@ -28,7 +27,7 @@ headers = {}
 if method == "POST":
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
         "protocolVersion": "2025-03-26", "capabilities": {},
-        "clientInfo": {"name": "beat-reach", "version": "1"}}}).encode()
+        "clientInfo": {"name": "reach-probe", "version": "1"}}}).encode()
     headers = {"Content-Type": "application/json",
                "Accept": "application/json, text/event-stream"}
 req = urllib.request.Request(url, data=body, headers=headers, method=method)

@@ -222,11 +222,10 @@ Each command exits non-zero when the expected outcome does not happen.
 [`docs/demo-runbook.md`](docs/demo-runbook.md) §5 has what to say at each step.
 The claims call the model; `guard`, `approve`, `keystone` and `evidence` do not.
 
-Two short scripts show the outer rings and the keystone, with no model call
-(`scripts/demo guard` and `scripts/demo keystone` run the same checks):
-`./scripts/beat-reach.sh` (a workload cannot reach the payments tool around the
-gateway) and `./scripts/beat-keystone.sh` (an agent cannot change the autonomy
-flag, even when an over-broad grant lets RBAC through).
+`scripts/demo guard` shows the outer rings (a workload cannot reach the
+payments tool around the gateway) and `scripts/demo keystone` shows the
+keystone (an agent cannot change the autonomy flag, even when an over-broad
+grant lets RBAC through). Neither calls the model.
 
 Tear everything down with `./scripts/teardown.sh`.
 

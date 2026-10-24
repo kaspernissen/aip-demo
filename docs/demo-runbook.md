@@ -1000,37 +1000,14 @@ there gets a 403, and the proxy counts it. No model call, no browser, no cost.
 **DO**
 
 ```bash
-./scripts/beat-reach.sh
+scripts/demo guard
 ```
 
-**SHOW** — *expected output; first live run on Linkerd pending (the demo cluster
-still runs Cilium until it is recreated; the shape below is what the script
-prints, not a recorded run).* Step 1 is the control (the same pod reaches the
-one peer it exists to call); step 2 is the egress drop; step 3 is the ingress
-refusal and its counter.
-
-```
-=== Beat R: the only way in ===
-Egress is NetworkPolicy in the node; ingress is Linkerd, by workload identity.
-
-1. Control: claims-agent calls settlement-agent, the one peer it exists to call
-$ POST http://settlement-agent.northstar-agents.svc.cluster.local:9002/
-  -> REACHED 200
-  REACHED. reachable, as it should be.
-
-2. Egress: claims-agent sends an MCP initialize straight to payments-mcp, around the gateway
-$ POST http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp   (initialize, 8s timeout)
-  -> DROPPED (proxy error: the node dropped the packets, this pod's proxy answered 504)
-  DROPPED. Nothing answered: not a 401, not a 403. The packets never arrived.
-
-3. Ingress: reviewer-ui calls payments-api's execute route directly, skipping the gateway and the PDS
-$ POST http://payments-api.northstar-systems.svc.cluster.local:8080/payments/PAY-000000/execute
-  -> REFUSED 403 by payments-api/<route> (deny counter +1)
-  REFUSED. By the proxy, by identity, and counted.
-
-Beat R holds: the gateway is the only route to payments-mcp, and only payments-mcp's identity may execute at payments-api.
-(Refusals are counted at the destination proxy, not traced.)
-```
+**SHOW** — step 2 of `scripts/demo guard` ("Around the gateway", see Step 1 of
+the five-minute flow above). From inside claims-agent, the control reaches
+settlement-agent (`REACHED`), and an MCP initialize straight to payments-mcp is
+`DROPPED`. From inside reviewer-ui, a direct POST to payments-api's execute
+route is `REFUSED 403 by payments-api/<route> (deny counter +1)`.
 
 The egress verdict is read above TCP. A meshed pod's own proxy accepts every
 connect locally, so a connect never fails; the HTTP request does (a TLS reset or
@@ -1056,7 +1033,7 @@ requests that do. Say also what Linkerd cost us against Cilium: egress is now an
 range (Anthropic's published `160.79.104.0/23` and `2607:6bc0::/48`) rather than
 a name, so any other host in that range is also reachable from settlement-agent;
 the enforcement of egress is kind's kindnet, and a production cluster needs a CNI
-that enforces NetworkPolicy; a TCP connect no longer proves reach; and between meshed pods egress is per pod, not per port (a pod allowed to reach a peer's proxy on 4143 can reach any port that listens on that pod's IP; the peer's Linkerd Servers decide which ports answer, per port and per identity). The script
+that enforces NetworkPolicy; a TCP connect no longer proves reach; and between meshed pods egress is per pod, not per port (a pod allowed to reach a peer's proxy on 4143 can reach any port that listens on that pod's IP; the peer's Linkerd Servers decide which ports answer, per port and per identity). `scripts/demo guard`
 exits non-zero if the control fails, if the direct call is not dropped, or if
 the 403 is not counted.
 
@@ -1277,45 +1254,13 @@ No model call.
 **DO**
 
 ```bash
-./scripts/beat-keystone.sh
+scripts/demo keystone
 ```
 
-**SHOW** — a real run. Five steps: the agent tries and RBAC refuses; someone
-makes a mistake (the over-grant); the **same** patch, and now Kyverno refuses;
-the mistake is taken back; the flag still resolves `assisted`.
-
-```
-=== Beat K: the keystone ===
-Acting as system:serviceaccount:northstar-agents:settlement-agent (kubectl --as).
-
-1. The agent tries to flip its own autonomy flag to 'autonomous'
-$ kubectl --as=system:serviceaccount:northstar-agents:settlement-agent -n northstar-platform patch featureflag/northstar-autonomy --type=json -p '<replace targeting.if[1] with autonomous>'
-  Error from server (Forbidden): featureflags.core.openfeature.dev "northstar-autonomy" is forbidden: User "system:serviceaccount:northstar-agents:settlement-agent" cannot get resource "featureflags" in API group "core.openfeature.dev" in the namespace "northstar-platform"
-  RBAC says no. That is the first line.
-
-2. Someone makes a mistake: the agent is over-granted 'patch' on that one flag
-$ kubectl apply -f deploy/demo/keystone-overgrant.yaml
-  role.rbac.authorization.k8s.io/keystone-demo-overgrant created
-  rolebinding.rbac.authorization.k8s.io/keystone-demo-overgrant created
-$ kubectl --as=system:serviceaccount:northstar-agents:settlement-agent auth can-i patch featureflag/northstar-autonomy
-  yes
-
-3. The same patch again. RBAC now allows it. Kyverno does not.
-$ kubectl --as=system:serviceaccount:northstar-agents:settlement-agent -n northstar-platform patch featureflag/northstar-autonomy --type=json -p '<replace targeting.if[1] with autonomous>'
-  Error from server: admission webhook "vpol.validate.kyverno.svc-fail-finegrained-agents-cannot-edit-their-own-authority" denied the request: Policy agents-cannot-edit-their-own-authority failed: DENIED: agent identity 'system:serviceaccount:northstar-agents:settlement-agent' may not change the objects that define its own authority (FeatureFlag/northstar-autonomy). Authority changes go through a reviewed commit, never a runtime decision by the agent.
-  Denied by Kyverno, naming the policy. That is the second line, and it did not need RBAC to be right.
-
-4. Take the mistake back
-$ kubectl delete -f deploy/demo/keystone-overgrant.yaml
-  role.rbac.authorization.k8s.io "keystone-demo-overgrant" deleted
-  rolebinding.rbac.authorization.k8s.io "keystone-demo-overgrant" deleted
-
-5. What does the flag resolve to now?
-$ kubectl -n northstar-platform get featureflag/northstar-autonomy -o jsonpath='{... targeting.if[1]}'
-  settlement-agent resolves: assisted
-
-Beat K holds: the agent could not edit what constrains it, even with the grant.
-```
+**SHOW** — the output is Step 4 of the five-minute flow above. Five steps: the
+agent tries and RBAC refuses; someone makes a mistake (the over-grant); the
+**same** patch, and now Kyverno refuses, naming the policy; the mistake is taken
+back; the flag still resolves `assisted`.
 
 **SAY**
 
@@ -1343,7 +1288,7 @@ policy.
 > see: the gateway's decision, yes, inside the claim. Kyverno's, yes, but
 > standalone. Linkerd's is a counted 403, not a span, and an egress drop is silent."
 
-The script removes the over-grant on every exit path, including Ctrl-C.
+`scripts/demo keystone` removes the over-grant on every exit path, including Ctrl-C.
 **If you abort the room's patience some other way, check §7 item 2.**
 
 ---
@@ -1425,7 +1370,7 @@ kubectl -n northstar-platform apply -f deploy/platform/openfeature/featureflag.y
 ```
 
 ```bash
-# 2. THE OVER-GRANT MUST BE ABSENT. beat-keystone.sh removes it itself, even on
+# 2. THE OVER-GRANT MUST BE ABSENT. `scripts/demo keystone` removes it itself, even on
 #    Ctrl-C, but check: it is a standing permission for settlement-agent to
 #    patch the flag, which is exactly what this demo says never exists.
 kubectl -n northstar-platform get role,rolebinding keystone-demo-overgrant \
@@ -1462,10 +1407,10 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 | `start-demo.sh` refuses: *webhook configuration is not registered* | Kyverno was stopped gracefully (scaled to 0, a rollout) and deleted its own registration: **the keystone is silently off** | `kubectl -n kyverno scale deploy/kyverno-admission-controller --replicas=1`, wait for `kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg`, re-run |
 | `start-demo.sh` refuses: *nothing answers behind svc/kyverno-svc* | Kyverno pods not Ready, webhook still registered: an agent's write is *refused* (fails closed) | `kubectl -n kyverno get pods`, logs |
 | Backstage's flip answers with an admission error mentioning `kyverno` | the policy's `matchConditions` now match Backstage's identity (a Kyverno outage alone cannot do this: measured, Backstage is unaffected by one) | Backstage's identity is `backstage-autonomy-writer` in `northstar-platform`; the policy matches only `northstar-agents` and `northstar-tools` prefixes. `kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg -o yaml` and read the `matchConditions` |
-| `start-demo.sh` refuses: *over-grant is still applied* | an earlier beat-keystone run was killed hard (SIGKILL) | `kubectl delete -f deploy/demo/keystone-overgrant.yaml` |
-| `beat-keystone.sh` step 3 prints `Forbidden` instead of the Kyverno message | the over-grant did not take effect yet | re-run; the script waits for `auth can-i` to say `yes` first, so this means RBAC is not what it was |
-| `beat-reach.sh` step 2 prints `REFUSED` or `REACHED` | the egress NetworkPolicy is not enforcing (kindnet), or the pod was not dropped | `kubectl get networkpolicy -A`; `tests/e2e/test_egress_policy.py` |
-| `beat-reach.sh` step 3 does not print `REFUSED 403` | payments-api's Linkerd policy is missing or not holding, or the deny counter did not rise | `kubectl get servers,httproutes.policy.linkerd.io,authorizationpolicies -A`; `kubectl get --raw /api/v1/namespaces/northstar-systems/pods/<pod>:4191/proxy/metrics \| grep inbound_http_authz_deny_total`; `tests/e2e/test_gateway_is_the_only_route.py` |
+| `start-demo.sh` refuses: *over-grant is still applied* | an earlier `scripts/demo keystone` run was killed hard (SIGKILL) | `kubectl delete -f deploy/demo/keystone-overgrant.yaml` |
+| `scripts/demo keystone` step 3 prints `Forbidden` instead of the Kyverno message | the over-grant did not take effect yet | re-run; it waits for `auth can-i` to say `yes` first, so this means RBAC is not what it was |
+| `scripts/demo guard` says claims-agent was not dropped on the way to payments-mcp | the egress NetworkPolicy is not enforcing (kindnet), or the pod was not dropped | `kubectl get networkpolicy -A`; `tests/e2e/test_egress_policy.py` |
+| `scripts/demo guard` says reviewer-ui's direct execute was not refused 403, or the counter did not rise | payments-api's Linkerd policy is missing or not holding, or the deny counter did not rise | `kubectl get servers,httproutes.policy.linkerd.io,authorizationpolicies -A`; `kubectl get --raw /api/v1/namespaces/northstar-systems/pods/<pod>:4191/proxy/metrics \| grep inbound_http_authz_deny_total`; `tests/e2e/test_gateway_is_the_only_route.py` |
 | `setup-kind.sh` refuses: *already exists and still runs Cilium* | the cluster predates M12 (it was created with `disableDefaultCNI`) | `kind delete cluster --name northstar`, then `./scripts/setup-kind.sh --stage 7` |
 | settlement-agent's model call dies with a TLS reset | Anthropic's address range is static in `network-policies.yaml`; a provider address change lands outside it | compare `api.anthropic.com` with 160.79.104.0/23 and 2607:6bc0::/48 and update the `ipBlock`s |
 | EUR 5,800 comes back `executed` at the start of step 2 | **contract left flipped from a previous run** | `scripts/demo reset`, or §7 |

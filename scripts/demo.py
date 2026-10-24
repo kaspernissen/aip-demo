@@ -37,8 +37,7 @@ Design: docs/superpowers/specs/2026-10-13-northstar-m8-human-in-the-loop-design.
 from `tests/harness/` (`live.py`, `contract.py`, `jaeger.py`) -- claim submission
 over A2A, server-side SVID minting, direct MCP calls through the gateway, the
 flag patch with propagation verified, the Jaeger evidence join. The reach
-probe is `scripts/reach-probe.py`, the very file `scripts/beat-reach.sh` runs.
-So the stage path and the tested path are the same code, and
+probe is `scripts/reach-probe.py`. So the stage path and the tested path are the same code, and
 `tests/e2e/test_demo_flow.py` runs these commands, not a re-implementation.
 
 **Written for a room.** Short lines, at most ~100 columns, the decisive word

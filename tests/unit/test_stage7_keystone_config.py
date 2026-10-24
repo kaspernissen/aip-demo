@@ -300,24 +300,6 @@ def test_start_demos_preflight_checks_the_overgrant_is_absent():
     assert "keystone-demo-overgrant" in effective
 
 
-SMOKE_TEST = REPO_ROOT / "scripts" / "smoke-test.sh"
-
-
-def test_the_gate_refuses_below_stage_7_and_runs_both_beats_unconditionally():
-    """Comment-stripped, so prose cannot supply any of it. The beats run bare
-    under `set -e`: a non-zero exit from either fails the gate."""
-    effective = _effective(SMOKE_TEST)
-    assert "validatingpolicy agents-cannot-edit-their-own-authority" in effective
-    assert "kyverno-resource-validating-webhook-cfg" in effective
-    lines = [line.strip() for line in effective.splitlines()]
-    assert '"$ROOT/scripts/beat-reach.sh"' in lines
-    assert '"$ROOT/scripts/beat-keystone.sh"' in lines
-    assert "set +e" not in "\n".join(
-        lines[lines.index('"$ROOT/scripts/beat-reach.sh"') - 2:
-              lines.index('"$ROOT/scripts/beat-keystone.sh"') + 1]
-    )
-
-
 def test_start_demos_preflight_also_asks_for_the_webhook_registration_and_endpoints():
     """Measured: a graceful stop of Kyverno deletes its webhook configs and the
     keystone goes fail-open while the policy object still says Ready."""

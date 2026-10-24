@@ -98,14 +98,6 @@ def test_the_probe_and_the_harness_agree_on_every_shape(base):
             assert harness == "answered"
 
 
-def test_beat_reach_probes_ingress_by_identity_and_reads_the_counter_not_a_port_forward():
-    beat = (SCRIPTS / "beat-reach.sh").read_text()
-    assert "INGRESS_URL=" in beat and "/execute" in beat
-    assert "tests.harness.reach" in beat, "the counter is read by the shared harness code"
-    assert "kubectl port-forward" not in beat and "kc port-forward" not in beat
-    assert "Cilium" not in beat
-
-
 def _driver():
     spec = importlib.util.spec_from_file_location("northstar_demo_driver_reach", SCRIPTS / "demo.py")
     module = importlib.util.module_from_spec(spec)

@@ -207,7 +207,7 @@ Usage: setup-kind.sh [--stage N]
                           note below -- nothing it installs needs a host
                           port. The over-grant the keystone beat
                           uses is a demo fixture, applied and removed by
-                          scripts/beat-keystone.sh, and is NEVER applied
+                          scripts/demo keystone, and is NEVER applied
                           here]
 
 Each stage installs only what that stage of the demo needs, so the laptop
@@ -1096,7 +1096,7 @@ echo -e "${GREEN}Port-forwards verified: claims-agent, settlement-agent, payment
 
 echo ""
 if [[ "${STAGE}" -eq 7 ]]; then
-  echo -e "${GREEN}Stage 7 (Bounded) is up: stage 6's workloads and backends, unchanged, plus Kyverno ${KYVERNO_CHART_VERSION} (app ${KYVERNO_APP_VERSION}) tracing to the collector, and the keystone policy agents-cannot-edit-their-own-authority (ValidatingPolicy, failurePolicy Fail): a northstar-agents or northstar-tools ServiceAccount cannot create, update or delete the autonomy FeatureFlag, the gateway's ConfigMap, network policies, RBAC or Kyverno's own policy and exceptions -- even if RBAC were wrong. Beats: ./scripts/beat-reach.sh and ./scripts/beat-keystone.sh. Run ./scripts/start-demo.sh to reach Backstage at http://localhost:7007.${NC}"
+  echo -e "${GREEN}Stage 7 (Bounded) is up: stage 6's workloads and backends, unchanged, plus Kyverno ${KYVERNO_CHART_VERSION} (app ${KYVERNO_APP_VERSION}) tracing to the collector, and the keystone policy agents-cannot-edit-their-own-authority (ValidatingPolicy, failurePolicy Fail): a northstar-agents or northstar-tools ServiceAccount cannot create, update or delete the autonomy FeatureFlag, the gateway's ConfigMap, network policies, RBAC or Kyverno's own policy and exceptions -- even if RBAC were wrong. Beats: scripts/demo guard and scripts/demo keystone. Run ./scripts/start-demo.sh to reach Backstage at http://localhost:7007.${NC}"
 elif [[ "${STAGE}" -eq 6 ]]; then
   echo -e "${GREEN}Stage 6 (Golden path) is up: stage 5's workloads and backends, unchanged, plus Backstage in northstar-platform on SQLite. Its read-only ServiceAccount is wired to the Kubernetes plugin (get/list/watch on Pods, Deployments, ReplicaSets, Services, ConfigMaps and the other default object types; no Secrets, no write verbs) and its own, separate ServiceAccount carries the one narrow write grant (get/list/patch, resourceNames: [northstar-autonomy], no delete -- deploy/k8s/backstage.yaml). The catalog covers this repo's own eight components (agent cards linked, not restated) plus Backstage itself, each showing its live workload; the autonomy card reads northstar-autonomy live, per identity, and can change it from a UI instead of kubectl. Run ./scripts/start-demo.sh to reach it, unauthenticated at http://localhost:7007 once forwarded.${NC}"
 elif [[ "${STAGE}" -eq 5 ]]; then

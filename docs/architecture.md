@@ -1973,8 +1973,8 @@ v1.18.1 uses; same rule, current type.
 **Two lines, not one.** RBAC already denies every agent ServiceAccount a write
 to the flag, so on a correct cluster an agent sees an RBAC `Forbidden`: the
 first line, not the keystone. The keystone is the line that holds when RBAC is
-wrong. Northstar does not ship a standing over-grant to show it; `Beat K`
-(`scripts/beat-keystone.sh`) applies `deploy/demo/keystone-overgrant.yaml`
+wrong. Northstar does not ship a standing over-grant to show it;
+`scripts/demo keystone` applies `deploy/demo/keystone-overgrant.yaml`
 ("someone made a mistake"), shows Kyverno refuse the same patch, and deletes
 it. `setup-kind.sh` never applies that file (pinned by a unit test), and
 `start-demo.sh` refuses to start if it is left behind.

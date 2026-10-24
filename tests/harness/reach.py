@@ -32,7 +32,6 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -594,34 +593,3 @@ def require_reach(context: str):
         f"enforced. Missing: {missing}. Re-apply deploy/platform/reach/ "
         "(./scripts/setup-kind.sh --stage 7)")
     return json.loads(listing.stdout)["items"]
-
-
-# --- a tiny CLI for shell callers (scripts/beat-reach.sh) ------------------------------
-#
-#   python3 -m tests.harness.reach snapshot <context> <namespace> <pod>
-#       prints the pod proxy's deny-counter lines (read through the API server)
-#   python3 -m tests.harness.reach refusal <status> <before-file> <after-file> [srv_name]
-#       prints `REFUSED <status> by <Server>/<route> (deny counter +N)`, or the
-#       not-attributable line, and exits 1 in that case
-
-
-def _main(argv: list[str]) -> int:
-    if len(argv) == 4 and argv[0] == "snapshot":
-        counters = read_deny_counters(argv[1], argv[2], argv[3])
-        for c in counters:
-            labels = ",".join(f'{k}="{v}"' for k, v in c.labels)
-            print(f"{DENY_METRIC}{{{labels}}} {c.value:g}")
-        return 0
-    if len(argv) in (4, 5) and argv[0] == "refusal":
-        before = parse_deny_counters(Path(argv[2]).read_text())
-        after = parse_deny_counters(Path(argv[3]).read_text())
-        want = {"srv_name": argv[4]} if len(argv) == 5 else {}
-        by = refused_by(before, after, **want)
-        print(refusal_line(int(argv[1]), by))
-        return 0 if by else 1
-    print("usage: python3 -m tests.harness.reach snapshot|refusal ...", file=sys.stderr)
-    return 2
-
-
-if __name__ == "__main__":
-    raise SystemExit(_main(sys.argv[1:]))
