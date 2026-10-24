@@ -1378,8 +1378,7 @@ If the audience remembers nothing else:
 | [`docs/architecture.md`](architecture.md) | the rings and the keystone, components, hops, protocols, the trace span by span, the full "See it yourself" walkthrough, and the authoritative limitations list |
 | [`docs/telemetry-contract.md`](telemetry-contract.md) | the instrumentation contract and the published gaps |
 | [`docs/upstream-findings.md`](upstream-findings.md) | filing-ready findings against upstream projects — **none of them filed** |
-| [`docs/superpowers/specs/`](superpowers/specs/) | design specs, including what was deliberately dropped |
-| [`docs/superpowers/plans/`](superpowers/plans/) | the implementation plans |
+| [`docs/research/`](research/) | evaluations of alternatives that were not adopted |
 
 ---
 

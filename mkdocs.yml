@@ -23,12 +23,11 @@ site_description: "The Northstar claims-settlement system: how a claim becomes a
 
 docs_dir: docs
 
-# docs/superpowers/ is the spec-driven-development record -- plans, designs
-# and rulings. It is how this repo was built, not what it built, and none of
-# it answers "what is Northstar and how does it work", so it is deliberately
-# excluded from the solution documentation.
+# docs/research/ holds evaluations of alternatives that were not adopted. They
+# do not answer "what is Northstar and how does it work", so they are left out
+# of the solution documentation.
 exclude_docs: |
-  superpowers/
+  research/
 
 nav:
   - Overview: index.md

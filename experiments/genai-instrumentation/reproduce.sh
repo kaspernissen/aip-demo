@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Rebuild every venv and regenerate every span dump the write-up cites
-# (docs/superpowers/specs/2026-10-24-genai-instrumentation-options.md).
+# (docs/research/genai-instrumentation-options.md).
 # Token-free and cluster-free: the model is common/fake_anthropic.py behind a
 # MockTransport, and the MCP server is a local stdio stub.
 #

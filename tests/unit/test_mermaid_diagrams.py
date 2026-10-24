@@ -68,12 +68,9 @@ PARSER = (
     REPO_ROOT / "platform" / "backstage" / "packages" / "app" / "scripts" / "parse-mermaid.mjs"
 )
 
-# Skipped wholesale: `docs/superpowers/` is the spec-driven-development record,
-# excluded from the published documentation by the root mkdocs.yml for the same
-# reason it is excluded here -- it is how this repo was built, not what it
-# built, and its diagrams are frozen historical artefacts of decisions already
-# made.
-SKIP_PARTS = {"node_modules", ".catalog-stage", "superpowers", ".git", "site"}
+# Skipped wholesale: `docs/research/` is left out of the published documentation
+# by the root mkdocs.yml, so it is left out here too.
+SKIP_PARTS = {"node_modules", ".catalog-stage", "research", ".git", "site"}
 
 # Mermaid's diagram keywords, as they appear on a diagram's first line. Used to
 # recognise a mermaid source inside a TypeScript template literal, where there
@@ -123,7 +120,6 @@ def _published_markdown():
         for p in REPO_ROOT.rglob("*.md")
         if not SKIP_PARTS & set(p.parts)
         and (p.name == "README.md" or "docs" in p.parts)
-        and p.parent.name != "superpowers"
     )
 
 

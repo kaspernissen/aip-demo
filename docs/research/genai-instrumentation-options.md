@@ -138,7 +138,7 @@ invoke_agent settlement_agent   INTERNAL  pydantic-ai
 | Every tool argument and result | yes (content on) | `gen_ai.tool.call.arguments` / `gen_ai.tool.call.result` on the tool span; also as `tool_call` / `tool_call_response` parts in the next turn's `gen_ai.input.messages` |
 | Why each turn ended | yes | `gen_ai.response.finish_reasons` on every `chat` span: `["tool_call"]`, `["tool_call"]`, `["stop"]` |
 | Token usage | yes | `gen_ai.usage.input_tokens` (cache included: 620 = 500 + 100 + 20), `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens` per turn; run totals on `invoke_agent` under `gen_ai.aggregated_usage.*` |
-| Conversation | yes | `gen_ai.conversation.id` on all three span types. On `main` it is a random UUID per run; on `m11-agentevals` and later, `decide_settlement` passes `conversation_id=claim_id` |
+| Conversation | yes | `gen_ai.conversation.id` on all three span types. `decide_settlement` passes `conversation_id=claim_id` |
 | Agent identity | name only | `gen_ai.agent.name=settlement_agent` on all spans; no `gen_ai.agent.description` (the `Agent` is not given one) |
 | System instructions | yes | `gen_ai.system_instructions` on `chat` and `invoke_agent` |
 | Input/output messages | yes, on `chat` | `gen_ai.input.messages`, `gen_ai.output.messages`; on `invoke_agent` only as the non-standard `pydantic_ai.all_messages` |
@@ -306,9 +306,9 @@ Dumps and diffs: `strands_prototype/out/{legacy,latest,latest-attrs}/`.
 | E2E and unit tests on span shape | `tests/e2e/test_settlement_llm_trace.py` (781), `test_policy_denial.py` (1,743), `test_settlement_agent_trace.py` (478), `tests/unit/test_metrics_wiring.py` (630), `test_telemetry_contract_attribute_counts.py` | assert `chat claude-sonnet-5`, `invoke_agent settlement_agent`, the 28-name `gen_ai.*` inventory, and `gen_ai_client_token_usage_*` in Prometheus |
 | Demo and dashboards | `scripts/demo.py`, `deploy/observability/dashboards/evidence.ndjson` | span names and attributes |
 | Contract and registry | `docs/telemetry-contract.md`, `telemetry/registry/` | the inventory and live-check expectations |
-| Later branches | `m11-agentevals` (AgentEvals keys on `gen_ai.conversation.id`, which Strands does not emit), `m13-claims-intake` (`agents/claims-agent/extraction.py`, 99 lines, also PydanticAI) | same work again, plus a lost join key |
+| AgentEvals and the intake | AgentEvals keys on `gen_ai.conversation.id`, which Strands does not emit; `agents/claims-agent/extraction.py` (99 lines) is also PydanticAI | same work again, plus a lost join key |
 
-The files in this table that exist on `main` total 5,985 lines: 947 of agent code
+The files in this table total 5,985 lines: 947 of agent code
 (`settlement.py`, `mcp_tools.py`, `bootstrap.py`), 1,406 of unit tests and 3,632 of
 span-shape tests. Not every line changes, but every file does, and a gate run on the
 cluster has to follow. The telemetry gets less standard on the axis this demo talks
@@ -407,10 +407,9 @@ name.
 - **Test and evidence risk.** About 5,000 lines of unit and e2e tests assert today's span
   shapes and names, and so do the telemetry contract's attribute-count guard, the Weaver
   registry and live-check, the evidence dashboard, `scripts/demo.py`, and AgentEvals'
-  `gen_ai.conversation.id` key on `m11`.
-- **No safe buffer.** Each of these needs a gate run on the cluster. The gate history
-  (M8: four failed runs before a measured row; M10: runs 2-5 failed on unrelated causes)
-  says 18 days does not leave room for that.
+  `gen_ai.conversation.id` key.
+- **No safe buffer.** Each of these needs a full gate run on the cluster, and gate runs
+  regularly fail on unrelated causes before one passes. 18 days does not leave room for that.
 
 **Pin hygiene that follows from the measurements:**
 

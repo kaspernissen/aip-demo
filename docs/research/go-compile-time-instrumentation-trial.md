@@ -1,7 +1,6 @@
 # Trial: compile-time instrumentation for payments-api
 
-Date: 2026-10-24. Branch `worktree-agent-a457578ae3362eb45`, from
-`m13-claims-intake` at `d06a379`. Local only: no cluster, no deploy scripts.
+Date: 2026-10-24. Run locally: no cluster, no deploy scripts.
 
 Question: can a Go compile-time instrumentation tool replace payments-api's
 hand-written OpenTelemetry code and produce the same telemetry?

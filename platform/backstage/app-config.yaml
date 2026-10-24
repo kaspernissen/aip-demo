@@ -123,9 +123,7 @@ backend:
       - scaffolder
   # workingDirectory: /tmp # Use this to configure a working directory for the scaffolder, defaults to the OS temp-dir
 
-# No `integrations.github` block. This repo has no git remote (raised twice,
-# deferred twice -- see docs/superpowers/specs/2026-09-15-northstar-m6-golden-
-# path-design.md §2, "Out"): nothing here reads from GitHub or authenticates
+# No `integrations.github` block: nothing here reads from GitHub or authenticates
 # against it, and the scaffold's default `${GITHUB_TOKEN}` interpolation would
 # fail config loading in a cluster that sets no such secret. Removed rather
 # than left commented out with a token nobody will ever set.

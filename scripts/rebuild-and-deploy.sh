@@ -147,7 +147,7 @@ for component in "${targets[@]}"; do
     # root's mkdocs.yml and docs/ have to land here, beside
     # system-catalog-info.yaml, exactly as each component's do beside theirs.
     #
-    # docs/ is copied whole, superpowers/ included, and mkdocs.yml excludes
+    # docs/ is copied whole, research/ included, and mkdocs.yml excludes
     # that subtree from the built site. One source of truth, one place the
     # exclusion is stated -- rather than a copy rule here and a nav rule there
     # that can disagree about which documents are part of the solution.

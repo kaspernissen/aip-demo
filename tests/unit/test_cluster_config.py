@@ -226,8 +226,7 @@ def test_setup_kind_ends_with_the_preflight():
 def test_start_demo_is_gone_and_nothing_operator_facing_points_at_it_or_at_stages():
     assert not (REPO_ROOT / "scripts" / "start-demo.sh").exists()
     files = subprocess.run(
-        # `:(glob)` so `docs/*.md` does not reach the dated plans and specs
-        # under docs/superpowers/, which record history as it was.
+        # `:(glob)` so `docs/*.md` stays at the top level of docs/.
         ["git", "ls-files", "README.md", ":(glob)docs/*.md", "scripts", "tests", "deploy"],
         cwd=REPO_ROOT, capture_output=True, text=True, check=True,
     ).stdout.split()
