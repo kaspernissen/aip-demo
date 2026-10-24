@@ -1,5 +1,22 @@
-/* 90-thanks · the close, then the speaker-only appendix (pre-flight, reset, triage).
+/* 90-thanks · the close, then the demo's backup slides, one per ring.
    Scoped under .x90-. Tokens only. */
+
+/* backup ring slides, in the pattern of William Rizzo's ring slides: the ring's question, a one-line
+   rule, the committed config | what the cluster printed, one sentence. */
+.x90-rsub { margin: 10px 0 0; font-size: var(--type-kicker); color: color-mix(in srgb, var(--color-text) 62%, transparent); }
+.x90-rp { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 28px; }
+.x90-rp > div { min-width: 0; display: flex; flex-direction: column; }
+.x90-rh { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 10px; font-size: 22px; font-weight: 700;
+  color: var(--color-accent-2-700); }
+.x90-rh span + span { font-weight: 400; font-size: 19px; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x90-code-d { flex: 1; margin: 0; padding: 18px 22px; border-radius: var(--radius-md); background: var(--color-text); color: var(--color-bg);
+  font-family: var(--font-mono); font-size: 18px; line-height: 1.42; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+.x90-code-d .p { color: color-mix(in srgb, var(--color-bg) 58%, transparent); }
+.x90-code-d .h { font-weight: 700; }
+.x90-code-d .c { color: var(--color-accent-300); font-weight: 700; }
+.x90-code-d .m { color: var(--color-accent-2-300); font-weight: 700; }
+.x90-rt { margin: 26px 0 0; text-align: center; font-family: var(--font-heading); font-weight: 700; font-size: 34px; }
 .x90-tag { position: absolute; top: 58px; right: var(--pad-x); margin: 0; font-size: var(--type-kicker); letter-spacing: 0.04em;
   font-style: italic; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
 .x90-code { font-size: 22px !important; }
