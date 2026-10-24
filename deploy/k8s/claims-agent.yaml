@@ -127,15 +127,21 @@ spec:
             limits:
               memory: 256Mi
 ---
+# NodePort 30901 is published on localhost:19001 by deploy/kind/cluster.yaml:
+# the customer-ui page in the browser calls claims-agent there directly. No
+# Linkerd Server selects claims-agent, so a request with no mesh identity is
+# admitted, the same as before the mesh.
 apiVersion: v1
 kind: Service
 metadata:
   name: claims-agent
   namespace: northstar-agents
 spec:
+  type: NodePort
   selector:
     app: claims-agent
   ports:
     - name: http
       port: 9001
       targetPort: 9001
+      nodePort: 30901

@@ -79,7 +79,7 @@
 # makes Kyverno DELETE its own webhook configurations on the way out, and the
 # same patch then SUCCEEDS: fail-open. So the guarantee is "fail closed while
 # Kyverno is registered", not "fail closed whenever Kyverno is down";
-# start-demo.sh's pre-flight checks the registration and the endpoints, and
+# scripts/preflight.sh checks the registration and the endpoints, and
 # docs/architecture.md records the measurement. The identity match lives in
 # `matchConditions` (copied into the webhook, confirmed on the live
 # configuration), so the API server evaluates it BEFORE calling Kyverno: only

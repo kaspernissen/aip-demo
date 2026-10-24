@@ -21,24 +21,18 @@ service:
     traces:
       exporters:
         - otlp_grpc/jaeger
-        # BEGIN stage-4-only
         - otlp_grpc/weaver
         - otlp_http/agentevals
-        # END stage-4-only
         - otlp_grpc/dash0
         - debug
     metrics:
       exporters:
-        # BEGIN stage-4-only
         - otlp_http/prometheus
         - otlp_grpc/weaver
-        # END stage-4-only
         - otlp_grpc/dash0
         - debug
     logs:
       exporters:
-        # BEGIN stage-4-only
         - otlp_grpc/weaver
-        # END stage-4-only
         - otlp_grpc/dash0
         - debug

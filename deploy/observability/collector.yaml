@@ -4,8 +4,7 @@
 # needs a proxy and its own service account. Unmeshed senders (Kyverno, the
 # browser through the NodePort, anything outside the mesh) still reach 4317 and
 # 4318 in plaintext: the default inbound policy is all-unauthenticated and no
-# Server selects this pod. Below stage 2 there is no Linkerd and the annotation
-# does nothing.
+# Server selects this pod.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

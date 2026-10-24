@@ -1,6 +1,6 @@
 # Weaver live-check (M9): checks the telemetry the platform really emits
 # against telemetry/registry. The collector sends it a COPY of every span,
-# metric and log (exporter `otlp_grpc/weaver`, stage-4-only); nothing is
+# metric and log (exporter `otlp_grpc/weaver`); nothing is
 # sampled and nothing is dropped.
 #
 # Two ConfigMaps, both built by scripts/setup-kind.sh from the repo:
@@ -65,9 +65,9 @@ spec:
           # points and 60 spans a minute sent to it, no logs). The old 768Mi limit would have been reached
           # in about 3.5 hours of idle. Nothing in live-check v0.28.0 caps or
           # drops samples, and the collector must keep sending a copy of all of
-          # them, so the pod is recycled instead: scripts/start-demo.sh restarts
-          # it at the start of every demo session, the gate restarts it before
-          # its run, and 4Gi covers about 17 hours between the two (the gate
+          # them, so the pod is recycled instead: scripts/setup-kind.sh restarts
+          # it on every run, the gate restarts it before its run, and 4Gi covers
+          # about 17 hours between restarts (the gate
           # itself needs about 275 MiB, an estimate). A kill at the limit shows
           # as a changed restartCount, which livecheck.report() fails on.
           resources:

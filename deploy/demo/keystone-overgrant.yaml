@@ -1,7 +1,6 @@
 # DEMO FIXTURE -- models a MISTAKE. Never applied by scripts/setup-kind.sh,
-# never part of any stage, and it must be ABSENT whenever the demo is not
-# mid-beat (scripts/start-demo.sh's pre-flight and the runbook's reset
-# checklist both assert that).
+# and it must be ABSENT whenever the demo is not mid-beat (scripts/preflight.sh
+# and the runbook's reset checklist both assert that).
 #
 # Why it exists. RBAC already denies every agent ServiceAccount a write to the
 # autonomy flag, so on a correct cluster the keystone beat would show an RBAC

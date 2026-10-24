@@ -5,8 +5,8 @@
 #                    ^                                        |
 #                    +---- gen_ai.evaluation.result logs -----+  --> Weaver, Dash0 (if set)
 #
-# The collector sends it a COPY of every trace (exporter `otlp_http/agentevals`,
-# stage-4-only), as it does for Weaver live-check. AgentEvals groups the copies
+# The collector sends it a COPY of every trace (exporter `otlp_http/agentevals`),
+# as it does for Weaver live-check. AgentEvals groups the copies
 # into one session per `gen_ai.conversation.id`, which settlement-agent sets to
 # the claim id: one claim, one session. Nothing scores on its own: `scripts/demo
 # evals` (or Run Evaluation in its UI) asks it to, and each result goes back to
@@ -127,3 +127,21 @@ spec:
     - name: otlp-http
       port: 4318
       targetPort: 4318
+---
+# The UI and REST API only, as NodePort 30801, published on localhost:18001 by
+# deploy/kind/cluster.yaml (`scripts/demo evals` calls it there). A Service of
+# its own so the OTLP port above is not given a NodePort as well.
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentevals-external
+  namespace: observability
+spec:
+  type: NodePort
+  selector:
+    app: agentevals
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+      nodePort: 30801

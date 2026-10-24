@@ -1,0 +1,65 @@
+# The one kind cluster the demo runs on.
+#
+# Every page and API the browser, `scripts/demo` and the tests open from the
+# laptop is a NodePort Service, published on a fixed localhost port by the
+# mapping below. Nothing needs a `kubectl port-forward` to be reached, and a
+# redeploy does not break any of these URLs.
+#
+# `extraPortMappings` is read only when the cluster is CREATED: adding a
+# mapping here means recreating the cluster (`scripts/teardown.sh`, then
+# `scripts/setup-kind.sh`). tests/unit/test_cluster_config.py checks that every
+# NodePort Service under deploy/ has exactly one mapping here, and the reverse.
+#
+# Not here, on purpose: payments-api, payments-mcp and settlement-agent. Their
+# Linkerd Servers admit only named workload identities
+# (deploy/platform/reach/linkerd-policies.yaml), so a request from the host
+# would arrive with no identity and be refused. Tests that call them directly
+# open a `kubectl port-forward` of their own (tests/harness/live.py).
+#
+# Every mapping listens on 127.0.0.1 only: Backstage and the reviewer page are
+# unauthenticated, and on a conference network nobody else should reach them.
+#
+# The default CNI (kindnet) stays: it is what enforces the egress
+# NetworkPolicies in deploy/platform/reach/network-policies.yaml.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: northstar
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080   # customer-ui, the claim form
+        hostPort: 8080
+        listenAddress: 127.0.0.1
+        protocol: TCP
+      - containerPort: 30081   # reviewer-ui, the human approval page
+        hostPort: 8081
+        listenAddress: 127.0.0.1
+        protocol: TCP
+      - containerPort: 30901   # claims-agent A2A; the browser calls it directly
+        hostPort: 19001
+        listenAddress: 127.0.0.1
+        protocol: TCP
+      - containerPort: 30686   # Jaeger query UI and API
+        hostPort: 16686
+        listenAddress: 127.0.0.1
+        protocol: TCP
+      - containerPort: 30318   # collector OTLP/HTTP: the browser's spans, and host-side tests
+        hostPort: 4318
+        listenAddress: 127.0.0.1
+        protocol: TCP
+      - containerPort: 30909   # Prometheus
+        hostPort: 9090
+        listenAddress: 127.0.0.1
+        protocol: TCP
+      - containerPort: 30801   # AgentEvals UI and REST API
+        hostPort: 18001
+        listenAddress: 127.0.0.1
+        protocol: TCP
+      - containerPort: 30707   # Backstage
+        hostPort: 7007
+        listenAddress: 127.0.0.1
+        protocol: TCP

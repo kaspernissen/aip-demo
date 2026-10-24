@@ -54,7 +54,6 @@ exporters:
   debug:
     verbosity: normal
 
-  # BEGIN stage-4-only
   # Prometheus, fed by the collector rather than scraping anything: the
   # services below set no `OTEL_METRICS_*` variable and know nothing about
   # Prometheus, they export OTLP to this collector exactly as they already do
@@ -95,9 +94,7 @@ exporters:
     endpoint: http://prometheus.observability.svc.cluster.local:9090/api/v1/otlp
     tls:
       insecure: true
-  # END stage-4-only
 
-  # BEGIN stage-4-only
   # A COPY of everything for Weaver live-check (M9). Never a sample: the
   # registry is checked against the same traffic every backend receives.
   otlp_grpc/weaver:
@@ -117,9 +114,7 @@ exporters:
       permit_without_stream: true
     sending_queue: {enabled: true}
     retry_on_failure: {enabled: true}
-  # END stage-4-only
 
-  # BEGIN stage-4-only
   # A COPY of every trace for AgentEvals (M11), which scores what the agent did
   # and sends each score back here as a `gen_ai.evaluation.result` log event
   # (deploy/observability/agentevals.yaml). Traces only: PydanticAI puts message
@@ -130,45 +125,28 @@ exporters:
     endpoint: http://agentevals.observability.svc.cluster.local:4318
     sending_queue: {enabled: true}
     retry_on_failure: {enabled: true}
-  # END stage-4-only
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [resource_detection, batch]
-      # One exporter per line so scripts/setup-kind.sh can strip the
-      # stage-4-only entry below stage 4 with the same marker rule it uses for
-      # every other block here.
       exporters:
         - otlp_grpc/jaeger
-        # BEGIN stage-4-only
         - otlp_grpc/weaver
         - otlp_http/agentevals
-        # END stage-4-only
         - debug
     metrics:
       receivers: [otlp, prometheus/spire]
       processors: [batch]
-      # One exporter per line, for the same reason the traces pipeline above is
-      # written that way: scripts/setup-kind.sh strips the stage-4-only entry
-      # below stage 4 with a line-range sed, and it cannot edit inside a flow
-      # sequence. Below stage 4 this list is `- debug` alone: the collector
-      # must not name a backend the cluster does not have.
       exporters:
-        # BEGIN stage-4-only
         - otlp_http/prometheus
         - otlp_grpc/weaver
-        # END stage-4-only
         - debug
     logs:
       receivers: [otlp]
       processors: [batch]
-      # AgentEvals sends its `gen_ai.evaluation.result` events here. One
-      # exporter per line, same reason as the pipelines above. Below stage 4
-      # this list is `- debug` alone.
+      # AgentEvals sends its `gen_ai.evaluation.result` events here.
       exporters:
-        # BEGIN stage-4-only
         - otlp_grpc/weaver
-        # END stage-4-only
         - debug

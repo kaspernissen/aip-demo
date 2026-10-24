@@ -44,8 +44,11 @@ server:
   #     `prometheus` release would publish `prometheus-server`;
   #   * `server.service.servicePort` defaults to **80**, not 9090.
   fullnameOverride: prometheus
+  # NodePort 30909 is published on localhost:9090 by deploy/kind/cluster.yaml.
   service:
     servicePort: 9090
+    type: NodePort
+    nodePort: 30909
 
   extraFlags:
     - web.enable-lifecycle
