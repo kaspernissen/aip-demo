@@ -1,4 +1,4 @@
-# S1 (task-6-review.md): the Dockerfile's build stage runs `npm ci` (which
+# The Dockerfile's build stage runs `npm ci` (which
 # installs strictly from package-lock.json) and then `COPY . .`. Without this
 # file, `COPY . .` layers the host's own node_modules/.next/out over that
 # fresh install inside the image, so whatever happens to be sitting on the

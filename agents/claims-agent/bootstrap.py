@@ -14,8 +14,8 @@ StarletteInstrumentor (applied to the built app in main.py, since the
 a2a-sdk's Starlette instance doesn't exist until then) is what does that,
 using the global propagator configured below.
 
-M13: claims-agent runs a model (extraction.py, the free-text intake), so this
-file now does what settlement-agent's bootstrap does for its model:
+claims-agent runs a model (extraction.py, the free-text intake), so this
+file does what settlement-agent's bootstrap does for its model:
 `HTTPX2ClientInstrumentor` for the model's own outbound hop, and PydanticAI's
 instrumentation with the same settings and the same content-capture switch.
 """
@@ -85,8 +85,7 @@ def configure() -> None:
     # on httpx2, a separate distribution HTTPXClientInstrumentor does not
     # cover; without this the model call is only pydantic-ai's `chat` span,
     # with no HTTP status, retry or wire latency under it. Same reasoning, in
-    # full, in agents/settlement-agent/bootstrap.py (docs/telemetry-contract.md
-    # Gap 7).
+    # full, in agents/settlement-agent/bootstrap.py.
     HTTPX2ClientInstrumentor().instrument()
 
     _instrument_pydantic_ai()
@@ -117,8 +116,8 @@ def _configure_metrics(resource: Resource) -> None:
     worth reporting as "none" if it was actually measured. Without a
     provider here, claims-agent emitting nothing would say nothing about
     those instrumentations -- it would only say this process had nowhere to
-    put a measurement. The absence is only meaningful if it's real. Since
-    M13 the intake model's PydanticAI histograms land here too, which is why
+    put a measurement. The absence is only meaningful if it's real. The
+    intake model's PydanticAI histograms land here too, which is why
     this must run before `_instrument_pydantic_ai()` (see settlement-agent's
     copy for that ordering).
     """

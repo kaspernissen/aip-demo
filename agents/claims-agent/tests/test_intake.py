@@ -52,7 +52,7 @@ def test_defaults_description_to_empty_string():
     assert claim["description"] == ""
 
 
-# --- M13: which path, and the free-text draft's boundary ---------------------
+# --- which path, and the free-text draft's boundary ---------------------
 
 import datetime as dt
 import re

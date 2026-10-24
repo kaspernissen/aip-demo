@@ -1,4 +1,4 @@
-"""The intake model is instrumented exactly as settlement-agent's (M13).
+"""The intake model is instrumented exactly as settlement-agent's.
 
 Content capture is configuration, its default is ON, and one variable
 (`NORTHSTAR_CAPTURE_CONTENT`) switches both agents: a silent flip to redaction

@@ -1,5 +1,5 @@
 """The intake model: a customer's first notice of loss, in their own words,
-read into a draft claim (M13).
+read into a draft claim.
 
 The model reads; it decides nothing. What it returns is a DRAFT that
 intake.check_draft validates exactly as strictly as a JSON claim, and it is

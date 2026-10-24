@@ -772,7 +772,7 @@ func TestRefusingAnAlreadyRefusedPaymentIsRejected(t *testing.T) {
 	}
 
 	// The original refusal record must survive untouched -- this is the
-	// exact hole the review named: an unconditional refuse could overwrite
+	// hole being guarded: an unconditional refuse could overwrite
 	// refusedTraceId/refusedSpanId, repointing the audit link at a trace of
 	// the caller's choosing.
 	got := getPayment(t, srv, payment.PaymentID)

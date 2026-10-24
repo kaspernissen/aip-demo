@@ -8,9 +8,8 @@
 # placeholder (that route was tried first and is not supported by this
 # Backstage version's default reader set for a local, git-less file).
 #
-# Since M8 this is the only settlement Deployment: the second one
-# (`senior-settlement-agent`) was retired, and a human approval is released by
-# the reviewer-ui instead.
+# This is the only settlement Deployment; a human approval is released by the
+# reviewer-ui, not by a second settlement agent.
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:

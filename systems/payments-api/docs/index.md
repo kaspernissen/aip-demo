@@ -4,8 +4,8 @@ The **system of record** for payments, and the one place in the whole trace
 where real money state changes.
 
 Written in Go — the only Go component here, which is why it is also the one
-that exposed the W3C Trace Context Level 2 incompatibility recorded as upstream
-Finding 11.
+that exposed the W3C Trace Context Level 2 incompatibility recorded in
+docs/upstream-findings.md.
 
 ## Responsibilities
 
