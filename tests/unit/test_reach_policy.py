@@ -154,9 +154,11 @@ def _load_workloads():
 
 WORKLOADS = _load_workloads()
 
-# Pods the policies talk about but this repo does not deploy as Deployments of
-# its own: CoreDNS, the Linkerd control plane, the collector. None is meshed
-# (spec section 2: nothing in kube-system, linkerd or observability is).
+# Pods the policies talk about that are not read from deploy/k8s/: CoreDNS, the
+# Linkerd control plane, the collector. CoreDNS and the control plane are not
+# meshed. The collector is (deploy/observability/collector.yaml), because the
+# Linkerd proxies export their spans to it over mTLS; its entry is checked
+# against that manifest by test_the_collector_entry_matches_its_manifest.
 INFRA = {
     "kube-dns": Workload(
         "kube-dns", "kube-system", {"k8s-app": "kube-dns"}, "coredns", False,
@@ -169,7 +171,7 @@ INFRA = {
     ),
     "otel-collector": Workload(
         "otel-collector", "observability", {"app": "otel-collector"}, "otel-collector",
-        False, frozenset({4317, 4318}),
+        True, frozenset({4317, 4318}),
     ),
 }
 ALL_PODS = {**WORKLOADS, **INFRA}
@@ -554,7 +556,10 @@ EGRESS = [
     ("settlement-agent", "payments-api", 8080, None, "drop"),
     ("settlement-agent", "policy-decision-service", 9100, None, "drop"),
     ("settlement-agent", "claims-agent", 9001, None, "drop"),
-    ("settlement-agent", "otel-collector", 4317, None, "drop"),
+    # The collector is meshed, so a meshed source reaches it through 4143 like
+    # any meshed peer (per pod). The proxy's own 4317 export is checked apart, in
+    # test_every_egress_restricted_proxy_may_export_its_spans_on_4317.
+    ("settlement-agent", "otel-collector", 4317, None, "allow"),
     # claims-agent (Cilium: claims-agent-egress-allowlist).
     ("claims-agent", "kube-dns", 53, None, "allow"),
     ("claims-agent", "settlement-agent", 9002, None, "allow"),
@@ -814,6 +819,43 @@ def test_an_egress_restricted_pod_still_reaches_what_makes_it_work(src):
         assert egress_outcome(src, "linkerd-control-plane", port) == "allow", port
     assert egress_outcome(src, "otel-collector", 4318) == "allow"
     assert egress_outcome(src, "kube-dns", 53) == "allow"
+
+
+@pytest.mark.parametrize("src", EGRESS_SOURCES)
+def test_every_egress_restricted_proxy_may_export_its_spans_on_4317(src):
+    """The Linkerd proxy sends its spans to the collector itself, not through an
+    outbound proxy, so the kernel sees the real port, 4317, and the 4143 rule
+    does not cover it. Without it every proxy span from this pod is lost and
+    nothing fails."""
+    collector = ALL_PODS["otel-collector"]
+    assert _np_egress_allows(WORKLOADS[src], collector, None, 4317, "TCP"), src
+    # The app's export, which the source proxy now sends to the collector's
+    # proxy on 4143, and the plain port a pod outside the mesh would use.
+    assert _np_egress_allows(WORKLOADS[src], collector, None, PROXY_INBOUND_PORT, "TCP"), src
+    assert egress_outcome(src, "otel-collector", 4318, unmeshed=True) == "allow", src
+
+
+def test_the_collector_entry_matches_its_manifest():
+    """INFRA's collector is typed here, so it is held to the manifest: meshed by
+    pod annotation, its own service account (the identity the proxies expect,
+    deploy/platform/linkerd/values.yaml), its label and its two OTLP ports."""
+    docs = _docs(REPO_ROOT / "deploy" / "observability" / "collector.yaml")
+    dep = next(d for d in docs if d["kind"] == "Deployment")
+    template = dep["spec"]["template"]
+    entry = INFRA["otel-collector"]
+    assert template["metadata"]["annotations"]["linkerd.io/inject"] == "enabled"
+    assert entry.meshed is True
+    assert template["spec"]["serviceAccountName"] == entry.service_account
+    assert any(d["kind"] == "ServiceAccount" and d["metadata"]["name"] == entry.service_account
+               for d in docs)
+    assert template["metadata"]["labels"] == entry.labels
+    ports = {p["containerPort"] for c in template["spec"]["containers"] for p in c["ports"]}
+    assert ports == set(entry.ports)
+    values = yaml.safe_load(
+        (REPO_ROOT / "deploy" / "platform" / "linkerd" / "values.yaml").read_text())
+    identity = values["proxy"]["tracing"]["collector"]["meshIdentity"]
+    assert identity == {"serviceAccountName": entry.service_account,
+                        "namespace": entry.namespace}
 
 
 def test_only_settlement_agent_may_reach_the_model_provider():

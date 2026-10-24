@@ -636,7 +636,7 @@ the six SPIRE sub-images, including the one carrying the hazard recorded under
 
 | Component | What it is | Version / image | Role in this system |
 |---|---|---|---|
-| `linkerd` (M12) | CNCF service mesh (graduated). Control plane in namespace `linkerd`; a `linkerd-proxy` native sidecar in each meshed pod. Authorizes **ingress** to the money path by workload identity (403, counted); egress is NetworkPolicy, not Linkerd. Proxy tracing is off on purpose | Helm `linkerd-crds` and `linkerd-control-plane`, `edge-26.10.1` (proxy v2.370.0); the exact chart version is pinned in `scripts/setup-kind.sh`. Not yet measured on the demo cluster | The Reach ring's ingress half: `deploy/platform/reach/linkerd-policies.yaml`. Replaces Cilium |
+| `linkerd` (M12) | CNCF service mesh (graduated). Control plane in namespace `linkerd`; a `linkerd-proxy` native sidecar in each meshed pod. Authorizes **ingress** to the money path by workload identity (403, counted); egress is NetworkPolicy, not Linkerd. Proxy tracing is on: each proxy sends OTLP spans to the collector, which is meshed for that reason | Helm `linkerd-crds` and `linkerd-control-plane`, `edge-26.10.1` (proxy v2.370.0); the exact chart version is pinned in `scripts/setup-kind.sh`. Not yet measured on the demo cluster | The Reach ring's ingress half: `deploy/platform/reach/linkerd-policies.yaml`. Replaces Cilium |
 | `agentgateway` | Rust MCP/A2A/LLM proxy. A **Linux Foundation** project — **not** CNCF | `cr.agentgateway.dev/agentgateway:v1.5.0` (note the leading `v`; the tag `1.5.0` does not exist on that registry, though the binary reports `1.5.0` as its internal version) | Interposed on the MCP hop. Verifies the caller's JWT-SVID (`jwtAuth`), asks the Policy Decision Service about every `tools/call` (`mcpGuardrails`), and forwards to `payments-mcp` **only** if the answer is permit. |
 | `policy-decision-service` | **This project's own code** (Python 3.13, `grpcio`), not third-party — listed here because it is platform machinery rather than an application component. Serves agentgateway's `agentgateway.dev.ext_mcp.ExtMcp` contract, from a proto vendored verbatim at v1.5.0 (`platform/policy-decision-service/proto/ext_mcp.proto`, `d459d88`) | `localhost:5001/northstar/policy-decision-service:dev`, `policy-decision-service.northstar-platform.svc.cluster.local:9100` | Answers permit or deny on caller identity plus amount. Holds the milestone's one rule and emits the `northstar.policy.decision` span. Makes no Kubernetes API calls and holds no RBAC; nothing in `northstar-agents` can reach it. |
 | `eval-scorer` **(M4; row added M5 Task 6)** | **This project's own code** (Python 3.13, standard library only — no web framework, no third-party OTel SDK dependency beyond what `platform/eval-scorer/requirements.txt` pins), not third-party — the same reason `policy-decision-service` has a row here rather than in the application table | `localhost:5001/northstar/eval-scorer:dev`, `eval-scorer.northstar-platform.svc.cluster.local:8300` | Scores a settled trajectory's identity authority against its own independent copy of the policy table (`scorer/authority.py`) and its own independent copy of the contract's currently-published autonomy level (`scorer/contract.py`'s `CURRENT_LEVEL`), never by re-reading the `northstar.policy.decision` span's own claim — the anti-vacuity argument `scorer/contract.py`'s own module docstring makes at length. `CURRENT_LEVEL` is a static constant checked at build time against the committed `deploy/platform/openfeature/featureflag.yaml`, deliberately blind to a live `kubectl patch` against the deployed `FeatureFlag` object (M5-R29/M5-R31) — the two are independent by design, not by oversight, which is exactly what let Task 6 flip the live contract without touching this service or its tests. |
@@ -1460,11 +1460,15 @@ the half it is good at:
 
 The meshed workloads are the three app namespaces (`northstar-agents`,
 `northstar-tools`, `northstar-systems`) plus agentgateway and the
-policy-decision-service. Everything else (observability, SPIRE, Kyverno, flagd,
-Backstage, eval-scorer, `kube-system`) is not meshed: this milestone is about
-reach. Linkerd's default inbound policy stays `all-unauthenticated`, so only a
-port that has a `Server` is restricted. Proxy tracing is **off**, on purpose:
-the trace keeps exactly the shape M11 measured.
+policy-decision-service, and the OpenTelemetry collector. Everything else
+(the rest of observability, SPIRE, Kyverno, flagd, Backstage, eval-scorer,
+`kube-system`) is not meshed. Linkerd's default inbound policy stays
+`all-unauthenticated`, so only a port that has a `Server` is restricted. Proxy
+tracing is **on**: every proxy sends a span per traced HTTP request to the
+collector over OTLP gRPC and mTLS, which is why the collector is meshed and every
+egress policy allows it on 4317. One meshed hop gains four proxy spans; the e2e
+harness skips them when it walks parents (`docs/telemetry-contract.md`, "Linkerd
+proxy spans").
 
 | Direction | Policy | What it makes impossible |
 |---|---|---|
@@ -2060,8 +2064,9 @@ the live stage-7 cluster, Kyverno chart 3.9.1 / app v1.19.1:
 
 So the answer for the deck: the gateway's decision is in the claim's trace;
 Kyverno's refusal is in Jaeger, attributable, but standalone; **Linkerd's refusals are a
-counted 403 (`inbound_http_authz_deny_total`) but not a span**, because proxy
-tracing is off on purpose, and **an egress drop is silent**: NetworkPolicy
+counted 403 (`inbound_http_authz_deny_total`)**, and a span only when the refused
+request carried a sampled `traceparent` (the inbound proxy span, status 403;
+expected, not yet measured), and **an egress drop is silent**: NetworkPolicy
 counts nothing here. (Until M12 the line read "Cilium's drops are in no trace,
 because Hubble is not installed".) That last one is stated, not fixed. `tests/e2e/test_keystone.py::test_the_denial_reaches_jaeger_as_a_standalone_kyverno_trace`
 asserts the first two (and fails if the trace ever stops being standalone, so

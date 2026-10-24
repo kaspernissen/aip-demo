@@ -63,6 +63,15 @@ STATE_PATH = Path(__file__).resolve().parents[2] / ".demo" / "m9-live-check-stat
 # tests/unit/test_no_legacy_names.py::test_approval_histogram_uses_registry_label_keys
 # and live by the e2e series assertions in tests/e2e/test_human_in_the_loop.py.
 OWNED_PREFIXES = ("northstar.", "policy.", "review.", "claim.", "settlement.")
+# Kubernetes label keys that start like an owned name. The Linkerd proxy puts
+# its pod's labels on its resource, so `northstar.io/plane` reaches live-check;
+# telemetry/live-check.toml lowers it to information, and owned_violations()
+# leaves it out.
+FOREIGN_LABEL_PREFIXES = ("northstar.io/",)
+
+
+def _is_owned(name: str) -> bool:
+    return name.startswith(OWNED_PREFIXES) and not name.startswith(FOREIGN_LABEL_PREFIXES)
 
 
 def _kubectl(*args: str, timeout: float = 200.0) -> subprocess.CompletedProcess:
@@ -304,7 +313,7 @@ def owned_violations(report_: dict[str, Any]) -> list[dict[str, Any]]:
     """
     return [
         f for f in findings(report_)
-        if f.get("level") == "violation" and judged_name(f).startswith(OWNED_PREFIXES)
+        if f.get("level") == "violation" and _is_owned(judged_name(f))
     ]
 
 
@@ -328,7 +337,7 @@ def top_foreign_findings(report_: dict[str, Any], limit: int = 5) -> list[tuple[
     gate's output: what the registry does not describe, and so does not judge."""
     counts: dict[str, int] = {}
     for finding in findings(report_):
-        if not judged_name(finding).startswith(OWNED_PREFIXES):
+        if not _is_owned(judged_name(finding)):
             counts[finding["message"]] = counts.get(finding["message"], 0) + 1
     return sorted(counts.items(), key=lambda item: -item[1])[:limit]
 

@@ -278,9 +278,9 @@ def test_trace_a_is_finished_at_the_hand_off():
         baseline = client.get_trace(run["trace_id"])
         time.sleep(12)
         later = client.get_trace(run["trace_id"])
-        assert len(later.spans) == len(baseline.spans), (
-            f"trace A kept growing while the claim waited: {len(baseline.spans)} spans, then "
-            f"{len(later.spans)} twelve seconds later; new: "
+        assert later.span_count == baseline.span_count, (
+            f"trace A kept growing while the claim waited: {baseline.span_count} spans, then "
+            f"{later.span_count} twelve seconds later; new: "
             f"{sorted({s.operation for s in later.spans} - {s.operation for s in baseline.spans})}")
         assert not [s for s in later.spans if s.service == "customer-ui-server"], (
             "trace A holds a customer-ui-server span: only the outcome is pushed, in trace B")

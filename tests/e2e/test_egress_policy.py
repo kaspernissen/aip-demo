@@ -332,8 +332,8 @@ def test_the_model_agent_still_reaches_the_gateway_and_the_collector(
 ):
     """The two in-cluster destinations a settlement cannot happen without.
 
-    The gateway is meshed (so the allowance is its service port AND the proxy's
-    4143, M2); the collector is not. Any HTTP answer counts, a 404 or 405
+    Both are meshed, so the allowance is the service port AND the peer proxy's
+    4143. Any HTTP answer counts, a 404 or 405
     included: the question is whether something answered.
     """
     result = _http(MODEL_AGENT, host, port, "GET", "/")

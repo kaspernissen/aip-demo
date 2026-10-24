@@ -13,16 +13,41 @@
 # no linkerd-cni), default inbound policy is all-unauthenticated (only ports
 # with a Server are restricted).
 
-# PROXY TRACING STAYS OFF (M12 spec section 1). Turning it on would add about
-# 140 proxy spans per run to every trace, and this demo never samples or drops a
-# span: the trace's shape must stay exactly as M11 measured it. The chart's
-# default is already false; it is written out so that a future chart default
-# cannot turn it on unnoticed, and tests/unit/test_stage2_linkerd_config.py
-# asserts both flags.
+# PROXY TRACING IS ON. Every meshed proxy sends a span for each HTTP request
+# that arrives with a sampled W3C `traceparent`, to the OpenTelemetry collector
+# over OTLP gRPC (protocol "opentelemetry", the chart's default, written out).
+#
+# Sampling: the proxy has no sampler of its own. It records a request only when
+# the incoming traceparent is sampled and never starts a trace, so it follows
+# the apps, which sample everything. Requests without a traceparent (kubelet
+# probes, the OTLP exports themselves) produce no proxy span.
+#
+# Shape: each proxy layer re-parents the request, so one meshed-to-meshed call
+# gains four spans between the caller's client span and the callee's server
+# span (caller proxy outbound server + client, callee proxy inbound server +
+# client), each named by the request path. tests/harness/jaeger.py skips them
+# when it walks parents, so the app-level shape the e2e suite asserts holds.
+#
+# The proxy dials the collector itself, over mTLS, and expects the collector's
+# mesh identity below. So the collector pod is meshed
+# (deploy/observability/collector.yaml) and runs as service account
+# otel-collector, and every egress NetworkPolicy allows the collector on 4317.
+#
+# Resource attributes: service.name=linkerd-proxy (traceServiceName), the pod's
+# labels (read from the downward API) and the chart's default labels below.
 proxy:
   tracing:
-    enabled: false
-# The control plane's own tracing, same reasoning.
+    enabled: true
+    protocol: opentelemetry
+    traceServiceName: linkerd-proxy
+    collector:
+      endpoint: otel-collector.observability.svc.cluster.local:4317
+      meshIdentity:
+        serviceAccountName: otel-collector
+        namespace: observability
+# The control plane's own tracing stays off: its Go controllers export with the
+# OpenCensus agent exporter (linkerd2 pkg/trace, ocagent), not OTLP, and the
+# collector has no OpenCensus receiver.
 controller:
   tracing:
     enabled: false

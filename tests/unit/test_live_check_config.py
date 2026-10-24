@@ -34,13 +34,20 @@ def test_findings_policy_fails_on_violation():
     assert tomllib.loads(LIVE_CHECK_TOML.read_text())["live-check"]["fail_on"] == "violation"
 
 
+def _owned_override() -> dict:
+    return next(o for o in _overrides() if o["level"] == "violation")
+
+
 def test_owned_names_override_comes_first_and_the_catch_all_comes_last():
     """Overrides are first-match-wins and globs have no negation (measured on
-    weaver v0.28.0), so the order IS the policy."""
+    weaver v0.28.0), so the order IS the policy. The only override allowed
+    before the owned one lowers Kubernetes pod labels (`northstar.io/...`) that
+    the Linkerd proxy copies onto its resource."""
     overrides = _overrides()
-    assert len(overrides) >= 2
-    first, last = overrides[0], overrides[-1]
-    assert first["level"] == "violation" and first.get("sample_names"), first
+    assert len(overrides) >= 3
+    first, owned, last = overrides[0], overrides[1], overrides[-1]
+    assert first == {"level": "information", "sample_names": ["northstar.io/*"]}, first
+    assert owned["level"] == "violation" and owned.get("sample_names"), owned
     assert last["level"] == "information", last
     assert not last.get("sample_names") and not last.get("ids"), (
         "the last override must be the unscoped catch-all, or foreign names fail the gate"
@@ -50,12 +57,22 @@ def test_owned_names_override_comes_first_and_the_catch_all_comes_last():
 def test_undefined_enum_variant_is_raised_for_owned_names():
     """`undefined_enum_variant` is `information` by default; for our names an
     enum value outside the registry is a defect."""
-    assert "undefined_enum_variant" in _overrides()[0]["ids"]
+    assert "undefined_enum_variant" in _owned_override()["ids"]
 
 
 def test_the_harness_and_the_policy_name_the_same_owned_namespaces():
-    policy = tuple(glob.removesuffix("*") for glob in _overrides()[0]["sample_names"])
+    policy = tuple(glob.removesuffix("*") for glob in _owned_override()["sample_names"])
     assert policy == livecheck.OWNED_PREFIXES
+    lowered = tuple(glob.removesuffix("*") for glob in _overrides()[0]["sample_names"])
+    assert lowered == livecheck.FOREIGN_LABEL_PREFIXES
+
+
+def test_a_pod_label_on_the_proxy_resource_is_not_an_owned_violation():
+    report = {"samples": [{"resource": {"attributes": [
+        {"live_check_result": {"all_advice": [
+            _finding("violation", "linkerd-proxy", attribute_key="northstar.io/plane"),
+        ]}}]}}]}
+    assert livecheck.owned_violations(report) == []
 
 
 @pytest.mark.parametrize("config", COLLECTOR_CONFIGS, ids=lambda p: p.name)

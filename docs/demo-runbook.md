@@ -537,8 +537,9 @@ only the road the money would take.
 loud: "That wait is the drop. There is no error to read, because nothing
 answered." Neither is in the trace. The egress drop is silent
 (nothing counts it); the ingress 403 is counted by the proxy
-(`inbound_http_authz_deny_total`) but it is a counter, not a span (proxy tracing
-is off on purpose). This terminal line is the evidence, and the slide says so.
+(`inbound_http_authz_deny_total`) but it is a counter, not a span: the probe
+sends no `traceparent`, so the proxy records no span for it. This terminal line
+is the evidence, and the slide says so.
 *Expected output; first live run on Linkerd pending.*
 
 **If it fails** — `FAIL ... the control did not answer`: the network is down, not
@@ -1051,8 +1052,8 @@ the proxy's own 504). That is why the line says DROPPED with a reason, never
 **Say the limits out loud.** Neither refusal is in the trace. The egress drop
 is silent: nothing counts it. The ingress 403 is counted
 (`inbound_http_authz_deny_total` on the destination proxy) but it is a counter,
-not a span: proxy tracing is off on purpose, so the trace keeps the shape it
-had. Say also what Linkerd cost us against Cilium: egress is now an address
+not a span: the probe carries no `traceparent`, and the proxies only trace
+requests that do. Say also what Linkerd cost us against Cilium: egress is now an address
 range (Anthropic's published `160.79.104.0/23` and `2607:6bc0::/48`) rather than
 a name, so any other host in that range is also reachable from settlement-agent;
 the enforcement of egress is kind's kindnet, and a production cluster needs a CNI

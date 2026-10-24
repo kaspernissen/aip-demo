@@ -42,8 +42,12 @@
 #     bind a pod that skips the proxy (an unmeshed pod is held to the listed
 #     ports); for a meshed pod 4143 alone is the gate. Cilium's rules were per
 #     port: this is a weakening and it is stated here on purpose.
-#   * The collector is NOT meshed (nothing in `observability` is), so it is
-#     reached on its plain port, 4318, with no 4143 beside it.
+#   * The collector IS meshed (the only meshed pod in `observability`), and
+#     every document allows it on three ports: 4318, where the app's OTLP
+#     exporter sends; 4143, because that export now goes proxy to proxy; and
+#     4317, where the pod's own Linkerd proxy sends its spans. The proxy dials
+#     the collector directly (it is the proxy, there is no second hop), so that
+#     connection is seen on 4317 itself, not 4143.
 #
 # WHAT A MESHED POD'S TCP CONNECT NO LONGER MEANS. The pod's own proxy accepts
 # any outbound TCP connection locally, so "connect succeeded" proves nothing;
@@ -73,8 +77,8 @@
 #
 # Inventory, from deploy/k8s/settlement-agent.yaml and agents/settlement-agent/:
 # DNS; agentgateway:3000 (PAYMENTS_MCP_URL, the gateway being the only way to a
-# tool); the collector (OTLP http/protobuf on 4318, not the 4317 gRPC port
-# agentgateway uses); the model provider; the Linkerd control plane. It is an
+# tool); the collector (the app's OTLP http/protobuf on 4318, and 4317 for the
+# Linkerd proxy's own spans); the model provider; the Linkerd control plane. It is an
 # A2A *server* only: it calls no peer, so no 9001 or 9002 allowance here.
 # Notably absent: payments-mcp:8000, payments-api:8080 and the PDS:9100 --
 # every route to a tool or the ledger goes through the gateway.
@@ -128,8 +132,9 @@ spec:
     # 3. The OTLP collector. THE RULE WHOSE ABSENCE IS WORST: the BatchSpanProcessor
     # exports on a background thread and swallows failure, so settlements would keep
     # succeeding while every span from this service vanished, in a milestone whose
-    # claim is that the decision is visible in one trace. 4318 only; the collector is
-    # not meshed, so no 4143.
+    # claim is that the decision is visible in one trace. 4318 is the app's OTLP
+    # http/protobuf export, 4143 carries it once the collector is meshed, 4317 is
+    # the Linkerd proxy's own span export.
     - to:
         - namespaceSelector:
             matchLabels:
@@ -140,6 +145,10 @@ spec:
       ports:
         - protocol: TCP
           port: 4318
+        - protocol: TCP
+          port: 4317  # the Linkerd proxy's own span export (OTLP gRPC)
+        - protocol: TCP
+          port: 4143  # the collector is meshed: the app's export goes proxy to proxy
     # 4. The Linkerd control plane (identity 8080, destination 8086, policy 8090): the
     # proxy dials it for its certificate and its routes (M2).
     - to:
@@ -263,6 +272,10 @@ spec:
       ports:
         - protocol: TCP
           port: 4318
+        - protocol: TCP
+          port: 4317  # the Linkerd proxy's own span export (OTLP gRPC)
+        - protocol: TCP
+          port: 4143  # the collector is meshed: the app's export goes proxy to proxy
     # 5. The customer's push receiver (M10): a claim decided by a human is pushed to
     # customer-ui's /a2a/push. Only POST /a2a/push is admitted, by customer-ui's own
     # Server (the exact allowlist in push.py is the same fact in the client).
@@ -344,6 +357,10 @@ spec:
       ports:
         - protocol: TCP
           port: 4318
+        - protocol: TCP
+          port: 4317  # the Linkerd proxy's own span export (OTLP gRPC)
+        - protocol: TCP
+          port: 4143  # the collector is meshed: the app's export goes proxy to proxy
     # 3. The Linkerd control plane.
     - to:
         - namespaceSelector:
@@ -452,6 +469,10 @@ spec:
       ports:
         - protocol: TCP
           port: 4318
+        - protocol: TCP
+          port: 4317  # the Linkerd proxy's own span export (OTLP gRPC)
+        - protocol: TCP
+          port: 4143  # the collector is meshed: the app's export goes proxy to proxy
     # 5. The Linkerd control plane.
     - to:
         - namespaceSelector:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import requests
@@ -61,7 +61,24 @@ def otlp_links(payload: dict) -> dict[str, list[dict[str, Any]]]:
     return out
 
 
+# The service name every Linkerd proxy reports (deploy/platform/linkerd/values.yaml,
+# proxy.tracing.traceServiceName).
+PROXY_SERVICE = "linkerd-proxy"
+
+
 class Trace:
+    """A Jaeger trace, as the app services drew it.
+
+    Linkerd's proxies add spans of their own between a caller's client span and
+    the callee's server span: up to four per meshed hop, each one re-parenting
+    the request. `spans` leaves them out and points each app span's `parent_id`
+    at its nearest app ancestor, so the propagation assertions keep asking
+    "did the app's context reach the next app". The proxy spans are kept in
+    `proxy_spans`, and `span_count` counts both, for code that waits for a
+    trace to stop growing. If a proxy span in the chain has not reached Jaeger
+    yet, the app span keeps pointing at it and shows up in `orphans()`.
+    """
+
     def __init__(self, raw: dict[str, Any]):
         self._raw = raw
         process_names = {
@@ -69,6 +86,7 @@ class Trace:
             for pid, proc in raw.get("processes", {}).items()
         }
         self.spans: list[Span] = []
+        self.proxy_spans: list[Span] = []
         for raw_span in raw.get("spans", []):
             attrs = {tag["key"]: tag["value"] for tag in raw_span.get("tags", [])}
             parent_id = None
@@ -92,6 +110,26 @@ class Trace:
                     links=tuple(links),
                 )
             )
+        proxies = {s.span_id: s for s in self.spans if s.service == PROXY_SERVICE}
+        self.proxy_spans = list(proxies.values())
+
+        def app_parent(parent_id: str | None) -> str | None:
+            seen = set()
+            while parent_id in proxies and parent_id not in seen:
+                seen.add(parent_id)
+                parent_id = proxies[parent_id].parent_id
+            return parent_id
+
+        self.spans = [
+            replace(s, parent_id=app_parent(s.parent_id))
+            for s in self.spans
+            if s.service != PROXY_SERVICE
+        ]
+
+    @property
+    def span_count(self) -> int:
+        """Every span in the trace, the proxies' included."""
+        return len(self.spans) + len(self.proxy_spans)
 
     @property
     def trace_id(self) -> str:
@@ -334,7 +372,7 @@ class JaegerClient:
             try:
                 trace = self.get_trace(trace_id)
                 last_trace = trace
-                history.append(f"{time.time() - started:.0f}s:{len(trace.spans)}")
+                history.append(f"{time.time() - started:.0f}s:{trace.span_count}")
                 if operation is not None and not trace.has_span(operation):
                     last_span_count = None
                     quiet_since = None
@@ -347,7 +385,7 @@ class JaegerClient:
                         quiet_since = None
                     else:
                         now = time.time()
-                        span_count = len(trace.spans)
+                        span_count = trace.span_count
                         if last_span_count is None or span_count != last_span_count:
                             last_span_count = span_count
                             quiet_since = now
@@ -375,7 +413,7 @@ class JaegerClient:
                 raise AssertionError(
                     f"trace {trace_id!r} had all of {sorted(services)} but its "
                     f"span count never held steady for {self.QUIET_WINDOW_S}s "
-                    f"within {timeout}s total (last count: {len(last_trace.spans)}; "
+                    f"within {timeout}s total (last count: {last_trace.span_count}; "
                     f"last read error: {last_error}; polls, first 15 and last 15 of "
                     f"{len(history)}: {history[:15]} ... {history[-15:]})"
                 )

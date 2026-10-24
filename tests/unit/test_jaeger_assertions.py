@@ -404,3 +404,36 @@ def test_otlp_links_keep_the_link_attributes_the_v1_shape_drops():
     ]}]}]}
     assert otlp_links(payload) == {"b2": [
         {"trace_id": "aaaa", "span_id": "a1", "attrs": {"northstar.a2a.link.reason": "resume"}}]}
+
+
+def _proxied_trace(drop: str | None = None) -> Trace:
+    """svc-a's client span -> four Linkerd proxy spans -> svc-b's server span,
+    the shape one meshed hop has with proxy tracing on."""
+    chain = [
+        _raw_span("client", "POST", parent_id=None, process_id="p1"),
+        _raw_span("out-srv", "/", parent_id="client", process_id="px"),
+        _raw_span("out-cli", "/", parent_id="out-srv", process_id="px"),
+        _raw_span("in-srv", "/", parent_id="out-cli", process_id="px"),
+        _raw_span("in-cli", "/", parent_id="in-srv", process_id="px"),
+        _raw_span("server", "POST /", parent_id="in-cli", process_id="p2"),
+    ]
+    raw = _raw_trace([s for s in chain if s["spanID"] != drop])
+    raw["processes"]["px"] = {"serviceName": jaeger_module.PROXY_SERVICE}
+    return Trace(raw)
+
+
+def test_proxy_spans_are_skipped_when_walking_parents():
+    trace = _proxied_trace()
+    assert [s.span_id for s in trace.spans] == ["client", "server"]
+    assert trace.span("POST /").parent_id == "client"
+    assert {s.span_id for s in trace.proxy_spans} == {"out-srv", "out-cli", "in-srv", "in-cli"}
+    assert trace.span_count == 6
+    assert trace.orphans() == []
+    assert jaeger_module.PROXY_SERVICE not in trace.services()
+
+
+def test_a_missing_proxy_span_leaves_the_app_span_orphaned():
+    """A proxy span that has not reached Jaeger yet must not be papered over."""
+    trace = _proxied_trace(drop="in-srv")
+    assert trace.span("POST /").parent_id == "in-srv"
+    assert [s.span_id for s in trace.orphans()] == ["server"]

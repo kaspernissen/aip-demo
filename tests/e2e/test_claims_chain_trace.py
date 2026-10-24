@@ -197,14 +197,14 @@ def chain_trace():
     QUIET_WINDOW_S = 10  # comfortably > 5s BatchSpanProcessor default export delay
     POLL_INTERVAL_S = 1
     stability_deadline = time.time() + 90
-    previous_count = len(trace.spans)
+    previous_count = trace.span_count
     last_change = time.time()
     while (
         time.time() - last_change < QUIET_WINDOW_S and time.time() < stability_deadline
     ):
         time.sleep(POLL_INTERVAL_S)
         trace = client.get_trace(trace_id)
-        count = len(trace.spans)
+        count = trace.span_count
         if count != previous_count:
             previous_count = count
             last_change = time.time()

@@ -1,6 +1,6 @@
 """Guards the stage-2 configuration: kind's default CNI stays, Linkerd is
 pinned and installed before any workload, the mesh annotations are where the
-design says, and proxy tracing is off.
+design says, and proxy tracing is on and points at the collector.
 
 Every assertion here exists because getting it wrong costs a cluster recreate
 to find out.
@@ -127,17 +127,31 @@ def test_the_pinned_versions_are_recorded_in_the_values_header():
     assert PINNED_LINKERD_APP_VERSION in header
 
 
-# --- The values: proxy tracing stays off -----------------------------------
+# --- The values: proxy tracing is on ---------------------------------------
 
 
-def test_proxy_tracing_is_off_explicitly():
-    """Never sample, never drop a span, and do not change the trace's shape:
-    proxy tracing would add ~140 proxy spans per run. Parsed YAML, so a
-    comment cannot satisfy it; the value must be written, not merely defaulted."""
+def test_proxy_tracing_exports_to_the_collector_over_otlp():
+    """The proxies send their spans to the collector over OTLP gRPC on 4317, and
+    expect the collector's mesh identity. Parsed YAML, so a comment cannot
+    satisfy it. The proxy has no sampler (it follows the incoming traceparent),
+    so there is no sampling value to pin; the apps sample everything."""
     values = _yaml(LINKERD_VALUES)
-    assert values["proxy"]["tracing"]["enabled"] is False
-    assert values["controller"]["tracing"]["enabled"] is False
-    assert "collector" not in values["proxy"]["tracing"], "no collector endpoint may be set"
+    tracing = values["proxy"]["tracing"]
+    assert tracing["enabled"] is True
+    assert tracing["protocol"] == "opentelemetry"
+    assert tracing["traceServiceName"] == "linkerd-proxy"
+    assert tracing["collector"]["endpoint"] == "otel-collector.observability.svc.cluster.local:4317"
+    assert tracing["collector"]["meshIdentity"] == {
+        "serviceAccountName": "otel-collector",
+        "namespace": "observability",
+    }
+    assert not any("sampl" in str(k).lower() for k in tracing), "the demo never samples"
+
+
+def test_controller_tracing_stays_off():
+    """linkerd2's Go controllers export with the OpenCensus agent exporter, not
+    OTLP, and the collector has no OpenCensus receiver."""
+    assert _yaml(LINKERD_VALUES)["controller"]["tracing"]["enabled"] is False
 
 
 def test_identity_material_is_not_committed_in_the_values():
@@ -252,8 +266,9 @@ def test_linkerd_is_ready_before_any_workload_is_deployed():
 
 def test_namespaces_and_pods_are_meshed_where_the_design_says():
     """The three app namespaces by namespace annotation; agentgateway and the
-    policy-decision-service by pod annotation. Nothing in observability,
-    spire*, kyverno, flagd/OpenFeature, cert-manager, kube-system or linkerd."""
+    policy-decision-service by pod annotation; the collector by pod annotation,
+    because the proxies export their spans to it over mTLS. Nothing else in
+    observability, nothing in spire*, kyverno, flagd/OpenFeature, cert-manager, kube-system or linkerd."""
     namespaces = {d["metadata"]["name"]: d for d in _docs(REPO_ROOT / "deploy/k8s/namespaces.yaml")}
     meshed = {
         n for n, d in namespaces.items()
@@ -264,6 +279,7 @@ def test_namespaces_and_pods_are_meshed_where_the_design_says():
     for rel, kind in (
         ("deploy/platform/agentgateway/deployment.yaml", "Deployment"),
         ("deploy/k8s/policy-decision-service.yaml", "Deployment"),
+        ("deploy/observability/collector.yaml", "Deployment"),
     ):
         deployments = [d for d in _docs(REPO_ROOT / rel) if d.get("kind") == kind]
         assert deployments, rel
@@ -281,6 +297,7 @@ def test_namespaces_and_pods_are_meshed_where_the_design_says():
     assert sorted(offenders) == [
         "deploy/k8s/namespaces.yaml",
         "deploy/k8s/policy-decision-service.yaml",
+        "deploy/observability/collector.yaml",
         "deploy/platform/agentgateway/deployment.yaml",
     ], offenders
 

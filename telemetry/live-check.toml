@@ -38,6 +38,15 @@ admin_port = 4320
 # docs/telemetry-contract.md, "What live-check checks, and what it does not".
 # Listed so that a weaver release that starts checking it is not silently
 # lowered by the catch-all.
+# Kubernetes pod labels, not telemetry names. With proxy tracing on, every
+# Linkerd proxy copies its pod's labels onto its resource (read from the
+# downward API), so `northstar.io/plane` and `northstar.io/owner` arrive as
+# resource attributes and would match the owned glob below. They are foreign:
+# this override must come before the owned one.
+[[live-check.finding_level_overrides]]
+level = "information"
+sample_names = ["northstar.io/*"]
+
 [[live-check.finding_level_overrides]]
 ids = [
   "missing_attribute",
