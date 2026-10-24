@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The five-minute demo driver. A shim: the implementation is scripts/demo.py and
+# The demo driver (`scripts/demo --help`). A shim: the implementation is scripts/demo.py and
 # it runs under the repo's own venv, the same interpreter the e2e tests use, so
 # `demo` and `pytest tests/e2e` import the same harness with the same packages.
 set -euo pipefail

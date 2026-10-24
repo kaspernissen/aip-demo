@@ -1005,3 +1005,8 @@ def test_keystone_prints_the_commands_it_runs_and_the_refusals_it_gets(monkeypat
     assert "[DENIED]: agent identity" in printed and demo.POLICY in printed
     flat = " ".join(printed.split())
     assert "(FeatureFlag/northstar-autonomy)" in flat and "never a runtime decision by the agent" in flat
+
+
+def test_the_runbook_gives_the_injection_text_the_driver_files():
+    demo = _driver()
+    assert demo.DEFAULT_INJECTION in (REPO_ROOT / "docs/demo-runbook.md").read_text()

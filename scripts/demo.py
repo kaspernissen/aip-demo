@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""The five-minute demo driver. Run it as `scripts/demo <command>`.
+"""The demo driver. Run it as `scripts/demo <command>`.
 
-    guard                 no identity -> 401, around the gateway -> dropped,
+    guard                 (off stage) no identity -> 401, around the gateway -> dropped,
                           with settlement-agent's SPIRE identity -> its tools
     claim <amount>        a real claim through claims-agent and the model: it
                           settles, or it WAITS for a human. The outcome, the span
@@ -13,26 +13,38 @@
                           The claim may have been filed here or in the customer-ui:
                           the reviewer-ui's queue is asked, not only this run's notes
     reject <claim|last>   a human declines a waiting claim. Nothing is paid
+    inject                the latest free-text claim in this run, read back from its
+                          trace: what the customer wrote, what the model read it as,
+                          the system prompt it ran under. Then the highest amount the
+                          customer asked for, sent to the gateway as settlement-agent:
+                          403 from the CEL ceiling, the PDS never asked
+    inject --submit       the same, after filing the default injection text itself
+                          (--text "..." files that text instead): rehearsal, no browser
     autonomy <level>      flip the one live value: assisted | autonomous
-    keystone              the agent tries to edit what constrains it
-    evidence              who decided, the rule, who approved, how long the human took
+    keystone              the agent tries to edit what constrains it: the full kubectl
+                          command run on its behalf, and the API server's refusal
+    evidence              per claim: who decided, the rule, who approved, how long the
+                          human took, AgentEvals' verdicts, the Jaeger link; for a
+                          free-text claim also what the customer wrote and the amount read
     config                the restraining config, read live from the repo: identity,
                           reach, what the gateway checks and delegates, the live level,
                           the keystone. A line that has moved is a failure, not a guess
-    evals [--quick]       AgentEvals scores what the agent did, from its own traces. On
-                          stage --quick: our four checks (the path it took, stopped when
+    evals [--quick]       AgentEvals scores what the agent did, from its own traces.
+                          --quick: our four checks (the path it took, stopped when
                           refused, executed the proposed amount, no amount in the
                           narrative), seconds. Without it, also
                           its built-in metrics with an LLM judge (AGENTEVALS_JUDGE), minutes
     reset                 rejects open approvals as demo-reset, flag assisted,
-                          over-grant absent, state cleared
-    ceiling               (off stage) the gateway's own CEL ceiling: a 403 before the PDS
+                          over-grant absent, a new run starts now
+    ceiling               the gateway's own CEL ceiling: a 403 before the PDS (inject
+                          uses it with the amount the customer asked for)
 
-The five-minute flow (spec section 4): guard; claim 5800 (it WAITS at assisted)
-then approve last; autonomy autonomous; claim 5800 (settled by the agent) and
-claim 6200 (waits: the limit is 6,000); autonomy assisted; keystone; evidence;
-evals --quick; reset. At rest the contract is `assisted` and nothing waits. `config`
-is there if a question asks what, exactly, restrains the agent.
+The flow (docs/demo-runbook.md, section 5): reset before the audience arrives;
+show customer-ui and reviewer-ui; a free-text claim in customer-ui, approved in
+reviewer-ui; a free-text claim that tells the model to pay more, then `inject`;
+`evidence`; `autonomy autonomous` and a claim under EUR 6,000 that settles with no
+approval; `evidence` again; `keystone`. At rest the contract is `assisted` and
+nothing waits. `config` is there if a question asks what, exactly, restrains the agent.
 
 Design: docs/superpowers/specs/2026-10-13-northstar-m8-human-in-the-loop-design.md, section 4.
 
@@ -56,7 +68,8 @@ that is open. Every network call and subprocess carries a timeout.
 `sub` and `aud` are ever printed.
 
 State: `.demo/state.json` (git-ignored; `DEMO_STATE_DIR` moves it) remembers when the run
-started and the claims it knows, so `evidence` reports this run's claims and nothing older.
+started (`reset` or `guard` starts it) and the claims it knows, so `evidence` reports this
+run's claims and nothing older.
 A claim filed in the customer-ui is not in it: `approve`/`reject` adopt it from the
 reviewer-ui's queue, and `evidence` also reads every claim id Jaeger has seen since
 the run started.
