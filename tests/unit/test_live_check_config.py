@@ -133,9 +133,7 @@ def test_setup_kind_builds_both_configmaps_from_the_repo_at_stage_4_and_up():
     assert "weaver-live-check.yaml" in setup
 
 
-# Built, not written out, so tests/unit/test_no_legacy_names.py (which searches
-# tests too) does not read the retired name as a use of it.
-LEGACY_RULE = ".".join(("policy", "rule"))
+LEGACY_RULE = "policy.rule"
 
 
 def _finding(level: str, signal_name: str, **context: str) -> dict:

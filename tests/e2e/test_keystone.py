@@ -53,9 +53,7 @@ POLICY_CRD = "validatingpolicies.policies.kyverno.io"
 
 NAMESPACE = "northstar-platform"
 AGENTS_NAMESPACE = "northstar-agents"
-# Built, not quoted: test_no_legacy_names.py reads a quoted `policy.<x>` string as a
-# retired telemetry name, and an API group has the same shape.
-LINKERD_GROUP = "policy" + ".linkerd.io"
+LINKERD_GROUP = "policy.linkerd.io"
 FLAG = "featureflag/northstar-autonomy"
 AGENT = "system:serviceaccount:northstar-agents:settlement-agent"
 

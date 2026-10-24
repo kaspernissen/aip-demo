@@ -31,9 +31,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 POLICY = REPO_ROOT / "deploy" / "platform" / "kyverno" / "keystone-policy.yaml"
-# Built, not quoted: test_no_legacy_names.py reads a quoted `policy.<x>` string
-# as a retired telemetry name, and an API group has the same shape.
-LINKERD_GROUP = "policy" + ".linkerd.io"
+LINKERD_GROUP = "policy.linkerd.io"
 OVERGRANT = REPO_ROOT / "deploy" / "demo" / "keystone-overgrant.yaml"
 SETUP_KIND = REPO_ROOT / "scripts" / "setup-kind.sh"
 START_DEMO = REPO_ROOT / "scripts" / "start-demo.sh"

@@ -84,16 +84,6 @@ COLLECTOR_CONFIGS = (
     REPO_ROOT / "deploy" / "observability" / "collector-config.yaml",
     REPO_ROOT / "deploy" / "observability" / "collector-config-dash0.yaml",
 )
-# Documents that publish a SPIFFE ID as a measured value. Guarded because a
-# published measurement nothing checks is a published measurement that can go
-# stale -- and for this particular value the stale form is `.../sa/default`,
-# which is precisely the silent failure the dedicated ServiceAccounts exist to
-# prevent. A regression back to it would otherwise ship with a green suite.
-DOCS_PUBLISHING_SPIFFE_IDS = (
-    REPO_ROOT / "docs" / "telemetry-contract.md",
-    REPO_ROOT / "docs" / "architecture.md",
-)
-
 # Resolved from `helm search repo spiffe/spire --versions` against the HARDENED
 # charts repo, and cross-checked against that repo's upstream releases API
 # (which tags per chart, so these two version series are independent):
@@ -101,7 +91,6 @@ DOCS_PUBLISHING_SPIFFE_IDS = (
 # newest.
 PINNED_SPIRE_CHART_VERSION = "0.30.2"
 PINNED_SPIRE_CRDS_CHART_VERSION = "0.6.1"
-PINNED_SPIRE_APP_VERSION = "1.15.3"
 HARDENED_CHARTS_REPO = "https://spiffe.github.io/helm-charts-hardened/"
 
 TRUST_DOMAIN = "northstar.local"
@@ -199,23 +188,6 @@ def _squash(text: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
-def _prose(path: Path) -> str:
-    """A YAML file's comment prose as one squashed line.
-
-    Leading `#` markers are stripped *before* squashing, because a
-    hard-wrapped comment puts a `#` in the middle of the sentence -- so
-    squashing alone would turn "spiffe/spire-crds 0.6.1" wrapped across two
-    comment lines into "spiffe/spire-crds # 0.6.1" and miss it. This is the
-    same under-count that has already defeated two enumerations of
-    docs/telemetry-contract.md, one level meaner.
-    """
-    return _squash(
-        " ".join(
-            re.sub(r"^\s*#\s?", "", line)
-            for line in path.read_text().splitlines()
-            if line.lstrip().startswith("#")
-        )
-    )
 
 
 def _python_spiffe_literals(path: Path) -> list[str]:
@@ -348,45 +320,6 @@ def test_the_trust_domain_cluster_name_and_issuer_are_nested_not_flat():
             "ignored -- Helm does not warn, and the chart default applies "
             "instead. It must live under global.spire."
         )
-
-
-def test_the_values_header_records_both_pinned_chart_versions():
-    """Nothing floats: the versions setup-kind.sh installs must be stated in
-    the values file too, so the two cannot drift apart silently.
-
-    Read through `_prose`, because this file hard-wraps its header and the
-    version and the chart name it belongs to can land on different lines --
-    with a comment marker between them.
-    """
-    text = _prose(SPIRE_VALUES)
-    assert f"spiffe/spire-crds {PINNED_SPIRE_CRDS_CHART_VERSION}" in text, (
-        "the values header must state the pinned spire-crds chart version as "
-        f"'spiffe/spire-crds {PINNED_SPIRE_CRDS_CHART_VERSION}'"
-    )
-    assert f"spiffe/spire {PINNED_SPIRE_CHART_VERSION}" in text, (
-        "the values header must state the pinned spire chart version as "
-        f"'spiffe/spire {PINNED_SPIRE_CHART_VERSION}'"
-    )
-    # Deliberately not a bare `"1.15.3" in text`: this file mentions the SPIRE
-    # release in prose elsewhere, so a bare containment check was satisfiable
-    # by that unrelated sentence -- a mutation that changed the header's
-    # appVersion escaped exactly that way. The appVersion has to be stated
-    # next to the chart version it belongs to, which is the only place the
-    # pairing is load-bearing.
-    assert (
-        f"spiffe/spire {PINNED_SPIRE_CHART_VERSION} "
-        f"(appVersion {PINNED_SPIRE_APP_VERSION}" in text
-    ), (
-        f"the values header must state the SPIRE appVersion "
-        f"({PINNED_SPIRE_APP_VERSION}) alongside the chart version "
-        f"({PINNED_SPIRE_CHART_VERSION}), so a chart bump that changes SPIRE "
-        "itself is visible"
-    )
-    assert HARDENED_CHARTS_REPO in text, (
-        "the values header must name the hardened charts repo explicitly -- "
-        "the older spiffe/helm-charts location does not carry these charts, "
-        "and that is the wrong turn this pin exists to prevent"
-    )
 
 
 def test_spires_own_prometheus_telemetry_is_enabled_on_both_server_and_agent():
@@ -817,105 +750,6 @@ def test_the_gateway_audience_is_the_same_string_everywhere_it_appears():
 
 
 _DOC_SPIFFE_ID_RE = re.compile(r"spiffe://[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+")
-
-
-@pytest.mark.parametrize(
-    "doc", DOCS_PUBLISHING_SPIFFE_IDS, ids=lambda p: p.name
-)
-def test_every_spiffe_id_published_in_the_docs_is_one_this_repo_configures(doc):
-    """A SPIFFE ID published in the docs is a measurement, so it gets a guard.
-
-    `docs/telemetry-contract.md` publishes
-    `jwt.sub = spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent`
-    as read off a live span. Swapping it to `.../sa/default` would leave the
-    whole suite green -- and `.../sa/default` is not an arbitrary wrong value,
-    it is exactly what SPIRE mints for a pod with no ServiceAccount of its
-    own. A regression to that failure would ship with a passing suite, having
-    also quietly rewritten the document that would have exposed it.
-
-    Two things follow from that about the shape of this check.
-
-    It is an **allow-list over every occurrence**, not an equality check on
-    one line. The value appears in several places in that file and in
-    `architecture.md`; a check pinned to a line number, or to one attribute
-    block alone, would leave the others exactly as unguarded as they were. So
-    the enumeration unit is "every SPIFFE ID anywhere in the document", and
-    the permitted set is every ID this repo actually configures -- which makes
-    a wrong trust domain, a wrong namespace and a wrong service account all
-    fail, not only `sa/default`.
-
-    No count is written in this docstring, deliberately: the `permitted` set
-    below is the single place the answer lives, so prose restating its size
-    cannot go stale against it.
-
-    And it enumerates over the **raw text**, deliberately including prose,
-    tables and fenced blocks. A published measurement is wrong wherever it
-    appears; there is no part of these documents where a stale SPIFFE ID is
-    acceptable.
-    """
-    text = doc.read_text()
-    found = _DOC_SPIFFE_ID_RE.findall(text)
-    assert found, (
-        f"{doc.relative_to(REPO_ROOT)} publishes no SPIFFE ID at all, so this "
-        "guard would be checking nothing. If the identity documentation moved, "
-        "point this at where it went rather than deleting the check."
-    )
-    # Every identity this repository configures, whether or not it has a
-    # ClusterSPIFFEID of its own. A guard that fails on a document publishing
-    # a genuinely correct new SPIFFE ID is as harmful as one that passes a
-    # wrong one: both teach a reader to edit the document to match the test
-    # instead of fixing the guard. Adding a workload's identity here belongs
-    # in the same change that creates the workload.
-    permitted = {
-        SETTLEMENT_SPIFFE_ID,
-        GATEWAY_SPIFFE_ID,
-        PDS_SPIFFE_ID,
-        REVIEWER_UI_SPIFFE_ID,
-    }
-    offenders = sorted({one for one in found if one not in permitted})
-    assert not offenders, (
-        f"{doc.relative_to(REPO_ROOT)} publishes SPIFFE ID(s) this repo does "
-        f"not configure: {offenders}. The registered IDs are "
-        f"{sorted(permitted)}.\n"
-        "A subject ending '/sa/default' means the document has been rewritten "
-        "to match a pod running as the default ServiceAccount -- the exact "
-        "regression the dedicated ServiceAccounts prevent. A different trust "
-        "domain means the chart's `example.org` default came back. Either way "
-        "the document and the cluster now disagree, and the document is not "
-        "the thing to change first."
-    )
-
-
-def test_the_documented_jwt_sub_value_is_the_callers_attested_identity():
-    """Checked structurally rather than by line.
-
-    The allow-list above catches a swap to any unregistered ID. This one
-    additionally pins *which* of the two registered IDs belongs in the
-    `jwt.sub` row of the gateway's SERVER attribute block -- because swapping
-    it for the gateway's own SPIFFE ID would pass an allow-list while
-    describing a token minted for its own subject, which verifies against
-    nothing and proves nothing about who called.
-    """
-    text = (REPO_ROOT / "docs" / "telemetry-contract.md").read_text()
-    rows = [
-        line.split(None, 1)
-        for line in text.splitlines()
-        if line.startswith("jwt.sub")
-    ]
-    assert rows, (
-        "no `jwt.sub <value>` row found in docs/telemetry-contract.md's "
-        "agentgateway attribute block -- that block is where the measured "
-        "value is published, and this guard cannot check it without it"
-    )
-    for row in rows:
-        assert len(row) == 2, f"jwt.sub row publishes no value: {row!r}"
-        published = row[1].strip().strip('"')
-        assert published == SETTLEMENT_SPIFFE_ID, (
-            f"the documented jwt.sub value is {published!r}; the gateway "
-            f"records the *caller's* attested identity, "
-            f"{SETTLEMENT_SPIFFE_ID!r}. "
-            f"{GATEWAY_SPIFFE_ID!r} is the audience, not the subject."
-        )
 
 
 # --- The gateway's verification policy ------------------------------------

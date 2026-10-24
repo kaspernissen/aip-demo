@@ -15,9 +15,7 @@ It is `tests/harness/` rather than a new top-level package for two reasons. The
 helpers it replaces were already imported by name across a dozen test modules
 and the harness is where `jaeger.py`, `kube.py` and `contract.py` (all of which
 the driver also uses) already live, so there is one import root to learn. And a
-new top-level directory would sit outside `GATE_PATHS`
-(`tests/unit/test_telemetry_contract_counts.py`), so a change to the code the
-stage runs would not demote the gate row; `tests/` is inside it.
+new top-level directory would be one more place to look.
 
 **What is here is plain functions, not pytest fixtures.** The fixtures in
 `test_caller_identity.py` (`gateway_url`, `mint_svid`) are thin wrappers over

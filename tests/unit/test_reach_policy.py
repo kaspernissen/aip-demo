@@ -71,9 +71,7 @@ REACH_DIR = REPO_ROOT / "deploy" / "platform" / "reach"
 LINKERD_POLICIES = REACH_DIR / "linkerd-policies.yaml"
 NETWORK_POLICIES = REACH_DIR / "network-policies.yaml"
 
-# Built, not quoted: test_no_legacy_names.py reads a quoted `policy.<x>` string as a
-# retired telemetry name, and an API group has the same shape.
-LINKERD_GROUP = "policy" + ".linkerd.io"
+LINKERD_GROUP = "policy.linkerd.io"
 IDENTITY_SUFFIX = "serviceaccount.identity.linkerd.cluster.local"
 PROXY_INBOUND_PORT = 4143
 CONTROL_PLANE_PORTS = (8080, 8086, 8090)

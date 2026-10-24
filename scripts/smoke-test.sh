@@ -16,14 +16,6 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
-# A banner and a sign-off naming an older milestone would misreport what a
-# passing run proved, so neither string is hand-maintained:
-# tests/unit/test_stage4_config.py::test_the_gates_banner_names_the_milestone_it_actually_proves
-# DERIVES the expected milestone from the newest design spec in
-# docs/superpowers/specs/ and checks both echoes against it. The next
-# milestone does not have to remember to come here -- the guard reddens when
-# the spec lands. Both strings share the word "Northstar" so they match one
-# pattern instead of two.
 echo -e "${BLUE}=== Northstar M13 smoke test ===${NC}"
 
 echo -e "${BLUE}--- Checking prerequisites ---${NC}"
@@ -44,15 +36,7 @@ command_exists npx || { echo -e "${RED}npx (Node.js) is required${NC}" >&2; exit
 #   cannot run without the PDS being set up regardless of this check; the
 #   stubs themselves are generated below, and the PDS's own suite is run
 #   alongside the rest.
-# * `apps/reviewer-ui` and `apps/customer-ui/server` -- `tests/unit/
-#   test_telemetry_contract_counts.py` (which Step 2/2 below runs, since it
-#   runs the whole `tests/` tree) calls `_pytest_collected_count` against
-#   each service's directory, and that helper asserts
-#   `<service>/.venv/bin/python` exists before it will count anything.
-#   Without the venv the gate would fail anyway, minutes later, inside a unit
-#   test about a contract count rather than about a missing prerequisite.
-#   docs/telemetry-contract.md's per-service row publishes each suite's
-#   count, and that same test module re-measures it -- not restated here.
+# * the others -- the gate runs each service's own suite below.
 for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui apps/customer-ui/server; do
   [[ -x "$ROOT/$svc/.venv/bin/python" ]] || {
     echo -e "${RED}Error: $ROOT/$svc/.venv not found.${NC}" >&2
@@ -61,14 +45,8 @@ for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platfo
     exit 1
   }
 done
-# `platform/backstage`'s own jest suites -- six autonomy-contract plugin test
-# files plus the two scaffold-default suites -- need `node_modules` in place
-# before `backstage-cli repo test` can run. `_jest_test_count` in
-# tests/unit/test_telemetry_contract_counts.py re-measures that suite's row
-# against `backstage-cli repo test`'s own count, the same contract every row
-# above keeps, so this checks the same prerequisite the same way: fail here,
-# at a clear missing-toolchain message, rather than later inside a unit test
-# about a contract count.
+# `platform/backstage`'s jest suites need `node_modules` before
+# `backstage-cli repo test` can run.
 [[ -x "$ROOT/platform/backstage/node_modules/.bin/backstage-cli" ]] || {
   echo -e "${RED}Error: $ROOT/platform/backstage/node_modules not found.${NC}" >&2
   echo "Create it: (cd platform/backstage && yarn install)" >&2
@@ -77,16 +55,6 @@ done
 command_exists kubectl || { echo -e "${RED}kubectl is required${NC}" >&2; exit 1; }
 kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
   echo -e "${RED}Error: cannot reach the 'kind-northstar' cluster.${NC}" >&2
-  # Always names the current stage, never an older one: rebuilding at an
-  # older stage would silently revert the CNI this gate's own trace
-  # assertions exist to verify, and would come up without the workloads
-  # (reviewer-ui, OpenSearch, ...) the checks below require -- so an operator
-  # following an older instruction would just fail the very next check, on a
-  # component this script had just told them not to install.
-  # tests/unit/test_stage2_linkerd_config.py's
-  # `test_no_operator_facing_instruction_still_points_at_an_older_stage`
-  # keeps this pinned to the current stage as a test rather than trusting a
-  # reader to notice it drifted.
   echo "Run ./scripts/setup-kind.sh --stage 7 first." >&2
   exit 1
 }
@@ -270,19 +238,10 @@ echo -e "${YELLOW}policy-decision-service${NC}"
 echo -e "${YELLOW}customer-ui${NC}"
 (cd "$ROOT/apps/customer-ui" && npx vitest run)
 
-# customer-ui's Python server (relay, token handling, the static export). Its
-# venv is in the prerequisite loop above; docs/telemetry-contract.md's
-# per-service row publishes the count and tests/unit/test_telemetry_contract_counts.py
-# re-measures it, so no count is restated here.
+# customer-ui's Python server (relay, token handling, the static export).
 echo -e "${YELLOW}customer-ui server${NC}"
 (cd "$ROOT/apps/customer-ui/server" && .venv/bin/python -m pytest tests -q)
 
-# reviewer-ui. Same shape as the PDS row above -- the venv is required in the
-# prerequisite loop, so reaching here means it exists, and the suite is
-# hermetic and sub-second, so this costs the gate nothing.
-# docs/telemetry-contract.md's per-service row publishes every figure and
-# tests/unit/test_telemetry_contract_counts.py re-measures each of them, so
-# no count is restated here.
 echo -e "${YELLOW}reviewer-ui${NC}"
 (cd "$ROOT/apps/reviewer-ui" && .venv/bin/python -m pytest tests -q)
 
@@ -417,8 +376,8 @@ if [[ "$SKIPPED" -ne 0 ]]; then
   echo "nobody accounted for. The skipped tests and their reasons:" >&2
   grep -E "^[^ ]+::[^ ]+ SKIPPED" "$SKIP_LOG" >&2 || true
   echo "" >&2
-  echo "Fix the condition, or -- if the skip is genuinely correct -- say so in" >&2
-  echo "docs/telemetry-contract.md's gate row and change this check deliberately." >&2
+  echo "Fix the condition, or -- if the skip is genuinely correct -- change this" >&2
+  echo "check deliberately." >&2
   exit 1
 fi
 

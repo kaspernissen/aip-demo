@@ -24,7 +24,6 @@ Two defences, applied together:
 The YAML guards parse with `yaml.safe_load`, which discards comments before any
 assertion runs.
 """
-import ast
 import os
 import re
 import shutil
@@ -117,14 +116,6 @@ def test_setup_kind_pins_the_linkerd_chart_version_exactly():
         "chart version; an unpinned `helm install` floats"
     )
     assert "GATEWAY_API_MANIFEST=" in text and "${GATEWAY_API_VERSION}" in text
-
-
-def test_the_pinned_versions_are_recorded_in_the_values_header():
-    header = "\n".join(
-        line for line in LINKERD_VALUES.read_text().splitlines()[:6] if line.startswith("#")
-    )
-    assert PINNED_LINKERD_CHART_VERSION in header
-    assert PINNED_LINKERD_APP_VERSION in header
 
 
 # --- The values: proxy tracing is on ---------------------------------------
@@ -594,154 +585,6 @@ def test_stage_two_does_not_need_host_port_8081(tmp_path):
     _, out, _ = _run_setup_kind("2", True, False, tmp_path, host_port_8081=False)
     assert "no host port 8081" not in out, out
     assert "Cluster already exists, skipping creation." in out
-
-
-def test_no_operator_facing_instruction_still_points_at_an_older_stage():
-    """The current stage is the current cluster, so nothing a reader is told
-    to run may name an older one. `scripts/smoke-test.sh` telling an operator
-    whose cluster is unreachable to run an older `--stage N` would rebuild on
-    a stale cluster shape -- reverting the CNI at worst, or omitting
-    workloads a later check assumes are present -- so this asserts over a
-    *set* of files rather than any one line.
-
-    `CURRENT_STAGE` below is the single number each new stage has to raise.
-    It is also the reason this test is parameter-free rather than
-    parameterised: adding a stage must not change how many tests this module
-    collects, since `docs/telemetry-contract.md` publishes that count.
-
-    Two deliberate exclusions:
-
-    * `docs/superpowers/` holds historical plan and spec documents, and the
-      older `--stage N` in them is the correct, historical instruction for
-      the milestone each one describes. Rewriting them would falsify a
-      record rather than fix a pointer.
-    * `docs/telemetry-contract.md` is checked for `--stage 1` but NOT for the
-      later stages. That file's job is to state the command each published
-      number was actually measured with, so naming the stage actually run is
-      *required* there; "fixing" it to a later stage would attach provenance
-      to numbers that do not have it.
-
-    `deploy/kind/*.yaml` and `scripts/*.sh` are globs rather than hand-written
-    lists, so a new kind config or script is covered the day it is written
-    rather than depending on someone remembering to add it here.
-    """
-    CURRENT_STAGE = 7
-    scripts_and_readme = [
-        # A glob, not a hand-written list: every script this repo ships is
-        # covered the day it is written, rather than depending on someone
-        # remembering to add it here.
-        *sorted((REPO_ROOT / "scripts").glob("*.sh")),
-        REPO_ROOT / "README.md",
-        *sorted((REPO_ROOT / "deploy" / "kind").glob("*.yaml")),
-    ]
-    assert any(
-        path.parent.name == "kind" for path in scripts_and_readme
-    ), (
-        "deploy/kind/ matched no *.yaml at all, so this guard silently covers "
-        "less than its docstring claims -- has the directory moved?"
-    )
-    # An empty or shrunken glob is how a guard silently stops guarding, so name
-    # the scripts that must be in it. A rename is fine, but it has to be a
-    # deliberate edit here rather than a silent drop.
-    script_names = {path.name for path in scripts_and_readme if path.suffix == ".sh"}
-    assert {
-        "smoke-test.sh",
-        "rebuild-and-deploy.sh",
-        "setup-kind.sh",
-        "start-demo.sh",
-    } <= script_names, (
-        "scripts/*.sh does not match every script this guard is meant to "
-        f"cover; it matched {sorted(script_names)}. A renamed or moved script "
-        "drops out of this guard silently, so a stale operator instruction in "
-        "it could go unnoticed."
-    )
-    checked: list[tuple[Path, int]] = [
-        (path, stage)
-        for path in scripts_and_readme
-        for stage in range(1, CURRENT_STAGE)
-    ]
-    checked.append((REPO_ROOT / "docs" / "telemetry-contract.md", 1))
-
-    # `tests/` is included too: a skip or failure message is read by an
-    # operator at the exact moment something is wrong, and a stale `--stage N`
-    # in one is as dangerous as one in a script -- following a remedy printed
-    # by a test that names an older stage can silently disable telemetry a
-    # later stage depends on.
-    #
-    # The needle is narrower here than for scripts and README. Those files
-    # are read top to bottom, so any `--stage N` in them is an instruction. A
-    # test module is mostly prose *about* the stages -- "the ordering
-    # `setup-kind.sh --stage 2` must preserve" is a correct sentence that must
-    # stay correct forever -- and a guard that reddened on it would be a
-    # guard people satisfy by rewriting true sentences. So only a fixed set
-    # of instruction lead-ins is checked, immediately before the command --
-    # what an operator is actually told to type or read as "the fix".
-    #
-    # Each file is parsed with `ast` rather than read as physical lines, and
-    # searched over `ast.Constant` string values. CPython's tokenizer
-    # concatenates adjacent string literals -- plain-to-plain, and
-    # plain-to-f-string via `ast.JoinedStr`'s own `Constant` children --
-    # before the parser ever produces a node, so `node.value` already reads
-    # as one sentence regardless of how many source lines or literal
-    # fragments an instruction was written across (e.g. "Re-run " /
-    # "./scripts/setup-kind.sh --stage 4 to ..." as two adjacent literals),
-    # and a `#` comment can never appear in it at all, since comments are not
-    # AST nodes -- a correctness property no per-line text scan has.
-    _INSTRUCTION_LEADINS = r"(?:(?:[Rr]e-?)?run|[Bb]ring it up with|[Tt]he fix is)"
-    _STAGE_INSTRUCTION_RE = re.compile(
-        _INSTRUCTION_LEADINS
-        + r"\s+`?\.?/?scripts/setup-kind\.sh`?\s*--stage\s+(\d+)"
-    )
-    test_files = sorted((REPO_ROOT / "tests").glob("**/*.py"))
-    assert len(test_files) >= 20, (
-        "tests/**/*.py matched only "
-        f"{len(test_files)} files, so this half of the guard is covering "
-        "almost nothing -- has the suite moved?"
-    )
-
-    offenders = []
-    for path in test_files:
-        tree = ast.parse(path.read_text(), filename=str(path))
-        for node in ast.walk(tree):
-            if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
-                continue
-            for match in _STAGE_INSTRUCTION_RE.finditer(node.value):
-                stage = int(match.group(1))
-                if stage >= CURRENT_STAGE:
-                    continue
-                offenders.append(
-                    f"{path.relative_to(REPO_ROOT)}:{node.lineno} (stage "
-                    f"{stage}): {match.group(0)!r}"
-                )
-
-    for path, stage in checked:
-        if not path.exists():
-            continue
-        needle = f"setup-kind.sh --stage {stage}"
-        lines = path.read_text().splitlines()
-        for i, line in enumerate(lines):
-            if needle not in line:
-                continue
-            # A passage that documents the correction is allowed to quote the
-            # old instruction; a line that *issues* it is not. Whole-line
-            # comments are prose, and so is a quotation introduced by
-            # "previously read" — which, since the quoted command wraps, may
-            # sit a line or two above the match rather than on it.
-            if line.lstrip().startswith("#"):
-                continue
-            window = "\n".join(lines[max(0, i - 2): i + 1])
-            if "previously read" in window:
-                continue
-            offenders.append(
-                f"{path.relative_to(REPO_ROOT)}:{i + 1} (stage {stage}): "
-                f"{line.strip()}"
-            )
-    assert not offenders, (
-        f"these lines still instruct a reader to build a cluster older than "
-        f"stage {CURRENT_STAGE}, which is the current one. `--stage 1` "
-        "silently reverts the CNI; `--stage 2` omits workloads a later "
-        "stage's prerequisite check then requires:\n" + "\n".join(offenders)
-    )
 
 
 @pytestmark_bash

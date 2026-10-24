@@ -13,8 +13,7 @@ This module is the shared, port-aware fake both `test_start_demo_v11.py` and
 instead of hard-coding which port refuses.
 
 Named with a leading underscore and no `test_` prefix so pytest's own
-collection never picks it up as a test module (same convention as
-`_count_gated_plugin.py`).
+collection never picks it up as a test module.
 """
 from __future__ import annotations
 

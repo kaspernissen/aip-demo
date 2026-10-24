@@ -42,7 +42,6 @@ import os
 import signal
 import stat
 import subprocess
-import time
 from pathlib import Path
 
 from _start_demo_fakes import port_aware_fake_curl

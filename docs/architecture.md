@@ -68,11 +68,6 @@
 Status: **M12 (Linkerd for reach)**, in progress on branch `m12-linkerd`: Cilium leaves the cluster; Linkerd authorizes ingress by workload identity and core NetworkPolicy (enforced by kindnet) denies egress. The Reach sections below describe that layer; the parts of this document that tell the M2 to M11 story keep the Cilium words as dated history. Nothing in M12 had run on the demo cluster when this was written (it still ran Cilium; the recreate was pending): what is recorded as measured is the five measurements on a throwaway cluster (see the M12 plan), and the first live run is the gate. Before it came **M10 (Span links)**, on branch `m10-span-links`: a claim that waits for a person is two traces and a link (trace A ends at the hand-off; trace B carries the release, the resume and the A2A push). Before it came **M9 (Weaver registry)**, on branch `m9-weaver-registry`: the registry in `telemetry/registry/` defines every owned telemetry name (all of them `northstar.*`, renamed everywhere at once), Weaver live-check checks the cluster's telemetry against it, and the demo reads Jaeger. This document uses the new names; the generated tables in `docs/telemetry-contract.md` are the attribute, span and metric inventory. Before it came **M8 (Human in the loop)**, on branch `m8-human-in-the-loop`, on top of **M7 (Bounded)**, which sat on **M6 (Golden path)**, which merged and is tagged `m6-verified`. **M5 (Progressive
 autonomy) merged 2026-09-15 at `e62238f`, tagged `m5-verified`** -- read that
 tag's own message before trusting it, it claims less than its predecessors.
-Bumped in M6's first commit rather than left to a doc pass: this line went
-stale two milestones running (M3->M4, then M4->M5), and M5 shipped a guard
-(`tests/unit/test_doc_status_lines_name_the_current_milestone.py`) that now
-derives the expected milestone from the newest plan file and reddens here the
-moment a new plan lands. It did, on its first day.
 **This header and the line below it said "M4 (Observable)" on branch
 `m4-observable` until this whole-branch review's fix wave (finding J5), while
 the sections beneath them had already grown the flagd sidecar diagram and

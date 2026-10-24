@@ -59,9 +59,8 @@ STATE_PATH = Path(__file__).resolve().parents[2] / ".demo" / "m9-live-check-stat
 # The old histogram attribute keys (decision, autonomy.level) are NOT listed here:
 # a bare `decision` is a plausible attribute key of a framework we do not own
 # (Kyverno, Linkerd, agentgateway), and listing it would turn that framework's
-# `information` findings into gate failures. The rename is guarded in source by
-# tests/unit/test_no_legacy_names.py::test_approval_histogram_uses_registry_label_keys
-# and live by the e2e series assertions in tests/e2e/test_human_in_the_loop.py.
+# `information` findings into gate failures. The rename is checked live by the
+# e2e series assertions in tests/e2e/test_human_in_the_loop.py.
 OWNED_PREFIXES = ("northstar.", "policy.", "review.", "claim.", "settlement.")
 # Kubernetes label keys that start like an owned name. The Linkerd proxy puts
 # its pod's labels on its resource, so `northstar.io/plane` reaches live-check;

@@ -1551,7 +1551,7 @@ If the audience remembers nothing else:
 |---|---|
 | [`README.md`](../README.md) | status per milestone, quick start, the stages table |
 | [`docs/architecture.md`](architecture.md) | the rings and the keystone, components, hops, protocols, the trace span by span, the full "See it yourself" walkthrough, and the authoritative limitations list |
-| [`docs/telemetry-contract.md`](telemetry-contract.md) | verified instrumentation, the published gaps, the pin table, test counts |
+| [`docs/telemetry-contract.md`](telemetry-contract.md) | verified instrumentation, the published gaps, the pin table |
 | [`docs/upstream-findings.md`](upstream-findings.md) | filing-ready findings against upstream projects — **none of them filed** |
 | [`docs/superpowers/specs/`](superpowers/specs/) | the design behind each milestone, including what was deliberately dropped |
 | [`docs/superpowers/plans/`](superpowers/plans/) | the implementation plans |

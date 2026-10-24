@@ -261,9 +261,7 @@ The gate generates them itself. To run a suite on its own first, generate them:
 `pytest tests/` needs the cluster and its port-forwards and fails with
 `httpx.ConnectError` without them, on purpose. Every test that drives a model
 call or a browser sits behind `RUN_BROWSER_TESTS=1`, so a bare run spends
-nothing. The exact counts are measured in
-[`docs/telemetry-contract.md`](docs/telemetry-contract.md), and a unit test
-keeps them honest.
+nothing.
 
 ### Mutation-testing a guard
 
