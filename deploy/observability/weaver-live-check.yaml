@@ -1,4 +1,4 @@
-# Weaver live-check (M9): checks the telemetry the platform really emits
+# Weaver live-check: checks the telemetry the platform really emits
 # against telemetry/registry. The collector sends it a COPY of every span,
 # metric and log (exporter `otlp_grpc/weaver`); nothing is
 # sampled and nothing is dropped.
@@ -55,21 +55,17 @@ spec:
             # Weaver caches the semconv checkout under $HOME.
             - name: HOME
               value: /tmp
-          # Sized from two measurements (crictl stats / cgroup memory.current on
-          # the kind node, 2026-10-17). Per sample: 13 MiB idle, 62 MiB after one
-          # live run of 2714 spans, 3795 metrics and 40 logs, about 7.5 KiB per
-          # span or metric held. Idle growth: 210.4 MB at 12:58:38, 252.3 MB at
-          # 13:08:59 and 271.9 MB at 13:14:46 on a pod up since 12:09:54, i.e.
-          # about 3.8 MB/min or 220 MiB/hour while the demo cluster only runs its
-          # background traffic (the collector's own counters: about 490 metric
-          # points and 60 spans a minute sent to it, no logs). The old 768Mi limit would have been reached
-          # in about 3.5 hours of idle. Nothing in live-check v0.28.0 caps or
-          # drops samples, and the collector must keep sending a copy of all of
-          # them, so the pod is recycled instead: scripts/setup-kind.sh restarts
-          # it on every run, the gate restarts it before its run, and 4Gi covers
-          # about 17 hours between restarts (the gate
-          # itself needs about 275 MiB, an estimate). A kill at the limit shows
-          # as a changed restartCount, which livecheck.report() fails on.
+          # Sized from measurement (crictl stats / cgroup memory.current).
+          # Per sample: 13 MiB idle, 62 MiB after one live run of 2714 spans,
+          # 3795 metrics and 40 logs, about 7.5 KiB per span or metric held.
+          # Idle growth is about 3.8 MB/min (220 MiB/hour) from background
+          # traffic alone (about 490 metric points and 60 spans a minute). A
+          # 768Mi limit would be reached in about 3.5 hours of idle. Nothing in
+          # live-check v0.28.0 caps or drops samples, and the collector must
+          # keep sending a copy of all of them, so the pod is recycled
+          # instead: scripts/setup-kind.sh and the test gate restart it, and
+          # 4Gi covers about 17 hours between restarts. A kill at the limit
+          # shows as a changed restartCount, which livecheck.report() fails on.
           resources:
             requests: {cpu: 50m, memory: 128Mi}
             limits: {cpu: "1", memory: 4Gi}

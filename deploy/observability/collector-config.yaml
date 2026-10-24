@@ -95,7 +95,7 @@ exporters:
     tls:
       insecure: true
 
-  # A COPY of everything for Weaver live-check (M9). Never a sample: the
+  # A COPY of everything for Weaver live-check. Never a sample: the
   # registry is checked against the same traffic every backend receives.
   otlp_grpc/weaver:
     endpoint: weaver-live-check.observability.svc.cluster.local:4317
@@ -104,7 +104,7 @@ exporters:
     # Content is compressed with `gzip` which isn't supported`, every batch
     # dropped as a permanent error), and the exporter's default is gzip.
     compression: none
-    # The pod behind this endpoint is replaced by the gate (a rollout), and the
+    # The pod behind this endpoint is replaced on redeploy, and the
     # old connection can be black-holed rather than reset. Without pings the
     # exporter keeps writing to it until the TCP timeout, minutes later; with
     # them it notices in ~15s and reconnects to the new pod.
@@ -115,7 +115,7 @@ exporters:
     sending_queue: {enabled: true}
     retry_on_failure: {enabled: true}
 
-  # A COPY of every trace for AgentEvals (M11), which scores what the agent did
+  # A COPY of every trace for AgentEvals, which scores what the agent did
   # and sends each score back here as a `gen_ai.evaluation.result` log event
   # (deploy/observability/agentevals.yaml). Traces only: PydanticAI puts message
   # content on spans, not in log events, and the scores it sends back are logs,

@@ -54,10 +54,10 @@ server:
     - web.enable-lifecycle
     - web.enable-otlp-receiver
 
-  # MEASURED, not guessed. `server.resources` is `{}` in the chart, i.e. no
+  # Sized from measurement. `server.resources` is `{}` in the chart, i.e. no
   # request and no limit at all, which on a single-node kind cluster means the
   # pod is BestEffort and is the first thing evicted under pressure -- not a
-  # property stage 4's ~8 GB budget should be left to chance.
+  # property to leave to chance on a ~8 GB budget.
   #
   # This cluster has no metrics-server (`kubectl top` answers "Metrics API not
   # available" -- checked, not assumed), so usage is read from the same
@@ -74,7 +74,7 @@ server:
   # well above the measurement on purpose: this is a 15d-retention TSDB whose
   # working set grows with series count, and the measured figure is the first
   # ten minutes of one. The limit is the number that matters for the budget,
-  # and 1Gi is what stage 4 can afford.
+  # and 1Gi is what the budget allows.
   resources:
     requests:
       cpu: "100m"
