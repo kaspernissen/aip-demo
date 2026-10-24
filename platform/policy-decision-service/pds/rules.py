@@ -129,7 +129,7 @@ class Decision:
     rule: str
     limit: float | None = None
     # Always False. A denial the agent may retry is a denial it can sit on
-    # stage retrying; see the spec's §5 hazard.
+    # stage retrying.
     retryable: bool = False
 
 

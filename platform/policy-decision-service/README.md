@@ -15,8 +15,8 @@ cd platform/policy-decision-service && ./gen-stubs.sh
 `proto/ext_mcp.proto` is vendored from agentgateway v1.6.0 and is the only
 source of truth for the wire contract. The generated `ext_mcp_pb2.py` and
 `ext_mcp_pb2_grpc.py` are **git-ignored** and produced by that script — at dev
-time by hand, and again inside `docker build`, which runs the same file
-(ruling R22). Committing them would let the image and the repo disagree.
+time by hand, and again inside `docker build`, which runs the same file.
+Committing them would let the image and the repo disagree.
 
 Without them the test suite refuses to start: `tests/conftest.py` raises and
 pytest exits 4, collecting nothing. That is deliberate. A missing stub is a
