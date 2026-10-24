@@ -1622,9 +1622,9 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x30-gc .cell.end .sub { font-family: var(--font-body); font-weight: 400; font-size: 20px; margin-top: 12px; }
 
 /* ===== 30-live.css ===== */
-/* 30-live (Broadsheet): "What you just saw", the demo's five steps as outcomes. Everything is x3l-*.
+/* 30-live (Broadsheet): "What you just saw", the demo's steps as outcomes, each under its ring. Everything is x3l-*.
    Magenta chips are the platform saying no or holding; cyan chips are what went through. */
-.x3l-saw { display: grid; grid-template-columns: repeat(6, 1fr); gap: 36px; margin-top: calc(2 * var(--baseline)); }
+.x3l-saw { display: grid; grid-template-columns: repeat(5, 1fr); gap: 40px; margin-top: calc(1.4 * var(--baseline)); }
 .x3l-saw > div { display: flex; flex-direction: column; }
 .x3l-saw p { margin: 0; }
 .x3l-saw i { font-size: 80px; line-height: 1; color: var(--color-neutral-700); }
@@ -1636,6 +1636,9 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x3l-no { background: var(--color-accent-2); color: var(--color-bg); }
 .x3l-yes { background: var(--color-accent-100); color: var(--color-accent-800); }
 .x3l-saw .w { margin-top: 22px; font-size: var(--type-small); line-height: 1.3; font-style: italic; color: color-mix(in srgb, var(--color-text) 62%, transparent); }
+.x3l-core { margin: calc(1 * var(--baseline)) 0 0; padding-top: 22px; border-top: 2px solid color-mix(in srgb, var(--color-text) 14%, transparent);
+  font-size: var(--type-small); }
+.x3l-core b { color: var(--color-accent-2-700); }
 
 /* ===== 31-act3b.css ===== */
 /* 31-act3b · Act 3b in Broadsheet: the deep dives after the live demo, in ring order, then the handover.
@@ -2098,8 +2101,25 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x50-callback em { color: var(--color-accent-2); }
 
 /* ===== 90-thanks.css ===== */
-/* 90-thanks · the close, then the speaker-only appendix (pre-flight, reset, triage).
+/* 90-thanks · the close, then the demo's backup slides, one per ring.
    Scoped under .x90-. Tokens only. */
+
+/* backup ring slides, in the pattern of William Rizzo's ring slides: the ring's question, a one-line
+   rule, the committed config | what the cluster printed, one sentence. */
+.x90-rsub { margin: 10px 0 0; font-size: var(--type-kicker); color: color-mix(in srgb, var(--color-text) 62%, transparent); }
+.x90-rp { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 28px; }
+.x90-rp > div { min-width: 0; display: flex; flex-direction: column; }
+.x90-rh { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 10px; font-size: 22px; font-weight: 700;
+  color: var(--color-accent-2-700); }
+.x90-rh span + span { font-weight: 400; font-size: 19px; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x90-code-d { flex: 1; margin: 0; padding: 18px 22px; border-radius: var(--radius-md); background: var(--color-text); color: var(--color-bg);
+  font-family: var(--font-mono); font-size: 18px; line-height: 1.42; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+.x90-code-d .p { color: color-mix(in srgb, var(--color-bg) 58%, transparent); }
+.x90-code-d .h { font-weight: 700; }
+.x90-code-d .c { color: var(--color-accent-300); font-weight: 700; }
+.x90-code-d .m { color: var(--color-accent-2-300); font-weight: 700; }
+.x90-rt { margin: 26px 0 0; text-align: center; font-family: var(--font-heading); font-weight: 700; font-size: 34px; }
 .x90-tag { position: absolute; top: 58px; right: var(--pad-x); margin: 0; font-size: var(--type-kicker); letter-spacing: 0.04em;
   font-style: italic; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
 .x90-code { font-size: 22px !important; }

@@ -24,7 +24,7 @@
   </div>
 </section>
 
-<!-- 32r · BOUNDED · optional: reach has two layers, after William's Linkerd reach beat, backed by the Linkerd spike's measured results (scratchpad linkerd-spike-report.md, 2026-10-12: criteria 1, 3, 4, 6, release channels). M12 made the demo run both layers (Linkerd for ingress, NetworkPolicy for egress), backed by the M12 plan's measurements M1 to M6. -->
+<!-- 32r · BOUNDED · optional: reach has two layers, after William's Linkerd reach beat, backed by the Linkerd spike's measured results (scratchpad linkerd-spike-report.md, 2026-10-12: criteria 1, 3, 4, 6, release channels). The demo runs both layers (Linkerd for ingress, NetworkPolicy for egress). -->
 <section data-cut class="slide content" data-label="Reach has two layers">
   <p class="ring">Ring 1 &middot; Reach</p>
   <h2 class="slide-title">Reach has two layers</h2>
@@ -47,7 +47,7 @@
   <p class="x31-line">This demo runs both layers. <em>Open-source Linkerd ships edge releases only.</em></p>
 </section>
 
-<!-- 25 · NEW · deep dive after step 2: the full deny trace from the customer UI, after Ch 5 Figure 5.5 and Ch 6 Figure 6.13 (trace a4007e49…) -->
+<!-- 25 · NEW · deep dive after the demo: the held claim's full trace from the customer UI, after Ch 5 Figure 5.5 and Ch 6 Figure 6.13 (trace a4007e49…) -->
 <section class="slide content" data-label="One trace, and the absence">
   <p class="ring">Ring 2 &middot; Capability</p>
   <h2 class="slide-title">One trace, and the absence that proves it</h2>
@@ -65,7 +65,7 @@
     <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">chat claude-sonnet-5</span><span class="v">narrates the wait, no retry</span></div>
     <div class="r i1"><span class="svc agent">settlement-agent</span><span class="op">MCP send tools/call refuse_payment</span><span class="flag ok">permit</span></div>
   </div>
-  <p class="x31-tread"><b>Read it like this:</b> indented means called by the line above · struck through means it never happened</p>
+  <p class="x31-tread"><b>Read it like this:</b> indented means called by the line above · struck through means it never happened · proxy spans not shown</p>
 </section>
 
 <!-- 27 · NEW · the gateway's spans per governed call: Ch 6 Figure 6.7 tree with the measured key counts, plus Figure 6.15's four added keys -->
@@ -84,8 +84,8 @@
     <span class="code m">error=true</span><span class="code m">otel.status_code=ERROR</span><span class="code m">reason=MCP</span><span class="code m">otel.status_description=&ldquo;mcp: mcpGuardrails rejected: requested 5800 EUR exceeds the 0 EUR limit&hellip;&rdquo;</span></div>
 </section>
 
-<!-- 28 · NEW · HTTP 200 means no (Ch 6: Figure 6.15, the metrics Figure 6.24, Finding 7) -->
-<section class="slide hero x-dark" data-label="HTTP 200 means no">
+<!-- 28 · NEW · HTTP 200 means no, cut from the 30-minute version for the new demo flow (Ch 6: Figure 6.15, the metrics Figure 6.24, Finding 7) -->
+<section data-cut class="slide hero x-dark" data-label="HTTP 200 means no">
   <div class="hero-num cmyk-num rise"><span class="paper">200</span><span class="plate plate-c" aria-hidden="true">200</span><span class="plate plate-m" aria-hidden="true">200</span><span class="plate plate-y" aria-hidden="true">200</span></div>
   <p class="hero-caption"><b>HTTP 200 <span class="hl-ring">means no.</span></b> The no is a tool result marked <span class="code">isError</span>, with the rule in its text. No metric counts permit versus deny, and zero agentgateway series reach Prometheus.</p>
   <p class="x31-names">From v1.6.0 the span says <span class="code">http.response.status_code</span></p>
@@ -161,7 +161,7 @@
 </g></svg></figure>
 </section>
 
-<!-- 30 · NEW · two ways to say no, measured: a gateway guardrail in CEL (config only; the real rule from deploy/platform/agentgateway/config.yaml) beside the decision service, the table from the M8 spec §5; the ceiling is on the deck, not in the live demo (tests/e2e/test_gateway_ceiling.py) -->
+<!-- 30 · NEW · two ways to say no, measured: a gateway guardrail in CEL (config only; the real rule from deploy/platform/agentgateway/config.yaml) beside the decision service, the table from the design spec; the ceiling is on the deck, not in the live demo (tests/e2e/test_gateway_ceiling.py) -->
 <section data-cut class="slide content" data-label="Two ways to say no">
   <h2 class="slide-title">Two ways to say no</h2>
   <div class="x31-cmp rise">
@@ -180,7 +180,7 @@ request.method != &quot;POST&quot;
   <p class="x31-line">The gateway holds the hard ceiling. <em>The service makes the decision.</em></p>
 </section>
 
-<!-- 30g · NEW · what agentgateway v1.6.0 ships for model traffic: read from crates/agentgateway/src/llm/policy/ at the v1.6.0 tag (mod.rs RequestGuardKind, pii/, webhook.rs, moderation.rs, bedrock_guardrails.rs, azure_content_safety.rs, google_model_armor.rs). Northstar's model calls do not go through the gateway, so none of it is in the demo (M8 spec §5) -->
+<!-- 30g · NEW · what agentgateway v1.6.0 ships for model traffic: read from crates/agentgateway/src/llm/policy/ at the v1.6.0 tag (mod.rs RequestGuardKind, pii/, webhook.rs, moderation.rs, bedrock_guardrails.rs, azure_content_safety.rs, google_model_armor.rs). Northstar's model calls do not go through the gateway, so none of it is in the demo -->
 <section data-cut class="slide content" data-label="Guardrails for model traffic">
   <h2 class="slide-title">Guardrails for model traffic</h2>
   <p class="x31-opt rise">What agentgateway v1.6.0 ships &middot; <span class="code">crates/agentgateway/src/llm/policy/</span></p>
@@ -194,7 +194,7 @@ request.method != &quot;POST&quot;
   <p class="x31-line">Northstar&rsquo;s model calls do not go through the gateway today. <em>None of these are in the demo.</em></p>
 </section>
 
-<!-- 30a · BOUNDED · hide or refuse, as two layers: HIDE, a static CEL allowlist (William's OSFF demo: mcp.tool.name in [...], the tool never in tools/list, HTTP 400 Unknown tool) beside REFUSE AND RECORD, Northstar's decision service (all four tools listed to settlement-agent's SVID, measured 2026-10-12; the €6,200 call depends on its arguments). Credits William; not a disagreement (bounded-ai/README.md; M7 design spec §1) -->
+<!-- 30a · BOUNDED · hide or refuse, as two layers: HIDE, a static CEL allowlist (William's OSFF demo: mcp.tool.name in [...], the tool never in tools/list, HTTP 400 Unknown tool) beside REFUSE AND RECORD, Northstar's decision service (all four tools listed to settlement-agent's SVID, measured 2026-10-12; the €6,200 call depends on its arguments). Credits William; not a disagreement (bounded-ai/README.md) -->
 <section data-cut class="slide content" data-label="Hide or refuse">
   <h2 class="slide-title">Hide or refuse</h2>
   <div class="x31-tw rise">

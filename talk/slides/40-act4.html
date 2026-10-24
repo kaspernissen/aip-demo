@@ -35,7 +35,7 @@
   </div>
 </section>
 
-<!-- 38b · BOUNDED · which refusals the trace can see: one row per ring, measured in M7 (gateway 401 spans; reach refusal: a Linkerd 403 is a proxy span when the request has a traceparent; northstar.policy.decision in the claim trace; Kyverno denial as its own trace, no traceparent from kubectl) -->
+<!-- 38b · BOUNDED · which refusals the trace can see: one row per ring, measured on the demo cluster (gateway 401 spans; reach refusal: a Linkerd 403 is a proxy span when the request has a traceparent; northstar.policy.decision in the claim trace; Kyverno denial as its own trace, no traceparent from kubectl) -->
 <section data-cut class="slide content" data-label="Which refusals the trace can see">
   <h2 class="slide-title">Which refusals the trace can see</h2>
   <div class="x40-rt rise">
@@ -59,7 +59,7 @@
   <p class="x40-ev-cap rise">Who approved, as which identity, how long the human took, and a link back to the trace that asked.</p>
 </section>
 
-<!-- 39r · NEW · The decision contract is a published schema (M9): a real excerpt of telemetry/registry/policy.yaml beside a real Jaeger screenshot of the same northstar.policy.decision span (jaeger-policy-decision-m9.png, 2026-10-17). Outside the live block. -->
+<!-- 39r · NEW · The decision contract is a published schema: a real excerpt of telemetry/registry/policy.yaml beside a real Jaeger screenshot of the same northstar.policy.decision span (jaeger-policy-decision-m9.png, 2026-10-17). Outside the live block. -->
 <section data-cut class="slide content" data-label="The decision contract is a published schema">
   <h2 class="slide-title">The decision contract is a published schema</h2>
   <div class="x40-rs rise">
