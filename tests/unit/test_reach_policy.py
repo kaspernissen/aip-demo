@@ -1,11 +1,10 @@
 """The reach matrix: who may reach what, under Linkerd and NetworkPolicy.
 
-Replaces `test_stage2_network_policy.py`, which asserted the shape of one
-CiliumNetworkPolicy. Nothing here reads a policy's *shape*. The two files
+Nothing here reads a policy's *shape*. The two files
 under `deploy/platform/reach/` are evaluated, by a small reader that
 implements only the semantics this repo uses, against a table of requests
 (the REACH MATRIX below), and the table is the spec: every path the demo needs
-is a row that says `allow`, and every path the milestone claims is closed is a
+is a row that says `allow`, and every path claimed to be closed is a
 row that says `deny-403`, `deny-404-no-route` or `drop`.
 
 **Two enforcement points, two kinds of row.**
@@ -53,7 +52,7 @@ matrix cannot drift from what actually runs.
 
 **What this does not prove.** Enforcement. That is the e2e reach files'
 job, against the live cluster. What it proves is that the two policy files say
-what the table says, and that the table says what the milestone claims.
+what the table says, and that the table says what the demo claims.
 """
 import ipaddress
 import re
@@ -624,7 +623,7 @@ def test_dns_is_open_on_udp_and_tcp(src, proto):
     [("claims-agent", "customer-ui", 9090), ("claims-agent", "settlement-agent", 9999),
      ("claims-agent", "payments-api", 9999)],
 )
-def test_m7_port_rules_bind_an_unmeshed_source_but_not_a_meshed_one(src, dst, port):
+def test_port_rules_bind_an_unmeshed_source_but_not_a_meshed_one(src, dst, port):
     """The same labels, with and without a proxy: a pod that skips the proxy is
     held to the ports written in the rule; a meshed pod is held to 4143 only."""
     assert egress_outcome(src, dst, port) == "allow"
@@ -632,7 +631,7 @@ def test_m7_port_rules_bind_an_unmeshed_source_but_not_a_meshed_one(src, dst, po
     assert egress_outcome(src, dst, 4143, unmeshed=True) == "allow"
 
 
-def test_m7_a_meshed_peer_is_reached_on_4143_alone():
+def test_a_meshed_peer_is_reached_on_4143_alone():
     """No rule lists port 9090 or 9999 for these peers, yet a meshed source gets
     through: 4143 is the whole gate."""
     for dst in ("customer-ui", "settlement-agent", "payments-api"):

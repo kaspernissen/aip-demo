@@ -508,7 +508,7 @@ def test_the_container_port_the_service_and_the_guardrail_all_name_one_port():
 
 def test_the_pds_exports_its_span_to_the_same_collector_as_everything_else():
     """The `northstar.policy.decision` span has to land in the *same trace* as the
-    gateway's `tools/call` and the model's reasoning -- that is the milestone's
+    gateway's `tools/call` and the model's reasoning -- that is the demo's
     observability claim, and it is the only reason a reader can tell a policy
     refusal from an outage. `pds/telemetry.py` reads the standard
     `OTEL_EXPORTER_OTLP_*` names and nothing of ours, so this manifest is the

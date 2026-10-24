@@ -1,5 +1,5 @@
 """The FeatureFlag write grant, pinned the same way the read-only grant is
-(tests/unit/test_stage6_backstage_config.py). Every clause below is a named,
+(tests/unit/test_backstage_rbac_config.py). Every clause below is a named,
 testable requirement on `deploy/k8s/backstage.yaml`, not an incidental
 property:
 
@@ -14,7 +14,7 @@ property:
   not to `backstage`.
 
 Parsed with `yaml.safe_load_all`, never grepped -- same discipline
-test_stage6_backstage_config.py states and for the same reason: a manifest is
+test_backstage_rbac_config.py states and for the same reason: a manifest is
 data, and "no delete verb anywhere" is a claim about the parsed RBAC object,
 not about which strings happen to appear in the file.
 

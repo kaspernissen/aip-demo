@@ -74,7 +74,7 @@ def test_the_flip_patches_the_path_backstage_patches():
     assert "targeting/if/1" not in text, "the driver restated the flag path instead of importing it"
 
 
-def test_the_subcommands_are_the_m8_flow_plus_reset_and_the_ceiling():
+def test_the_help_lists_every_demo_subcommand():
     out = subprocess.run([str(SCRIPTS / "demo"), "--help"], capture_output=True, text=True, timeout=30)
     for command in ("guard", "claim", "approve", "reject", "autonomy", "keystone", "evidence", "reset", "ceiling",
                     "evals", "inject"):

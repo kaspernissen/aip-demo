@@ -24,8 +24,7 @@ There is a fourth link in that chain this module deliberately does NOT check,
 because it is not a property of the tree: `scripts/rebuild-and-deploy.sh` has
 to stage `mkdocs.yml` and `docs/` into the image beside the staged
 `catalog-info.yaml`, or the running instance sees 1-3 in the repo and nothing
-in the container. That is covered by the staging assertions in
-`test_stage6_backstage_config.py`.
+in the container. That staging happens in the build script and is not asserted in this file.
 """
 from __future__ import annotations
 
