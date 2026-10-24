@@ -2295,9 +2295,10 @@ environment rather than forcing itself (A19 — this is the guard for exactly
 the plan defect described two paragraphs up).
 
 Per-service unit suites (all ten run by `smoke-test.sh`, before any e2e test):
-claims-agent 124, settlement-agent 101, payments-mcp 16, payments-api (Go) 39,
+claims-agent 127, settlement-agent 104, payments-mcp 19, payments-api (Go) 39,
 customer-ui (vitest) 29, customer-ui server (pytest) 16, policy-decision-service 156,
 reviewer-ui 103, eval-scorer 166, backstage (jest) 37 — all passing.
+(**2026-10-24, upstream BaggageSpanProcessor: claims-agent 124 → 127, settlement-agent 101 → 104, payments-mcp 16 → 19.** Each gains `tests/test_claim_id_processor.py`, three tests: the processor is upstream's with a claim-id-only predicate, a second baggage key does not reach the span, and `configure()` adds it.)
 (**2026-10-24: claims-agent 57 → 124, settlement-agent 100 → 101.** The claims-agent's free-text intake (`extraction.py`) and the wait for missing information added 67 tests; settlement-agent gained one (a claim carrying a `description` settles and the description reaches no one). The row had not been updated in that commit.)
 (**M11 (AgentEvals): settlement-agent 99 → 100.** One test: the claim id is the agent run's `conversation_id`, which PydanticAI writes as `gen_ai.conversation.id` on the invoke_agent span and AgentEvals groups sessions by.)
 (**M10 final-review fix wave: claims-agent 46 → 57, and a new row, customer-ui server (pytest) 16.** The claims-agent gains eleven tests in `test_push.py` (a non-terminal task is not pushed, a terminal one is, the stream pushes only the outcome, push-config get/list/delete are refused); the customer-ui's Python server suite, which the gate did not run before, is now in `smoke-test.sh` and counted here. The collection under `tests/` is unchanged (616, gated 107), so the predicted gate figure stays `615 passed, 1 xfailed`.)
@@ -5100,6 +5101,30 @@ Python services running `ClaimIdSpanProcessor`, and agentgateway forwards only
 `baggage` — measured in M2.2 Task 1, run C, which removed the header filter
 entirely and got ten headers with no `baggage` among them. So the decision is
 correlated to the claim by trace id, exactly as agentgateway's own spans are.
+
+**The mechanism, as of 2026-10-24: upstream `BaggageSpanProcessor`.** The
+three Python services (claims-agent, settlement-agent, payments-mcp) no longer
+carry their own `ClaimIdSpanProcessor`; each `correlation.py` builds
+`BaggageSpanProcessor` from `opentelemetry-processor-baggage==0.65b0` with a
+predicate that admits `northstar.claim.id` and no other key
+(`correlation.is_claim_id`), and `bootstrap.configure()` adds it to the tracer
+provider. Behaviour is the same: on span start it reads the parent context's
+baggage, so a span gets the id only if baggage already carries it in that
+process. The predicate is deliberate: `ALLOW_ALL_BAGGAGE_KEYS` would copy any
+entry an upstream caller put in baggage onto every span and export it. Pinned by
+each service's `tests/test_claim_id_processor.py` (the processor is upstream's,
+its predicate admits only the claim id, a second baggage key does not reach the
+span, and `configure()` adds it). The coverage figures and the prose below were
+measured with the custom class and keep its name; the copying rule they describe
+has not changed.
+
+| Service | What copies `northstar.claim.id` onto its spans |
+|---|---|
+| claims-agent | `BaggageSpanProcessor(is_claim_id)` (`correlation.py`); also sets the baggage at intake (`set_claim_id`) |
+| settlement-agent | `BaggageSpanProcessor(is_claim_id)` (`correlation.py`) |
+| payments-mcp | `BaggageSpanProcessor(is_claim_id)` (`correlation.py`); finds nothing in practice, see below |
+| reviewer-ui | its own spans set the attribute where it acts on a claim (`review.py`); no baggage processor |
+| PDS, payments-api, agentgateway, Linkerd proxies | none: correlated to the claim by trace id |
 
 **Real, measured coverage, one live capture (trace
 `8a59dfee2b192408f4282a07a0938f43`). No whole-trace span total is published

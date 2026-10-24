@@ -57,6 +57,10 @@ opentelemetry-sdk==1.44.0
 opentelemetry-exporter-otlp-proto-http==1.44.0
 opentelemetry-instrumentation-httpx==0.65b0
 opentelemetry-instrumentation-starlette==0.65b0
+# BaggageSpanProcessor, which copies northstar.claim.id from baggage onto spans
+# (correlation.py). 0.65b0 is the contrib release paired with the 1.44.0 core
+# pinned here; 0.66b1 is newer but belongs to the 1.45 line.
+opentelemetry-processor-baggage==0.65b0
 # pytest==9.1.1 clears PYSEC-2026-1845 (pip-audit). pytest-asyncio==1.4.0 is
 # paired with it: pytest-asyncio 0.25.0 only supports pytest<8.4 (its own
 # metadata), so pytest-asyncio needs a matching bump; 1.4.0 is its current

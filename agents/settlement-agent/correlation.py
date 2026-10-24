@@ -1,22 +1,21 @@
-"""Domain correlation.
+"""Domain correlation: the claim id, carried in W3C baggage.
 
-northstar.claim.id is set once, here, at intake. It then propagates
-automatically: A2A carries it in W3C baggage headers, MCP carries it in the
-JSON-RPC params._meta bag. No function downstream takes a claim id parameter
-purely for telemetry.
+northstar.claim.id is set once, at intake (claims-agent). It then propagates by
+itself: A2A carries it in the `baggage` header, MCP in the JSON-RPC
+params._meta bag. No function downstream takes a claim id parameter just for
+telemetry.
 
-`ClaimIdSpanProcessor` lives here, alongside `CLAIM_ID_KEY` and
-`set_claim_id`, because it is the mechanism that implements this file's own
-correlation rule (copying the id from baggage onto a span), and this is the
-one file each service's correlation code points to. The class is
-byte-identical across services, one copy per service rather than a shared
-dependency, matching `CLAIM_ID_KEY`/`set_claim_id` above.
+Each service copies it from baggage onto every span it starts with the upstream
+`BaggageSpanProcessor` (opentelemetry-processor-baggage), restricted to this one
+key. Baggage can carry other entries, set by anyone upstream, and copying them
+all onto spans would export whatever they hold; so the predicate allows
+`northstar.claim.id` and nothing else.
 """
 from __future__ import annotations
 
 from opentelemetry import baggage
 from opentelemetry.context import Context
-from opentelemetry.sdk.trace import Span, SpanProcessor
+from opentelemetry.processor.baggage import BaggageSpanProcessor
 
 CLAIM_ID_KEY = "northstar.claim.id"
 
@@ -26,24 +25,11 @@ def set_claim_id(claim_id: str, ctx: Context | None = None) -> Context:
     return baggage.set_baggage(CLAIM_ID_KEY, claim_id, context=ctx)
 
 
-class ClaimIdSpanProcessor(SpanProcessor):
-    """Copies northstar.claim.id from baggage onto every span in this process.
+def is_claim_id(key: str) -> bool:
+    """The only baggage key copied onto spans."""
+    return key == CLAIM_ID_KEY
 
-    Standard OTel enrichment: it adds a domain fact to spans this process
-    produces. It does not invent a convention, and it never touches telemetry
-    emitted by infrastructure we do not run in-process.
-    """
 
-    def on_start(self, span: Span, parent_context: Context | None = None) -> None:
-        claim_id = baggage.get_baggage(CLAIM_ID_KEY, parent_context)
-        if claim_id is not None:
-            span.set_attribute(CLAIM_ID_KEY, str(claim_id))
-
-    def on_end(self, span) -> None:  # noqa: D102
-        pass
-
-    def shutdown(self) -> None:  # noqa: D102
-        pass
-
-    def force_flush(self, timeout_millis: int = 30_000) -> bool:  # noqa: D102
-        return True
+def claim_id_span_processor() -> BaggageSpanProcessor:
+    """Copies northstar.claim.id, and only it, from baggage onto each span."""
+    return BaggageSpanProcessor(is_claim_id)

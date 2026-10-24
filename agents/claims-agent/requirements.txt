@@ -33,6 +33,10 @@ opentelemetry-sdk==1.44.0
 opentelemetry-exporter-otlp-proto-http==1.44.0
 opentelemetry-instrumentation-httpx==0.65b0
 opentelemetry-instrumentation-starlette==0.65b0
+# BaggageSpanProcessor, which copies northstar.claim.id from baggage onto spans
+# (correlation.py). 0.65b0 is the contrib release paired with the 1.44.0 core
+# pinned here; 0.66b1 is newer but belongs to the 1.45 line.
+opentelemetry-processor-baggage==0.65b0
 # pytest 8.3.4 -> 9.0.3 clears PYSEC-2026-1845 (pip-audit). This file's
 # runtime image installs the whole requirements.txt (Dockerfile), so the
 # advisory ships in the running claims-agent pod, not just a dev venv.

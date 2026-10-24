@@ -2440,9 +2440,11 @@ the `-01` control is `09809e3142874fb09ce8111c5366c9f6`.
 (`correlation.py`'s `set_claim_id`, called from `executor.py` right after
 `parse_claim`), and rides in W3C baggage from there. It is **not** an
 attribute added after the fact to every span by hand — each of the three
-Python services runs a `ClaimIdSpanProcessor` (`correlation.py`, identical
-in all three) that copies the value onto a span *only if it is already
-present as baggage in the ambient context the moment that span starts*.
+Python services runs the upstream `BaggageSpanProcessor`
+(`opentelemetry-processor-baggage`, built in `correlation.py` with a predicate
+that admits `northstar.claim.id` and no other baggage key) that copies the value
+onto a span *only if it is already present as baggage in the ambient context
+the moment that span starts*.
 Coverage from the M1.2-era capture described above (trace
 `edd4efea69542d6d0f401291917f5d5c`, 62 spans, identical at the time to the
 counts in `docs/telemetry-contract.md`). Read the *pattern*, not the

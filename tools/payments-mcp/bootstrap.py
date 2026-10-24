@@ -28,17 +28,15 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-# ClaimIdSpanProcessor lives in correlation.py, not here — it is the
-# mechanism that implements that file's own correlation rule, and a reader
-# told "correlation.py is the shared file" should find it there.
-from correlation import ClaimIdSpanProcessor
+# Copies northstar.claim.id (and no other baggage key) onto every span.
+from correlation import claim_id_span_processor
 
 
 def configure() -> None:
     service_name = os.environ.get("OTEL_SERVICE_NAME", "payments-mcp")
     resource = Resource.create({"service.name": service_name})
     provider = TracerProvider(resource=resource)
-    provider.add_span_processor(ClaimIdSpanProcessor())
+    provider.add_span_processor(claim_id_span_processor())
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
 

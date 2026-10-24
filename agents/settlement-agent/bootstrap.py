@@ -36,9 +36,8 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
 
-# ClaimIdSpanProcessor lives in correlation.py, the module shared with
-# claims-agent that implements claim-id/trace correlation for both agents.
-from correlation import ClaimIdSpanProcessor
+# Copies northstar.claim.id (and no other baggage key) onto every span.
+from correlation import claim_id_span_processor
 
 
 def configure() -> None:
@@ -52,7 +51,7 @@ def configure() -> None:
     service_name = os.environ.get("OTEL_SERVICE_NAME", "settlement-agent")
     resource = Resource.create({"service.name": service_name})
     provider = TracerProvider(resource=resource)
-    provider.add_span_processor(ClaimIdSpanProcessor())
+    provider.add_span_processor(claim_id_span_processor())
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
 
