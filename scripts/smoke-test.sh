@@ -16,7 +16,7 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
-echo -e "${BLUE}=== Northstar M13 smoke test ===${NC}"
+echo -e "${BLUE}=== Northstar smoke test ===${NC}"
 
 echo -e "${BLUE}--- Checking prerequisites ---${NC}"
 command_exists go || { echo -e "${RED}go is required${NC}" >&2; exit 1; }
@@ -63,7 +63,7 @@ command_exists curl || { echo -e "${RED}curl is required${NC}" >&2; exit 1; }
 echo ""
 echo -e "${BLUE}--- Step 1/2: Unit tests ---${NC}"
 
-# The telemetry registry (M9): `weaver registry check`, plus the generated docs
+# The telemetry registry: `weaver registry check`, plus the generated docs
 # region in docs/telemetry-contract.md being current. Needs docker and the
 # network (Weaver resolves the semconv dependency), like the live-check pod.
 echo -e "${YELLOW}telemetry registry (weaver registry check)${NC}"
@@ -141,7 +141,7 @@ DEMO_STATE_DIR="$(mktemp -d -t northstar-gate-demo-XXXXXX)" "$ROOT/scripts/demo"
 
 echo ""
 echo -e "${BLUE}--- Step 2/2: End-to-end trace assertions, browser hop included ---${NC}"
-# Weaver live-check (M9) is emptied HERE, after the unit suites and the two
+# Weaver live-check is emptied HERE, after the unit suites and the two
 # beats and before the e2e run, so its report covers exactly the traffic
 # Step 2 drives: every span, metric and log the collector copies to it. The
 # restart is `kubectl rollout restart` plus a wait for Ready, done by the
@@ -251,4 +251,4 @@ if [[ "$SKIPPED" -ne 0 ]]; then
 fi
 
 echo ""
-echo -e "${GREEN}Northstar M13 smoke test passed.${NC}"
+echo -e "${GREEN}Northstar smoke test passed.${NC}"
