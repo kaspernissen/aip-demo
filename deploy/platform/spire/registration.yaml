@@ -1,7 +1,7 @@
 # SPIRE registration entries for the workloads this repo names explicitly.
 #
 # No count of "how many workloads get an identity" is written here, for the
-# same reason `tests/unit/test_stage2_spire_config.py`'s allow-list docstring
+# same reason `tests/unit/test_spire_config.py`'s allow-list docstring
 # gives for carrying none: the CRs below are the answer, and prose restating
 # how many of them there are only goes stale as more are added.
 #
@@ -24,7 +24,7 @@
 # ignored outright: `kubectl apply` succeeds, the CR sits there with an empty
 # status, no entry is ever created, and the only symptom is a workload that
 # cannot fetch an SVID. **Every CR below sets it**, and
-# `tests/unit/test_stage2_spire_config.py::test_every_cluster_spiffeid_sets_the_controller_managers_class_name`
+# `tests/unit/test_spire_config.py::test_every_cluster_spiffeid_sets_the_controller_managers_class_name`
 # is what makes that true rather than intended -- it walks every
 # ClusterSPIFFEID in this file and fails on a missing className.
 #

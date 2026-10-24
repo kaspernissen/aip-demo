@@ -3,7 +3,7 @@
  * The same eight-point star the claimant portal and the reviewer console
  * carry (apps/customer-ui/src/app/layout.tsx, apps/reviewer-ui/render.py's
  * _MARK) -- long vertical and horizontal rays, short diagonals. One company,
- * three surfaces, one mark; the whole point of this milestone is that
+ * three surfaces, one mark; the whole point is that
  * Backstage is Northstar's internal view of its own platform, not a separate
  * product bolted on.
  */

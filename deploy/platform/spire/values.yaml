@@ -11,7 +11,7 @@
 # missing spire.spiffe.io CRDs, which the umbrella chart's own
 # spire-controller-manager needs before it can reconcile anything. The
 # ordering is enforced in scripts/setup-kind.sh and asserted by
-# tests/unit/test_stage2_spire_config.py.
+# tests/unit/test_spire_config.py.
 #
 # The repo tags PER CHART (`spire-0.30.2`, `spire-crds-0.6.1` are independent
 # tag series on github.com/spiffe/helm-charts-hardened), so the two version

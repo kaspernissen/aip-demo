@@ -113,7 +113,7 @@ binds:
     # a dollar-sign reference anywhere in here, even inside a comment, must
     # resolve in the gateway container's environment or the gateway refuses to
     # start. Which is why this file contains no dollar signs at all, and why
-    # tests/unit/test_stage2_spire_config.py asserts that.
+    # tests/unit/test_spire_config.py asserts that.
     - policies:
         jwtAuth:
           # `strict` is a DELIBERATE override of the chart-free default, and it

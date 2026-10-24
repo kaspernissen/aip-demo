@@ -44,7 +44,7 @@ app:
           # the two Northstar cards were built, registered, and never placed --
           # the page kept rendering Backstage's defaults, Random Joke and
           # World Clocks included. Registered is not the same as displayed,
-          # which is the third time this milestone has paid for that lesson.
+          # which is the third time this has paid for that lesson.
           defaultConfig:
             - component: HomePageSearchBar
               column: 0

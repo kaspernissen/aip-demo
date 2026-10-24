@@ -1,6 +1,6 @@
 # Linkerd control plane (chart linkerd-edge/linkerd-control-plane 2026.10.1,
 # app edge-26.10.1). The chart version is pinned in scripts/setup-kind.sh
-# (LINKERD_CHART_VERSION) and by tests/unit/test_stage2_linkerd_config.py, so
+# (LINKERD_CHART_VERSION) and by tests/unit/test_linkerd_config.py, so
 # the two cannot drift.
 #
 # The identity material is NOT in this file: setup-kind.sh passes
