@@ -239,7 +239,7 @@ refuses to run against it and tells you to recreate it with
 | `ANTHROPIC_API_KEY` | **required** | The settlement decision is a **real model call**. Empty → every pod still comes up Running and fully traced, and the **first claim submission fails**. `setup-kind.sh` prints `SET`/`EMPTY` — **check for SET before going on stage.** |
 | `DASH0_AUTH_TOKEN` + 3 siblings | unset | Adds a second OTLP exporter. **No application code changes.** Good beat if the audience cares about vendor-neutrality. |
 | `NORTHSTAR_CAPTURE_CONTENT` | `true` | `false` → `scripts/demo evidence` loses **nothing** (every field it reads is emitted by the platform, not the model). What is lost is the agent's own statement of the amount. Verified as a matched pair of runs. |
-| `RUN_BROWSER_TESTS=1` | unset | Unlocks the gated test modules (`docs/telemetry-contract.md` publishes how many) that spend model tokens or drive a browser, `tests/e2e/test_demo_flow.py` among them. **Only for the gate**, not for the demo. |
+| `RUN_BROWSER_TESTS=1` | unset | Unlocks the gated test modules that spend model tokens or drive a browser, `tests/e2e/test_demo_flow.py` among them. **Only for the gate**, not for the demo. |
 
 ### Option 4: the four ways to flip the autonomy contract
 

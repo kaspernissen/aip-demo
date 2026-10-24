@@ -292,7 +292,7 @@ deliberately does not do" section has the full list.
 
 - [`docs/demo-runbook.md`](docs/demo-runbook.md) — the operator's script: bring-up, the demo beats, options, reset and triage
 - [`docs/architecture.md`](docs/architecture.md) — components, hops, protocols and the trace, end to end
-- [`docs/telemetry-contract.md`](docs/telemetry-contract.md) — the instrumentation as measured, and the convention gaps
+- [`docs/telemetry-contract.md`](docs/telemetry-contract.md) — the instrumentation contract and the convention gaps
 - [`docs/upstream-findings.md`](docs/upstream-findings.md) — filing-ready findings against the upstream projects this repo uses
 - [`talk/`](talk/) — the KubeCon + CloudNativeCon North America 2026 talk built on this demo, with the reports it cites
 - [`docs/superpowers/`](docs/superpowers/) — the design specs and implementation plans the repo was built from
