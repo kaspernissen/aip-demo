@@ -82,7 +82,7 @@ spire-server:
     prometheus:
       enabled: true
       # podMonitor stays off: it needs the Prometheus Operator's CRD, which
-      # this cluster does not have (Prometheus is stage 4). The collector
+      # this cluster does not have. The collector
       # scrapes directly instead.
       podMonitor:
         enabled: false

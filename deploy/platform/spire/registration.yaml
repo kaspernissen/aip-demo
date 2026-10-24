@@ -84,7 +84,7 @@ spec:
 #   spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui
 #
 # It is in northstar-agents, so the chart's fallback would already have issued
-# it an identity. It is named here anyway because this identity now releases
+# it an identity. It is named here anyway because this identity releases
 # money: the PDS permits it under `human-approved.execute`
 # (pds/rules.py, HUMAN_APPROVERS), so the identity a human approval rests on is
 # in-tree and reviewable rather than an emergent property of a chart default.
