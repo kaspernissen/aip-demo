@@ -208,6 +208,51 @@ def push_config(*, customer_ui_url: str = CUSTOMER_UI_URL_DEFAULT) -> dict:
     return body
 
 
+def claim_message(text: str) -> dict:
+    """A new claim's A2A message. `text` is a JSON object for the
+    deterministic path, or the customer's own words for the intake model."""
+    return {"role": "user", "messageId": uuid.uuid4().hex,
+            "parts": [{"kind": "text", "text": text}]}
+
+
+def answer_message(task_id: str, context_id: str, text: str) -> dict:
+    """The customer's answer to claims-agent's question, on the SAME task: the
+    task id and context id say which claim it answers."""
+    return {"role": "user", "messageId": uuid.uuid4().hex,
+            "taskId": task_id, "contextId": context_id,
+            "parts": [{"kind": "text", "text": text}]}
+
+
+def _new_traceparent() -> str:
+    return f"00-{uuid.uuid4().hex}-{uuid.uuid4().hex[:16]}-01"
+
+
+def _stream_task(claims_agent_url: str, request: dict, traceparent: str, timeout: float,
+                 what: str, snap: dict) -> dict:
+    """POST one `message/stream` and read it to its end; returns the last snapshot."""
+    with httpx.stream(
+        "POST", f"{claims_agent_url}/", json=request,
+        headers={"traceparent": traceparent, "accept": "text/event-stream"},
+        timeout=httpx.Timeout(timeout, read=timeout),
+    ) as response:
+        response.raise_for_status()
+        if "text/event-stream" not in response.headers.get("content-type", ""):
+            # A JSON-RPC error answers as a plain JSON body (e.g. -32602, push URL refused).
+            body = response.read()
+            try:
+                error = json.loads(body).get("error")
+            except (ValueError, AttributeError):
+                error = None
+            raise AssertionError(
+                f"claims-agent refused {what}: "
+                f"{(error or {}).get('message') if error else body[:300]!r}")
+        for event in _sse_results(response):
+            snap = _snapshot(event, snap)
+    assert snap.get("state"), f"claims-agent streamed no task state for {what}"
+    assert snap.get("reply") is not None, f"claims-agent streamed no reply for {what}: {snap}"
+    return snap
+
+
 def submit_claim(
     claim_id: str,
     amount: float,
@@ -235,40 +280,61 @@ def submit_claim(
     A claim is never sent with a blocking `message/send`: one routed to a human
     would block for the whole wait.
     """
-    if traceparent is None:
-        traceparent = f"00-{uuid.uuid4().hex}-{uuid.uuid4().hex[:16]}-01"
-    trace_id = traceparent.split("-")[1]
+    claim = json.dumps({
+        "claimId": claim_id, "policyNumber": "POL-77120",
+        "description": "Rear-end collision at a junction", "estimatedAmount": amount})
+    return submit_text(claim, claims_agent_url=claims_agent_url, customer_ui_url=customer_ui_url,
+                       timeout=timeout, traceparent=traceparent, what=f"claim {claim_id!r}")
+
+
+def submit_text(
+    text: str,
+    *,
+    claims_agent_url: str = CLAIMS_AGENT_URL_DEFAULT,
+    customer_ui_url: str = CUSTOMER_UI_URL_DEFAULT,
+    timeout: float = SETTLEMENT_TIMEOUT_S,
+    traceparent: str | None = None,
+    what: str = "the free-text claim",
+) -> dict:
+    """A claim as the customer wrote it, through the same path as `submit_claim`.
+
+    Text that is not a JSON object goes to claims-agent's intake model. The
+    stream may end at `input-required` with `reply["status"] ==
+    "needs_information"` and a `question`; answer it with `answer_claim` on the
+    returned `task_id` and `context_id`. Returns what `submit_claim` returns.
+    """
+    traceparent = traceparent or _new_traceparent()
     push = push_config(customer_ui_url=customer_ui_url)
     request = _jsonrpc("message/stream", {
-        "message": {
-            "role": "user", "messageId": uuid.uuid4().hex,
-            "parts": [{"kind": "text", "text": json.dumps({
-                "claimId": claim_id, "policyNumber": "POL-77120",
-                "description": "Rear-end collision at a junction", "estimatedAmount": amount})}]},
+        "message": claim_message(text),
         "configuration": {"pushNotificationConfig": {"url": push["url"], "token": push["token"]}},
     })
-    snap: dict = {"trace_id": trace_id, "push_token": push["token"]}
-    with httpx.stream(
-        "POST", f"{claims_agent_url}/", json=request,
-        headers={"traceparent": traceparent, "accept": "text/event-stream"},
-        timeout=httpx.Timeout(timeout, read=timeout),
-    ) as response:
-        response.raise_for_status()
-        if "text/event-stream" not in response.headers.get("content-type", ""):
-            # A JSON-RPC error answers as a plain JSON body (e.g. -32602, push URL refused).
-            body = response.read()
-            try:
-                error = json.loads(body).get("error")
-            except (ValueError, AttributeError):
-                error = None
-            raise AssertionError(
-                f"claims-agent refused claim {claim_id!r}: "
-                f"{(error or {}).get('message') if error else body[:300]!r}")
-        for event in _sse_results(response):
-            snap = _snapshot(event, snap)
-    assert snap.get("state"), f"claims-agent streamed no task state for claim {claim_id!r}"
-    assert snap.get("reply") is not None, f"claims-agent streamed no reply for claim {claim_id!r}: {snap}"
-    return snap
+    snap: dict = {"trace_id": traceparent.split("-")[1], "push_token": push["token"]}
+    return _stream_task(claims_agent_url, request, traceparent, timeout, what, snap)
+
+
+def answer_claim(
+    run: dict,
+    text: str,
+    *,
+    claims_agent_url: str = CLAIMS_AGENT_URL_DEFAULT,
+    timeout: float = SETTLEMENT_TIMEOUT_S,
+    traceparent: str | None = None,
+) -> dict:
+    """The customer's answer to claims-agent's question, on the same task.
+
+    `run` is what `submit_text` (or a previous `answer_claim`) returned. The
+    answer is its own trace, so the result's `trace_id` is new; `task_id`,
+    `context_id` and `push_token` are carried over. No push config is sent:
+    the one sent with the claim stays with the task.
+    """
+    traceparent = traceparent or _new_traceparent()
+    request = _jsonrpc("message/stream", {
+        "message": answer_message(run["task_id"], run["context_id"], text)})
+    snap = {"trace_id": traceparent.split("-")[1], "task_id": run["task_id"],
+            "context_id": run["context_id"], "push_token": run.get("push_token")}
+    return _stream_task(claims_agent_url, request, traceparent, timeout,
+                        f"the answer on task {run['task_id']}", snap)
 
 
 def await_outcome(

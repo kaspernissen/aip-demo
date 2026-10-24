@@ -6,6 +6,9 @@
     claim <amount>        a real claim through claims-agent and the model: it
                           settles, or it WAITS for a human. The outcome, the span
                           tree from Jaeger, a Jaeger link
+    claim --text "..."    the claim in the customer's own words: what claims-agent
+                          read, any question it asks (answer with --answer "..." or
+                          at the prompt, on the same task), the outcome, Jaeger links
     approve <claim|last>  a human releases a waiting claim (the reviewer-ui's route).
                           The claim may have been filed here or in the customer-ui:
                           the reviewer-ui's queue is asked, not only this run's notes
@@ -590,6 +593,15 @@ def render_span_tree(trace: Trace, executed_expected: bool) -> dict:
 
 
 def cmd_claim(args: argparse.Namespace) -> None:
+    if args.text is not None:
+        if args.amount is not None:
+            raise Fail("give an amount or --text, not both")
+        cmd_claim_text(args)
+        return
+    if args.answer:
+        raise Fail("--answer answers a question about a --text claim; a JSON claim asks none")
+    if args.amount is None:
+        raise Fail("give an amount (claim 5800) or the claim in words (claim --text \"...\")")
     amount = float(args.amount)
     claim_id = f"CLM-DEMO-{uuid.uuid4().hex[:6].upper()}"
     title(f"CLAIM  {claim_id}   EUR {amount:,.0f}")
@@ -671,6 +683,125 @@ def cmd_claim(args: argparse.Namespace) -> None:
         out(paint("The model asked. The platform sent it to a human. The record shows both.", "bold"))
     else:
         out(paint("Settled by the agent, inside its band. Same code; only the value changed.", "bold"))
+
+
+def _claim_as_read(reply: dict) -> None:
+    """What claims-agent took the claim to be (the reply's `claim`)."""
+    read = reply.get("claim") or {}
+    amount = read.get("estimatedAmount")
+    out(paint("  claims-agent read it as:", "dim"))
+    kv("claim", str(reply.get("claimId") or "-"))
+    kv("policy", str(read.get("policyNumber") or "(not given)"))
+    kv("amount", f"EUR {amount:,.2f}" if isinstance(amount, (int, float)) else "(not given)")
+    kv("incident date", str(read.get("incidentDate") or "(not given)"))
+    description = str(read.get("description") or "(not given)")
+    for n, line in enumerate(textwrap.wrap(description, WIDTH - 21) or [""]):
+        kv("description" if n == 0 else "", line)
+
+
+def _quoted(text: str) -> None:
+    for para in text.split("\n"):
+        for line in textwrap.wrap(para, WIDTH - 6) or [""]:
+            out(paint(f"    > {line}", "dim"))
+
+
+def _next_answer(answers: list[str], question: str) -> str | None:
+    """The next --answer, else one typed at the prompt; None when neither."""
+    if answers:
+        return answers.pop(0)
+    if not sys.stdin.isatty():
+        return None
+    try:
+        typed = input(f"  {paint('your answer>', 'bold')} ").strip()
+    except EOFError:
+        return None
+    return typed or None
+
+
+def cmd_claim_text(args: argparse.Namespace) -> None:
+    """A claim in the customer's own words, through the same harness path as a
+    JSON claim. claims-agent's model reads it; the code checks what it read; a
+    missing piece is asked for on the SAME task, and the answer goes back there."""
+    text = args.text.strip()
+    if not text:
+        raise Fail("--text is empty")
+    title("CLAIM  in the customer's own words")
+    level_before = flag_level()
+    state = start_run(load_state())
+    kv("autonomy level", paint(level_before, "bold"), indent=2)
+    out()
+    say("A claimant writes what happened. claims-agent's model reads it into a claim;")
+    say("the code checks it as strictly as a JSON claim, and asks for anything missing.")
+    _quoted(text)
+    doing(f"A2A message/stream  claims-agent  free text, {len(text)} characters")
+    answers = list(args.answer or [])
+    traces = []
+    started = time.monotonic()
+    with live.claims_agent_route() as url:
+        run = live.submit_text(text, claims_agent_url=url, timeout=170)
+        traces.append(run["trace_id"])
+        out(f"  -> {time.monotonic() - started:0.0f}s")
+        out()
+        _claim_as_read(run["reply"])
+        while run.get("state") == "input-required" and run["reply"].get("status") == "needs_information":
+            question = str(run["reply"].get("question") or run["reply"].get("narrative") or "")
+            out()
+            out(f"  Question  {word('ASKS', 'info')}  {question}")
+            kv("missing", ", ".join(run["reply"].get("missing") or []) or "-")
+            answer = _next_answer(answers, question)
+            if answer is None:
+                break
+            out()
+            say(f"The customer answers on the same task ({run['task_id'][:8]}...).")
+            _quoted(answer)
+            doing(f"A2A message/stream  claims-agent  answer on task {run['task_id'][:8]}...")
+            started = time.monotonic()
+            run = live.answer_claim(run, answer, claims_agent_url=url, timeout=170)
+            traces.append(run["trace_id"])
+            out(f"  -> {time.monotonic() - started:0.0f}s")
+            out()
+            _claim_as_read(run["reply"])
+
+    reply = run["reply"]
+    status = reply.get("status")
+    out()
+    if status == "needs_information":
+        out(f"  Outcome  {word('ASKS', 'info')}  waiting for the customer's answer. Nothing was paid.")
+        out("  Answer with:  scripts/demo claim --text \"...\" --answer \"...\"  (or run it in a terminal)")
+    elif status == "awaiting_approval":
+        out(f"  Outcome  {word('WAITING', 'stop')}  awaiting human approval. Nothing was paid.")
+    elif status == "executed":
+        out(f"  Outcome  {word('SETTLED', 'go')}  by the agent, inside its band. The payment was made.")
+    else:
+        out(f"  Outcome  {word(str(status).upper(), 'stop')}  {reply.get('narrative') or ''}")
+        if reply.get("error"):
+            kv("error", str(reply["error"]))
+    claimed = (reply.get("claim") or {}).get("estimatedAmount")
+    if reply.get("amount") is not None and claimed is not None and reply["amount"] != claimed:
+        say(f"Settlement proposed EUR {reply['amount']:,.2f}; the claim as read says "
+            f"EUR {claimed:,.2f}.")
+    if status in ("awaiting_approval", "executed") and reply.get("narrative"):
+        out()
+        out(paint("  The model's explanation to the claimant:", "dim"))
+        for para in str(reply["narrative"]).split("\n"):
+            for line in textwrap.wrap(para, WIDTH - 6) or [""]:
+                out("    " + line)
+
+    state["claims"].append(
+        {"id": reply.get("claimId"), "amount": claimed, "status": status, "trace_id": traces[0],
+         "payment_id": reply.get("paymentId"), "task_id": run.get("task_id"), "level": level_before,
+         "free_text": True})
+    save_state(state)
+    if status == "awaiting_approval":
+        out(f"  Approve with:  scripts/demo approve {reply.get('claimId')}   (or: scripts/demo approve last)")
+    out()
+    for n, trace_id in enumerate(traces):
+        kv("Jaeger" if n == 0 else "", f"{JAEGER_UI}/trace/{trace_id}", indent=2, key_width=8)
+
+    if args.expect and status != args.expect:
+        raise Fail(f"expected the claim to end {args.expect!r}, it ended {status!r}")
+    if status not in ("needs_information", "awaiting_approval", "executed"):
+        raise Fail(f"the claim ended {status!r}: {reply.get('error') or reply.get('narrative')}")
 
 
 # --- approve / reject: the human --------------------------------------------------
@@ -1285,9 +1416,12 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("guard", help="identity, reach, and the tools it may call").set_defaults(fn=cmd_guard)
     claim = sub.add_parser("claim", help="a real claim through the agents and the model")
-    claim.add_argument("amount", type=float)
+    claim.add_argument("amount", type=float, nargs="?")
+    claim.add_argument("--text", help="the claim in the customer's own words, for the intake model")
+    claim.add_argument("--answer", action="append",
+                       help="answer to claims-agent's question (repeat for more; else asked at the prompt)")
     claim.add_argument(
-        "--expect", choices=["awaiting_approval", "executed"],
+        "--expect", choices=["awaiting_approval", "executed", "needs_information"],
         help="exit non-zero unless the claim ends this way",
     )
     claim.set_defaults(fn=cmd_claim)
