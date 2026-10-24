@@ -23,6 +23,9 @@ _sink = HTTPServer(("127.0.0.1", 0), _Sink)
 threading.Thread(target=_sink.serve_forever, daemon=True).start()
 # Before bootstrap is imported: nothing here may reach a real collector.
 os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"http://127.0.0.1:{_sink.server_address[1]}"
+for _signal in ("TRACES", "METRICS", "LOGS"):
+    os.environ.pop(f"OTEL_EXPORTER_OTLP_{_signal}_ENDPOINT", None)
+    os.environ[f"OTEL_{_signal}_EXPORTER"] = "none"
 
 import httpx
 import pytest
