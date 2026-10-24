@@ -1,5 +1,5 @@
 a2a-sdk[telemetry]==0.3.7
-# Held at 0.3.7 deliberately. The newest installable release is 1.1.2; 1.x is
+# Held at 0.3.7 deliberately. The newest installable release is 1.2.3; 1.x is
 # a protocol migration, not a bump:
 #   * It implements A2A v1.0 with v0.3 behind an opt-in compat layer. The
 #     JSON-RPC method is `SendMessage` rather than `message/send` (this repo
@@ -7,7 +7,7 @@ a2a-sdk[telemetry]==0.3.7
 #     `a2a.types.AgentCard` is a protobuf message that cannot parse this
 #     repo's agent card, and `a2a.server.apps.A2AStarletteApplication` (what
 #     main.py builds and StarletteInstrumentor attaches to) does not exist.
-#   * 1.1.2 still does not extract inbound trace context and its spans carry
+#   * 1.2.3 still does not extract inbound trace context and its spans carry
 #     no attributes (docs/upstream-findings.md), so the
 #     StarletteInstrumentor workaround is still required.
 #

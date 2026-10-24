@@ -1439,8 +1439,8 @@ For each: the evidence, the upstream state, and what this project does.
   fallback; A2A supplies `contextId` and `taskId`. No `a2a.*` or `gen_ai.*` attribute
   is invented here. The `a2a-python` zero-attribute finding and the extraction gap
   are filing-ready (`docs/upstream-findings.md` Finding 1).
-- **Newer major version.** `a2a-sdk` 1.1.2 still has no propagation code (`propagate`,
-  `traceparent` and `TextMapPropagator` each find 0 matches, and all 17 decorated
+- **Newer major version.** `a2a-sdk` 1.2.3 still has no propagation code (no
+  `traceparent` or `TextMapPropagator` anywhere, and all 16 decorated
   modules still carry a bare `@trace_class(kind=...)` with no attributes). Both agents
   stay on 0.3.7 because 1.x is A2A protocol v1.0 (the JSON-RPC method is
   `SendMessage`, not `message/send`), its `AgentCard` is a protobuf message that

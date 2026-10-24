@@ -43,7 +43,7 @@ findings refer to.
 ## Finding 1: `a2a-sdk` does not extract inbound trace context, and its spans carry no identity attributes
 
 **Project and version.** `a2a-sdk[telemetry]==0.3.7` (PyPI `a2a-sdk`, the
-reference Python A2A SDK, `a2aproject/a2a-python`). Re-read at 1.1.2: both
+reference Python A2A SDK, `a2aproject/a2a-python`). Re-read at 1.2.3: both
 halves still hold.
 
 **What it does.** A2A exists for one agent to delegate to another across a
@@ -98,7 +98,7 @@ protobuf message (no `protocolVersion`, `url` or `preferredTransport`; it has
 `supportedInterfaces`), removes `a2a.server.apps.A2AStarletteApplication` in
 favour of `a2a.server.routes.create_jsonrpc_routes(...)`, and gives
 `DefaultRequestHandler` a required `agent_card`. Both halves of this finding
-survive: the 1.1.2 package tree still has no trace-context extraction and no
+survive: the 1.2.3 package tree still has no trace-context extraction and no
 decorator passes `attributes=`. Moving to 1.x is a wire and API migration, not
 a version bump, so the agents stay on 0.3.7. The newest release on PyPI can lag
 the GitHub releases page; check PyPI for what is installable.
