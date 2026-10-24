@@ -107,7 +107,7 @@ BACKSTAGE_PORT = 7007
 
 # The same figure test_progressive_autonomy.py uses -- this file drives the
 # identical claim through a second write path, not a different one. Under
-# maker-checker (M8) EUR 5,800 waits for a human at `assisted` (limit 0) and
+# maker-checker EUR 5,800 waits for a human at `assisted` (limit 0) and
 # settles on its own at `autonomous` (limit 6,000).
 AMOUNT = 5800.0
 
@@ -124,9 +124,9 @@ def _kubectl(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
 @pytest.fixture(scope="module", autouse=True)
 def stage_6_backstage_deployed_or_a_reason():
     """Skip if this is not even a live cluster; skip if Backstage's own
-    Deployment does not exist (absence of stage 6, not a regression); FAIL if
+    Deployment does not exist (absence of Backstage, not a regression); FAIL if
     Backstage exists but the write Role this whole file depends on does not
-    (a stage-6 cluster missing its own write Role is this file's own
+    (a cluster with Backstage but missing its own write Role is this file's own
     regression, never an absence to skip past -- same discipline
     `test_autonomy_writer_live_rbac.py`'s own fixture uses for the identical
     Role).

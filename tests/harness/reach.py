@@ -1,10 +1,8 @@
 """Reach probes: what to run in a pod, and how to read what came back.
 
-M12 moved the reach guarantees from Cilium to Linkerd (ingress, by workload
-identity) and core NetworkPolicy (egress). Both change what a refusal looks
-like, so the oracles changed. They come from the measurements in
-`docs/superpowers/plans/2026-10-21-northstar-m12-linkerd.md` (M1-M6), and every
-decision the e2e files make is a pure function here.
+The reach guarantees come from Linkerd (ingress, by workload identity) and
+core NetworkPolicy (egress). The oracles below describe what a refusal looks
+like under each, and every decision the e2e files make is a pure function here.
 
 **Ingress refused** = HTTP 403 (a matched route or a route-less Server, wrong
 identity) or a proxy 404 (no route matched on a Server that has routes), an
@@ -21,7 +19,7 @@ read above TCP: a TLS handshake plus an HTTP request. Allowed = a status line
 comes back. Refused = reset or timeout. From an *unmeshed* pod the kernel
 drops the packet and the connect itself times out.
 
-**Nothing here goes through `kubectl port-forward`** (M3): a port-forward
+**Nothing here goes through `kubectl port-forward`**: a port-forward
 reaches the app on loopback and bypasses the proxy, so it cannot show a
 refusal. Probes run inside a pod (`kubectl exec`); metrics are read through
 the API server's pod proxy (`kubectl get --raw .../pods/<pod>:4191/proxy/metrics`).
@@ -128,7 +126,7 @@ def classify_ingress(result: dict) -> str:
 def grpc_refused(result: dict) -> bool:
     """gRPC PERMISSION_DENIED, in either form it can arrive.
 
-    Measured at the PDS in the final review (M7: `PERMISSION_DENIED`). A refusal
+    Measured at the PDS: `PERMISSION_DENIED`. A refusal
     at the HTTP/2 layer is an HTTP 403, a gRPC-aware refusal is `grpc-status: 7`. Accept both, and
     require no `l5d-proxy-error` so a proxy failure is not mistaken for it.
     """
@@ -147,13 +145,13 @@ def classify_egress(result: dict) -> tuple[str, str]:
     `reached` = a status line came back (the TLS handshake, if any, completed
     and the server answered). A 502 with an empty body and no `l5d-proxy-error`
     is `("reached", "peer-proxy-502")`: the peer's inbound proxy answered for a
-    port with no listener (M7), so the pod, not the port, was what the policy let in. `dropped` = anything else; `how` names it:
+    port with no listener, so the pod, not the port, was what the policy let in. `dropped` = anything else; `how` names it:
     `timeout`, `reset`, `proxy-error` (the pod's own proxy could not reach the
     peer, e.g. the node dropped its packets) or `other:<ExceptionName>`.
     """
     if (result.get("status") == 502 and not result.get("body_len")
             and not _proxy_error(result)):
-        # M7: a meshed client got through to the peer POD's proxy, which found
+        # A meshed client got through to the peer POD's proxy, which found
         # nothing listening on the port it was asked for. Reached, deliberately:
         # the packets were not dropped, so egress to this pod is open on every port.
         return "reached", "peer-proxy-502"
@@ -174,7 +172,7 @@ def classify_tcp(result: dict) -> str:
     """Connect-only probe (mode `tcp`), meaningful from an UNMESHED pod only:
     `connected`, `timeout` (the kernel dropped the SYN: NetworkPolicy), or
     `refused`/`other:<Name>`. From a meshed pod this says nothing, because the
-    pod's own proxy accepts every connect (M1)."""
+    pod's own proxy accepts every connect."""
     if result.get("stage") == "connected" and not result.get("error"):
         return "connected"
     error = result.get("error") or "unknown"
@@ -281,7 +279,7 @@ def egress_line(verdict: str, how: str, meshed: bool) -> str:
 def metrics_proxy_path(namespace: str, pod: str) -> str:
     """The API-server pod-proxy path for a pod's linkerd-proxy metrics.
 
-    Through the API server, not `kubectl port-forward` to the app port (M3).
+    Through the API server, not `kubectl port-forward` to the app port.
     """
     return f"/api/v1/namespaces/{namespace}/pods/{pod}:{PROXY_ADMIN_PORT}/proxy/metrics"
 
@@ -354,7 +352,7 @@ def classify_grpc(result: dict) -> str:
 
     A client library maps an HTTP 403 at the HTTP/2 layer and a `grpc-status: 7`
     trailer to the same PERMISSION_DENIED, so one name covers both forms.
-    Measured on the spike in the final review (plan M7).
+    Measured against the PDS.
     """
     code = result.get("grpc_code")
     if code is None:
@@ -558,12 +556,11 @@ class throwaway_pod:
 
 
 def require_reach(context: str):
-    """Skip below stage 2; FAIL on a stage >= 2 cluster without Linkerd or the
-    reach objects. A skip is invisible in a green gate, so every way of being
-    stage 2 and broken is a failure.
+    """Skip on a cluster without the platform layer; FAIL on one that has it but
+    lacks Linkerd or the reach objects. A skip is invisible in a green gate, so
+    every way of being installed and broken is a failure.
 
-    Stage 2 is detected by the Policy Decision Service Deployment, which stage 2
-    installs and stage 1 does not. kubectl failures other than NotFound (an
+    The platform layer is detected by the Policy Decision Service Deployment. kubectl failures other than NotFound (an
     unreachable API server, a wrong context) are failures too, never skips.
     """
     import pytest

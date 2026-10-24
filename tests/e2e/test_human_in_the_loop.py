@@ -1,7 +1,7 @@
-"""M8: the agent prepares, a human releases. Live, stage 7.
+"""The agent prepares, a human releases. Live.
 
-Task 1 covers the ledger and the release; Task 2 adds the A2A task states and
-the stream; Task 3 adds trace B and the histogram.
+Covers the ledger and the release, the A2A task states and the stream, trace B
+and the approval-wait histogram.
 
 The dial is maker-checker. At the resting `assisted` level the settlement agent
 may release nothing, so a claim is left `awaiting_approval` and a human decides
@@ -60,9 +60,8 @@ def _claim(amount: float) -> dict:
 def _claim_at_current_level(amount: float) -> dict:
     """File a claim; once, and only when the model provider was unreachable.
 
-    M8 gate run 4: one claim's task failed with no payment because settlement-
-    agent's DNS lookup of api.anthropic.com failed (three spans, ~1.5 s, one
-    claim in the whole run). That is outside this repo and these tests are not
+    A task can fail with no payment because settlement-agent's DNS lookup of
+    api.anthropic.com failed (three spans, ~1.5 s). That is outside this repo and these tests are not
     about it, so a task that failed that way is filed again under a new id. Any
     other failure is returned as it is and fails the test that asked.
     """
@@ -362,10 +361,9 @@ def test_the_push_token_is_in_no_span_of_trace_a_or_trace_b(approved):
     assert token not in json.dumps(traces), "the push token appears in a customer-ui-server span"
 
 
-# The series name was read off the running Prometheus on 2026-10-14. The label
-# key is that Prometheus's own dot-to-underscore rendering of the M9 attribute
-# `northstar.review.decision`, whose value is the registry's `approve`; it has
-# not been read off a running cluster since the rename (Task 3 does that).
+# The series name as the running Prometheus renders it. The label key is its
+# dot-to-underscore rendering of the registry attribute
+# `northstar.review.decision`, whose value is the registry's `approve`.
 APPROVAL_WAIT_SERIES = "northstar_approval_wait_duration_seconds"
 APPROVED_WAIT_COUNT = (
     f'{APPROVAL_WAIT_SERIES}_count{{job="reviewer-ui",northstar_review_decision="approve"}}'
@@ -385,7 +383,7 @@ def test_the_histogram_has_a_sample_for_the_approval(approved):
         f"approval, {after} after")
 
 
-# --- the two bypasses the review found (M8 review I1 and I2) ----------------
+# --- two bypasses of the approval path ----------------
 
 
 @pytest.fixture(scope="module")

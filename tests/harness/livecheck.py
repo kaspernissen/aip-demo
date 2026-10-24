@@ -1,4 +1,4 @@
-"""Weaver live-check, as the gate drives it (M9).
+"""Weaver live-check, as the gate drives it.
 
 The collector sends the weaver-live-check pod (observability namespace) a COPY
 of every span, metric and log. The pod serves its admin API on 4320:

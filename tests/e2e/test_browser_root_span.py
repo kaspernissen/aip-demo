@@ -41,7 +41,7 @@ the finding, not something to be worked around here.
 **The outcome of that submission is a refusal, not an execution** — €6,200
 is above the €6,000 allowance the platform enforces on `execute_payment` for
 this caller, so `test_the_browser_path_settles_the_expected_amount` below
-asserts `status == "awaiting_approval"` (M8; "refused" before it) with €6,200 as the *proposed* amount. Everything
+asserts `status == "awaiting_approval"` with €6,200 as the *proposed* amount. Everything
 else in this file is about trace plumbing (root ownership, service presence,
 orphans, the policy-number attribute) and is unaffected: the propose leg is
 permitted unconditionally, so all five services still land in this one trace,

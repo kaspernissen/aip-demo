@@ -30,7 +30,7 @@ is; the runbook is the script.
   SPIRE-issued identity, then asks the Policy Decision Service whether this
   caller may make this call. The decision is fail-closed: if the policy
   service can't answer, the payment is refused.
-- **A refusal is a success.** The autonomy dial is a maker-checker policy: at
+- **Over-limit payments wait for a human.** The autonomy dial is a maker-checker policy: at
   `assisted` the agent may release nothing (€0), at `autonomous` up to €6,000.
   A payment over the agent's limit is proposed, refused and recorded as
   awaiting approval, and the customer's claim waits for a human, as an A2A
@@ -141,7 +141,7 @@ keystone idea comes from. Each ring answers one question:
 | Ring 2 · Capability | what may it do | agentgateway and the Policy Decision Service, fail-closed; the autonomy flag |
 | Keystone | can it edit what constrains it | Kyverno: no |
 
-Northstar differs from that demo in two places, on purpose: SPIRE rather than
+Northstar differs from that demo in two places: SPIRE rather than
 Linkerd for identity, and a decision service rather than a static CEL
 allowlist for capability. The gateway also carries a CEL rule of its own, a
 €50,000 ceiling on `execute_payment`, to show a guardrail built from
@@ -170,8 +170,7 @@ which talk length.
 ## Quick start
 
 You need Docker, kind, kubectl, helm, [uv](https://docs.astral.sh/uv/) and an
-Anthropic API key. Give Docker at least 8 GB of memory: the cluster used about
-6 GB before Kyverno was added.
+Anthropic API key. Give Docker at least 8 GB of memory; the cluster uses about 6 GB.
 
 ```bash
 cp .env.template .env
@@ -293,7 +292,7 @@ deliberately does not do" section has the full list.
 
 - [`docs/demo-runbook.md`](docs/demo-runbook.md) — the operator's script: bring-up, the demo beats, options, reset and triage
 - [`docs/architecture.md`](docs/architecture.md) — components, hops, protocols and the trace, end to end
-- [`docs/telemetry-contract.md`](docs/telemetry-contract.md) — the instrumentation as measured, and the convention gaps
+- [`docs/telemetry-contract.md`](docs/telemetry-contract.md) — the instrumentation contract and the convention gaps
 - [`docs/upstream-findings.md`](docs/upstream-findings.md) — filing-ready findings against the upstream projects this repo uses
 - [`talk/`](talk/) — the KubeCon + CloudNativeCon North America 2026 talk built on this demo, with the reports it cites
 - [`docs/superpowers/`](docs/superpowers/) — the design specs and implementation plans the repo was built from

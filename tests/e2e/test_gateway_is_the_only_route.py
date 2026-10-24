@@ -11,7 +11,7 @@ with no reason to touch payments, POSTed an MCP `initialize` straight at
 `payments-mcp:8000/mcp` and got **HTTP 200**. A choke point a workload can walk
 around is a convention, not a control.
 
-**M12: what enforces it now.** Ingress is Linkerd's, at the destination's
+**What enforces it.** Ingress is Linkerd's, at the destination's
 proxy: `payments-mcp:8000` and `policy-decision-service:9100` each have a
 `Server` (`accessPolicy: deny`) and one `AuthorizationPolicy` naming
 agentgateway's mesh identity
@@ -19,13 +19,13 @@ agentgateway's mesh identity
 enforced by kindnet (`deploy/platform/reach/network-policies.yaml`). Both file
 halves are asserted here; the egress half lives in `test_egress_policy.py`.
 
-**The oracle, from the plan's measurements M1-M6.** An ingress refusal is an
+**The oracle.** An ingress refusal is an
 HTTP 403 (or a proxy 404 when no route matched), an empty body, no
 `l5d-proxy-error` header, AND the destination proxy's
 `inbound_http_authz_deny_total` for that Server and caller rising by at least
 one across the call. The counter is what says Linkerd's policy refused it
 rather than an application. It is read through the API server pod proxy, never
-through `kubectl port-forward`, which bypasses the proxy (M3). **A TCP connect
+through `kubectl port-forward`, which bypasses the proxy. **A TCP connect
 is never the oracle for ingress**: the proxy accepts every connection and
 answers above TCP. All decisions are pure functions in `tests/harness/reach.py`
 with their own unit tests; this file only runs probes and applies them.
@@ -41,9 +41,9 @@ with a ServiceAccount of its own that no policy names (the wrong identity).
 
 **Not behind `RUN_BROWSER_TESTS=1`**: it spends no model tokens.
 
-**A skip is invisible in a green gate.** The fixture skips only below stage 2
-(no policy-decision-service). On a stage >= 2 cluster without Linkerd or
-without the reach objects it FAILS, so the one event these tests exist to catch
+**A skip is invisible in a green gate.** The fixture skips only on a cluster without the platform layer
+(no policy-decision-service). On one that has it but lacks Linkerd or
+the reach objects it FAILS, so the one event these tests exist to catch
 (the policy silently no longer applied) cannot leave the suite green.
 """
 
@@ -68,7 +68,7 @@ GATEWAY_IDENTITY = reach.client_id("agentgateway", "northstar-platform")
 # delegation target) and it is authorized for claims-agent's identity.
 # The control is `POST /`, never `GET /.well-known/agent-card.json`: Linkerd's
 # default probe route opens that path to EVERY caller of a route-less Server
-# (plan M5), so a GET there would pass for any identity and prove nothing.
+# so a GET there would pass for any identity and prove nothing.
 CONTROL_HOST = "settlement-agent.northstar-agents.svc.cluster.local"
 CONTROL_PORT = 9002
 CONTROL_METHOD, CONTROL_PATH = "POST", "/"
@@ -198,8 +198,7 @@ def test_the_pds_refuses_every_caller_but_the_gateway(wrong_identity_pod):
     The PDS is fail-closed and the gateway's ExtMCP hook is its only client; a
     workload that could call it could probe the ruleset. gRPC refusal is
     PERMISSION_DENIED (an HTTP 403 at the HTTP/2 layer, or `grpc-status: 7`;
-    a client library reports both as the same code). Measured on the spike in
-    the final review (plan M7): `PERMISSION_DENIED`, counter
+    a client library reports both as the same code). Expected result: `PERMISSION_DENIED`, counter
     `route_name="default"`, `tls="true"`, `client_id` present. If this fails,
     look at the code before the policy.
     """
@@ -276,7 +275,7 @@ def test_the_wrong_identity_cannot_post_to_settlement_agent(wrong_identity_pod):
     The control is claims-agent's `POST /`, answered. This is a meshed pod with
     an identity no policy names making the same `POST /`: a counted 403 against
     Server settlement-agent. (Never the agent-card path: the probe route opens
-    that to everyone, M5.)
+    that to everyone.)
     """
     cid = reach.client_id(WRONG_ID_SA, AGENT_NS)
     kind, result, delta, by = _refusal(
@@ -323,7 +322,7 @@ def test_the_protected_pod_is_ready_and_meshed(app, namespace, reach_objects):
     """Both protected pods are Ready under their Servers, with a proxy.
 
     Their probes are `tcpSocket`, which the proxy accepts under
-    `accessPolicy: deny` (M6). The symptom of getting it wrong is not a network
+    `accessPolicy: deny`. The symptom of getting it wrong is not a network
     error but a pod that never becomes Ready, or a PDS that restarts and fails
     closed so every payment is refused for the wrong reason. A pod without a
     `linkerd-proxy` container is a pod the Server does not protect.

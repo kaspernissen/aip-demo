@@ -88,8 +88,8 @@ def _can_i(
 @pytest.fixture(scope="module", autouse=True)
 def stage_6_with_the_write_grant_applied_or_a_reason():
     """Skip if this is not even a live cluster; skip (not fail) if the
-    cluster is live but stage 6's Backstage Deployment does not exist -- that
-    is an absence of stage 6, not a regression; FAIL, never skip, if
+    cluster is live but the Backstage Deployment does not exist -- that
+    is an absence of Backstage, not a regression; FAIL, never skip, if
     Backstage is deployed but `deploy/k8s/backstage.yaml`'s write grant is
     missing -- the same "empty is a regression, unreachable is a skip"
     discipline `test_egress_policy.py::policy_present` and its own docstring
@@ -99,8 +99,8 @@ def stage_6_with_the_write_grant_applied_or_a_reason():
     checks the Role only once Backstage itself is confirmed present,
     matching `test_backstage_image_matches_head.py:59-77` and
     `test_golden_path.py:150-166`: collapsing this into a single reachability
-    check would hard-fail every cluster below stage 6 with a message
-    claiming a regression where there is only an absence of stage 6 -- the
+    check would hard-fail every cluster without Backstage with a message
+    claiming a regression where there is only an absence of Backstage -- the
     exact inversion of the "skip where you should fail" family this repo
     otherwise guards against.
 

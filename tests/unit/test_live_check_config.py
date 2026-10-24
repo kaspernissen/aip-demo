@@ -1,4 +1,4 @@
-"""The Weaver live-check wiring (M9), asserted hermetically.
+"""The Weaver live-check wiring, asserted hermetically.
 
 No cluster, no docker, no network: this reads the files that wire live-check in
 and checks they agree with each other. What the live-check actually reports is

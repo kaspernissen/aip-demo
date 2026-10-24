@@ -3,7 +3,7 @@
 The probe runs INSIDE a pod and prints one line the beat script and the demo
 driver branch on. It is executed here with `python -c`, exactly as
 `kubectl exec ... python3 -c "$(cat reach-probe.py)"` does, against a local
-HTTP server that answers the shapes recorded on the M12 spike (an empty 403,
+HTTP server that answers the shapes a Linkerd-enforced cluster produces (an empty 403,
 an empty 404, an app 404 with a body, a 504 carrying `l5d-proxy-error`).
 """
 import http.server

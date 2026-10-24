@@ -148,7 +148,7 @@ def gateway_settlement():
     traceparent = f"00-{trace_id}-{span_id}-01"
     claim_id = f"CLM-GW-{uuid.uuid4().hex[:8]}"
 
-    # M8: the resting state (`assisted`) releases nothing, so a claim the agent
+    # The resting state (`assisted`) releases nothing, so a claim the agent
     # is to settle itself runs with the dial at `autonomous` -- always restored.
     with live.autonomy(contract.AUTONOMOUS):
         result = _send(
@@ -272,7 +272,7 @@ JAEGER_ADDED_TAGS = {"internal.span.format", "span.kind"}
 # tool name payments-mcp would recognise: payments-mcp's own span for the same
 # call is named `tools/call propose_payment`.
 #
-# **Re-measured on agentgateway v1.6.0 (2026-10-13), which moved the SERVER
+# **As measured on agentgateway v1.6.0, which moved the SERVER
 # span to stable HTTP semantic conventions (upstream PR #3182).** Six keys of
 # the v1.5.0 set are gone -- `http.host`, `http.method`, `http.path`,
 # `http.status`, `http.version`, `src.addr` -- and six are new --

@@ -1,4 +1,4 @@
-"""M9: the platform emits what the telemetry registry says it emits.
+"""The platform emits what the telemetry registry says it emits.
 
 `telemetry/registry` is Northstar's declared telemetry. This file is the
 executable half of that claim: the collector sends a COPY of every span, metric
@@ -23,7 +23,7 @@ would otherwise report zero violations and pass; the sample-count assertions are
 what make "no violations" mean something. They are paired with the two spans the
 whole registry was written about.
 
-Gated like every live module here (`RUN_BROWSER_TESTS=1`): it needs the stage-7
+Gated like every live module here (`RUN_BROWSER_TESTS=1`): it needs the full
 cluster, and it FAILS rather than skips when the cluster or live-check is absent.
 """
 from __future__ import annotations

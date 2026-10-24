@@ -21,7 +21,7 @@ LINKERD_VALUES = REPO_ROOT / "deploy" / "platform" / "linkerd" / "values.yaml"
 LINKERD_CERTS_SCRIPT = REPO_ROOT / "scripts" / "linkerd-certs.sh"
 
 # Read off `helm search repo linkerd-edge --versions` and
-# https://helm.linkerd.io/edge/index.yaml on 2026-10-21: the chart version is
+# https://helm.linkerd.io/edge/index.yaml: the chart version is
 # NOT the app version, and linkerd-crds / linkerd-control-plane share it.
 PINNED_LINKERD_CHART_VERSION = "2026.10.1"
 PINNED_LINKERD_APP_VERSION = "edge-26.10.1"

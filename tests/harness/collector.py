@@ -28,7 +28,7 @@ def pipeline_exporters(config_text: str, signal: str) -> set[str]:
     select `metrics/traces`.
 
     Returns an empty set for empty, unparseable or structurally unexpected
-    text rather than raising. The callers turn that into a stage-4 skip only in
+    text rather than raising. The callers turn that into a skip only in
     combination with the backend Service being absent too; on its own it means
     "nothing is routed", which is the honest answer to this question when the
     ConfigMap could not be read.

@@ -228,7 +228,7 @@ def test_evidence_waits_for_ingest_lag_then_settles_and_never_returns_a_partial_
 
 
 def test_evidence_for_an_executed_claim_waits_for_the_execute_hop_itself(monkeypatch):
-    """M10 gate run 4: a claim approved in the browser was evidenced before
+    """A claim approved in the browser can be evidenced before
     payments-api's execute span (batched, ~5 s) reached Jaeger. Trace A's refused
     attempt already filled `money_hops`, so waiting for "any hop" returned early
     and the row said nothing moved. An executed claim waits for the execute hop;
@@ -491,7 +491,7 @@ def test_a_claim_filed_in_the_skew_margin_before_the_run_is_not_this_runs(monkey
     assert adopted["run_started_ms"] == adopted["window_start_ms"] == 5_000
 
 
-# --- evals: AgentEvals (M11) ---------------------------------------------------------
+# --- evals: AgentEvals ---------------------------------------------------------
 
 
 def test_the_evaluators_evals_asks_for_are_the_ones_the_pod_mounts():

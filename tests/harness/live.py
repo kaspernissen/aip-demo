@@ -1,14 +1,12 @@
 """Calls against the live `kind-northstar` cluster, shared by the e2e tests and
-the stage driver (`scripts/demo`).
+the demo driver (`scripts/demo`).
 
 **Why this module exists, and why it lives in `tests/harness/`.** The five-minute
-demo flow (`docs/superpowers/specs/2026-10-12-northstar-m7-bounded-design.md`
-section 7) is a thin driver over things this repo's tests already prove: submit
+demo flow is a thin driver over things this repo's tests already prove: submit
 a claim to claims-agent over A2A, mint a SPIFFE JWT-SVID and speak MCP to the
-gateway. The spec's rule is
-**no new mechanism** -- "the stage path and the tested path are the same code" --
-so those helpers moved here from the test files that used to own them, and both
-the tests and the driver import them. A second copy in the driver would be a
+gateway. The rule is
+**no new mechanism**: the demo path and the tested path are the same code, so
+the helpers live here and both the tests and the driver import them. A second copy in the driver would be a
 copy that can quietly stop matching what the tests assert.
 
 It is `tests/harness/` rather than a new top-level package for two reasons. The
@@ -494,7 +492,7 @@ def release_wait(payment_id: str, reviewer_id: str = "demo-cleanup") -> dict:
 def autonomy(level: str):
     """The flag at `level` for the duration, always restored to assisted.
 
-    M8's resting state releases nothing; a test that needs the agent to settle
+    The resting state releases nothing; a test that needs the agent to settle
     a payment itself runs inside `with live.autonomy(contract.AUTONOMOUS):`.
     """
     from tests.harness import contract

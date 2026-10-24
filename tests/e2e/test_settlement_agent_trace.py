@@ -55,7 +55,7 @@ denies `execute_payment` above the €6,000 allowance for this caller
 (`platform/policy-decision-service/pds/rules.py`), so two of the tests below
 assert that behaviour directly:
 `test_message_send_returns_the_full_settlement_reply` asserts
-`status == "awaiting_approval"` (M8; "refused" before it) (every other field of the documented reply unchanged,
+`status == "awaiting_approval"` (every other field of the documented reply unchanged,
 including the €6,200 the ledger recorded for the proposal), and
 `test_mcp_tool_calls_are_present` asserts `tools/call propose_payment` present
 and `tools/call execute_payment` **absent**, paired with the model's own

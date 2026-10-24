@@ -87,7 +87,7 @@ clearly rather than to look like a failure:
 | Claim form | [localhost:8080](http://localhost:8080) | filing a claim, and the determination |
 | Review console | [localhost:8081](http://localhost:8081) | settlements awaiting a human, and the ledger |
 | Autonomy contract | [the OpenFeature page](/autonomy-contract) | the live flag, and the one write that flips it |
-| Traces | [Jaeger](http://localhost:16686) | one trace, end to end, ~150 spans across 7 services |
+| Traces | [Jaeger](http://localhost:16686) | one trace, end to end, across every service |
 | Metrics | [Prometheus](http://localhost:9090) | request rates, LLM tokens, model cost |
 | The catalog | [Components](/catalog) | every component, its docs, and its own links into the above |
 
@@ -100,11 +100,11 @@ and Prometheus — no hunting for the right query.
   logic, the identity story, what is real and what is deferred, and a
   span-by-span walk of the trace.
 - **[Running the demo](demo-runbook.md)** — the operator's document: the
-  eight beats, what to say, what to show, how to reset, and what to do when
+  seven-step flow, what to say, what to show, how to reset, and what to do when
   something breaks.
 - **[Telemetry contract](telemetry-contract.md)** — what every span and metric
-  must carry, and the measured figures behind the claims above.
-- **[Upstream findings](upstream-findings.md)** — things learned about the
+  must carry, the conventions used and the known gaps.
+- **[Upstream findings](upstream-findings.md)** — filing-ready findings against the
   upstream projects this system is built on.
 
 ## Honest limits
@@ -119,5 +119,4 @@ acceptable anywhere else:
 - **Authorization is exactly one hop.** The browser → claims-agent,
   claims-agent → settlement-agent and payments-mcp → payments-api hops carry
   no identity and consult no policy. `claims-agent` and `customer-ui` still
-  share one SPIFFE ID — carried debt, measured and written down rather than
-  quietly left out.
+  share one SPIFFE ID.

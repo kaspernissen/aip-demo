@@ -1,7 +1,6 @@
 """The five-minute demo flow, run as the commands themselves.
 
-`scripts/demo` is what the speaker types on stage (spec section 4,
-`docs/superpowers/specs/2026-10-13-northstar-m8-human-in-the-loop-design.md`):
+`scripts/demo` is what the speaker types on stage:
 
     guard -> claim 5800 (WAITS) -> approve last -> autonomy autonomous
           -> claim 5800 (settled by the agent) -> claim 6200 (WAITS)

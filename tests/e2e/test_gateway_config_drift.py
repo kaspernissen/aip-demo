@@ -19,7 +19,7 @@ block -- leaves `yaml.safe_load` of both sides comparing **equal**. That is not
 a defect: `scripts/setup-kind.sh` recreates the ConfigMap from the committed
 file *and* restarts the deployment (a mounted ConfigMap change is invisible to
 a running gateway, which reads its config once at startup with `-f`), so
-convergence is guaranteed at the next `--stage 2`, and bouncing the choke point
+convergence is guaranteed at the next `setup-kind.sh` run, and bouncing the choke point
 to publish a comment would be the worse trade. A byte comparison would call
 that state a failure, wrongly, and the predictable response to a guard that
 cries wolf is to delete it.
@@ -32,15 +32,15 @@ the only version of this test that can be left switched on permanently.
 **Skips without a cluster, fails with one — and never skips on the object under
 test.** Same split, and the same reasons, as
 `tests/e2e/test_gateway_is_the_only_route.py::policy_present`: the skip
-discriminates on a *different object* than the one being asserted. Whether this
-is a stage-2 cluster at all is decided by the `agentgateway` Deployment; the
+discriminates on a *different object* than the one being asserted. Whether the gateway
+is installed at all is decided by the `agentgateway` Deployment; the
 ConfigMap and its `config.yaml` key are the target, so their absence is a
 **failure**, never a skip. A missing or empty ConfigMap on a cluster that is
 running the gateway is itself a live/committed divergence — the gateway is
 serving a configuration this repository cannot see — which is precisely what
 this file exists to catch. A skip on the ConfigMap itself would let a genuinely
 broken cluster report `1 skipped` with a reason that falsely claims "not a
-stage-2 cluster"; `policy_present` and
+cluster with the gateway"; `policy_present` and
 `platform/policy-decision-service/tests/conftest.py` apply the same rule for
 the same reason -- a skip does not fail a run.
 
@@ -61,7 +61,7 @@ COMMITTED_CONFIG = REPO_ROOT / "deploy" / "platform" / "agentgateway" / "config.
 KUBE_CONTEXT = "kind-northstar"
 PLATFORM_NAMESPACE = "northstar-platform"
 CONFIGMAP_NAME = "agentgateway-config"
-# The stage-2 discriminator: a different object than the one under test, so a
+# The installed-or-not discriminator: a different object than the one under test, so a
 # missing ConfigMap can fail instead of silently skipping.
 GATEWAY_DEPLOYMENT = "agentgateway"
 # The key `scripts/setup-kind.sh` creates the ConfigMap under
@@ -95,7 +95,7 @@ def live_gateway_config_text() -> str:
             "run ./scripts/setup-kind.sh"
         )
 
-    # The stage-2 probe, deliberately NOT the object under test. If the gateway
+    # The installed-or-not probe, deliberately NOT the object under test. If the gateway
     # Deployment is absent there is no deployed gateway to have drifted and
     # nothing to say; if it is present, everything below is an assertion.
     deployment = _kubectl(
