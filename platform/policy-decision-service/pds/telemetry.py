@@ -62,7 +62,7 @@ ATTR_LEDGER_STATUS = "northstar.policy.ledger.status"
 # for a policy decision itself -- a feature flag's ruleset version already
 # has one: `feature_flag.version`, read from
 # `opentelemetry.semconv._incubating.attributes.feature_flag_attributes`
-# (still incubating as of opentelemetry-semantic-conventions==0.65b0, not yet
+# (still incubating in opentelemetry-semantic-conventions==0.65b0, not yet
 # in the stable `opentelemetry.semconv.attributes` namespace -- checked by
 # import, not assumed) rather than retyped as a string literal. The
 # `feature_flag.evaluation` span event `TracingHook` writes does not carry it,

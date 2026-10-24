@@ -1,4 +1,4 @@
-# reviewer-ui: the HITL stage surface.
+# reviewer-ui: the human-approval surface.
 #
 # Its own ServiceAccount, for the same reason settlement-agent.yaml's own
 # comment gives: without one this pod attests as
@@ -6,7 +6,7 @@
 # policy cannot decide on. It grants no RBAC and this pod makes no Kubernetes
 # API call.
 #
-# This identity now releases money: the reviewer-ui calls execute_payment
+# This identity releases money: the reviewer-ui calls execute_payment
 # through agentgateway under its own JWT-SVID, and the Policy Decision Service
 # permits it under `human-approved.execute` only for a payment the ledger shows
 # awaiting approval (platform/policy-decision-service/pds/rules.py,
@@ -104,50 +104,35 @@ spec:
               path: /healthz
               port: 8080
             initialDelaySeconds: 2
-          # Both memory figures are measured, not guessed. They replace
-          # `requests: 32Mi` / `limits: 64Mi`, which were
-          # estimates and were wrong in the direction that looks like nothing:
-          # this pod OOMKilled three times during load testing
-          # (`kubectl get pod` restart count 3, and the container's own
-          # `lastState.terminated` reads `exitCode: 137, reason: OOMKilled`),
-          # self-recovered each time, and would have turned an ordinary gate
-          # run -- or a live demo -- into a false failure.
-          #
-          # HOW THEY WERE MEASURED. There is no metrics-server on this kind
-          # cluster, so `kubectl top pod` answers "Metrics API not available".
-          # The numbers below are read straight off the container's own cgroup
-          # v2 accounting instead, which is what `kubectl top` would be
-          # summarising anyway:
+          # Memory is sized from measurement. There is no metrics-server on
+          # this kind cluster, so the figures are read from the container's
+          # cgroup v2 accounting, which is what `kubectl top` summarises:
           #
           #   kubectl -n northstar-agents exec deploy/reviewer-ui -- \
           #     sh -c 'head -1 /sys/fs/cgroup/memory.current; \
           #            head -1 /sys/fs/cgroup/memory.peak'
           #
           # `memory.peak` is the high-water mark since the container started,
-          # so each figure below was taken after a `rollout restart` and one
-          # load shape, against a temporarily raised limit so the kernel could
-          # not cap the very number being measured:
+          # so each figure was taken after a `rollout restart` and one load
+          # shape, against a temporarily raised limit so the kernel could not
+          # cap the number being measured:
           #
           #   idle, just after startup        ~55 MiB peak
           #   60 sequential  GET /            ~75 MiB peak
           #   100 GET / at concurrency 10     ~72 MiB peak
           #   200 GET / fully concurrent     ~210 MiB peak
           #
-          # The 64Mi limit was below even the IDLE figure's neighbourhood
-          # (idle `memory.current` measured 57 MiB against a 64 MiB cap, ~7 MiB
-          # of headroom), and the 200-concurrent burst reproduced the OOMKill
-          # on the old limit directly -- so this is the limit's own fault, not
-          # a symptom of something else.
+          # A 64Mi limit leaves about 7 MiB over idle, and the 200-concurrent
+          # burst OOMKills at that limit, so it is too low.
           #
           # `limits.memory: 256Mi` covers the worst shape measured (210 MiB)
           # rather than only the realistic ones, because a limit is the figure
-          # a crash depends on and this node has 29 GiB allocatable.
+          # a crash depends on and this node has 29 GiB allocatable. Against
+          # real browser approvals `memory.peak` was 62.2 MiB.
           # `requests.memory: 96Mi` is set from the realistic peak (~75 MiB)
           # instead: requests are what the scheduler reserves, and reserving
           # the pathological figure would misreport what this pod normally
-          # needs. cpu is left at the original 25m -- nothing about the
-          # OOMKills implicated it, and it was not measured, so it is not
-          # changed.
+          # needs. cpu stays at 25m; nothing implicated it.
           #
           # CONFIRMED AFTER THE FACT, against real traffic rather than a
           # synthetic burst: read back immediately after the full gate run

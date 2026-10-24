@@ -4,19 +4,14 @@
 # `agentgateway --version` reports the bare "1.6.0" as its internal version
 # string, but the pullable image tag carries the `v` prefix).
 #
-# Upstream check, 2026-10-13: v1.6.0 (GA 2026-10-02, the newest non-prerelease
-# per `gh api repos/agentgateway/agentgateway/releases`) bumped from v1.5.0
-# (2026-08-27). The v1.6.0, -rc.1, -alpha.2 and -alpha.1 release notes were read
-# for everything this file touches. This file's keys needed no change to parse:
-# the v1.5.0 and v1.6.0 images both reach the JWKS fetch (the validator's
-# last stage) on this exact file. One key was ADDED for a changed default:
-# `frontendPolicies.tracing.parentNotSampled` (see below).
+# `frontendPolicies.tracing.parentNotSampled` is set explicitly because v1.6.0
+# changed its default (see below).
 #
 # The external `ExtMCP` gRPC hook is configured below, as `mcpGuardrails`,
 # pointed at the Policy Decision Service and set to `failureMode: failClosed`.
 # Native CEL `mcpAuthorization` is deliberately absent: the authorization
 # decision belongs to the PDS, not to this file. The route-level `authorization`
-# ceiling (M8) is the one exception, and it only ever says no.
+# ceiling is the one exception, and it only ever says no.
 #
 # Schema verified directly against the pinned image: `docker run --rm
 # cr.agentgateway.dev/agentgateway:v1.6.0 -f config.yaml --validate-only`
@@ -58,7 +53,7 @@
 # our spans would appear either way; this makes a headerless caller visible
 # too, instead of silently untraced.
 #
-# `parentNotSampled: true` is new in v1.6.0 (upstream PR #3316, verified in
+# `parentNotSampled: true` is new in v1.6.0 (upstream PR #3316; see
 # v1.6.0's `TraceSampler::trace_sampled`, log.rs:554-579) and is the same
 # standing requirement as `randomSampling`: 100% of telemetry, always. v1.6.0
 # splits the incoming-`traceparent` case in two: a sampled parent (`-01`) still
@@ -66,7 +61,7 @@
 # (`-00`) now follows `parentNotSampled`, which defaults to false -- the
 # OpenTelemetry ParentBased sampler's `remoteParentNotSampled` delegate. No
 # caller here sends `-00` today (every SDK is always-on), so this changes
-# nothing measured; it is set so that a caller that ever does is recorded
+# nothing today; it is set so that a caller that ever does is recorded
 # rather than silently dropped by a default that moved under the pin.
 frontendPolicies:
   tracing:
@@ -113,9 +108,7 @@ binds:
     # variable in that command: agentgateway v1.5.0 expands environment
     # variables in this file's raw text BEFORE parsing it as YAML, comments
     # included, and an unset name is a hard error -- "Error: error looking key
-    # 'PWD' up: environment variable not found", which is exactly what the
-    # first draft of this comment produced (and then, once, again: the fix
-    # mentioned a dollar-prefixed placeholder name and hit the same wall). That
+    # 'PWD' up: environment variable not found". That
     # is a live constraint on this whole file, not a quirk of one command line:
     # a dollar-sign reference anywhere in here, even inside a comment, must
     # resolve in the gateway container's environment or the gateway refuses to
@@ -233,7 +226,7 @@ binds:
               # FailureMode from that module.
               #
               # The line stays anyway, and so does the test that requires it.
-              # The reason is now the honest one: `failOpen` is one word away,
+              # The reason: `failOpen` is one word away,
               # and a fail-open gateway is indistinguishable from a governing
               # one until someone reads a trace. Naming the value makes the
               # intent reviewable rather than inherited.
@@ -254,10 +247,8 @@ binds:
               # it does not read it.
               metadata:
                 caller: 'jwt.sub'
-              # `requestHeaders.allowed` IS A STRICT ALLOWLIST, and this is
-              # the one line in this block that was measured wrong before it
-              # was measured right. Recorded in full because the failure was
-              # silent and the fix is counter-intuitive.
+              # `requestHeaders.allowed` IS A STRICT ALLOWLIST. Getting it wrong
+              # fails silently, and the fix is counter-intuitive.
               #
               # `allowed: ["authorization"]` alone validates, the gateway
               # starts, the PDS is called, and the policy decides correctly.
@@ -303,10 +294,9 @@ binds:
         # asked: no caller may execute a payment above EUR 50,000, or of a
         # non-positive amount. Written as an ALLOW rule on purpose: a `deny:`
         # rule fails OPEN on a value it cannot evaluate (a string "60000"
-        # executed in the spike), while an allow rule that errors denies.
+        # executed), while an allow rule that errors denies.
         # v1.6.0+ only: on v1.5.0 this policy has no MCP context and denies
-        # every request. Measured: .demo/reports/cel-spike-report.md section 2.2
-        # and section 4. A denial is `403 text/plain "authorization failed"` and
+        # every request. A denial is `403 text/plain "authorization failed"` and
         # leaves no northstar.policy.decision span: the PDS is never asked.
         authorization:
           rules:

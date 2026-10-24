@@ -17,7 +17,7 @@ v1.5.0 on this cluster, not assumed. The three facts this file is built on:
 And one fact about the way out, measured on agentgateway v1.6.0: a
 `PERMISSION_DENIED` rejection on `tools/call` reaches the client as HTTP 200
 with an MCP tool result, `{"isError": true, "content": [{"type": "text",
-"text": <rejection message>}]}`. `error.data` no longer reaches it (upstream PR
+"text": <rejection message>}]}`. `error.data` does not reach it (upstream PR
 #3526); only `INTERNAL_ERROR` keeps the JSON-RPC error form, and a policy
 refusal is not an internal error. So everything the agent needs -- the reason,
 the rule, the limit, the requested amount -- rides in the message text, in the
@@ -92,7 +92,7 @@ _flag_client.add_hooks([TracingHook()])
 # The JSON-RPC application-error range. The exact code is ours because this is
 # our error -- and the client never sees it: on agentgateway v1.6.0 a deny is
 # returned as an `isError` tool result whose text is the message below, and
-# `error.data` (where this code and the decision body used to land) is dropped.
+# `error.data` (where this code and the decision body would land) is dropped.
 # The body is still sent in `mcp_error` in case a gateway version reads it.
 DENY_JSONRPC_CODE = -32003
 

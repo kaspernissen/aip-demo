@@ -50,11 +50,9 @@ spec:
 ---
 # The autonomy contract itself, as a catalog entity.
 #
-# Added 2026-09-16 because a reader looking at the component list asked where
-# OpenFeature was, and the honest answer was: nowhere. flagd ran as a native
-# sidecar in this service's pod, the `northstar-autonomy` FeatureFlag was the
-# thing the demo's last beat flips, and the catalog -- the portal's own answer
-# to "what is this system made of" -- did not mention either.
+# flagd runs as a native sidecar in this service's pod, and the
+# `northstar-autonomy` FeatureFlag is what the demo flips. The catalog, the
+# portal's answer to "what is this system made of", lists it here.
 #
 # `kind: Resource`, not Component: it is not built or deployed from a
 # directory in this tree (which is also why the component guards in tests/unit

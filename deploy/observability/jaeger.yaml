@@ -119,7 +119,7 @@ spec:
           # **v2.20.0 deliberately, not the newest v2.21.0.** v2.21.0's
           # release notes carry one breaking change: "remove v1 http
           # endpoints the ui no longer calls" (jaegertracing/jaeger#9260).
-          # Checked against a running v2.21.0 pod: `/api/services` and
+          # Checked against a v2.21.0 pod: `/api/services` and
           # `/api/traces` return 404 there, and only `/api/v3/*` answers.
           # Those two v1 endpoints are what tests/harness/jaeger.py is built
           # on, and its Span/Trace parsing expects v1 trace JSON -- the v3 API
@@ -141,16 +141,15 @@ spec:
           # **The config is the image's own built-in all-in-one config,
           # mounted from the ConfigMap below with one value changed:
           # `max_traces` 100000 -> 20000** (upstream file:
-          # cmd/jaeger/internal/all-in-one.yaml at tag v2.20.0, copied
-          # 2026-10-18). Why: the in-memory store evicts only by trace count,
-          # and at 100000 it never evicted before the 512Mi limit. The pod was
-          # OOMKilled on 2026-10-14T15:53Z, about 2.5 days after it started,
-          # and an OOM erases every trace -- since M9 that is the demo's
-          # evidence (`scripts/demo evidence` reads Jaeger). Most traces here
+          # cmd/jaeger/internal/all-in-one.yaml at tag v2.20.0). Why: the
+          # in-memory store evicts only by trace count, and at 100000 it never
+          # evicted before a 512Mi limit was hit. An OOM kill erases every
+          # trace, and those traces are the demo's evidence
+          # (`scripts/demo evidence` reads Jaeger). Most traces here
           # are tiny (Kyverno self-checks, about six a minute); the claim
           # traces are a few hundred spans each, so a count cap only bounds
           # memory together with a limit that has headroom: 1Gi below.
-          # 20000 still holds a whole gate run: oldest traces go first.
+          # 20000 still holds a whole test run: oldest traces go first.
           #
           # The image name is `jaegertracing/jaeger`, not
           # `jaegertracing/all-in-one`, which is a v1-only repository.

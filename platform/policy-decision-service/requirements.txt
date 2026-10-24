@@ -7,8 +7,8 @@
 # grpcio-tools to generate stubs from the vendored proto/ext_mcp.proto.
 # Version matched to agents/settlement-agent/requirements.txt, the only
 # other sibling service with a grpcio dependency (pulled in there via
-# spiffe==0.3.1): grpcio 1.83.1 is upstream's latest stable release at the
-# time that pin was made (grpc/grpc tag v1.83.1, 2026-08-27).
+# spiffe==0.3.1): grpcio 1.83.1 is upstream's latest stable release (grpc/grpc
+# tag v1.83.1).
 grpcio==1.83.1
 grpcio-tools==1.83.1
 
@@ -21,7 +21,7 @@ opentelemetry-api==1.44.0
 opentelemetry-exporter-otlp-proto-http==1.44.0
 
 # Test path, matched to the pytest version already current across every
-# other requirements.txt in this repo (fixed after PYSEC-2026-1845).
+# other requirements.txt in this repo (the version that fixes PYSEC-2026-1845).
 pytest==9.1.1
 
 # The rest of this file's transitive closure, pinned exactly as resolved by

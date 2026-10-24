@@ -13,7 +13,7 @@
 # the collector as a `gen_ai.evaluation.result` log event attached to the agent's
 # invoke_agent span (AGENTEVALS_EVALUATION_EVENTS).
 #
-# What it can and cannot see is the talk's caveat, measured 2026-10-21 on 0.11.0:
+# What it can and cannot see is limited (checked on 0.11.0):
 # the agent's GenAI spans only (tool calls, tool results, the final answer). Not
 # the policy decision, not the reviewer's approval, not the caller's identity; it
 # does not follow span links. Those are in the trace, read by a person (Jaeger,

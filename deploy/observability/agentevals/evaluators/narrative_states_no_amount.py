@@ -1,4 +1,4 @@
-"""narrative_states_no_amount, as an AgentEvals code evaluator (M11).
+"""narrative_states_no_amount, as an AgentEvals code evaluator.
 
 The settlement agent's instructions end "Do not state amounts in your narrative"
 (agents/settlement-agent/settlement.py): the amount the claimant is told comes from

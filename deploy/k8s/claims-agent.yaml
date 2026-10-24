@@ -1,14 +1,12 @@
-# A dedicated ServiceAccount (M12), so Linkerd can tell this workload from its
+# A dedicated ServiceAccount, so Linkerd can tell this workload from its
 # neighbours. A meshed pod's identity is
 # `<serviceaccount>.<namespace>.serviceaccount.identity.linkerd.cluster.local`
-# (deploy/platform/reach/linkerd-policies.yaml authorizes callers by it), and
-# until now this pod ran as `default`, which every other pod in `northstar-agents` that
-# names no account shares: a policy naming it would admit them all. It grants no
-# RBAC; this pod makes no Kubernetes API calls. No named ClusterSPIFFEID selects
-# this workload, but SPIRE's catch-all fallback does
-# (deploy/platform/spire/registration.yaml), so its SPIFFE ID DOES change with this
-# account: from `.../sa/default` to `.../sa/claims-agent`. Nothing in the repo
-# references the old ID.
+# (deploy/platform/reach/linkerd-policies.yaml authorizes callers by it). Pods
+# that name no account share `default` in `northstar-agents`, so a policy naming
+# it would admit them all. The account grants no RBAC; this pod makes no
+# Kubernetes API calls. SPIRE's catch-all fallback
+# (deploy/platform/spire/registration.yaml) gives it the SPIFFE ID
+# `.../sa/claims-agent`.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

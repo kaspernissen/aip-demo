@@ -1,4 +1,4 @@
-"""stopped_when_refused, as an AgentEvals code evaluator (M11).
+"""stopped_when_refused, as an AgentEvals code evaluator.
 
 AgentEvals runs this file as a subprocess: one EvalInput JSON document on stdin,
 one result on stdout (protocol 1.1, docs/custom-evaluators.md upstream).

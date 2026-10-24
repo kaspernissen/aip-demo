@@ -63,7 +63,7 @@ spec:
       annotations:
         openfeature.dev/enabled: "true"
         openfeature.dev/featureflagsource: "northstar-autonomy-source"
-        # Meshed by Linkerd (M12): a pod-level opt-in, because the platform
+        # Meshed by Linkerd: a pod-level opt-in, because the platform
         # namespace is not. The injector adds the proxy alongside the flagd
         # sidecar above; they do not interact (flagd is on localhost).
         linkerd.io/inject: enabled

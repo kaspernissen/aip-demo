@@ -46,8 +46,6 @@ reviewer-ui; a free-text claim that tells the model to pay more, then `inject`;
 approval; `evidence` again; `keystone`. At rest the contract is `assisted` and
 nothing waits. `config` is there if a question asks what, exactly, restrains the agent.
 
-Design: docs/superpowers/specs/2026-10-13-northstar-m8-human-in-the-loop-design.md, section 4.
-
 **No new mechanism.** Everything here is code the tests already prove, imported
 from `tests/harness/` (`live.py`, `contract.py`, `jaeger.py`) -- claim submission
 over A2A, server-side SVID minting, direct MCP calls through the gateway, the
@@ -120,7 +118,7 @@ AGENTS_NS = "northstar-agents"
 TOOLS_NS = "northstar-tools"
 PLATFORM_NS = "northstar-platform"
 # POST /, not the agent card: Linkerd's default probe route opens the card path to
-# every caller (plan M5), so only a POST proves claims-agent's identity is authorized.
+# every caller, so only a POST proves claims-agent's identity is authorized.
 CONTROL_URL = "http://settlement-agent.northstar-agents.svc.cluster.local:9002/"
 DIRECT_URL = "http://payments-mcp.northstar-tools.svc.cluster.local:8000/mcp"
 INGRESS_URL = (
@@ -1197,8 +1195,8 @@ def _settled(claim: dict, window_start_ms: int) -> dict:
         missing = [f for f in required if not row.get(f)]
         # Trace A's refused attempt already fills `money_hops`, so "any hop" is not
         # enough: wait for the hop this claim's outcome means. payments-api batches
-        # its spans (~5 s), and M10 gate run 4 evidenced an approved claim before
-        # its execute span had landed.
+        # its spans (~5 s), so an approved claim can be read before its execute
+        # span has landed.
         outcome_hop = {"executed": EXECUTE_HOP, "rejected": REJECT_HOP}.get(claim["status"])
         if outcome_hop and outcome_hop not in (row.get("money_hops") or []):
             missing.append(outcome_hop)
@@ -1704,8 +1702,8 @@ def cmd_evals(args: argparse.Namespace) -> None:
         say("Not here: safety_v1 and the multi-turn metrics, which need Google Cloud.")
     results = agentevals_score(body)
     failed = 0
-    # AgentEvals keeps every session it has seen since its pod started, the gate's
-    # test claims included. Show this run's claims when the run has any.
+    # AgentEvals keeps every session it has seen since its pod started, test
+    # claims included. Show this run's claims when the run has any.
     mine = {c["id"] for c in load_state().get("claims") or []}
     shown = [r for r in results if r["sessionId"] in mine] if mine else results
     if len(shown) < len(results):

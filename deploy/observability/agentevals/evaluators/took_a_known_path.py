@@ -1,4 +1,4 @@
-"""took_a_known_path, as an AgentEvals code evaluator (M11).
+"""took_a_known_path, as an AgentEvals code evaluator.
 
 The model has two payment tools, and a settlement takes one path through them,
 read off its tool calls in order (get_payment, a read, is left out):
@@ -7,8 +7,7 @@ read off its tool calls in order (get_payment, a read, is left out):
   held      propose_payment -> execute_payment (refused by the platform)
 
 The refusal itself is recorded by settlement-agent's own code after the run
-(decide_settlement), not by the model, so it is not a tool call here (measured on
-the live demo, 2026-10-21). Anything else, a skipped proposal, a second execute, is
+(decide_settlement), not by the model, so it is not a tool call here. Anything else, a skipped proposal, a second execute, is
 a path nobody designed. This is the deterministic stand-in for AgentEvals' own
 tool_trajectory_avg_score, which compares tool arguments too (claim ids, amounts)
 and, at agentevals 0.11.0, exposes no switch to ignore them: against a golden run
