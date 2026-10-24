@@ -1,0 +1,46 @@
+{
+  "gen_ai.client.operation.duration": {
+    "scope": "opentelemetry.instrumentation.anthropic",
+    "unit": "s",
+    "type": "Histogram",
+    "attribute_keys": [
+      "gen_ai.provider.name",
+      "gen_ai.response.model"
+    ]
+  },
+  "gen_ai.client.token.usage": {
+    "scope": "pydantic-ai",
+    "unit": "{token}",
+    "type": "Histogram",
+    "attribute_keys": [
+      "gen_ai.operation.name",
+      "gen_ai.provider.name",
+      "gen_ai.request.model",
+      "gen_ai.response.model",
+      "gen_ai.system",
+      "gen_ai.token.type"
+    ]
+  },
+  "gen_ai.client.generation.choices": {
+    "scope": "opentelemetry.instrumentation.anthropic",
+    "unit": "choice",
+    "type": "Sum",
+    "attribute_keys": [
+      "gen_ai.provider.name",
+      "gen_ai.response.finish_reason",
+      "gen_ai.response.model"
+    ]
+  },
+  "operation.cost": {
+    "scope": "pydantic-ai",
+    "unit": "{USD}",
+    "type": "Histogram",
+    "attribute_keys": [
+      "gen_ai.operation.name",
+      "gen_ai.provider.name",
+      "gen_ai.request.model",
+      "gen_ai.response.model",
+      "gen_ai.system"
+    ]
+  }
+}

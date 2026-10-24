@@ -1,0 +1,242 @@
+[
+  {
+    "name": "chat claude-sonnet-5",
+    "kind": "CLIENT",
+    "scope": "opentelemetry.instrumentation.genai.anthropic",
+    "scope_version": "1.3b0",
+    "span_id": "8621b12c255124e2",
+    "parent_id": "11f5d91a890ed84f",
+    "status": "UNSET",
+    "status_description": null,
+    "attributes": {
+      "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"content\":\"Claim CLM-1842 is assessed as covered for 6200 EUR. Settle it.\",\"type\":\"text\"}],\"name\":null}]",
+      "gen_ai.operation.name": "chat",
+      "gen_ai.output.messages": "[{\"role\":\"assistant\",\"parts\":[{\"arguments\":{\"amount\":6200.0,\"currency\":\"EUR\"},\"name\":\"propose_payment\",\"id\":\"toolu_fake_0007\",\"type\":\"tool_call\"}],\"finish_reason\":\"tool_call\",\"name\":null}]",
+      "gen_ai.provider.name": "anthropic",
+      "gen_ai.request.max_tokens": 4096,
+      "gen_ai.request.model": "claude-sonnet-5",
+      "gen_ai.response.finish_reasons": [
+        "tool_call"
+      ],
+      "gen_ai.response.id": "msg_fake_0007",
+      "gen_ai.response.model": "claude-sonnet-5",
+      "gen_ai.system_instructions": "[{\"content\":\"You settle motor insurance claims for Northstar Insurance.\\nYou are given a claim that has already been assessed as covered.\\nSettle it by calling propose_payment with the assessed amount, then execute_payment with the paymentId you get back and that same amount.\\nThen reply with a short narrative for the claimant.\\nSettle the assessed amount. Do not round it, discount it or renegotia... [463 chars]",
+      "gen_ai.tool.definitions": "[{\"name\":\"propose_payment\",\"description\":\"Propose a payment against this claim. Returns the payment, including its paymentId.\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"amount\":{\"type\":\"number\"},\"currency\":{\"default\":\"EUR\",\"type\":\"string\"}},\"required\":[\"amount\"],\"type\":\"object\"},\"type\":\"function\"},{\"name\":\"execute_payment\",\"description\":\"Execute a proposed payment. This moves money... [866 chars]",
+      "gen_ai.usage.cache_read.input_tokens": 100,
+      "gen_ai.usage.cache_write.input_tokens": 20,
+      "gen_ai.usage.input_tokens": 620,
+      "gen_ai.usage.output_tokens": 50,
+      "server.address": "api.anthropic.com"
+    },
+    "events": []
+  },
+  {
+    "name": "chat claude-sonnet-5",
+    "kind": "CLIENT",
+    "scope": "pydantic-ai",
+    "scope_version": "2.42.0",
+    "span_id": "11f5d91a890ed84f",
+    "parent_id": "256b762fc8b18948",
+    "status": "UNSET",
+    "status_description": null,
+    "attributes": {
+      "gen_ai.agent.call.id": "01a16cd3-0d6d-7701-91fb-e875c2ebd466",
+      "gen_ai.agent.name": "settlement_agent",
+      "gen_ai.conversation.id": "01a16cd3-0d6d-7701-91fb-e87640bbbb17",
+      "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Claim CLM-1842 is assessed as covered for 6200 EUR. Settle it.\"}]}]",
+      "gen_ai.operation.name": "chat",
+      "gen_ai.output.messages": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"toolu_fake_0007\",\"name\":\"propose_payment\",\"arguments\":{\"amount\":6200.0,\"currency\":\"EUR\"}}],\"finish_reason\":\"tool_call\"}]",
+      "gen_ai.provider.name": "anthropic",
+      "gen_ai.request.model": "claude-sonnet-5",
+      "gen_ai.response.finish_reasons": [
+        "tool_call"
+      ],
+      "gen_ai.response.id": "msg_fake_0007",
+      "gen_ai.response.model": "claude-sonnet-5",
+      "gen_ai.system": "anthropic",
+      "gen_ai.system_instructions": "[{\"type\":\"text\",\"content\":\"You settle motor insurance claims for Northstar Insurance.\\nYou are given a claim that has already been assessed as covered.\\nSettle it by calling propose_payment with the assessed amount, then execute_payment with the paymentId you get back and that same amount.\\nThen reply with a short narrative for the claimant.\\nSettle the assessed amount. Do not round it, discount i... [463 chars]",
+      "gen_ai.tool.definitions": "[{\"type\":\"function\",\"name\":\"propose_payment\",\"description\":\"Propose a payment against this claim. Returns the payment, including its paymentId.\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"amount\":{\"type\":\"number\"},\"currency\":{\"default\":\"EUR\",\"type\":\"string\"}},\"required\":[\"amount\"],\"type\":\"object\"}},{\"type\":\"function\",\"name\":\"execute_payment\",\"description\":\"Execute a proposed payment... [866 chars]",
+      "gen_ai.usage.cache_creation.input_tokens": 20,
+      "gen_ai.usage.cache_read.input_tokens": 100,
+      "gen_ai.usage.details.cache_creation_input_tokens": 20,
+      "gen_ai.usage.details.cache_read_input_tokens": 100,
+      "gen_ai.usage.details.cache_read_tokens": 100,
+      "gen_ai.usage.details.cache_write_tokens": 20,
+      "gen_ai.usage.input_tokens": 620,
+      "gen_ai.usage.output_tokens": 50,
+      "logfire.json_schema": "{\"type\":\"object\",\"properties\":{\"gen_ai.input.messages\":{\"type\":\"array\"},\"gen_ai.output.messages\":{\"type\":\"array\"},\"gen_ai.system_instructions\":{\"type\":\"array\"},\"model_request_parameters\":{\"type\":\"object\"}}}",
+      "model_request_parameters": "{\"function_tools\":[{\"name\":\"propose_payment\",\"parameters_json_schema\":{\"additionalProperties\":false,\"properties\":{\"amount\":{\"type\":\"number\"},\"currency\":{\"default\":\"EUR\",\"type\":\"string\"}},\"required\":[\"amount\"],\"type\":\"object\"},\"description\":\"Propose a payment against this claim. Returns the payment, including its paymentId.\",\"outer_typed_dict_key\":null,\"strict\":false,\"sequential\":false,\"kind\":\"func... [2286 chars]",
+      "operation.cost": 0.00157,
+      "server.address": "api.anthropic.com"
+    },
+    "events": []
+  },
+  {
+    "name": "execute_tool propose_payment",
+    "kind": "INTERNAL",
+    "scope": "pydantic-ai",
+    "scope_version": "2.42.0",
+    "span_id": "6c5e0bb1618365f4",
+    "parent_id": "256b762fc8b18948",
+    "status": "UNSET",
+    "status_description": null,
+    "attributes": {
+      "gen_ai.agent.call.id": "01a16cd3-0d6d-7701-91fb-e875c2ebd466",
+      "gen_ai.agent.name": "settlement_agent",
+      "gen_ai.conversation.id": "01a16cd3-0d6d-7701-91fb-e87640bbbb17",
+      "gen_ai.operation.name": "execute_tool",
+      "gen_ai.tool.call.arguments": "{\"amount\":6200.0,\"currency\":\"EUR\"}",
+      "gen_ai.tool.call.id": "toolu_fake_0007",
+      "gen_ai.tool.call.result": "{\"paymentId\":\"PAY-000001\",\"claimId\":\"CLM-1842\",\"amount\":6200.0,\"currency\":\"EUR\",\"status\":\"PROPOSED\"}",
+      "gen_ai.tool.name": "propose_payment",
+      "logfire.json_schema": "{\"type\":\"object\",\"properties\":{\"gen_ai.tool.call.arguments\":{\"type\":\"object\"},\"gen_ai.tool.call.result\":{\"type\":\"object\"},\"gen_ai.tool.name\":{},\"gen_ai.tool.call.id\":{}}}",
+      "logfire.msg": "running tool: propose_payment"
+    },
+    "events": []
+  },
+  {
+    "name": "chat claude-sonnet-5",
+    "kind": "CLIENT",
+    "scope": "opentelemetry.instrumentation.genai.anthropic",
+    "scope_version": "1.3b0",
+    "span_id": "934cdf6d4e9c1391",
+    "parent_id": "3845c1adaec795b8",
+    "status": "UNSET",
+    "status_description": null,
+    "attributes": {
+      "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"content\":\"Claim CLM-1842 is assessed as covered for 6200 EUR. Settle it.\",\"type\":\"text\"}],\"name\":null},{\"role\":\"assistant\",\"parts\":[{\"arguments\":{\"amount\":6200.0,\"currency\":\"EUR\"},\"name\":\"propose_payment\",\"id\":\"toolu_fake_0007\",\"type\":\"tool_call\"}],\"name\":null},{\"role\":\"user\",\"parts\":[{\"response\":[{\"text\":\"{\\\"paymentId\\\":\\\"PAY-000001\\\",\\\"claimId\\\":\\\"CLM-1842\\\",\\\"amount\\\"... [537 chars]",
+      "gen_ai.operation.name": "chat",
+      "gen_ai.output.messages": "[{\"role\":\"assistant\",\"parts\":[{\"arguments\":{\"payment_id\":\"PAY-000001\",\"amount\":6200.0,\"currency\":\"EUR\"},\"name\":\"execute_payment\",\"id\":\"toolu_fake_0008\",\"type\":\"tool_call\"}],\"finish_reason\":\"tool_call\",\"name\":null}]",
+      "gen_ai.provider.name": "anthropic",
+      "gen_ai.request.max_tokens": 4096,
+      "gen_ai.request.model": "claude-sonnet-5",
+      "gen_ai.response.finish_reasons": [
+        "tool_call"
+      ],
+      "gen_ai.response.id": "msg_fake_0008",
+      "gen_ai.response.model": "claude-sonnet-5",
+      "gen_ai.system_instructions": "[{\"content\":\"You settle motor insurance claims for Northstar Insurance.\\nYou are given a claim that has already been assessed as covered.\\nSettle it by calling propose_payment with the assessed amount, then execute_payment with the paymentId you get back and that same amount.\\nThen reply with a short narrative for the claimant.\\nSettle the assessed amount. Do not round it, discount it or renegotia... [463 chars]",
+      "gen_ai.tool.definitions": "[{\"name\":\"propose_payment\",\"description\":\"Propose a payment against this claim. Returns the payment, including its paymentId.\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"amount\":{\"type\":\"number\"},\"currency\":{\"default\":\"EUR\",\"type\":\"string\"}},\"required\":[\"amount\"],\"type\":\"object\"},\"type\":\"function\"},{\"name\":\"execute_payment\",\"description\":\"Execute a proposed payment. This moves money... [866 chars]",
+      "gen_ai.usage.cache_read.input_tokens": 100,
+      "gen_ai.usage.cache_write.input_tokens": 20,
+      "gen_ai.usage.input_tokens": 820,
+      "gen_ai.usage.output_tokens": 50,
+      "server.address": "api.anthropic.com"
+    },
+    "events": []
+  },
+  {
+    "name": "chat claude-sonnet-5",
+    "kind": "CLIENT",
+    "scope": "pydantic-ai",
+    "scope_version": "2.42.0",
+    "span_id": "3845c1adaec795b8",
+    "parent_id": "256b762fc8b18948",
+    "status": "UNSET",
+    "status_description": null,
+    "attributes": {
+      "gen_ai.agent.call.id": "01a16cd3-0d6d-7701-91fb-e875c2ebd466",
+      "gen_ai.agent.name": "settlement_agent",
+      "gen_ai.conversation.id": "01a16cd3-0d6d-7701-91fb-e87640bbbb17",
+      "gen_ai.input.messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Claim CLM-1842 is assessed as covered for 6200 EUR. Settle it.\"}]},{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"toolu_fake_0007\",\"name\":\"propose_payment\",\"arguments\":{\"amount\":6200.0,\"currency\":\"EUR\"}}],\"finish_reason\":\"tool_call\"},{\"role\":\"user\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"toolu_fake_0007\",\"name\":\"propose_payment\",\"resul... [507 chars]",
+      "gen_ai.operation.name": "chat",
+      "gen_ai.output.messages": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"toolu_fake_0008\",\"name\":\"execute_payment\",\"arguments\":{\"payment_id\":\"PAY-000001\",\"amount\":6200.0,\"currency\":\"EUR\"}}],\"finish_reason\":\"tool_call\"}]",
+      "gen_ai.provider.name": "anthropic",
+      "gen_ai.request.model": "claude-sonnet-5",
+      "gen_ai.response.finish_reasons": [
+        "tool_call"
+      ],
+      "gen_ai.response.id": "msg_fake_0008",
+      "gen_ai.response.model": "claude-sonnet-5",
+      "gen_ai.system": "anthropic",
+      "gen_ai.system_instructions": "[{\"type\":\"text\",\"content\":\"You settle motor insurance claims for Northstar Insurance.\\nYou are given a claim that has already been assessed as covered.\\nSettle it by calling propose_payment with the assessed amount, then execute_payment with the paymentId you get back and that same amount.\\nThen reply with a short narrative for the claimant.\\nSettle the assessed amount. Do not round it, discount i... [463 chars]",
+      "gen_ai.tool.definitions": "[{\"type\":\"function\",\"name\":\"propose_payment\",\"description\":\"Propose a payment against this claim. Returns the payment, including its paymentId.\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"amount\":{\"type\":\"number\"},\"currency\":{\"default\":\"EUR\",\"type\":\"string\"}},\"required\":[\"amount\"],\"type\":\"object\"}},{\"type\":\"function\",\"name\":\"execute_payment\",\"description\":\"Execute a proposed payment... [866 chars]",
+      "gen_ai.usage.cache_creation.input_tokens": 20,
+      "gen_ai.usage.cache_read.input_tokens": 100,
+      "gen_ai.usage.details.cache_creation_input_tokens": 20,
+      "gen_ai.usage.details.cache_read_input_tokens": 100,
+      "gen_ai.usage.details.cache_read_tokens": 100,
+      "gen_ai.usage.details.cache_write_tokens": 20,
+      "gen_ai.usage.input_tokens": 820,
+      "gen_ai.usage.output_tokens": 50,
+      "logfire.json_schema": "{\"type\":\"object\",\"properties\":{\"gen_ai.input.messages\":{\"type\":\"array\"},\"gen_ai.output.messages\":{\"type\":\"array\"},\"gen_ai.system_instructions\":{\"type\":\"array\"},\"model_request_parameters\":{\"type\":\"object\"}}}",
+      "model_request_parameters": "{\"function_tools\":[{\"name\":\"propose_payment\",\"parameters_json_schema\":{\"additionalProperties\":false,\"properties\":{\"amount\":{\"type\":\"number\"},\"currency\":{\"default\":\"EUR\",\"type\":\"string\"}},\"required\":[\"amount\"],\"type\":\"object\"},\"description\":\"Propose a payment against this claim. Returns the payment, including its paymentId.\",\"outer_typed_dict_key\":null,\"strict\":false,\"sequential\":false,\"kind\":\"func... [2286 chars]",
+      "operation.cost": 0.00197,
+      "server.address": "api.anthropic.com"
+    },
+    "events": []
+  },
+  {
+    "name": "execute_tool execute_payment",
+    "kind": "INTERNAL",
+    "scope": "pydantic-ai",
+    "scope_version": "2.42.0",
+    "span_id": "5eb6c6658062a33a",
+    "parent_id": "256b762fc8b18948",
+    "status": "ERROR",
+    "status_description": null,
+    "attributes": {
+      "gen_ai.agent.call.id": "01a16cd3-0d6d-7701-91fb-e875c2ebd466",
+      "gen_ai.agent.name": "settlement_agent",
+      "gen_ai.conversation.id": "01a16cd3-0d6d-7701-91fb-e87640bbbb17",
+      "gen_ai.operation.name": "execute_tool",
+      "gen_ai.tool.call.arguments": "{\"payment_id\":\"PAY-000001\",\"amount\":6200.0,\"currency\":\"EUR\"}",
+      "gen_ai.tool.call.id": "toolu_fake_0008",
+      "gen_ai.tool.name": "execute_payment",
+      "logfire.json_schema": "{\"type\":\"object\",\"properties\":{\"gen_ai.tool.call.arguments\":{\"type\":\"object\"},\"gen_ai.tool.call.result\":{\"type\":\"object\"},\"gen_ai.tool.name\":{},\"gen_ai.tool.call.id\":{}}}",
+      "logfire.msg": "running tool: execute_payment"
+    },
+    "events": [
+      {
+        "name": "exception",
+        "attributes": {
+          "exception.type": "mcp_tools.ToolCallError",
+          "exception.message": "payment PAY-000001 already executed (409)",
+          "exception.stacktrace": "<omitted>",
+          "exception.escaped": "True"
+        }
+      }
+    ]
+  },
+  {
+    "name": "invoke_agent settlement_agent",
+    "kind": "INTERNAL",
+    "scope": "pydantic-ai",
+    "scope_version": "2.42.0",
+    "span_id": "256b762fc8b18948",
+    "parent_id": null,
+    "status": "ERROR",
+    "status_description": "ToolCallError: payment PAY-000001 already executed (409)",
+    "attributes": {
+      "agent_name": "settlement_agent",
+      "gen_ai.agent.call.id": "01a16cd3-0d6d-7701-91fb-e875c2ebd466",
+      "gen_ai.agent.name": "settlement_agent",
+      "gen_ai.aggregated_usage.cache_creation.input_tokens": 40,
+      "gen_ai.aggregated_usage.cache_read.input_tokens": 200,
+      "gen_ai.aggregated_usage.details.cache_creation_input_tokens": 40,
+      "gen_ai.aggregated_usage.details.cache_read_input_tokens": 200,
+      "gen_ai.aggregated_usage.details.cache_read_tokens": 200,
+      "gen_ai.aggregated_usage.details.cache_write_tokens": 40,
+      "gen_ai.aggregated_usage.input_tokens": 1440,
+      "gen_ai.aggregated_usage.output_tokens": 100,
+      "gen_ai.conversation.id": "01a16cd3-0d6d-7701-91fb-e87640bbbb17",
+      "gen_ai.operation.name": "invoke_agent",
+      "gen_ai.system_instructions": "[{\"type\":\"text\",\"content\":\"You settle motor insurance claims for Northstar Insurance.\\nYou are given a claim that has already been assessed as covered.\\nSettle it by calling propose_payment with the assessed amount, then execute_payment with the paymentId you get back and that same amount.\\nThen reply with a short narrative for the claimant.\\nSettle the assessed amount. Do not round it, discount i... [463 chars]",
+      "logfire.json_schema": "{\"type\":\"object\",\"properties\":{\"pydantic_ai.all_messages\":{\"type\":\"array\"},\"gen_ai.system_instructions\":{\"type\":\"array\"},\"final_result\":{\"type\":\"object\"}}}",
+      "logfire.msg": "settlement_agent run",
+      "model_name": "claude-sonnet-5",
+      "pydantic_ai.all_messages": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Claim CLM-1842 is assessed as covered for 6200 EUR. Settle it.\"}]},{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"toolu_fake_0007\",\"name\":\"propose_payment\",\"arguments\":{\"amount\":6200.0,\"currency\":\"EUR\"}}],\"finish_reason\":\"tool_call\"},{\"role\":\"user\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"toolu_fake_0007\",\"name\":\"propose_payment\",\"resul... [507 chars]"
+    },
+    "events": [
+      {
+        "name": "exception",
+        "attributes": {
+          "exception.type": "mcp_tools.ToolCallError",
+          "exception.message": "payment PAY-000001 already executed (409)",
+          "exception.stacktrace": "<omitted>",
+          "exception.escaped": "False"
+        }
+      }
+    ]
+  }
+]

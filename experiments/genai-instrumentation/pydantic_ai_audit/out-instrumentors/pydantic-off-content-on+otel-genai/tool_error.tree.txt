@@ -1,0 +1,2 @@
+- chat claude-sonnet-5 (CLIENT, opentelemetry.instrumentation.genai.anthropic)
+- chat claude-sonnet-5 (CLIENT, opentelemetry.instrumentation.genai.anthropic)

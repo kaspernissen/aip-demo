@@ -1,0 +1,3 @@
+- beta.messages.create (INTERNAL, openinference.instrumentation.anthropic)  [OK]
+- beta.messages.create (INTERNAL, openinference.instrumentation.anthropic)  [OK]
+- beta.messages.create (INTERNAL, openinference.instrumentation.anthropic)  [OK]

@@ -1,0 +1,27 @@
+{
+  "gen_ai.client.token.usage": {
+    "scope": "pydantic-ai",
+    "unit": "{token}",
+    "type": "Histogram",
+    "attribute_keys": [
+      "gen_ai.operation.name",
+      "gen_ai.provider.name",
+      "gen_ai.request.model",
+      "gen_ai.response.model",
+      "gen_ai.system",
+      "gen_ai.token.type"
+    ]
+  },
+  "operation.cost": {
+    "scope": "pydantic-ai",
+    "unit": "{USD}",
+    "type": "Histogram",
+    "attribute_keys": [
+      "gen_ai.operation.name",
+      "gen_ai.provider.name",
+      "gen_ai.request.model",
+      "gen_ai.response.model",
+      "gen_ai.system"
+    ]
+  }
+}
