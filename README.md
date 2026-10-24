@@ -148,24 +148,22 @@ allowlist for capability. The gateway also carries a CEL rule of its own, a
 agentgateway config alone; it is off the live demo (`scripts/demo ceiling`). The keystone uses Kyverno's current
 `ValidatingPolicy` type rather than the deprecated `ClusterPolicy`.
 
-## Stages
+## What is in it
 
-The demo tells its story in seven stages, one idea at a time. They are a way
-to explain the system, not separate installs: `scripts/setup-kind.sh` always
-builds all of it.
+`scripts/setup-kind.sh` builds all of it, in one pass.
 
-| Stage | Name | Adds |
-|---|---|---|
-| 1 | Connected | Agents, MCP server, payments system, customer UI, Collector, Jaeger |
-| 2 | Governed | Linkerd, SPIRE, agentgateway and the Policy Decision Service |
-| 3 | Supervised | Reviewer UI, which releases the money itself |
-| 4 | Observable | Prometheus, Weaver live-check, AgentEvals |
-| 5 | Progressive autonomy | Open Feature Operator, flagd and the `northstar-autonomy` flag |
-| 6 | Golden path | Backstage |
-| 7 | Bounded | Kyverno and the keystone policy |
+| Part | Components |
+|---|---|
+| The agent chain | Agents, MCP server, payments system, customer UI, Collector, Jaeger |
+| Identity and policy | Linkerd, NetworkPolicy, SPIRE, agentgateway and the Policy Decision Service |
+| The human | Reviewer UI, which releases the money itself |
+| Evidence | Prometheus, Weaver live-check, AgentEvals |
+| Autonomy as a live value | Open Feature Operator, flagd and the `northstar-autonomy` flag |
+| The view | Backstage |
+| The keystone | Kyverno and the keystone policy |
 
-[`docs/demo-runbook.md`](docs/demo-runbook.md) §3 says which stages suit
-which talk length.
+[`docs/demo-runbook.md`](docs/demo-runbook.md) §3 says which parts suit
+which talk.
 
 ## Quick start
 

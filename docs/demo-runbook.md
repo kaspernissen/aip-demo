@@ -201,21 +201,21 @@ flowchart LR
 
 ## 3. What you can choose — the options
 
-### Option 1: which stages to talk about
+### Option 1: which parts to talk about
 
 There is one bring-up, `./scripts/setup-kind.sh`, and it always installs the
-whole system. The stages are the order the story adds things in, so a shorter
-talk can stop at the idea it needs while everything keeps running underneath.
+whole system. A shorter talk can focus on the part it needs while everything
+keeps running underneath.
 
-| Stage | Name | Adds | Talk about this stage if the talk is about… |
-|:---:|---|---|---|
-| 1 | Connected | agents, MCP servers, systems of record, customer UI, collector, Jaeger | distributed tracing across an agent chain |
-| 2 | Governed | Linkerd, NetworkPolicy, SPIFFE/SPIRE, agentgateway, Policy Decision Service | authorization and workload identity |
-| 3 | Supervised | reviewer-ui | human-in-the-loop |
-| 4 | Observable | Prometheus, Weaver live-check, AgentEvals | evidence and evaluation |
-| 5 | Progressive autonomy | cert-manager, Open Feature Operator, flagd sidecar, the `FeatureFlag` | policy as a live value |
-| 6 | Golden path | Backstage | the platform API and its UI |
-| 7 | **Bounded** | **Kyverno and the keystone policy** | **that an agent cannot edit its own limits** |
+| Part | Components | Talk about it if the talk is about… |
+|---|---|---|
+| The agent chain | agents, MCP servers, systems of record, customer UI, collector, Jaeger | distributed tracing across an agent chain |
+| Identity and policy | Linkerd, NetworkPolicy, SPIFFE/SPIRE, agentgateway, Policy Decision Service | authorization and workload identity |
+| The human | reviewer-ui | human-in-the-loop |
+| Evidence | Prometheus, Weaver live-check, AgentEvals | evidence and evaluation |
+| Autonomy as a live value | cert-manager, Open Feature Operator, flagd sidecar, the `FeatureFlag` | policy as a live value |
+| The view | Backstage | the platform API and its UI |
+| **The keystone** | **Kyverno and the keystone policy** | **that an agent cannot edit its own limits** |
 
 **One thing that will bite you:** the localhost ports are fixed when the kind
 cluster is created (`extraPortMappings` in `deploy/kind/cluster.yaml`). If that
@@ -1374,7 +1374,7 @@ If the audience remembers nothing else:
 
 | Document | What it owns |
 |---|---|
-| [`README.md`](../README.md) | what the system is, quick start, the stages table |
+| [`README.md`](../README.md) | what the system is, quick start, what is in it |
 | [`docs/architecture.md`](architecture.md) | the rings and the keystone, components, hops, protocols, the trace span by span, the full "See it yourself" walkthrough, and the authoritative limitations list |
 | [`docs/telemetry-contract.md`](telemetry-contract.md) | the instrumentation contract and the published gaps |
 | [`docs/upstream-findings.md`](upstream-findings.md) | filing-ready findings against upstream projects — **none of them filed** |
