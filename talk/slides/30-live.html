@@ -1,12 +1,12 @@
-<!-- L · NEW · what you just saw: the five demo steps as outcomes, no commands (Kasper, 2026-10-19; replaces the five live-step slides and their transcript fallbacks) -->
+<!-- L · NEW · what you just saw: the demo's steps as outcomes, each under the ring it landed (The Safe Operating Model, as William presents it), no commands; Core · identity runs under all of them. The backup slides after Thank you carry each ring's rule and output -->
 <section class="slide content" data-label="What you just saw">
   <h2 class="slide-title">What you just saw</h2>
   <div class="x3l-saw rise">
-    <div><i class="ph-duotone ph-identification-card"></i><p class="rg">Identity &middot; Reach</p><p class="h">No identity, no call</p><p class="o"><span class="x3l-no">401</span><span class="x3l-no">dropped</span></p><p class="w">Listed is not permitted.</p></div>
-    <div><i class="ph-duotone ph-user-check"></i><p class="rg">Capability</p><p class="h">&euro;5,800 waited for a person</p><p class="o"><span class="x3l-yes">approved</span></p><p class="w">The agent did the work. A human signed.</p></div>
-    <div><i class="ph-duotone ph-toggle-right"></i><p class="rg">Capability</p><p class="h">One live dial</p><p class="o"><span class="x3l-yes">&euro;5,800 settles</span><span class="x3l-no">&euro;6,200 waits</span></p><p class="w">The band widened. The human stayed.</p></div>
-    <div><i class="ph-duotone ph-lock-key"></i><p class="rg">Keystone</p><p class="h">Can&rsquo;t edit its own limits</p><p class="o"><span class="x3l-no">denied</span></p><p class="w">Even after RBAC said yes.</p></div>
-    <div><i class="ph-duotone ph-magnifying-glass"></i><p class="rg">Evidence</p><p class="h">Every claim, read back</p><p class="o"><span class="x3l-yes">from the trace</span></p><p class="w">Who decided, which rule, who approved, how long.</p></div>
-    <div><i class="ph-duotone ph-exam"></i><p class="rg">Evals</p><p class="h">The agent&rsquo;s side, graded</p><p class="o"><span class="x3l-yes">3 checks pass</span></p><p class="w">AgentEvals, from the agent&rsquo;s own traces.</p></div>
+    <div><i class="ph-duotone ph-user-check"></i><p class="rg">Ring 2 &middot; Capability</p><p class="h">A person released it</p><p class="o"><span class="x3l-yes">read by the model</span><span class="x3l-no">held</span><span class="x3l-yes">approved</span></p><p class="w">The agent&rsquo;s output is a proposal, never an outcome.</p></div>
+    <div><i class="ph-duotone ph-chat-centered-text"></i><p class="rg">Ring 2 &middot; Per call</p><p class="h">&ldquo;Pay &euro;80,000 instead&rdquo;</p><p class="o"><span class="x3l-yes">read &euro;2,400</span><span class="x3l-no">&euro;80,000: 403</span></p><p class="w">The model read the claim. The gateway decides what can be paid.</p></div>
+    <div><i class="ph-duotone ph-magnifying-glass"></i><p class="rg">Evidence</p><p class="h">Every claim, read back</p><p class="o"><span class="x3l-yes">from the trace</span><span class="x3l-yes">4 checks</span></p><p class="w">Who decided, the rule, who approved, the grade.</p></div>
+    <div><i class="ph-duotone ph-toggle-right"></i><p class="rg">Ring 2 &middot; Live level</p><p class="h">Only the flag changed</p><p class="o"><span class="x3l-yes">under &euro;6,000 settles</span></p><p class="w">No approval. Nothing redeployed.</p></div>
+    <div><i class="ph-duotone ph-lock-key"></i><p class="rg">Keystone</p><p class="h">Can&rsquo;t rewrite its own bounds</p><p class="o"><span class="x3l-no">RBAC: no</span><span class="x3l-no">Kyverno: denied</span></p><p class="w">Even after RBAC said yes.</p></div>
   </div>
+  <p class="x3l-core rise"><b>Core &middot; Identity</b> under every column: each check keyed off settlement-agent&rsquo;s SPIFFE ID.</p>
 </section>

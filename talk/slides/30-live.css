@@ -1,6 +1,6 @@
-/* 30-live (Broadsheet): "What you just saw", the demo's five steps as outcomes. Everything is x3l-*.
+/* 30-live (Broadsheet): "What you just saw", the demo's steps as outcomes, each under its ring. Everything is x3l-*.
    Magenta chips are the platform saying no or holding; cyan chips are what went through. */
-.x3l-saw { display: grid; grid-template-columns: repeat(6, 1fr); gap: 36px; margin-top: calc(2 * var(--baseline)); }
+.x3l-saw { display: grid; grid-template-columns: repeat(5, 1fr); gap: 40px; margin-top: calc(1.4 * var(--baseline)); }
 .x3l-saw > div { display: flex; flex-direction: column; }
 .x3l-saw p { margin: 0; }
 .x3l-saw i { font-size: 80px; line-height: 1; color: var(--color-neutral-700); }
@@ -12,3 +12,6 @@
 .x3l-no { background: var(--color-accent-2); color: var(--color-bg); }
 .x3l-yes { background: var(--color-accent-100); color: var(--color-accent-800); }
 .x3l-saw .w { margin-top: 22px; font-size: var(--type-small); line-height: 1.3; font-style: italic; color: color-mix(in srgb, var(--color-text) 62%, transparent); }
+.x3l-core { margin: calc(1 * var(--baseline)) 0 0; padding-top: 22px; border-top: 2px solid color-mix(in srgb, var(--color-text) 14%, transparent);
+  font-size: var(--type-small); }
+.x3l-core b { color: var(--color-accent-2-700); }
