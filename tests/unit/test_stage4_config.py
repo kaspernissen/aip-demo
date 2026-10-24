@@ -1,51 +1,16 @@
 """Guards for what stage 4 actually ships.
 
-Stage 4 has no stage4.yaml: Dashboards' host port mapping can only be added
-at cluster CREATION (`extraPortMappings`), the same create-time rule that
-already governs `disableDefaultCNI` (see
-tests/unit/test_stage2_linkerd_config.py). So stage 4 runs on stage 3's
-cluster config unchanged, and OpenSearch Dashboards is reached by
-port-forward via `scripts/start-demo.sh`.
+Stage 4 has no stage4.yaml: it runs on stage 3's cluster config unchanged,
+and its UIs are reached by port-forward via `scripts/start-demo.sh`.
 
-Several guards here bind to a script's actual content rather than a loose
-substring, because a filename or remedy text can appear in help text,
-comments or an unrelated `echo` and stay green through the edit it was meant
-to catch:
+Several guards bind to a script's actual content in the comment-stripped
+file, so a comment or help text cannot keep them green.
 
-* `test_stage_4_reuses_the_stage_3_cluster_config` binds to the
-  `STAGE -eq 4|5|6|7` -> `stage3.yaml` mapping itself, in the comment-stripped
-  script.
-* `test_the_port_forward_remedy_points_at_the_script` requires BOTH of
-  `smoke-test.sh`'s two remedies (the lsof branch and the curl branch) to
-  name `start-demo.sh`, matched against a comment-stripped file so no comment
-  can supply either.
-
-* `test_below_stage_4_the_collector_config_names_no_opensearch` and
-  `test_below_stage_4_the_collector_config_names_no_prometheus_exporter` run
-  `setup-kind.sh`'s own sed program -- read out of the script, so the two
-  cannot drift -- and check the result is a valid collector config that still
-  exports traces to Jaeger, keeps the `prometheus/spire` receiver, and names
-  neither OpenSearch nor a Prometheus exporter anywhere below stage 4.
-* `test_the_opensearch_compat_processor_covers_every_colliding_attribute`
-  derives the colliding attribute keys from every first-party service's own
-  source (not just the PDS's), so a second collider added anywhere fails a
-  unit test instead of a bulk request.
-* `test_start_demo_skips_stage_gated_surfaces_that_do_not_exist` is
-  behavioural rather than textual: it runs the real script against fake
-  `kubectl`/`lsof`/`curl` and asserts on what it did.
-* `test_the_strip_message_names_every_backend_it_drops` and
-  `test_the_stage_4_completion_message_names_everything_stage_4_installs`
-  derive the operator-facing text each guard checks from the script's own
-  config and install list, so a strip or an install that grows silently
-  reddens a test instead of ageing a sentence.
-
-The live end-to-end assertions -- span parity between Jaeger and OpenSearch,
-the decision span being queryable, and Jaeger keeping the canonical attribute
-names -- are in `tests/e2e/test_opensearch_trace_ingest.py`, which needs the
-cluster.
+The strip tests run `setup-kind.sh`'s own sed program, read out of the
+script, and check the result is a valid collector config that still exports
+traces to Jaeger, keeps the `prometheus/spire` receiver, and names no
+Prometheus exporter below stage 4.
 """
-import ast
-import json
 import re
 import subprocess
 from pathlib import Path
@@ -59,16 +24,6 @@ SETUP_KIND = REPO_ROOT / "scripts/setup-kind.sh"
 COLLECTOR_CONFIGS = [
     REPO_ROOT / "deploy/observability/collector-config.yaml",
 ]
-PDS_TELEMETRY = REPO_ROOT / "platform/policy-decision-service/pds/telemetry.py"
-
-# The evidence-view export, and the three names every other reference to it
-# derives from rather than restates.
-EVIDENCE_NDJSON = REPO_ROOT / "deploy/observability/dashboards/evidence.ndjson"
-EVIDENCE_DASHBOARD_ID = "northstar-evidence"
-EVIDENCE_README_ID = "northstar-evidence-readme"
-# The index the `opensearch` exporter's ss4o mapping mode writes traces to.
-EVIDENCE_INDEX = "ss4o_traces-default-namespace"
-ARCHITECTURE = REPO_ROOT / "docs/architecture.md"
 
 
 def _without_comments(path: Path) -> str:
@@ -94,11 +49,9 @@ def test_stage_4_reuses_the_stage_3_cluster_config():
     """No stage4.yaml exists, deliberately, and `--stage 4` is wired to stage
     3's kind config.
 
-    Dashboards' host port mapping can only be added at cluster CREATION time
-    (`extraPortMappings`), so a cluster recreate is out of scope: stage 4
-    runs on stage 3's cluster and reaches OpenSearch Dashboards by
-    port-forward instead. A stage4.yaml appearing later means someone
-    recreated the cluster without accounting for that constraint.
+    Host port mappings can only be added at cluster CREATION time
+    (`extraPortMappings`), so stage 4 runs on stage 3's cluster and reaches
+    its UIs by port-forward instead.
 
     The second assertion binds to the actual conditional and assignment
     together, in the comment-stripped script, rather than to a loose
@@ -164,7 +117,7 @@ def test_stage_4_reuses_the_stage_3_cluster_config():
     )
 
 
-# --- No OpenSearch or Prometheus in the collector config below stage 4 -----
+# --- No Prometheus exporter in the collector config below stage 4 ---------
 
 
 def _stage4_strip_expression() -> str:
@@ -179,8 +132,7 @@ def _stage4_strip_expression() -> str:
     assert match, (
         "scripts/setup-kind.sh no longer defines STAGE4_ONLY_STRIP, so below "
         "stage 4 it is applying the collector config whole -- which deploys a "
-        "collector naming an OpenSearch AND a Prometheus that cluster does "
-        "not have"
+        "collector naming a Prometheus that cluster does not have"
     )
     return match.group(1)
 
@@ -193,8 +145,8 @@ def test_setup_kind_strips_the_stage_4_regions_below_stage_4():
     ), (
         "scripts/setup-kind.sh no longer branches on `STAGE -lt 4` around the "
         "collector ConfigMap assembly, so either every stage gets the "
-        "stage-4-only regions -- the OpenSearch branch and the Prometheus "
-        "metrics exporter -- or no stage does"
+        "stage-4-only regions -- the Prometheus metrics exporter -- or no "
+        "stage does"
     )
     assert re.search(
         r'sed "\$STAGE4_ONLY_STRIP" "\$COLLECTOR_CONFIG" > "\$COLLECTOR_CONFIG_APPLIED"',
@@ -210,55 +162,11 @@ def test_setup_kind_strips_the_stage_4_regions_below_stage_4():
 
 
 @pytest.mark.parametrize("config", COLLECTOR_CONFIGS, ids=lambda p: p.name)
-def test_below_stage_4_the_collector_config_names_no_opensearch(config):
-    """Run the real sed program and check what comes out.
-
-    Three things have to hold for the stripped config to be correct, and all
-    three are asserted rather than eyeballed: it parses as YAML; it still
-    exports traces to Jaeger (a strip that removed the whole traces pipeline
-    would satisfy "no OpenSearch" and be catastrophic); and the word
-    "opensearch" does not survive anywhere -- exporter, processor, connector or
-    pipeline.
-    """
-    stripped = subprocess.run(
-        ["sed", _stage4_strip_expression(), str(config)],
-        capture_output=True, text=True, check=True,
-    ).stdout
-    assert "opensearch" not in stripped.lower(), (
-        f"stripping the stage-4-only regions of {config.name} leaves an "
-        "OpenSearch reference behind, so a stage-1/2/3 cluster would deploy a "
-        "collector exporting to a backend it does not have. Every "
-        "OpenSearch-only region must sit between `# BEGIN stage-4-only` and "
-        "`# END stage-4-only`, including the single `- forward/opensearch` "
-        "entry in the traces pipeline's exporter list."
-    )
-    parsed = yaml.safe_load(stripped)
-    assert parsed is not None, f"the stripped {config.name} is not valid YAML"
-    traces = parsed["service"]["pipelines"]["traces"]
-    assert "otlp_grpc/jaeger" in traces["exporters"], (
-        f"the stripped {config.name} no longer exports traces to Jaeger. The "
-        "strip took too much: below stage 4 the collector must keep exporting "
-        f"to every backend a pre-stage-4 cluster has. Exporters left: "
-        f"{traces['exporters']}"
-    )
-    assert "traces/opensearch" not in parsed["service"]["pipelines"], (
-        "the OpenSearch branch pipeline survived the strip"
-    )
-    for exporter in traces["exporters"]:
-        assert exporter in parsed["exporters"], (
-            f"the stripped {config.name}'s traces pipeline names exporter "
-            f"{exporter!r}, which its `exporters` section does not define -- "
-            "the collector would refuse to start"
-        )
-
-
-@pytest.mark.parametrize("config", COLLECTOR_CONFIGS, ids=lambda p: p.name)
 def test_below_stage_4_the_collector_config_names_no_prometheus_exporter(config):
-    """The metrics half: no Prometheus exporter below stage 4 either.
+    """No Prometheus exporter below stage 4.
 
-    The guard above is the traces half; this is the second stage-4-only
-    region -- the `otlp_http/prometheus` exporter and its entry in the
-    `metrics` pipeline. Remove or misplace either marker pair and a
+    The stage-4-only region is the `otlp_http/prometheus` exporter and its
+    entry in the `metrics` pipeline. Remove or misplace either marker pair and a
     `--stage 1|2|3` cluster deploys a collector exporting metrics to
     `prometheus.observability.svc.cluster.local:9090`, a Service that does
     not exist.
@@ -315,12 +223,6 @@ _GENERIC_EXPORTER_SEGMENTS = frozenset({
 
 def test_the_strip_message_names_every_backend_it_drops():
     """The operator-facing `echo` must name every backend the strip removes.
-
-    A hand-written message describing "the stage-4-only OpenSearch branch" is
-    only true until a second stage-4-only region is bracketed, so this does
-    not check a restated sentence: it derives the expected message content
-    instead, and a strip that grows silently reddens the test rather than
-    leaving the message stale.
 
     The list is DERIVED, not duplicated: run the script's own sed program, diff
     the `exporters` section before and after, and require each removed
@@ -382,8 +284,7 @@ def test_the_stage_4_completion_message_names_everything_stage_4_installs():
     message.
 
     Release names are matched case-insensitively, because the message spells
-    them as products (`OpenSearch`) and the script as Helm releases
-    (`opensearch`); a release whose name is genuinely absent from the message
+    them as products and the script as Helm releases; a release whose name is genuinely absent from the message
     fails regardless of case.
 
     **"Installs" covers more than Helm.** A workload that is not a chart (a
@@ -497,22 +398,10 @@ def test_the_stage_4_markers_are_balanced_and_never_nested(config):
 
 @pytest.mark.parametrize("config", COLLECTOR_CONFIGS, ids=lambda p: p.name)
 def test_the_shipped_collector_config_declares_every_component_it_names(config):
-    """The same declared-ness check the stripped config already gets, run over
-    the config as shipped.
+    """Every component a pipeline names is declared, in the config as shipped.
 
-    `test_below_stage_4_the_collector_config_names_no_opensearch` verifies
-    declared-ness only on the *stripped* output and only for the `traces`
-    pipeline. Nothing covered the stage-4 config itself, so deleting the
-    `connectors:` block from **both** files (the sync guard compares them to
-    each other, and `None == None` passes) or dropping `- forward/opensearch`
-    from the main traces exporter list would leave all unit tests green while
-    the collector refuses to start at stage 4.
-
-    A connector is the interesting case and the reason this is not merely
-    symmetry: it must be used as an exporter in one pipeline and as a receiver
-    in another. Declared and used on only one side is a startup failure, and
-    `test_the_rename_is_confined_to_the_opensearch_branch` only ever checked
-    the receiver side.
+    The strip tests check the stripped output; this checks the stage-4 config
+    itself. A connector, if one is added, must be used on both sides.
     """
     parsed = yaml.safe_load(config.read_text())
     receivers = set(parsed.get("receivers") or {})
@@ -544,13 +433,6 @@ def test_the_shipped_collector_config_declares_every_component_it_names(config):
             )
             used_as_exporter.add(component)
 
-    assert connectors, (
-        f"{config.name} declares no connectors at all. The OpenSearch branch "
-        "is a `forward/opensearch` tee off the main traces pipeline; without "
-        "it, either the branch is gone or it has been re-declared with its "
-        "own receivers, which is the silent-drift shape "
-        "the tee exists to prevent."
-    )
     for connector in connectors:
         assert connector in used_as_exporter, (
             f"{config.name}: connector {connector!r} is declared but no "
@@ -563,675 +445,3 @@ def test_the_shipped_collector_config_declares_every_component_it_names(config):
             "discarded. A connector must be used on both sides or the "
             "collector refuses to start."
         )
-
-
-# --- The attribute collision, and the processor that fixes it --------------
-
-
-def _pds_attribute_keys() -> set[str]:
-    """Every attribute key the PDS declares, parsed out of its own module.
-
-    Parsed with `ast` rather than imported: this is a unit test and must not
-    need the PDS's OpenTelemetry dependencies installed in the repo-root venv.
-    `pds/telemetry.py` exists precisely so the guard tests and the contract
-    cite one source (its own comment says so).
-
-    Kept as the *lower bound* the repo-wide scan below must contain. It is not
-    the scan's source of truth any more -- see `_first_party_attribute_keys`.
-    """
-    tree = ast.parse(PDS_TELEMETRY.read_text())
-    keys = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign):
-            continue
-        if not isinstance(node.value, ast.Constant) or not isinstance(
-            node.value.value, str
-        ):
-            continue
-        for target in node.targets:
-            if isinstance(target, ast.Name) and target.id.startswith("ATTR_"):
-                keys.add(node.value.value)
-    assert keys, f"no ATTR_* string constants found in {PDS_TELEMETRY}"
-    return keys
-
-
-# Every directory holding a first-party service's source. The OpenSearch
-# mapping is index-wide, so a collision does not have to occur within one
-# span or even within one service: a scalar `x.y` on one service's span and an
-# object-valued `x.y.z` on another's, in the same index, is enough for the
-# second to be rejected permanently -- reading only one service's source could
-# never see that.
-SERVICE_SOURCE_DIRS = ["agents", "apps", "platform", "systems", "tools"]
-SERVICE_SOURCE_SUFFIXES = {".py", ".go", ".ts", ".tsx"}
-_SKIP_DIR_NAMES = {
-    "node_modules", ".venv", "venv", "tests", "__pycache__",
-    "dist", "build", ".next", "out",
-}
-
-# An OTel attribute key: lowercase dotted segments. Deliberately matched
-# against EVERY string literal rather than only the arguments of
-# `set_attribute` / `attribute.String` / `setAttribute` calls, because parsing
-# call shapes across Python, Go and TypeScript is where a scanner like this
-# quietly stops seeing things -- a constant defined in one file and used in
-# another, a dict passed to `start_as_current_span(attributes=...)`, a Go
-# `attribute.Key(...).String(...)`. Over-collecting is the safe direction: a
-# non-attribute literal that happens to look like a key (module paths such as
-# `mcp.client.streamable_http`, function references such as `rules.decide`)
-# can only ever ADD a pair to the collision set, so the failure mode is a red
-# test with a named pair a human can read -- never a silent hole.
-#
-# Since the M9 rename there is no first-party collision: the decision span's
-# `northstar.policy.decision` and `northstar.policy.retryable` are siblings,
-# not a prefix and its extension. The test below asserts that any collision
-# that does appear is renamed by the `attributes/opensearch-compat` processor.
-#
-# The scan's file and key totals are deliberately NOT written down here: they
-# change whenever any service gains a source file, so no assertion could
-# usefully pin them, and a number that moves on every unrelated commit is a
-# number that goes stale almost immediately.
-_ATTRIBUTE_KEY = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$")
-_STRING_LITERAL = re.compile(
-    r"\"([^\"\\\n]{1,120})\"|'([^'\\\n]{1,120})'|`([^`\\\n]{1,120})`"
-)
-
-
-def _first_party_attribute_keys() -> dict[str, set[str]]:
-    """Candidate attribute keys across every first-party service, with the
-    files each was found in (so a failure can name where to look).
-
-    **What this cannot see, stated because a guard that overclaims is the
-    defect this file keeps fixing:** keys computed at runtime (there are none
-    today -- every key in this repo is a literal or a constant bound to one),
-    and keys emitted by third-party libraries. The second is the larger set:
-    `gen_ai.*` from PydanticAI, `mcp.*` from the MCP SDK, `http.*`/`url.*`
-    from the ASGI and httpx instrumentations, and agentgateway's and SPIRE's
-    own. Those are covered from the other end, against live data, by
-    `tests/e2e/test_opensearch_trace_ingest.py`:
-    `test_no_attribute_key_in_the_driven_trace_collides_uncovered` reads every
-    key Jaeger actually holds for a driven trace, and
-    `test_the_collector_rejected_no_spans_during_the_run` reddens on a
-    rejection from any service that exported during the window.
-    """
-    found: dict[str, set[str]] = {}
-    scanned_dirs = set()
-    for directory in SERVICE_SOURCE_DIRS:
-        root = REPO_ROOT / directory
-        assert root.is_dir(), (
-            f"{directory}/ does not exist, so this guard silently covers less "
-            "than its docstring claims -- has a service moved?"
-        )
-        for path in sorted(root.rglob("*")):
-            if path.suffix not in SERVICE_SOURCE_SUFFIXES or not path.is_file():
-                continue
-            if any(part in _SKIP_DIR_NAMES for part in path.parts):
-                continue
-            scanned_dirs.add(directory)
-            text = path.read_text(errors="replace")
-            for match in _STRING_LITERAL.finditer(text):
-                literal = match.group(1) or match.group(2) or match.group(3)
-                if literal and _ATTRIBUTE_KEY.match(literal):
-                    found.setdefault(literal, set()).add(
-                        str(path.relative_to(REPO_ROOT))
-                    )
-    missing_dirs = set(SERVICE_SOURCE_DIRS) - scanned_dirs
-    assert not missing_dirs, (
-        f"no source files were scanned under {sorted(missing_dirs)}, so this "
-        "guard is silently covering less than it claims. Check "
-        "SERVICE_SOURCE_SUFFIXES and _SKIP_DIR_NAMES."
-    )
-    return found
-
-
-def _collisions(keys: set[str]) -> set[tuple[str, str]]:
-    """Pairs where one key is a strict dotted prefix of another.
-
-    This is the shape OpenSearch cannot index: it expands dotted keys into
-    nested objects, so `a.b` and `a.b.c` in the same document need
-    `attributes.a.b` to be a scalar and an object at once.
-    """
-    return {
-        (shorter, longer)
-        for shorter in keys
-        for longer in keys
-        if longer != shorter and longer.startswith(shorter + ".")
-    }
-
-
-def test_the_collision_detector_finds_a_prefix_and_ignores_siblings():
-    """Keeps `_collisions` honest: a.b with a.b.c collides, a.b with a.c does not,
-    and a key is not a prefix of one that merely shares leading characters."""
-    assert _collisions({"a.b", "a.b.c"}) == {("a.b", "a.b.c")}
-    assert _collisions({"a.b", "a.c"}) == set()
-    assert _collisions({"a.b", "a.bc"}) == set()
-    assert _collisions({"northstar.policy.decision", "northstar.policy.retryable"}) == set()
-
-
-def test_the_opensearch_compat_processor_covers_every_colliding_attribute():
-    """The rename must cover every collider, not just today's one.
-
-    An earlier ingest path rejected 100% of the decision spans because the
-    span set a decision key and a dotted extension of it as the retryable flag
-    (the M9 rename removed that pair). A collider added later would reintroduce the
-    defect silently -- the
-    export fails permanently, per document, and only the collector log says
-    so.
-
-    **Deriving the collision set from the PDS's declared constants alone is
-    not enough.** The OpenSearch mapping is index-wide, so a scalar `x.y` on
-    one service's span and an object-valued `x.y.z` on another's is enough
-    for the second to be rejected -- and a collider added anywhere but the
-    PDS, or added to the PDS as an inline
-    `set_attribute("northstar.policy.decision.reason", ...)` rather than as an `ATTR_*`
-    constant, would fail no unit test at all. So this scans every first-party
-    service's source; `_first_party_attribute_keys` documents exactly what
-    that can and cannot see, and the e2e file covers the rest against live
-    data.
-
-    Add `northstar.policy.decision.reason` in any service tomorrow and this goes red
-    here, in a unit test, rather than in a bulk request nobody is watching.
-    """
-    keys_by_file = _first_party_attribute_keys()
-    # The PDS's declared keys are the floor: if the repo-wide scan ever stops
-    # containing them, it has stopped working and every collision it reports
-    # is meaningless.
-    declared = _pds_attribute_keys()
-    missing = declared - set(keys_by_file)
-    assert not missing, (
-        f"the repo-wide attribute scan did not find {sorted(missing)}, which "
-        "pds/telemetry.py declares as ATTR_* constants. The scan is broken, "
-        "so its collision set cannot be trusted -- check "
-        "SERVICE_SOURCE_DIRS, SERVICE_SOURCE_SUFFIXES and _ATTRIBUTE_KEY."
-    )
-
-    collisions = _collisions(set(keys_by_file))
-    for config in COLLECTOR_CONFIGS:
-        parsed = yaml.safe_load(config.read_text())
-        actions = parsed["processors"]["attributes/opensearch-compat"]["actions"]
-        deleted = {
-            action["key"] for action in actions if action.get("action") == "delete"
-        }
-        copied_from = {
-            action["from_attribute"]
-            for action in actions
-            if action.get("from_attribute")
-        }
-        for shorter, longer in collisions:
-            where = ", ".join(
-                sorted(keys_by_file[shorter] | keys_by_file[longer])
-            )
-            assert longer in deleted, (
-                f"{config.name}: attribute {longer!r} collides with "
-                f"{shorter!r} (OpenSearch would need attributes.{shorter} to "
-                "be both a scalar and an object), but the "
-                "attributes/opensearch-compat processor does not delete it on "
-                "the OpenSearch branch. Every document carrying both keys -- "
-                "and they need not be the same span, or even the same "
-                "service, because the mapping is index-wide -- will be "
-                f"rejected permanently. Seen in: {where}"
-            )
-            assert longer in copied_from, (
-                f"{config.name}: {longer!r} is deleted on the OpenSearch "
-                "branch but never copied to a non-colliding key first, so the "
-                "attribute is lost rather than renamed"
-            )
-
-
-# Collisions in keys a third-party component emits, which the first-party
-# source scan above cannot see. Measured against live Jaeger at stage 7 on
-# 2026-10-12: Kyverno v1.19.1's admission spans carry `admission.request.kind`
-# (an empty string) beside `admission.request.kind.{group,kind,version}`.
-# Before the rename the collector logged 169 permanent `Exporting failed`
-# rejections from `opensearch/trace` in 90 minutes, and each one took the
-# Northstar spans batched with it.
-THIRD_PARTY_COLLISIONS = {
-    ("admission.request.kind", "admission.request.kind.group"),
-    ("admission.request.kind", "admission.request.kind.kind"),
-    ("admission.request.kind", "admission.request.kind.version"),
-    # agentgateway v1.6.0, on a refused tools/call SERVER span (measured
-    # 2026-10-13): `error` = true beside `error.type` = "MCP".
-    ("error", "error.type"),
-}
-
-
-def test_every_known_third_party_collision_is_renamed_on_the_opensearch_branch():
-    """Same rule as the first-party test, for keys only live data reveals.
-
-    The backstop for a NEW third-party collider is still the gate's log
-    assertion in tests/e2e/test_opensearch_trace_ingest.py; this pins the
-    ones already found so a config edit cannot quietly undo them.
-    """
-    for config in COLLECTOR_CONFIGS:
-        parsed = yaml.safe_load(config.read_text())
-        actions = parsed["processors"]["attributes/opensearch-compat"]["actions"]
-        deleted = {a["key"] for a in actions if a.get("action") == "delete"}
-        copied_from = {a["from_attribute"] for a in actions if a.get("from_attribute")}
-        for shorter, longer in sorted(THIRD_PARTY_COLLISIONS):
-            assert longer in deleted and longer in copied_from, (
-                f"{config.name}: {longer!r} collides with {shorter!r} but is "
-                "not renamed on the OpenSearch branch, so every batch carrying "
-                "a Kyverno admission span or a refused gateway span is rejected, "
-                "Northstar spans included"
-            )
-
-
-def test_the_rename_is_confined_to_the_opensearch_branch():
-    """The rename is OpenSearch-branch only, as far as a unit test can see it.
-
-    What Jaeger and Dash0 actually receive is asserted against the live
-    cluster by tests/e2e/test_opensearch_trace_ingest.py. This is the static
-    half: the compat processor must appear in the `traces/opensearch` pipeline
-    and in no other, because every other pipeline's output is what the
-    canonical-name consumers read.
-    """
-    for config in COLLECTOR_CONFIGS:
-        parsed = yaml.safe_load(config.read_text())
-        pipelines = parsed["service"]["pipelines"]
-        assert pipelines["traces/opensearch"]["processors"] == [
-            "attributes/opensearch-compat"
-        ], (
-            f"{config.name}: the OpenSearch branch no longer runs "
-            "attributes/opensearch-compat, so the colliding attribute reaches "
-            f"OpenSearch unrenamed: {pipelines['traces/opensearch']}"
-        )
-        for name, pipeline in pipelines.items():
-            if name == "traces/opensearch":
-                continue
-            assert "attributes/opensearch-compat" not in pipeline.get(
-                "processors", []
-            ), (
-                f"{config.name}: pipeline {name!r} runs "
-                "attributes/opensearch-compat. The rewrite is OpenSearch-branch "
-                "only -- Jaeger and Dash0 must receive the canonical attribute "
-                "names, or the evidence view's field names stop matching the "
-                "trace an operator reads in Jaeger."
-            )
-        assert pipelines["traces/opensearch"]["receivers"] == ["forward/opensearch"], (
-            f"{config.name}: the OpenSearch branch no longer receives from the "
-            "forward/opensearch connector, so it has stopped being a tee off "
-            "the main traces pipeline and can drift from what Jaeger sees"
-        )
-
-
-# --- The evidence view, and the two things that make it real ---------------
-
-
-def _evidence_objects() -> list[dict]:
-    """Every saved object in the committed export, with the summary line dropped.
-
-    Parses the file the way the importer does -- line by line, each line a JSON
-    object -- which is also the assertion that no line is a comment. NDJSON has
-    no comment syntax, and measured against this cluster's Dashboards a single
-    leading `// ...` line makes the import fail outright with
-    `400 Bad Request, Unexpected token '/'`. That is why the view's own header
-    is a markdown panel inside the file rather than a comment above it.
-    """
-    objects = []
-    for number, line in enumerate(EVIDENCE_NDJSON.read_text().splitlines(), start=1):
-        if not line.strip():
-            continue
-        try:
-            parsed = json.loads(line)
-        except json.JSONDecodeError as exc:  # pragma: no cover -- diagnostic path
-            raise AssertionError(
-                f"{EVIDENCE_NDJSON.relative_to(REPO_ROOT)} line {number} is not "
-                f"JSON, so `POST /api/saved_objects/_import` will reject the "
-                f"whole file with a 400 and import nothing: {exc}. NDJSON has "
-                "no comment syntax -- the view's header is the "
-                "`northstar-evidence-readme` markdown panel, not a comment."
-            ) from exc
-        # The exporter's own trailing summary, which the importer ignores.
-        if "type" not in parsed and "exportedCount" in parsed:
-            continue
-        objects.append(parsed)
-    return objects
-
-
-def test_the_evidence_view_is_a_complete_importable_export():
-    """Every panel the dashboard names is in the file, and nothing dangles.
-
-    An export with a missing reference imports "successfully" and then renders
-    an empty frame where a panel should be -- the exact silent-blank failure
-    `tests/e2e/test_evidence_view.py` exists to prevent on the data side, one
-    layer out.
-    """
-    objects = _evidence_objects()
-    by_id = {(obj["type"], obj["id"]): obj for obj in objects}
-    dashboards = [obj for obj in objects if obj["type"] == "dashboard"]
-    assert len(dashboards) == 1, (
-        f"expected exactly one dashboard in "
-        f"{EVIDENCE_NDJSON.relative_to(REPO_ROOT)}, found "
-        f"{[d['id'] for d in dashboards]}"
-    )
-    assert dashboards[0]["id"] == EVIDENCE_DASHBOARD_ID, (
-        f"the dashboard's id changed to {dashboards[0]['id']!r}; the URL "
-        "scripts/setup-kind.sh prints and docs/architecture.md links both "
-        f"name {EVIDENCE_DASHBOARD_ID!r}"
-    )
-    # The id appears in exactly three places and they are checked against each
-    # other, rather than each restating a URL that ages on its own. Stale prose
-    # is this repo's other recurring defect; a `#/view/<id>` link that 404s is
-    # its worst form, because the reader concludes the demo is broken.
-    for document in (SETUP_KIND, ARCHITECTURE):
-        assert EVIDENCE_DASHBOARD_ID in document.read_text(), (
-            f"{document.relative_to(REPO_ROOT)} does not name "
-            f"{EVIDENCE_DASHBOARD_ID!r}, so the link it gives a reader no "
-            "longer points at the dashboard this file imports"
-        )
-
-    for obj in objects:
-        for reference in obj.get("references", []):
-            assert (reference["type"], reference["id"]) in by_id, (
-                f"{obj['type']}/{obj['id']} references "
-                f"{reference['type']}/{reference['id']}, which is not in "
-                f"{EVIDENCE_NDJSON.relative_to(REPO_ROOT)} -- the export was "
-                "taken without `includeReferencesDeep`, and that panel will "
-                "import to an empty frame"
-            )
-
-    panels = json.loads(dashboards[0]["attributes"]["panelsJSON"])
-    referenced = {r["name"] for r in dashboards[0].get("references", [])}
-    assert len(panels) >= 4, f"the evidence view lost panels: {len(panels)}"
-    for panel in panels:
-        assert panel["panelRefName"] in referenced, (
-            f"dashboard panel {panel['panelRefName']!r} has no matching "
-            "reference, so it will render as an empty frame"
-        )
-
-    index_patterns = [obj for obj in objects if obj["type"] == "index-pattern"]
-    assert len(index_patterns) == 1, index_patterns
-    attributes = index_patterns[0]["attributes"]
-    assert attributes["title"] == EVIDENCE_INDEX, (
-        f"the evidence view reads {attributes['title']!r}; the index the "
-        f"`opensearch` exporter's ss4o mapping mode writes to is "
-        f"{EVIDENCE_INDEX!r} (tests/e2e/test_opensearch_trace_ingest.py's own "
-        "TRACE_INDEX)"
-    )
-    assert attributes["timeFieldName"] == "startTime", attributes
-    assert attributes.get("fields"), (
-        "the index-pattern carries no cached field list. Without it every "
-        "`min(startTime)` agg on this dashboard throws `SavedObjectNotFound: "
-        "Could not locate that index-pattern-field (id: startTime)` and the "
-        "panel 400s. Re-export from the UI rather than hand-trimming the file."
-    )
-
-
-def test_the_evidence_views_header_records_the_permitted_claim_id_choice():
-    """The €5,800 claim has no fixed id, and the reason is recorded in the view.
-
-    Both options were defensible -- a fixed fixture id, or a parameterised
-    dashboard -- and an *unrecorded* choice is not. The record lives in the
-    markdown panel because the file cannot hold a comment (see
-    `_evidence_objects`), which also puts it in front of the person reading
-    the evidence rather than in front of whoever next opens the export.
-    """
-    readme = [
-        obj
-        for obj in _evidence_objects()
-        if obj["type"] == "visualization" and obj["id"] == EVIDENCE_README_ID
-    ]
-    assert len(readme) == 1, (
-        f"{EVIDENCE_README_ID!r} is missing from "
-        f"{EVIDENCE_NDJSON.relative_to(REPO_ROOT)} -- that panel IS this "
-        "file's header and the only place the claim-id choice is recorded"
-    )
-    markdown = json.loads(readme[0]["attributes"]["visState"])["params"]["markdown"]
-    for required in (
-        # The choice itself, and the precedent it rests on.
-        "parameterise, do not pin a fixture id",
-        "test_supervised.py",
-        # The constraint the two-step layout exists for.
-        "Gap 4",
-        "trace id is the join",
-    ):
-        assert required in markdown, (
-            f"the evidence view's header no longer states {required!r}. It is "
-            "the only record of why the permitted claim has no fixed id and "
-            "why the control selects trace ids rather than claim ids; a "
-            "reader who loses it will 'simplify' the dashboard into one that "
-            "silently drops the decision and the money spans."
-        )
-
-
-def test_setup_kind_imports_the_evidence_view_at_stage_4():
-    """The dashboard is imported from the committed file, at stage 4, checked.
-
-    Three separate claims, because each one has failed somewhere in this repo
-    before: the script names the committed file (not some other path), the
-    import is inside the stage-4 block (not run unconditionally against a
-    cluster that has no Dashboards), and the HTTP response is checked (curl
-    exits 0 on a 400, so an import that imported nothing would otherwise leave
-    a cluster that looks complete and a Dashboards that is empty).
-    """
-    setup = _without_comments(SETUP_KIND)
-    relative = str(EVIDENCE_NDJSON.relative_to(REPO_ROOT))
-    assert relative in setup, (
-        f"scripts/setup-kind.sh does not name {relative} outside of a "
-        "comment, so the committed evidence view is never imported and the "
-        "dashboard exists only wherever someone made it by hand"
-    )
-    assert "/api/saved_objects/_import" in setup, (
-        "setup-kind.sh names the evidence file but never calls the saved "
-        "objects import API with it"
-    )
-    # A loose `'"success":true' in setup` substring test would stay green for
-    # an INVERTED check too -- `if [[ $X == *'"success":true'* ]]; then exit 1;
-    # fi` contains the same substring and aborts on success. Bound to the
-    # guard's actual shape instead: the negative comparison, and an `exit 1`
-    # inside the block it opens.
-    guard = re.search(
-        r'if \[\[ "\$\{EVIDENCE_IMPORT\}" != \*\'"success":true\'\* \]\]; then(.*?)\n  fi',
-        setup,
-        re.S,
-    )
-    assert guard, (
-        "the import's response is not checked with a negative comparison "
-        "against '\"success\":true'. `curl` exits 0 on an HTTP 400, so without "
-        "that check the script reports a complete stage-4 cluster while "
-        "Dashboards holds nothing."
-    )
-    assert "exit 1" in guard.group(1), (
-        "the import-response check exists but does not abort: the block it "
-        f"opens is {guard.group(1)!r}. A failed import that only prints is a "
-        "stage-4 cluster that looks complete and has no evidence view in it."
-    )
-
-    # The readiness poll is bound the same way: `--wait` on the Helm install is
-    # only a TCP-accept probe, so the saved-objects API can still answer 503
-    # when the import runs.
-    assert "/api/status" in setup, (
-        "the import no longer waits for OpenSearch Dashboards' /api/status to "
-        "answer before posting. The chart's readiness probe is `tcpSocket` on "
-        "5601, which says nothing about whether the saved-objects API is "
-        "serving -- OSD answers 503 'OpenSearch Dashboards server is not "
-        "ready yet' for a window after the socket binds, and a single "
-        "unretried import would `exit 1` mid-stage-4."
-    )
-
-    stage_4_block = re.search(
-        r'if \[\[ "\$\{STAGE\}" -ge 4 \]\]; then(.*?)\nfi\n', setup, re.S
-    )
-    assert stage_4_block, (
-        "could not find the `STAGE -ge 4` block in the comment-stripped "
-        "setup-kind.sh, so this test cannot tell whether the import is gated"
-    )
-    assert relative in stage_4_block.group(1), (
-        "the evidence-view import is not inside the `STAGE -ge 4` block. "
-        "Below stage 4 there is no OpenSearch Dashboards to import into, so an "
-        "ungated import fails every `--stage 1|2|3` run."
-    )
-
-
-# --- The SHIPPED panels' own fields and queries -----------------------------
-
-
-def _e2e_string_constants(*relative_paths: str) -> dict[str, str]:
-    """Module-level `NAME = "literal"` assignments from `tests/e2e` files, by AST.
-
-    Read rather than imported, for the reason every hermetic guard in this file
-    is: importing a `tests/e2e` module would pull in `httpx`, the Jaeger harness
-    and a pile of fixtures, and would make a unit test depend on the live
-    cluster's test surface. The same `ast` idiom `_pds_attribute_keys` uses.
-    """
-    constants: dict[str, str] = {}
-    for relative in relative_paths:
-        tree = ast.parse((REPO_ROOT / relative).read_text())
-        for node in tree.body:
-            if not isinstance(node, ast.Assign) or len(node.targets) != 1:
-                continue
-            target = node.targets[0]
-            if isinstance(target, ast.Name) and isinstance(node.value, ast.Constant):
-                if isinstance(node.value.value, str):
-                    constants.setdefault(target.id, node.value.value)
-    return constants
-
-
-def _panel_fields_and_query(visualization: dict) -> tuple[set[str], str]:
-    """Every index field a visualization queries, and its own KQL query string."""
-    vis_state = json.loads(visualization["attributes"]["visState"])
-    fields = {
-        agg["params"]["field"]
-        for agg in vis_state.get("aggs", [])
-        if agg.get("params", {}).get("field")
-    }
-    fields |= {
-        control["fieldName"]
-        for control in vis_state.get("params", {}).get("controls", [])
-        if control.get("fieldName")
-    }
-    source = json.loads(
-        visualization["attributes"]["kibanaSavedObjectMeta"]["searchSourceJSON"]
-    )
-    return fields, (source.get("query") or {}).get("query", "")
-
-
-def test_the_shipped_panels_query_the_fields_the_evidence_tests_name():
-    """Assert the SAVED OBJECT's queries, not a copy of them.
-
-    `tests/e2e/test_evidence_view.py` re-implements the two-step join in Python
-    and asserts the instrumentation. That is valuable on its own, but a
-    re-implementation can agree with itself perfectly while the shipped
-    dashboard drifts: changing panel 4's query off `payments-api`, mistyping a
-    rule field in panel 2, or deleting the money panel outright would leave
-    every test in this repository green while the dashboard rendered blank or
-    wrong.
-
-    Every name below is **derived from the e2e file's own constants**, read out
-    of its source by AST rather than restated here, so a renamed attribute has
-    to move the test file and the saved object in the same commit or this goes
-    red.
-
-    Cross-checking each field against the index-pattern's cached `fields` list
-    also catches a *new* attribute that never gets added to that cache: a
-    panel that queries a field the cached list does not carry reddens here.
-    """
-    constants = _e2e_string_constants(
-        "tests/e2e/test_evidence_view.py",
-        "tests/e2e/test_policy_denial.py",
-        "tests/e2e/test_opensearch_trace_ingest.py",
-    )
-
-    def keyword(attribute: str) -> str:
-        return f"attributes.{attribute}.keyword"
-
-    expected_fields = {
-        "northstar-evidence-controls": {"traceId.keyword"},
-        "northstar-evidence-claims": {
-            keyword(constants["ATTR_CLAIM_ID"]),
-            "traceId.keyword",
-        },
-        "northstar-evidence-decisions": {
-            keyword(constants["ATTR_POLICY_TOOL"]),
-            keyword(constants["ATTR_DECISION"]),
-            keyword(constants["ATTR_POLICY_RULE"]),
-            keyword(constants["ATTR_POLICY_CALLER"]),
-            f"attributes.{constants['ATTR_POLICY_AMOUNT']}",
-            f"attributes.{constants['ATTR_POLICY_LIMIT']}",
-        },
-        "northstar-evidence-review": {
-            keyword(constants["ATTR_REVIEW_DECISION"]),
-            keyword(constants["ATTR_REVIEW_REVIEWER"]),
-        },
-        "northstar-evidence-money": {"name.keyword", "traceId.keyword"},
-    }
-    expected_queries = {
-        "northstar-evidence-controls": "",
-        "northstar-evidence-claims": "",
-        "northstar-evidence-decisions": f'name:"{constants["DECISION_SPAN"]}"',
-        "northstar-evidence-review": f'name:"{constants["REVIEW_DECISION_SPAN"]}"',
-        "northstar-evidence-money": (
-            f'resource.service.name:"{constants["PAYMENTS_API"]}"'
-        ),
-    }
-
-    objects = {(o["type"], o["id"]): o for o in _evidence_objects()}
-    index_pattern = objects[("index-pattern", "northstar-evidence-traces")]
-    assert index_pattern["attributes"]["title"] == constants["TRACE_INDEX"], (
-        "the dashboard reads a different index than "
-        "tests/e2e/test_opensearch_trace_ingest.py's TRACE_INDEX: "
-        f"{index_pattern['attributes']['title']!r} vs "
-        f"{constants['TRACE_INDEX']!r}"
-    )
-    cached = {field["name"] for field in json.loads(index_pattern["attributes"]["fields"])}
-
-    for panel_id, fields in expected_fields.items():
-        panel = objects.get(("visualization", panel_id))
-        assert panel is not None, (
-            f"panel {panel_id!r} is not in "
-            f"{EVIDENCE_NDJSON.relative_to(REPO_ROOT)} at all"
-        )
-        actual_fields, actual_query = _panel_fields_and_query(panel)
-        missing = fields - actual_fields
-        assert not missing, (
-            f"panel {panel_id!r} no longer queries {sorted(missing)}. Those "
-            "names come from tests/e2e/test_evidence_view.py's own constants, "
-            "so either the dashboard drifted or an attribute was renamed in "
-            "one place and not the other -- and the panel now renders blank or "
-            f"wrong. It queries: {sorted(actual_fields)}"
-        )
-        assert actual_query == expected_queries[panel_id], (
-            f"panel {panel_id!r}'s query is {actual_query!r}, expected "
-            f"{expected_queries[panel_id]!r}. A panel filtered on the wrong "
-            "span name or service renders rows that are not evidence of "
-            "anything, and no e2e test can see it -- they read the index "
-            "directly, not this saved object."
-        )
-        uncached = {field for field in actual_fields if field not in cached}
-        assert not uncached, (
-            f"panel {panel_id!r} queries {sorted(uncached)}, which the "
-            "index-pattern's cached field list does not carry, so OpenSearch "
-            "Dashboards cannot resolve them and the aggregation 400s "
-            "(measured: `SavedObjectNotFound: Could not locate that "
-            "index-pattern-field`). Refresh the field list in the UI and "
-            "re-export."
-        )
-
-
-def test_the_evidence_view_ships_exactly_its_six_panels():
-    """All six named panels must be present, not merely "at least four".
-
-    A lower-bound count like `len(panels) >= 4` would let the money panel --
-    the half of the story a claim-id filter drops, and the reason the join
-    has two steps at all -- be deleted without a single test noticing. The
-    panels are named here instead, in the order the dashboard lays them out.
-    """
-    dashboards = [o for o in _evidence_objects() if o["type"] == "dashboard"]
-    assert len(dashboards) == 1, dashboards
-    dashboard = dashboards[0]
-    by_name = {r["name"]: r["id"] for r in dashboard.get("references", [])}
-    panels = json.loads(dashboard["attributes"]["panelsJSON"])
-    shipped = [by_name[panel["panelRefName"]] for panel in panels]
-    assert shipped == [
-        "northstar-evidence-readme",
-        "northstar-evidence-controls",
-        "northstar-evidence-claims",
-        "northstar-evidence-decisions",
-        "northstar-evidence-review",
-        "northstar-evidence-money",
-    ], (
-        f"the evidence view's panels are now {shipped}. Each one is load-bearing "
-        "-- the header carries the only record of the claim-id choice, the "
-        "control is the Gap 4 join key, and panels 3 and 4 are the two whose "
-        "CONTENTS (a reviewer, or none) and whose EXISTENCE (the money hops a "
-        "claim-id filter drops) are the evidence. Add a panel deliberately by "
-        "adding it here too."
-    )

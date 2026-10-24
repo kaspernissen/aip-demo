@@ -1077,7 +1077,7 @@ _COPIED = [
     Path("deploy/platform/spire/registration.yaml"),
     Path("deploy/platform/spire/metrics.yaml"),
     # setup-kind.sh reads the collector config (it strips the stage-4-only
-    # OpenSearch regions below stage 4), so a tree without these files makes
+    # regions below stage 4), so a tree without these files makes
     # the script die at Step 7 under `set -e` before it ever reaches the SPIRE
     # step these tests assert on. The ConfigMap creation itself is faked.
     Path("deploy/observability/collector-config.yaml"),

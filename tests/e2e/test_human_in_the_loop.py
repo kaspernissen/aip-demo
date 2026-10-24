@@ -46,7 +46,7 @@ REVIEWER = "alex.mercer"
 def _reviewer_id() -> str:
     """One reviewer id per decision. Payment ids restart when the ledger does, so a
     Jaeger lookup by `northstar.review.payment.id` can find an older run's trace B; a uuid
-    reviewer id cannot (test_evidence_view.py does the same)."""
+    reviewer id cannot."""
     return f"{REVIEWER}-{uuid.uuid4().hex[:8]}"
 REVIEWER_UI_SPIFFE_ID = live.REVIEWER_UI_SPIFFE_ID
 AMOUNT = 5800.0

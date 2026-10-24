@@ -80,9 +80,6 @@ def test_every_pipeline_sends_the_weaver_copy_and_none_samples_it(config):
     pipelines = parsed["service"]["pipelines"]
     for name in ("traces", "metrics", "logs"):
         assert "otlp_grpc/weaver" in pipelines[name]["exporters"], name
-    # The copy goes to the MAIN traces pipeline, upstream of the OpenSearch
-    # compat rewrite, so Weaver sees canonical names.
-    assert "otlp_grpc/weaver" not in pipelines["traces/opensearch"]["exporters"]
     exporter = parsed["exporters"]["otlp_grpc/weaver"]
     assert exporter["endpoint"] == "weaver-live-check.observability.svc.cluster.local:4317"
     # Weaver's receiver rejects gzip, the exporter's default; with it every

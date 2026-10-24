@@ -39,13 +39,13 @@ this repo owns outright on the human-in-the-loop path —
 `settlement.execute_approved` (with this project's first span link) and
 `review.decision` — which between them close Gap 2, and through **M4
 (Observable)** for the metrics this system actually emits (one of six GenAI
-agent metrics, the rest published as gaps), the trace-ingest path into
-OpenSearch, the evidence view's queries, the policy-adherence score spans, and
-**OQ-1, answered**, and through **M5 (Progressive autonomy)** for the
-`feature_flag.evaluation` span event and log record the OpenFeature/flagd
-sidecar now emits on every autonomy-level resolution, and the export
-destinations those log records travel to (see the export-destinations table
-and its recurrence note below). Revised at every milestone.
+agent metrics, the rest published as gaps), the policy-adherence score spans,
+and **OQ-1, answered**, and through **M5 (Progressive autonomy)** for the
+`feature_flag.evaluation` span event the OpenFeature hook puts on every
+autonomy-level resolution. Revised at every milestone. OpenSearch, its
+Dashboards evidence view and the PDS's own `feature_flag.evaluation` log
+record were removed on 2026-10-24; sections below that describe them are
+records of what was measured.
 
 **M8 (Human in the loop): `senior-settlement-agent` is retired.** Every
 mention of it below, of the "senior identity", of `settlement.execute_approved`
@@ -265,45 +265,30 @@ That prediction held, and this is where M1.2 changes it: PydanticAI's own
 opened by a library specifically to represent *our own agent's reasoning*,
 not a network call our code happened to make.
 
-## Export destinations: Jaeger, OpenSearch and Dash0, and they are not symmetric
+## Export destinations: Jaeger, Prometheus and Dash0
 
 The collector runs `deploy/observability/collector-config.yaml`. When
 `DASH0_AUTH_TOKEN` is set, `scripts/setup-kind.sh` also passes
 `deploy/observability/collector-dash0-overlay.yaml` as a second `--config`.
 The collector merges the two: the overlay declares `otlp_grpc/dash0` and
-restates each main pipeline's exporter list with it added
+restates each pipeline's exporter list with it added
 (`tests/unit/test_collector_dash0_overlay.py` checks the merged result).
 The pipelines, read from those two files:
 
 | Pipeline | Exporters |
 |---|---|
-| `traces` | `otlp_grpc/jaeger`, `forward/opensearch` (stage 4 only), `otlp_grpc/weaver` (stage 4 only), `otlp_http/agentevals` (stage 4 only), `otlp_grpc/dash0` (with the overlay), `debug` |
-| `traces/opensearch` (stage 4 only) | `opensearch/trace` |
+| `traces` | `otlp_grpc/jaeger`, `otlp_grpc/weaver` (stage 4 only), `otlp_http/agentevals` (stage 4 only), `otlp_grpc/dash0` (with the overlay), `debug` |
 | `metrics` | `otlp_http/prometheus` (stage 4 only), `otlp_grpc/weaver` (stage 4 only), `otlp_grpc/dash0` (with the overlay), `debug` |
-| `logs` | `opensearch/logs` (stage 4 only), `otlp_grpc/weaver` (stage 4 only), `otlp_grpc/dash0` (with the overlay), `debug` |
+| `logs` | `otlp_grpc/weaver` (stage 4 only), `otlp_grpc/dash0` (with the overlay), `debug` |
 
-**Traces go to Jaeger, OpenSearch and Dash0; metrics go to Prometheus and
-Dash0; logs go to OpenSearch and Dash0.** Every signal also goes, as a copy
-and never a sample, to Weaver live-check (`otlp_grpc/weaver`), which checks it
-against the registry. Jaeger takes traces only. Below stage 4,
-`scripts/setup-kind.sh` strips every region of both files bracketed by
-`# BEGIN stage-4-only` / `# END stage-4-only`, because a collector must not
+**Traces go to Jaeger and Dash0; metrics go to Prometheus and Dash0; logs go
+to Dash0.** The logs are AgentEvals' `gen_ai.evaluation.result` events. Every
+signal also goes, as a copy and never a sample, to Weaver live-check
+(`otlp_grpc/weaver`), which checks it against the registry. No processor
+renames an attribute, so every destination gets the canonical names. Below
+stage 4, `scripts/setup-kind.sh` strips every region of both files bracketed
+by `# BEGIN stage-4-only` / `# END stage-4-only`, because a collector must not
 name a backend its cluster does not have.
-
-**Three things about the OpenSearch branch a reader needs:**
-
-* It is **stage 4 only** (see above).
-* It is a **tee, not a fourth backend on the main pipeline**. `forward/opensearch`
-  is a connector: it is declared in the `traces` exporter list but hands the
-  main pipeline's output to the second pipeline, so the OpenSearch branch
-  cannot drift from what Jaeger and Dash0 receive.
-* It is the **only** place in this system where an attribute is renamed in
-  flight. `traces/opensearch` runs `attributes/opensearch-compat`, which
-  rewrites Kyverno's `admission.request.kind.{group,kind,version}` and
-  agentgateway's `error.type` for OpenSearch only: OpenSearch expands dotted
-  keys into nested objects and rejects a document that needs a key to be a
-  scalar and an object at once. Jaeger and Dash0 export upstream of the tee
-  and keep the canonical names.
 
 Verified live, not inferred, 2026-09-08: `dash0-secrets` present with all
 four keys; the collector pod carries all four `DASH0_*` env vars; the
@@ -782,9 +767,8 @@ url.scheme                      "http"
 
 (On v1.5.0 the same span had 20 keys: the legacy `http.*` six, `src.addr`, and
 no `error.type`. `error.type` is new in v1.6.0 and repeats `reason`. It also
-makes `error` and `error.type` a scalar-and-object pair that OpenSearch cannot
-map; the collector's `attributes/opensearch-compat` processor now renames
-`error.type` to `error_type`, see `docs/upstream-findings.md`.)
+made `error` and `error.type` a scalar-and-object pair that OpenSearch could
+not map, which mattered until OpenSearch was removed.)
 
 Four things differ from the accepted path, and each matters diagnostically:
 
@@ -1256,8 +1240,7 @@ outside:
   `attributes/opensearch-compat` processor. M9's rename to
   `northstar.policy.retryable` removed the collision and the rewrite. Of the 114 distinct
   span attribute keys Jaeger held across all ten services when this was
-  measured (2026-09-13), it was the only such collision among our own keys; nothing of ours is
-  renamed for any destination. See "Export destinations" above.
+  measured (2026-09-13), it was the only such collision among our own keys.
 - **`policy.caller.spiffe_id` is the *caller's* attested identity**, not the
   PDS's own and not the audience — the same string the gateway records as
   `jwt.sub` one span up, handed to the PDS through the guardrail's
@@ -2832,7 +2815,7 @@ For each: the evidence, whether upstream already has work in flight, and what we
 
 ### Gap 4: baggage propagation across the MCP boundary
 
-**Dated note, M8 Task 3 (measured): payments-api's ledger READS now carry the claim id; its money hops still do not.** The claims-agent resumes a waiting claim with `northstar.claim.id` in baggage, and its `GET /payments/{paymentId}` reaches payments-api with it: four such server spans carried the claim id after one approval run, each parented by a claims-agent `GET`. `POST /payments/propose` and `POST /payments/{paymentId}/execute` carry none, and no `policy.decision` span does, so the trace-id join below is still what reaches the money hops. `tests/e2e/test_evidence_view.py::test_the_trace_id_join_is_what_reaches_the_money_hops` asserts exactly that split.
+**Dated note, M8 Task 3 (measured): payments-api's ledger READS now carry the claim id; its money hops still do not.** The claims-agent resumes a waiting claim with `northstar.claim.id` in baggage, and its `GET /payments/{paymentId}` reaches payments-api with it: four such server spans carried the claim id after one approval run, each parented by a claims-agent `GET`. `POST /payments/propose` and `POST /payments/{paymentId}/execute` carry none, and no `policy.decision` span does, so the trace-id join below is still what reaches the money hops.
 
 - **Evidence:** Neither. `northstar.claim.id` reaches payments-mcp on **0** of
   its tool-call spans, and payments-api on **0** of its spans, in a live
@@ -2896,15 +2879,9 @@ For each: the evidence, whether upstream already has work in flight, and what we
   `@pytest.mark.xfail(strict=True)` (see "Running the tests"
   above for why), narrowed to this one assertion per a review finding — a
   fixture-setup failure upstream of it now surfaces as an ordinary `ERROR`,
-  not a false-quiet `xfailed`. **Pinned from the other side too, since M4
-  Task 3:** `tests/e2e/test_evidence_view.py::
-  test_the_trace_id_join_is_what_reaches_the_money_hops` asserts that a
-  claim-id filter over the OpenSearch trace index reaches neither
-  `payments-api` nor the Policy Decision Service, and that the trace-id join
-  does. That is not a second recording of the same fact — it is the
-  constraint the M4 evidence view is *built around*, so if this gap is ever
-  closed, that test names itself, the saved dashboard's two-step layout and
-  this section as the three things that have to change together.
+  not a false-quiet `xfailed`. `scripts/demo evidence` is built around this
+  gap: it finds a claim's traces by claim id, then the decision and the money
+  hops by trace id.
 
 ### Gap 5: FastMCP never emits `gen_ai.operation.name` on tool-call spans
 
@@ -3386,8 +3363,8 @@ controllers export with the OpenCensus agent exporter (`pkg/trace`), not OTLP.
 To measure on the first live run: that proxy spans reach Jaeger under
 `linkerd-proxy`; the span names and attributes above; the count per driven
 claim (it replaces the "about 140" estimate written when tracing was off); that
-no app span is orphaned once the trace settles; that OpenSearch accepts the pod
-labels as resource attributes; and that live-check reports no owned violation.
+no app span is orphaned once the trace settles; and that live-check reports no
+owned violation.
 
 **10. `tests/unit` is no longer self-sufficient on a fresh clone: it needs one
 generated artifact that only a script outside it produces.** Rewritten, not
@@ -3525,7 +3502,9 @@ measured; this section is the answer on top of it.
 #### The answer, stated as narrowly as it was measured
 
 **Zero. The evidence view loses nothing.** Every field of every panel is
-populated identically at OFF.
+populated identically at OFF. (The view was removed on 2026-10-24;
+`scripts/demo evidence` reads the same platform-emitted fields from Jaeger, so
+the answer carries over.)
 
 Measured as a matched pair on this cluster, both runs the same supervised
 `CLM-1842` story at €6,200 — refused by `settlement-agent`, escalated,

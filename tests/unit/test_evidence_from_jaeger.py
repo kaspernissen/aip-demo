@@ -1,4 +1,4 @@
-"""The demo's evidence read comes from Jaeger (M9 Task 4), not OpenSearch.
+"""The demo's evidence read comes from Jaeger.
 
 A fake Jaeger: two traces for one claim, the refusal trace (decision span with
 no claim id, claim id on the agent spans) and the approval's own trace (the
@@ -92,14 +92,6 @@ def test_claims_filed_before_the_run_are_not_this_runs(monkeypatch):
     # The decision is in the window, but the claim's first span is before filed_after.
     assert evidence.claim_ids_since(T0 // 1000 - 1000, filed_after_ms=T0 // 1000 - 500) == [CLAIM]
     assert evidence.claim_ids_since(T0 // 1000 - 1000, filed_after_ms=T0 // 1000 + 1) == []
-
-
-def test_the_driver_never_mentions_opensearch():
-    # OpenSearch left the demo (it stays in the stack for the evidence view):
-    # not a call, not a help string, not a line printed to the room.
-    from pathlib import Path
-    driver = (Path(__file__).resolve().parents[2] / "scripts" / "demo.py").read_text()
-    assert "opensearch" not in driver.lower()
 
 
 def test_a_full_search_page_fails_loudly_instead_of_dropping_claims(monkeypatch):

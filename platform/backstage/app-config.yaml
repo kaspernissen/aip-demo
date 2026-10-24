@@ -35,9 +35,6 @@ app:
             - url: http://localhost:9090
               label: Prometheus
               icon: kind:component
-            - url: http://localhost:5601
-              label: OpenSearch
-              icon: kind:component
     - page:home:
         config:
           path: /

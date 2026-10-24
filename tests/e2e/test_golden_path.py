@@ -66,17 +66,13 @@ spends two live settlements and a browser, same as
 `test_progressive_autonomy.py`'s own headline test, and is gated the same way
 (`RUN_BROWSER_TESTS=1`). Everything else in this file spends no model call and
 drives no browser: a guest-token request, a handful of authenticated HTTP
-calls, and (for the no-redeploy check and the OpenSearch-span check) a
-`kubectl patch` through the HTTP route plus two `kubectl get pods`, or an
-in-cluster OpenSearch query, respectively. The OpenSearch-span test
-(`test_the_contract_change_span_lands_in_opensearch`) skips below stage 4,
-the same way the rest of this file skips below stage 6 -- a golden-path
-cluster has both, but the two stages are independent and this file does not
-assume the higher one implies the lower.
+calls, and (for the no-redeploy check and the span check) a `kubectl patch`
+through the HTTP route plus two `kubectl get pods`, or a Jaeger query,
+respectively.
 """
 from __future__ import annotations
 
-import datetime
+import os
 import re
 import subprocess
 import time
@@ -102,12 +98,7 @@ from tests.e2e.test_policy_denial import (  # noqa: F401 -- reused, not reimplem
 )
 from tests.harness.live import get_payment as _get_payment  # same ledger-read helper
 from tests.e2e.test_progressive_autonomy import _pod_uids_and_image_digests
-from tests.e2e.test_opensearch_trace_ingest import (  # noqa: F401 -- reused, not reimplemented
-    OBSERVABILITY_NAMESPACE,
-    TRACE_INDEX,
-    _opensearch,
-    _opensearch_is_installed,
-)
+from tests.harness.jaeger import JaegerClient
 
 KUBE_CONTEXT = "kind-northstar"
 PLATFORM_NAMESPACE = "northstar-platform"
@@ -625,53 +616,32 @@ ATTR_PREVIOUS_VARIANT = "northstar.contract.previous_variant"
 ATTR_FIELD_MANAGER = "northstar.contract.field_manager"
 ATTR_ACTOR = "northstar.contract.actor"
 FIELD_MANAGER = "backstage-autonomy-card"  # k8sClient.ts's own FIELD_MANAGER
-OPENSEARCH_SETTLE_TIMEOUT_S = 90.0
+SPAN_SETTLE_TIMEOUT_S = 90.0
+JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 
 
-def _opensearch_contract_change_spans(new_variant: str, not_before: str) -> list[dict]:
-    """Every indexed `northstar.autonomy_contract.change` document for
-    `backstage` with this exact `new_variant`, started at or after
-    `not_before` (an ISO-8601 UTC string) -- polled rather than read once,
-    for the same reason `test_opensearch_trace_ingest.py`'s own poll exists:
-    OpenSearch is near-real-time and the collector batches on a 1s timeout.
-
-    Filtered by `new_variant` and a time floor rather than by trace id,
-    because this span carries none the caller can know in advance: it is
-    hand-built in `telemetry.ts` with a fresh random trace/span id
-    (`buildOtlpTracePayload`'s `hex(16)`/`hex(8)`), never linked to any
-    inbound request, and `router.ts`'s `POST /variant` response carries no
-    trace id back to attach to either -- see that module's own docstring on
-    why this is the ONE durable signal among the three, and the one none
-    of this file's other tests assert actually reaches the collector.
-    """
-    deadline = time.time() + OPENSEARCH_SETTLE_TIMEOUT_S
-    query = {
-        "size": 10,
-        "sort": [{"startTime": "desc"}],
-        "query": {
-            "bool": {
-                "filter": [
-                    {"match_phrase": {"name": SPAN_NAME}},
-                    {"term": {"resource.service.name": BACKSTAGE_SERVICE}},
-                    {"range": {"startTime": {"gte": not_before}}},
-                ]
-            }
-        },
-    }
-    hits: list[dict] = []
-    while time.time() < deadline:
-        hits = _opensearch(f"/{TRACE_INDEX}/_search", query)["hits"]["hits"]
-        documents = [hit["_source"] for hit in hits]
-        if any(doc["attributes"].get(ATTR_NEW_VARIANT) == new_variant for doc in documents):
-            return documents
+def _contract_change_spans(new_variant: str, not_before_us: int):
+    """Every `northstar.autonomy_contract.change` span in Jaeger naming
+    `new_variant` that started at or after `not_before_us`. Polls, because the
+    collector batches; returns an empty list on timeout."""
+    jaeger = JaegerClient(JAEGER_URL)
+    deadline = time.time() + SPAN_SETTLE_TIMEOUT_S
+    while True:
+        spans = [
+            span
+            for trace in jaeger.find_traces(
+                BACKSTAGE_SERVICE, SPAN_NAME, {ATTR_NEW_VARIANT: new_variant}, lookback="15m")
+            for span in trace.spans_named(SPAN_NAME, BACKSTAGE_SERVICE)
+            if span.start_us >= not_before_us
+        ]
+        if spans or time.time() >= deadline:
+            return spans
         time.sleep(3)
-    return [hit["_source"] for hit in hits]
 
 
-def test_the_contract_change_span_lands_in_opensearch(backstage_url, auth_headers):
-    """Asserts that the span lands, the
-    way `test_opensearch_trace_ingest.py` already does for `northstar.policy.decision`
-    -- nothing else in this suite does for this span.
+def test_the_contract_change_span_lands_in_jaeger(backstage_url, auth_headers):
+    """Asserts that the span lands in Jaeger -- nothing else in this suite
+    does for this span.
 
     This system emits three independent signals for a contract change; two
     are already covered elsewhere and are not repeated here. The RBAC grant
@@ -686,16 +656,8 @@ def test_the_contract_change_span_lands_in_opensearch(backstage_url, auth_header
     durable one of the three -- actually reaches the collector and is
     queryable, the same standard this suite already holds `northstar.policy.decision` to.
     """
-    if not _opensearch_is_installed():
-        pytest.skip(
-            f"needs stage 4: svc/opensearch-cluster-master does not exist "
-            f"in {OBSERVABILITY_NAMESPACE}. Run ./scripts/setup-kind.sh --stage 4."
-        )
-
-    contract.assert_assisted("test_the_contract_change_span_lands_in_opensearch")
-    not_before = (
-        datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=2)
-    ).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    contract.assert_assisted("test_the_contract_change_span_lands_in_jaeger")
+    not_before_us = int((time.time() - 2) * 1_000_000)
     try:
         flip = requests.post(
             f"{backstage_url}/api/autonomy-contract/variant",
@@ -714,20 +676,15 @@ def test_the_contract_change_span_lands_in_opensearch(backstage_url, auth_header
             "span search below would prove nothing about this write"
         )
 
-        documents = _opensearch_contract_change_spans("autonomous", not_before)
-        matching = [d for d in documents if d["attributes"].get(ATTR_NEW_VARIANT) == "autonomous"]
+        matching = _contract_change_spans("autonomous", not_before_us)
         assert matching, (
             f"the card's write to the FeatureFlag object landed (confirmed "
             f"live against the object itself), but no {SPAN_NAME!r} span "
-            f"naming new_variant='autonomous' appeared in OpenSearch's "
-            f"{TRACE_INDEX!r} within {OPENSEARCH_SETTLE_TIMEOUT_S:.0f}s -- the "
-            "write is real but the durable audit signal this span is meant "
-            f"to provide is not reaching the collector. Documents found for this window: "
-            f"{documents!r}"
+            f"naming new_variant='autonomous' appeared in Jaeger within "
+            f"{SPAN_SETTLE_TIMEOUT_S:.0f}s -- the write is real but the durable "
+            "audit signal this span is meant to provide is not reaching the collector."
         )
-        span = matching[0]
-        assert span["resource"]["service.name"] == BACKSTAGE_SERVICE, span
-        attrs = span["attributes"]
+        attrs = matching[0].attrs
         assert attrs.get(ATTR_PREVIOUS_VARIANT) == "assisted", attrs
         assert attrs.get(ATTR_NEW_VARIANT) == "autonomous", attrs
         assert attrs.get(ATTR_FIELD_MANAGER) == FIELD_MANAGER, attrs
@@ -745,4 +702,4 @@ def test_the_contract_change_span_lands_in_opensearch(backstage_url, auth_header
             f"failed to revert the contract to assisted through the card: "
             f"HTTP {revert.status_code}: {revert.text[:300]}"
         )
-        contract.assert_assisted("test_the_contract_change_span_lands_in_opensearch (revert)")
+        contract.assert_assisted("test_the_contract_change_span_lands_in_jaeger (revert)")

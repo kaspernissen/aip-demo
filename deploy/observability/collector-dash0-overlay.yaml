@@ -8,8 +8,7 @@
 # list plus `otlp_grpc/dash0`. Change both files together;
 # tests/unit/test_collector_dash0_overlay.py checks that they agree.
 #
-# Dash0 is on the main traces pipeline, which renames no attribute, so it gets
-# the same names Jaeger does.
+# No processor renames an attribute, so Dash0 gets the same names Jaeger does.
 exporters:
   otlp_grpc/dash0:
     endpoint: ${env:DASH0_GRPC_HOSTNAME}:${env:DASH0_GRPC_PORT}
@@ -23,7 +22,6 @@ service:
       exporters:
         - otlp_grpc/jaeger
         # BEGIN stage-4-only
-        - forward/opensearch
         - otlp_grpc/weaver
         - otlp_http/agentevals
         # END stage-4-only
@@ -40,7 +38,6 @@ service:
     logs:
       exporters:
         # BEGIN stage-4-only
-        - opensearch/logs
         - otlp_grpc/weaver
         # END stage-4-only
         - otlp_grpc/dash0

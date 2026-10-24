@@ -11,9 +11,8 @@
 #     `prometheus-29.29.0`, prerelease false -- the newest `prometheus-*` entry
 #     (29.28.1 is the one before it). That repo tags per chart, so the many
 #     `prometheus-<exporter>-*` tags in the same list are unrelated series.
-# Unlike the OpenSearch chart, chart version and appVersion are independent
-# here: 29.29.0 installs Prometheus **v3.14.0**, and every claim below was read
-# at that tag rather than from "latest" docs.
+# Chart version and appVersion are independent here: 29.29.0 installs
+# Prometheus **v3.14.0**, and every claim below was read at that tag rather than from "latest" docs.
 #
 # THE OTLP RECEIVER IS A SERVER FLAG, NOT A CHART BOOLEAN. The chart has no
 # `otlp.enabled` key -- grepping the pulled 29.29.0 chart for "otlp" finds
@@ -72,7 +71,7 @@ server:
   # well above the measurement on purpose: this is a 15d-retention TSDB whose
   # working set grows with series count, and the measured figure is the first
   # ten minutes of one. The limit is the number that matters for the budget,
-  # and 1Gi is what stage 4 can afford next to OpenSearch's 2Gi.
+  # and 1Gi is what stage 4 can afford.
   resources:
     requests:
       cpu: "100m"
@@ -82,10 +81,8 @@ server:
       memory: "1Gi"
 
   # Left at the chart's `8Gi` default on this cluster's only StorageClass
-  # ("standard", rancher.io/local-path, already marked default) -- the same
-  # choice and the same reasoning as
-  # `deploy/observability/opensearch/values.yaml`: a single-node kind cluster
-  # restarting this pod should not lose its series. 8Gi is the PVC's requested
+  # ("standard", rancher.io/local-path, already marked default): a
+  # single-node kind cluster restarting this pod should not lose its series. 8Gi is the PVC's requested
   # size, not memory, and local-path provisions it thinly from the node's own
   # disk.
   persistentVolume:

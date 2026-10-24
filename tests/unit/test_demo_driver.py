@@ -205,7 +205,7 @@ def test_a_refused_claim_that_executes_would_fail_the_run():
 
 
 def test_evidence_waits_for_ingest_lag_then_settles_and_never_returns_a_partial_row(monkeypatch):
-    """OpenSearch is near-real-time, so a claim's row can be incomplete for a
+    """Jaeger ingest lags a little, so a claim's row can be incomplete for a
     few seconds after the claim returns. `evidence` waits, bounded; and the row
     it finally prints is a complete one, never the partial one it saw first."""
     driver = _driver()
@@ -369,16 +369,12 @@ def test_evidence_also_reports_claims_a_human_filed_in_the_browser(monkeypatch, 
     }
     monkeypatch.setattr(demo.evidence, "evidence_for",
                         lambda cid, window: row if cid == "CLM-BROWSER-1" else {"policy_decision": None})
-    def no_opensearch(*a, **k):
-        raise AssertionError("`evidence` asked OpenSearch; the demo reads Jaeger")
-    monkeypatch.setattr(demo.live, "opensearch", no_opensearch)
-    monkeypatch.setattr(demo.live, "search", no_opensearch)
     row["link_trace_id"] = "c" * 32
     assert demo.main(["evidence"]) == 0
     printed = capsys.readouterr().out
     assert "CLM-BROWSER-1" in printed and "CLM-BROWSER-FAILED" not in printed
     assert f"/trace/{'c' * 32}" in printed
-    assert "OpenSearch" not in printed and "waiting for Jaeger" not in printed
+    assert "waiting for Jaeger" not in printed
     assert "approved by" in printed and "kasper.on.stage, after 41 s" in printed
     claims = demo._claims_seen_in_jaeger([], 7)
     assert claims[0]["status"] == "executed" and claims[0]["decision"] == "approve"

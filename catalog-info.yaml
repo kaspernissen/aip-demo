@@ -42,9 +42,6 @@ metadata:
     - url: http://localhost:9090
       title: Metrics in Prometheus
       icon: dashboard
-    - url: http://localhost:5601
-      title: Spans in OpenSearch
-      icon: dashboard
 spec:
   owner: guests
 
@@ -108,7 +105,7 @@ metadata:
   name: otel-collector
   description: >-
     The telemetry pipeline every component exports to. Fans traces out to
-    Jaeger and OpenSearch and metrics to Prometheus. Sampling is off, always
+    Jaeger and metrics to Prometheus. Sampling is off, always
     -- 100% of spans, because a demo that samples cannot prove what it claims.
   annotations:
     backstage.io/kubernetes-namespace: observability
@@ -168,27 +165,3 @@ spec:
   dependsOn:
     - resource:otel-collector
 
----
-apiVersion: backstage.io/v1alpha1
-kind: Resource
-metadata:
-  name: opensearch
-  description: >-
-    Spans as queryable data, in `ss4o_traces-default-namespace`. This is what
-    the evidence view reads -- the same
-    traces as Jaeger, but addressable by query rather than by eye.
-  annotations:
-    backstage.io/kubernetes-namespace: observability
-  tags:
-    - opensearch
-    - evidence
-  links:
-    - url: http://localhost:5601
-      title: Open OpenSearch Dashboards
-      icon: dashboard
-spec:
-  type: observability
-  owner: guests
-  system: northstar
-  dependsOn:
-    - resource:otel-collector

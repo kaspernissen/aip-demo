@@ -76,12 +76,11 @@ const surfaces = `
 | [Autonomy contract](/autonomy-contract) | the live OpenFeature flag, and the one write that flips it |
 | [Traces — Jaeger](http://localhost:16686) | one claim, one trace, ~150 spans across 7 services |
 | [Metrics — Prometheus](http://localhost:9090) | request rates, LLM tokens, model cost |
-| [Spans — OpenSearch](http://localhost:5601) | the same traces, queryable as data |
 
 **In the portal**
 
 - [Components](/catalog) — all nine, each with its own docs and pre-filtered
-  links into Jaeger, Prometheus and OpenSearch
+  links into Jaeger and Prometheus
 - [Catalog Graph](/catalog-graph?rootEntityRefs%5B%5D=system%3Adefault%2Fnorthstar) —
   the call chain as a picture, including the gateway and the flag
 - [Docs](/docs) — every component's documentation, and the system's
@@ -113,7 +112,7 @@ needs. Stage 6 is the whole thing, and is what you are looking at.
 | 1 | Connected | they can talk to each other, and one trace says so | the agents, the MCP servers, Jaeger |
 | 2 | Governed | the platform decides, not the agent — and identity is an *input* to that decision | Linkerd, SPIFFE/SPIRE, agentgateway, the policy decision service |
 | 3 | Supervised | a refusal is not the end; a human can overturn one | the reviewer console, which releases the money itself |
-| 4 | Observable | why €5,800 was paid, from telemetry alone and no new app code | OpenSearch, Prometheus, the eval scorer |
+| 4 | Observable | why €5,800 was paid, from telemetry alone and no new app code | Prometheus, Weaver, AgentEvals |
 | 5 | Progressive autonomy | one live value changes what the platform permits — no redeploy, no restart | Open Feature Operator, the \`FeatureFlag\` |
 | 6 | Golden path | the resource **is** the platform API; this portal is a view onto it | Backstage |
 

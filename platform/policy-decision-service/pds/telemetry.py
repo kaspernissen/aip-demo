@@ -16,16 +16,12 @@ from __future__ import annotations
 import os
 
 from opentelemetry import metrics, trace
-from opentelemetry._logs import get_logger, set_logger_provider
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
 from opentelemetry.context import Context
-from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.propagate import extract, set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
-from opentelemetry.sdk._logs import LoggerProvider
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
@@ -68,14 +64,12 @@ ATTR_LEDGER_STATUS = "northstar.policy.ledger.status"
 # `opentelemetry.semconv._incubating.attributes.feature_flag_attributes`
 # (still incubating as of opentelemetry-semantic-conventions==0.65b0, not yet
 # in the stable `opentelemetry.semconv.attributes` namespace -- checked by
-# import, not assumed) rather than retyped as a string literal. Placed here,
-# on `northstar.policy.decision`, and not only on the `feature_flag.evaluation` log
-# record: the span is where a reader establishes `northstar.policy.rule`, and
-# the *ruleset version* should not depend on the logs pipeline either.
+# import, not assumed) rather than retyped as a string literal. The
+# `feature_flag.evaluation` span event `TracingHook` writes does not carry it,
+# so it goes on the decision span.
 ATTR_FLAG_VERSION = FEATURE_FLAG_VERSION
 
 _TRACER_NAME = "northstar.policy-decision-service"
-_LOGGER_NAME = "northstar.policy-decision-service"
 
 
 def configure() -> None:
@@ -94,21 +88,6 @@ def configure() -> None:
     # services do -- it is placed beside the TracerProvider anyway so all five
     # Python services read the same top to bottom.
     _configure_metrics(resource)
-
-    # The third signal, logs, alongside traces and metrics above. Wired as a
-    # `LoggerProvider` rather than a standalone `Event`/`EventLogger` API,
-    # because that API does not exist in this venv's installed SDK (measured
-    # against opentelemetry-api/-sdk 1.44.0: `opentelemetry._events` and
-    # `opentelemetry.sdk._events` both raise `ModuleNotFoundError`). The
-    # standalone Events API was folded into the Logs API upstream, so what
-    # gets wired here is a `LoggerProvider`, shaped exactly like the
-    # TracerProvider/MeterProvider above it: OTLP over HTTP -- this service
-    # has never had the gRPC exporter installed
-    # (`opentelemetry-exporter-otlp-proto-grpc` has no package metadata in
-    # this venv, measured) -- a batch processor, and endpoint/protocol from
-    # the same standard `OTEL_EXPORTER_OTLP_*` variables the other two
-    # signals already read.
-    _configure_logs(resource)
 
     # W3C trace-context + baggage, explicitly, matching the other four Python
     # services. This registration is what `context_from_headers` below reads
@@ -146,7 +125,7 @@ def _configure_metrics(resource: Resource) -> None:
     own components to author metrics "on the same terms their spans are
     authored under", which needs a provider to author them into. None is
     authored here: a decision counter would be derivable from the
-    `northstar.policy.decision` spans the evidence view already reads, and inventing one
+    `northstar.policy.decision` spans, and inventing one
     to make a dashboard look fuller is exactly what §6 forbids.
     """
     metrics.set_meter_provider(
@@ -154,38 +133,10 @@ def _configure_metrics(resource: Resource) -> None:
     )
 
 
-def _configure_logs(resource: Resource) -> None:
-    """Install a LoggerProvider. Split out for the same reason
-    `_configure_metrics` is: a test can build one under a controlled
-    environment, and `configure()` stays a short list of "install signal N"
-    calls rather than growing the wiring inline.
-
-    `pds/autonomy.py`'s `emit_evaluation_event` is the only caller of
-    `event_logger()` below, and it is what actually emits the
-    `feature_flag.evaluation` log record this signal carries -- one per
-    decision, alongside (not instead of) the span event `TracingHook`
-    already puts on the active span (verified in `tests/test_autonomy.py`).
-    """
-    provider = LoggerProvider(resource=resource)
-    provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter()))
-    set_logger_provider(provider)
-
-
 def tracer() -> trace.Tracer:
     """Resolved per call, not bound at import, so `configure()` may run after
     this module is imported (and so tests can install their own provider)."""
     return trace.get_tracer(_TRACER_NAME)
-
-
-def event_logger():
-    """Resolved per call, not bound at import -- same reasoning as `tracer()`
-    above. Returns an `opentelemetry._logs.Logger`, not an `EventLogger`:
-    that class does not exist in this SDK (1.44.0). A
-    `Logger.emit(event_name=..., attributes=...)` call is this version's
-    equivalent -- `event_name` is what makes the log record a semconv *event*
-    rather than a plain log line (measured on the installed `Logger.emit`
-    signature, which accepts it as a keyword)."""
-    return get_logger(_LOGGER_NAME)
 
 
 def context_from_headers(headers) -> Context:

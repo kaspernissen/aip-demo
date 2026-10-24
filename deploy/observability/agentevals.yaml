@@ -3,7 +3,7 @@
 #
 #   agents --> otel-collector --(copy of every trace)--> agentevals  (UI + REST on 8001)
 #                    ^                                        |
-#                    +---- gen_ai.evaluation.result logs -----+  --> OpenSearch, Weaver
+#                    +---- gen_ai.evaluation.result logs -----+  --> Weaver, Dash0 (if set)
 #
 # The collector sends it a COPY of every trace (exporter `otlp_http/agentevals`,
 # stage-4-only), as it does for Weaver live-check. AgentEvals groups the copies
@@ -22,7 +22,8 @@
 # The four code evaluators are this repo's, from the ConfigMap
 # `agentevals-evaluators` that scripts/setup-kind.sh builds from
 # deploy/observability/agentevals/evaluators. Sessions live in memory: a restart
-# empties the UI (the results already sent are in OpenSearch).
+# empties the UI. The results already sent are in the collector's logs
+# pipeline (Weaver, debug, and Dash0 when the overlay is applied).
 apiVersion: apps/v1
 kind: Deployment
 metadata:

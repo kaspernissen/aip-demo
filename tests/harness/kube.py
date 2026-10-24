@@ -1,7 +1,6 @@
 """The one definition of "does this object exist, or could I not look?".
 
-Several `tests/e2e` modules (`test_prometheus_metrics_ingest.py`,
-`test_opensearch_trace_ingest.py`, and others) need to skip when a cluster is
+Several `tests/e2e` modules (`test_prometheus_metrics_ingest.py` and others) need to skip when a cluster is
 below the stage that provisions some object, but only when that object is
 genuinely absent -- not when `kubectl` merely failed to reach the API server.
 Reading `returncode == 0` as "it exists" and every other exit as "absent"
@@ -21,7 +20,7 @@ import re
 import subprocess
 
 # kubectl's own "the API server says this object is absent" shape, with the
-# object named: `services "opensearch" not found`. Anchored on the quoted name
+# object named: `services "prometheus" not found`. Anchored on the quoted name
 # so that a `not found` from anywhere else -- a shell reporting a missing
 # binary, a library error -- is not mistaken for it.
 _NAMED_OBJECT_NOT_FOUND = re.compile(r'"[^"]+"\s+not found', re.IGNORECASE)

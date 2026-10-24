@@ -47,7 +47,6 @@ from pds import telemetry
 from pds.autonomy import (
     FLAGD_HOST,
     FLAGD_PORT,
-    emit_evaluation_event,
     resolve_autonomy,
 )
 from pds.deny_text import format_deny
@@ -85,9 +84,7 @@ log = logging.getLogger("pds")
 #
 # `TracingHook()` puts a `feature_flag.evaluation` event on whatever span is
 # active when the flag is resolved -- `_decide` below resolves inside the
-# `northstar.policy.decision` span, so that event lands there. `emit_evaluation_event`
-# (see `pds/autonomy.py`) sends a separate log record with the fields the
-# hook does not.
+# `northstar.policy.decision` span, so that event lands there.
 api.set_provider(FlagdProvider(host=FLAGD_HOST, port=FLAGD_PORT))
 _flag_client = api.get_client()
 _flag_client.add_hooks([TracingHook()])
@@ -305,13 +302,6 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
         # Resolved unconditionally: every `northstar.policy.decision` span carries the
         # level in effect, even on the `_undecidable_method` path below.
         resolution = resolve_autonomy(caller, _flag_client)
-        # The second of "two records per evaluation" -- a log record
-        # carrying the full seven-field set, alongside (not instead of) the
-        # span event `TracingHook` already put on the active span inside
-        # `resolve_autonomy` above. See `pds/autonomy.py`'s comment for why
-        # this is a separate call rather than folded into `resolve_autonomy`
-        # itself.
-        emit_evaluation_event(resolution, caller)
 
         if request.method != DECIDABLE_METHOD:
             # Not reachable under the committed gateway config, which sends us
@@ -348,10 +338,8 @@ class PolicyServicer(pb_grpc.ExtMcpServicer):
         # or STATIC) from "assisted because we could not ask" (reason ERROR).
         span.set_attribute(telemetry.ATTR_AUTONOMY, resolution.level)
         span.set_attribute(telemetry.ATTR_AUTONOMY_REASON, resolution.reason)
-        # The ruleset version goes on this span too, not only on the log
-        # record `emit_evaluation_event` writes -- the audit trail reads this
-        # span, and must not have its correctness depend on the logs
-        # pipeline as well. Absent like every other optional field below:
+        # The ruleset version, which the hook's span event does not carry.
+        # Absent like every other optional field below:
         # the live sidecar's `autonomy-level` flag carries no
         # `flagSetId`/`version` metadata today (measured, `flag_metadata`
         # comes back `{}`), so this is routinely missing rather than always

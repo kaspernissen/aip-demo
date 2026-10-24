@@ -58,33 +58,8 @@ kubectl cluster-info --context kind-northstar >/dev/null 2>&1 || {
   echo "Run ./scripts/setup-kind.sh --stage 7 first." >&2
   exit 1
 }
-# The gate must PROVE it is running on a stage-4 cluster rather than be told
-# so by a README.
-#
-# tests/e2e/test_opensearch_trace_ingest.py is what catches a span silently
-# failing to reach OpenSearch. It SKIPS on a coherently stage-3 cluster,
-# deliberately: OpenSearch is a stage-4 component, and a test that failed for
-# its absence would cry wolf on every lower stage.
-#
-# But a skip is invisible in a green gate. Run this gate on a stage-3 cluster
-# and it reports that file's every assertion as a skip, exit 0, with the checks
-# this milestone rests on never executed and nothing anywhere going red. "A guard
-# that skips on the object it guards" is this repo's most recurrent defect
-# class; here the skip is the right behaviour for the test and the wrong
-# behaviour for the GATE, so the gate refuses to run below stage 4 instead of
-# running weaker and saying nothing about it.
-#
-# Asked of the cluster, not of a flag or an env var: the Service either exists
-# or it does not.
-kubectl --context kind-northstar -n observability get svc/opensearch-cluster-master >/dev/null 2>&1 || {
-  echo -e "${RED}Error: svc/opensearch-cluster-master not found in the observability namespace.${NC}" >&2
-  echo "This cluster is below stage 4. The gate runs tests/e2e/test_opensearch_trace_ingest.py -- the trace-ingest guard -- and on a cluster without OpenSearch every one of its assertions SKIPs, so the gate would pass while proving nothing about them." >&2
-  echo "Bring the cluster to stage 4. No recreate is needed: stage 4 runs on stage 3's cluster config unchanged." >&2
-  echo "Run ./scripts/setup-kind.sh --stage 7 first." >&2
-  exit 1
-}
-# The gate must also PROVE it is running on a stage-7 cluster, for the same
-# reason: tests/e2e/test_keystone.py skips when Kyverno's CRD is absent (a
+# The gate must PROVE it is running on a stage-7 cluster rather than be told
+# so by a README: tests/e2e/test_keystone.py skips when Kyverno's CRD is absent (a
 # coherently-below-stage-7 cluster), and a skip is invisible in a green gate --
 # the zero-skips check at the end would catch it, but only after ten minutes.
 # Ask the cluster now: the keystone policy must exist and be Ready, and Kyverno's
@@ -295,14 +270,13 @@ PYTHONPATH="$ROOT" "$ROOT/.venv/bin/python" -m tests.harness.livecheck restart |
 # A narrower `tests/e2e`-only invocation would silently drop harness coverage
 # the e2e assertions themselves rely on being correct.
 #
-# A skip is invisible in a green gate. The stage-4 refusal above covers the
-# OpenSearch Service this gate refuses to run without, but the pytest
-# invocation itself carries nothing that fails on a skip, while several
-# modules running inside it hold reachable `pytest.skip` calls on conditions
-# that refusal does not cover (test_egress_policy.py,
+# A skip is invisible in a green gate. The stage-7 refusal above covers
+# Kyverno, but the pytest invocation itself carries nothing that fails on a
+# skip, while several modules running inside it hold reachable `pytest.skip`
+# calls on conditions that refusal does not cover (test_egress_policy.py,
 # test_gateway_is_the_only_route.py, test_gateway_config_drift.py,
 # test_human_in_the_loop.py, test_settlement_llm_trace.py and the cluster-reachability
-# skips in the OpenSearch/Prometheus modules). Each is defensible on its own;
+# skips in the Prometheus module). Each is defensible on its own;
 # collectively, nothing would stop a green gate that had silently skipped an
 # assertion it exists to run. So "zero skips" is checked below as a property
 # of the gate, not merely verified once by hand after the fact.
@@ -368,7 +342,7 @@ if [[ "$SKIPPED" -ne 0 ]]; then
   echo "A skip inside this gate is invisible in a green run: the gate's" >&2
   echo "assertions simply do not execute and the summary still says 'passed'." >&2
   echo "Every gated module is unskipped here by RUN_BROWSER_TESTS=1, and the" >&2
-  echo "stage-4 refusal above covers the cluster, so a skip means a condition" >&2
+  echo "stage-7 refusal above covers the cluster, so a skip means a condition" >&2
   echo "nobody accounted for. The skipped tests and their reasons:" >&2
   grep -E "^[^ ]+::[^ ]+ SKIPPED" "$SKIP_LOG" >&2 || true
   echo "" >&2

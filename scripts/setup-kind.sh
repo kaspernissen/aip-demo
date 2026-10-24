@@ -39,24 +39,14 @@ GATEWAY_API_MANIFEST="https://github.com/kubernetes-sigs/gateway-api/releases/do
 SPIRE_CRDS_CHART_VERSION="0.6.1"
 SPIRE_CHART_VERSION="0.30.2"
 SPIFFE_HELM_REPO="https://spiffe.github.io/helm-charts-hardened/"
-# OpenSearch. Verified against TWO independent sources, not a local Helm
-# cache -- Artifact Hub's opensearch-project-helm-charts/opensearch package
-# (version AND app_version both "3.8.0") and
-# https://api.github.com/repos/opensearch-project/helm-charts/releases (tag
-# opensearch-3.8.0, prerelease: false, the newest entry). Unlike Linkerd/SPIRE
-# this chart's tags equal its appVersion. The same number and the same
-# evidence are recorded in deploy/observability/opensearch/values.yaml and
-# dashboards-values.yaml's headers.
-OPENSEARCH_CHART_VERSION="3.8.0"
-OPENSEARCH_HELM_REPO="https://opensearch-project.github.io/helm-charts"
 # Prometheus. Verified against TWO independent sources, not a local Helm
 # cache -- Artifact Hub's prometheus-community/prometheus package (version
 # "29.29.0", app_version "v3.14.0", prerelease false) and
 # https://api.github.com/repos/prometheus-community/helm-charts/releases
 # (tag prometheus-29.29.0, prerelease false, the newest `prometheus-*` entry;
 # that repo tags per chart, so the many `prometheus-<exporter>-*` tags
-# alongside it are unrelated series). Unlike the OpenSearch chart, chart
-# version and appVersion are independent here: 29.29.0 installs Prometheus
+# alongside it are unrelated series). Chart version and appVersion are
+# independent here: 29.29.0 installs Prometheus
 # v3.14.0. The same numbers and the same evidence are recorded in
 # deploy/observability/prometheus/values.yaml's header, and pinned by
 # tests/unit/test_metrics_wiring.py so the two cannot drift.
@@ -135,24 +125,16 @@ Usage: setup-kind.sh [--stage N]
                           already, since they are code in payments-api and
                           the Policy Decision Service rather than separate
                           workloads]
-  --stage 4   Observable:           + OpenSearch, Prometheus, AgentEvals
-                          [OpenSearch (single node, security plugin off) and
-                          OpenSearch Dashboards are installed, and the
-                          trace-ingest path into OpenSearch is live.
-                          Prometheus is installed too, OTLP-ingest only:
-                          every default scrape job is off, so the only way a
+  --stage 4   Observable:           + Prometheus, AgentEvals, Weaver
+                          [Prometheus is installed, OTLP-ingest only: every
+                          default scrape job is off, so the only way a
                           series reaches it is the collector's
-                          otlp_http/prometheus exporter. The evidence view is
-                          imported into Dashboards from
-                          deploy/observability/dashboards/evidence.ndjson, so
-                          it survives a cluster recreate instead of living
-                          only in a pod's volume. AgentEvals and Weaver
-                          live-check receive a copy of every trace. Runs on
-                          stage 3's cluster config
-                          UNCHANGED -- see the KIND_CONFIG note below --
-                          Dashboards is reached by port-forward
-                          (./scripts/start-demo.sh), never by a kind host
-                          port]
+                          otlp_http/prometheus exporter. AgentEvals and
+                          Weaver live-check receive a copy of every trace.
+                          Runs on stage 3's cluster config UNCHANGED -- see
+                          the KIND_CONFIG note below -- and its UIs are
+                          reached by port-forward (./scripts/start-demo.sh),
+                          never by a kind host port]
   --stage 5   Progressive autonomy: + flagd
                           [cert-manager (a prerequisite the Open Feature
                           Operator's webhooks need for TLS, not used by
@@ -226,11 +208,10 @@ to delete and recreate it. Note that --stage defaults to 1, so a bare
 explicitly for the governed one.
 
 Stage 4 is the first exception to "each stage brings its own deploy/kind/
-stageN.yaml": there is deliberately no stage4.yaml. OpenSearch Dashboards
-would need a fifth host port (extraPortMappings is create-time only, same
-rule as above), and this cluster is not recreated just to add it -- so
-stage 4 reuses stage 3's cluster config unchanged and reaches Dashboards by
-port-forward instead. tests/unit/test_stage4_config.py pins that no
+stageN.yaml": there is deliberately no stage4.yaml. Its UIs would need more
+host ports (extraPortMappings is create-time only, same rule as above), and
+this cluster is not recreated just to add them -- so stage 4 reuses stage
+3's cluster config unchanged and reaches them by port-forward instead. tests/unit/test_stage4_config.py pins that no
 stage4.yaml appears.
 
 Stage 5 is the second: there is deliberately no stage5.yaml either. Nothing
@@ -313,12 +294,11 @@ echo -e "${BLUE}Step 2/9: Creating kind cluster '${CLUSTER_NAME}'...${NC}"
 # stage 2's is one extra host port reservation for reviewer-ui — see
 # deploy/kind/stage3.yaml's header.
 KIND_CONFIG="$ROOT/deploy/kind/stage${STAGE}.yaml"
-# There is no stage4.yaml, deliberately. A fifth host port mapping (for
-# OpenSearch Dashboards) can only be added at cluster CREATION -- same
-# create-time rule as disableDefaultCNI above -- and this cluster is not
-# recreated just to add it. So --stage 4 reuses stage 3's cluster config
-# unchanged; Dashboards is reached by port-forward (./scripts/start-demo.sh)
-# instead of a host port.
+# There is no stage4.yaml, deliberately. More host port mappings can only be
+# added at cluster CREATION -- same create-time rule as disableDefaultCNI
+# above -- and this cluster is not recreated just to add them. So --stage 4
+# reuses stage 3's cluster config unchanged; its UIs are reached by
+# port-forward (./scripts/start-demo.sh) instead of a host port.
 #
 # There is no stage5.yaml either, for the same reasoning -- nothing this
 # stage installs (cert-manager, the Open Feature Operator, the flagd
@@ -515,39 +495,16 @@ else
 fi
 
 # Below stage 4 the collector must not name a backend this cluster does not
-# have.
+# have. Prometheus, Weaver live-check and AgentEvals are installed only at
+# `-ge 4`, so without a strip `--stage 1|2|3` would deploy a collector that
+# logs permanent export failures to each of them.
 #
-# OpenSearch is installed only at `-ge 4` (Step 8c below), but the collector
-# config is chosen on DASH0_AUTH_TOKEN and never on stage -- so without a
-# strip, `--stage 1|2|3` would deploy a collector whose traces pipeline names
-# `opensearch/trace`. Jaeger would still receive everything (the fanout is
-# per-exporter), so this would degrade to permanent export failures logged
-# into a file nobody reads, which is precisely the silently-broken shape this
-# repo exists to avoid.
-#
-# The rule is one line of sed and one marker convention, not a YAML rewriter:
-# every region of the collector config and its Dash0 overlay that is
-# stage-4-only is bracketed by
-# `# BEGIN stage-4-only` / `# END stage-4-only`. Two backends share the
-# convention, and it is named after the stage rather than after either one
-# for exactly that reason:
-#   * traces -- the `opensearch/trace` exporter, the
-#     `attributes/opensearch-compat` processor, the `forward/opensearch`
-#     connector, the `traces/opensearch` branch pipeline, and the single
-#     `- forward/opensearch` entry in the traces pipeline's exporter list;
-#   * metrics -- the `otlp_http/prometheus` exporter and its entry in the
-#     metrics pipeline's exporter list.
-# Both entries are why those exporter lists are written one-per-line. Deleting
-# the bracketed regions yields the exact below-stage-4 config.
-#
-# tests/unit/test_stage4_config.py runs this same sed program (it reads the
-# expression out of this file, so the two cannot drift) and asserts, per
-# signal, that the result parses, still exports traces to Jaeger and metrics to
-# debug, keeps the `prometheus/spire` receiver (which is NOT stage-4-only), and
-# names neither `opensearch` nor `otlp_http/prometheus` anywhere. It also
-# asserts that the `echo` below names every backend the strip actually removes,
-# derived by diffing the two configs rather than restated -- which is what
-# turns the next third region into a red test instead of a stale sentence.
+# Every stage-4-only region of the collector config and its Dash0 overlay is
+# bracketed by `# BEGIN stage-4-only` / `# END stage-4-only`, including single
+# entries in the pipelines' exporter lists (which is why those lists are
+# written one per line). Deleting the bracketed regions yields the exact
+# below-stage-4 config. tests/unit/test_stage4_config.py runs this same sed
+# program, read out of this file, and checks the result.
 STAGE4_ONLY_STRIP='/^[[:space:]]*# BEGIN stage-4-only$/,/^[[:space:]]*# END stage-4-only$/d'
 COLLECTOR_CONFIG_APPLIED="$COLLECTOR_CONFIG"
 DASH0_OVERLAY_APPLIED="$DASH0_OVERLAY"
@@ -564,7 +521,7 @@ if [[ "${STAGE}" -lt 4 ]]; then
   trap 'rm -f "$COLLECTOR_CONFIG_APPLIED" "$DASH0_OVERLAY_APPLIED"' EXIT
   sed "$STAGE4_ONLY_STRIP" "$COLLECTOR_CONFIG" > "$COLLECTOR_CONFIG_APPLIED"
   sed "$STAGE4_ONLY_STRIP" "$DASH0_OVERLAY" > "$DASH0_OVERLAY_APPLIED"
-  echo -e "${YELLOW}Stage ${STAGE}: dropping every stage-4-only region from the collector config -- the OpenSearch trace branch, the Prometheus metrics exporter, the Weaver live-check copy and the AgentEvals copy (all four backends are installed at stage 4 only).${NC}"
+  echo -e "${YELLOW}Stage ${STAGE}: dropping every stage-4-only region from the collector config -- the Prometheus metrics exporter, the Weaver live-check copy and the AgentEvals copy (all three backends are installed at stage 4 only).${NC}"
 fi
 
 kubectl create configmap otel-collector-config \
@@ -674,112 +631,13 @@ if [[ "${STAGE}" -ge 2 ]]; then
 fi
 
 if [[ "${STAGE}" -ge 4 ]]; then
-  # OpenSearch is the destination
-  # deploy/observability/collector-config.yaml's `opensearch/trace` exporter
-  # writes to; Dashboards is the UI a human reads it through, reached by
-  # port-forward (./scripts/start-demo.sh) rather than a kind host port --
-  # see the KIND_CONFIG note above.
-  #
-  # `--wait` on both installs, and then a SECOND collector restart below, and
-  # the ordering between them is a real requirement rather than tidiness. A
-  # collector restart before OpenSearch's Service exists would NOT just mean
-  # the first export retries until it does: the collector's own message in
-  # this cluster is `Exporting failed. Rejecting data. Try enabling
-  # sending_queue to survive temporary failures.`, i.e. this exporter has no
-  # sending queue to survive anything with. Step 8 above has already
-  # restarted the collector by the time this runs, so at stage 4 the restart
-  # here is what guarantees the collector's first export attempt happens after
-  # OpenSearch is serving, instead of relying on retry behaviour this exporter
-  # does not have.
-  echo -e "${BLUE}Step 8c/9 (stage 4): Installing OpenSearch ${OPENSEARCH_CHART_VERSION}...${NC}"
-  helm repo add opensearch "${OPENSEARCH_HELM_REPO}" --force-update >/dev/null
-  helm repo update opensearch >/dev/null
-  helm upgrade --install opensearch opensearch/opensearch \
-    --version "${OPENSEARCH_CHART_VERSION}" \
-    --namespace observability \
-    --kube-context "kind-${CLUSTER_NAME}" \
-    --values "$ROOT/deploy/observability/opensearch/values.yaml" \
-    --wait --timeout 5m
-  helm upgrade --install opensearch-dashboards opensearch/opensearch-dashboards \
-    --version "${OPENSEARCH_CHART_VERSION}" \
-    --namespace observability \
-    --kube-context "kind-${CLUSTER_NAME}" \
-    --values "$ROOT/deploy/observability/opensearch/dashboards-values.yaml" \
-    --wait --timeout 5m
-
-  # The evidence view, imported rather than hand-made.
-  #
-  # The audit trail already exists in OpenSearch; this is what makes it
-  # queryable through a saved view -- so the view that reads it has to be
-  # reproducible too. A dashboard that lives only in the Dashboards pod's
-  # volume is gone at the next `kind delete cluster`, and "we had one, you had
-  # to be there" is not evidence of anything.
-  #
-  # Done by `kubectl exec` into the Dashboards pod rather than through a
-  # port-forward: the image ships curl, the API is on localhost:5601 inside
-  # the pod, and this repo's standing rule is that `scripts/start-demo.sh`
-  # owns the demo's forwards. A forward opened and closed inside this block
-  # would be a fifth thing that can leave a socket behind for no gain.
-  #
-  # **`--wait` is NOT enough on its own.** The chart's readiness probe is not
-  # Dashboards' own status endpoint: measured on the deployed object
-  # (`kubectl get deploy opensearch-dashboards -o jsonpath=
-  # '{.spec.template.spec.containers[0].readinessProbe}'`), it is
-  # `{"tcpSocket":{"port":5601},"initialDelaySeconds":10,"periodSeconds":20,
-  #   "timeoutSeconds":5,"failureThreshold":10}` -- a TCP accept, and
-  # dashboards-values.yaml overrides neither probe. A socket accepting is not
-  # the saved-objects API serving: OSD answers
-  # `503 {"statusCode":503,"error":"Service Unavailable",
-  # "message":"OpenSearch Dashboards server is not ready yet"}` for a window
-  # after the bind.
-  #
-  # So the readiness this block needs is polled for directly, against the API
-  # that actually receives the import. `/api/status` is what the OSD UI itself
-  # polls and it returns 200 only once the server is past "not ready yet".
-  # Without this the import would run once and `exit 1` on a 503, aborting
-  # `--stage 4` at step 8c2 -- before Prometheus is installed and before the
-  # collector restart below -- leaving a half-built cluster.
-  echo -e "${BLUE}Step 8c2/9 (stage 4): Importing the evidence view into OpenSearch Dashboards...${NC}"
-  DASHBOARDS_READY=""
-  for _ in $(seq 1 60); do
-    if kubectl --context "kind-${CLUSTER_NAME}" -n observability \
-        exec deploy/opensearch-dashboards -- \
-        curl -sf -o /dev/null "http://localhost:5601/api/status" 2>/dev/null; then
-      DASHBOARDS_READY="yes"
-      break
-    fi
-    sleep 3
-  done
-  if [[ -z "${DASHBOARDS_READY}" ]]; then
-    echo -e "${RED}OpenSearch Dashboards' /api/status never answered 200 within 180s, so the evidence view cannot be imported.${NC}" >&2
-    echo "  kubectl -n observability logs deploy/opensearch-dashboards" >&2
-    exit 1
-  fi
-
-  # curl exits 0 on an HTTP 400, so the response is checked rather than the
-  # exit code -- an import that silently failed would leave the operator with
-  # a cluster that looks complete and a Dashboards with nothing in it, which is
-  # this milestone's own favourite failure mode.
-  EVIDENCE_IMPORT=$(kubectl --context "kind-${CLUSTER_NAME}" -n observability \
-    exec -i deploy/opensearch-dashboards -- \
-    curl -sS -X POST "http://localhost:5601/api/saved_objects/_import?overwrite=true" \
-    -H 'osd-xsrf: true' -F 'file=@-;filename=evidence.ndjson' \
-    < "$ROOT/deploy/observability/dashboards/evidence.ndjson")
-  if [[ "${EVIDENCE_IMPORT}" != *'"success":true'* ]]; then
-    echo -e "${RED}Importing deploy/observability/dashboards/evidence.ndjson failed.${NC}" >&2
-    echo "${EVIDENCE_IMPORT}" >&2
-    exit 1
-  fi
-  echo -e "${GREEN}Evidence view imported. Open it with ./scripts/start-demo.sh and browse to http://localhost:5601/app/dashboards#/view/northstar-evidence${NC}"
-
-  # Prometheus, installed in the SAME stage-4 block and BEFORE the
-  # collector restart below, for exactly the reason the OpenSearch install is.
+  # Prometheus, installed BEFORE the collector restart below.
   # `otlp_http/prometheus` is a plain otlphttp exporter with no sending queue
   # configured, so its first export attempt after a restart either lands or is
   # dropped -- restarting the collector while this Service does not yet exist
   # would throw the first minute of every service's metrics away and report it
   # only in a log nobody reads. `--wait` is what makes "exists" mean "serving".
-  echo -e "${BLUE}Step 8d/9 (stage 4): Installing Prometheus ${PROMETHEUS_CHART_VERSION} (OTLP ingest, no scrape jobs)...${NC}"
+  echo -e "${BLUE}Step 8c/9 (stage 4): Installing Prometheus ${PROMETHEUS_CHART_VERSION} (OTLP ingest, no scrape jobs)...${NC}"
   helm repo add prometheus-community "${PROMETHEUS_HELM_REPO}" --force-update >/dev/null
   helm repo update prometheus-community >/dev/null
   helm upgrade --install prometheus prometheus-community/prometheus \
@@ -789,12 +647,12 @@ if [[ "${STAGE}" -ge 4 ]]; then
     --values "$ROOT/deploy/observability/prometheus/values.yaml" \
     --wait --timeout 5m
 
-  # See the ordering note above: the collector has already been restarted once,
-  # against a cluster with neither OpenSearch nor Prometheus in it. This
+  # The collector has already been restarted once, against a cluster without
+  # Prometheus in it. This
   # restart is the one whose first export attempt can succeed.
   kubectl -n observability rollout restart deployment/otel-collector
   kubectl -n observability rollout status deployment/otel-collector --timeout=180s
-  echo -e "${GREEN}OpenSearch ${OPENSEARCH_CHART_VERSION} is up (single node, security plugin off, heap and resources set in deploy/observability/opensearch/values.yaml); Dashboards is up, reached by port-forward, with the evidence view imported into it from deploy/observability/dashboards/evidence.ndjson; Prometheus ${PROMETHEUS_CHART_VERSION} is up on OTLP ingest alone; the collector has been restarted against both.${NC}"
+  echo -e "${GREEN}Prometheus ${PROMETHEUS_CHART_VERSION} is up on OTLP ingest alone; the collector has been restarted against it.${NC}"
 fi
 
 if [[ "${STAGE}" -ge 5 ]]; then
@@ -879,8 +737,7 @@ if [[ "${STAGE}" -ge 6 ]]; then
   # delivery directly rather than trusting pod readiness for it.
   #
   # Checked with `kubectl exec` + node's own `http` module, not curl: the
-  # final image stage installs no curl (unlike the OpenSearch Dashboards
-  # image Step 8c2 above execs into), and this is a one-shot in-pod check,
+  # final image stage installs no curl, and this is a one-shot in-pod check,
   # not a persistent forward -- `scripts/start-demo.sh` still owns the
   # demo's own port-forwards. A guest token is required first
   # (`/api/autonomy-contract/status` answers 401 unauthenticated either way,
@@ -1111,7 +968,7 @@ elif [[ "${STAGE}" -eq 6 ]]; then
 elif [[ "${STAGE}" -eq 5 ]]; then
   echo -e "${GREEN}Stage 5 (Progressive autonomy) is up: stage 4's workloads and backends, unchanged, plus cert-manager ${CERT_MANAGER_VERSION}, the Open Feature Operator ${OPENFEATURE_CHART_VERSION}, and the northstar-autonomy FeatureFlag/FeatureFlagSource pair. The PDS pod carries a flagd sidecar answering on localhost:8013 inside it, serving flag 'autonomy-level' (variants assisted/autonomous, targeted on evaluation-context key spiffeId) -- still resolved nowhere yet, since this stage stands up the machinery only.${NC}"
 elif [[ "${STAGE}" -eq 4 ]]; then
-  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workload (reviewer-ui) on the same Linkerd ${LINKERD_APP_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- unchanged -- plus OpenSearch ${OPENSEARCH_CHART_VERSION} holding this system's traces, opensearch-dashboards for reading them with the evidence view already imported, and prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone. Run ./scripts/start-demo.sh to reach Dashboards and Prometheus; neither is a kind host port, and the evidence view is at http://localhost:5601/app/dashboards#/view/northstar-evidence.${NC}"
+  echo -e "${GREEN}Stage 4 (Observable) is up: stage 3's workload (reviewer-ui) on the same Linkerd ${LINKERD_APP_VERSION} / SPIRE ${SPIRE_CHART_VERSION} cluster -- unchanged -- plus prometheus ${PROMETHEUS_CHART_VERSION} holding its metrics on OTLP ingest alone, and agentevals and weaver-live-check receiving a copy of every trace. Run ./scripts/start-demo.sh to reach them; none is a kind host port.${NC}"
 elif [[ "${STAGE}" -eq 3 ]]; then
   echo -e "${GREEN}Stage 3 (Supervised) is up: stage 1's workloads meshed by Linkerd ${LINKERD_APP_VERSION}, with SPIRE ${SPIRE_CHART_VERSION} issuing workload identity, plus reviewer-ui -- so a payment the agent may not release now has a human who can release it.${NC}"
 elif [[ "${STAGE}" -ge 2 ]]; then
@@ -1133,10 +990,10 @@ echo "  Collector OTLP/HTTP: http://localhost:4318"
 echo "  claims-agent (A2A):  http://localhost:19001"
 echo "  Local registry:      localhost:${REGISTRY_PORT}"
 if [[ "${STAGE}" -ge 6 ]]; then
-  # Not a kind host port, same reasoning as Dashboards/Prometheus at stage 4:
+  # Not a kind host port, same reasoning as Prometheus at stage 4:
   # reached by port-forward rather than printed as a bare URL.
-  # ./scripts/start-demo.sh owns this forward the same way it owns Dashboards'
-  # and Prometheus', so this points there instead of to a hand-assembled
+  # ./scripts/start-demo.sh owns this forward the same way it owns
+  # Prometheus', so this points there instead of to a hand-assembled
   # `kubectl port-forward` command an operator would otherwise have to
   # remember.
   echo "  Backstage:           run ./scripts/start-demo.sh, then http://localhost:7007"

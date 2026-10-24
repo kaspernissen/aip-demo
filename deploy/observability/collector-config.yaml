@@ -46,98 +46,6 @@ processors:
     detectors: [env]
     override: false
 
-  # BEGIN stage-4-only
-  # WHAT BREAKS WITHOUT IT: OpenSearch expands dotted keys into objects at
-  # index time, so a span that carries a scalar attribute AND a dotted
-  # extension of it (`a.b` and `a.b.c`) needs one path to be a scalar and an
-  # object at once. OpenSearch refuses that bulk item permanently, per
-  # document, forever:
-  #   kubectl -n observability logs deploy/otel-collector --since=48h \
-  #     | grep "Exporting failed"
-  #   -> "can't merge a non object mapping [attributes.x] with an object
-  #       mapping"
-  # The rejection is not retried, so a trace driven without this processor in
-  # the path keeps missing the spans that carry the pair in OpenSearch.
-  #
-  # NONE OF THE KEYS THIS PROJECT OWNS COLLIDES. The M9 rename moved the
-  # decision span's retryable flag to `northstar.policy.retryable`, which is
-  # no longer a dotted extension of `northstar.policy.decision`, so the
-  # rewrite that used to live here is gone. Every collision below is a
-  # third-party key this project cannot rename.
-  #
-  # WHY A RENAME AND NOT AN INDEX TEMPLATE. Against OpenSearch 3.8.0 on this
-  # cluster: `subobjects: false` is rejected outright ("unsupported
-  # parameters: [subobjects : false]"); `index.mapping.ignore_malformed` does
-  # not apply to an object-vs-scalar path collision and the document is still
-  # rejected; only `"type": "flat_object"` on the whole `attributes` subtree
-  # indexes the document, and it costs more than it buys -- `_field_caps` then
-  # reports `attributes` as one non-aggregatable field with NO subfields (so
-  # the Dashboards index pattern would not list the attributes at all), a
-  # terms aggregation returns `java.lang.Object@...` buckets, and ranges
-  # become lexical ("42" > "100" matches).
-  #
-  # WHY ONLY HERE. This processor runs in the `traces/opensearch` pipeline
-  # only. Jaeger and Dash0 are exported from the main `traces` pipeline,
-  # upstream of the `forward/opensearch` tee, so they keep the canonical key.
-  # An evidence view whose field names differ from the trace an operator reads
-  # in Jaeger is worse than none -- so only the colliding third-party keys are
-  # rewritten, never a key this project owns.
-  #
-  # WHAT PINS IT, stated precisely -- the mapping is index-wide, so two
-  # colliding keys need not be on the same span or even come from the same
-  # service:
-  #   * tests/unit/test_stage4_config.py scans EVERY first-party service's
-  #     source -- agents/, apps/, platform/, systems/, tools/ -- for
-  #     attribute-shaped string literals, and fails if any collision among
-  #     them is not renamed here. It cannot see keys emitted by third-party
-  #     libraries.
-  #   * tests/e2e/test_opensearch_trace_ingest.py::
-  #     test_no_attribute_key_in_the_driven_trace_collides_uncovered applies
-  #     the same rule to every key Jaeger actually holds for a driven trace,
-  #     third-party keys included, for the services that trace reaches.
-  #   * ...and that file's log assertion reddens on a rejection from ANY
-  #     component that exported during the run, which is the backstop.
-  # The residual gap, named rather than papered over: a library upgrade that
-  # introduces a collider on a service the driven trace does not reach
-  # (settlement-agent's model spans, reviewer-ui, customer-ui) would be caught
-  # by the log assertion on the gate run, not before it.
-  attributes/opensearch-compat:
-    actions:
-      # Kyverno's admission spans (stage 7) emit `admission.request.kind` -- an
-      # empty string -- next to `admission.request.kind.{group,kind,version}`,
-      # which OpenSearch would have to map as an object. The keys are
-      # Kyverno's own, so the source scan in tests/unit/test_stage4_config.py
-      # cannot see them; THIRD_PARTY_COLLISIONS there pins them instead.
-      # Without these renames OpenSearch rejects every batch that carries a
-      # Kyverno span, and the Northstar spans in the same batch with it.
-      - key: admission.request.kind_group
-        from_attribute: admission.request.kind.group
-        action: insert
-      - key: admission.request.kind.group
-        action: delete
-      - key: admission.request.kind_kind
-        from_attribute: admission.request.kind.kind
-        action: insert
-      - key: admission.request.kind.kind
-        action: delete
-      - key: admission.request.kind_version
-        from_attribute: admission.request.kind.version
-        action: insert
-      - key: admission.request.kind.version
-        action: delete
-      # agentgateway v1.6.0 marks a refused `tools/call` SERVER span with
-      # `error` (true) AND `error.type` ("MCP"): a scalar and a dotted
-      # extension of it, which OpenSearch cannot map. v1.5.0 wrote `error`
-      # alone. Measured 2026-10-13; pinned by THIRD_PARTY_COLLISIONS in
-      # tests/unit/test_stage4_config.py. The mapping is index-wide, so this
-      # applies to every service's `error.type`.
-      - key: error_type
-        from_attribute: error.type
-        action: insert
-      - key: error.type
-        action: delete
-  # END stage-4-only
-
 exporters:
   otlp_grpc/jaeger:
     endpoint: jaeger.observability.svc.cluster.local:4317
@@ -145,58 +53,6 @@ exporters:
       insecure: true
   debug:
     verbosity: normal
-
-  # BEGIN stage-4-only
-  # The trace-ingest path. The opensearchexporter for this pinned collector
-  # image (otel/opentelemetry-collector-contrib:0.162.0, see .env) supports
-  # Traces in its default `ss4o` mapping mode, so no Data Prepper is needed.
-  #
-  # The exporter alone does not survive the attribute collision the
-  # `attributes/opensearch-compat` processor above fixes; read that comment
-  # before changing anything here. Verified on this cluster: for one driven
-  # trace, Jaeger and OpenSearch hold the SAME span-id set -- equal counts and
-  # an empty symmetric difference, the `northstar.policy.decision` spans included --
-  # and the collector logs zero `Exporting failed` events over its full log
-  # window (a short tail of a long-running log can miss those events).
-  #
-  # `http://`, not `https://` + basicauth: this cluster's OpenSearch
-  # (deploy/observability/opensearch/values.yaml) runs with
-  # DISABLE_SECURITY_PLUGIN=true, so there is no TLS listener and no auth to
-  # satisfy -- a plain HTTP endpoint is the correct one for this cluster.
-  opensearch/trace:
-    http:
-      endpoint: http://opensearch-cluster-master.observability.svc.cluster.local:9200
-  # END stage-4-only
-
-  # BEGIN stage-4-only
-  # The logs pipeline's real exporter, alongside `debug`.
-  #
-  # This marker is named `stage-4-only`, not `stage-5-only`: OpenSearch is
-  # the backend it names, and OpenSearch is installed starting stage 4
-  # (`setup-kind.sh` Step 8c), exactly like the traces branch above -- the
-  # marker tracks backend existence, not which task added the region.
-  # Reusing the existing marker and the existing
-  # `STAGE4_ONLY_STRIP`/`-lt 4` machinery in `scripts/setup-kind.sh` means a
-  # `--stage 1|2|3` cluster still gets no reference to a backend it does not
-  # have, with no change to that script at all --
-  # `tests/unit/test_stage4_config.py::test_below_stage_4_the_collector_config_
-  # names_no_opensearch` extends to this region automatically because it
-  # strips by marker, not by exporter name.
-  #
-  # No `attributes/opensearch-compat`-style rename needed here: that
-  # processor exists solely because some keys collide as a scalar-vs-object
-  # OpenSearch mapping (one key a dotted prefix of the other). The `feature_flag.*`
-  # attributes `pds/autonomy.py`'s `emit_evaluation_event` writes have no such
-  # pair -- checked: none of `feature_flag.key`, `.provider.name`,
-  # `.result.variant`, `.result.reason`, `.result.value`, `.context.id`,
-  # `.set.id`, `.version`, `error.type` is a dotted prefix of another in that
-  # set -- so this exporter is wired directly into the `logs` pipeline below,
-  # no `forward`/tee connector and no branch pipeline needed the way traces
-  # required one.
-  opensearch/logs:
-    http:
-      endpoint: http://opensearch-cluster-master.observability.svc.cluster.local:9200
-  # END stage-4-only
 
   # BEGIN stage-4-only
   # Prometheus, fed by the collector rather than scraping anything: the
@@ -234,8 +90,7 @@ exporters:
   #   "otlp_http" instead  {... "otelcol.component.id": "otlp_http/prometheus",
   #   "otelcol.component.kind": "exporter", "otelcol.signal": "metrics"}
   #
-  # `otlp_http/` is used consistently, matching the two exporters above it --
-  # this file spells the grpc one `otlp_grpc/`, not `otlpgrpc/`.
+  # The grpc exporters are likewise spelled `otlp_grpc/`, not `otlpgrpc/`.
   otlp_http/prometheus:
     endpoint: http://prometheus.observability.svc.cluster.local:9090/api/v1/otlp
     tls:
@@ -277,15 +132,6 @@ exporters:
     retry_on_failure: {enabled: true}
   # END stage-4-only
 
-# BEGIN stage-4-only
-# The `forward/` connector tee: the OpenSearch branch reuses the main traces
-# pipeline's receivers and processors instead of re-declaring them, so it
-# cannot silently drift from what Jaeger and Dash0 see. Everything before the
-# tee is shared and canonical, and the single attribute rewrite lives after it.
-connectors:
-  forward/opensearch: {}
-# END stage-4-only
-
 service:
   pipelines:
     traces:
@@ -297,17 +143,10 @@ service:
       exporters:
         - otlp_grpc/jaeger
         # BEGIN stage-4-only
-        - forward/opensearch
         - otlp_grpc/weaver
         - otlp_http/agentevals
         # END stage-4-only
         - debug
-    # BEGIN stage-4-only
-    traces/opensearch:
-      receivers: [forward/opensearch]
-      processors: [attributes/opensearch-compat]
-      exporters: [opensearch/trace]
-    # END stage-4-only
     metrics:
       receivers: [otlp, prometheus/spire]
       processors: [batch]
@@ -325,14 +164,11 @@ service:
     logs:
       receivers: [otlp]
       processors: [batch]
-      # One exporter per line, same reason as the traces/metrics pipelines
-      # above: scripts/setup-kind.sh strips the stage-4-only entry below
-      # stage 4 with a line-range sed and cannot edit inside a flow sequence.
-      # Below stage 4 this list is `- debug` alone: the collector must not
-      # name a backend the cluster does not have.
+      # AgentEvals sends its `gen_ai.evaluation.result` events here. One
+      # exporter per line, same reason as the pipelines above. Below stage 4
+      # this list is `- debug` alone.
       exporters:
         # BEGIN stage-4-only
-        - opensearch/logs
         - otlp_grpc/weaver
         # END stage-4-only
         - debug

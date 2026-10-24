@@ -2442,7 +2442,7 @@ run.) On 2026-09-14 it returns **five** call sites, one span each:
   * `platform/policy-decision-service/pds/server.py:230` —
     **`northstar.policy.decision`** (the name is `telemetry.SPAN_NAME`, which is why a
     grep for the literal string does not find it). This is the span every
-    scorer in M4 reads and the evidence view's second panel renders.
+    scorer in M4 reads and `scripts/demo evidence` reports.
 
 **The earlier version of this paragraph said "exactly two", scoped to `agents/`,
 `tools/` and `systems/` — and then named a file in `apps/` as one of the two.**
@@ -2471,7 +2471,6 @@ calling the tracer directly.
 | Customer UI | http://localhost:8080 |
 | Reviewer UI (stage 3) | http://localhost:8081 |
 | Jaeger | http://localhost:16686 |
-| OpenSearch Dashboards — the evidence view (stage 4) | http://localhost:5601 |
 | Prometheus — the metrics half of stage 4 | http://localhost:9090 |
 | Backstage — the catalog and the autonomy card (stage 6) | http://localhost:7007 |
 | AgentEvals — what the agent did, scored (stage 4) | http://localhost:18001 |
@@ -2637,9 +2636,7 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
 7. **Then approve the refusal — this is M3's part of the walkthrough.** After
    step 1's €6,200 submission comes back `refused`, open the Reviewer UI at
    http://localhost:8081. Unlike the Customer UI and Jaeger above it needs no
-   `kubectl port-forward` (OpenSearch Dashboards and Prometheus, the other two
-   rows of that table, do -- the original "unlike the four surfaces above"
-   was wrong about its own table): its Service is a `NodePort` and
+   `kubectl port-forward` (Prometheus does): its Service is a `NodePort` and
    `deploy/kind/stage3.yaml` maps host 8081 to it, so it also survives a
    redeploy.
 
@@ -2703,56 +2700,21 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
    part of the walkthrough, and the question it answers is *"can we prove why
    €5,800 was paid?"*
 
-   Run `./scripts/start-demo.sh` (it starts the forward Dashboards needs) and
-   open **http://localhost:5601/app/dashboards#/view/northstar-evidence**. The
-   dashboard is not made by hand: it is imported from
-   `deploy/observability/dashboards/evidence.ndjson` by
-   `./scripts/setup-kind.sh --stage 4`, so it survives a cluster recreate, and
-   `tests/unit/test_stage4_config.py` fails if that import is removed or
-   ungated.
+   Run `scripts/demo evidence`. For each claim in this run it reads Jaeger and
+   prints who decided, under which rule and limit, who approved, and how long
+   the human took, with a link to the trace. Both claims' `execute_payment`
+   decisions name the **same rule**, `settlement-agent.assisted.execute_limit`:
+   €5,800 permitted against a €6,000 limit for `settlement-agent`, €6,200
+   denied against the same limit, then approved by a human. Same rule,
+   different caller, different answer. Every field is an attribute on a span
+   the platform already emits; none comes from the model.
 
-   Read its own top-left panel first — it is the file's header, and it records
-   two decisions this walkthrough depends on. Then:
+   The join is claim id first, then trace id. `northstar.claim.id` stops at the
+   MCP boundary (Gap 4 in `docs/telemetry-contract.md`) and never reaches the
+   Policy Decision Service, so the decision is found through the traces the
+   claim touched.
 
-   - Set the time range to cover the two submissions from step 1 (the picker
-     defaults to the last hour). The range is not cosmetic: `CLM-1842` is a
-     fixed id, so the index holds one set of traces per run of it, going back
-     as far as retention does.
-   - **Panel 1, "Claims in this window"**, lists each claim id against the
-     trace ids it touched. The €6,200 claim has **two**: the refusal, and the
-     human approval that followed. The €5,800 claim has one.
-   - Select those trace ids in the control at the top. **This is the join, and
-     it is trace id rather than claim id on purpose.** `northstar.claim.id`
-     stops at the MCP boundary (Gap 4 in `docs/telemetry-contract.md`) and
-     never reaches the Policy Decision Service either, so a claim-id filter
-     would blank exactly the two panels that matter. Panel 1 is where you make
-     the hop from the number a human has to the id the telemetry joins on.
-   - **Panel 2, "What the platform decided"**, is the milestone's sentence in
-     table form. Both claims' `execute_payment` decisions name the **same
-     rule**, `settlement-agent.assisted.execute_limit`: €5,800 permitted
-     against a €6,000 limit for `settlement-agent`, €6,200 denied against the
-     same limit, and then permitted against `senior-settlement-agent`'s
-     €25,000. Same rule, different caller, different answer.
-   - **Panel 3, "Was a human in the loop?"**, is empty for the €5,800 claim —
-     and that emptiness *is* the evidence, which is why the panel is on the
-     dashboard rather than only its contents. For `CLM-1842` it names the
-     reviewer, the decision, and how long the refusal waited.
-   - **Panel 4, "What reached the ledger"**, is every `payments-api` server
-     span in the selected traces. For the €5,800 claim that is
-     `propose → execute` and nothing else. For `CLM-1842` it is
-     `propose → refuse`, then the reviewer page's own ledger reads, then
-     `execute` — the state changes and the reads that led to them. Not one of
-     these spans carries a claim id; they are here only because of the
-     trace-id join, which is the whole reason the join has two steps.
-
-   The queries behind all four panels are asserted against the live cluster by
-   `tests/e2e/test_evidence_view.py`, which drives both settlements itself. The
-   dashboard's *pixels* are deliberately not tested — but a dashboard that
-   silently goes blank because instrumentation regressed is worse than no
-   dashboard, so the fields it renders redden a test instead.
-
-   **There is no score panel on this dashboard, and that is deliberate.** The
-   AgentEvals checks run on demand with `scripts/demo evals`.
+   The AgentEvals checks run on demand with `scripts/demo evals`.
 
 10. **Finally, open Backstage — M6's part of the walkthrough, and the first
     step in this list that is not about the money hop at all.** Run
@@ -2821,9 +2783,8 @@ An unmarked line fails; adding a URL is now a decision rather than an echo.
       overwritten by the very next write, whichever tool makes it, so it
       is a point-in-time fact rather than a history; this span is what
       survives both the object being reverted and the pod being recycled.
-      `tests/e2e/test_golden_path.py::test_the_contract_change_span_lands_in_opensearch`
-      asserts it reaches OpenSearch too, the same standard M4-R6 already
-      holds `northstar.policy.decision` to.
+      `tests/e2e/test_golden_path.py::test_the_contract_change_span_lands_in_jaeger`
+      asserts it reaches Jaeger.
 
 **Known limitations, stated plainly (design §10).** An audience of platform
 engineers will notice these; naming them first is better than letting them

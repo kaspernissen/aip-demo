@@ -8,6 +8,12 @@ namespace (`policy.decision` and `review.decision` span and attribute names beca
 the full old-to-new map is at the top of `docs/telemetry-contract.md`). The records here are
 left as measured: a finding's evidence is what was observed, not what the system says today.
 
+**Dated note, 2026-10-24: OpenSearch removed.** OpenSearch, OpenSearch Dashboards, the
+collector's `attributes/opensearch-compat` processor and the Policy Decision Service's own
+`feature_flag.evaluation` log record (`emit_evaluation_event`) were removed. The decision
+span still carries the hook's `feature_flag.evaluation` span event. Findings below that
+cite them describe the system as it was.
+
 Status: M1.1, revised through M1.2 for the settlement-agent's model-driven
 decision logic, through **M2.1 (Interposed)** for the two findings the
 interposed proxy produced — Findings 6 and 7, both against `agentgateway`

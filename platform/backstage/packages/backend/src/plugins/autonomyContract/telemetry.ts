@@ -17,7 +17,7 @@
  *   3. This module -- a real span, in the SAME OTLP pipeline every other
  *      first-party service in this cluster exports into
  *      (deploy/observability/collector-config.yaml), so an operator looking
- *      at Jaeger/OpenSearch sees the change too, not only an operator
+ *      at Jaeger sees the change too, not only an operator
  *      reading this one pod's logs or this one object's YAML. This is the
  *      signal that survives both the object being reverted and the pod
  *      being recycled -- the auditability claim should rest on THIS, not

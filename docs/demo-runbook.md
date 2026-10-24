@@ -141,7 +141,6 @@ flowchart TD
       OTLP ingest ONLY — all 10 default
       scrape jobs are disabled`"]
         col --> jg["Jaeger :16686"]
-        col --> os["OpenSearch :5601"]
         col --> pr["Prometheus :9090"]
         col --> ae["`AgentEvals :18001
       scores the agent's own spans`"]
@@ -216,7 +215,7 @@ everything below it.
 | 1 | Connected | agents, MCP servers, systems of record, customer UI, collector, Jaeger | distributed tracing across an agent chain |
 | 2 | Governed | Linkerd, NetworkPolicy, SPIFFE/SPIRE, agentgateway, Policy Decision Service | authorization and workload identity |
 | 3 | Supervised | reviewer-ui | human-in-the-loop |
-| 4 | Observable | OpenSearch + Dashboards, Prometheus, Weaver live-check, AgentEvals | evidence and evaluation |
+| 4 | Observable | Prometheus, Weaver live-check, AgentEvals | evidence and evaluation |
 | 5 | Progressive autonomy | cert-manager, Open Feature Operator, flagd sidecar, the `FeatureFlag` | policy as a live value |
 | 6 | Golden path | Backstage | the platform API and its UI |
 | 7 | **Bounded** | **Kyverno and the keystone policy** | **that an agent cannot edit its own limits — run this one** |
@@ -246,7 +245,7 @@ everything below it.
 | Length | Stage | Beats to run | Cut |
 |---|:---:|---|---|
 | **5 min** | 7 | §5 "The five-minute flow": `scripts/demo` steps 1–5 | everything else: the longer beats below it |
-| **20 min** | 7 | beats 1–3, R, 6, 7, K | the evidence view and the scorer; Beat R and K are a minute each |
+| **20 min** | 7 | beats 1–3, R, 6, 7, K | Beat 5 (the evidence); Beat R and K are a minute each |
 | **45 min** | 7 | all of §5 | nothing |
 | deep-dive | 7 | all of §5 + architecture.md's "See it yourself" | — |
 
@@ -256,9 +255,8 @@ everything below it.
 |---|---|---|
 | `ANTHROPIC_API_KEY` | **required** | The settlement decision is a **real model call**. Empty → every pod still comes up Running and fully traced, and the **first claim submission fails**. `setup-kind.sh` prints `SET`/`EMPTY` — **check for SET before going on stage.** |
 | `DASH0_AUTH_TOKEN` + 3 siblings | unset | Adds a second OTLP exporter. **No application code changes.** Good beat if the audience cares about vendor-neutrality. |
-| `NORTHSTAR_CAPTURE_CONTENT` | `true` | `false` → the evidence view loses **nothing** (every field it reads is emitted by the platform, not the model). What is lost is the agent's own statement of the amount. This is OQ-1, measured as a matched pair. |
+| `NORTHSTAR_CAPTURE_CONTENT` | `true` | `false` → `scripts/demo evidence` loses **nothing** (every field it reads is emitted by the platform, not the model). What is lost is the agent's own statement of the amount. This is OQ-1, measured as a matched pair. |
 | `RUN_BROWSER_TESTS=1` | unset | Unlocks the gated test modules (`docs/telemetry-contract.md` publishes how many) that spend model tokens or drive a browser, `tests/e2e/test_demo_flow.py` among them. **Only for the gate**, not for the demo. |
-| `"emit": false` | — | On `POST /score`: read the scores **without writing spans**. How to look without changing what you are looking at. |
 
 ### Option 4: the four ways to flip the autonomy contract
 
@@ -804,8 +802,6 @@ proof; the terminal only reads it back.
 driver. The rule, the limit and the autonomy level are attributes of the
 `northstar.policy.decision` span (`northstar.policy.rule`,
 `northstar.policy.limit.amount`, `northstar.policy.autonomy.level`).
-OpenSearch is not part of this step: `evidence` makes no request to it. It stays
-in the stack for the evidence dashboard and the longer slot.
 
 **If it fails** — it waits for Jaeger, bounded (90s), printing `waiting for
 Jaeger (...)`, then fails naming the fields that never arrived: read the
@@ -876,8 +872,8 @@ noise, not a failure: the claim completed.
 
 Everything from here to Beat 8 is the 20-, 45- and 90-minute version of the
 demo, and the only home of the surfaces the five-minute flow leaves out: the
-customer UI, the human approval, the reviewer UI, the scores, OpenSearch
-Dashboards and the Backstage card. They are unchanged by the five-minute flow.
+customer UI, the human approval, the reviewer UI, the scores and the
+Backstage card. They are unchanged by the five-minute flow.
 
 **M8 caveat for Beats 1, 2, 5, 6, 7 and K:** they use M7's amounts and the
 M7 limit table. Under M8 the agent's limit is EUR 0 at `assisted` and EUR 6,000
@@ -1107,32 +1103,30 @@ flowchart LR
 
 ---
 
-### Beat 5 — prove why the money moved · *stage 4* · ~6 min
+### Beat 5 — prove why the money moved · *stage 4* · ~2 min
 
-**DO** — http://localhost:5601/app/dashboards#/view/northstar-evidence
+**DO**
 
-> The dashboard is imported from
-> `deploy/observability/dashboards/evidence.ndjson` at stage 4, so it
-> survives a cluster recreate. Read its **top-left readme panel first** — it
-> records two decisions this walkthrough depends on. Set the time range to
-> cover your two submissions.
+```bash
+scripts/demo evidence
+```
 
-| Panel | What it shows | The point |
-|---|---|---|
-| 1 · Claims in this window | claim id → trace ids. A claim a human released has **two** (the wait, then the approval); a claim the agent settled at `autonomous` has one | this is where a human hops from the number they have to the id telemetry joins on |
-| 2 · What the platform decided | both claims' `execute_payment` decisions, **same rule**, different outcomes | same rule, different caller, different answer |
-| 3 · Was a human in the loop? | **empty** for the claim the agent settled at `autonomous` | the emptiness *is* the evidence |
-| 4 · What reached the ledger | every `payments-api` server span | not one of them carries a claim id — they are here only via the trace-id join |
+> For each claim in this run it reads Jaeger and prints who decided, under
+> which rule and limit, who approved, and how long the human took, with a
+> link to the trace. A claim a human released has **two** traces (the wait,
+> then the approval); a claim the agent settled at `autonomous` has one, and
+> no approver.
 
 **SAY**
 
-> "There is **no new application code** behind this dashboard. Every panel
-> is built out of spans the system already emitted."
+> "There is **no new application code** behind this. Every field is an
+> attribute on a span the system already emitted."
 
-> "The join is on **trace id, not claim id**, and that is deliberate.
-> `northstar.claim.id` stops at the MCP boundary — a claim-id filter would
-> blank exactly the two panels that matter. We built the dashboard around the
-> gap instead of pretending it isn't there."
+> "Both claims' `execute_payment` decisions name the **same rule**. Same rule,
+> different caller, different answer."
+
+> "The join is claim id, then trace id. `northstar.claim.id` stops at the MCP
+> boundary, so the decision is found through the traces the claim touched."
 
 ---
 
@@ -1324,7 +1318,6 @@ and naming them first is worth more than the features.
 | Customer UI | http://localhost:8080 | 1+ | kind host port |
 | Reviewer UI | http://localhost:8081 | 3+ | kind host port (NodePort) |
 | Jaeger | http://localhost:16686 | 1+ | kind host port |
-| OpenSearch Dashboards | http://localhost:5601 | 4+ | `start-demo.sh` |
 | Prometheus | http://localhost:9090 | 4+ | `start-demo.sh` |
 | Backstage | http://localhost:7007 | 6+ | `start-demo.sh` |
 
@@ -1334,12 +1327,12 @@ opens but which are useful when debugging live: `claims-agent` 19001,
 **flagd metrics** 18014.
 
 > The **kind host ports survive a redeploy**; the port-forwards do not. If a
-> surface in the bottom three rows stops answering, the fix is almost always
+> surface in the bottom two rows stops answering, the fix is almost always
 > to restart `start-demo.sh`, not to touch the cluster.
 
 **flagd's metrics port is the one place** that shows how many evaluations
-resolved `assisted` versus `autonomous` without querying Prometheus or
-OpenSearch by hand:
+resolved `assisted` versus `autonomous` without querying Prometheus by
+hand:
 
 ```bash
 curl -s localhost:18014/metrics | grep feature_flag_flagd_impression_total
@@ -1399,9 +1392,9 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 
 | Symptom | Most likely cause | Fix, in order |
 |---|---|---|
-| `otlp_grpc/weaver` `Exporting failed` lines in the collector log | the weaver live-check pod was restarted or is starting (a gate run, `start-demo.sh`, a manual `report()`), so the collector's exporter to it retries in a burst for up to about a minute. **Live-check's, not demo telemetry loss**: Jaeger, Prometheus and OpenSearch get their own copies through separate exporters and are unaffected | wait a minute; `kubectl -n observability get pods -l app=weaver-live-check`. If it stays failing, the pod is not Ready: `kubectl -n observability logs deploy/weaver-live-check`. Every weaver start clones the semconv dependency from github.com (measured: not cached, a new checkout each start), so a pod that never gets Ready usually has no egress to github.com |
+| `otlp_grpc/weaver` `Exporting failed` lines in the collector log | the weaver live-check pod was restarted or is starting (a gate run, `start-demo.sh`, a manual `report()`), so the collector's exporter to it retries in a burst for up to about a minute. **Live-check's, not demo telemetry loss**: Jaeger and Prometheus get their own copies through separate exporters and are unaffected | wait a minute; `kubectl -n observability get pods -l app=weaver-live-check`. If it stays failing, the pod is not Ready: `kubectl -n observability logs deploy/weaver-live-check`. Every weaver start clones the semconv dependency from github.com (measured: not cached, a new checkout each start), so a pod that never gets Ready usually has no egress to github.com |
 | First claim submission errors | `ANTHROPIC_API_KEY` empty | it is a **model call**. Check `.env`, restart the agent deployments |
-| A surface at 5601 / 9090 / 7007 does not answer | dead port-forward (a dead forward **keeps its socket bound** and still looks healthy to `lsof`) | Ctrl+C and re-run `./scripts/start-demo.sh` |
+| A surface at 9090 / 7007 does not answer | dead port-forward (a dead forward **keeps its socket bound** and still looks healthy to `lsof`) | Ctrl+C and re-run `./scripts/start-demo.sh` |
 | `Backstage: SKIPPED` in start-demo output | cluster is below stage 6 | `./scripts/setup-kind.sh --stage 7` — no recreate needed from stage 3+ |
 | `start-demo.sh` refuses: *keystone policy is not Ready* | the policy never armed (usually Kyverno cannot read a kind it matches) | `kubectl get validatingpolicy agents-cannot-edit-their-own-authority -o yaml` and read `status.conditionStatus.conditions`. Beat 7 is **not** affected: Backstage's flip works with Kyverno down |
 | `start-demo.sh` refuses: *webhook configuration is not registered* | Kyverno was stopped gracefully (scaled to 0, a rollout) and deleted its own registration: **the keystone is silently off** | `kubectl -n kyverno scale deploy/kyverno-admission-controller --replicas=1`, wait for `kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg`, re-run |
@@ -1425,7 +1418,6 @@ kubectl delete -f deploy/demo/keystone-overgrant.yaml
 | Jaeger shows two disconnected traces | trace context broken at a hop | expected only for the **human approval**, which is a link by design (beat 4) |
 | Trace A looks short and ends at `input-required` | that is the design: trace A ends at the hand-off, and a person's decision is trace B | expected. Follow the link from trace B's `northstar.a2a.resume` span back to A |
 | `NoTaskQueue` ERROR in the claims-agent log after an approve | a2a-sdk's cleanup on every resume | expected noise; the claim completed |
-| Scores come back with `spanCount` still climbing | OpenSearch near-real-time lag | wait, re-ask with `"emit": false` until it settles |
 | A pod is CrashLooping | — | `kubectl -n <ns> logs <pod> --previous` |
 
 **The two things not to do live:**

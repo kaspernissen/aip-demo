@@ -23,10 +23,9 @@ def pipeline_exporters(config_text: str, signal: str) -> set[str]:
     """Every exporter id listed by a `service.pipelines` entry for `signal`.
 
     `signal` matches on the pipeline name's leading segment, so `"traces"`
-    covers both `traces` and the named branch `traces/opensearch` -- which is
-    the shape the OpenSearch tee uses, and which a plain `pipelines["traces"]`
-    lookup would miss half of. It deliberately does not match a pipeline merely
-    *containing* the word: `signal="traces"` does not select `metrics/traces`.
+    covers `traces` and any named branch such as `traces/<name>`. It does not
+    match a pipeline merely *containing* the word: `signal="traces"` does not
+    select `metrics/traces`.
 
     Returns an empty set for empty, unparseable or structurally unexpected
     text rather than raising. The callers turn that into a stage-4 skip only in

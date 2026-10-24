@@ -140,13 +140,13 @@ verify_existing_surface() {
 
 # This script is the universal remedy smoke-test.sh sends an operator to, so
 # it must not forward a Service unconditionally: on a cluster below the stage
-# that provides it, an unconditional forward for e.g. svc/opensearch-dashboards
+# that provides it, an unconditional forward for e.g. svc/prometheus
 # never binds, verify_owned_forward exits 1, and the EXIT trap then kills every
 # good forward it had just created -- the remedy for a dead port-forward would
 # leave the operator with no port-forwards at all.
 #
-# So the stage-gated surfaces -- reviewer-ui, OpenSearch Dashboards, Prometheus
-# and the rest below -- are asked for rather than assumed, one `service_exists`
+# So the stage-gated surfaces -- reviewer-ui, Prometheus and the rest
+# below -- are asked for rather than assumed, one `service_exists`
 # call each below. The stage-1 surfaces below are NOT optional -- a cluster
 # without them is broken, not merely younger -- and nothing here is silently
 # skipped: each skip prints the stage that would provide it.
@@ -154,10 +154,6 @@ service_exists() {
   kubectl -n "$1" get "svc/$2" -o name >/dev/null 2>&1
 }
 
-DASHBOARDS_AVAILABLE=""
-if service_exists observability opensearch-dashboards; then
-  DASHBOARDS_AVAILABLE=1
-fi
 REVIEWER_UI_AVAILABLE=""
 if service_exists northstar-agents reviewer-ui; then
   REVIEWER_UI_AVAILABLE=1
@@ -271,25 +267,10 @@ kubectl -n northstar-systems port-forward svc/payments-api 18080:8080 >/dev/null
 API_PID=$!
 PIDS+=("$API_PID")
 
-# Dashboards has no kind host port -- extraPortMappings is create-time only
-# and this cluster was not recreated to add a fifth one -- so this is the
-# ONLY way to reach it. Stage 4 installs it; below stage 4 it does not exist,
-# and forwarding it anyway would leave the forward dangling on a cluster that
-# has never bound it.
-DASHBOARDS_PID=""
-if [[ -n "$DASHBOARDS_AVAILABLE" ]]; then
-  echo "  - OpenSearch Dashboards (5601 -> 5601)"
-  kubectl -n observability port-forward svc/opensearch-dashboards 5601:5601 >/dev/null 2>&1 &
-  DASHBOARDS_PID=$!
-  PIDS+=("$DASHBOARDS_PID")
-else
-  echo -e "${YELLOW}  - OpenSearch Dashboards: SKIPPED, svc/opensearch-dashboards does not exist in this cluster (it arrives with ./scripts/setup-kind.sh --stage 7)${NC}"
-fi
-
-# Prometheus has no kind host port either (same create-time
-# `extraPortMappings` constraint as Dashboards), so a forward is the only way
-# to reach it -- and it is stage 4 only, so it takes the same `service_exists`
-# guard as Dashboards rather than one of the unconditional forwards above.
+# Prometheus has no kind host port (`extraPortMappings` is create-time only),
+# so a forward is the only way to reach it -- and it is stage 4 only, so it
+# takes a `service_exists` guard rather than being one of the unconditional
+# forwards above.
 #
 # 9090 -> 9090 and not an offset like the 1xxxx ports above: the Service's own
 # port is 9090 (`server.service.servicePort` in
@@ -355,7 +336,7 @@ fi
 # `feature_flag_flagd_impression_total`, broken down by
 # `feature_flag_result_variant` -- the only place in this system that shows
 # how many evaluations resolved "assisted" versus "autonomous" without
-# querying Prometheus or OpenSearch by hand.
+# querying Prometheus by hand.
 #
 # `deployment/policy-decision-service`, not a pod name: flagd is a sidecar
 # inside that Deployment's own pod, not a separate Deployment or Service (no
@@ -375,8 +356,8 @@ fi
 
 # Backstage has no kind host port (its Service is ClusterIP-only,
 # deploy/k8s/backstage.yaml) and no NodePort the way reviewer-ui has, so a
-# forward is the only way to reach it -- same constraint as Dashboards and
-# Prometheus above, stage-6-gated the same way.
+# forward is the only way to reach it -- same constraint as Prometheus
+# above, stage-6-gated the same way.
 #
 # Started and tracked in PIDS exactly like every other forward this script
 # owns (the kill-only-your-own-PIDs rule below is unchanged), but verified
@@ -410,9 +391,6 @@ verify_owned_forward 19001 "${CLAIMS_PID}" claims-agent "/.well-known/agent-card
 verify_owned_forward 19002 "${SETTLEMENT_PID}" settlement-agent "/.well-known/agent-card.json"
 verify_owned_forward 18000 "${MCP_PID}" payments-mcp "/mcp"
 verify_owned_forward 18080 "${API_PID}" payments-api "/healthz"
-if [[ -n "$DASHBOARDS_PID" ]]; then
-  verify_owned_forward 5601 "${DASHBOARDS_PID}" opensearch-dashboards "/"
-fi
 if [[ -n "$PROMETHEUS_PID" ]]; then
   # `/-/healthy` rather than `/`: with every scrape job disabled
   # (deploy/observability/prometheus/values.yaml) the root page still renders,
@@ -452,7 +430,6 @@ if [[ -n "$BACKSTAGE_PID" ]]; then
   # Backstage credential (guest or otherwise) and answers 401 unauthenticated
   # by design -- a curl with no token would read a healthy backend as dead.
   # `/` is the served frontend bundle, which answers 200 with no credential,
-  # the same reason Dashboards' own check above uses its bare root.
   verify_existing_surface 7007 backstage "/"
 fi
 # reviewer-ui: covered here for the same reason smoke-test.sh covers it --
@@ -467,9 +444,7 @@ else
   # Name the CURRENT stage here, not the stage reviewer-ui first appears at
   # (3): stage 3 is a strict subset of the current cluster, and sending an
   # operator to build only as far as reviewer-ui's own first stage lands them
-  # on a cluster where every one of
-  # tests/e2e/test_opensearch_trace_ingest.py's guards skips, missing
-  # everything a later stage added. `tests/unit/test_stage2_linkerd_config.py`'s
+  # on a cluster missing everything a later stage added. `tests/unit/test_stage2_linkerd_config.py`'s
   # `test_no_operator_facing_instruction_still_points_at_an_older_stage`
   # enforces exactly this for every operator-facing instruction in this repo:
   # an instruction naming a stage older than `CURRENT_STAGE` is an offender
@@ -480,7 +455,7 @@ else
 fi
 
 echo ""
-if [[ -n "$DASHBOARDS_AVAILABLE" && -n "$REVIEWER_UI_AVAILABLE" && -n "$PROMETHEUS_AVAILABLE" && -n "$WEAVER_AVAILABLE" && -n "$AGENTEVALS_AVAILABLE" && -n "$FLAGD_AVAILABLE" && -n "$BACKSTAGE_AVAILABLE" ]]; then
+if [[ -n "$REVIEWER_UI_AVAILABLE" && -n "$PROMETHEUS_AVAILABLE" && -n "$WEAVER_AVAILABLE" && -n "$AGENTEVALS_AVAILABLE" && -n "$FLAGD_AVAILABLE" && -n "$BACKSTAGE_AVAILABLE" ]]; then
   echo -e "${GREEN}All surfaces verified up.${NC}"
 else
   echo -e "${GREEN}Every surface this cluster has is verified up.${NC}"
@@ -524,9 +499,6 @@ fi
 # a condition simply being false.
 if [[ -n "$REVIEWER_UI_AVAILABLE" ]]; then
   echo "  reviewer-ui:               http://localhost:8081"  #surface
-fi
-if [[ -n "$DASHBOARDS_AVAILABLE" ]]; then
-  echo "  OpenSearch Dashboards:     http://localhost:5601"  #surface
 fi
 if [[ -n "$PROMETHEUS_AVAILABLE" ]]; then
   echo "  Prometheus:                http://localhost:9090"  #surface

@@ -212,7 +212,7 @@ async def decide(
         )
         # Seconds, as a double: the registry's unit rule (no units in names).
         span.set_attribute("northstar.review.wait.duration", round(elapsed_ms / 1000, 3))
-        # The join key the evidence view reads a claim's whole
+        # The join key `scripts/demo evidence` reads a claim's whole
         # trajectory by: this decision happens minutes after, and in a
         # different trace from, the refusal, and the claim id is what ties the
         # two together (Gap 4). Read off the ledger record, like everything

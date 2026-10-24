@@ -1,11 +1,7 @@
-"""The evidence read, from Jaeger (M9 Task 4): the demo shows traces and span
-attributes, so `scripts/demo evidence` reads Jaeger and nothing else.
+"""The evidence read, from Jaeger: the demo shows traces and span attributes,
+so `scripts/demo evidence` reads Jaeger and nothing else.
 
-It answers the same questions `live.evidence_for` answers from OpenSearch (that
-module still serves the dashboard test) and
-returns the same row shape, so the driver's printing did not change.
-
-The join is the one `live.trace_ids_for_claim` documents (GAP 4): a claim id is
+The join (GAP 4): a claim id is
 on the spans of customer-ui, claims-agent, settlement-agent and reviewer-ui
 (W3C baggage), and NOT on the policy decision spans or the money hops, which
 sit in the same traces. So: claim id -> the traces it touched -> every span in
@@ -143,9 +139,9 @@ def claim_ids_since(window_start_ms: int, filed_after_ms: int | None = None) -> 
 
 
 def evidence_for(claim_id: str, window_start_ms: int) -> dict:
-    """One row of the evidence, read out of Jaeger. Same keys as
-    `live.evidence_for`, plus `link_trace_id`: the approval's own trace when
-    there is one, else the claim's first trace (the one the demo links)."""
+    """One row of the evidence, read out of Jaeger. `link_trace_id` is the
+    approval's own trace when there is one, else the claim's first trace (the
+    one the demo links)."""
     traces = [t for t in _claim_traces(claim_id, window_start_ms, 24 * 3600)
               if min((s.start_us for s in t.spans), default=0) >= window_start_ms * 1000]
     spans: list[Span] = [s for t in traces for s in t.spans]

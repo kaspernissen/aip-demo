@@ -33,9 +33,7 @@ drift from the cluster without this file going red:
   the decision span carries is 6000.
 * `keystone` -- RBAC `Forbidden`, then Kyverno `DENIED` naming the policy, the
   over-grant gone, the flag still `assisted`.
-* `evidence` -- for this run's three claims, from Jaeger (no OpenSearch: the
-  command is run with OPENSEARCH_URL pointing at a dead port and must still
-  succeed): who decided, the rule, who approved (the stage reviewer for the
+* `evidence` -- for this run's three claims, from Jaeger: who decided, the rule, who approved (the stage reviewer for the
   first, none for the other two), the human wait in seconds for the approved
   one, and a Jaeger trace link per claim.
 * `reset` -- the resting state: flag `assisted`, over-grant absent, and no
@@ -101,7 +99,7 @@ pytestmark = pytest.mark.skipif(
         "EUR 5,800 payment under settlement-agent's identity with the flag "
         "flipped; gated behind the same RUN_BROWSER_TESTS=1 flag "
         "scripts/smoke-test.sh sets unconditionally (no browser is started -- "
-        "test_evidence_view.py rides the same flag for the same reason)"
+        "test_gateway_trace.py rides the same flag for the same reason)"
     ),
 )
 
@@ -329,11 +327,8 @@ def test_4_keystone_rbac_forbids_then_kyverno_denies_and_the_grant_is_gone(flow)
 
 def test_5_evidence_names_who_decided_and_who_approved_for_each_claim(flow):
     flow.require("claim-waiting", "claim-settled", "claim-over", "keystone")
-    # No request to OpenSearch: a dead address must change nothing.
-    flow.env["OPENSEARCH_URL"] = "http://127.0.0.1:9"
     out = flow.ok("evidence", "evidence")
     assert "for this run's 3 claim(s)" in out, out
-    assert "OpenSearch" not in out, out
     ids = [c["id"] for c in flow.claims()]
     assert len(ids) == 3, ids
     # One section per claim, in the order they were made: a section starts at

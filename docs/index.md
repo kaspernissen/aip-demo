@@ -89,11 +89,10 @@ clearly rather than to look like a failure:
 | Autonomy contract | [the OpenFeature page](/autonomy-contract) | the live flag, and the one write that flips it |
 | Traces | [Jaeger](http://localhost:16686) | one trace, end to end, ~150 spans across 7 services |
 | Metrics | [Prometheus](http://localhost:9090) | request rates, LLM tokens, model cost |
-| Spans as data | [OpenSearch](http://localhost:5601) | the same traces, queryable |
 | The catalog | [Components](/catalog) | every component, its docs, and its own links into the above |
 
-Each component's entity page carries its own pre-filtered links into Jaeger,
-Prometheus and OpenSearch — no hunting for the right query.
+Each component's entity page carries its own pre-filtered links into Jaeger
+and Prometheus — no hunting for the right query.
 
 ## Read next
 

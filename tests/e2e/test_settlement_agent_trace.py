@@ -83,9 +83,9 @@ from tests.harness.jaeger import JaegerClient
 
 # --- Why this file is gated behind RUN_BROWSER_TESTS=1 -----------------------
 #
-# `RUN_BROWSER_TESTS=1` is this repo's COST gate, not a browser gate. Three
+# `RUN_BROWSER_TESTS=1` is this repo's COST gate, not a browser gate. Other
 # modules already ride it with no browser (`test_settlement_llm_trace.py`,
-# `test_gateway_trace.py`, `test_evidence_view.py`),
+# `test_gateway_trace.py`),
 # each saying so in its own `pytestmark`; `scripts/smoke-test.sh` sets the flag
 # unconditionally, so the gate loses nothing.
 #

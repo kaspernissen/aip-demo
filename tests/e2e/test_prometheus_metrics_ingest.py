@@ -32,8 +32,7 @@ the data crosses them:
      nothing about any framework -- it only proves that process had nowhere to
      put a measurement.
 
-**Stage gate, and why it is not a way to hide.** Same rule
-`test_opensearch_trace_ingest.py` uses: skip only when the cluster is
+**Stage gate, and why it is not a way to hide.** Skip only when the cluster is
 *coherently* below stage 4 -- Prometheus absent AND the deployed collector
 config not naming the exporter. The incoherent middle (an exporter pointed at a
 Service that does not exist) fails here rather than skipping. "Absent" means
@@ -84,8 +83,8 @@ tests/`.
 
 The reviewer-ui row of the per-service control is the exception: there is no
 ungated traffic to reviewer-ui at all. Every e2e file that reaches
-reviewer-ui's `GET /` or `POST /review/{id}` (`test_evidence_view.py`,
-`test_human_in_the_loop.py`, `test_demo_flow.py`) is itself gated
+reviewer-ui's `GET /` or `POST /review/{id}` (`test_human_in_the_loop.py`,
+`test_demo_flow.py`) is itself gated
 behind `RUN_BROWSER_TESTS=1`, and reviewer-ui's readiness probe deliberately
 makes no ledger call, so this row needs its own gate,
 `_REVIEWER_UI_TRAFFIC_REQUIRED`, rather than settlement-agent's; see that
@@ -408,8 +407,8 @@ _MODEL_TRAFFIC_REQUIRED = pytest.mark.skipif(
 # "probe traffic must not need the thing it is proving" reason
 # `systems/payments-api/handlers.go` gives for its own `/healthz`), so no
 # probe ever produces this metric. Every e2e file that reaches `GET /` or
-# `POST /review/{id}` --  `test_evidence_view.py`, `test_human_in_the_loop.py`
-# and `test_demo_flow.py` -- is itself gated behind
+# `POST /review/{id}` -- `test_human_in_the_loop.py` and `test_demo_flow.py`
+# -- is itself gated behind
 # `RUN_BROWSER_TESTS=1` (grepped: no other file references
 # `reviewer_ui_route`'s HTTP paths). So unlike claims-agent and payments-mcp,
 # there is no ungated traffic source for this row at all, and it fails a bare
@@ -419,8 +418,8 @@ _REVIEWER_UI_TRAFFIC_REQUIRED = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
     reason=(
         "needs reviewer-ui's own HTTP call to payments-api, which only "
-        "test_evidence_view.py, test_human_in_the_loop.py and test_demo_flow.py "
-        "cause -- all three gated behind the same "
+        "test_human_in_the_loop.py and test_demo_flow.py "
+        "cause -- both gated behind the same "
         "RUN_BROWSER_TESTS=1 flag scripts/smoke-test.sh sets unconditionally; "
         "reviewer-ui's own readiness probe deliberately makes no ledger call"
     ),

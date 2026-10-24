@@ -56,8 +56,7 @@ is; the runbook is the script.
   the system already emits. The names of those attributes (all `northstar.*`)
   are defined in a Weaver registry, `telemetry/registry/`, and the cluster's
   telemetry is checked against it by Weaver live-check. AgentEvals scores what
-  the agent did from its own spans (`scripts/demo evals`). OpenSearch
-  Dashboards stays in the stack for the longer slot.
+  the agent did from its own spans (`scripts/demo evals`).
 - **An agent can never edit what constrains it.** Kyverno denies an agent
   ServiceAccount any write to the autonomy flag, the gateway's config, the
   reach policy (NetworkPolicy and Linkerd), RBAC or its own policy, even when an over-broad RBAC grant
@@ -126,8 +125,7 @@ workload identity, so the gateway is the only route to the payments tool; core
 NetworkPolicy, enforced by kind's kindnet, denies egress), SPIRE (workload identity), agentgateway (the
 enforcement point), the Open Feature Operator and flagd (the autonomy flag),
 Kyverno (the keystone),
-and the OpenTelemetry Collector, Jaeger, OpenSearch with Dashboards, and
-Prometheus (the evidence). [`docs/architecture.md`](docs/architecture.md)
+and the OpenTelemetry Collector, Jaeger and Prometheus (the evidence). [`docs/architecture.md`](docs/architecture.md)
 walks every hop.
 
 ## The rings
@@ -160,7 +158,7 @@ needs. Each stage adds to the one before.
 | 1 | Connected | Agents, MCP server, payments system, customer UI, Collector, Jaeger |
 | 2 | Governed | Linkerd, SPIRE, agentgateway and the Policy Decision Service |
 | 3 | Supervised | Reviewer UI, which releases the money itself |
-| 4 | Observable | OpenSearch, OpenSearch Dashboards with the evidence view, Prometheus, Weaver live-check, AgentEvals |
+| 4 | Observable | Prometheus, Weaver live-check, AgentEvals |
 | 5 | Progressive autonomy | Open Feature Operator, flagd and the `northstar-autonomy` flag |
 | 6 | Golden path | Backstage |
 | 7 | Bounded | Kyverno and the keystone policy |
@@ -192,7 +190,6 @@ actually answers. Then open:
 | Customer UI | http://localhost:8080 |
 | Reviewer UI | http://localhost:8081 |
 | Jaeger | http://localhost:16686 |
-| OpenSearch Dashboards (the evidence view) | http://localhost:5601 |
 | Prometheus | http://localhost:9090 |
 | Backstage | http://localhost:7007 |
 
@@ -264,8 +261,7 @@ nothing.
 
 ## Telemetry
 
-Everything is OTLP to an OpenTelemetry Collector, then Jaeger, OpenSearch and
-Prometheus. Sampling is always 100%: an audit trail with gaps is not evidence.
+Everything is OTLP to an OpenTelemetry Collector, then Jaeger and Prometheus. Sampling is always 100%: an audit trail with gaps is not evidence.
 Setting `DASH0_AUTH_TOKEN` adds a Dash0 exporter with no application change.
 
 The system uses the telemetry the frameworks emit, including the GenAI
