@@ -8,6 +8,14 @@
 # identity.issuer.tls.keyPEM with --set-file, from the openssl-made, git-ignored
 # .demo/linkerd-certs/ (scripts/linkerd-certs.sh).
 #
+# Workload certificates last a week, not the chart's 24 hours. A proxy renews
+# its certificate while it runs, but a laptop that sleeps past the expiry wakes
+# with every certificate expired and the mesh refusing every connection. A week
+# covers bringing the cluster up the day before a talk and closing the lid.
+identity:
+  issuer:
+    issuanceLifetime: 168h0m0s
+
 # Everything else is the chart default, deliberately: native sidecar is on
 # (nativeSidecar: true), proxy-init needs only NET_ADMIN (cniEnabled: false, so
 # no linkerd-cni), default inbound policy is all-unauthenticated (only ports

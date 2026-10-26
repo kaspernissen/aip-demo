@@ -82,6 +82,13 @@ def test_controller_tracing_stays_off():
     assert _yaml(LINKERD_VALUES)["controller"]["tracing"]["enabled"] is False
 
 
+def test_workload_certificates_outlive_a_closed_laptop_lid():
+    """A laptop that sleeps past the expiry wakes with every proxy certificate
+    expired and the mesh refusing every connection; a week covers a cluster
+    brought up the day before a talk."""
+    assert _yaml(LINKERD_VALUES)["identity"]["issuer"]["issuanceLifetime"] == "168h0m0s"
+
+
 def test_identity_material_is_not_committed_in_the_values():
     text = yaml.dump(_yaml(LINKERD_VALUES))
     for key in ("identityTrustAnchorsPEM", "crtPEM", "keyPEM", "BEGIN"):

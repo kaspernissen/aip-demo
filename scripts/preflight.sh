@@ -8,7 +8,11 @@ set -euo pipefail
 #   1. The keystone is armed: the Kyverno policy is Ready, its webhook is
 #      registered, something answers behind it, and the demo's over-grant is
 #      absent.
-#   2. Every localhost URL answers an HTTP request. Each is a kind host port
+#   2. The mesh carries a call: claims-agent reaches settlement-agent over
+#      Linkerd mTLS. The localhost URLs below arrive without mTLS, so they keep
+#      answering when the mesh is broken (expired workload certificates, a
+#      stuck identity controller).
+#   3. Every localhost URL answers an HTTP request. Each is a kind host port
 #      onto a NodePort (deploy/kind/cluster.yaml); the list below must name
 #      exactly the host ports that file publishes, which
 #      tests/unit/test_cluster_config.py checks.
@@ -71,7 +75,22 @@ if [[ -n "$(kubectl --context "$CONTEXT" -n northstar-platform get role,rolebind
 fi
 echo -e "${GREEN}Keystone: policy Ready, webhook registered, Kyverno answering, over-grant absent.${NC}"
 
-# --- 2. The localhost URLs ---------------------------------------------------
+# --- 2. The mesh ----------------------------------------------------------------
+#
+# The same probe `scripts/demo guard` runs, on the one call claims-agent is
+# allowed to make. Anything but REACHED means meshed services cannot talk.
+PROBE="$(dirname "$0")/reach-probe.py"
+VERDICT="$(kubectl --context "$CONTEXT" -n northstar-agents exec deploy/claims-agent -c claims-agent -- \
+  python3 -c "$(cat "$PROBE")" "http://settlement-agent.northstar-agents.svc.cluster.local:9002/" POST 8 2>&1 | tail -1 || true)"
+if [[ "$VERDICT" != REACHED* ]]; then
+  echo -e "${RED}Error: claims-agent cannot reach settlement-agent through the mesh (${VERDICT}).${NC}" >&2
+  echo "Check the proxies: kubectl -n northstar-agents logs deploy/claims-agent -c linkerd-proxy --since=10m" >&2
+  echo "Expired workload certificates (\"certificate expired\"): kubectl -n linkerd rollout restart deploy, then restart the meshed deployments." >&2
+  exit 1
+fi
+echo -e "${GREEN}Mesh: claims-agent reaches settlement-agent over mTLS (${VERDICT}).${NC}"
+
+# --- 3. The localhost URLs ---------------------------------------------------
 #
 # port|name|path. The path is anything that answers without credentials; any
 # HTTP status counts (the collector answers 404/405 to a GET), only "no
