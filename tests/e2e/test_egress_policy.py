@@ -1,4 +1,4 @@
-"""Exit criterion 7: the model provider is reachable from two workloads, not a namespace.
+"""Exit criterion 7: the model provider is reachable from no workload in the namespace.
 
 The criterion, verbatim: *"Direct egress from `northstar-agents` to the model
 provider is **denied**, with the gateway as the only path."* (Enforced by
@@ -10,16 +10,14 @@ claims-agent, customer-ui) plus reviewer-ui. Scoping a policy to
 leaving the others as unrestricted outbound egress points, so every workload in
 the namespace carries an egress NetworkPolicy and this file asserts them.
 
-**The honest reading of "the gateway as the only path".** `settlement-agent`
-*must* reach `api.anthropic.com:443`: its own model call goes there, and
-agentgateway is an MCP proxy that does not carry model traffic. `claims-agent` must too: it calls a model to read a claim the
-customer wrote as free text. So the criterion is discharged as two testable
-statements:
+**"The gateway as the only path"**, discharged as two testable statements:
 
-1. **Two workloads, not the namespace.** Only `settlement-agent` and
-   `claims-agent` are admitted to the model provider, and only to Anthropic's published ranges
-   (160.79.104.0/23 and 2607:6bc0::/48, TCP 443). NetworkPolicy has no names, so an address range is
-   the honest equivalent and a name that resolves elsewhere is dropped.
+1. **No workload reaches the model provider directly.** No document carries a
+   rule for Anthropic's address range, so a TLS request to `api.anthropic.com`
+   from any pod in the namespace (the two model agents included) is reset or
+   times out. The model agents reach the model through agentgateway's `llm`
+   listener (:4000), which holds the key and is the only pod that dials the
+   provider; the control below proves that path answers.
 2. **The gateway really is the only path to a tool**, from the egress side:
    `payments-mcp:8000`, `policy-decision-service:9100` and
    `payments-api:8080` appear in no agent's allowlist but the ones
@@ -38,8 +36,9 @@ the proxy. The decisions are pure functions in `tests/harness/reach.py`, unit
 tested against recorded probe output.
 
 **Controls, because a blanket outage would otherwise read as a success.** Each
-denial is paired: both model agents must still reach the model provider;
-`settlement-agent` must still reach the gateway and the collector; `claims-agent` must still reach its peer and the
+denial is paired: both model agents must still get an answer from the gateway's
+llm listener (an unauthenticated model call, refused 401 by the gateway itself,
+costs no tokens); `settlement-agent` must still reach the gateway and the collector; `claims-agent` must still reach its peer and the
 collector; DNS must resolve in every pod; every pod must be Ready. Nothing here
 is a `kubectl get networkpolicy` assertion on its own: a live-object comparison
 (`test_the_live_egress_rules_are_the_ones_in_the_repo`) is there for drift, but
@@ -68,8 +67,8 @@ MODEL_AGENTS = ("settlement-agent", "claims-agent")
 OTHER_AGENTS = ("customer-ui",)
 ALL_AGENTS = (*MODEL_AGENTS, *OTHER_AGENTS, "reviewer-ui")
 
-# The one external service any workload here may reach: the SDK default
-# (`base_url = "https://api.anthropic.com"`); no override exists in the repo.
+# The model provider's real host. No workload here may reach it: the agents'
+# ANTHROPIC_BASE_URL points at the gateway, which is the only pod that dials it.
 MODEL_HOST = "api.anthropic.com"
 MODEL_PORT = 443
 
@@ -85,6 +84,7 @@ DENIED_TOOLS = (
 
 GATEWAY_HOST = "agentgateway.northstar-platform.svc.cluster.local"
 GATEWAY_PORT = 3000
+GATEWAY_LLM_PORT = 4000
 COLLECTOR_HOST = "otel-collector.observability.svc.cluster.local"
 COLLECTOR_PORT = 4318
 PEER_HOST = "settlement-agent.northstar-agents.svc.cluster.local"
@@ -181,14 +181,16 @@ def wrong_identity_pod(reach_objects):
 # --- The criterion's own sentence -------------------------------------------
 
 
-@pytest.mark.parametrize("app", OTHER_AGENTS)
-def test_an_agent_with_no_model_call_cannot_reach_the_model_provider(app, reach_objects):
+@pytest.mark.parametrize("app", ALL_AGENTS)
+def test_no_agent_can_reach_the_model_provider_directly(app, reach_objects):
     """§9.7: direct egress from `northstar-agents` to the model provider.
 
-    Written against the workload that makes no model call. It holds no `ANTHROPIC_API_KEY`,
-    so it loses nothing. A meshed pod's connect succeeds
-    regardless, so the request is a TLS handshake plus an HTTP request and
-    the verdict is whether a status line came back.
+    Every workload in the namespace, the two that call a model included: their
+    model calls go to the gateway, so none has a rule to the provider. A meshed
+    pod's connect succeeds regardless, so the request is a TLS handshake plus an
+    HTTP request and the verdict is whether a status line came back. The control
+    that this is a policy and not an outage is
+    `test_a_model_agent_reaches_the_model_through_the_gateway`.
     """
     result = _http(app, MODEL_HOST, MODEL_PORT, "HEAD", "/", tls=True)
     verdict, how = reach.classify_egress(result)
@@ -203,16 +205,16 @@ def test_an_agent_with_no_model_call_cannot_reach_the_model_provider(app, reach_
 @pytest.mark.parametrize("app", MODEL_AGENTS)
 @pytest.mark.parametrize("host,port", FOREIGN_EXTERNAL)
 def test_a_model_agent_reaches_no_other_external_host(app, host, port, reach_objects):
-    """The allowance is one address range, not "external is fine".
+    """No external host at all, not just no Anthropic one.
 
-    `api.openai.com` is in the list on purpose: if the rule had been written as
-    a blanket 443 allowance, a second model provider is exactly what would slip
+    `api.openai.com` is in the list on purpose: if a rule had been written as a
+    blanket 443 allowance, a second model provider is exactly what would slip
     through while `example.com` still looked blocked.
     """
     result = _http(app, host, port, "HEAD", "/", tls=True)
     assert reach.egress_is_dropped(result), (
         f"{app} reached {host}:{port} ({result}), so its egress "
-        f"allowance is wider than Anthropic's published range for {MODEL_HOST}"
+        "allowlist has a route out of the cluster; it should have none"
     )
 
 
@@ -243,7 +245,8 @@ def test_the_gateway_is_the_only_tool_destination_from_the_model_agent(
     "host,why",
     [
         ("example.com", "an arbitrary external host"),
-        ("1.1.1.1", "an external address outside Anthropic's range"),
+        ("1.1.1.1", "an external address"),
+        (MODEL_HOST, "the model provider itself: only the gateway dials it"),
     ],
 )
 def test_a_pod_that_skips_the_proxy_is_still_dropped_by_the_node(
@@ -297,26 +300,31 @@ def test_the_bypass_pod_is_dropped_on_the_tool_too_and_the_control_connects(bypa
 
 
 @pytest.mark.parametrize("app", MODEL_AGENTS)
-def test_a_model_agent_still_reaches_the_model_provider(app, reach_objects):
+def test_a_model_agent_reaches_the_model_through_the_gateway(app, reach_objects):
     """Control, and the one that makes the whole file mean something.
 
     Without it every denial above is satisfied by an agent plane with no
-    network at all. A TLS handshake and an HTTP status line from
-    `api.anthropic.com` (any status: an unauthenticated HEAD on `/` is a 4xx)
-    prove the address range, DNS and the proxy are all working together.
+    network at all. A POST to the gateway's llm listener with no credential is
+    answered 401 by the gateway's own `jwtAuth`: the request left the pod,
+    crossed both proxies and reached the listener that holds the model key, and
+    it cost no model tokens. A model call that completes end to end is asserted
+    in test_settlement_llm_trace.py; this file only needs the path to answer.
     """
-    result = _http(app, MODEL_HOST, MODEL_PORT, "HEAD", "/", tls=True)
+    result = _http(app, GATEWAY_HOST, GATEWAY_LLM_PORT, "POST", "/v1/messages")
     assert reach.classify_egress(result) == ("reached", "answered"), (
-        f"{app} cannot complete a request to {MODEL_HOST}:{MODEL_PORT} "
-        f"({result}), so every model call from it will fail. If "
-        "Anthropic's published ranges moved, the ipBlock in "
-        "deploy/platform/reach/network-policies.yaml is stale"
+        f"{app} cannot reach {GATEWAY_HOST}:{GATEWAY_LLM_PORT} ({result}), so "
+        "every model call from it will fail"
+    )
+    assert result["status"] == 401, (
+        f"an unauthenticated model call from {app} was answered {result['status']}, "
+        f"not the gateway's 401 ({result}); the llm listener is not enforcing jwtAuth"
     )
 
 
 @pytest.mark.parametrize(
     "host,port",
-    [(GATEWAY_HOST, GATEWAY_PORT), (COLLECTOR_HOST, COLLECTOR_PORT)],
+    [(GATEWAY_HOST, GATEWAY_PORT), (GATEWAY_HOST, GATEWAY_LLM_PORT),
+     (COLLECTOR_HOST, COLLECTOR_PORT)],
 )
 def test_the_model_agent_still_reaches_the_gateway_and_the_collector(
     host, port, reach_objects

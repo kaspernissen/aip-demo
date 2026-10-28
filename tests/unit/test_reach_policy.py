@@ -535,13 +535,14 @@ EGRESS = [
     # settlement-agent (Cilium: settlement-agent-egress-allowlist).
     ("settlement-agent", "kube-dns", 53, None, "allow"),
     ("settlement-agent", "agentgateway", 3000, None, "allow"),
+    ("settlement-agent", "agentgateway", 4000, None, "allow"),  # the llm listener
     ("settlement-agent", "otel-collector", 4318, None, "allow"),
     ("settlement-agent", "linkerd-control-plane", 8080, None, "allow"),
     ("settlement-agent", "linkerd-control-plane", 8086, None, "allow"),
     ("settlement-agent", "linkerd-control-plane", 8090, None, "allow"),
-    ("settlement-agent", None, 443, ANTHROPIC_HOST, "allow"),
-    ("settlement-agent", None, 443, OTHER_ANTHROPIC_HOST, "allow"),
-    ("settlement-agent", None, 443, "2607:6bc0::10", "allow"),
+    ("settlement-agent", None, 443, ANTHROPIC_HOST, "drop"),
+    ("settlement-agent", None, 443, OTHER_ANTHROPIC_HOST, "drop"),
+    ("settlement-agent", None, 443, "2607:6bc0::10", "drop"),
     ("settlement-agent", None, 443, EXAMPLE_COM, "drop"),
     ("settlement-agent", None, 443, "160.79.106.1", "drop"),
     ("settlement-agent", None, 80, ANTHROPIC_HOST, "drop"),
@@ -561,17 +562,24 @@ EGRESS = [
     ("claims-agent", "customer-ui", 8080, None, "allow"),
     ("claims-agent", "otel-collector", 4318, None, "allow"),
     ("claims-agent", "linkerd-control-plane", 8086, None, "allow"),
-    # The intake model: claims-agent reaches the model provider's range, and
-    # nothing else on the internet.
-    ("claims-agent", None, 443, ANTHROPIC_HOST, "allow"),
-    ("claims-agent", None, 443, OTHER_ANTHROPIC_HOST, "allow"),
-    ("claims-agent", None, 443, "2607:6bc0::10", "allow"),
+    # The intake model: claims-agent's only way to it is the gateway's llm
+    # listener. The provider's published ranges and the rest of the internet are
+    # dropped, so the model key and the model's address are not the pod's to use.
+    ("claims-agent", "agentgateway", 4000, None, "allow"),
+    ("claims-agent", None, 443, ANTHROPIC_HOST, "drop"),
+    ("claims-agent", None, 443, OTHER_ANTHROPIC_HOST, "drop"),
+    ("claims-agent", None, 443, "2607:6bc0::10", "drop"),
     ("claims-agent", None, 443, EXAMPLE_COM, "drop"),
     ("claims-agent", None, 443, "160.79.106.1", "drop"),
     ("claims-agent", None, 80, ANTHROPIC_HOST, "drop"),
     ("claims-agent", None, 443, "2607:6bc1::10", "drop"),
     ("claims-agent", "payments-mcp", 8000, None, "drop"),  # direct bypass of the gateway
-    ("claims-agent", "agentgateway", 3000, None, "drop"),
+    # The rule that reaches agentgateway:4000 also carries 4143, and a meshed
+    # source reaches EVERY port of the peer through 4143 (per pod, not per port).
+    # So the MCP port is open to claims-agent at L4. What keeps it out of the
+    # tools is the gateway itself (its MCP route's jwtAuth and the PDS), never
+    # this NetworkPolicy. An unmeshed claims-agent is held to 4000 only, below.
+    ("claims-agent", "agentgateway", 3000, None, "allow"),
     ("claims-agent", "reviewer-ui", 8080, None, "drop"),
     # Egress to a meshed peer is per pod. 4143 is allowed to these peers, so
     # every port of them is allowed for a meshed claims-agent; the peer's Servers
@@ -621,7 +629,7 @@ def test_dns_is_open_on_udp_and_tcp(src, proto):
 @pytest.mark.parametrize(
     "src,dst,port",
     [("claims-agent", "customer-ui", 9090), ("claims-agent", "settlement-agent", 9999),
-     ("claims-agent", "payments-api", 9999)],
+     ("claims-agent", "payments-api", 9999), ("claims-agent", "agentgateway", 3000)],
 )
 def test_port_rules_bind_an_unmeshed_source_but_not_a_meshed_one(src, dst, port):
     """The same labels, with and without a proxy: a pod that skips the proxy is
@@ -862,12 +870,34 @@ def test_the_collector_entry_matches_its_manifest():
 MODEL_AGENTS = {"settlement-agent", "claims-agent"}
 
 
-def test_only_the_two_model_agents_may_reach_the_model_provider():
+def test_no_agent_plane_pod_reaches_the_model_provider_directly():
+    """The requirement: direct egress from `northstar-agents` to the model
+    provider is denied. The two agents that call a model do so through the
+    gateway's llm listener, so no pod in the namespace, them included, may reach
+    the published ranges on 443."""
+    checked = 0
     for src in WORKLOADS:
         if WORKLOADS[src].namespace != "northstar-agents" or src not in EGRESS_SOURCES:
             continue
-        outcome = egress_outcome(src, port=443, ip=ANTHROPIC_HOST)
-        assert outcome == ("allow" if src in MODEL_AGENTS else "drop"), src
+        for ip in (ANTHROPIC_HOST, OTHER_ANTHROPIC_HOST, "2607:6bc0::10"):
+            assert egress_outcome(src, port=443, ip=ip) == "drop", (src, ip)
+        checked += 1
+    assert checked >= len(MODEL_AGENTS)
+
+
+@pytest.mark.parametrize("src", sorted(MODEL_AGENTS))
+def test_a_model_agent_reaches_the_model_only_through_the_gateways_llm_listener(src):
+    assert egress_outcome(src, "agentgateway", 4000) == "allow"
+    # Unmeshed, the rule's listed ports bind: 4000 is written in it.
+    assert egress_outcome(src, "agentgateway", 4000, unmeshed=True) == "allow"
+
+
+@pytest.mark.parametrize("src", sorted(set(EGRESS_SOURCES) - MODEL_AGENTS))
+def test_only_the_model_agents_may_reach_the_gateways_llm_listener(src):
+    """customer-ui has no rule to the gateway at all; reviewer-ui's rule lists
+    3000 and 4143. For an unmeshed reviewer-ui, 4000 is not written, so a pod
+    that skipped its proxy could not use the model path."""
+    assert egress_outcome(src, "agentgateway", 4000, unmeshed=True) == "drop", src
 
 
 @pytest.mark.parametrize("src", sorted(MODEL_AGENTS))
@@ -876,18 +906,16 @@ def test_a_model_agent_reaches_nothing_else_on_the_internet(src):
         assert egress_outcome(src, port=443, ip=ip) == "drop", (src, ip)
 
 
-def test_the_anthropic_ranges_are_exactly_the_published_ones_on_443_only():
-    blocks = []
+def test_no_egress_policy_names_an_address_range():
+    """There is no direct path to the provider any more, so no document carries
+    an ipBlock at all: a range rule is exactly how a direct path would return."""
     for p in _network_policies():
         for rule in p["spec"].get("egress", []):
             for peer in rule.get("to", []):
-                if "ipBlock" in peer:
-                    blocks.append((p["metadata"]["name"], peer["ipBlock"]["cidr"], rule["ports"]))
-                    assert not peer["ipBlock"].get("except")
-    assert sorted(b[1] for b in blocks) == sorted([ANTHROPIC_V4, ANTHROPIC_V6] * 2)
-    assert {b[0] for b in blocks} == {"settlement-agent-egress", "claims-agent-egress"}
-    for _, _, ports in blocks:
-        assert ports == [{"protocol": "TCP", "port": 443}]
+                assert "ipBlock" not in peer, (p["metadata"]["name"], peer)
+    text = NETWORK_POLICIES.read_text()
+    non_comment = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+    assert ANTHROPIC_V4 not in non_comment and ANTHROPIC_V6 not in non_comment
 
 
 def test_network_policies_are_egress_only_and_select_one_workload():

@@ -31,6 +31,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
+from model_client import gateway_model
+
 DEFAULT_MODEL = "anthropic:claude-sonnet-5"
 INTAKE_PROMPT_PREFIX = "First notice of loss"
 
@@ -50,7 +52,7 @@ class IntakeDraft(BaseModel):
 
 
 intake_agent = Agent(
-    os.environ.get("NORTHSTAR_CLAIMS_MODEL", DEFAULT_MODEL),
+    gateway_model(os.environ.get("NORTHSTAR_CLAIMS_MODEL", DEFAULT_MODEL)),
     name="claims-agent",
     output_type=IntakeDraft,
     # See settlement.py: without this, constructing the Agent at import time

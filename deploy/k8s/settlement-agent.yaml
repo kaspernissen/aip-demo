@@ -137,20 +137,14 @@ spec:
             # whole point of scoping it.
             - name: NORTHSTAR_GATEWAY_AUDIENCE
               value: spiffe://northstar.local/ns/northstar-platform/sa/agentgateway
-            # Created by scripts/setup-kind.sh from the sourced .env.
-            # `optional: true` deliberately, matching how the repo treats its
-            # other degradable secret (dash0-secrets): with no key present the
-            # pod still starts, stays traced and serves its agent card — only
-            # the model call itself fails, with a credential error the logs
-            # name. A required secretKeyRef would instead hold the pod in
-            # CreateContainerConfigError, which reads as a broken deployment
-            # rather than a missing credential.
+            # Model calls go through agentgateway's `llm` listener, which holds
+            # the key and adds it; the anthropic SDK reads this variable when
+            # no base_url is passed. The SDK insists on a key being set, so the
+            # value below is a placeholder the gateway overwrites.
+            - name: ANTHROPIC_BASE_URL
+              value: http://agentgateway.northstar-platform.svc.cluster.local:4000
             - name: ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: northstar-model
-                  key: ANTHROPIC_API_KEY
-                  optional: true
+              value: held-by-agentgateway
           ports:
             - name: http
               containerPort: 9002

@@ -234,18 +234,21 @@ EOF
 # any workload, so no pod is ever briefly unprotected.
 kubectl --context "kind-${CLUSTER_NAME}" apply -f "$ROOT/deploy/platform/reach/"
 
-# The agents' model credential. Reported SET / EMPTY only, never printed. A
-# missing key degrades rather than aborting (the secretKeyRef is optional):
-# everything comes up, and only the model calls fail, with a clear error.
+# The model credential, held by agentgateway: the agents call models through
+# its llm listener and carry no key. Reported SET / EMPTY only, never printed.
+# The Secret is created even when the key is empty: agentgateway mounts it and
+# reads the key file at startup, so a missing Secret would keep the gateway, and
+# with it the MCP path, from starting. An empty file starts fine (measured on
+# v1.6.0), and only the model calls fail, with the provider's 401.
 echo -e "${BLUE}Step 6/12: Creating the model secret...${NC}"
+kubectl create secret generic northstar-model \
+  --namespace northstar-platform \
+  --from-literal=ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
+  --dry-run=client -o yaml | kubectl apply -f -
 if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-  kubectl create secret generic northstar-model \
-    --namespace northstar-agents \
-    --from-literal=ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-    --dry-run=client -o yaml | kubectl apply -f -
   echo -e "${GREEN}  ANTHROPIC_API_KEY: SET${NC}"
 else
-  echo -e "${YELLOW}  ANTHROPIC_API_KEY: EMPTY — the agents will fail on their first model call${NC}"
+  echo -e "${YELLOW}  ANTHROPIC_API_KEY: EMPTY — every model call will fail with the provider's 401${NC}"
 fi
 
 echo -e "${BLUE}Step 7/12: Installing the observability backbone...${NC}"

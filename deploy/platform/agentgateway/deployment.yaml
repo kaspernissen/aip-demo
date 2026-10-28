@@ -49,6 +49,8 @@ spec:
           ports:
             - name: mcp
               containerPort: 3000
+            - name: llm
+              containerPort: 4000
             - name: readiness
               containerPort: 15021
           # Confirmed against the running image (not guessed): agentgateway
@@ -64,6 +66,11 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/agentgateway
+            # The model key, for the `llm` listener in config.yaml. The agents
+            # no longer carry it.
+            - name: model
+              mountPath: /etc/agentgateway-model
+              readOnly: true
           # Measured idle RSS for this image is 11.2 MiB. 64Mi request /
           # 128Mi limit is generous headroom, not copied from a larger
           # service's values.
@@ -77,6 +84,9 @@ spec:
         - name: config
           configMap:
             name: agentgateway-config
+        - name: model
+          secret:
+            secretName: northstar-model
 ---
 apiVersion: v1
 kind: Service
@@ -90,3 +100,6 @@ spec:
     - name: mcp
       port: 3000
       targetPort: 3000
+    - name: llm
+      port: 4000
+      targetPort: 4000

@@ -11,7 +11,8 @@
 # pointed at the Policy Decision Service and set to `failureMode: failClosed`.
 # Native CEL `mcpAuthorization` is deliberately absent: the authorization
 # decision belongs to the PDS, not to this file. The route-level `authorization`
-# ceiling is the one exception, and it only ever says no.
+# rule (two callers and a payment ceiling) is the one exception, and it only
+# ever says no.
 #
 # Schema verified directly against the pinned image: `docker run --rm
 # cr.agentgateway.dev/agentgateway:v1.6.0 -f config.yaml --validate-only`
@@ -290,17 +291,26 @@ binds:
               # reads a header.
               requestHeaders:
                 allowed: ["traceparent", "tracestate"]
-        # A hard ceiling, enforced by the gateway itself, before the PDS is
-        # asked: no caller may execute a payment above EUR 50,000, or of a
-        # non-positive amount. Written as an ALLOW rule on purpose: a `deny:`
-        # rule fails OPEN on a value it cannot evaluate (a string "60000"
-        # executed), while an allow rule that errors denies.
+        # Two facts the gateway enforces itself, before the PDS is asked, in
+        # one ALLOW rule:
+        #   1. who may use the tools at all: settlement-agent, and reviewer-ui
+        #      releasing a held payment. Every workload in the trust domain can
+        #      mint a valid JWT-SVID for this audience (claims-agent does, for
+        #      the llm listener below), so jwtAuth alone would let any of them
+        #      call propose_payment or get_payment, which the PDS permits for
+        #      any caller.
+        #   2. a hard ceiling: no caller may execute a payment above EUR
+        #      50,000, or of a non-positive amount.
+        # Written as an ALLOW rule on purpose: a `deny:` rule fails OPEN on a
+        # value it cannot evaluate (a string "60000" executed), while an allow
+        # rule that errors denies. One expression joined by `&&`, rather than
+        # two rules, so nothing depends on how the gateway combines rules.
         # v1.6.0+ only: on v1.5.0 this policy has no MCP context and denies
         # every request. A denial is `403 text/plain "authorization failed"` and
         # leaves no northstar.policy.decision span: the PDS is never asked.
         authorization:
           rules:
-          - allow: 'request.method != "POST" || mcp.methodName != "tools/call" || mcp.tool.name != "execute_payment" || (mcp.tool.arguments.amount > 0 && mcp.tool.arguments.amount <= 50000)'
+          - allow: 'jwt.sub in ["spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent", "spiffe://northstar.local/ns/northstar-agents/sa/reviewer-ui"] && (request.method != "POST" || mcp.methodName != "tools/call" || mcp.tool.name != "execute_payment" || (mcp.tool.arguments.amount > 0 && mcp.tool.arguments.amount <= 50000))'
       backends:
       - mcp:
           targets:
@@ -309,3 +319,37 @@ binds:
               host: payments-mcp.northstar-tools.svc.cluster.local
               port: 8000
               path: /mcp
+# The model door. The agents send their Anthropic Messages calls here
+# (ANTHROPIC_BASE_URL in deploy/k8s/*-agent.yaml) and hold no key of their
+# own: the gateway replaces whatever x-api-key arrives with the one below, read
+# once at startup from the mounted Secret (a rotated key needs a restart).
+# `apiKey.file` rather than the upstream examples' environment reference keeps
+# this file free of dollar signs (see the jwtAuth comment above).
+#
+# `models` is an allowlist: a request for any other model is refused here with
+# 404 model_not_found and never leaves the cluster. Measured against v1.6.0.
+#
+# `policies` is the MCP route's identity check, repeated: the same issuer,
+# audience and JWKS, `strict`, so a model call with no valid JWT-SVID is
+# refused with 401 before it reaches the provider. The verified subject lands
+# on the gateway's span as `jwt.sub`, which is what names the calling agent
+# there. `authorization` then admits only the two agents that call a model.
+llm:
+  port: 4000
+  policies:
+    jwtAuth:
+      mode: strict
+      issuer: http://spire-spiffe-oidc-discovery-provider.northstar-platform.svc.cluster.local
+      audiences:
+      - spiffe://northstar.local/ns/northstar-platform/sa/agentgateway
+      jwks:
+        url: http://spire-spiffe-oidc-discovery-provider.northstar-platform.svc.cluster.local/keys
+    authorization:
+      rules:
+      - allow: 'jwt.sub in ["spiffe://northstar.local/ns/northstar-agents/sa/claims-agent", "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"]'
+  models:
+  - name: claude-sonnet-5
+    provider: anthropic
+    params:
+      apiKey:
+        file: /etc/agentgateway-model/ANTHROPIC_API_KEY

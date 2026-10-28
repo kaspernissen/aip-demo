@@ -56,7 +56,8 @@ Five points are worth knowing before reading further:
 4. **The model's own HTTP hop has a CLIENT span.** `anthropic==1.4.0` speaks
    `httpx2`, not `httpx`; `bootstrap.py` instruments both
    `HTTPXClientInstrumentor` (`_module_name = "httpx"`, covers the MCP hop)
-   and `HTTPX2ClientInstrumentor` (covers the `api.anthropic.com` request) —
+   and `HTTPX2ClientInstrumentor` (covers the model request, which goes to
+   agentgateway's `llm` listener, not to the provider) —
    see `test_anthropic_client_span_exists_and_is_parented_to_chat` below,
    which asserts the span exists and is correctly parented.
 
@@ -96,6 +97,11 @@ from tests.harness.jaeger import JaegerClient
 
 JAEGER_URL = os.environ.get("JAEGER_URL", "http://localhost:16686")
 
+# The model hop: the agent's ANTHROPIC_BASE_URL is agentgateway's llm listener,
+# so this is the server.address / server.port on the chat span and its httpx
+# CLIENT span. api.anthropic.com is the gateway's own outbound hop.
+MODEL_GATEWAY_HOST = "agentgateway.northstar-platform.svc.cluster.local"
+MODEL_GATEWAY_PORT = 4000
 ENTRY_SPAN = "POST /"  # StarletteInstrumentor's ASGI server span
 
 pytestmark = pytest.mark.skipif(
@@ -239,7 +245,12 @@ def llm_settlement():
 
 
 def _chat_spans(trace):
-    return [s for s in trace.spans if s.attrs.get("gen_ai.operation.name") == "chat"]
+    # settlement-agent's own chat spans. agentgateway's llm listener writes a
+    # SERVER span per model call with gen_ai.operation.name=chat too (and the
+    # token usage, but no content); selecting on the attribute alone picks up
+    # both, which is the double count docs/telemetry-contract.md warns about.
+    return [s for s in trace.spans
+            if s.service == "settlement-agent" and s.attrs.get("gen_ai.operation.name") == "chat"]
 
 
 def _descends_from(trace, span, ancestor_id):
@@ -675,14 +686,17 @@ def test_anthropic_client_span_exists_and_is_parented_to_chat(llm_settlement):
     `anthropic==1.4.0` speaks `httpx2`, a distribution separate from
     `httpx`. `bootstrap.py` instruments both `HTTPXClientInstrumentor`
     (`_module_name` `"httpx"`, covers settlement-agent's MCP round trips)
-    and `HTTPX2ClientInstrumentor` (covers the model's own HTTPS request to
-    `api.anthropic.com`).
+    and `HTTPX2ClientInstrumentor` (covers the model's own HTTP request, to
+    agentgateway's `llm` listener: `ANTHROPIC_BASE_URL` in
+    `deploy/k8s/settlement-agent.yaml`). The agent never dials
+    `api.anthropic.com`; that hop is the gateway's, asserted at the end.
 
     Both `HTTPXClientInstrumentor` and `HTTPX2ClientInstrumentor` live in the
     same `opentelemetry.instrumentation.httpx` module and share its
     `get_tracer(__name__, ...)` call, so `otel.scope.name` is identical for
-    both (`"opentelemetry.instrumentation.httpx"`) — the new span is
-    identified by `server.address == "api.anthropic.com"`, not by scope name.
+    both (`"opentelemetry.instrumentation.httpx"`) — the model span is
+    identified by the gateway's llm port (`server.port == 4000`; the MCP hop
+    is the same host on 3000), not by scope name.
 
     Attribute names measured live, not recalled: this deployment sets
     `OTEL_SEMCONV_STABILITY_OPT_IN=http` (`deploy/k8s/settlement-agent.yaml`),
@@ -716,10 +730,19 @@ def test_anthropic_client_span_exists_and_is_parented_to_chat(llm_settlement):
     ]
     assert httpx_spans, "no httpx-instrumented CLIENT spans at all in this trace"
 
-    to_model = [s for s in httpx_spans if s.attrs.get("server.address") == "api.anthropic.com"]
+    to_model = [
+        s for s in httpx_spans
+        if s.attrs.get("server.address") == MODEL_GATEWAY_HOST
+        and s.attrs.get("server.port") == MODEL_GATEWAY_PORT
+    ]
     assert to_model, (
-        "no httpx CLIENT span targets api.anthropic.com; HTTPX2ClientInstrumentor "
-        "is presumably not instrumented in bootstrap.py"
+        f"no httpx CLIENT span targets {MODEL_GATEWAY_HOST}:{MODEL_GATEWAY_PORT}; "
+        "HTTPX2ClientInstrumentor is presumably not instrumented in bootstrap.py, "
+        "or ANTHROPIC_BASE_URL no longer points at the gateway"
+    )
+    assert not [s for s in httpx_spans if s.attrs.get("server.address") == "api.anthropic.com"], (
+        "an agent httpx CLIENT span targets api.anthropic.com: the model call "
+        "bypassed the gateway"
     )
 
     chat_spans = _chat_spans(trace)
@@ -773,8 +796,21 @@ def test_anthropic_client_span_exists_and_is_parented_to_chat(llm_settlement):
     # errored turn can lack it entirely, and that is not the same failure as
     # a turn that reached the wrong host (the thing this assertion exists to
     # catch) -- exact set equality over the *full* `chat_spans` list turned
-    # one into the other (`{None, "api.anthropic.com"}` != `{"api.anthropic.com"}`).
+    # one into the other (`{None, <host>}` != `{<host>}`).
     addresses = {
         s.attrs.get("server.address") for s in chat_spans if s.attrs.get("server.address") is not None
     }
-    assert addresses == {"api.anthropic.com"}, addresses
+    assert addresses == {MODEL_GATEWAY_HOST}, addresses
+
+    # The provider hop is the gateway's: its server span for the model route
+    # carries the model, and its outbound CLIENT span is the one that names
+    # api.anthropic.com. Measured live on a settlement trace.
+    gateway_spans = [s for s in trace.spans if s.service == "agentgateway"]
+    assert [
+        s for s in gateway_spans
+        if s.kind == "server" and s.attrs.get("gen_ai.request.model")
+    ], "agentgateway has no server span carrying gen_ai.request.model for the model call"
+    assert [
+        s for s in gateway_spans
+        if s.kind == "client" and s.operation == "POST api.anthropic.com:443"
+    ], "agentgateway has no outbound CLIENT span to api.anthropic.com:443"

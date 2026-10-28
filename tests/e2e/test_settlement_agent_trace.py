@@ -320,8 +320,8 @@ def test_settlement_agent_outbound_mcp_calls_are_traced(settlement_trace):
     **Filtered to the httpx instrumentation's own scope, not `kind ==
     "client"`.** The settlement decision is a real model call, so
     settlement-agent also emits pydantic-ai's `chat <model>` spans, and
-    those are CLIENT-kind too. They carry `server.address =
-    "api.anthropic.com"` and no `url.full` at all, so a bare `kind ==
+    those are CLIENT-kind too. They carry `server.address` and `server.port`
+    of the gateway's llm listener (`:4000`) and no `url.full` at all, so a bare `kind ==
     "client" and service == "settlement-agent"` filter would sweep them in
     and break the `"payments-mcp" in url.full` assertion.
     `otel.scope.name == "opentelemetry.instrumentation.httpx"` says what this
@@ -331,14 +331,15 @@ def test_settlement_agent_outbound_mcp_calls_are_traced(settlement_trace):
 
     **The model hop has its own httpx-scoped span too, and is deliberately
     excluded.** `HTTPX2ClientInstrumentor` (`bootstrap.py`) means
-    `anthropic==1.4.0`'s `httpx2` traffic to `api.anthropic.com` also
+    `anthropic==1.4.0`'s `httpx2` traffic to the gateway's llm listener also
     produces a CLIENT span under `otel.scope.name ==
     "opentelemetry.instrumentation.httpx"`, nested under the `chat` span,
-    with its own `url.full` (`https://api.anthropic.com/v1/messages...`).
+    with its own `url.full` (`http://agentgateway...:4000/v1/messages...`).
     That is a real, separate outbound target for this service and belongs in
     this trace — it is asserted for and pinned by
     `tests/e2e/test_settlement_llm_trace.py::test_anthropic_client_span_exists_and_is_parented_to_chat`.
-    It is excluded here (`server.address != "api.anthropic.com"`) because
+    It is excluded here (`server.port != 4000`, the llm listener; the MCP hop
+    is the same host on 3000) because
     this test's job is specifically the MCP transport's own spans, not every
     outbound hop this service makes.
 
@@ -359,7 +360,7 @@ def test_settlement_agent_outbound_mcp_calls_are_traced(settlement_trace):
         for s in settlement_trace.trace.spans
         if s.service == "settlement-agent"
         and s.attrs.get("otel.scope.name") == "opentelemetry.instrumentation.httpx"
-        and s.attrs.get("server.address") != "api.anthropic.com"
+        and s.attrs.get("server.port") != 4000
     ]
     assert client_spans, "no outbound CLIENT spans found for the MCP transport"
     for span in client_spans:

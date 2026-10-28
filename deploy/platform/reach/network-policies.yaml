@@ -57,27 +57,40 @@
 # carries an ingress block, so probes are untouched (Linkerd, not this file,
 # governs what may reach a port).
 #
-# WHAT THIS DOES NOT CLAIM. NetworkPolicy enforces reachability, not intent:
-# settlement-agent and claims-agent may still reach the model provider, because
-# that is where their own model calls go. The "gateway as the only path" clause
-# is discharged for *tools* (payments-mcp:8000 and the PDS:9100 are absent from
-# every allowlist, so the only route to a tool is agentgateway:3000), and for the
-# model provider as "the two agents that call a model, not the namespace".
+# THE MODEL PROVIDER HAS NO RULE HERE. The two agents that call a model do so
+# through agentgateway's `llm` listener (port 4000), which holds the provider key
+# and is the only pod that dials api.anthropic.com. Their ANTHROPIC_BASE_URL
+# points there and their egress lists the gateway, never the provider's address
+# range, so a pod that tried the provider directly (api.anthropic.com is
+# 160.79.104.0/23 and 2607:6bc0::/48 on 443) is dropped like any other
+# destination. The "gateway as the only path" clause is therefore discharged for
+# tools (payments-mcp:8000 and the PDS:9100 are absent from every allowlist, so
+# the only route to a tool is agentgateway:3000) and for the model provider
+# alike.
+#
+# WHAT THIS DOES NOT CLAIM. NetworkPolicy enforces reachability, not intent, and
+# because 4143 opens every port of a meshed peer (above), claims-agent's rule to
+# the gateway lets it reach the gateway's MCP port as well as 4000. What scopes
+# each agent on the gateway is the gateway's own `jwtAuth` and `authorization`
+# (deploy/platform/agentgateway/config.yaml): the llm listener admits only the
+# two agents' SPIFFE IDs, the MCP route is decided by the PDS.
 #
 # Enforcement is kind's. The objects are portable; a production cluster needs a
 # CNI that enforces NetworkPolicy. The refusal is a kernel drop: a pod's
 # connect times out and no counter records it.
 ---
-# Document 1 of 4: settlement-agent. One of the two workloads permitted to reach
-# the model provider (claims-agent, document 2, is the other).
+# Document 1 of 4: settlement-agent. One of the two workloads that call a model,
+# through the gateway (claims-agent, document 2, is the other).
 #
 # Inventory, from deploy/k8s/settlement-agent.yaml and agents/settlement-agent/:
 # DNS; agentgateway:3000 (PAYMENTS_MCP_URL, the gateway being the only way to a
-# tool); the collector (the app's OTLP http/protobuf on 4318, and 4317 for the
-# Linkerd proxy's own spans); the model provider; the Linkerd control plane. It is an
+# tool) and agentgateway:4000 (ANTHROPIC_BASE_URL, the gateway being the only way
+# to the model); the collector (the app's OTLP http/protobuf on 4318, and 4317
+# for the Linkerd proxy's own spans); the Linkerd control plane. It is an
 # A2A *server* only: it calls no peer, so no 9001 or 9002 allowance here.
 # Notably absent: payments-mcp:8000, payments-api:8080 and the PDS:9100 --
-# every route to a tool or the ledger goes through the gateway.
+# every route to a tool or the ledger goes through the gateway. Also absent: the
+# model provider, which only the gateway dials.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -107,10 +120,11 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # 2. agentgateway, on the MCP port, and the whole of "the gateway is the only path"
-    # from this side. Both the namespace and the label are required, so a pod that
-    # labels itself `app: agentgateway` elsewhere does not inherit the gateway's
-    # place in the path. 4143 beside 3000: agentgateway is meshed.
+    # 2. agentgateway, on the MCP port (3000) and the llm port (4000), and the whole
+    # of "the gateway is the only path" from this side, to tools and to the model.
+    # Both the namespace and the label are required, so a pod that labels itself
+    # `app: agentgateway` elsewhere does not inherit the gateway's place in the
+    # path. 4143 beside them: agentgateway is meshed.
     - to:
         - namespaceSelector:
             matchLabels:
@@ -121,6 +135,8 @@ spec:
       ports:
         - protocol: TCP
           port: 3000
+        - protocol: TCP
+          port: 4000  # the llm listener: model calls
         - protocol: TCP
           port: 4143  # a meshed source reaches EVERY port of the peer (per pod, not per port)
     # 3. The OTLP collector. THE RULE WHOSE ABSENCE IS WORST: the BatchSpanProcessor
@@ -155,34 +171,19 @@ spec:
           port: 8086
         - protocol: TCP
           port: 8090
-    # 5. The model provider, by ADDRESS RANGE.
-    #
-    # `api.anthropic.com` is not configured anywhere in this repo; it is the
-    # pinned `anthropic` SDK's own default base_url, reached because settlement.py
-    # hands PydanticAI the model `anthropic:claude-sonnet-5`. NetworkPolicy cannot
-    # match by name, so this is Anthropic's published API range, https://platform.claude.com/docs/en/api/ip-addresses:
-    # 160.79.104.0/23 (IPv4) and 2607:6bc0::/48 (IPv6), TCP 443 only. The
-    # published range "will not change without notice", and any other host in
-    # it is also reachable: a loss of precision. The effect: from an unmeshed pod a connect to
-    # 160.79.104.0/23:443 succeeds and example.com:443 and 1.1.1.1:443 time out;
-    # from this meshed pod the same shows as a TLS handshake that completes to
-    # api.anthropic.com and is reset to example.com.
-    - to:
-        - ipBlock:
-            cidr: 160.79.104.0/23
-        - ipBlock:
-            cidr: 2607:6bc0::/48
-      ports:
-        - protocol: TCP
-          port: 443
+    # There is no rule for the model provider. Model calls are rule 2's port 4000;
+    # the gateway adds the key and dials api.anthropic.com itself, so this pod holds
+    # no key and has no route to the provider. From this meshed pod a TLS handshake
+    # to api.anthropic.com is reset (the connect itself succeeds locally, at the
+    # pod's own proxy), and so is one to example.com.
 ---
 # Document 2 of 4: claims-agent.
 #
 # claims-agent calls a model to read a claim the customer wrote as free text
-# (extraction.py; NORTHSTAR_CLAIMS_MODEL and ANTHROPIC_API_KEY in
+# (extraction.py; NORTHSTAR_CLAIMS_MODEL and ANTHROPIC_BASE_URL in
 # deploy/k8s/claims-agent.yaml). A claim sent as a JSON object never reaches the
-# model. So it gets exactly settlement-agent's model rule (rule 7) and no other
-# external reachability.
+# model. The call goes to the gateway's llm listener (rule 7) and claims-agent has
+# no other external reachability.
 #
 # Inventory, from its manifest and source: DNS; the one A2A peer it delegates to
 # (NORTHSTAR_ALLOWED_AGENTS: settlement-agent:9002); payments-api:8080 for one
@@ -191,10 +192,10 @@ spec:
 # ingress, where only claims-agent's identity on the read route is admitted);
 # the collector; customer-ui:8080 for the push (claims-agent checks the URL
 # against an exact allowlist in push.py, and customer-ui's Server admits only
-# claims-agent on POST /a2a/push); the Linkerd control plane; the model
-# provider, by the same address range as settlement-agent's. There is no
-# Kubernetes API client, no gateway call and no tool call anywhere in
-# agents/claims-agent/. In particular it has no route to payments-mcp:8000,
+# claims-agent on POST /a2a/push); the Linkerd control plane; agentgateway:4000
+# for the model. There is no Kubernetes API client and no tool call anywhere in
+# agents/claims-agent/: the only gateway traffic is the model's, so it has no
+# need of the MCP port (3000). In particular it has no route to payments-mcp:8000,
 # so the direct bypass of the gateway is closed from both ends.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -294,17 +295,23 @@ spec:
           port: 8086
         - protocol: TCP
           port: 8090
-    # 7. The model provider, by address range, for the intake model. Copied from
-    # settlement-agent-egress rule 5; see there for where the range comes from
-    # and what it does and does not narrow.
+    # 7. agentgateway's llm listener, for the intake model, and the only way to the
+    # model provider. The rule lists 4000, which is all this pod uses and what binds
+    # a pod that skips its proxy. 4143 is what a meshed claims-agent actually
+    # passes, and it reaches every port of the gateway, 3000 included; the gateway's
+    # own jwtAuth and authorization, not this rule, keep this identity to the model.
     - to:
-        - ipBlock:
-            cidr: 160.79.104.0/23
-        - ipBlock:
-            cidr: 2607:6bc0::/48
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: northstar-platform
+          podSelector:
+            matchLabels:
+              app: agentgateway
       ports:
         - protocol: TCP
-          port: 443
+          port: 4000
+        - protocol: TCP
+          port: 4143
 ---
 # Document 3 of 4: customer-ui.
 #

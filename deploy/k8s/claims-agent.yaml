@@ -93,16 +93,21 @@ spec:
             # docs/telemetry-contract.md, "Content capture".
             - name: NORTHSTAR_CAPTURE_CONTENT
               value: "true"
-            # The same Secret settlement-agent reads, created by
-            # scripts/setup-kind.sh from .env. Optional for the same reason:
-            # with no key the pod starts and JSON claims work; only a free-text
-            # claim fails, on the task, with the credential error in `error`.
+            # Model calls go through agentgateway's `llm` listener, which holds
+            # the key and adds it; the anthropic SDK reads this variable when
+            # no base_url is passed. The SDK insists on a key being set, so the
+            # value below is a placeholder the gateway overwrites.
+            # The Workload API socket svid.py reads, and the audience its
+            # JWT-SVID is minted for: agentgateway's own SPIFFE ID, which the
+            # llm listener's jwtAuth requires. As on settlement-agent.
+            - name: SPIFFE_ENDPOINT_SOCKET
+              value: unix:///spiffe-workload-api/spire-agent.sock
+            - name: NORTHSTAR_GATEWAY_AUDIENCE
+              value: spiffe://northstar.local/ns/northstar-platform/sa/agentgateway
+            - name: ANTHROPIC_BASE_URL
+              value: http://agentgateway.northstar-platform.svc.cluster.local:4000
             - name: ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: northstar-model
-                  key: ANTHROPIC_API_KEY
-                  optional: true
+              value: held-by-agentgateway
           ports:
             - name: http
               containerPort: 9001
@@ -124,6 +129,17 @@ spec:
               cpu: 50m
             limits:
               memory: 256Mi
+          volumeMounts:
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+              readOnly: true
+      # The SPIFFE CSI driver bind-mounts the spire-agent's Workload API
+      # socket, as on settlement-agent (see there).
+      volumes:
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true
 ---
 # NodePort 30901 is published on localhost:19001 by deploy/kind/cluster.yaml:
 # the customer-ui page in the browser calls claims-agent there directly. No

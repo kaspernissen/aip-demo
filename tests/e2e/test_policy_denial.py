@@ -106,18 +106,20 @@ browser_test = pytest.mark.skipif(
     reason="set RUN_BROWSER_TESTS=1 and install playwright to run browser tests",
 )
 
-# customer-ui's own pre-filled DEFAULT_CLAIM (apps/customer-ui/src/app/page.tsx)
-# and the claim the spec names in criterion 1. `_drive_browser` re-enters this
-# id into the form, but it re-enters the *same* value the page already had, and
-# never touches the amount field on this path -- so €6,200 is genuinely the
-# page's own pre-filled figure and not something this test chose.
-DENIED_CLAIM_ID = "CLM-1842"
-DENIED_AMOUNT = 6200.0
+# customer-ui's own pre-filled claim (STANDARD_CLAIM in
+# apps/customer-ui/src/presets.ts): `_drive_browser(None)` submits the page
+# untouched, so EUR 1,450 is genuinely the page's own figure, read by the
+# intake model, and not something this test chose. claims-agent names every
+# claim (`CLM-INTAKE-...`), so each run's claim id is its own.
+DENIED_AMOUNT = 1450.0
 
-# Criterion 6's amount: below the €6,000 allowance, and the same value the
-# reference permit trace was captured at. The claim id is unique per run so the
-# permit run can never be confused with the denial run in a shared Jaeger.
+# Criterion 6's claim: below the EUR 6,000 allowance, typed into the page in
+# the customer's own words.
 PERMITTED_AMOUNT = 5800.0
+PERMITTED_STORY = (
+    "Last week a van clipped my car on the motorway and smashed the front wing "
+    "and headlight. My policy number is POL-77120. The garage quoted EUR 5,800."
+)
 
 # Every service that must appear in a governed settlement's trace. payments-api
 # is in the *denied* trace too: the proposal really is recorded, and only the
@@ -227,8 +229,11 @@ def _wait_for_browser_root(client: JaegerClient, trace_id: str, timeout: float) 
     )
 
 
-def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
+def _drive_browser(story: str | None) -> SimpleNamespace:
     """Submit one claim through the real page and return trace id, span id, reply.
+
+    `story=None` submits the page untouched (the standard claim); otherwise
+    the text replaces what is in the box.
 
     Reads the `traceparent` the browser actually put on the wire (Playwright
     request interception) rather than searching Jaeger for a plausible trace:
@@ -264,9 +269,8 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
         page.on("request", on_request)
 
         page.goto(UI_URL)
-        page.fill("input >> nth=0", claim_id)
-        if amount is not None:
-            page.fill("input[type=number]", str(int(amount)))
+        if story is not None:
+            page.fill("textarea", story)
         page.click("button[type=submit]")
         # A governed settlement is three model turns on the denial path
         # (propose, execute, narrate). 180s is generous rather than tuned; a
@@ -278,6 +282,7 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
         # positionally, so a future <pre> earlier on the page cannot silently
         # redirect this read.
         outcome["raw"] = page.locator("h2:text-is('Outcome') + pre").inner_text()
+        claim_id = json.loads(outcome["raw"])["claimId"]
         # A claim the platform routes to a human is a waiting claim, said so on
         # the page; not a failure and not a settlement.
         waiting_payment = None
@@ -322,7 +327,7 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
         if waiting_payment is not None:
             # The customer's wait is its own trace, linked to the claim's, and
             # lasts at least as long as the human took (minus a second of slack).
-            # The claim id is reused across runs (CLM-1842), so the submit is
+            # The submit is
             # the trace this run observed on the wire, and the wait is the one
             # that links to it.
             submit = client.get_trace(trace_id).span("northstar.claim.submit", "customer-ui")
@@ -372,10 +377,10 @@ def _drive_browser(claim_id: str, amount: float | None) -> SimpleNamespace:
 
 @pytest.fixture(scope="module")
 def denial_run(claims_agent_route):
-    """One settlement: CLM-1842 at the page's own pre-filled €6,200.
+    """One settlement: the page's own pre-filled standard claim, EUR 1,450.
 
-    `amount=None` means "leave the amount field alone", so the €6,200 under
-    test is DEFAULT_CLAIM's figure rather than one this fixture typed in.
+    `story=None` means "leave the text alone", so the EUR 1,450 under test is
+    the page's figure rather than one this fixture typed in.
 
     Shared by criteria 1, 2 and 3, which are three views of this single event.
     Costs one model call per run of this file.
@@ -393,7 +398,7 @@ def denial_run(claims_agent_route):
     decision path this fixture is about to exercise will actually consult.
     """
     contract.assert_assisted("test_policy_denial.py::denial_run")
-    return _drive_browser(DENIED_CLAIM_ID, None)
+    return _drive_browser(None)
 
 
 @pytest.fixture(scope="module")
@@ -407,7 +412,7 @@ def permit_run(claims_agent_route):
     # At the resting `assisted` level nothing is released, so the permit
     # path runs with the dial at `autonomous` (restored on exit).
     with live.autonomy(contract.AUTONOMOUS):
-        return _drive_browser(f"CLM-PERMIT-{uuid.uuid4().hex[:8]}", PERMITTED_AMOUNT)
+        return _drive_browser(PERMITTED_STORY)
 
 
 # --- trace-shape helpers ----------------------------------------------------
@@ -482,15 +487,15 @@ def _tool_calls(messages: list[dict], tool: str) -> list[dict]:
 
 
 @browser_test
-def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
+def test_criterion_1_the_browser_claim_is_denied_and_no_payment_executes(
     denial_run,
 ):
-    """Criterion 1: CLM-1842 submitted in the browser -- the model proposes €6,200,
+    """Criterion 1: the standard claim submitted in the browser -- the model proposes EUR 1,450,
     requests execution, and the platform denies it. No payment is executed.
 
     Four things, in the order the criterion states them.
 
-    *Proposed €6,200*: the reply's amount is what `payments-api` recorded for
+    *Proposed EUR 1,450*: the reply's amount is what `payments-api` recorded for
     the proposal, not what the model said about it (`settlement.py`'s honesty
     rule), and the trace shows the propose leg completing through to
     `payments-api`.
@@ -500,7 +505,7 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
     agent that never tried, which is not the demo.
 
     *Denied by the platform*: the PDS's own decision span says `deny`, under the
-    execute-limit rule, with the €6,000 allowance and the €6,200 request both on
+    execute-limit rule, with the EUR 0 `assisted` limit and the EUR 1,450 request both on
     it. The decision is read from the PDS's span rather than from the refusal
     prose, so a reworded message cannot make this pass or fail.
 
@@ -543,7 +548,8 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
     reply = denial_run.reply
     trace = denial_run.trace
 
-    assert reply.get("claimId") == DENIED_CLAIM_ID, reply
+    assert reply.get("claimId") == denial_run.claim_id, reply
+    assert denial_run.claim_id.startswith("CLM-INTAKE-"), reply
     assert reply.get("status") == "awaiting_approval", reply
     assert reply.get("amount") == DENIED_AMOUNT, reply
     assert reply.get("paymentId"), (
@@ -578,7 +584,7 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
     # At `assisted` the agent's limit is nothing -- the dial is
     # maker-checker -- so the limit the denial states is 0.
     assert decision.attrs.get(ATTR_POLICY_LIMIT) == 0, decision.attrs
-    assert decision.attrs.get(ATTR_POLICY_AMOUNT) == 6200, decision.attrs
+    assert decision.attrs.get(ATTR_POLICY_AMOUNT) == DENIED_AMOUNT, decision.attrs
 
     # And nothing executed. The ledger first, read straight from the service
     # that owns it: the proposal was refused, not paid.
@@ -603,7 +609,7 @@ def test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes(
     # same rule settlement.py follows), so assert them here rather than
     # trusting the reply alone.
     assert record.get("amount") == DENIED_AMOUNT, record
-    assert record.get("claimId") == DENIED_CLAIM_ID, record
+    assert record.get("claimId") == denial_run.claim_id, record
 
     # Then the corroborating absences, one per service the execution would have
     # had to pass through.
@@ -816,7 +822,7 @@ def test_criterion_3_one_trace_one_browser_root_zero_orphans_with_all_four_parts
         "the trace's root span id is not the span id observed in the browser's "
         "own traceparent header -- Jaeger returned some other request's trace"
     )
-    assert root.attrs.get("northstar.claim.id") == DENIED_CLAIM_ID, root.attrs
+    assert root.attrs.get("northstar.claim.id") == denial_run.claim_id, root.attrs
 
     assert ALL_SERVICES <= trace.services(), (
         f"missing services: {sorted(ALL_SERVICES - trace.services())}"
@@ -1409,10 +1415,11 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
 
 # --- Criterion 5 ------------------------------------------------------------
 
-# A real SPIFFE ID in this trust domain that `EXECUTE_LIMITS` has no entry for.
-# claims-agent rather than an invented name: it is a workload that genuinely
-# exists here and genuinely has no business executing payments, which is the
-# realistic shape of this failure.
+# A real SPIFFE ID in this trust domain that is not on the MCP route's caller
+# list and that `EXECUTE_LIMITS` has no entry for. claims-agent rather than an
+# invented name: it is a workload that genuinely exists here (and holds a
+# gateway-audience SVID for the llm listener) and genuinely has no business
+# executing payments.
 STRANGER_SPIFFE_ID = "spiffe://northstar.local/ns/northstar-agents/sa/claims-agent"
 
 # The amount both halves of criterion 5 use. Far below the €6,000 allowance, so
@@ -1437,12 +1444,14 @@ def test_criterion_5_the_decision_changes_when_the_callers_spiffe_id_changes(
     gateway_url, valid_svid, stranger_svid
 ):
     """Criterion 5: the caller's SPIFFE identity is a required input to the decision,
-    demonstrated by the decision changing when the identity changes.
+    demonstrated by the outcome changing when the identity changes.
 
     Two `execute_payment` calls for **the same amount** -- €100, far under the
     €6,000 allowance -- differing in exactly one thing: the `sub` claim of the
-    JWT-SVID presented. One executes; the other is denied under
-    `unknown_caller`. `EXECUTE_LIMITS` is keyed by the tuple
+    JWT-SVID presented. One executes; the other is refused 403 by the gateway's
+    caller clause before the PDS is asked (so there is no decision span for it).
+    The PDS's own `unknown_caller` deny is covered where it is reachable, in its
+    unit tests; see the comment at the stranger half. `EXECUTE_LIMITS` is keyed by the tuple
     `(spiffe_id, autonomy_level)` (`pds/rules.py`), so an unknown caller has no
     allowance *at any amount*, which is what makes the identity a structural
     input rather than scenery: it is not consulted and then ignored, it is half
@@ -1544,32 +1553,45 @@ def test_criterion_5_the_decision_changes_when_the_callers_spiffe_id_changes(
     assert executed.get("status") == "executed", authorised
     assert executed.get("amount") == IDENTITY_PROBE_AMOUNT, authorised
 
-    # The stranger, at the identical amount: denied, and denied on identity.
-    stranger = execute_as(stranger_svid, "stranger")
-    # agentgateway v1.6.0 answers a PDS deny as HTTP 200 carrying an `isError`
-    # tool result whose text ends in the `[policy-denial ...]` tag.
-    assert stranger.http_status == 200, stranger
-    assert (stranger.tool_result or {}).get("isError") is True, (
-        "an identity with no execute allowance did not get an isError tool "
-        f"result: {stranger!r}"
+    # The stranger, at the identical amount: stopped by the gateway, before the PDS.
+    # The MCP route's `authorization` admits only settlement-agent and
+    # reviewer-ui, so claims-agent's genuine, correctly-audienced SVID (which
+    # `jwtAuth` accepts, and which the llm listener admits) is refused 403 at
+    # `initialize`, and no session, proposal or decision ever exists for it.
+    # The `unknown_caller` rule can therefore no longer be reached through the
+    # gateway by a minted-token probe: it is proven at the rule itself, by
+    # platform/policy-decision-service/tests/test_rules.py
+    # (`test_an_unrecognised_identity_still_denies_under_unknown_caller`, with
+    # claims-agent's own SPIFFE ID) and tests/test_servicer.py (the same rule
+    # name on the wire).
+    trace_id = uuid.uuid4().hex
+    stranger_headers = {
+        "authorization": f"Bearer {stranger_svid}",
+        "traceparent": f"00-{trace_id}-{uuid.uuid4().hex[:16]}-01",
+    }
+    stranger = call_tool_directly(
+        gateway_url,
+        EXECUTE_TOOL,
+        {"payment_id": "PAY-000000", "amount": IDENTITY_PROBE_AMOUNT, "currency": "EUR"},
+        headers=stranger_headers,
     )
-    denial = stranger.denial
-    assert denial is not None, (
-        "the refusal carries no policy-denial tag, so it cannot be "
-        f"distinguished from a transport error or an outage: {stranger!r}"
+    assert stranger.http_status == 403, (
+        "an identity that is not on the MCP route's caller list was not "
+        f"refused 403 by the gateway: {stranger!r}"
     )
-    assert denial.rule == "unknown_caller", (
-        "the unknown caller was refused, but not because of its identity -- "
-        f"rule {denial.rule!r}. Something other than the SPIFFE ID "
-        "decided this, and the criterion is about the SPIFFE ID"
-    )
-    assert denial.requested == IDENTITY_PROBE_AMOUNT, (
-        "the denied request must be for the same amount the authorised caller "
-        f"just executed, or the identity is not what differs: {denial!r}"
-    )
-    assert denial.limit is None, (
-        "an unknown caller has no allowance to exceed, so no limit should be "
-        f"reported: {denial!r}"
+    assert stranger.stage == "initialize", stranger
+    assert stranger.tool_result is None and stranger.denial is None, stranger
+
+    # No decision span: the PDS was never asked. Wait out one export cycle first,
+    # so "absent" is not merely "not exported yet".
+    time.sleep(JaegerClient.QUIET_WINDOW_S)
+    try:
+        decisions = JaegerClient(JAEGER_URL).get_trace(trace_id).spans_named(DECISION_SPAN)
+    except AssertionError:  # Jaeger 404s on a trace id it has never seen
+        decisions = []
+    assert decisions == [], (
+        "the stranger's refused call produced a northstar.policy.decision span, "
+        f"so the PDS was asked after all: {[s.attrs for s in decisions]}"
     )
 
 
@@ -1591,7 +1613,7 @@ def test_criterion_6_a_payment_below_the_threshold_still_executes_end_to_end(
 
     "End to end" is asserted at both ends and in the middle: the browser's own
     reply says `executed` at €5,800; the PDS's decision span says `permit` under
-    the execute-limit rule family that denied €6,200 (at `assisted`, limit 0)
+    the execute-limit rule family that denied EUR 1,450 (at `assisted`, limit 0)
     with the €6,000 `autonomous` allowance on it (so the permit and the denial
     are demonstrably the same rule shape reaching opposite conclusions, not two
     different code paths); the gateway
@@ -1627,7 +1649,7 @@ def test_criterion_6_a_payment_below_the_threshold_still_executes_end_to_end(
         f"{decision.attrs}"
     )
     assert decision.attrs.get(ATTR_POLICY_LIMIT) == 6000, decision.attrs
-    assert decision.attrs.get(ATTR_POLICY_AMOUNT) == 5800, decision.attrs
+    assert decision.attrs.get(ATTR_POLICY_AMOUNT) == PERMITTED_AMOUNT, decision.attrs
     assert decision.attrs.get(ATTR_POLICY_CALLER) == CALLER_SPIFFE_ID, decision.attrs
 
     # Asked once, and forwarded -- unlike the denial, where the CLIENT forward

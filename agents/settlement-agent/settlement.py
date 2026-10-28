@@ -35,6 +35,7 @@ from opentelemetry import trace
 from pydantic_ai import Agent, RunContext
 
 from mcp_tools import PolicyDenial
+from model_client import gateway_model
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class SettlementDeps:
 
 
 settlement_agent = Agent(
-    os.environ.get("NORTHSTAR_SETTLEMENT_MODEL", DEFAULT_MODEL),
+    gateway_model(os.environ.get("NORTHSTAR_SETTLEMENT_MODEL", DEFAULT_MODEL)),
     deps_type=SettlementDeps,
     # output_type is deliberately the default `str`, not a structured
     # BaseModel. Agent.__init__'s output_type defaults to `str` (verified via
@@ -85,7 +86,11 @@ settlement_agent = Agent(
         "amount.\n"
         "Then reply with a short narrative for the claimant.\n"
         "Settle the assessed amount. Do not round it, discount it or "
-        "renegotiate it. Do not state amounts in your narrative."
+        "renegotiate it. Do not state amounts in your narrative.\n"
+        "If a payment call is refused, the payment has not been made: it now "
+        "waits for a person at Northstar to review it. Say exactly that. Do "
+        "not call the claim approved, confirmed or covered, and do not "
+        "mention limits or authorisation levels."
     ),
 )
 

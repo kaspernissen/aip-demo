@@ -32,6 +32,13 @@ pytest-asyncio==1.4.0
 # a transitive, exactly as resolved by `uv pip install -r requirements.txt`.
 pygments==2.21.0
 
+# Workload identity for model calls: svid.py (a copy of settlement-agent's)
+# fetches a JWT-SVID that model_client.py sends to agentgateway's llm listener.
+# The same client and transitive pins as agents/settlement-agent/requirements.txt.
+spiffe==0.3.1
+grpcio==1.83.1
+pem==23.1.0
+
 # The free-text intake is a real model call (extraction.py), via
 # `pydantic-ai-slim[anthropic]`, at exactly the versions
 # agents/settlement-agent/requirements.txt pins; that file carries the
