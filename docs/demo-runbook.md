@@ -728,8 +728,8 @@ CLM-INTAKE-B1BEF0   EUR 2,400
     trace            http://localhost:16686/trace/<trace id>
 ```
 
-The `evals` lines are AgentEvals' five checks of ours for that claim
-(the same as `scripts/demo evals --quick`), one line each; a failing check
+The `evals` lines are AgentEvals' five checks of ours for that claim,
+one line each; a failing check
 prints its reason under it, and so does a `FLAG`. Then open a `trace` link: for an approved claim it
 is the approval's own trace, with the `northstar.review.decision` span.
 
@@ -811,8 +811,7 @@ armed (§8). `FAIL ... over-grant is already applied`: `scripts/demo reset`.
 
 `scripts/demo guard` (identity and reach: 401 with no identity, dropped around
 the gateway, the tools with settlement-agent's SVID), `scripts/demo claim
-<amount>` (a JSON claim, no intake model), `scripts/demo evals --quick` (every
-claim's checks, not only this run's evidence), `scripts/demo ceiling` (the
+<amount>` (a JSON claim, no intake model), `scripts/demo ceiling` (the
 ceiling attempt alone) and `scripts/demo config` (the restraining lines, from
 the files) still work; see the longer beats and the appendix.
 

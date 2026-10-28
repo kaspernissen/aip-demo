@@ -1359,7 +1359,7 @@ def _show_verdicts(verdicts: dict[str, dict] | str, claim_id: str) -> None:
     result = verdicts.get(claim_id)
     if result is None:
         kv("evals", paint("no finished AgentEvals session for this claim yet: "
-                          "`scripts/demo evals --quick` in a few seconds", "dim"))
+                          "run `scripts/demo evidence` again in a few seconds", "dim"))
         return
     if result.get("error"):
         kv("evals", f"{word('ERROR', 'stop')}  {result['error']}")

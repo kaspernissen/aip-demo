@@ -1402,6 +1402,11 @@ def test_criterion_4_no_policy_logic_lives_in_settlement_agent_or_payments_mcp()
         # the model and holds no allowance; parts 1-3 of this test scan this
         # file's AST like any other.
         "agents/settlement-agent/policy_denial_text.py",
+        # Added when model calls moved behind agentgateway's llm listener:
+        # builds the Anthropic client that presents the agent's JWT-SVID to
+        # the gateway. Transport only, no amount and no allowance; parts 1-3
+        # of this test scan this file's AST like any other.
+        "agents/settlement-agent/model_client.py",
     }
     assert production_changed <= expected, (
         "production source changed in these components since m2.1-verified, "
