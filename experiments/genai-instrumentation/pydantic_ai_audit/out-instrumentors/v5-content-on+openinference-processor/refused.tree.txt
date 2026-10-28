@@ -1,6 +1,0 @@
-- invoke_agent settlement_agent (INTERNAL, pydantic-ai)  [OK]
-  - chat claude-sonnet-5 (CLIENT, pydantic-ai)  [OK]
-  - execute_tool propose_payment (INTERNAL, pydantic-ai)  [OK]
-  - chat claude-sonnet-5 (CLIENT, pydantic-ai)  [OK]
-  - execute_tool execute_payment (INTERNAL, pydantic-ai)  [ERROR]
-  - chat claude-sonnet-5 (CLIENT, pydantic-ai)  [OK]

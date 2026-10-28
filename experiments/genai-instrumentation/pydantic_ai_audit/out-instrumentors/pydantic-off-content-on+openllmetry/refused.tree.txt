@@ -1,3 +1,0 @@
-- anthropic.chat (CLIENT, opentelemetry.instrumentation.anthropic)  [OK]
-- anthropic.chat (CLIENT, opentelemetry.instrumentation.anthropic)  [OK]
-- anthropic.chat (CLIENT, opentelemetry.instrumentation.anthropic)  [OK]
