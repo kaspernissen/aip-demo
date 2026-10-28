@@ -158,8 +158,8 @@ agents, even though they are not agents.
 | Component | Language / framework | Service : port | Role |
 |---|---|---|---|
 | `customer-ui` | TypeScript, Next.js (static export) served by a small Python Starlette server (`apps/customer-ui/server`) | `customer-ui:8080`, NodePort 30080 mapped to host `8080` | Owns the trace root in the browser. Submits claims, shows the waiting state, and receives the outcome pushed by claims-agent (`POST /a2a/push`), relaying it to the browser over `GET /claims/events`. |
-| `claims-agent` | Python 3.13, `a2a-sdk` + Starlette | `claims-agent:9001` | A2A server (inbound from the browser) and A2A client (outbound to settlement-agent). Parses a JSON claim with no model; reads a free-text claim with an intake model and the same validator. Holds the A2A task while a claim waits. |
-| `settlement-agent` | Python 3.13, `a2a-sdk`, `mcp` client, `pydantic-ai-slim` | `settlement-agent:9002` | A2A server and MCP client. A model call decides how to propose and execute the payment through payments-mcp. |
+| `claims-agent` | Python 3.13, `a2a-sdk` + Starlette | `claims-agent:9001` | A2A server (inbound from the browser) and A2A client (outbound to settlement-agent). Parses a JSON claim with no model; reads a free-text claim with an intake model (called through agentgateway) and the same validator. Holds the A2A task while a claim waits. |
+| `settlement-agent` | Python 3.13, `a2a-sdk`, `mcp` client, `pydantic-ai-slim` | `settlement-agent:9002` | A2A server and MCP client. A model call, made through agentgateway, decides how to propose and execute the payment through payments-mcp. |
 | `payments-mcp` | Python 3.13, FastMCP | `payments-mcp:8000`, endpoint `/mcp` | MCP server exposing `propose_payment`, `execute_payment`, `refuse_payment` and `get_payment`. An adapter over payments-api; it owns no state. |
 | `payments-api` | Go, `otelhttp` | `payments-api:8080` | System of record for payments. In-memory store, sequential ids. Records facts and decides nothing. |
 | `reviewer-ui` | Python 3.13, FastAPI, server-rendered HTML, no build step | `reviewer-ui:8080`, NodePort 30081 mapped to host `8081` | The page a human reads and clicks. Lists payments awaiting approval from payments-api, and on approval releases the payment itself through the gateway. |
@@ -195,7 +195,7 @@ used. Exact chart and image versions live in `scripts/setup-kind.sh` and
 | Component | What it is | Role in this system |
 |---|---|---|
 | `linkerd` | CNCF service mesh; a proxy sidecar in each meshed pod | Authorizes **ingress** to the money path by workload identity (a counted 403). Egress is NetworkPolicy, not Linkerd. Proxy tracing is on. See "Reach". |
-| `agentgateway` | Rust MCP/A2A/LLM proxy; a Linux Foundation project. A plain Deployment plus a ConfigMap-mounted `config.yaml` in `deploy/platform/agentgateway/`, not the Helm chart (the chart installs a Gateway API control plane with nowhere to put one inline `jwtAuth` policy) | Verifies the caller's JWT-SVID (`jwtAuth`), asks the policy service about every `tools/call` (`mcpGuardrails`), and forwards to payments-mcp only on permit. Also carries one CEL ceiling rule (see "Two ways to say no"). |
+| `agentgateway` | Rust MCP/A2A/LLM proxy; a Linux Foundation project. A plain Deployment plus a ConfigMap-mounted `config.yaml` in `deploy/platform/agentgateway/`, not the Helm chart (the chart installs a Gateway API control plane with nowhere to put one inline `jwtAuth` policy) | On its MCP listener (`:3000`) verifies the caller's JWT-SVID (`jwtAuth`), asks the policy service about every `tools/call` (`mcpGuardrails`), and forwards to payments-mcp only on permit; it also carries one CEL ceiling rule (see "Two ways to say no"). On its `llm` listener (`:4000`) it is the agents' only route to the model: the same SVID check, an `authorization` rule admitting only claims-agent and settlement-agent, a `models` allowlist (`claude-sonnet-5`), and the only copy of the Anthropic key (see "The model call"). |
 | `policy-decision-service` | **This project's own code** (Python, `grpcio`), listed here because it is platform machinery. Implements agentgateway's `agentgateway.dev.ext_mcp.ExtMcp` contract from a vendored proto | Answers permit or deny on caller identity, autonomy level and ledger state. Emits the `northstar.policy.decision` span. Holds no RBAC; nothing in `northstar-agents` can reach it. |
 | SPIRE (server, agent, controller-manager, CSI driver, OIDC discovery provider) | SPIFFE runtime from the hardened chart | Issues the JWT-SVID. Trust domain `northstar.local`. The discovery provider publishes SPIRE's signing keys as a JWKS the gateway fetches. |
 | Open Feature Operator, `cert-manager` | Operator that injects a `flagd` sidecar; cert-manager signs the operator's webhook certificate | Put flagd inside the policy service's pod. |
@@ -204,7 +204,7 @@ used. Exact chart and image versions live in `scripts/setup-kind.sh` and
 | `backstage` | Third-party framework plus one plugin of this project's own (`autonomyContract/`) | Serves the software catalog, TechDocs and the autonomy-contract card, the one UI with a write path: it flips `northstar-autonomy` through a dedicated ServiceAccount that may patch that one object and nothing else. |
 | OpenTelemetry Collector, Jaeger, Prometheus | Evidence pipeline | Everything is OTLP to the collector, then Jaeger (traces) and Prometheus (metrics). Sampling is always 100%. |
 | Weaver live-check | OpenTelemetry Weaver receiving a copy of the telemetry | Checks emitted telemetry against the registry in `telemetry/registry/`. |
-| AgentEvals | Scores what the agent did from its own spans | Run on demand with `scripts/demo evals`. |
+| AgentEvals | Scores what the agent did from its own spans | Called live by `scripts/demo evidence` for this repo's five code evaluators, and on demand with `scripts/demo evals` (which adds the built-in LLM-judged metrics). One evaluator, `prompt_injection`, makes a Haiku call through LiteLLM inside the AgentEvals pod and judges claims-agent's intake only. |
 
 **SPIRE contributes metrics only.** The SPIRE version in use has no OpenTelemetry
 support: no OTLP exporter and no tracing. It adds no spans and none are invented
@@ -301,10 +301,12 @@ not use `@a2a-js/sdk`: that SDK's current line targets A2A protocol `1.0`, while
 claims-agent's agent card advertises `protocolVersion: "0.3.0"`
 (`apps/customer-ui/NOTES.md`).
 
-The form pre-fills a claim (`CLM-1842`, `POL-77120`, a rear-end collision, €6,200).
-The claim travels as a JSON string inside `params.message.parts[0].text`; A2A wraps
-arbitrary text and the payload happens to be JSON, so claims-agent's `intake.py`
-parses that inner string, not the outer envelope.
+The customer page has three chips, each a claim in the customer's own words
+(`apps/customer-ui/src/presets.ts`). The text travels as typed inside
+`params.message.parts[0].text`, and claims-agent's model (Claude) reads it into a
+claim (`extraction.py`), asking a follow-up question when something is missing.
+A JSON claim is still accepted: `scripts/demo claim <amount>` sends one, and
+claims-agent's `intake.py` parses that inner string, not the outer envelope.
 
 Trace context is injected by hand (`injectContext` in
 `apps/customer-ui/src/telemetry.ts`) because nothing auto-instruments the browser.
@@ -345,7 +347,7 @@ three legs:
 
 | | From → to | What is different about it |
 |---|---|---|
-| **Hop 3a** | `settlement-agent` → `agentgateway` | Carries the credential: `Authorization: Bearer <JWT-SVID>`. Trace context rides in two independent carriers (below). The only authenticated hop in the A2A/MCP chain, and the only authorized one. |
+| **Hop 3a** | `settlement-agent` → `agentgateway` | Carries the credential: `Authorization: Bearer <JWT-SVID>`. Trace context rides in two independent carriers (below). The only authenticated hop in the A2A/MCP chain, and the only authorized one (the model call, Hop 5, is authenticated too). |
 | **Hop 3p** | `agentgateway` → `policy-decision-service` | gRPC, `agentgateway.dev.ext_mcp.ExtMcp/CheckRequest`, on every `tools/call`, at the REQUEST phase, before the call reaches payments-mcp. Not on the claim's path: a question the gateway asks. |
 | **Hop 3b** | `agentgateway` → `payments-mcp` | Same MCP transport and tool call, **only if Hop 3p permitted**. The gateway has stripped the credential (`jwtAuth.preserveToken` is off) and re-stamped `params._meta` with its own outbound span, so payments-mcp verifies nothing and sees no identity. |
 
@@ -500,6 +502,33 @@ that proposes a payment advances the counter (demo runs, the e2e suite, probes),
 nothing in the repo asserts an absolute record count or a hardcoded next id;
 assertions are relative to their own claim id.
 
+## Hop 5 — the model call: agents → agentgateway → the provider
+
+Both agents call the model through the gateway's second listener, `llm:` on port 4000
+(`deploy/platform/agentgateway/config.yaml`). `ANTHROPIC_BASE_URL` points the
+Anthropic SDK at it; `ANTHROPIC_API_KEY` in the agent is the placeholder
+`held-by-agentgateway`. The real key is the Secret `northstar-model` in
+`northstar-platform`, mounted into the gateway as a file and read once at startup, so
+rotating it needs a gateway restart. The gateway replaces whatever `x-api-key` the
+client sends.
+
+| | What it does | Measured refusal |
+|---|---|---|
+| `jwtAuth` | the same SPIFFE JWT-SVID check as the MCP route (strict, same issuer, audience and JWKS). `model_client.py` in each agent adds a fresh SVID to every request through `svid.py`, cached until 30 s before expiry; the gateway strips it before forwarding | no token: 401 `no bearer token found` |
+| `authorization` | admits only the claims-agent and settlement-agent SPIFFE IDs | reviewer-ui's valid SVID: 403 `authorization failed` |
+| `models` | an allowlist of one, `claude-sonnet-5` | any other model: 404 `model_not_found`, and the request never leaves the cluster |
+
+The agents have no other route: the NetworkPolicy no longer allows the Anthropic
+address ranges, and a direct call to `api.anthropic.com` is reset. claims-agent has its
+own SPIFFE Workload API socket and `svid.py` for this (settlement-agent already had
+them). What this adds: the key is in one place and not in two agent pods, a model call
+has an authenticated, attributed caller (`jwt.sub` on the gateway span), and a model
+the platform did not allow cannot be reached. What it does not: the **content** of the
+call is not inspected (no prompt guard), the policy service is still asked only about
+MCP `tools/call`, and the gateway is one replica, so it is a single point of failure
+for every model call. The spans it adds are in
+[`telemetry-contract.md`](telemetry-contract.md), "The model call at the gateway".
+
 ## The settlement decision: a model chooses, the ledger states the amounts
 
 `agents/settlement-agent/settlement.py` validates the inbound claim (`claimId`
@@ -524,7 +553,7 @@ model that narrates one amount while the mocked ledger returns another.
 plus one `invoke_agent settlement_agent` span, one `chat <model>` span per model turn
 (propose, execute, final narrative), and `execute_tool` spans, with a `POST` CLIENT
 span nested under each `chat` span for the model's own HTTP hop
-(`HTTPX2ClientInstrumentor`). The attribute inventory is in
+(`HTTPX2ClientInstrumentor`), and under that the gateway's own two spans (see "The model call"). The attribute inventory is in
 [`telemetry-contract.md`](telemetry-contract.md).
 
 **There is no limit, threshold or guard rail in the agent.** The only numeric checks
@@ -636,7 +665,7 @@ spans; the e2e harness skips them when it walks parents.
 | Ingress | `payments-mcp:8000` and the policy service admit agentgateway's identity and nothing else | A workload reaching the tool or the decision point without crossing the gateway |
 | Ingress, per route | payments-api authorizes each route for the identities that call it; `execute` is payments-mcp's alone, reviewer-ui may list, get and reject only. customer-ui authorizes `POST /a2a/push` for claims-agent alone | reviewer-ui or claims-agent POSTing `/payments/{id}/execute` straight at the ledger, skipping the gateway and the policy service |
 | Ingress | `settlement-agent:9002` admits claims-agent's identity | Anything else calling an A2A port that can execute a proposed payment |
-| Egress | One document per workload. settlement-agent may reach DNS, agentgateway:3000, the collector, the Linkerd control plane and, by `ipBlock`, the model provider's published range; claims-agent may reach DNS, settlement-agent:9002, payments-api:8080, customer-ui:8080 (the push), the collector, the control plane and the same range (its intake model); customer-ui and reviewer-ui have short lists | An agent reaching the model provider (all but the two that need it), the ledger, the tool or the policy service directly |
+| Egress | One document per workload. settlement-agent may reach DNS, agentgateway:3000 (tools) and :4000 (model), the collector and the Linkerd control plane; claims-agent may reach DNS, settlement-agent:9002, payments-api:8080, customer-ui:8080 (the push), agentgateway:4000 (its intake model), the collector and the control plane; customer-ui and reviewer-ui have short lists | An agent reaching the model provider directly, the ledger, the tool or the policy service directly |
 
 Behaviour worth knowing when probing it:
 
@@ -664,12 +693,11 @@ Behaviour worth knowing when probing it:
 
 Trade-offs, stated plainly:
 
-- **Egress is by address range, not by name.** The model provider's range is static
-  and "will not change without notice". Any other host in that range is also
-  reachable from settlement-agent, and a provider address change shows up as a TLS
-  reset, not a policy message. The host `api.anthropic.com` is configured nowhere in
-  this repository (it is the client's own base URL); the range is written into
-  `network-policies.yaml`. If either moves, the policy fails closed.
+- **Egress is by pod and port, not by name.** The agents no longer have a route
+  to the model provider at all: the Anthropic address ranges were removed from
+  `network-policies.yaml`, and a direct call to `api.anthropic.com` is reset. They reach
+  agentgateway on `:4000` instead, so the provider's address is no longer in any
+  policy and the gateway's own egress is the only place the provider is reachable from.
 - **Egress between meshed pods is per pod, not per port.**
 - **Egress enforcement is kind's.** The policy objects are portable; the enforcement
   is not. A production cluster needs a CNI that enforces NetworkPolicy.
@@ -819,7 +847,7 @@ agent to remember its own authority limits; you make the platform enforce them.
 | Ring | Question | Northstar's answer |
 |---|---|---|
 | Core · Identity | who is it | SPIRE JWT-SVIDs, verified by the gateway on every call |
-| Ring 1 · Reach | what can it connect to | Linkerd (ingress, by identity) and NetworkPolicy (egress): the gateway is the only way into `payments-mcp` |
+| Ring 1 · Reach | what can it connect to | Linkerd (ingress, by identity) and NetworkPolicy (egress): the gateway is the only way into `payments-mcp` and the only way to the model |
 | Ring 2 · Capability | what may it do | agentgateway → ExtMCP → policy-decision-service, `failClosed`; the autonomy flag |
 | Keystone | can it edit what constrains it | Kyverno `ValidatingPolicy`: no |
 
@@ -928,6 +956,14 @@ rule on the route in `deploy/platform/agentgateway/config.yaml`, caps `execute_p
 at a fixed ceiling (read it from that file) for every caller and refuses a zero or
 negative amount. It is off the live demo (`scripts/demo ceiling`).
 
+The same rule names who may use the tools at all: settlement-agent and reviewer-ui,
+joined to the ceiling with `&&`. Every workload in the trust domain can mint a valid
+JWT-SVID for the gateway's audience, and claims-agent does, for the model listener
+(Hop 5); without the caller clause it could call `propose_payment` and `get_payment`,
+which the policy service permits for any caller. Any other identity gets the same
+`403 "authorization failed"` and no `northstar.policy.decision` span: the policy
+service is never asked.
+
 | | agentgateway CEL ceiling | Policy Decision Service |
 |---|---|---|
 | Code to write | none: one line of config | a service |
@@ -982,6 +1018,11 @@ Properties of the rule, each guarded in `tests/e2e/test_gateway_ceiling.py`:
 **What is not authorized, and none of it is an oversight.**
 
 - **Only `tools/call` is decided.** Other MCP methods carry no tool and no amount.
+- **The model call is authenticated and allowlisted, not inspected.** The gateway checks
+  who is calling and which model, and attributes the call; it does not read the prompt
+  or the reply, and the policy service is not asked about it (Hop 5).
+- **The gateway is a single replica.** It carries the MCP route and every model call;
+  while it restarts (a key rotation needs one), both stop.
 - **Hops 1, 2 and 4 carry no identity and no policy.** Hop 2's allow-list checks a
   target *name*; customer-ui reaches claims-agent with no credential. Linkerd restricts
   who can reach settlement-agent and payments-api by identity, but what reaches them
@@ -1127,17 +1168,20 @@ checking each answers, and `./scripts/preflight.sh` repeats that check.
 the preflight's list in agreement. The operator's script is
 [`demo-runbook.md`](demo-runbook.md); what follows is what to look for in the traces.
 
-1. **Submit a claim above the agent's limit.** In the Customer UI the form is
-   pre-filled with `CLM-1842`, €6,200. Submit; the page shows "Awaiting human approval"
-   with a timer. The payment was proposed and then refused by the platform and
+1. **Submit a claim above the agent's limit.** In the Customer UI, after
+   `scripts/demo start`, click the **Large claim** chip (€8,500, free text that
+   claims-agent's model reads) and submit; the page shows "Awaiting human approval"
+   with a timer. `scripts/demo claim 6200` sends the same kind of claim as JSON, with
+   no browser. The payment was proposed and then refused by the platform and
    recorded as `awaiting_approval`; the model explains, in its own words (different
-   every run), that the settlement could not be paid. A claim inside the band (`5800`
-   at `autonomous`) comes back `executed`. Seeing both is the point: a platform that
+   every run), that the settlement could not be paid. A claim inside the band (the
+   **Standard claim**, €1,450, at `autonomous`) comes back `executed`. Seeing both is the point: a platform that
    refused everything would look identical on the first run alone.
 2. **In Jaeger,** search service `customer-ui`, operation `northstar.claim.submit`. The
    single result is your submission (read the response's `data`, not `total`, which is
    often `0`). Or search by tag: service `settlement-agent` or `claims-agent`, tag
-   `northstar.claim.id=CLM-1842`. The same tag search against `payments-mcp` or
+   `northstar.claim.id=<claim id>` (a free-text claim's id looks like
+   `CLM-INTAKE-B1BEF0`; `scripts/demo claim` prints it). The same tag search against `payments-mcp` or
    `payments-api` returns nothing, by design, even though those spans are in the same
    trace by trace id. Ignore `harness-probe*` services: they are the e2e suite's
    synthetic trace ids.

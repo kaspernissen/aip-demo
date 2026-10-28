@@ -1,12 +1,15 @@
 # Claims Agent
 
-The intake agent. It is the first thing the browser talks to, and the thinnest
-component in the chain — deliberately.
+The intake agent. It is the first thing the browser talks to: it reads the
+customer's own words into a claim with a model (Claude), asks a follow-up
+question when something is missing, and delegates settlement.
 
 ## Responsibilities
 
 - Serve A2A on port `9001` for the customer UI.
-- Parse the submitted claim.
+- Read a free-text claim into a claim with its model (`extraction.py`), asking
+  the customer a follow-up question when something is missing. A JSON claim
+  (`scripts/demo claim <amount>`) is parsed with no model (`intake.py`).
 - Delegate settlement to `settlement-agent` over A2A.
 - Return settlement-agent's reply as the task's result. Every claim is an A2A
   task. A claim the platform routes to a human is `input-required` until the
@@ -27,6 +30,7 @@ component in the chain — deliberately.
 |---|---|---|
 | In | A2A / JSON-RPC 2.0 | port `9001`: `message/stream` from the browser, `tasks/get` and a blocking `message/send` (the resume) from the reviewer-ui |
 | Out | A2A | `settlement-agent:9002` |
+| Out | HTTP | agentgateway `:4000` (`ANTHROPIC_BASE_URL`), which forwards to the model provider (`NORTHSTAR_CLAIMS_MODEL`), for a free-text claim only. Each request carries a fresh JWT-SVID (`model_client.py`, `svid.py`); the gateway holds the API key, and the agent's `ANTHROPIC_API_KEY` is a placeholder. The agent has no egress to the provider itself (`deploy/platform/reach/network-policies.yaml`) |
 | Out | HTTP | `payments-api:8080`, one read: `GET /payments/{id}`, when a task is resumed |
 | Out | A2A push | `POST` of the finished Task (terminal states only; never in trace A) to `customer-ui:8080/a2a/push`, only to a URL on the exact-match allowlist (`CLAIMS_AGENT_PUSH_URL_ALLOWLIST`) |
 

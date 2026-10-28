@@ -11,6 +11,7 @@ build/talk-base-bs.css) plus any slides/NN-name.css, and prints
 the total. Run it after any edit:  python3 build/build.py
 """
 import json
+import os
 import pathlib
 import re
 import sys
@@ -19,6 +20,14 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 BUILD = ROOT / "build"
 EVENT = "KubeCon + CloudNativeCon North America 2026 &middot; Salt Lake City"
 
+
+
+def _write(path, text):
+    """Write via a temp file and a rename, so a browser reloading mid-build never
+    reads (and caches under the new ?v= hash) a half-written file."""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
 
 def mmss(s):
     return f"{s // 60}:{s % 60:02d}"
@@ -55,7 +64,7 @@ def main():
     css = [(BUILD / "broadsheet-deck.css").read_text(), (BUILD / "talk-base-bs.css").read_text()]
     for c in sorted(ROOT.glob("slides/[0-9][0-9]-*.css")):
         css.append(f"\n/* ===== {c.name} ===== */\n" + c.read_text())
-    (ROOT / ("talk.css" if not only else f"preview-{only.stem}.css")).write_text("".join(css))
+    _write(ROOT / ("talk.css" if not only else f"preview-{only.stem}.css"), "".join(css))
 
     head = (BUILD / "head.html").read_text()
     out = (head +
@@ -76,7 +85,12 @@ def main():
         for css_name in ("talk.css", "ocean/ocean.css", "bs/styles.css"):
             digest = hashlib.sha1((ROOT / css_name).read_bytes()).hexdigest()[:10]
             out = out.replace(f'href="{css_name}"', f'href="{css_name}?v={digest}"')
-    (ROOT / target).write_text(out)
+        # The scripts too: http.server sends no Cache-Control, so Chrome kept an old
+        # chrome.js and drew the folio unstyled (2026-10-27).
+        for js_name in ("chrome.js", "deck-stage.js", "bs/print-plates.js"):
+            digest = hashlib.sha1((ROOT / js_name).read_bytes()).hexdigest()[:10]
+            out = out.replace(f'src="{js_name}"', f'src="{js_name}?v={digest}"')
+    _write(ROOT / target, out)
     print(f"wrote {target}: {len(sections)} slides, running time {mmss(t)}")
     if "--list" in sys.argv:
         for i, lab in enumerate(labels, 1):

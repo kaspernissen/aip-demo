@@ -20,6 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -76,8 +77,8 @@ def test_the_flip_patches_the_path_backstage_patches():
 
 def test_the_help_lists_every_demo_subcommand():
     out = subprocess.run([str(SCRIPTS / "demo"), "--help"], capture_output=True, text=True, timeout=30)
-    for command in ("guard", "claim", "approve", "reject", "autonomy", "keystone", "evidence", "reset", "ceiling",
-                    "evals", "inject"):
+    for command in ("guard", "claim", "approve", "reject", "autonomy", "keystone", "evidence", "reset", "start",
+                    "ceiling", "evals", "inject"):
         assert command in out.stdout, out.stdout
 
 
@@ -137,6 +138,22 @@ def test_reset_rejects_every_open_approval_as_demo_reset(monkeypatch, tmp_path):
     # A new run starts at reset, so a claim filed only in the browser is this run's.
     state = demo.load_state()
     assert state["claims"] == [] and state["run_id"] != "old" and state["window_start_ms"] > 5
+
+
+def test_start_resets_then_sets_autonomous(monkeypatch, tmp_path):
+    demo = _driver()
+    levels = []
+    monkeypatch.setattr(demo, "awaiting_payments", lambda: [])
+    monkeypatch.setattr(demo, "delete_overgrant", lambda: None)
+    monkeypatch.setattr(demo, "overgrant_present", lambda: False)
+    monkeypatch.setattr(demo.contract, "set_targeted_branch", levels.append)
+    monkeypatch.setattr(demo, "flag_level", lambda: levels[-1] if levels else "assisted")
+    monkeypatch.setattr(demo, "pod_fingerprint", lambda: {"ns/pod": "same"})
+    monkeypatch.setattr(demo, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(demo, "STATE_FILE", tmp_path / "state.json")
+    assert demo.main(["start"]) == 0
+    assert levels == ["assisted", "autonomous"]
+    assert demo.load_state()["claims"] == []
 
 
 def test_reset_fails_while_an_approval_is_still_open(monkeypatch):
@@ -473,6 +490,37 @@ def test_untold_payments_keeps_only_decided_payments_whose_task_still_waits(monk
     monkeypatch.setattr(demo.live, "list_payments", lambda status: ledger[status])
     monkeypatch.setattr(demo.live, "get_task", lambda task_id: {"state": states[task_id]})
     assert [p["paymentId"] for p in demo.untold_payments()] == ["PAY-000004", "PAY-000003"]
+
+
+def test_untold_payments_skips_a_task_the_claims_agent_no_longer_has(monkeypatch):
+    """A claims-agent restart forgets its in-memory tasks; the scan must go on."""
+    demo = _driver(stub_untold=False)
+    ledger = {"executed": [
+        {"paymentId": "PAY-000009", "a2aTaskId": "gone", "status": "executed"},
+        {"paymentId": "PAY-000008", "a2aTaskId": "t8", "status": "executed"}],
+        "rejected": []}
+
+    def get_task(task_id):
+        assert task_id != "gone", f"tasks/get {task_id}: {{'code': -32001, 'message': 'Task not found'}}"
+        return {"state": "input-required"}
+
+    monkeypatch.setattr(demo.live, "list_payments", lambda status: ledger[status])
+    monkeypatch.setattr(demo.live, "get_task", get_task)
+    assert [p["paymentId"] for p in demo.untold_payments()] == ["PAY-000008"]
+
+
+def test_untold_payments_still_fails_on_any_other_tasks_get_error(monkeypatch):
+    demo = _driver(stub_untold=False)
+    ledger = {"executed": [{"paymentId": "PAY-000009", "a2aTaskId": "t9", "status": "executed"}],
+              "rejected": []}
+
+    def get_task(task_id):
+        raise AssertionError(f"tasks/get {task_id}: {{'code': -32603, 'message': 'Internal error'}}")
+
+    monkeypatch.setattr(demo.live, "list_payments", lambda status: ledger[status])
+    monkeypatch.setattr(demo.live, "get_task", get_task)
+    with pytest.raises(AssertionError, match="Internal error"):
+        demo.untold_payments()
 
 
 def test_a_claim_filed_in_the_skew_margin_before_the_run_is_not_this_runs(monkeypatch, tmp_path):
@@ -1010,3 +1058,86 @@ def test_keystone_prints_the_commands_it_runs_and_the_refusals_it_gets(monkeypat
 def test_the_runbook_gives_the_injection_text_the_driver_files():
     demo = _driver()
     assert demo.DEFAULT_INJECTION in (REPO_ROOT / "docs/demo-runbook.md").read_text()
+
+
+def _preset_text(name: str) -> str:
+    """A customer-ui chip's text, joined from presets.ts's concatenated literals."""
+    import re
+    source = (REPO_ROOT / "apps/customer-ui/src/presets.ts").read_text()
+    block = re.search(rf"export const {name}: Preset = \{{(.*?)\n\}};", source, re.DOTALL)
+    assert block, f"{name} not found in presets.ts"
+    text = re.search(r"text:\s*((?:\"[^\"]*\"\s*\+?\s*)+),", block.group(1))
+    assert text, f"{name} has no text literal"
+    return "".join(re.findall(r"\"([^\"]*)\"", text.group(1)))
+
+
+def test_the_tricky_chip_files_the_injection_text_the_driver_files():
+    """So `scripts/demo inject` reads back the claim the chip filed."""
+    demo = _driver()
+    assert _preset_text("TRICKY_CLAIM") == demo.DEFAULT_INJECTION
+
+
+def test_the_standard_and_large_chips_are_the_runbooks_claims():
+    runbook = (REPO_ROOT / "docs/demo-runbook.md").read_text()
+    for name in ("STANDARD_CLAIM", "LARGE_CLAIM"):
+        assert _preset_text(name) in runbook, name
+
+
+def _keystone_kubectl(demo, ran):
+    import subprocess as sp
+
+    def kubectl(*args, timeout=90, stdin=None):
+        ran.append(args)
+        if "validatingpolicy" in args:
+            return sp.CompletedProcess(args, 0, "true", "")
+        if "can-i" in args:
+            return sp.CompletedProcess(args, 0, "yes\n", "")
+        if "patch" in args:
+            patches = sum("patch" in r and "can-i" not in r for r in ran)
+            return sp.CompletedProcess(args, 1, "", RBAC_REFUSAL if patches == 1 else KYVERNO_REFUSAL)
+        return sp.CompletedProcess(args, 0, f"{args[0]}d\n", "")
+    return kubectl
+
+
+def test_keystone_passes_at_autonomous_when_the_flag_is_unchanged(monkeypatch, capsys):
+    """The flow runs the keystone after the autonomy switch: the claim is that
+    the agent moved nothing, at whichever level the flag stood."""
+    demo = _driver()
+    monkeypatch.setattr(demo.live, "kubectl", _keystone_kubectl(demo, []))
+    monkeypatch.setattr(demo, "overgrant_present", lambda: False)
+    monkeypatch.setattr(demo, "flag_level", lambda: "autonomous")
+    assert demo.main(["keystone"]) == 0
+    assert "(unchanged)" in capsys.readouterr().out
+
+
+def test_keystone_fails_when_the_flag_moved(monkeypatch, capsys):
+    demo = _driver()
+    levels = iter(["assisted", "autonomous"])
+    monkeypatch.setattr(demo.live, "kubectl", _keystone_kubectl(demo, []))
+    monkeypatch.setattr(demo, "overgrant_present", lambda: False)
+    monkeypatch.setattr(demo, "flag_level", lambda: next(levels))
+    assert demo.main(["keystone"]) != 0
+    printed = capsys.readouterr()
+    assert "it was 'assisted' before the agent tried" in printed.err
+    assert "(unchanged)" not in printed.out
+
+
+def test_keystone_deletes_the_overgrant_even_when_output_breaks(monkeypatch):
+    """A pipe into `head` closes stdout mid-run; the over-grant must still go."""
+    demo = _driver()
+    ran = []
+    monkeypatch.setattr(demo.live, "kubectl", _keystone_kubectl(demo, ran))
+    monkeypatch.setattr(demo, "overgrant_present", lambda: False)
+    monkeypatch.setattr(demo, "flag_level", lambda: "assisted")
+    real_step = demo.step
+
+    def step(text):
+        if text.startswith("4"):
+            raise BrokenPipeError
+        real_step(text)
+    monkeypatch.setattr(demo, "step", step)
+    try:
+        demo.cmd_keystone(None)
+    except BrokenPipeError:
+        pass
+    assert any("delete" in r for r in ran), ran

@@ -2,8 +2,8 @@
 
 The agent that actually decides what a claim is worth, and then tries to pay
 it. **The settlement decision is a real Claude model call**, not a stub — which
-is why `ANTHROPIC_API_KEY` is required and why the first claim submission fails
-without it.
+is why an Anthropic key is required (held by agentgateway, not by this agent) and
+why the first claim submission fails without it.
 
 ## Responsibilities
 
@@ -44,6 +44,7 @@ approval.
 |---|---|---|
 | In | A2A / JSON-RPC 2.0 | port `9002` |
 | Out | MCP | through **agentgateway**, never directly to `payments-mcp` |
+| Out | HTTP | model calls to agentgateway `:4000` (`ANTHROPIC_BASE_URL`), never to the provider: `model_client.py` adds a fresh JWT-SVID per request and the gateway replaces the placeholder key with the real one. No egress to the provider |
 | Identity | SPIFFE | JWT-SVID from the SPIRE Workload API, mounted at `/spiffe-workload-api/spire-agent.sock` |
 
 ## Telemetry

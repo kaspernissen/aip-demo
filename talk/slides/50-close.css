@@ -7,6 +7,7 @@
 
 /* ---- 48: limitations ---- */
 .x50-lim { display: grid; grid-template-columns: 1.05fr 1fr; gap: 120px; margin-top: calc(2 * var(--baseline)); }
+.x50-lim.one { grid-template-columns: 1fr; margin-top: calc(1 * var(--baseline)); }
 .x50-gaps { display: grid; grid-template-columns: auto 1fr; gap: 18px 36px; align-items: baseline; margin: 0; font-size: var(--type-small); }
 .x50-gaps dt { font-weight: 600; }
 .x50-gaps dd { margin: 0; color: color-mix(in srgb, var(--color-text) 62%, transparent); }
@@ -43,3 +44,49 @@
 .x50-three { margin-top: calc(1.5 * var(--baseline)); }
 .x50-callback { margin: calc(1.5 * var(--baseline)) 0 0; font-size: 80px; line-height: 1.1; font-weight: 700; letter-spacing: -0.02em; }
 .x50-callback em { color: var(--color-accent-2); }
+
+/* Autonomy is a platform setting: the one value that moved, beside what held still */
+.x50-ap { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; margin-top: calc(0.8 * var(--baseline)); align-items: stretch; }
+.x50-ap > div { padding: 34px 40px 38px; border-radius: var(--radius-md); }
+.x50-ap .mv { background: var(--color-accent-2-100); box-shadow: inset 0 0 0 2px var(--color-accent-2); }
+.x50-ap .st { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+.x50-ap .x50-k { margin-bottom: 14px; }
+.x50-ap-v { margin: 0; font-family: var(--font-heading); font-weight: 700; font-size: 60px; line-height: 1.05; }
+.x50-ap-f { margin: 16px 0 0; font-size: var(--type-small); }
+.x50-ap ul { margin: 20px 0 0; padding-left: 1.1em; font-size: var(--type-small); line-height: 1.4; }
+.x50-ap-hold { list-style: none; padding-left: 0 !important; margin-top: 0 !important; display: grid; row-gap: 12px; }
+.x50-ap-hold b { display: inline-block; min-width: 5.4em; font-family: var(--font-heading); }
+.x50-ap-line { margin: calc(0.9 * var(--baseline)) 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 48px; line-height: 1.15; max-width: 40ch; }
+
+/* Three things to remember, as cards */
+.x50-3 { list-style: none; margin: calc(0.8 * var(--baseline)) 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; }
+.x50-3 li { position: relative; display: flex; flex-direction: column; gap: 14px; padding: 34px 34px 36px; border-radius: var(--radius-md); }
+.x50-3 li.a { background: var(--color-accent-100); }
+.x50-3 li.b { background: var(--color-accent-2-100); }
+.x50-3 li.c { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+.x50-3 i { font-size: 88px; line-height: 1; color: var(--color-accent-600); }
+.x50-3 li.b i { color: var(--color-accent-2-600); }
+.x50-3 li.c i { color: var(--color-text); }
+.x50-3 .n { position: absolute; top: 26px; right: 34px; font-family: var(--font-heading); font-weight: 700; font-size: 64px; line-height: 1; color: color-mix(in srgb, var(--color-text) 18%, transparent); }
+.x50-3 b { font-family: var(--font-heading); font-size: 38px; line-height: 1.12; }
+.x50-3 p { margin: 0; font-size: var(--type-small); line-height: 1.35; color: color-mix(in srgb, var(--color-text) 75%, transparent); }
+.x50-3 .chip { margin-top: auto; font-size: 20px; color: var(--color-accent-2-700); font-weight: 700; }
+.x50-3 .logos { margin-top: auto; display: flex; gap: 18px; align-items: center; }
+.x50-3 .logos img { width: 52px; height: 52px; object-fit: contain; }
+/* "Autonomy is a platform setting", simplified: one amount axis, the line one flag moves */
+.x50-ad-lede { margin: calc(0.4 * var(--baseline)) 0 0; font-size: var(--type-body); }
+.x50-ad { display: grid; grid-template-columns: 1fr 1.6fr 0.8fr; margin-top: calc(1 * var(--baseline)); row-gap: 14px; }
+.x50-ad .z { display: grid; grid-template-columns: auto 1fr; column-gap: 16px; align-items: center; padding: 30px 32px; }
+.x50-ad .z i { grid-row: 1 / 3; font-size: 56px; line-height: 1; }
+.x50-ad .z b { font-family: var(--font-heading); font-size: 34px; line-height: 1.1; }
+.x50-ad .z span { font-size: var(--type-small); color: color-mix(in srgb, var(--color-text) 65%, transparent); }
+.x50-ad .ag { background: var(--color-accent-100); border-radius: var(--radius-md) 0 0 var(--radius-md); }
+.x50-ad .ag i { color: var(--color-accent-700); }
+.x50-ad .hu { background: var(--color-accent-2-100); border-left: 6px solid var(--color-accent-2); }
+.x50-ad .hu i { color: var(--color-accent-2-700); }
+.x50-ad .no { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--color-text) 7%, transparent) 0 12px, transparent 12px 24px); border-left: 2px solid color-mix(in srgb, var(--color-text) 30%, transparent); border-radius: 0 var(--radius-md) var(--radius-md) 0; }
+.x50-ad .no i { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x50-ad .t { margin: 0; font-family: var(--font-mono); font-size: 24px; }
+.x50-ad .t1 { margin-left: -3px; color: var(--color-accent-2-700); font-weight: 700; }
+.x50-ad .t1 em { margin-left: 14px; font-family: var(--font-body); font-weight: 400; font-size: 22px; }
+.x50-ad .t0 { grid-column: 1; } .x50-ad .t1 { grid-column: 2; } .x50-ad .t2 { grid-column: 3; margin-left: -3px; }

@@ -108,34 +108,6 @@
   </div>
 </section>
 
-<!-- 16a · NEW · OpenTelemetry, and Weaver: the one standard every service speaks (SDK, Collector, semantic conventions), and the registry that keeps our own names honest: telemetry/registry (northstar.* on semconv v1.44.0), scripts/check-registry.sh (weaver v0.28.0 registry check + generated docs), deploy/observability/weaver-live-check.yaml (live-check on a copy of every signal, fail_on = violation) -->
-<section class="slide content" data-label="OpenTelemetry and Weaver">
-  <h2 class="slide-title">One language for telemetry, and a checker for it</h2>
-  <div class="x20-ow rise">
-    <div class="col">
-      <header><img src="assets/logos/opentelemetry.svg" alt=""><div><p class="n">OpenTelemetry</p><p class="r">the standard every service speaks</p></div></header>
-      <ul>
-        <li><b>Traces, metrics, logs</b>, one SDK in every service</li>
-        <li><b>One Collector</b> fans out to any backend: Jaeger, Prometheus, Dash0</li>
-        <li><b>Shared names</b>, the semantic conventions: <span class="code">http.*</span>, <span class="code">gen_ai.*</span></li>
-      </ul>
-    </div>
-    <div class="col w">
-      <header><i class="ph-duotone ph-ruler"></i><div><p class="n">Weaver</p><p class="r">our own names, as a contract</p></div></header>
-      <pre class="x20-yaml"><span class="k">- id:</span> northstar.policy.decision
-  <span class="k">type:</span> { members: [permit, deny] }
-  <span class="k">brief:</span> What the decision service decided.</pre>
-      <ol class="x20-ow-steps">
-        <li><b>Define</b> in YAML, on top of semconv</li>
-        <li><b>Check</b> the registry in CI</li>
-        <li><b>Generate</b> the docs</li>
-        <li><b>Live-check</b> what the cluster really emits</li>
-      </ol>
-    </div>
-  </div>
-  <p class="x20-ow-line rise">Telemetry names are an API. <span class="spot-2">Weaver checks the API against what really runs.</span></p>
-</section>
-
 <!-- 17 · DID WHAT · the "what can the conventions answer today" table (Ch 3 Fig 3.10, minus the gap row, which is slide 18); the four opt-in rows dimmed -->
 <section data-cut class="slide content" data-label="What can gen_ai.* answer today?">
   <h2 class="slide-title">What can <span class="a2-ident">gen_ai.*</span> answer today?</h2>

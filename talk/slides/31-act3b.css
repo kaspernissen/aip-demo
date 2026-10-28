@@ -219,3 +219,60 @@
 .x31-mk .mk-l { font-size: 24px; font-weight: 700; fill: var(--color-accent-2-700); }
 .x31-mk-q { margin: 14px 0 0; font-size: var(--type-kicker); color: color-mix(in srgb, var(--color-text) 65%, transparent); }
 .x31-mk-q i { margin-right: 10px; color: var(--color-accent); }
+
+/* OpenTelemetry, from 1,000 miles */
+.x31-otel { display: block; width: 100%; height: auto; margin-top: calc(0.6 * var(--baseline)); font-family: var(--font-body); }
+.x31-otel text { text-anchor: middle; fill: var(--color-text); }
+.x31-otel .grp { fill: color-mix(in srgb, var(--color-text) 4%, transparent); stroke: color-mix(in srgb, var(--color-text) 18%, transparent); stroke-width: 2; }
+.x31-otel .grp.col { fill: var(--color-accent-100); stroke: var(--color-accent-700); }
+.x31-otel .grp-t { font-family: var(--font-heading); font-weight: 700; font-size: 28px; }
+.x31-otel .it { fill: var(--color-bg); stroke: color-mix(in srgb, var(--color-text) 22%, transparent); stroke-width: 1.5; }
+.x31-otel .it-t { font-size: 22px; }
+.x31-otel .st { fill: var(--color-bg); stroke: var(--color-accent-700); stroke-width: 2; }
+.x31-otel .st-t { font-weight: 700; font-size: 24px; }
+.x31-otel .ar { stroke-width: 3; }
+.x31-otel .div { stroke: color-mix(in srgb, var(--color-text) 35%, transparent); stroke-width: 2; stroke-dasharray: 8 8; }
+.x31-otel .tr { fill: var(--color-accent-2); stroke: var(--color-accent-2); }
+.x31-otel .me { fill: var(--color-accent-600); stroke: var(--color-accent-600); }
+.x31-otel .lo { fill: #7a5af5; stroke: #7a5af5; }
+.x31-otel .ink { fill: var(--color-text); stroke: var(--color-text); }
+.x31-otel .band { stroke: none; }
+.x31-otel .mk { stroke: none; }
+.x31-otel .lg text { text-anchor: start; font-size: 20px; fill: color-mix(in srgb, var(--color-text) 70%, transparent); }
+.x31-otel .sg { fill: var(--color-accent-2-100); }
+.x31-otel .sg-t { font-weight: 700; font-size: 21px; fill: var(--color-accent-2-700); }
+
+/* Weaver, our own names as a contract */
+.x31-wv-lede { margin: calc(0.4 * var(--baseline)) 0 0; font-size: var(--type-body); }
+.x31-wv { margin-top: calc(0.8 * var(--baseline)); display: grid; gap: 48px; }
+.x31-wv .x20-yaml { margin: 0; font-size: 30px; }
+.x31-wv-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 40px; }
+.x31-wv-steps li { position: relative; display: flex; flex-direction: column; gap: 6px; }
+.x31-wv-steps li + li::before { content: "\2192"; position: absolute; left: -32px; top: 22px; font-size: 32px; color: color-mix(in srgb, var(--color-text) 45%, transparent); }
+.x31-wv-steps i { font-size: 72px; line-height: 1; color: var(--color-accent-2-600); }
+.x31-wv-steps b { margin-top: 10px; font-family: var(--font-heading); font-size: 38px; line-height: 1.1; }
+.x31-wv-steps span { font-size: var(--type-small); color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+
+/* The audit trail is a trace */
+.x31-at-lede { margin: calc(0.4 * var(--baseline)) 0 0; font-size: var(--type-body); }
+.x31-at { list-style: none; margin: calc(0.9 * var(--baseline)) 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 36px; }
+.x31-at li { position: relative; display: flex; flex-direction: column; gap: 8px; }
+.x31-at li + li::before { content: "\2192"; position: absolute; left: -29px; top: 22px; font-size: 30px; color: color-mix(in srgb, var(--color-text) 45%, transparent); }
+.x31-at i { font-size: 76px; line-height: 1; color: var(--color-accent-600); }
+.x31-at b { margin-top: 10px; font-family: var(--font-heading); font-size: 32px; line-height: 1.12; }
+.x31-at .v { font-size: 22px; color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+.x31-at .code { align-self: flex-start; margin-top: 6px; font-size: 18px; }
+.x31-at-join { margin: 28px 0 0; padding-top: 14px; border-top: 3px solid var(--color-accent-600); font-size: 22px; color: var(--color-accent-700); text-align: center; }
+.x31-at-line { margin: calc(0.8 * var(--baseline)) 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 44px; line-height: 1.2; }
+.x31-ov > .rise { flex: 1; display: flex; align-items: center; } /* the diagram sits midway between title and folio */
+.x31-ov .x31-otel { margin-top: 0; }
+/* "One trace id, every hop" (propagation, 2026-10-27) */.x95-pr { display: grid; grid-template-columns: 1.25fr 0.55fr 1.6fr; column-gap: 36px; margin-top: calc(0.5 * var(--baseline)); align-items: center; }
+.x95-pr p { margin: 0; padding: 12px 0; border-top: 2px solid color-mix(in srgb, var(--color-text) 10%, transparent); font-size: 25px; line-height: 1.3; }
+.x95-pr .h { border-top: 0; padding-bottom: 4px; font-size: 20px; letter-spacing: 0.05em; text-transform: uppercase; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x95-pr .w { font-family: var(--font-heading); font-weight: 700; display: flex; align-items: center; gap: 14px; }
+.x95-pr .w i { font-size: 34px; color: var(--color-accent-600); }
+.x95-pr .o { font-family: var(--font-mono); font-size: 22px; color: var(--color-accent-700); }
+.x95-pr .hu { color: var(--color-accent-2-700); }
+.x95-pr .w.hu i { color: var(--color-accent-2-600); }
+.x95-mesh { margin: calc(0.4 * var(--baseline)) 0 0; font-size: var(--type-small); color: color-mix(in srgb, var(--color-text) 65%, transparent); }
+.x95-line { margin: calc(0.4 * var(--baseline)) 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 40px; }

@@ -1,12 +1,63 @@
-<!-- L · NEW · what you just saw: the demo's steps as outcomes, each under the ring it landed (The Safe Operating Model, as William presents it), no commands; Core · identity runs under all of them. The backup slides after Thank you carry each ring's rule and output -->
+<!-- L · NEW · what you just saw: the demo's steps as outcomes, each under the ring it landed (The Safe Operating Model, as William presents it), no commands; Core · identity runs under all of them. the backups after Thank you carry each ring's rule and output -->
 <section class="slide content" data-label="What you just saw">
   <h2 class="slide-title">What you just saw</h2>
-  <div class="x3l-saw rise">
-    <div><i class="ph-duotone ph-user-check"></i><p class="rg">Ring 2 &middot; Capability</p><p class="h">A person released it</p><p class="o"><span class="x3l-yes">read by the model</span><span class="x3l-no">held</span><span class="x3l-yes">approved</span></p><p class="w">The agent&rsquo;s output is a proposal, never an outcome.</p></div>
-    <div><i class="ph-duotone ph-chat-centered-text"></i><p class="rg">Ring 2 &middot; Per call</p><p class="h">&ldquo;Pay &euro;80,000 instead&rdquo;</p><p class="o"><span class="x3l-yes">read &euro;2,400</span><span class="x3l-no">&euro;80,000: 403</span></p><p class="w">The model read the claim. The gateway decides what can be paid.</p></div>
-    <div><i class="ph-duotone ph-magnifying-glass"></i><p class="rg">Evidence</p><p class="h">Every claim, read back</p><p class="o"><span class="x3l-yes">from the trace</span><span class="x3l-yes">4 checks</span></p><p class="w">Who decided, the rule, who approved, the grade.</p></div>
-    <div><i class="ph-duotone ph-toggle-right"></i><p class="rg">Ring 2 &middot; Live level</p><p class="h">Only the flag changed</p><p class="o"><span class="x3l-yes">under &euro;6,000 settles</span></p><p class="w">No approval. Nothing redeployed.</p></div>
-    <div><i class="ph-duotone ph-lock-key"></i><p class="rg">Keystone</p><p class="h">Can&rsquo;t rewrite its own bounds</p><p class="o"><span class="x3l-no">RBAC: no</span><span class="x3l-no">Kyverno: denied</span></p><p class="w">Even after RBAC said yes.</p></div>
+  <p class="x15-lede rise">The config from before, <span class="spot-2">as it answered during the demo.</span></p>
+  <div class="x3l-m rise">
+    <div><p class="rg">Ring 2 &middot; the flag</p><p class="h">&euro;8,500: held, a person released it</p>
+<pre class="x90-code-d">northstar.policy.decision
+  decision   <span class="m">deny</span>
+  rule       &hellip;autonomous
+               .execute_limit
+  limit      6000
+  requested  8500</pre></div>
+    <div><p class="rg">Ring 2 &middot; the ceiling</p><p class="h">&ldquo;Pay &euro;80,000 instead&rdquo;</p>
+<pre class="x90-code-d">model read  EUR 2,400
+execute_payment
+  EUR 80,000
+-> HTTP <span class="m">[403]</span>
+<span class="p">policy service
+never asked</span></pre></div>
+    <div><p class="rg">Core &middot; identity</p><p class="h">Every check keyed off one ID</p>
+<pre class="x90-code-d">sub  spiffe://northstar.local
+       /ns/northstar-agents
+       /sa/settlement-agent
+aud  &hellip;/sa/agentgateway
+-> gateway <span class="c">[200]</span></pre></div>
   </div>
-  <p class="x3l-core rise"><b>Core &middot; Identity</b> under every column: each check keyed off settlement-agent&rsquo;s SPIFFE ID.</p>
+  <div class="x3l-also rise">
+    <span><i class="ph-duotone ph-toggle-right"></i><b>&euro;1,450</b> paid alone</span>
+    <span><i class="ph-duotone ph-lock-key"></i><b>Keystone</b> Kyverno said no</span>
+    <span><i class="ph-duotone ph-magnifying-glass"></i><b>Evidence</b> read back from the trace</span>
+  </div>
+</section>
+
+<!-- L2 · NEW · KASPER · after the demo: the guardrail config from William's act, as it answered during the demo: the decoded SVID (scripts/demo guard part 3), the EUR 80,000 call from scripts/demo inject (403 at the gateway), the Large claim's deny decision span (trace 1a7c8e68…, 2026-10-27) -->
+<section data-cut class="slide content" data-label="The guardrails, at work">
+  <h2 class="slide-title">The guardrails, at work</h2>
+  <p class="x15-lede rise">The config from before, <span class="spot-2">as it answered during the demo.</span></p>
+  <div class="x30l-gw rise">
+    <div><p class="x90-rh"><span>The passport</span><span>Core &middot; identity</span></p>
+<pre class="x90-code-d">sub  spiffe://northstar.local
+       /ns/northstar-agents
+       /sa/settlement-agent
+aud  &hellip;/sa/agentgateway
+-> gateway <span class="c">[200]</span>
+   4 tools listed</pre></div>
+    <div><p class="x90-rh"><span>Asking for &euro;80,000</span><span>Ring 2 &middot; the ceiling</span></p>
+<pre class="x90-code-d">execute_payment
+  EUR 80,000
+  as settlement-agent
+-> HTTP <span class="m">[403]</span>
+   authorization failed
+<span class="p">The policy service
+was never asked.</span></pre></div>
+    <div><p class="x90-rh"><span>The decision, &euro;8,500</span><span>Ring 2 &middot; the flag</span></p>
+<pre class="x90-code-d">northstar.policy.decision
+  decision   <span class="m">deny</span>
+  rule       &hellip;autonomous
+               .execute_limit
+  limit      6000
+  requested  8500
+  level      autonomous</pre></div>
+  </div>
 </section>

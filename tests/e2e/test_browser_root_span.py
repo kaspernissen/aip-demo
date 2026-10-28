@@ -27,25 +27,26 @@ not).
 
 Requires a real browser. Skipped unless RUN_BROWSER_TESTS=1.
 
-**Submits the form untouched rather than overwriting the claim id.**
-`CLM-1842` is customer-ui's own pre-filled `DEFAULT_CLAIM`
-(`apps/customer-ui/src/app/page.tsx`, amount 6200 EUR); this fixture submits
-the form as-is, reads the "Outcome" `<pre>` block the page renders
+**Submits the page untouched.** The page has no form: it opens with the
+standard claim's text in the box (`STANDARD_CLAIM` in
+`apps/customer-ui/src/presets.ts`, EUR 1,450, policy POL-77120).
+claims-agent's model reads it and names the claim (`CLM-INTAKE-...`). This
+fixture reads the "Outcome" `<pre>` block the page renders
 (`JSON.stringify(result, null, 2)`, the same `ClaimResult` shape
-`apps/customer-ui/src/a2a.ts` extracts from the A2A reply), and hands the
-parsed payload to the tests below. This is a test assertion, not a guard
-rail: nothing in `settlement.py` checks or clamps the amount, so if a live
-model run ever proposes a different amount, the resulting assertion failure is
-the finding, not something to be worked around here.
+`apps/customer-ui/src/a2a.ts` extracts from the A2A reply), takes the claim id
+from it, and hands the parsed payload to the tests below. This is a test
+assertion, not a guard rail: if a live model run ever reads or proposes a
+different amount, the resulting assertion failure is the finding.
 
-**The outcome of that submission is a refusal, not an execution** — €6,200
-is above the €6,000 allowance the platform enforces on `execute_payment` for
-this caller, so `test_the_browser_path_settles_the_expected_amount` below
-asserts `status == "awaiting_approval"` with €6,200 as the *proposed* amount. Everything
-else in this file is about trace plumbing (root ownership, service presence,
-orphans, the policy-number attribute) and is unaffected: the propose leg is
-permitted unconditionally, so all five services still land in this one trace,
-and a denied `execute_payment` leaves no dangling parent reference behind.
+**The outcome of that submission waits for a person**: at the resting
+`assisted` level the platform refuses every `execute_payment` from the agent
+(limit EUR 0), so `test_the_browser_path_settles_the_expected_amount` below
+asserts `status == "awaiting_approval"` with EUR 1,450 as the *proposed*
+amount. Everything else in this file is about trace plumbing (root ownership,
+service presence, orphans, the policy-number attribute) and is unaffected:
+the propose leg is permitted unconditionally, so all five services still land
+in this one trace, and a denied `execute_payment` leaves no dangling parent
+reference behind.
 """
 import json
 import os
@@ -73,11 +74,6 @@ TRACEPARENT_RE = re.compile(r"^00-([0-9a-f]{32})-([0-9a-f]{16})-\d{2}$")
 def browser_trace():
     from playwright.sync_api import sync_playwright
 
-    # CLM-1842 is customer-ui's own pre-filled DEFAULT_CLAIM
-    # (apps/customer-ui/src/app/page.tsx) — submitted as-is, not overwritten
-    # with a random id, so the outcome payload below can be asserted against
-    # a known amount.
-    claim_id = "CLM-1842"
     captured: dict[str, str] = {}
     outcome: dict[str, str] = {}
 
@@ -105,11 +101,12 @@ def browser_trace():
         page.on("request", on_request)
 
         page.goto(UI_URL)
-        # Submit the form untouched: CLM-1842 / POL-77120 / 6200 EUR are
-        # already DEFAULT_CLAIM's values, so this is genuinely "the pre-filled
-        # claim", not a value this test happens to also set.
+        # Submit the page untouched: the standard claim is already in the box,
+        # so this is genuinely "the pre-filled claim", not a text this test
+        # happens to also type. The intake model reads it first, then the
+        # settlement turns run.
         page.click("button[type=submit]")
-        page.wait_for_selector("text=Outcome", timeout=120_000)
+        page.wait_for_selector("text=Outcome", timeout=180_000)
         # The Outcome <pre> renders JSON.stringify(result, null, 2) of the
         # exact ClaimResult apps/customer-ui/src/a2a.ts extracted from the A2A
         # reply. Located explicitly by its preceding <h2>Outcome</h2> sibling
@@ -152,6 +149,7 @@ def browser_trace():
     # long as the wait), so the trace would never hold steady. Decide it first;
     # `ledger_record` is what the ledger said while it waited.
     reply = json.loads(outcome["raw"])
+    claim_id = reply["claimId"]
     ledger_record = (
         live.release_wait(reply["paymentId"]) if reply.get("status") == "awaiting_approval" else None
     )
@@ -229,11 +227,10 @@ def test_claims_agent_and_settlement_agent_join_the_browsers_trace(browser_trace
 def test_root_span_carries_the_policy_number(browser_trace):
     """northstar.claim.policy_number is documented in
     docs/telemetry-contract.md's owned-attribute table and set at
-    apps/customer-ui/src/app/page.tsx:39; northstar.claim.id is asserted five
-    ways elsewhere in this suite, this attribute otherwise zero. The
-    fixture only fills the claim-id input (page.fill("input >> nth=0", ...)),
-    leaving the policy number at its DEFAULT_CLAIM default, so this asserts
-    the exact known value rather than merely "is present"."""
+    apps/customer-ui/src/app/page.tsx (`nameClaim`, from the model's read);
+    northstar.claim.id is asserted five ways elsewhere in this suite, this
+    attribute otherwise zero. The standard claim's text names POL-77120, so
+    this asserts the exact known value rather than merely "is present"."""
     root = browser_trace.trace.roots()[0]
     assert root.attrs.get("northstar.claim.policy_number") == "POL-77120"
 
@@ -276,37 +273,21 @@ def test_all_five_services_are_in_one_trace(browser_trace):
 
 def test_the_browser_path_settles_the_expected_amount(browser_trace):
     """The browser path — the one actually driven on stage — is checked
-    against the outcome, not just the trace shape. CLM-1842 at €6,200 is
-    customer-ui's own pre-filled `DEFAULT_CLAIM`, submitted untouched, so
-    this is the outcome a visitor to the page actually gets.
+    against the outcome, not just the trace shape. The standard claim, EUR
+    1,450, submitted untouched, is the outcome a visitor to the page actually
+    gets at the resting `assisted` level: it waits for a person.
 
-    The platform denies `execute_payment` above the €6,000 allowance for
-    this caller (`platform/policy-decision-service/pds/rules.py`), so the
-    reply comes back `refused`: this test asserts *what does the canonical
-    pre-filled claim actually do when a real browser submits it?*
+    EUR 1,450 is still asserted on a waiting claim: `settlement.py` returns
+    the amount the **ledger recorded for the proposal**, verbatim, not model
+    output (the propose leg is permitted unconditionally, so the proposal
+    really is on the books; only the execution was stopped). A reply that
+    reported a different figure, or none, would fail this.
 
-    €6,200 is still asserted, and it is still the same number: on a refusal
-    `settlement.py::decide_settlement` returns the amount the **ledger
-    recorded for the proposal**, verbatim, not model output and not a
-    placeholder (the propose leg is permitted unconditionally —
-    `UNLIMITED_TOOLS` — so the proposal really is on the books; only the
-    execution was stopped). Asserting it here is therefore still a real
-    claim about the money, not a leftover: a refusal that reported a
-    different figure, or none, would fail this.
-
-    Still a test assertion, not a guard rail. Nothing in `settlement.py`
-    clamps the amount; the ceiling lives in the platform, one hop away. If a
-    live model run ever proposes a different amount, this assertion fails and
-    that is the finding to record; nothing here works around it.
-
-    Deliberately *not* asserted here: why it was refused. This test owns the
-    browser-visible outcome and nothing more. The decision itself — the PDS's
-    own `northstar.policy.decision` span, the rule name, the allowance and the requested
-    amount on it, and the absence of any execute span at payments-api — is
-    asserted from the platform's own telemetry by
-    `tests/e2e/test_policy_denial.py::test_criterion_1_clm_1842_is_denied_in_the_browser_and_no_payment_executes`,
-    which is where a claim that strong belongs.
+    Deliberately *not* asserted here: why it was refused. The decision itself
+    is asserted from the platform's own telemetry by
+    `tests/e2e/test_policy_denial.py::test_criterion_1_the_browser_claim_is_denied_and_no_payment_executes`.
     """
     reply = browser_trace.reply
     assert reply.get("status") == "awaiting_approval", reply
-    assert reply.get("amount") == 6200.0, reply
+    assert reply.get("amount") == 1450.0, reply
+    assert reply.get("claimId", "").startswith("CLM-INTAKE-"), reply

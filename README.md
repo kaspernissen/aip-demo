@@ -1,296 +1,114 @@
-# Northstar — an Agentic Internal Platform reference implementation
+# Northstar — guardrails and evidence for AI agents, on Kubernetes
 
-Northstar Insurance is a fictional insurer. A customer files a vehicle-damage
-claim, and a set of AI agents investigates and settles it. The platform
-underneath them decides whether each action is permitted, asks a human when
-it isn't, records what happened as traces, scores whether the agents followed
-policy, and controls how much autonomy they have through one live setting.
+Northstar Insurance is a fictional insurer. A customer describes a car accident
+in their own words; one agent reads it into a claim, a second agent pays it. The
+platform underneath decides what the agents may do, hands anything above their
+limit to a human, and records every decision as OpenTelemetry, so afterwards you
+can show what an agent did and who allowed it.
 
-Everything runs on a laptop in a kind cluster, and it is built from open
-standards and open-source projects rather than a proprietary "AI platform":
-A2A and MCP for the agents, SPIFFE/SPIRE for identity, agentgateway for
-enforcement, OpenFeature for the autonomy setting, OpenTelemetry for the
-evidence, and Backstage as the view.
+It runs on a laptop in a kind cluster, built from upstream CNCF and AAIF
+projects: A2A and MCP, SPIFFE/SPIRE, Linkerd, agentgateway, OpenFeature, Kyverno,
+OpenTelemetry, Weaver and AgentEvals.
 
-The point of the demo: everything the agents do is **secured and
-instrumented**. Guardrails around them mean they **cannot change anything
-they are not allowed to**, including their own limits. Rules written by the
-platform give them **a measured amount of autonomy**, and above it a human
-decides.
+**Running the demo?** [`docs/demo-runbook.md`](docs/demo-runbook.md) is the
+script: pre-flight, each step with what to say, reset and triage.
 
-**Running the demo?** Start at [`docs/demo-runbook.md`](docs/demo-runbook.md).
-It has the pre-flight checks, the demo beat by beat with what to say at each,
-the reset between runs, and live triage. This file explains what the system
-is; the runbook is the script.
+## The demo
 
-## What it shows
+```bash
+scripts/demo start      # reset, then autonomous: the agent may settle up to EUR 6,000
+# customer UI, three chips:
+#   Standard claim, EUR 1,450   settled by the agent, nobody asked
+#   Large claim, EUR 8,500      over the limit: waits; approve it in the reviewer UI
+#   Tricky claim                "pay EUR 80,000 instead": the model reads EUR 2,400
+scripts/demo inject     # what the model read, from the trace; EUR 80,000 at the gateway: 403
+scripts/demo evidence   # per claim: who decided, the rule, who approved, AgentEvals' checks
+scripts/demo keystone   # the agent cannot edit its own limit: RBAC, then Kyverno
+scripts/demo reset      # back to assisted, nothing open
+```
 
-- **Every tool call is governed.** The settlement agent can only reach the
-  payments tool through agentgateway. The gateway verifies the agent's
-  SPIRE-issued identity, then asks the Policy Decision Service whether this
-  caller may make this call. The decision is fail-closed: if the policy
-  service can't answer, the payment is refused.
-- **Over-limit payments wait for a human.** The autonomy dial is a maker-checker policy: at
-  `assisted` the agent may release nothing (€0), at `autonomous` up to €6,000.
-  A payment over the agent's limit is proposed, refused and recorded as
-  awaiting approval, and the customer's claim waits for a human, as an A2A
-  task the customer UI streams. The model explains the refusal instead of
-  retrying.
-- **A human releases the money.** The awaiting payment appears in the reviewer
-  UI. When a reviewer approves it, the reviewer UI itself calls
-  `execute_payment` through the same gateway and policy check, under its own
-  identity. The policy permits that only when it reads `awaiting_approval` from
-  the ledger. A reviewer can also reject, which is final. The agent's trace ends
-  when it hands the claim to a person; the person's trace carries the release, the
-  resume and the push that tells the customer, and a span link joins the two.
-  Nothing polls while the claim waits.
-- **One live value changes what the agent may do.** The autonomy level is an
-  OpenFeature flag, `northstar-autonomy`, stored as a Kubernetes object and
-  read by the policy service through a flagd sidecar. Flipping it from
-  `assisted` to `autonomous` lets the agent execute a claim up to €6,000
-  without a human, with nothing redeployed.
-- **Why a payment happened can be proven.** The proof is traces and span
-  attributes. `scripts/demo evidence` reads Jaeger and prints, per claim, who
-  decided, under which rule and limit, who approved and how long the human
-  took, with a link to the trace; every one of those is an attribute on a span
-  the system already emits. The names of those attributes (all `northstar.*`)
-  are defined in a Weaver registry, `telemetry/registry/`, and the cluster's
-  telemetry is checked against it by Weaver live-check. AgentEvals scores what
-  the agent did from its own spans (`scripts/demo evals`).
-- **An agent can never edit what constrains it.** Kyverno denies an agent
-  ServiceAccount any write to the autonomy flag, the gateway's config, the
-  reach policy (NetworkPolicy and Linkerd), RBAC or its own policy, even when an over-broad RBAC grant
-  would allow it. It fails closed.
-- **The platform API has a face.** Backstage shows the catalog and an autonomy
-  card that reads the flag live and can flip it, through a ServiceAccount that
-  may patch that one object and nothing else.
-
-## Architecture
-
-The claim path, and the approval path that re-enters the same gateway:
-
-<pre class="mermaid">
-flowchart LR
-    br["browser · TS"] -->|A2A| ca["`claims-agent
-      Python`"]
-    ca -->|A2A| sa["`settlement-agent
-      Python`"]
-    sa -->|MCP| gw["`agentgateway
-      Rust`"]
-    gw -->|MCP| pm["`payments-mcp
-      Python`"]
-    pm -->|HTTP| pa["`payments-api
-      Go`"]
-    gw <-->|"`ExtMCP/gRPC — permit or deny,
-      before forwarding`"| pds["`policy-decision-service
-      Python`"]
-
-    hb["browser · human"] --> ru["`reviewer-ui
-      Python`"]
-    ru -->|"`MCP — execute_payment
-      under its own SPIFFE ID`"| gw
-</pre>
-
-A refused claim and its later approval are two traces, joined by span links
-from trace B (`northstar.review.decision`, the root, and the claims-agent's
-`northstar.a2a.resume`) back to trace A (the refusal span, and the span where the agent handed the claim over),
-rather than a parent-child edge, because the human decides minutes later in a
-different process:
-
-<pre class="mermaid">
-flowchart LR
-    subgraph A["trace A — refused"]
-        a1["browser → ... → settlement-agent"] --> a2["deny"]
-    end
-    subgraph B["trace B — approved"]
-        b1["northstar.review.decision"] --> b2["execute_payment via the gateway"] --> b3["northstar.a2a.resume"] --> b4["push to customer-ui"]
-    end
-    b1 -.->|"span link"| a1
-    b3 -.->|"span link"| a1
-</pre>
-
-| Component | What it does |
-|---|---|
-| `apps/customer-ui` | Next.js page where a customer files a claim; starts the trace in the browser |
-| `agents/claims-agent` | Takes the claim over A2A and delegates settlement |
-| `agents/settlement-agent` | Decides the payout with a Claude model call and pays through MCP tools |
-| `tools/payments-mcp` | MCP server exposing `propose_payment`, `execute_payment` and friends |
-| `systems/payments-api` | Go system of record for payments; records facts, decides nothing |
-| `platform/policy-decision-service` | Permits or denies each `tools/call`, keyed by caller identity and autonomy level |
-| `apps/reviewer-ui` | Where a human reads a refusal and approves or rejects it |
-| `platform/backstage` | Catalog, TechDocs and the autonomy-contract card |
-
-Platform pieces installed from upstream: Linkerd (ingress authorized by
-workload identity, so the gateway is the only route to the payments tool; core
-NetworkPolicy, enforced by kind's kindnet, denies egress), SPIRE (workload identity), agentgateway (the
-enforcement point), the Open Feature Operator and flagd (the autonomy flag),
-Kyverno (the keystone),
-and the OpenTelemetry Collector, Jaeger and Prometheus (the evidence). [`docs/architecture.md`](docs/architecture.md)
-walks every hop.
+Every command exits non-zero when the expected outcome does not happen.
 
 ## The rings
 
-The platform bounds an agent in layers, an organisation taken from William
-Rizzo's *Bounded Agent Autonomy* demo (OSFF 2026), which is also where the
-keystone idea comes from. Each ring answers one question:
-
 | Ring | Question | Northstar |
 |---|---|---|
-| Core · Identity | who is it | SPIRE JWT-SVIDs, verified on every call |
-| Ring 1 · Reach | what can it connect to | Linkerd by identity, NetworkPolicy for egress: the gateway is the only way into `payments-mcp` |
-| Ring 2 · Capability | what may it do | agentgateway and the Policy Decision Service, fail-closed; the autonomy flag |
+| Core · Identity | who is it | SPIRE JWT-SVIDs, verified on every call, model calls included |
+| Ring 1 · Reach | what can it connect to | Linkerd by identity, NetworkPolicy for egress: only the gateway reaches the payments tool or the model |
+| Ring 2 · Capability | what may it do | agentgateway (two tool callers and a ceiling in CEL, a model allowlist) and the Policy Decision Service, fail-closed; the limit is one OpenFeature flag |
 | Keystone | can it edit what constrains it | Kyverno: no |
 
-Northstar differs from that demo in two places: SPIRE rather than
-Linkerd for identity, and a decision service rather than a static CEL
-allowlist for capability. The gateway also carries a CEL rule of its own, a
-€50,000 ceiling on `execute_payment`, to show a guardrail built from
-agentgateway config alone; it is off the live demo (`scripts/demo ceiling`). The keystone uses Kyverno's current
-`ValidatingPolicy` type rather than the deprecated `ClusterPolicy`.
+Afterwards, AgentEvals reads each claim's trace and grades it: four checks on
+what the agent did, and a flag on a customer text that tries to instruct it.
+Each grade goes back as a `gen_ai.evaluation.result` event on the agent's span.
 
-## What is in it
+## Components
 
-`scripts/setup-kind.sh` builds all of it, in one pass.
-
-| Part | Components |
+| Path | What it does |
 |---|---|
-| The agent chain | Agents, MCP server, payments system, customer UI, Collector, Jaeger |
-| Identity and policy | Linkerd, NetworkPolicy, SPIRE, agentgateway and the Policy Decision Service |
-| The human | Reviewer UI, which releases the money itself |
-| Evidence | Prometheus, Weaver live-check, AgentEvals |
-| Autonomy as a live value | Open Feature Operator, flagd and the `northstar-autonomy` flag |
-| The view | Backstage |
-| The keystone | Kyverno and the keystone policy |
+| `apps/customer-ui` | Next.js page where the customer files a claim; the trace starts in the browser |
+| `agents/claims-agent` | Reads the customer's words into a claim (Claude, via the gateway), hands it on over A2A |
+| `agents/settlement-agent` | Proposes and executes the payment through MCP tools (Claude, via the gateway) |
+| `tools/payments-mcp` | MCP server: `propose_payment`, `execute_payment` |
+| `systems/payments-api` | Go system of record; records facts, decides nothing |
+| `platform/policy-decision-service` | Permits or denies each `tools/call`, keyed by caller identity and autonomy level |
+| `apps/reviewer-ui` | Where a human approves or rejects a held payment, under their own identity |
+| `platform/backstage` | Catalog and the autonomy card (not in the live demo) |
+| `deploy/` | kind, platform and observability manifests |
+| `telemetry/` | Weaver registry for the `northstar.*` attributes |
+| `talk/` | The KubeCon NA 2026 deck and the reports it cites |
 
-[`docs/demo-runbook.md`](docs/demo-runbook.md) §3 says which parts suit
-which talk.
+[`docs/architecture.md`](docs/architecture.md) walks every hop.
 
-## Quick start
+## Setup
 
-You need Docker, kind, kubectl, helm, [uv](https://docs.astral.sh/uv/) and an
-Anthropic API key. Give Docker at least 8 GB of memory; the cluster uses about 6 GB.
+You need Docker (8 GB), kind, kubectl, helm, [uv](https://docs.astral.sh/uv/)
+and an Anthropic API key (held by the gateway; the agents never see it).
 
 ```bash
-cp .env.template .env
-# edit .env and set ANTHROPIC_API_KEY. The cluster comes up without it, but
-# the first claim fails at the model call. setup-kind.sh prints SET or EMPTY
-# for it. The DASH0_* variables are optional.
-
-./scripts/setup-kind.sh
+cp .env.template .env          # set ANTHROPIC_API_KEY; DASH0_* is optional
+./scripts/setup-kind.sh        # cluster, everything, then the preflight check
+./scripts/teardown.sh          # when done
 ```
-
-`setup-kind.sh` creates the kind cluster, installs everything, and ends by
-checking that every URL below answers (`./scripts/preflight.sh` runs the same
-check again at any time). Each one is a kind host port onto a NodePort, so no
-`kubectl port-forward` is needed and a redeploy does not break them.
 
 | Surface | URL |
 |---|---|
 | Customer UI | http://localhost:8080 |
 | Reviewer UI | http://localhost:8081 |
 | Jaeger | http://localhost:16686 |
-| Prometheus | http://localhost:9090 |
 | AgentEvals | http://localhost:18001 |
+| Prometheus | http://localhost:9090 |
 | Backstage | http://localhost:7007 |
-
-File a claim for €5,800 in the customer UI. It shows "Awaiting human
-approval" with a timer. Approve it in the reviewer UI, and the customer tab
-flips to "Settled" without a reload. The approval is its own trace in Jaeger,
-linked to the claim's, and records how long the human took.
-
-**The five-minute demo** is five steps: two browser tabs (the customer UI and
-the reviewer UI) and `scripts/demo` in one terminal (it runs under the repo's
-`.venv`). The terminal can do all of it:
-
-```bash
-scripts/demo guard                # no identity: 401. Around the gateway: dropped. With SPIRE's identity: the tools
-scripts/demo claim 5800           # assisted: the agent may release nothing, so the claim WAITS for a human ...
-scripts/demo approve last         # ... a human releases it, through the same gateway
-scripts/demo autonomy autonomous  # one live value, nothing redeployed ...
-scripts/demo claim 5800           # ... inside the agent's €6,000 band: settled by the agent
-scripts/demo claim 6200           # ... outside it: still waits for a human
-scripts/demo autonomy assisted    # ... and back
-scripts/demo keystone             # the agent cannot edit what constrains it
-scripts/demo evidence             # who decided, the rule, who approved, how long the human took
-scripts/demo reset                # open approvals rejected, flag assisted, over-grant absent
-```
-
-Each command exits non-zero when the expected outcome does not happen.
-[`docs/demo-runbook.md`](docs/demo-runbook.md) §5 has what to say at each step.
-The claims call the model; `guard`, `approve`, `keystone` and `evidence` do not.
-
-`scripts/demo guard` shows the outer rings (a workload cannot reach the
-payments tool around the gateway) and `scripts/demo keystone` shows the
-keystone (an agent cannot change the autonomy flag, even when an over-broad
-grant lets RBAC through). Neither calls the model.
-
-Tear everything down with `./scripts/teardown.sh`.
 
 ## Tests
 
-`./scripts/smoke-test.sh` is the full gate. It needs a Python venv at the repo
-root, one per Python service, and a Playwright Chromium:
-
-```bash
-uv venv --python 3.13 .venv && uv pip install -r tests/requirements.txt && .venv/bin/playwright install chromium
-for svc in tools/payments-mcp agents/settlement-agent agents/claims-agent platform/policy-decision-service apps/reviewer-ui apps/customer-ui/server; do
-  # requirements-dev.txt (runtime + test packages) where a service has one
-  (cd "$svc" && uv venv --python 3.13 .venv && uv pip install -r "$([ -f requirements-dev.txt ] && echo requirements-dev.txt || echo requirements.txt)")
-done
-```
-
-The Policy Decision Service's gRPC stubs are generated, not committed, so the
-repo and its images can't disagree about the vendored `proto/ext_mcp.proto`.
-The gate generates them itself. To run a suite on its own first, generate them:
-
-```bash
-(cd platform/policy-decision-service && ./gen-stubs.sh)
-```
-
-| Command | Cluster | Anthropic tokens |
+| Command | Cluster | Tokens |
 |---|---|---|
-| `.venv/bin/python -m pytest tests/unit -q` | not needed | none |
-| `.venv/bin/python -m pytest tests/ -q` | required | none |
-| `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | required | yes — the full gate |
+| `.venv/bin/python -m pytest tests/unit -q` | no | no |
+| `.venv/bin/python -m pytest tests/ -q` | yes | no |
+| `RUN_BROWSER_TESTS=1 ./scripts/smoke-test.sh` | yes | yes: the full gate |
 
-`tests/unit` is hermetic: no cluster, no key, no network. A bare
-`pytest tests/` needs the cluster and fails with `httpx.ConnectError` without
-it, on purpose. The tests reach the UIs through the same localhost ports; for
-the three services the mesh only lets named workloads call (payments-api,
-payments-mcp, settlement-agent) they open a `kubectl port-forward` of their own. Every test that drives a model
-call or a browser sits behind `RUN_BROWSER_TESTS=1`, so a bare run spends
-nothing.
+The gate needs a root `.venv` (`tests/requirements.txt`, Playwright Chromium)
+and one per Python service; the runbook has the commands.
 
 ## Telemetry
 
-Everything is OTLP to an OpenTelemetry Collector, then Jaeger and Prometheus. Sampling is always 100%: an audit trail with gaps is not evidence.
-Setting `DASH0_AUTH_TOKEN` adds a Dash0 exporter with no application change.
+Everything is OTLP to an OpenTelemetry Collector, then Jaeger, Prometheus,
+Weaver live-check and AgentEvals; `DASH0_AUTH_TOKEN` adds Dash0. Sampling is
+always 100%: an audit trail with gaps is not evidence. The contract and the
+convention gaps are in [`docs/telemetry-contract.md`](docs/telemetry-contract.md).
 
-The system uses the telemetry the frameworks emit, including the GenAI
-semantic conventions, rather than inventing its own, and it documents the gaps
-it finds. See [`docs/telemetry-contract.md`](docs/telemetry-contract.md).
+## What it does not do
 
-## What it deliberately does not do
-
-- **Authorization covers one hop.** Identity and policy are enforced on the
-  MCP call through agentgateway. The A2A hops and the call into payments-api
-  carry no policy, so payments-api moves money for anything that can reach it.
-- **Approval is one unauthenticated click.** There is no second approver and
-  no expiry, and the reviewer id is a string the form supplies.
-- **Backstage is unauthenticated.** Anyone who can reach port 7007 can flip
-  the autonomy flag (the port listens on the laptop's 127.0.0.1 only). What limits the damage is that the one write it can make
-  is to that single object.
-- **No scaffolder, and a static catalog.** The platform API exists as a real
-  object with a real UI, but nothing here generates a new agent from it.
-
-[`docs/architecture.md`](docs/architecture.md)'s "What the system
-deliberately does not do" section has the full list.
+Policy covers one hop (the MCP call through the gateway); the model call is
+authenticated, allowlisted and attributed, but its content is not inspected;
+the gateway is one replica; approval is one unauthenticated click; Backstage is
+unauthenticated; a believable lie under the limit is paid. The full list is in [`docs/architecture.md`](docs/architecture.md).
 
 ## Documentation
 
-- [`docs/demo-runbook.md`](docs/demo-runbook.md) — the operator's script: bring-up, the demo beats, options, reset and triage
-- [`docs/architecture.md`](docs/architecture.md) — components, hops, protocols and the trace, end to end
-- [`docs/telemetry-contract.md`](docs/telemetry-contract.md) — the instrumentation contract and the convention gaps
-- [`docs/upstream-findings.md`](docs/upstream-findings.md) — filing-ready findings against the upstream projects this repo uses
-- [`talk/`](talk/) — the KubeCon + CloudNativeCon North America 2026 talk built on this demo, with the reports it cites
-- [`docs/research/`](docs/research/) — evaluations of alternatives that were not adopted (Go compile-time instrumentation, GenAI instrumentation libraries)
+- [`docs/demo-runbook.md`](docs/demo-runbook.md) — the operator's script
+- [`docs/architecture.md`](docs/architecture.md) — components, hops, protocols, the trace
+- [`docs/telemetry-contract.md`](docs/telemetry-contract.md) — the instrumentation contract
+- [`docs/upstream-findings.md`](docs/upstream-findings.md) — findings against the upstream projects
+- [`docs/research/`](docs/research/) — alternatives evaluated and not adopted

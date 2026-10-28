@@ -204,18 +204,6 @@ body {
   resize: vertical;
   line-height: 1.5;
 }
-/* a stated fact, not an editable one — same metrics as an input so the row
-   keeps its baseline, but flat and unbordered so it never reads as a control */
-.field .static {
-  font-family: var(--mono);
-  font-size: .9375rem;
-  color: var(--ink-soft);
-  background: var(--blue-050);
-  border: 1px solid transparent;
-  border-radius: 3px;
-  padding: 10px 12px;
-}
-
 .field input:hover,
 .field textarea:hover { border-color: var(--blue-300); }
 .field input:focus,
@@ -225,28 +213,6 @@ body {
   box-shadow: 0 0 0 3px var(--blue-100);
 }
 
-/* the amount reads as money, not as a quantity */
-.field.amount { position: relative; }
-.field.amount input {
-  padding-left: 30px;
-  font-size: 1.125rem;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: .01em;
-}
-.field.amount .currency {
-  position: absolute;
-  left: 12px;
-  bottom: 11px;
-  font-family: var(--mono);
-  font-size: 1rem;
-  color: var(--ink-faint);
-  pointer-events: none;
-}
-/* the spinners fight the tabular alignment and invite the stray click that
-   changes a settlement amount mid-demo */
-.field.amount input::-webkit-outer-spin-button,
-.field.amount input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.field.amount input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 
 .actions {
   display: flex;
@@ -371,7 +337,7 @@ pre:empty::before {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
-/* ── how the claim is entered, and the answer to a question ── */
+/* ── the prepared claims, and the answer to a question ── */
 .modes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .mode {
   font: inherit;
@@ -384,6 +350,8 @@ pre:empty::before {
   cursor: pointer;
 }
 .mode.is-active { background: var(--blue-050); border-color: var(--blue-600); font-weight: 600; }
+.mode.is-tricky { border-color: #e2c48a; color: var(--refused); }
+.mode.is-tricky.is-active { background: var(--refused-bg); border-color: var(--refused); }
 .mode:disabled { cursor: progress; opacity: .7; }
 .field textarea.story { min-height: 9rem; }
 .fineprint.wide { grid-column: 1 / -1; margin: 0; font-size: .8125rem; }

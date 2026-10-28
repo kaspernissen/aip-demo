@@ -28,7 +28,6 @@
 <section data-cut class="slide content" data-label="Reach has two layers">
   <p class="ring">Ring 1 &middot; Reach</p>
   <h2 class="slide-title">Reach has two layers</h2>
-  <p class="x31-opt rise">Optional &middot; after William&rsquo;s Linkerd beat &middot; what the demo runs</p>
   <div class="x31-tw x31-tw-r rise">
     <div>
       <p class="x31-tw-k">Linkerd</p>
@@ -40,25 +39,108 @@
     <div>
       <p class="x31-tw-k">NetworkPolicy</p>
       <p class="x31-tw-s">in the node, by address range</p>
-      <p class="x31-tw-l">Only the two model agents reach Anthropic&rsquo;s <span class="code">160.79.104.0/23</span></p>
+      <p class="x31-tw-l">The agents reach the gateway, and <b>no address on the internet</b>: the model is behind the gateway too</p>
       <p class="x31-tw-l">Linkerd&rsquo;s egress rule can&rsquo;t say that: namespace-wide, and it matches the SNI only</p>
     </div>
   </div>
   <p class="x31-line">This demo runs both layers. <em>Open-source Linkerd ships edge releases only.</em></p>
 </section>
 
-<!-- 25 · NEW · deep dive after the demo: the held claim's full trace from the customer UI, after Ch 5 Figure 5.5 and Ch 6 Figure 6.13 (trace a4007e49…) -->
+<!-- 06 · TAMING · the model draws the call graph: book Figure 1.4 (one prompt, three runs), lifted and cropped -->
+<section class="slide content" data-label="The model draws the call graph">
+  <h2 class="slide-title">The call graph is no longer something you drew</h2>
+  <figure class="bfig rise x10-fig" style="--fig-h:560px"><svg viewBox="14 8 802 234" role="img" aria-label="The same claim-settlement prompt produces three different runs: read the claim and pay, read the claim and ask a human, check the policy and pay; each uses different tokens.">
+<g font-family="Inter, sans-serif">
+<rect x="20" y="88" width="150" height="72" rx="8" fill="#F7F7F7" stroke="#9E9E9E"/>
+<text x="95" y="112" font-size="12" font-weight="700" text-anchor="middle" fill="#111111">Same prompt</text>
+<text x="95" y="131" font-size="10.5" text-anchor="middle" fill="#595959">&#8220;Settle this</text>
+<text x="95" y="146" font-size="10.5" text-anchor="middle" fill="#595959">car-damage claim&#8221;</text>
+<path d="M170,124 C185,124 185,45 200,45" fill="none" stroke="#9E9E9E"/>
+<path d="M170,124 L200,125" fill="none" stroke="#9E9E9E"/>
+<path d="M170,124 C185,124 185,205 200,205" fill="none" stroke="#9E9E9E"/>
+<g font-size="10.5" letter-spacing="1.3" fill="#595959">
+<text x="200" y="23">RUN 1</text><text x="200" y="103">RUN 2</text><text x="200" y="183">RUN 3</text></g>
+<line x1="200" y1="45" x2="810" y2="45" stroke="#E8E8E8"/>
+<rect x="200" y="30" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="246" y="49" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="302" y="30" width="92" height="30" rx="5" fill="#A8FBBE" stroke="#6AD186"/><text x="348" y="49" font-size="11" text-anchor="middle" fill="#18632F">get_claim</text>
+<rect x="404" y="30" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="450" y="49" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="506" y="30" width="96" height="30" rx="5" fill="#FCB6B8" stroke="#F8494D"/><text x="554" y="49" font-size="10.5" text-anchor="middle" fill="#111111">execute_payment</text>
+<rect x="612" y="30" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="658" y="49" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="714" y="30" width="92" height="30" rx="5" fill="#F7F7F7" stroke="#9E9E9E"/><text x="760" y="49" font-size="11" text-anchor="middle" fill="#212121">stop</text>
+<rect x="200" y="66" width="480" height="6" rx="3" fill="#FCB6B8"/>
+<line x1="200" y1="125" x2="810" y2="125" stroke="#E8E8E8"/>
+<rect x="200" y="110" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="246" y="129" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="302" y="110" width="92" height="30" rx="5" fill="#A8FBBE" stroke="#6AD186"/><text x="348" y="129" font-size="11" text-anchor="middle" fill="#18632F">get_claim</text>
+<rect x="404" y="110" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="450" y="129" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="506" y="110" width="96" height="30" rx="5" fill="#FEF1F1" stroke="#F8494D"/><text x="554" y="129" font-size="11" text-anchor="middle" fill="#111111">asks a human</text>
+<rect x="612" y="110" width="92" height="30" rx="5" fill="#F7F7F7" stroke="#9E9E9E"/><text x="658" y="129" font-size="11" text-anchor="middle" fill="#212121">stop</text>
+<rect x="200" y="146" width="330" height="6" rx="3" fill="#FCB6B8"/>
+<line x1="200" y1="205" x2="810" y2="205" stroke="#E8E8E8"/>
+<rect x="200" y="190" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="246" y="209" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="302" y="190" width="92" height="30" rx="5" fill="#A8FBBE" stroke="#6AD186"/><text x="348" y="209" font-size="11" text-anchor="middle" fill="#18632F">check_policy</text>
+<rect x="404" y="190" width="92" height="30" rx="5" fill="#DBD4F8" stroke="#9078F3"/><text x="450" y="209" font-size="11" text-anchor="middle" fill="#111111">model</text>
+<rect x="506" y="190" width="96" height="30" rx="5" fill="#FCB6B8" stroke="#F8494D"/><text x="554" y="209" font-size="10.5" text-anchor="middle" fill="#111111">execute_payment</text>
+<rect x="612" y="190" width="92" height="30" rx="5" fill="#F7F7F7" stroke="#9E9E9E"/><text x="658" y="209" font-size="11" text-anchor="middle" fill="#212121">stop</text>
+<rect x="200" y="226" width="400" height="6" rx="3" fill="#FCB6B8"/>
+</g></svg></figure>
+  <p class="x10-under">The model draws it at run time.</p>
+</section>
+
+<!-- 16a00 · NEW · KASPER · bridge from the demo to OpenTelemetry: the Large claim's audit trail as five recorded steps, each with the span field that holds it (CLM-INTAKE-E59B79, 2026-10-27: reviewer kasper.nissen after 4 s, PAY-000018) -->
+<section class="slide content" data-label="The audit trail is a trace">
+  <p class="ring">OTel &middot; span</p>
+  <h2 class="slide-title">The audit trail is a trace</h2>
+  <p class="x31-at-lede rise">The Large claim, start to finish. <span class="spot-2">Every step left a record.</span></p>
+  <ol class="x31-at rise"><li><i class="ph-duotone ph-chat-text"></i><b>Customer wrote</b><span class="v">what they typed</span><span class="code">gen_ai.input.messages</span></li><li><i class="ph-duotone ph-brain"></i><b>Model read</b><span class="v">EUR 8,500</span><span class="code">gen_ai.output.messages</span></li><li><i class="ph-duotone ph-scales"></i><b>Policy decided</b><span class="v">deny &middot; limit 6000</span><span class="code">northstar.policy.decision</span></li><li><i class="ph-duotone ph-user-check"></i><b>Person approved</b><span class="v">kasper.nissen, after 4 s</span><span class="code">northstar.review.decision</span></li><li><i class="ph-duotone ph-bank"></i><b>Ledger paid</b><span class="v">PAY-000018</span><span class="code">POST /payments/{id}/execute</span></li></ol>
+  <p class="x31-at-join rise"><span>one claim id &middot; linked traces &middot; one open standard</span></p>
+  <p class="x31-at-line rise">Nobody wrote an audit log. <span class="spot-2">The system recorded what it did.</span></p>
+</section>
+
+<!-- 16a0 · NEW · KASPER · OpenTelemetry from 1,000 miles, light version of Kasper's own overview diagram: instrumentation and infrastructure -> Collector (receive, process, export; traces, metrics, logs) -> backends (Jaeger, Prometheus, Dash0) -> analysis tools; the stage bar underneath -->
+<section class="slide content x31-ov" data-label="OpenTelemetry, from 1,000 miles">
+  <p class="ring">OTel &middot; five words</p>
+  <h2 class="slide-title">OpenTelemetry: a 1,000-mile view</h2>
+  <div class="rise"><svg class="x31-otel" viewBox="0 0 1640 585" role="img" aria-label="Instrumentation and infrastructure send traces, metrics and logs to the OpenTelemetry Collector, which receives, processes and exports them to telemetry backends; analysis tools read the backends."><defs><marker id="m-tr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk tr" d="M0 0L10 5L0 10z"/></marker><marker id="m-me" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk me" d="M0 0L10 5L0 10z"/></marker><marker id="m-lo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk lo" d="M0 0L10 5L0 10z"/></marker><marker id="m-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk ink" d="M0 0L10 5L0 10z"/></marker></defs><rect class="grp" x="0" y="10" width="300" height="250" rx="16"/><text class="grp-t" x="150" y="52">Instrumentation</text><rect class="it" x="20" y="72" width="260" height="50" rx="10"/><text class="it-t" x="150.0" y="105.0">OTel API &amp; SDK</text><rect class="it" x="20" y="135" width="260" height="50" rx="10"/><text class="it-t" x="150.0" y="168.0">auto-instrumentation</text><rect class="it" x="20" y="198" width="260" height="50" rx="10"/><text class="it-t" x="150.0" y="231.0">&hellip;</text><rect class="grp" x="0" y="310" width="300" height="190" rx="16"/><text class="grp-t" x="150" y="352">Infrastructure</text><rect class="it" x="20" y="372" width="260" height="50" rx="10"/><text class="it-t" x="150.0" y="405.0">Kubernetes &middot; Linkerd</text><rect class="it" x="20" y="435" width="260" height="50" rx="10"/><text class="it-t" x="150.0" y="468.0">&hellip;</text><rect class="grp col" x="470" y="120" width="520" height="290" rx="16"/><text class="grp-t" x="730" y="162">The OpenTelemetry Collector</text><rect class="st" x="495" y="190" width="130" height="190" rx="14"/><text class="st-t" x="560" y="293">Receive</text><rect class="st" x="665" y="190" width="130" height="190" rx="14"/><text class="st-t" x="730" y="293">Process</text><rect class="st" x="835" y="190" width="130" height="190" rx="14"/><text class="st-t" x="900" y="293">Export</text><rect class="band tr" x="625" y="245" width="40" height="22"/><rect class="band tr" x="795" y="245" width="40" height="22"/><rect class="band me" x="625" y="281" width="40" height="22"/><rect class="band me" x="795" y="281" width="40" height="22"/><rect class="band lo" x="625" y="317" width="40" height="22"/><rect class="band lo" x="795" y="317" width="40" height="22"/><line class="ar tr" x1="280" y1="97" x2="466" y2="200" marker-end="url(#m-tr)"/><line class="ar me" x1="280" y1="160" x2="466" y2="235" marker-end="url(#m-me)"/><line class="ar lo" x1="280" y1="223" x2="466" y2="270" marker-end="url(#m-lo)"/><line class="ar tr" x1="280" y1="397" x2="466" y2="330" marker-end="url(#m-tr)"/><line class="ar lo" x1="280" y1="460" x2="466" y2="370" marker-end="url(#m-lo)"/><line class="div" x1="1075" y1="0" x2="1075" y2="505"/><rect class="grp" x="1110" y="40" width="320" height="400" rx="16"/><text class="grp-t" x="1270" y="82">Telemetry backends</text><rect class="it" x="1130" y="104" width="280" height="50" rx="10"/><text class="it-t" x="1270.0" y="137.0">Trace database &middot; Jaeger</text><rect class="it" x="1130" y="168" width="280" height="50" rx="10"/><text class="it-t" x="1270.0" y="201.0">Time series &middot; Prometheus</text><rect class="it" x="1130" y="232" width="280" height="50" rx="10"/><text class="it-t" x="1270.0" y="265.0">All three &middot; Dash0</text><rect class="it" x="1130" y="296" width="280" height="50" rx="10"/><text class="it-t" x="1270.0" y="329.0">&hellip;</text><line class="ar tr" x1="990" y1="240" x2="1126" y2="129" marker-end="url(#m-tr)"/><line class="ar me" x1="990" y1="285" x2="1126" y2="193" marker-end="url(#m-me)"/><line class="ar lo" x1="990" y1="330" x2="1126" y2="257" marker-end="url(#m-lo)"/><rect class="grp" x="1470" y="200" width="170" height="100" rx="16"/><text class="grp-t" x="1555" y="243">Analysis</text><text class="grp-t" x="1555" y="277">tools</text><line class="ar ink" x1="1470" y1="250" x2="1436" y2="250" marker-end="url(#m-ink)"/><g class="lg"><rect class="band tr" x="560" y="428" width="28" height="14"/><text x="596" y="442">traces</text><rect class="band me" x="710" y="428" width="28" height="14"/><text x="746" y="442">metrics</text><rect class="band lo" x="860" y="428" width="28" height="14"/><text x="896" y="442">logs</text></g><rect class="sg" x="0" y="530" width="300" height="50" rx="8"/><text class="sg-t" x="150.0" y="563">Generate and emit</text><rect class="sg" x="310" y="530" width="150" height="50" rx="8"/><text class="sg-t" x="385.0" y="563">transmit</text><rect class="sg" x="470" y="530" width="520" height="50" rx="8"/><text class="sg-t" x="730.0" y="563">Collect, convert, process, route, export</text><rect class="sg" x="1000" y="530" width="100" height="50" rx="8"/><text class="sg-t" x="1050.0" y="563">transmit</text><rect class="sg" x="1110" y="530" width="530" height="50" rx="8"/><text class="sg-t" x="1375.0" y="563">Store and analyze</text></svg></div>
+</section>
+
+<!-- 06a · MCP and A2A as two business cards, side by side: what each is for, before the diagram of how they fit -->
+<!-- (2026-10-20: the static MCP/A2A cards became this looping SMIL animation, generated by a script; the cards live on, turned over, on the next slide) -->
+<section class="slide content" data-label="Meet MCP and A2A">
+  <h2 class="slide-title">Two protocols, two jobs</h2>
+  <figure class="x10-proto rise"><svg class="x10-pa" viewBox="0 -24 1632 584" role="img" aria-label="MCP: an agent asks a tool server for its tools, gets the list, calls execute_payment with an amount, gets a result. A2A: a claims agent reads the settlement agent's card, sends it a task; the task goes working, input-required, completed, and a push notification comes back."><g font-family="var(--font-body)"><text class="hd" x="0" y="34">MCP</text><text class="sb" x="0" y="70">reaches down: agent &#8594; tool</text><rect class="nd m" x="0" y="110" width="300" height="110" rx="20"/><text class="nt" x="150" y="175" text-anchor="middle">agent</text><rect class="nd m" x="0" y="430" width="300" height="110" rx="20"/><text class="nt" x="150" y="485" text-anchor="middle">tool server</text><text class="ns" x="150" y="516" text-anchor="middle">payments</text><path class="ln m" d="M120 220 V430"/><path class="ln m" d="M180 430 V220"/><line class="sep" x1="800" y1="20" x2="800" y2="540"/><text class="hd" x="840" y="34">A2A</text><text class="sb" x="840" y="70">reaches across: agent &#8596; agent</text><rect class="nd a" x="840" y="300" width="260" height="110" rx="20"/><text class="nt" x="970" y="365" text-anchor="middle">claims agent</text><rect class="nd a" x="1372" y="300" width="260" height="110" rx="20"/><text class="nt" x="1502" y="365" text-anchor="middle">settlement agent</text><g class="card"><rect x="1422" y="130" width="160" height="104" rx="12"/><text class="ct" x="1502" y="168" text-anchor="middle">agent card</text><text class="cs" x="1502" y="198" text-anchor="middle">name &#183; skills</text><text class="cs" x="1502" y="222" text-anchor="middle">where to reach it</text></g><path class="ln a dash" d="M1502 234 V300"/><path class="ln a" d="M1100 338 H1372"/><path class="ln a" d="M1372 376 H1100"/><g class="lb"><text x="208" y="282">&#8595; tools/list</text><text x="208" y="318">&#8595; tools/call execute_payment</text><text x="208" y="372">&#8593; the tools &#183; the result</text><text x="1490" y="274" text-anchor="end">1 &#183; read the card</text><text x="1236" y="326" text-anchor="middle">2 &#183; task &#8594;</text><text x="1236" y="448" text-anchor="middle">&#8592; working &#183; input-required &#183; completed</text></g></g></svg></figure>
+  <p class="x10-cards-foot rise">Both open, both in the Agentic AI Foundation. <span class="spot-2">Neither one decides what an agent may do.</span></p>
+</section>
+
+<!-- NEW · propagation: how the trace id crosses each hop (docs/telemetry-contract.md: customer-ui row, Gap 1 a2a-sdk extraction, SEP-414 params._meta, guardrail hook traceparent, reviewer-ui span links, Linkerd proxy spans) -->
+<section class="slide content" data-label="One trace id, every hop">
+  <p class="ring">OTel &middot; propagation</p>
+  <h2 class="slide-title">One trace id, every hop</h2>
+  <div class="x95-pr rise">
+    <p class="h">The hop</p><p class="h">Over</p><p class="h">The id travels in</p>
+    <p class="w"><i class="ph-duotone ph-browser"></i>Browser &rarr; claims agent</p><p class="o">HTTP</p><p class="c"><span class="code">traceparent</span> header, the claim id in <span class="code">baggage</span></p>
+    <p class="w"><i class="ph-duotone ph-robot"></i>Claims agent &rarr; settlement agent</p><p class="o">A2A</p><p class="c"><span class="code">traceparent</span> header; we read it ourselves, the SDK doesn&rsquo;t</p>
+    <p class="w"><i class="ph-duotone ph-wrench"></i>Settlement agent &rarr; gateway</p><p class="o">MCP</p><p class="c"><span class="code">params._meta</span> (SEP-414), and the header</p>
+    <p class="w"><i class="ph-duotone ph-scales"></i>Gateway &rarr; policy service</p><p class="o">gRPC hook</p><p class="c">the gateway forwards <span class="code">traceparent</span></p>
+    <p class="w"><i class="ph-duotone ph-bank"></i>Gateway &rarr; tool &rarr; ledger</p><p class="o">MCP &middot; HTTP</p><p class="c"><span class="code">_meta</span>, then the header</p>
+    <p class="w hu"><i class="ph-duotone ph-user-check"></i>A person approves</p><p class="o hu">human time</p><p class="c hu">a new trace, with a <b>span link</b> back</p>
+  </div>
+  <p class="x95-mesh rise">And Linkerd adds its proxy spans on every meshed hop, into the same trace.</p>
+  <p class="x95-line rise">Drop the id at one hop, <span class="spot-2">and the story falls apart.</span></p>
+</section>
+
+<!-- 25 · NEW · deep dive after the demo: the Large claim's full trace from the customer UI, measured 2026-10-27 (trace 703c00f1…, CLM-INTAKE-0E6260, autonomous, €8,500 held at €6,000: 304 spans, 148 from linkerd-proxy); proxy spans and A2A plumbing spans not shown -->
 <section class="slide content" data-label="One trace, and the absence">
-  <p class="ring">Ring 2 &middot; Capability</p>
+  <p class="ring">OTel &middot; trace</p>
   <h2 class="slide-title">One trace, and the absence that proves it</h2>
-  <div class="stree rise" style="margin-top:calc(1.5 * var(--baseline))">
-    <div class="r"><span class="svc sys">customer-ui</span><span class="op">northstar.claim.submit</span><span class="v">root &middot; <span class="code c">northstar.claim.id=CLM-1842</span></span></div>
+  <div class="stree rise" style="margin-top:calc(0.5 * var(--baseline))">
+    <div class="r"><span class="svc sys">customer-ui</span><span class="op">northstar.claim.submit</span><span class="v">root &middot; <span class="code c">northstar.claim.id=CLM-INTAKE-0E6260</span></span></div>
+    <div class="r i1"><span class="svc agent">claims-agent</span><span class="op">chat claude-sonnet-5</span><span class="v"><span class="code c">gen_ai.input.messages</span> <span class="code c">gen_ai.output.messages</span></span></div>
     <div class="r i1"><span class="svc agent">settlement-agent</span><span class="op">invoke_agent settlement_agent</span></div>
     <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">execute_tool propose_payment</span><span class="flag ok">permit</span></div>
     <div class="r i2"><span class="svc agent">settlement-agent</span><span class="op">execute_tool execute_payment</span><span class="v">ERROR</span></div>
     <div class="r i3"><span class="svc gw">agentgateway</span><span class="op">tools/call</span><span class="v"><span class="code m">jwt.sub=…/sa/settlement-agent</span> <span class="code m">http.response.status_code=200</span></span></div>
     <div class="r i4"><span class="svc gw">agentgateway</span><span class="op">Guardrail</span><span class="v"><span class="code">grpc.status=0</span></span></div>
-    <div class="r i4 hl"><span class="svc pds">policy-decision-service</span><span class="op">northstar.policy.decision</span><span class="flag deny">deny</span><span class="v">&euro;5,800 &gt; &euro;0</span></div>
+    <div class="r i4 hl"><span class="svc pds">policy-decision-service</span><span class="op">northstar.policy.decision</span><span class="flag deny">deny</span><span class="v">&euro;8,500 &gt; &euro;6,000</span></div>
     <div class="r i4 absent"><span class="svc">agentgateway</span><span class="op">tools/call payments-mcp_execute_payment</span><span class="x31-never">never attempted</span></div>
     <div class="r i5 absent"><span class="svc">payments-mcp</span><span class="op">tools/call execute_payment</span></div>
     <div class="r i5 absent"><span class="svc">payments-api</span><span class="op">POST /payments/{paymentId}/execute</span></div>
@@ -66,6 +148,62 @@
     <div class="r i1"><span class="svc agent">settlement-agent</span><span class="op">MCP send tools/call refuse_payment</span><span class="flag ok">permit</span></div>
   </div>
   <p class="x31-tread"><b>Read it like this:</b> indented means called by the line above · struck through means it never happened · proxy spans not shown</p>
+</section>
+
+<!-- 33 · NEW · maker and checker: trace A (the agent's work, ending at the hand-off), trace B (a person released it through the gateway, the resume, the push), the span link from B's resume back to A, and how long humans take (northstar_approval_wait_duration_seconds, docs/telemetry-contract.md; runbook §5 Beat 4) -->
+<section class="slide content" data-label="Maker and checker">
+  <p class="ring">OTel &middot; link</p>
+  <h2 class="slide-title">The agent makes it. A human checks it.</h2>
+  <figure class="x31-mk rise">
+    <svg viewBox="0 0 1632 500" role="img" aria-label="Two trace waterfalls. Trace A, the maker: claim, settlement agent, execute_payment, policy decision deny, ending at the hand-off. A gap of human time where nothing polls. Trace B, the checker: review decision, execute_payment, policy decision permit under rule human-approved.execute, a2a resume. A dashed span link arcs from B's resume back to A.">
+      <!-- lane labels -->
+      <text class="mk-k" x="0" y="26">TRACE A &middot; THE MAKER</text>
+      <text class="mk-w" x="0" y="62">the agent</text>
+      <text class="mk-k" x="1632" y="26" text-anchor="end">TRACE B &middot; THE CHECKER</text>
+      <text class="mk-w" x="1632" y="62" text-anchor="end">a person</text>
+      <!-- trace A -->
+      <rect class="mk-s" x="0" y="126" width="560" height="44" rx="8"/><text class="mk-t" x="16" y="156">claim filed</text>
+      <rect class="mk-s" x="30" y="180" width="520" height="44" rx="8"/><text class="mk-t" x="46" y="210">settlement agent</text>
+      <rect class="mk-s" x="200" y="234" width="340" height="44" rx="8"/><text class="mk-t mono" x="216" y="264">execute_payment</text>
+      <rect class="mk-s deny" x="230" y="288" width="300" height="44" rx="8"/><text class="mk-t" x="246" y="318">policy decision</text><text class="mk-tag deny" x="520" y="318" text-anchor="end">deny</text>
+      <line class="mk-end" x1="572" y1="120" x2="572" y2="340"/>
+      <text class="mk-e" x="584" y="320">hand-off</text>
+      <!-- the human gap -->
+      <text class="mk-gap" x="822" y="200" text-anchor="middle">human time</text>
+      <text class="mk-gs" x="822" y="238" text-anchor="middle">minutes, hours. Nothing polls.</text>
+      <!-- trace B -->
+      <rect class="mk-s rev" x="1072" y="126" width="560" height="44" rx="8"/><text class="mk-t" x="1088" y="156">human review</text><text class="mk-tag" x="1616" y="156" text-anchor="end">approve</text>
+      <rect class="mk-s" x="1102" y="180" width="330" height="44" rx="8"/><text class="mk-t mono" x="1118" y="210">execute_payment</text>
+      <rect class="mk-s ok" x="1132" y="234" width="300" height="44" rx="8"/><text class="mk-t on" x="1148" y="264">policy decision</text><text class="mk-tag on" x="1422" y="264" text-anchor="end">permit</text>
+      <rect class="mk-s" x="1442" y="288" width="190" height="44" rx="8"/><text class="mk-t mono" x="1456" y="318">a2a.resume</text>
+      <text class="mk-r" x="1632" y="92" text-anchor="end">reviewer-ui &middot; rule human-approved.execute</text>
+      <!-- the span link -->
+      <path class="mk-link" d="M1442,310 C1250,420 760,420 540,336"/>
+      <path class="mk-ah" d="M540,336 l2,20 l14,-11 z"/>
+      <text class="mk-l" x="822" y="445" text-anchor="middle">span link: B points back to A</text>
+    </svg>
+  </figure>
+  <p class="x31-line">A link, not a parent. <em>Work separated by human time is two traces and a link.</em></p>
+  <p class="x31-mk-q rise"><i class="ph-duotone ph-timer"></i>How long do humans take? <span class="code">northstar_approval_wait_duration_seconds</span>, p95 by autonomy level.</p>
+</section>
+
+<!-- 16a · NEW · OpenTelemetry, and Weaver: the one standard every service speaks (SDK, Collector, semantic conventions), and the registry that keeps our own names honest: telemetry/registry (northstar.* on semconv v1.44.0), scripts/check-registry.sh (weaver v0.28.0 registry check + generated docs), deploy/observability/weaver-live-check.yaml (live-check on a copy of every signal, fail_on = violation) -->
+<section class="slide content" data-label="OpenTelemetry and Weaver">
+  <p class="ring">OTel &middot; names</p>
+  <h2 class="slide-title">Our own names, as a contract</h2>
+  <p class="x31-wv-lede rise">Semantic conventions name <span class="code">http.*</span> and <span class="code">gen_ai.*</span>. <span class="spot-2">Weaver checks the names we add.</span></p>
+  <div class="x31-wv rise">
+    <pre class="x20-yaml"><span class="k">- id:</span> northstar.policy.decision
+  <span class="k">type:</span> { members: [permit, deny] }
+  <span class="k">brief:</span> What the decision service decided.</pre>
+    <ol class="x31-wv-steps">
+      <li><i class="ph-duotone ph-pencil-simple-line"></i><b>Define</b><span>in YAML</span></li>
+      <li><i class="ph-duotone ph-check-circle"></i><b>Check</b><span>in CI</span></li>
+      <li><i class="ph-duotone ph-book-open-text"></i><b>Generate</b><span>the docs</span></li>
+      <li><i class="ph-duotone ph-pulse"></i><b>Live-check</b><span>what really runs</span></li>
+    </ol>
+  </div>
+  <p class="x20-ow-line rise">Telemetry names are an API. <span class="spot-2">Weaver checks the API against what really runs.</span></p>
 </section>
 
 <!-- 27 · NEW · the gateway's spans per governed call: Ch 6 Figure 6.7 tree with the measured key counts, plus Figure 6.15's four added keys -->
@@ -180,7 +318,7 @@ request.method != &quot;POST&quot;
   <p class="x31-line">The gateway holds the hard ceiling. <em>The service makes the decision.</em></p>
 </section>
 
-<!-- 30g · NEW · what agentgateway v1.6.0 ships for model traffic: read from crates/agentgateway/src/llm/policy/ at the v1.6.0 tag (mod.rs RequestGuardKind, pii/, webhook.rs, moderation.rs, bedrock_guardrails.rs, azure_content_safety.rs, google_model_armor.rs). Northstar's model calls do not go through the gateway, so none of it is in the demo -->
+<!-- 30g · NEW · what agentgateway v1.6.0 ships for model traffic: read from crates/agentgateway/src/llm/policy/ at the v1.6.0 tag (mod.rs RequestGuardKind, pii/, webhook.rs, moderation.rs, bedrock_guardrails.rs, azure_content_safety.rs, google_model_armor.rs). Northstar's model calls go through the gateway (the llm listener, since 2026-10-28) with none of these guards on -->
 <section data-cut class="slide content" data-label="Guardrails for model traffic">
   <h2 class="slide-title">Guardrails for model traffic</h2>
   <p class="x31-opt rise">What agentgateway v1.6.0 ships &middot; <span class="code">crates/agentgateway/src/llm/policy/</span></p>
@@ -191,7 +329,7 @@ request.method != &quot;POST&quot;
     <li><b>A webhook</b> lets your own service judge the prompt and the answer</li>
     <li><b>Connectors</b> call Amazon Bedrock Guardrails, Azure Content Safety or Google Model Armor</li>
   </ul>
-  <p class="x31-line">Northstar&rsquo;s model calls do not go through the gateway today. <em>None of these are in the demo.</em></p>
+  <p class="x31-line">Northstar&rsquo;s model calls go through the gateway. <em>None of these guards are switched on.</em></p>
 </section>
 
 <!-- 30a · BOUNDED · hide or refuse, as two layers: HIDE, a static CEL allowlist (William's OSFF demo: mcp.tool.name in [...], the tool never in tools/list, HTTP 400 Unknown tool) beside REFUSE AND RECORD, Northstar's decision service (all four tools listed to settlement-agent's SVID, measured 2026-10-12; the €6,200 call depends on its arguments). Credits William; not a disagreement (bounded-ai/README.md) -->
@@ -281,46 +419,9 @@ request.method != &quot;POST&quot;
   <p class="x31-q">How does an approval, minutes later, join its refusal?</p>
 </section>
 
-<!-- 33 · NEW · maker and checker: trace A (the agent's work, ending at the hand-off), trace B (a person released it through the gateway, the resume, the push), the span link from B's resume back to A, and how long humans take (northstar_approval_wait_duration_seconds, docs/telemetry-contract.md; runbook §5 Beat 4) -->
-<section class="slide content" data-label="Maker and checker">
-  <h2 class="slide-title">The agent makes it. A human checks it.</h2>
-  <figure class="x31-mk rise">
-    <svg viewBox="0 0 1632 500" role="img" aria-label="Two trace waterfalls. Trace A, the maker: claim, settlement agent, execute_payment, policy decision deny, ending at the hand-off. A gap of human time where nothing polls. Trace B, the checker: review decision, execute_payment, policy decision permit under rule human-approved.execute, a2a resume. A dashed span link arcs from B's resume back to A.">
-      <!-- lane labels -->
-      <text class="mk-k" x="0" y="26">TRACE A &middot; THE MAKER</text>
-      <text class="mk-w" x="0" y="62">the agent</text>
-      <text class="mk-k" x="1632" y="26" text-anchor="end">TRACE B &middot; THE CHECKER</text>
-      <text class="mk-w" x="1632" y="62" text-anchor="end">a person</text>
-      <!-- trace A -->
-      <rect class="mk-s" x="0" y="126" width="560" height="44" rx="8"/><text class="mk-t" x="16" y="156">claim filed</text>
-      <rect class="mk-s" x="30" y="180" width="520" height="44" rx="8"/><text class="mk-t" x="46" y="210">settlement agent</text>
-      <rect class="mk-s" x="200" y="234" width="340" height="44" rx="8"/><text class="mk-t mono" x="216" y="264">execute_payment</text>
-      <rect class="mk-s deny" x="230" y="288" width="300" height="44" rx="8"/><text class="mk-t" x="246" y="318">policy decision</text><text class="mk-tag deny" x="520" y="318" text-anchor="end">deny</text>
-      <line class="mk-end" x1="572" y1="120" x2="572" y2="340"/>
-      <text class="mk-e" x="584" y="320">hand-off</text>
-      <!-- the human gap -->
-      <text class="mk-gap" x="822" y="200" text-anchor="middle">human time</text>
-      <text class="mk-gs" x="822" y="238" text-anchor="middle">minutes, hours. Nothing polls.</text>
-      <!-- trace B -->
-      <rect class="mk-s rev" x="1072" y="126" width="560" height="44" rx="8"/><text class="mk-t" x="1088" y="156">human review</text><text class="mk-tag" x="1616" y="156" text-anchor="end">approve</text>
-      <rect class="mk-s" x="1102" y="180" width="330" height="44" rx="8"/><text class="mk-t mono" x="1118" y="210">execute_payment</text>
-      <rect class="mk-s ok" x="1132" y="234" width="300" height="44" rx="8"/><text class="mk-t on" x="1148" y="264">policy decision</text><text class="mk-tag on" x="1422" y="264" text-anchor="end">permit</text>
-      <rect class="mk-s" x="1442" y="288" width="190" height="44" rx="8"/><text class="mk-t mono" x="1456" y="318">a2a.resume</text>
-      <text class="mk-r" x="1632" y="92" text-anchor="end">reviewer-ui &middot; rule human-approved.execute</text>
-      <!-- the span link -->
-      <path class="mk-link" d="M1442,310 C1250,420 760,420 540,336"/>
-      <path class="mk-ah" d="M540,336 l2,20 l14,-11 z"/>
-      <text class="mk-l" x="822" y="445" text-anchor="middle">span link: B points back to A</text>
-    </svg>
-  </figure>
-  <p class="x31-line">A link, not a parent. <em>Work separated by human time is two traces and a link.</em></p>
-  <p class="x31-mk-q rise"><i class="ph-duotone ph-timer"></i>How long do humans take? <span class="code">northstar_approval_wait_duration_seconds</span>, p95 by autonomy level.</p>
-</section>
-
 <!-- 36 · NEW · optional: the same flip, with a UI: backstage-autonomy-assisted/flipped + customer-ui-autonomous-executed + jaeger-autonomy-change (runbook §5 Beat 7, the longer version) -->
 <section data-cut class="slide content" data-label="The same flip, with a UI">
   <h2 class="slide-title">The same flip, with a UI</h2>
-  <p class="x31-opt rise">Optional &middot; Backstage writes the same value step 3 wrote, and records the change</p>
   <div class="x31-fb rise" style="grid-template-columns:780px 780px;gap:14px 72px;margin-top:calc(0.75 * var(--baseline))">
     <div>
       <figure class="shot x31-crop" style="width:780px;height:278px">

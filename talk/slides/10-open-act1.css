@@ -295,3 +295,59 @@ div.x10-w.cmyk-num { margin: -0.12em -0.12em -0.12em calc(-0.12em - 0.035em); }
 .x10-pa .st.w rect { fill: var(--color-accent-100); } .x10-pa .st.w text { fill: var(--color-accent-800); }
 .x10-pa .st.i rect { fill: color-mix(in srgb, var(--ocean-amber) 25%, #fff); } .x10-pa .st.i text { fill: var(--color-text); }
 .x10-pa .st.c rect { fill: color-mix(in srgb, var(--ocean-mint) 25%, #fff); } .x10-pa .st.c text { fill: var(--color-text); }
+
+/* Authority accumulates (William, KCD Sofia slide 3) */
+.x10-ac { display: grid; grid-template-columns: 1.1fr 1fr; gap: 90px; align-items: center; margin-top: calc(0.8 * var(--baseline)); }
+.x10-ac-l { margin: 0; display: grid; grid-template-columns: 1fr; row-gap: 6px; }
+.x10-ac-l dt { margin-top: 30px; font-family: var(--font-heading); font-weight: 700; font-size: 36px; line-height: 1.2; }
+.x10-ac-l dt:first-child { margin-top: 0; }
+.x10-ac-l dd { margin: 0; font-size: var(--type-small); color: var(--color-accent-2-700); }
+.x10-ac-l dd::before { content: "\2192\00a0"; }
+.x10-ac-r { position: relative; height: 440px; border-radius: var(--radius-md);
+  background: repeating-linear-gradient(135deg, var(--color-accent-2-100) 0 14px, transparent 14px 28px);
+  box-shadow: inset 0 0 0 3px var(--color-accent-2); }
+.x10-ac-all { position: absolute; left: 32px; top: 24px; margin: 0; font-size: var(--type-kicker); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-accent-2-800); }
+.x10-ac-dec { position: absolute; left: 32px; bottom: 32px; width: 42%; height: 34%; display: flex; align-items: center; justify-content: center; text-align: center;
+  padding: 12px; border-radius: var(--radius-md); background: var(--color-bg); box-shadow: inset 0 0 0 3px var(--color-text); font-size: var(--type-kicker); font-weight: 700; }
+.x10-ac-never { position: absolute; right: 36px; top: 46%; margin: 0; font-family: var(--font-heading); font-style: italic; font-size: 44px; color: var(--color-accent-2-800); }
+.x10-ac-line { margin: calc(0.9 * var(--baseline)) 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 44px; line-height: 1.2; max-width: 40ch; }
+
+/* Review boards aim at the wrong layer (William, KCD Sofia slide 4) */
+.x10-rb { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; margin-top: calc(1 * var(--baseline)); }
+.x10-rb > div { padding: 34px 40px 38px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+.x10-rb > div.dr { background: var(--color-accent-2-100); box-shadow: inset 0 0 0 2px var(--color-accent-2); }
+.x10-rb-k { margin: 0; font-size: var(--type-kicker); letter-spacing: 0.04em; text-transform: uppercase; color: color-mix(in srgb, var(--color-text) 60%, transparent); }
+.x10-rb-v { margin: 14px 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 52px; line-height: 1.15; }
+.x10-rb-line { margin: calc(1.2 * var(--baseline)) 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 60px; line-height: 1.15; letter-spacing: -0.01em; max-width: 34ch; }
+.x10-rb-s { margin: 24px 0 0; font-size: var(--type-small); font-style: italic; color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+
+/* The deterministic spine (William, KCD Sofia slide 14), as a claims payout */
+.x10-sp-lede { margin: calc(0.4 * var(--baseline)) 0 0; font-size: var(--type-body); }
+.x10-sp { list-style: none; margin: calc(0.8 * var(--baseline)) 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 34px; }
+.x10-sp li { position: relative; padding: 26px 30px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--color-text) 6%, transparent); display: flex; flex-direction: column; gap: 6px; }
+.x10-sp li + li::before { content: "\2192"; position: absolute; left: -30px; top: 50%; transform: translateY(-50%); font-size: 30px; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x10-sp li.ag { background: var(--color-accent-100); box-shadow: inset 0 0 0 2px var(--color-accent); }
+.x10-sp b { font-family: var(--font-heading); font-size: 38px; line-height: 1.1; }
+.x10-sp span { font-size: var(--type-kicker); color: color-mix(in srgb, var(--color-text) 65%, transparent); }
+.x10-sp-two { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; margin-top: calc(0.8 * var(--baseline)); }
+.x10-sp-two p, .x10-sp-two ul { margin: 0; font-size: var(--type-small); line-height: 1.35; }
+.x10-sp-two ul { padding-left: 1.1em; }
+.x10-sp-k { font-size: var(--type-kicker) !important; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-accent-800); margin-bottom: 10px !important; }
+.x10-sp-two .no .x10-sp-k { color: var(--color-accent-2-700); }
+.x10-sp-out { margin-top: 12px !important; font-weight: 700; }
+.x10-sp-line { margin: calc(0.8 * var(--baseline)) 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 44px; line-height: 1.2; max-width: 44ch; }
+/* Decide/Trace/Prove as the hinge: what is done, what comes next */
+.x10-st { display: inline-block; margin-left: 18px; padding: 4px 14px; border-radius: 999px; font-family: var(--font-mono); font-style: normal; font-size: 22px; letter-spacing: 0.06em; text-transform: uppercase; vertical-align: middle; background: var(--color-accent-2-600); color: #fff; }
+.x10-st.done { background: transparent; color: color-mix(in srgb, currentColor 60%, transparent); border: 2px solid color-mix(in srgb, currentColor 35%, transparent); }
+/* section dividers: the current word lit, the others dimmed */
+.x10-words .dim { opacity: 0.26; }
+/* simplified spine: bigger steps, one output line */
+.x10-sp { margin-top: calc(1.1 * var(--baseline)); }
+.x10-sp li { padding: 40px 34px; min-height: 190px; justify-content: center; }
+.x10-sp b { font-size: 46px; }
+.x10-sp span { font-size: 26px; }
+.x10-sp-out1 { margin: calc(0.7 * var(--baseline)) 0 0; font-size: var(--type-body); color: color-mix(in srgb, var(--color-text) 75%, transparent); }
+.x10-pa .lb text { font-family: var(--font-mono); font-size: 22px; fill: var(--color-text); }
+.x10-pa .ot text { font-family: var(--font-mono); font-size: 22px; fill: var(--color-text); }
+.x10-pa .ot .k { font-weight: 700; fill: var(--color-accent-2-700); }
+.x10-pa .ot .s { font-size: 20px; fill: var(--color-neutral-600); }

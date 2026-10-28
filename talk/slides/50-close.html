@@ -1,30 +1,49 @@
 <!-- 48 · NEW · Honest limitations: Ch 14's list (Backstage line kept exact in the note) plus the two abstract blocks the demo does not have (Ch 11.3; dashed like the blueprint's missing layers, Fig 11.1) -->
 <section data-cut class="slide content" data-label="What this does not do">
   <h2 class="slide-title">What this does <em>not</em> do</h2>
-  <div class="x50-lim rise">
+  <div class="x50-lim one rise">
     <div>
       <p class="x50-k">Northstar, as built</p>
       <dl class="x50-gaps">
         <dt>Identity</dt><dd>checked on one hop: <span class="code m">tools/call</span></dd>
         <dt>Tool and ledger</dt><dd>trust the network</dd>
         <dt>Reviewer</dt><dd>unauthenticated &middot; one click, once</dd>
-        <dt>Backstage</dt><dd>anyone on :7007 can mint a credential · it flips the contract, nothing else</dd>
+        <dt>A believable lie</dt><dd>under &euro;6,000 is paid: the model reads the claim as written</dd>
         <dt>Claim id</dt><dd>stops at the MCP boundary</dd>
-        <dt>Model calls</dt><dd>bypass the gateway</dd>
+        <dt>Model calls</dt><dd>checked at the gateway, not read</dd>
         <dt>GenAI metrics</dt><dd>1 of 12 arrive</dd>
       </dl>
     </div>
-    <div>
-      <p class="x50-k">Not in the demo at all</p>
-      <div class="x50-ghost">
-        <i class="ph-duotone ph-stack"></i>
-        <div><b>A context layer</b><span>needs retrieval and memory spans</span></div>
-      </div>
-      <div class="x50-ghost">
-        <i class="ph-duotone ph-users-three"></i>
-        <div><b>Multi-agent over shared context</b><span>needs span links, one identity per agent</span></div>
-      </div>
-    </div>
+  </div>
+</section>
+
+<!-- recap: the three words, each with what the talk showed (William) -->
+<section class="slide content x10-thesis x-dark" data-label="Decide. Trace. Prove. (recap)">
+  <div class="x10-words rise">
+    <p class="x10-w">Decide<span class="spot-2">.</span></p><p class="x10-g">the rings held: identity, reach, limits, keystone</p>
+    <div class="x10-w cmyk-num"><span class="paper">Trace<span class="spot-2">.</span></span><span class="plate plate-c" aria-hidden="true">Trace.</span><span class="plate plate-m" aria-hidden="true">Trace.</span><span class="plate plate-y" aria-hidden="true">Trace.</span></div><p class="x10-g">every claim, one trace; every decision, a span</p>
+    <p class="x10-w">Prove<span class="spot-2">.</span></p><p class="x10-g">AgentEvals graded it, from the trace</p>
+  </div>
+</section>
+
+<!-- 50a · NEW · WILLIAM · autonomy is a platform setting: the demo's one moved value (assisted → autonomous, €0 → €6,000) beside everything that held still; the human stays, the platform says where. Callback to "Autonomy is earned" -->
+<section class="slide content" data-label="Autonomy is a platform setting">
+  <h2 class="slide-title">Autonomy is a platform setting</h2>
+  <p class="x50-ad-lede rise">Not in the prompt, not in the agent. <span class="spot-2">One value in the platform says where the human stands.</span></p>
+  <div class="x50-ad rise">
+    <div class="z ag"><i class="ph-duotone ph-robot"></i><b>The agent pays</b><span>under the line</span></div>
+    <div class="z hu"><i class="ph-duotone ph-user-check"></i><b>A person decides</b><span>above it</span></div>
+    <div class="z no"><i class="ph-duotone ph-prohibit"></i><b>Nobody</b><span>past the ceiling</span></div>
+    <p class="t t0">&euro;0</p><p class="t t1">&euro;6,000 <em>one flag moves this line</em></p><p class="t t2">&euro;50,000</p>
+  </div>
+  <p class="x50-ap-line rise">The human is not removed. <span class="spot-2">The platform decides where the human stands.</span></p>
+</section>
+
+<!-- 50b · WILLIAM · the closing line from William's KCD Sofia 2026 keynote (slide 16), set like the opening claim (x10-tools) -->
+<section class="slide content x10-tools x-dark" data-label="The boundary will not come from the agent">
+  <div class="rise">
+    <p class="x10-tl-q">The boundary will not come <span class="x10-tl-n">from the agent.</span></p>
+    <p class="x10-tl-s">Draw it in the platform, make it the default, and let the rings hold it.</p>
   </div>
 </section>
 
@@ -68,31 +87,10 @@
 <!-- 51 · NEW · Three things to remember: the layout of Figure 14.4 (study ed.; 14.9 full ed.), its text reworded for the talk's spine (guardrails, instrumented decisions, upstream projects), plus the callback. No QR: the book isn't hosted yet. -->
 <section class="slide content" data-label="Three things to remember">
   <h2 class="slide-title">Three things to remember</h2>
-  <figure class="bfig x50-three rise" style="--fig-h:430px"><svg viewBox="14 14 832 202" role="img" aria-label="Three things to remember: guardrails live in the platform, not the prompt; instrument decisions, not only errors; build it from upstream projects.">
-<g font-family="Inter, sans-serif">
-  <rect x="20" y="20" width="260" height="190" rx="10" fill="#FEF1F1" stroke="#FCB6B8"/>
-  <text x="40" y="66" font-size="40" font-weight="700" fill="#F8494D">1</text>
-  <text x="40" y="100" font-size="14" font-weight="700" fill="#111111">Guardrails live in</text>
-  <text x="40" y="119" font-size="14" font-weight="700" fill="#111111">the platform</text>
-  <text x="40" y="148" font-size="11" fill="#212121">Not in the prompt: identity,</text>
-  <text x="40" y="164" font-size="11" fill="#212121">reach, limits, a human where the</text>
-  <text x="40" y="180" font-size="11" fill="#212121">rule says. Agents can't move them.</text>
-
-  <rect x="300" y="20" width="260" height="190" rx="10" fill="#FFE1D6" stroke="#FD6F40"/>
-  <text x="320" y="66" font-size="40" font-weight="700" fill="#FD6F40">2</text>
-  <text x="320" y="100" font-size="14" font-weight="700" fill="#111111">Instrument decisions,</text>
-  <text x="320" y="119" font-size="14" font-weight="700" fill="#111111">not only errors</text>
-  <text x="320" y="148" font-size="11" fill="#212121">A permit, a hold, a sign-off:</text>
-  <text x="320" y="164" font-size="11" fill="#212121">spans with a rule, a limit and</text>
-  <text x="320" y="180" font-size="11" fill="#212121">an identity, in a published schema.</text>
-
-  <rect x="580" y="20" width="260" height="190" rx="10" fill="#A8FBBE" stroke="#6AD186"/>
-  <text x="600" y="66" font-size="40" font-weight="700" fill="#18632F">3</text>
-  <text x="600" y="100" font-size="14" font-weight="700" fill="#111111">Build it from</text>
-  <text x="600" y="119" font-size="14" font-weight="700" fill="#111111">upstream projects</text>
-  <text x="600" y="148" font-size="11" fill="#212121">CNCF and AAIF: SPIFFE, Linkerd,</text>
-  <text x="600" y="164" font-size="11" fill="#212121">Kyverno, OpenFeature, OTel,</text>
-  <text x="600" y="180" font-size="11" fill="#212121">MCP, A2A. Own only the rules.</text>
-</g></svg></figure>
+  <ol class="x50-3 rise">
+    <li class="a"><i class="ph-duotone ph-shield-check"></i><span class="n">1</span><b>Guardrails live in the platform</b><p>Not in the prompt: identity, reach, limits, a human where the rule says. Agents can&rsquo;t move them.</p></li>
+    <li class="b"><i class="ph-duotone ph-gavel"></i><span class="n">2</span><b>Instrument decisions, not only errors</b><p>A permit, a hold, a sign-off: spans with a rule, a limit and an identity.</p><span class="chip"><span class="code">northstar.policy.decision</span> deny &middot; 6000</span></li>
+    <li class="c"><i class="ph-duotone ph-puzzle-piece"></i><span class="n">3</span><b>Build it from upstream projects</b><p>CNCF and AAIF. Own only the rules.</p><span class="logos"><img src="assets/logos/spiffe.svg" alt=""><img src="assets/logos/linkerd.svg" alt=""><img src="assets/logos/kyverno.svg" alt=""><img src="assets/logos/openfeature.svg" alt=""><img src="assets/logos/opentelemetry.svg" alt=""></span></li>
+  </ol>
   <p class="x50-callback rise">If you can&rsquo;t trace it, <em>you can&rsquo;t govern it.</em></p>
 </section>

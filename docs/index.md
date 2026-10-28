@@ -84,7 +84,7 @@ clearly rather than to look like a failure:
 
 | Surface | Where | What it shows |
 |---|---|---|
-| Claim form | [localhost:8080](http://localhost:8080) | filing a claim, and the determination |
+| Claim page | [localhost:8080](http://localhost:8080) | filing a claim, and the determination |
 | Review console | [localhost:8081](http://localhost:8081) | settlements awaiting a human, and the ledger |
 | Autonomy contract | [the OpenFeature page](/autonomy-contract) | the live flag, and the one write that flips it |
 | Traces | [Jaeger](http://localhost:16686) | one trace, end to end, across every service |
@@ -100,7 +100,7 @@ and Prometheus — no hunting for the right query.
   logic, the identity story, what is real and what is deferred, and a
   span-by-span walk of the trace.
 - **[Running the demo](demo-runbook.md)** — the operator's document: the
-  seven-step flow, what to say, what to show, how to reset, and what to do when
+  six-step flow, what to say, what to show, how to reset, and what to do when
   something breaks.
 - **[Telemetry contract](telemetry-contract.md)** — what every span and metric
   must carry, the conventions used and the known gaps.
@@ -116,7 +116,8 @@ acceptable anywhere else:
   the autonomy guardrail. What keeps it honest is how narrow the write is —
   the card's ServiceAccount can `get/list/patch` exactly one named resource
   and nothing else.
-- **Authorization is exactly one hop.** The browser → claims-agent,
+- **Policy covers exactly one hop.** The browser → claims-agent,
   claims-agent → settlement-agent and payments-mcp → payments-api hops carry
-  no identity and consult no policy. `claims-agent` and `customer-ui` still
+  no identity and consult no policy. The model calls carry an identity and
+  an allowlist at the gateway, but their content is not inspected. `claims-agent` and `customer-ui` still
   share one SPIFFE ID.

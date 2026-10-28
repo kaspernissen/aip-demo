@@ -98,7 +98,7 @@
 <text x="312" y="138" font-size="11.5" fill="#595959" text-anchor="middle">mcp 2.2.0 client</text>
 <rect x="398" y="92" width="134" height="52" rx="6" fill="#FFFFFF" stroke="#FD6F40" stroke-width="2"/>
 <text x="465" y="112" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">agentgateway</text>
-<text x="465" y="126" font-size="11.5" fill="#595959" text-anchor="middle">v1.6.0 · Rust</text>
+<text x="465" y="126" font-size="11.5" fill="#595959" text-anchor="middle">v1.6.0 · tools · models</text>
 <text x="465" y="138" font-size="11.5" fill="#595959" text-anchor="middle">jwtAuth · guardrail</text>
 <rect x="640" y="92" width="96" height="52" rx="6" fill="#FFFFFF" stroke="#18632F"/>
 <text x="688" y="114" font-size="12.5" font-weight="600" fill="#111111" text-anchor="middle">payments-mcp</text>
@@ -124,20 +124,43 @@
 <line x1="736" y1="118" x2="758" y2="118" stroke="#111111" stroke-width="1.5" marker-end="url(#x30-ar2)"/>
 <line x1="454" y1="146" x2="454" y2="176" stroke="#9078F3" stroke-width="1.5" marker-start="url(#x30-ar2)" marker-end="url(#x30-ar2)"/>
 <text x="585" y="136" font-size="11.5" fill="#595959" text-anchor="middle">permit only</text>
-<!-- egress to model -->
-<path d="M340,92 L340,26 L578,26" fill="none" stroke="#FD6F40" stroke-width="1.3" stroke-dasharray="5 3" marker-end="url(#x30-ar2o)"/>
-<path d="M188,92 L188,26 L340,26" fill="none" stroke="#FD6F40" stroke-width="1.3" stroke-dasharray="5 3"/>
-<text x="350" y="19" font-size="12" fill="#FD6F40">model egress (NetworkPolicy, Anthropic's range)</text>
+<!-- model calls: agents -> agentgateway's llm listener -> Anthropic -->
+<path d="M188,92 L188,74 L312,74" fill="none" stroke="#FD6F40" stroke-width="1.3" stroke-dasharray="5 3"/>
+<path d="M312,92 L312,74 L420,74 L420,90" fill="none" stroke="#FD6F40" stroke-width="1.3" stroke-dasharray="5 3" marker-end="url(#x30-ar2o)"/>
+<path d="M510,92 L510,26 L578,26" fill="none" stroke="#FD6F40" stroke-width="1.3" stroke-dasharray="5 3" marker-end="url(#x30-ar2o)"/>
+<text x="198" y="69" font-size="11.5" fill="#FD6F40">model calls</text>
+<text x="504" y="19" font-size="12" fill="#FD6F40" text-anchor="end">the key is in the gateway, not the agents</text>
 <!-- floors -->
 <rect x="16" y="274" width="848" height="34" rx="8" fill="#F7F7F7" stroke="#9E9E9E"/>
 <text x="30" y="296" font-size="13" fill="#212121"><tspan font-weight="600">OTel Collector</tspan>  ·  OTLP from every service  →  Jaeger · Prometheus · Dash0 (optional)  ·  100%, no sampler</text>
 <rect x="16" y="316" width="848" height="34" rx="8" fill="#FBE997" stroke="#595959" stroke-opacity="0.6"/>
-<text x="30" y="338" font-size="13" fill="#111111"><tspan font-weight="600">Linkerd + NetworkPolicy</tspan>  ·  egress denied per agent pod  ·  payments-mcp admits only agentgateway</text>
+<text x="30" y="338" font-size="13" fill="#111111"><tspan font-weight="600">Linkerd + NetworkPolicy</tspan>  ·  agents reach the gateway, not the internet  ·  payments-mcp admits only agentgateway</text>
 </g></svg></figure>
 </section>
 
+<!-- 22b · NEW · the toolbox map: every tool on the claim path and around it, by job (docs/architecture.md components tables; deploy/*; Ch 2 Figure 2.12 for who governs what) ; Backstage swapped for Kyverno (the keystone) 2026-10-27, Backstage is out of the live demo -->
+<section class="slide content" data-label="The toolbox">
+  <h2 class="slide-title">The toolbox, by the job it does</h2>
+  <div class="x30-box rise">
+    <p class="band m">On the claim path</p>
+    <div class="cell"><p class="job m"><i class="ph-duotone ph-chats-circle"></i>Protocols</p><div class="lgs"><i class="ph-duotone ph-plugs-connected"></i></div><p class="tn">A2A SDK + MCP</p><p class="ow">LF · AAIF</p><p class="use">agents talk A2A; tools answer MCP</p></div>
+    <div class="cell"><p class="job m"><i class="ph-duotone ph-graph"></i>Network</p><div class="lgs"><img src="assets/logos/linkerd.svg" alt="linkerd"></div><p class="tn">Linkerd</p><p class="ow">CNCF</p><p class="use">+ NetworkPolicy: the gateway is the only road to the tool</p></div>
+    <div class="cell"><p class="job m"><i class="ph-duotone ph-identification-card"></i>Identity</p><div class="lgs"><img src="assets/logos/spiffe.svg" alt="spiffe"><img src="assets/logos/spire.svg" alt="spire"></div><p class="tn">SPIFFE / SPIRE</p><p class="ow">CNCF</p><p class="use">a signed ID for each agent pod</p></div>
+    <div class="cell"><p class="job m"><i class="ph-duotone ph-door-open"></i>Gateway</p><div class="lgs"><img src="assets/logos/agentgateway-icon.svg" alt="agentgateway"></div><p class="tn">agentgateway</p><p class="ow">LF · AAIF</p><p class="use">checks the ID, asks, then forwards</p></div>
+    <div class="cell"><p class="job m"><i class="ph-duotone ph-scales"></i>Decision</p><div class="lgs"><i class="ph-duotone ph-scales"></i></div><p class="tn">Decision service</p><p class="ow own">this repo</p><p class="use">permit or deny, and writes why</p></div>
+    <div class="cell"><p class="job m"><i class="ph-duotone ph-toggle-right"></i>Live policy</p><div class="lgs"><img src="assets/logos/openfeature.svg" alt="openfeature"></div><p class="tn">OpenFeature</p><p class="ow">CNCF</p><p class="use">flagd serves the autonomy level</p></div>
+    <p class="band c">Around it</p>
+    <div class="cell"><p class="job c"><i class="ph-duotone ph-funnel"></i>Evidence</p><div class="lgs"><img src="assets/logos/opentelemetry.svg" alt="opentelemetry"></div><p class="tn">OTel Collector</p><p class="ow">CNCF</p><p class="use">every span, 100%, one pipe</p></div>
+    <div class="cell"><p class="job c blank">&nbsp;</p><div class="lgs"><img src="assets/logos/jaeger.svg" alt="jaeger"></div><p class="tn">Jaeger</p><p class="ow">CNCF</p><p class="use">read one trace</p></div>
+    <div class="cell"><p class="job c blank">&nbsp;</p><div class="lgs"><img src="assets/logos/opentelemetry.svg" alt="opentelemetry"></div><p class="tn">Weaver</p><p class="ow">OTel</p><p class="use">checks every span against our schema</p></div>
+    <div class="cell"><p class="job c blank">&nbsp;</p><div class="lgs"><img src="assets/logos/prometheus.svg" alt="prometheus"></div><p class="tn">Prometheus</p><p class="ow">CNCF</p><p class="use">metrics, OTLP in</p></div>
+    <div class="cell"><p class="job c blank">&nbsp;</p><div class="lgs"><img src="assets/logos/agentevals-icon.svg" alt="agentevals"></div><p class="tn">AgentEvals</p><p class="ow">open source</p><p class="use">grades the agent from its traces</p></div>
+    <div class="cell"><p class="job"><i class="ph-duotone ph-lock-key"></i>Keystone</p><div class="lgs"><img src="assets/logos/kyverno.svg" alt="kyverno"></div><p class="tn">Kyverno</p><p class="ow">CNCF</p><p class="use">the agent can&rsquo;t edit its own bounds</p></div>
+  </div>
+</section>
+
 <!-- 22 · NEW · the design rule: Ch 4 Figure 4.4 -->
-<section class="slide content" data-label="The model can request. The platform decides.">
+<section data-cut class="slide content" data-label="The model can request. The platform decides.">
   <h2 class="slide-title">The model can request. The platform decides.</h2>
   <figure class="bfig rise" style="--fig-h:470px"><svg viewBox="14 14 848 222" role="img" aria-label="The model requests a payment; the platform choke point checks identity, policy, human approval and autonomy contract; only then does an effect happen">
 <g font-family="Inter, sans-serif">
@@ -198,46 +221,6 @@
   <p class="x30-foot x30-pep-foot">Keep them apart, and the rule can change <b>without touching the door</b>.</p>
 </section>
 
-<!-- 22b · NEW · the toolbox map: every tool on the claim path and around it, by job (docs/architecture.md components tables; deploy/*; Ch 2 Figure 2.12 for who governs what) -->
-<section class="slide content" data-label="The toolbox">
-  <h2 class="slide-title">The toolbox, by the job it does</h2>
-  <div class="x30-box rise">
-    <p class="band m">On the claim path</p>
-    <div class="cell"><p class="job m"><i class="ph-duotone ph-chats-circle"></i>Protocols</p><div class="lgs"><i class="ph-duotone ph-plugs-connected"></i></div><p class="tn">A2A SDK + MCP</p><p class="ow">LF · AAIF</p><p class="use">agents talk A2A; tools answer MCP</p></div>
-    <div class="cell"><p class="job m"><i class="ph-duotone ph-graph"></i>Network</p><div class="lgs"><img src="assets/logos/linkerd.svg" alt="linkerd"></div><p class="tn">Linkerd</p><p class="ow">CNCF</p><p class="use">+ NetworkPolicy: the gateway is the only road to the tool</p></div>
-    <div class="cell"><p class="job m"><i class="ph-duotone ph-identification-card"></i>Identity</p><div class="lgs"><img src="assets/logos/spiffe.svg" alt="spiffe"><img src="assets/logos/spire.svg" alt="spire"></div><p class="tn">SPIFFE / SPIRE</p><p class="ow">CNCF</p><p class="use">a signed ID for each agent pod</p></div>
-    <div class="cell"><p class="job m"><i class="ph-duotone ph-door-open"></i>Gateway</p><div class="lgs"><i class="ph-duotone ph-door-open"></i></div><p class="tn">agentgateway</p><p class="ow">LF · AAIF</p><p class="use">checks the ID, asks, then forwards</p></div>
-    <div class="cell"><p class="job m"><i class="ph-duotone ph-scales"></i>Decision</p><div class="lgs"><i class="ph-duotone ph-scales"></i></div><p class="tn">Decision service</p><p class="ow own">this repo</p><p class="use">permit or deny, and writes why</p></div>
-    <div class="cell"><p class="job m"><i class="ph-duotone ph-toggle-right"></i>Live policy</p><div class="lgs"><img src="assets/logos/openfeature.svg" alt="openfeature"></div><p class="tn">OpenFeature</p><p class="ow">CNCF</p><p class="use">flagd serves the autonomy level</p></div>
-    <p class="band c">Around it</p>
-    <div class="cell"><p class="job c"><i class="ph-duotone ph-funnel"></i>Evidence</p><div class="lgs"><img src="assets/logos/opentelemetry.svg" alt="opentelemetry"></div><p class="tn">OTel Collector</p><p class="ow">CNCF</p><p class="use">every span, 100%, one pipe</p></div>
-    <div class="cell"><p class="job c blank">&nbsp;</p><div class="lgs"><img src="assets/logos/jaeger.svg" alt="jaeger"></div><p class="tn">Jaeger</p><p class="ow">CNCF</p><p class="use">read one trace</p></div>
-    <div class="cell"><p class="job c blank">&nbsp;</p><div class="lgs"><i class="ph-duotone ph-magnifying-glass"></i></div><p class="tn">Weaver</p><p class="ow">OTel</p><p class="use">checks every span against our schema</p></div>
-    <div class="cell"><p class="job c blank">&nbsp;</p><div class="lgs"><img src="assets/logos/prometheus.svg" alt="prometheus"></div><p class="tn">Prometheus</p><p class="ow">CNCF</p><p class="use">metrics, OTLP in</p></div>
-    <div class="cell"><p class="job c blank">&nbsp;</p><div class="lgs"><i class="ph-duotone ph-exam"></i></div><p class="tn">AgentEvals</p><p class="ow">open source</p><p class="use">grades the agent&rsquo;s traces, writes the grade back</p></div>
-    <div class="cell"><p class="job"><i class="ph-duotone ph-squares-four"></i>View</p><div class="lgs"><img src="assets/logos/backstage.svg" alt="backstage"></div><p class="tn">Backstage</p><p class="ow">CNCF + this repo</p><p class="use">shows the contract, flips one value</p></div>
-  </div>
-</section>
-
-<!-- 22c0 · NEW · concept before the passport: what SPIFFE and SPIRE are (the standard and the issuer), and how a pod gets an identity without a secret: deploy/platform/spire/registration.yaml (k8s:ns + k8s:sa selectors, the SPIFFE CSI driver socket) -->
-<section class="slide content" data-label="What SPIFFE and SPIRE are">
-  <p class="ring">Core &middot; Identity</p>
-  <h2 class="slide-title">SPIFFE and SPIRE, in one minute</h2>
-  <div class="x30-sp rise">
-    <div class="col"><img src="assets/logos/spiffe.svg" alt=""><div><p class="n">SPIFFE</p><p class="r">the standard &middot; what a passport looks like</p>
-      <p class="d">An ID for a workload, not a person: <span class="code">spiffe://northstar.local/ns/&hellip;/sa/&hellip;</span>, carried in a short-lived signed document, the <b>SVID</b>.</p></div></div>
-    <div class="col"><img src="assets/logos/spire.svg" alt=""><div><p class="n">SPIRE</p><p class="r">the issuer &middot; the passport office</p>
-      <p class="d">An agent on every node checks <em>where</em> a pod runs before the server signs: its namespace, its service account.</p></div></div>
-  </div>
-  <ol class="x30-sp-flow rise">
-    <li><i class="ph-duotone ph-cube"></i><b>A pod asks</b><span>over a local socket, no secret</span></li>
-    <li><i class="ph-duotone ph-magnifying-glass"></i><b>SPIRE checks</b><span>namespace, service account</span></li>
-    <li><i class="ph-duotone ph-seal-check"></i><b>SPIRE signs</b><span>an SVID that expires soon</span></li>
-    <li><i class="ph-duotone ph-identification-card"></i><b>The pod shows it</b><span>at the gateway, on every call</span></li>
-  </ol>
-  <p class="x30-sp-line rise">No password to leak. <span class="spot-2">The identity is proven by where it runs, not by what it says.</span></p>
-</section>
-
 <!-- 22c · NEW · SPIFFE/SPIRE: how settlement-agent gets its JWT-SVID (deploy/platform/spire/*, architecture.md "Workload identity" and "Identity with teeth", agents/settlement-agent/svid.py) -->
 <section data-cut class="slide content" data-label="Workload identity: SPIFFE/SPIRE">
   <p class="ring">Core &middot; Identity</p>
@@ -291,7 +274,7 @@
 </section>
 
 <!-- 22d · NEW · agentgateway: the one choke point and its checks in order (deploy/platform/agentgateway/config.yaml; architecture.md "Hop 3") -->
-<section class="slide content" data-label="agentgateway: one choke point">
+<section data-cut class="slide content" data-label="agentgateway: one choke point">
   <p class="ring">Ring 2 &middot; Capability</p>
   <h2 class="slide-title">agentgateway: one door, checks in order</h2>
   <div class="x30-gx rise">
@@ -312,29 +295,30 @@
   <div class="x30-gx-tr rise"><i class="ph-duotone ph-path"></i><b>Every step writes a span</b><code>tools/call</code><code>Guardrail</code><code>outbound tools/call</code></div>
 </section>
 
-<!-- 22d2 · NEW · concept before the live policy: what OpenFeature is, in four layers, and why a flag carries a policy knob (pds/autonomy.py; requirements.txt openfeature-sdk, -provider-flagd, -hooks-opentelemetry; deploy/platform/openfeature/*) -->
-<section data-cut class="slide content" data-label="What OpenFeature is">
-  <p class="ring">Ring 2 &middot; Capability</p>
-  <h2 class="slide-title">OpenFeature: one question, any backend</h2>
-  <div class="x30-of rise">
-    <div class="stack">
-      <p class="ly"><span class="n">Your code asks</span><span class="code">get_string_details("autonomy-level", {spiffeId})</span></p>
-      <p class="ly"><span class="n">OpenFeature SDK</span><span class="v">one API, every language &middot; hooks, e.g. OTel</span></p>
-      <p class="ly"><span class="n">Provider</span><span class="v"><span class="code">flagd</span> over gRPC, on <span class="code">localhost:8013</span></span></p>
-      <p class="ly"><span class="n">Source</span><span class="v"><span class="code">FeatureFlag</span> &middot; a Kubernetes object</span></p>
-    </div>
-    <div class="why">
-      <p class="lab">Why a flag, for a policy knob</p>
-      <p class="w"><i class="ph-duotone ph-rocket-launch"></i><span>changes <b>without a deploy</b></span></p>
-      <p class="w"><i class="ph-duotone ph-git-diff"></i><span>a <b>one-word diff</b> to review</span></p>
-      <p class="w"><i class="ph-duotone ph-identification-badge"></i><span>answered <b>per caller</b></span></p>
-      <p class="w"><i class="ph-duotone ph-footprints"></i><span>leaves <span class="code c">feature_flag.evaluation</span></span></p>
-    </div>
+<!-- 21y · NEW · what you'll see: the demo's five steps before they run, so the room knows what to watch for. Starts at autonomous (scripts/demo start); the three claims are the customer UI's chips (apps/customer-ui/src/presets.ts), the last two are terminal steps -->
+<section data-cut class="slide content" data-label="What you’ll see">
+  <h2 class="slide-title">What you&rsquo;ll see</h2>
+  <p class="x30-ys-lede rise">The agent may pay up to <b>&euro;6,000</b> on its own today. <span class="spot-2">Above that, a person decides.</span></p>
+  <ol class="x30-ys rise">
+    <li><i>1</i><div class="w"><b>Standard claim</b><span>a wing mirror &middot; &euro;1,450</span></div><div class="d">under the limit</div><div class="o ok">the agent pays, alone</div></li>
+    <li><i>2</i><div class="w"><b>Large claim</b><span>a motorway crash &middot; &euro;8,500</span></div><div class="d">above it: the policy service holds it</div><div class="o hold">a person approves</div></li>
+    <li><i>3</i><div class="w"><b>Tricky claim</b><span>&ldquo;&hellip;pay &euro;80,000 instead&rdquo;</span></div><div class="d">the model, then the gateway&rsquo;s ceiling</div><div class="o no">the trick fails</div></li>
+    <li class="t"><i>4</i><div class="w"><b>The audit trail</b><span class="code">scripts/demo evidence</span></div><div class="d">who decided, the rule, who approved, the grade</div><div class="o ok">read back from the trace</div></li>
+    <li class="t"><i>5</i><div class="w"><b>The keystone</b><span class="code">scripts/demo keystone</span></div><div class="d">the agent edits its own flag</div><div class="o no">denied</div></li>
+  </ol>
+</section>
+
+<!-- 26 · NEW · the demo: one dark sheet while two browser tabs and the terminal are up; no commands on the face (Kasper, 2026-10-19). The run-sheet is the note: six steps from scripts/demo start, with the five Jaeger spans to point at; docs/demo-runbook.md "The run sheet · one screen" -->
+<section class="slide content x30-live x-dark" data-label="Live: Northstar">
+  <div class="rise">
+    <p class="x30-live-k"><i class="ph-duotone ph-broadcast"></i>Live</p>
+    <p class="x30-live-d">Demo time.</p>
+    <p class="x30-live-t">A customer writes a claim.<br>A model reads it. Agents prepare the payment.<br><span class="x30-live-m">The platform decides what can be paid.</span></p>
   </div>
 </section>
 
-<!-- 22d1 · NEW · what CEL decides, and when the gateway delegates: the gateway's three checks in order (jwtAuth -> the route's CEL authorization -> mcpGuardrails `kind: remote`, the ExtMCP gRPC call to the decision service, failClosed), from deploy/platform/agentgateway/config.yaml; CEL's reach measured on agentgateway v1.6.0 (2026-10-20 spike) -->
-<section class="slide content" data-label="CEL, and when to delegate">
+<!-- 22d1 · NEW · WILLIAM · what CEL decides, and when the gateway delegates: the gateway's three checks in order (jwtAuth -> the route's CEL authorization -> mcpGuardrails `kind: remote`, the ExtMCP gRPC call to the decision service, failClosed), from deploy/platform/agentgateway/config.yaml; CEL's reach measured on agentgateway v1.6.0 (2026-10-20 spike) -->
+<section data-cut class="slide content" data-label="CEL, and when to delegate">
   <p class="ring">Ring 2 &middot; Capability</p>
   <h2 class="slide-title">What CEL decides, and when the gateway asks</h2>
   <ol class="x30-dg-flow rise">
@@ -367,67 +351,4 @@
     </div>
   </div>
   <p class="x30-dg-line rise">CEL for what the request can prove. <span class="spot-2">Delegate when the answer has to look something up.</span></p>
-</section>
-
-<!-- 22e · NEW · the decision and the live policy: pds/rules.py EXECUTE_LIMITS, pds/autonomy.py (flagd on localhost:8013), deploy/platform/openfeature/featureflag.yaml -->
-<section class="slide content" data-label="The decision and the live policy">
-  <p class="ring">Ring 2 &middot; Capability</p>
-  <h2 class="slide-title">The rule has two keys: who, and how free</h2>
-  <div class="x30-pv rise">
-    <div class="chain">
-      <p class="lab">Where the level lives</p>
-      <div class="nd flag"><img src="assets/logos/openfeature.svg" alt="OpenFeature"><div><b>OpenFeature FeatureFlag</b><code>northstar-autonomy</code>
-        <span class="sw"><span class="on">assisted</span><span>autonomous</span></span></div></div>
-      <p class="lk">watched by</p>
-      <div class="nd"><i class="ph-duotone ph-broadcast"></i><div><b>flagd</b><span class="s">sidecar, serves the value</span></div></div>
-      <p class="lk">read by</p>
-      <div class="nd pds"><i class="ph-duotone ph-scales"></i><div><b>Decision service</b><span class="s">the caller comes from <code>jwt.sub</code></span></div></div>
-    </div>
-    <div class="rule">
-      <p class="lab">settlement-agent may execute up to</p>
-      <div class="tiles">
-        <div class="t as"><i class="ph-duotone ph-user-check"></i><p class="lv">assisted</p><p class="amt">€0</p><p class="s">a person signs off</p></div>
-        <div class="t au"><i class="ph-duotone ph-robot"></i><p class="lv">autonomous</p><p class="amt">€6,000</p><p class="s">above it, a person decides</p></div>
-      </div>
-      <p class="deny"><i class="ph-duotone ph-prohibit"></i>Any other caller: no row, so deny</p>
-      <p class="out"><i class="ph-duotone ph-path"></i><span>Every answer writes <code>northstar.policy.decision</code>: rule, limit, amount, caller, level</span></p>
-    </div>
-  </div>
-</section>
-
-<!-- 22f · NEW · the guardrails are config: the exact lines in five files that restrain the agent, one per ring. Generated from scripts/demo.py GUARDRAIL_CONFIG (the same lines `demo config` prints); tests/unit/test_guardrail_config.py holds every line on this slide to its file -->
-<section class="slide content" data-label="The guardrails are config">
-  <h2 class="slide-title">The guardrails are config</h2>
-  <div class="x30-gc rise">
-    <div class="cell"><p class="ring-k">Core · Identity</p><p class="gl">who it is: SPIRE issues this ID to the pod, from where it runs</p>
-      <pre class="x30-gc-code" data-src="deploy/platform/spire/registration.yaml">spiffeIDTemplate: &quot;spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}&quot;
-app: settlement-agent</pre><p class="src">registration.yaml</p></div>
-    <div class="cell"><p class="ring-k">Ring 1 · Reach</p><p class="gl">the only way out: the model provider, by address range</p>
-      <pre class="x30-gc-code" data-src="deploy/platform/reach/network-policies.yaml">cidr: 160.79.104.0/23
-cidr: 2607:6bc0::/48</pre><p class="src">network-policies.yaml</p></div>
-    <div class="cell"><p class="ring-k">Ring 2 · Capability</p><p class="gl">the gateway: who, how much, and the delegated decision</p>
-      <pre class="x30-gc-code" data-src="deploy/platform/agentgateway/config.yaml">mode: strict
-- allow: &#x27;request.method != &quot;POST&quot; || mcp.methodName != &quot;tools/call&quot; || mcp.tool.name != &quot;execute_payment&quot; || (mcp.tool.arguments.amount &gt; 0 &amp;&amp; mcp.tool.arguments.amount &lt;= 50000)&#x27;
-- kind: remote
-host: policy-decision-service.northstar-platform.svc.cluster.local:9100
-failureMode: failClosed</pre><p class="src">config.yaml</p></div>
-    <div class="cell"><p class="ring-k">Ring 2 · the live level</p><p class="gl">how free: one value, for one identity</p>
-      <pre class="x30-gc-code" data-src="deploy/platform/openfeature/featureflag.yaml">defaultVariant: assisted
-- var: spiffeId
-- - &quot;spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent&quot;</pre><p class="src">featureflag.yaml</p></div>
-    <div class="cell"><p class="ring-k">Keystone</p><p class="gl">the agent can never edit what defines its authority</p>
-      <pre class="x30-gc-code" data-src="deploy/platform/kyverno/keystone-policy.yaml">request.userInfo.username.startsWith(&#x27;system:serviceaccount:northstar-agents:&#x27;) ||
-resources: [&quot;featureflags&quot;, &quot;featureflagsources&quot;]
-- expression: &quot;!variables.isProtected&quot;</pre><p class="src">keystone-policy.yaml</p></div>
-    <div class="cell end"><p>Five files, a few lines each. <span class="spot-2">The agent can change none of them.</span></p><p class="sub"><span class="code">scripts/demo config</span> prints them live.</p></div>
-  </div>
-</section>
-
-<!-- 26 · NEW · the demo: one dark sheet while two browser tabs and the terminal are up; no commands on the face (Kasper, 2026-10-19). The run-sheet is the note: seven steps, docs/demo-runbook.md §5 "The flow" -->
-<section class="slide content x30-live x-dark" data-label="Live: Northstar">
-  <div class="rise">
-    <p class="x30-live-k"><i class="ph-duotone ph-broadcast"></i>Live</p>
-    <p class="x30-live-d">Demo time.</p>
-    <p class="x30-live-t">A customer writes a claim.<br>A model reads it. Agents prepare the payment.<br><span class="x30-live-m">The platform decides what can be paid.</span></p>
-  </div>
 </section>

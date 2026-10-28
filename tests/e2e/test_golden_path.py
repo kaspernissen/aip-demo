@@ -76,7 +76,6 @@ import os
 import re
 import subprocess
 import time
-import uuid
 
 import pytest
 import requests
@@ -92,6 +91,7 @@ from tests.e2e.test_policy_denial import (  # noqa: F401 -- reused, not reimplem
     ATTR_POLICY_RULE,
     EXECUTE_TOOL,
     _decisions,
+    PERMITTED_STORY,
     _drive_browser,
     browser_test,
     claims_agent_route,
@@ -515,7 +515,7 @@ def test_driving_the_cards_write_over_http_flips_a_refused_settlement_to_execute
     """
     contract.assert_assisted("test_driving_the_cards_write_over_http_...")
     try:
-        refused = _drive_browser(f"CLM-GOLDEN-{uuid.uuid4().hex[:8]}", AMOUNT)
+        refused = _drive_browser(PERMITTED_STORY)
         assert refused.reply.get("status") == "awaiting_approval", refused.reply
         refused_decisions = _decisions(refused.trace, EXECUTE_TOOL)
         assert len(refused_decisions) == 1, (
@@ -553,7 +553,7 @@ def test_driving_the_cards_write_over_http_flips_a_refused_settlement_to_execute
             "would prove nothing about the card"
         )
 
-        settled = _drive_browser(f"CLM-GOLDEN-{uuid.uuid4().hex[:8]}", AMOUNT)
+        settled = _drive_browser(PERMITTED_STORY)
         assert settled.reply.get("status") == "executed", settled.reply
         settled_decisions = _decisions(settled.trace, EXECUTE_TOOL)
         assert len(settled_decisions) == 1, (

@@ -15,3 +15,29 @@
 .x3l-core { margin: calc(1 * var(--baseline)) 0 0; padding-top: 22px; border-top: 2px solid color-mix(in srgb, var(--color-text) 14%, transparent);
   font-size: var(--type-small); }
 .x3l-core b { color: var(--color-accent-2-700); }
+
+/* The guardrails, at work: three outputs side by side */
+.x30l-gw { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; margin-top: calc(0.8 * var(--baseline)); }
+.x30l-gw > div { display: flex; flex-direction: column; }
+.x30l-gw .x90-code-d { font-size: 24px; line-height: 1.45; }
+.x30l-gw { align-items: stretch; }
+.x30l-gw .x90-code-d { flex: 1; }
+/* merged "What you just saw": three outcomes with the output that proves each, the rest as a strip */
+.x3l-m { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; margin-top: calc(0.6 * var(--baseline)); align-items: stretch; }
+.x3l-m > div { display: flex; flex-direction: column; }
+.x3l-m p { margin: 0; }
+.x3l-m .rg { font-size: var(--type-kicker); letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-accent-2-700); }
+.x3l-m .h { margin: 6px 0 14px; font-size: 30px; line-height: 1.15; font-weight: 700; }
+.x3l-m .x90-code-d { flex: 1; margin: 0; font-size: 23px; line-height: 1.45; }
+.x3l-also { display: flex; flex-wrap: wrap; gap: 14px 36px; margin-top: calc(0.6 * var(--baseline)); font-size: var(--type-small); }
+.x3l-also span { display: inline-flex; align-items: center; gap: 10px; }
+.x3l-also i { font-size: 34px; color: var(--color-accent-600); }
+.x3l-also b { color: var(--color-accent-2-700); }
+.x3l-also { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; font-size: 24px; line-height: 1.3; }
+.x3l-also span { align-items: flex-start; }
+.x3l-also b { white-space: nowrap; }
+/* the strip is its own band, not a footer to the three columns above */
+.x3l-also { display: flex; flex-wrap: nowrap; align-items: center; gap: 0 40px; margin-top: calc(0.9 * var(--baseline)); padding: 22px 32px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--color-text) 5%, transparent); font-size: 23px; }
+.x3l-also .k { margin: 0; font-size: 20px; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.x3l-also span { align-items: center; white-space: nowrap; }
+.x3l-also i { font-size: 30px; }

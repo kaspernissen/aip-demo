@@ -418,3 +418,19 @@
 .x30-gc .cell.end { justify-content: center; background: var(--color-accent-2-100); }
 .x30-gc .cell.end p { font-family: var(--font-heading); font-weight: 700; font-size: 32px; line-height: 1.2; }
 .x30-gc .cell.end .sub { font-family: var(--font-body); font-weight: 400; font-size: 20px; margin-top: 12px; }
+
+/* What you'll see: the demo's five steps before they run */
+.x30-ys-lede { margin: calc(0.4 * var(--baseline)) 0 0; font-size: var(--type-body); }
+.x30-ys { list-style: none; margin: calc(0.5 * var(--baseline)) 0 0; padding: 0; display: grid; row-gap: 0; }
+.x30-ys li { display: grid; grid-template-columns: 64px 1.15fr 1.25fr 0.95fr; column-gap: 36px; align-items: center; padding: 14px 0; }
+.x30-ys li + li { border-top: 2px solid color-mix(in srgb, var(--color-text) 10%, transparent); }
+.x30-ys li:not(.t) + li.t { border-top-width: 4px; }
+.x30-ys i { font-style: normal; font-family: var(--font-heading); font-weight: 700; font-size: 48px; line-height: 1; color: var(--color-accent-2-700); }
+.x30-ys li.t i { color: var(--color-neutral-600); }
+.x30-ys .w b { display: block; font-family: var(--font-heading); font-size: 36px; line-height: 1.15; }
+.x30-ys .w span { font-size: var(--type-kicker); color: color-mix(in srgb, var(--color-text) 65%, transparent); }
+.x30-ys .d { font-size: var(--type-small); line-height: 1.25; }
+.x30-ys .o { justify-self: start; font-size: var(--type-kicker); font-weight: 700; padding: 8px 16px; border-radius: var(--radius-sm); }
+.x30-ys .o.ok { background: var(--color-accent-100); color: var(--color-accent-800); }
+.x30-ys .o.hold { background: var(--color-text); color: var(--color-bg); }
+.x30-ys .o.no { background: var(--color-accent-2); color: var(--color-bg); }

@@ -1,0 +1,10 @@
+[
+  {
+    "secs": 0,
+    "note": "APPENDIX\n\nNot presented. Slides kept for questions."
+  },
+  {
+    "secs": 0,
+    "note": "WILLIAM\n\nHow does that look in practice? Think of airport security.\n\nYou walk down a corridor that only goes one way. You show your passport. You go through the scanner. And the gate staff decide whether you board. No single check catches everything; each one assumes the last one failed.\n\nNorthstar has the same four. The corridor: Linkerd and network policy, so the gateway is the only road to the payment tool. The passport: SPIFFE and SPIRE, who is acting. The scanner: agentgateway, which stops anything above fifty thousand euros, whoever asks. And the gate staff: the policy service, reading an OpenFeature flag: up to six thousand euros today, then a person.\n\nAnd the rule book is locked: the agent can't edit any of it. That's Kyverno.\n\nTwo of these get a closer look: the passport, and the gate staff's flag.\n\nSource: Ch 7 (defence in depth); deploy/platform/ (reach, spire, agentgateway, openfeature, kyverno)"
+  }
+]

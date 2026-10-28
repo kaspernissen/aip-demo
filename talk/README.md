@@ -5,19 +5,22 @@ The talk deck for KubeCon + CloudNativeCon North America 2026, Salt Lake City. I
 follower, and a folio with the speaker's handles.
 
 - Subtitle and thesis: **If you can't trace it, you can't govern it.**
-- 30 slides, 29:35 of content including the demo: the **30-minute cut** (Wed 11 Nov, 11:00–11:30).
-  The long cut's slides stay in the fragments as `data-cut`. The live demo is seven steps in two browser tabs
-  (customer-ui, reviewer-ui) and one terminal (`./scripts/demo`, about 7:30 with narration), against one
-  Northstar cluster brought up by `scripts/setup-kind.sh` (runbook §5, "The flow"). No slide shows a command
-  during the demo: one dark "Live" slide stays up and carries the whole run-sheet in its note, and
-  `slides/30-live.html` is one visual summary, "What you just saw", ring by ring. After "Thank you" come five
-  0 s backup slides, one per ring, in the pattern of William's ring slides (the rule beside what the demo
-  cluster printed); go there only when a step fails. A few statement slides are dark sheets (`.x-dark`, in
-  `ocean/ocean.css`). The operator checklists (pre-flight, reset, triage) live in `docs/demo-runbook.md`.
+- 38 slides, 34:45 including the demo (Wed 11 Nov, 11:00–11:30, with William Rizzo); the cut-first slides
+  named in `PLAN.md` take it to 30 minutes. The long cut's slides stay in the fragments as `data-cut`. William
+  covers the problem and every guardrail (`slides/10-open-act1.html`, `slides/15-guardrails.html`, one ring slide
+  per ring: the rule beside what the demo cluster printed); Kasper takes over at the auditor's questions for
+  Northstar, the demo, and the observability and eval layer; William closes. The live demo is six steps in two
+  browser tabs (customer-ui with three claim chips, reviewer-ui), Jaeger and one terminal (`scripts/demo start`,
+  then `inject`, `evidence`, `keystone`; about 6:30 with narration), against one Northstar cluster brought up by
+  `scripts/setup-kind.sh` (runbook "The run sheet · one screen"). No slide shows a command during the demo:
+  "What you'll see" previews it, one dark "Live" slide stays up and carries the run sheet in its note, and
+  `slides/30-live.html` is one visual summary, "What you just saw", ring by ring. A few statement slides are
+  dark sheets (`.x-dark`, in `ocean/ocean.css`). The operator checklists (pre-flight, reset, triage) live in
+  `docs/demo-runbook.md`.
 - "Decide" is defined by **The Safe Operating Model** (Francesco Beltramini, ControlPlane), as William
   presents it: rings of least privilege (Core · identity, Ring 1 · reach, Ring 2 · capability, and the
-  Keystone beneath them); the data ring is left out of this talk. The deck opens on three of William's KCD
-  Sofia 2026 intro slides, set on Northstar (origin tag `WILLIAM`). Slides derived from his OSFF demo carry
+  Keystone beneath them); the data ring is left out of this talk. The deck uses nine of William's KCD Sofia
+  2026 slides, set on Northstar (origin tag `WILLIAM`). Slides derived from his OSFF demo carry
   the origin tag `BOUNDED` in `PLAN.md`; Act 3's tools slides carry their ring as a `.ring` marker.
 - `PLAN.md` is the slide-by-slide plan: timing, origin (reused or new), visual and point. Its table is
   generated: after `python3 build/build.py`, run `python3 build/plan.py` (`--check` exits 1 if it is stale). It implements
@@ -71,13 +74,13 @@ raise small labels to about 20px at stage size. Don't redraw.
 
 - Every fast-moving fact carries a `[verify: …]` line in its speaker note. They map to Appendix B of the book.
 - The demo hazards are in Ch 14 and in the beat notes:
-  - Run `./scripts/demo reset` before the audience arrives and after every run: a contract left
-    `autonomous` makes step 2 settle instead of wait for the reviewer.
+  - Run `./scripts/demo start` before the audience arrives and `./scripts/demo reset` after every run:
+    forgetting `start` leaves the contract at `assisted`, and the Standard claim waits instead of settling.
   - `demo inject` waits up to 30 s for the claim's trace in Jaeger, `demo evidence` up to 90 s.
   - The model's reading of the injection claim varies run to run; if it takes the bait, `inject` says
     FOLLOWED and the ceiling still refuses. The Live note has the line for it.
   - In the browser: don't close the customer tab within 5 seconds of a submit, and switch Jaeger from GenAI View to Trace Timeline.
-  - Leave the autonomy contract at `assisted`, and the keystone over-grant absent.
-  - Kyverno must be Ready, with its webhook registered, before step 7 (`demo keystone`). A gracefully stopped Kyverno deletes its own webhooks, which turns the keystone off silently; `scripts/preflight.sh` checks for this.
+  - After the run, leave the autonomy contract at `assisted` (`demo reset`), and the keystone over-grant absent.
+  - Kyverno must be Ready, with its webhook registered, before step 6 (`demo keystone`). A gracefully stopped Kyverno deletes its own webhooks, which turns the keystone off silently; `scripts/preflight.sh` checks for this.
 - Slide 2's note has a placeholder line for William; he should write his own.
 - Two speakers: William Rizzo opens with the auditor's questions and Act 1, Kasper runs Acts 2–4 through the evidence, William closes from "Three things to remember". Every note starts with WILLIAM or KASPER; `PLAN.md` has a *Who* column.

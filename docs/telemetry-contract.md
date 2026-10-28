@@ -65,7 +65,7 @@ the day the gap closes upstream.
 | customer-ui | OpenTelemetry JS web, manual root spans | `@opentelemetry/sdk-trace-web` 2.8.0, `context-zone` 1.30.0, `exporter-trace-otlp-http` 0.219.0, `resources` 2.8.0 | `northstar.claim.submit`, `northstar.claim.wait`, `northstar.claim.answer` | Owns the trace roots. claims-agent's CORS `allow_headers` must list `traceparent`, `tracestate` and `baggage` so the browser's request survives preflight; the collector instead needs `http://localhost:8080` in its OTLP receiver's `allowed_origins`. The injection helper must be a *static* import: a dynamic `import()` or any other `await` before reading the active span loses it under `ZoneContextManager` (`apps/customer-ui/NOTES.md`; pinned by that service's vitest regression test). |
 | claims-agent | `a2a-sdk[telemetry]` + `opentelemetry-instrumentation-starlette` | `a2a-sdk==0.3.7`, `starlette` instrumentation `0.65b0` | ASGI entry span `POST /`, and the `a2a.server.*` call-graph spans (`JSONRPCHandler.on_message_send`, `DefaultRequestHandler.*`, `EventQueue.*`, `EventConsumer.consume_all`, ...); owned `northstar.a2a.resume` | `DISABLE_OTEL_INSTRUMENTATION` must stay unset; `bootstrap.configure()` raises if it is `true`. Inbound W3C trace context comes from `StarletteInstrumentor` wrapping the built ASGI app: `a2a-sdk` extracts nothing itself (Gap 1). |
 | claims-agent (intake model) | PydanticAI `Agent.instrument_all(InstrumentationSettings(...))` plus `HTTPX2ClientInstrumentor` | `pydantic-ai-slim==2.42.0`, `version=5` | `invoke_agent claims-agent` and one `chat <model>` per round, with the model's HTTP hop as its child. Only for a claim written as free text; a JSON claim emits none of these | The claim id is in baggage before the model runs, so these spans carry `northstar.claim.id`; `gen_ai.conversation.id` is the claim id. Held code-identical to settlement-agent's settings by `test_instrumentation_settings.py`. With content capture on, the `chat` span carries the customer's own description (see "Content capture"). |
-| settlement-agent | `a2a-sdk[telemetry]` + Starlette instrumentation + the `mcp` client, which instruments itself | `a2a-sdk==0.3.7`, `mcp==2.2.0`, starlette instrumentation `0.65b0` | Same shape as claims-agent, plus outbound `httpx2` CLIENT spans to agentgateway and to `api.anthropic.com`, and the SDK's own `MCP send initialize` / `MCP send tools/call <tool>` CLIENT spans | Only caller of agentgateway in the claim path. The outbound spans to the gateway are `httpx2` spans because `mcp` 2.x's transport is built on `httpx2`, a distribution separate from `httpx`; the instrumentor for it is `HTTPX2ClientInstrumentor`, applied in `bootstrap.py` next to `HTTPXClientInstrumentor`. |
+| settlement-agent | `a2a-sdk[telemetry]` + Starlette instrumentation + the `mcp` client, which instruments itself | `a2a-sdk==0.3.7`, `mcp==2.2.0`, starlette instrumentation `0.65b0` | Same shape as claims-agent, plus outbound `httpx2` CLIENT spans to agentgateway (the MCP listener and, for model calls, the `llm` listener), and the SDK's own `MCP send initialize` / `MCP send tools/call <tool>` CLIENT spans | Only caller of the gateway's MCP listener in the claim path (both agents call its `llm` listener). The outbound spans to the gateway are `httpx2` spans because `mcp` 2.x's transport is built on `httpx2`, a distribution separate from `httpx`; the instrumentor for it is `HTTPX2ClientInstrumentor`, applied in `bootstrap.py` next to `HTTPXClientInstrumentor`. |
 | settlement-agent (model) | PydanticAI `Agent.instrument_all(InstrumentationSettings(...))` in `bootstrap.py` | `pydantic-ai-slim==2.42.0`, `version=5` (the library default, pinned) | `invoke_agent settlement_agent` (internal, 1 per request), `chat <model>` (client, one per model turn), `execute_tool propose_payment`, `execute_tool execute_payment`, `execute_tool refuse_payment` (internal) | The decision itself, not only its transport. `include_content` reads `NORTHSTAR_CAPTURE_CONTENT` (default on; see "Content capture"). `include_model_request_parameters` stays at the library default (`True`). |
 | agentgateway | native, `frontendPolicies.tracing` in its own config | `cr.agentgateway.dev/agentgateway:v1.6.0` | Per MCP message: a SERVER span named after the JSON-RPC method and a CLIENT span named `<method> <target>`; per tool call an extra `Guardrail` CLIENT span | Verifies the caller's SPIRE JWT-SVID (`jwtAuth`, strict), asks the Policy Decision Service about every `tools/call` (`mcpGuardrails`, remote, `failureMode: failClosed`), and enforces a CEL ceiling on `execute_payment`. Exports OTLP/gRPC on 4317, the only component here that does not use OTLP/HTTP on 4318. `randomSampling: true` is set, see "Why the trace survives the gateway". Resource `telemetry.sdk.language=rust`. |
 | payments-mcp | FastMCP native | `fastmcp==4.0.3` | `tools/call <tool>` for `propose_payment`, `execute_payment`, `refuse_payment` and `get_payment` | The TracerProvider need not be installed before importing fastmcp: `fastmcp.telemetry.get_tracer()` asks for the provider on every span. `FASTMCP_TELEMETRY_MODE=native` is set explicitly although it is the default. |
@@ -145,6 +145,15 @@ also goes, as a copy and never a sample, to Weaver live-check
 (`otlp_grpc/weaver`), which checks it against the registry. AgentEvals receives a
 copy of every trace and scores what the agent did from its spans. No processor
 renames an attribute, so every destination gets the canonical names.
+
+One evaluator calls a model. `prompt_injection` sends claims-agent's intake (the
+customer's text) to Haiku (`AGENTEVALS_FLAG_MODEL`, default
+`anthropic/claude-haiku-5-5`) through LiteLLM inside the AgentEvals pod, and
+judges nothing else. An instruction in the text comes back as one
+`gen_ai.evaluation.result` event on claims-agent's span, label `fail` (AgentEvals
+0.11.0's labels are fixed: `pass`, `fail`, `not_evaluated`), explanation
+`flagged: <reason>`. `scripts/demo` prints it as `FLAG`, not as a failing check.
+With no key it is not evaluated.
 
 Jaeger is what the talk shows, because anyone can stand it up locally with no
 account. Dash0 is additive, enabled by one environment variable
@@ -304,7 +313,7 @@ The remaining 25 are present in both modes.
 | Span | Kind | Count per request | Carries |
 |---|---|---|---|
 | `invoke_agent settlement_agent` | internal | 1 | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=invoke_agent`, the five `gen_ai.aggregated_usage.*` roll-ups. Also the non-`gen_ai` `agent_name`, `model_name`, `logfire.msg`, `logfire.json_schema` and `pydantic_ai.all_messages` (the whole conversation; message shape only unless capture is on). |
-| `chat <model>` | client | one per model turn (propose, execute or refuse, final narrative) | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=chat`, `gen_ai.provider.name` and `gen_ai.system` (both `anthropic`; `gen_ai.system` is the deprecated spelling and `version=5` emits both), `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.response.id`, `gen_ai.response.finish_reasons`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.definitions`, the `gen_ai.usage.*` fields (`details.thinking_tokens` only on turns where the model thought, deliberately not asserted). Also `server.address=api.anthropic.com`, `operation.cost` and `model_request_parameters`. Each has exactly one httpx2 CLIENT child, the model's wire-level hop (Gap 7). |
+| `chat <model>` | client | one per model turn (propose, execute or refuse, final narrative) | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=chat`, `gen_ai.provider.name` and `gen_ai.system` (both `anthropic`; `gen_ai.system` is the deprecated spelling and `version=5` emits both), `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.response.id`, `gen_ai.response.finish_reasons`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.definitions`, the `gen_ai.usage.*` fields (`details.thinking_tokens` only on turns where the model thought, deliberately not asserted). Also `server.address` (set by PydanticAI from the client's base URL), `operation.cost` and `model_request_parameters`. Each has exactly one httpx2 CLIENT child, the model's wire-level hop (Gap 7), and under that the gateway's two spans ("The model call at the gateway"). |
 | `execute_tool <tool>` | internal | 1 per tool call | `gen_ai.agent.call.id`, `gen_ai.agent.name`, `gen_ai.conversation.id`, `gen_ai.operation.name=execute_tool`, `gen_ai.tool.call.id`, `gen_ai.tool.name`, plus `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result` when capture is on. |
 | `tools/call <tool>` (payments-mcp) | server | 1 per tool call | `gen_ai.tool.name` only. FastMCP's behaviour (Gap 5 covers what is missing). |
 
@@ -314,6 +323,33 @@ not part of the OpenTelemetry Semantic Conventions"). `gen_ai.tool.definitions`
 is not redacted by `include_content=False`, so neither `include_content` nor
 `include_model_request_parameters` is, on its own, a complete redaction switch
 (see "Content capture").
+
+## The model call at the gateway
+
+Model calls go through agentgateway's `llm` listener (port 4000), which adds two spans
+under each PydanticAI `chat <model>` span, measured from a real trace:
+
+```
+chat claude-sonnet-5          PydanticAI, CLIENT
+  POST                        httpx, CLIENT (the agent's wire hop, now to the gateway)
+    POST /v1/messages         agentgateway, SERVER
+      POST api.anthropic.com:443   agentgateway, CLIENT
+```
+
+The gateway's SERVER span carries `jwt.sub` (the calling agent's SPIFFE ID, from the
+token the gateway verified, not from anything the agent says), `gen_ai.operation.name=chat`,
+`gen_ai.provider.name=anthropic`, `gen_ai.request.model`, `gen_ai.response.model`,
+`gen_ai.request.max_tokens`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`
+and the cache token fields, the `agw.ai.usage.cost.*` family (`input`, `output`,
+`total` and others), `listener=llm`, `server.port=4000` and `url.path=/v1/messages`.
+`jwt.sub` was already on the gateway's MCP span.
+
+**Double counting.** The gateway span carries `gen_ai.operation.name=chat` and token
+usage, as the agent's `chat` span does, so a backend that sums `gen_ai.usage.*` across
+all spans counts each model call twice. Select the agent's `chat` spans or the
+gateway's, not both. The existing spans and attributes, and AgentEvals' verdicts, are
+unchanged (`scripts/demo evidence` gives the same five checks; Weaver live-check
+reports no violation in this project's attributes).
 
 ## The `mcp` client's own spans
 
@@ -355,8 +391,9 @@ nowhere to put the policy block), in `northstar-platform`.
 `deploy/platform/agentgateway/config.yaml`'s `frontendPolicies.tracing` exports
 OTLP/gRPC to `otel-collector.observability.svc.cluster.local:4317`.
 settlement-agent's `PAYMENTS_MCP_URL` names it, so every MCP call the model makes
-crosses it. The gateway also carries one CEL `authorization` ceiling on the
-route, which only ever says no (see below).
+crosses it. The gateway also carries one CEL `authorization` rule on the
+route, which only ever says no: only settlement-agent and reviewer-ui may call,
+and `execute_payment` has a ceiling (see below).
 
 Every name in this section was read off a live span in Jaeger and dumped in full.
 None was predicted from agentgateway's source or documentation, because it is not
@@ -1556,10 +1593,12 @@ For each: the evidence, the upstream state, and what this project does.
   `HTTPXClientInstrumentor()`. Each `chat` span has exactly one httpx2 CLIENT child
   (`otel.scope.name=opentelemetry.instrumentation.httpx`, `POST`, stable HTTP semconv
   under the opt-in: `http.request.method`, `http.response.status_code`,
-  `server.address=api.anthropic.com`, `url.full`, `network.protocol.version`). The
-  two instrumentor classes share one tracer, so the scope name cannot tell an httpx
-  span from an httpx2 span; the model-bound span is identified by `server.address ==
-  "api.anthropic.com"`. `chat` is the outer logical operation (with `gen_ai.*`) and
+  `server.address`, `url.full`, `network.protocol.version`; the host was
+  `api.anthropic.com` when the agents called the provider directly and is now the
+  gateway's). The two instrumentor classes share one tracer, so the scope name cannot
+  tell an httpx span from an httpx2 span; the model-bound span is identified by its
+  address (the test in the next sentence still names `api.anthropic.com`, the
+  pre-gateway value). `chat` is the outer logical operation (with `gen_ai.*`) and
   the httpx span the wire hop (with `http.*`): two CLIENT spans at two depths for two
   different things, not a duplicate. Pinned by
   `tests/e2e/test_settlement_llm_trace.py::test_anthropic_client_span_exists_and_is_parented_to_chat`.

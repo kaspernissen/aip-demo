@@ -109,16 +109,91 @@
   </div>
 </section>
 
-<!-- 39b · NEW · How the auditor works: AgentEvals reads the agents' own traces, four code evaluators, grades written back as gen_ai.evaluation.result (deploy/observability/agentevals.yaml; deploy/observability/agentevals/evaluators/) -->
+<!-- 43 · TAMING · "More Telemetry ≠ Better Telemetry" (p.40), reworked: the 142 vs 139 defect -->
+<section data-cut class="slide hero x-dark" data-label="Never sample the decisions">
+  <div class="hero-num cmyk-num rise"><span class="paper">142 vs 139</span><span class="plate plate-c" aria-hidden="true">142 vs 139</span><span class="plate plate-m" aria-hidden="true">142 vs 139</span><span class="plate plate-y" aria-hidden="true">142 vs 139</span></div>
+  <p class="hero-caption x40-hc">Spans in Jaeger vs a second backend. The missing three were exactly the decisions. <span class="spot-2">Never sample them.</span></p>
+</section>
+
+<!-- section divider: Prove (Kasper) -->
+<section class="slide content x10-thesis x-dark" data-label="Section: Prove">
+  <div class="x10-words rise">
+    <p class="x10-w dim">Decide<span class="spot-2">.</span></p><p class="x10-g dim">what an agent may do <span class="x10-st done">done</span></p>
+    <div class="x10-w cmyk-num dim"><span class="paper">Trace<span class="spot-2">.</span></span><span class="plate plate-c" aria-hidden="true">Trace.</span><span class="plate plate-m" aria-hidden="true">Trace.</span><span class="plate plate-y" aria-hidden="true">Trace.</span></div><p class="x10-g dim">what it actually did <span class="x10-st done">done</span></p>
+    <p class="x10-w">Prove<span class="spot-2">.</span></p><p class="x10-g">it afterwards, from the trace</p>
+  </div>
+</section>
+
+<!-- 38a · NEW · KASPER · the gen_ai.* conventions before the checks: the three span types the demo emits (invoke_agent settlement_agent, chat claude-sonnet-5, execute_tool execute_payment; trace 1a7c8e68…, 2026-10-27), default attributes solid, opt-in content dashed -->
+<section class="slide content" data-label="The gen_ai names">
+  <h2 class="slide-title">The <span class="a2-ident">gen_ai.*</span> names: what a trace can say</h2>
+  <p class="x40-gn-lede rise">OpenTelemetry&rsquo;s semantic conventions for model and agent calls. <span class="spot-2">Three span types carry the agent&rsquo;s work.</span></p>
+  <div class="x40-gn rise"><div class="c"><p class="h"><i class="ph-duotone ph-robot"></i><span><b>invoke_agent</b><em>settlement_agent</em></span></p><p class="w">an agent takes a task</p><div class="ch"><span class="code">gen_ai.agent.name</span><span class="code">gen_ai.conversation.id = claim id</span></div><div class="ch"><span class="code o">gen_ai.system_instructions</span></div></div><div class="c"><p class="h"><i class="ph-duotone ph-chat-circle-dots"></i><span><b>chat</b><em>claude-sonnet-5</em></span></p><p class="w">one call to the model</p><div class="ch"><span class="code">gen_ai.request.model</span><span class="code">gen_ai.usage.input_tokens</span><span class="code">gen_ai.response.finish_reasons</span></div><div class="ch"><span class="code o">gen_ai.input.messages</span><span class="code o">gen_ai.output.messages</span></div></div><div class="c"><p class="h"><i class="ph-duotone ph-wrench"></i><span><b>execute_tool</b><em>execute_payment</em></span></p><p class="w">the agent uses a tool</p><div class="ch"><span class="code">gen_ai.tool.name</span><span class="code">gen_ai.tool.call.id</span></div><div class="ch"><span class="code o">gen_ai.tool.call.arguments</span><span class="code o">gen_ai.tool.call.result</span></div></div></div>
+  <p class="x40-gn-k rise"><span><span class="code">solid</span> always recorded</span><span><span class="code o">dashed</span> opt-in: the words themselves</span></p>
+</section>
+
+<!-- 30e · NEW · KASPER · what to check in an agent's trace: the questions, the gen_ai.* data that answers each, the code check Northstar wrote for it (deploy/observability/agentevals/evaluators/*.py) and why, and where LLM-as-judge fits (its drift measured in the AgentEvals trial 2026-10-21). Replaces "Grade the claim, not the trace" -->
+<section class="slide content" data-label="What to check in the agent's trace">
+  <h2 class="slide-title">What did the agent actually do?</h2>
+  <p class="x40-ck-lede rise">The <span class="code c">gen_ai.*</span> spans record every model call and every tool call. <span class="spot-2">Ask them questions.</span></p>
+  <div class="x40-ck rise">
+    <p class="h">The question</p><p class="h">Read from</p><p class="h">Our check</p><p class="h">Why it matters here</p>
+    <p class="q">Right tools, right order?</p><p class="f"><span class="code">execute_tool</span> spans, in order</p><p class="c">took_a_known_path</p><p class="w">propose, then execute. Anything else is a path nobody designed</p>
+    <p class="q hot">Going round in a loop?</p><p class="f">tool calls after a refusal</p><p class="c hot">stopped_when_refused</p><p class="w">a refused agent that tries again is working around the platform</p>
+    <p class="q">Paid what it proposed?</p><p class="f">tool arguments</p><p class="c">amount_executed_matches_proposed</p><p class="w">no drift between the two calls</p>
+    <p class="q">Said what it shouldn&rsquo;t?</p><p class="f"><span class="code">gen_ai.output.messages</span></p><p class="c">narrative_states_no_amount</p><p class="w">the amount comes from the ledger, never the model</p>
+    <p class="q j">Was the answer good, and true?</p><p class="f j">input and output messages</p><p class="c j">LLM as judge</p><p class="w j">a second model grades it, and wavers: one claim, three runs, 0.60, 0.40, 0.40</p>
+  </div>
+  <p class="x40-ck-line rise">Code where the answer must never vary. <span class="spot-2">A judge where it needs meaning.</span></p>
+</section>
+
+<!-- 39b · NEW · How the auditor works: AgentEvals reads the agents' own traces, five code evaluators (the panel: the Tricky claim, demo evidence 2026-10-27), grades written back as gen_ai.evaluation.result (deploy/observability/agentevals.yaml; deploy/observability/agentevals/evaluators/) -->
 <section class="slide content" data-label="How the auditor works">
-  <h2 class="slide-title">How the auditor works</h2>
-  <ol class="x40-loop rise">
-    <li><i>1</i><b>Spans land</b><span>every service &rarr; OTel Collector &rarr; AgentEvals, a copy of what Jaeger gets</span></li>
-    <li><i>2</i><b>One session per claim</b><span>the claim id is the conversation id; it scores when asked, not on its own</span></li>
-    <li><i>3</i><b>Four checks, plain code</b><span>took a known path &middot; stopped when refused &middot; amount matches proposed &middot; narrative states no amount</span></li>
-    <li class="hot"><i>4</i><b>Written back</b><span>one <span class="code m">gen_ai.evaluation.result</span> event per check, on the agent&rsquo;s own span</span></li>
+  <h2 class="slide-title">The auditor: AgentEvals</h2>
+  <p class="x40-aw-lede rise">An open-source evaluator. It reads the agent&rsquo;s own trace, after the fact, <span class="spot-2">and writes its grade back as telemetry.</span></p>
+  <ol class="x40-aw rise">
+    <li><i class="ph-duotone ph-robot"></i><b>The agents</b><span>emit spans, as always</span></li>
+    <li><i class="ph-duotone ph-funnel"></i><b>The Collector</b><span>sends AgentEvals a copy</span></li>
+    <li class="hot"><img src="assets/logos/agentevals-icon.svg" alt=""><b>AgentEvals</b><span>five checks per claim</span></li>
+    <li><i class="ph-duotone ph-seal-check"></i><b>The grade</b><span>back on the agent&rsquo;s span</span></li>
   </ol>
-  <p class="x40-same rise">OpenTelemetry in, OpenTelemetry out. <span class="muted">The agent is never touched.</span></p>
+  <div class="x40-awx rise">
+    <p class="k">The Tricky claim, &euro;2,400</p>
+    <div class="r"><span class="code">took_a_known_path</span><span>propose, then execute, nothing else</span><b>PASS</b></div>
+    <div class="r"><span class="code">stopped_when_refused</span><span>never refused</span><b class="na">n/a</b></div>
+    <div class="r"><span class="code">amount_executed_matches_proposed</span><span>paid what it proposed</span><b>PASS</b></div>
+    <div class="r"><span class="code">narrative_states_no_amount</span><span>told the customer no figure</span><b>PASS</b></div>
+    <div class="r fl"><span class="code">prompt_injection</span><span>the customer tried to instruct it</span><b>FLAG</b></div>
+  </div>
+  <div class="x40-awo rise"><p>Also reads <span class="code">gen_ai.*</span>:</p><span><i class="ph-duotone ph-flask"></i>OpenLIT</span><span><i class="ph-duotone ph-bird"></i>Arize Phoenix</span><span><i class="ph-duotone ph-compass-tool"></i>Langfuse</span><span><i class="ph-duotone ph-heartbeat"></i>Agent Health</span></div>
+</section>
+
+<!-- 41a · NEW · two kinds of checks on the model itself: quality evals and topic guardrails (OpenLIT docs, 2026-10-19). Prompt injection sits in both: before the answer a guardrail can block it; after the fact AgentEvals can only flag it (the demo's prompt_injection evaluator, 2026-10-27) -->
+<section data-cut class="slide content" data-label="Two kinds of checks">
+  <h2 class="slide-title">The standard checks on the model</h2>
+  <div class="x40-two rise">
+    <div class="col">
+      <p class="when">After the answer</p>
+      <p class="q">Was it good?</p>
+      <p class="kind">Evals &middot; a score or a flag</p>
+      <ul>
+        <li><i class="ph-duotone ph-ghost"></i>Hallucination</li>
+        <li><i class="ph-duotone ph-arrows-left-right"></i>Bias</li>
+        <li><i class="ph-duotone ph-warning-octagon"></i>Toxicity</li>
+        <li><i class="ph-duotone ph-syringe"></i>Prompt injection</li>
+      </ul>
+    </div>
+    <div class="col m">
+      <p class="when">Before the answer</p>
+      <p class="q">May it say this?</p>
+      <p class="kind">Guardrails &middot; can block</p>
+      <ul>
+        <li><i class="ph-duotone ph-syringe"></i>Prompt injection</li>
+        <li><i class="ph-duotone ph-eye-slash"></i>Sensitive topics</li>
+        <li><i class="ph-duotone ph-signpost"></i>Topic restriction</li>
+      </ul>
+    </div>
+  </div>
 </section>
 
 <!-- 41 · DID WHAT · "Enter LLM-as-judge", rebuilt as judge vs auditor on one output format (Ch 3 Fig 3.13, Ch 9 "What Northstar does not have") -->
@@ -140,7 +215,7 @@
 </section>
 
 <!-- 38c · NEW · grade the claim, not the trace: AgentEvals 0.11.0 per trace (vacuous PASS) against grouped by claim (FAIL, caught). Measured 2026-10-21 on synthetic Northstar fixtures (scratchpad agentevals-trial/); the live demo sets gen_ai.conversation.id = claim id (one AgentEvals session per claim); caveats on the face -->
-<section class="slide content" data-label="Grade the claim, not the trace">
+<section data-cut class="slide content" data-label="Grade the claim, not the trace">
   <h2 class="slide-title">Grade the claim, not the trace</h2>
   <p class="x40-g3-lede rise">The agent was refused, then tried to pay again from a second trace. <span class="muted">Check: <span class="code">stopped_when_refused</span></span></p>
   <div class="x40-g3 rise">
@@ -149,35 +224,6 @@
   </div>
   <p class="x40-g3-line rise">A partial trajectory always reads higher. <span class="spot-2">Group by the claim before you grade.</span></p>
   <p class="x40-g3-cav rise"><i class="ph-duotone ph-warning"></i>The retry is staged: our live agent never retried. The demo sends the claim id as <span class="code">gen_ai.conversation.id</span>, so AgentEvals grades the claim. It sees agent spans only: no policy decision, no human, no caller. Those are read in Jaeger.</p>
-</section>
-
-<!-- 41a · NEW · two kinds of checks on the model itself: quality evals and topic guardrails (OpenLIT docs, 2026-10-19); neither is in the demo -->
-<section class="slide content" data-label="Two kinds of checks">
-  <h2 class="slide-title">Two kinds of checks on the model</h2>
-  <div class="x40-two rise">
-    <div class="col">
-      <p class="when">After the answer</p>
-      <p class="q">Was it good?</p>
-      <p class="kind">Evals &middot; a score</p>
-      <ul>
-        <li><i class="ph-duotone ph-ghost"></i>Hallucination</li>
-        <li><i class="ph-duotone ph-arrows-left-right"></i>Bias</li>
-        <li><i class="ph-duotone ph-warning-octagon"></i>Toxicity</li>
-      </ul>
-    </div>
-    <div class="col m">
-      <p class="when">Before the answer</p>
-      <p class="q">May it say this?</p>
-      <p class="kind">Guardrails &middot; block or flag</p>
-      <ul>
-        <li><i class="ph-duotone ph-syringe"></i>Prompt injection</li>
-        <li><i class="ph-duotone ph-eye-slash"></i>Sensitive topics</li>
-        <li><i class="ph-duotone ph-signpost"></i>Topic restriction</li>
-      </ul>
-    </div>
-  </div>
-  <p class="x40-two-f rise">Record either one as <span class="code">gen_ai.evaluation.result</span>, beside the trace it judged. <span class="muted">Neither is in the demo.</span></p>
-  <p class="x40-two-up rise"><b>Upstream, today:</b> OpenLIT judges one model call. Agent Health scores runs it starts itself. AgentEvals scores your OTel traces and writes <span class="code">gen_ai.evaluation.result</span> back, but sees only what the agent did, not what the platform decided. So the platform&rsquo;s side is read in the trace, not graded.</p>
 </section>
 
 <!-- 42 · NEW · Content capture, simplified (2026-10-19 "a lot of text"): what survives with capture off, what is lost; the measured counts stay in the note -->
@@ -205,12 +251,6 @@
     </div>
   </div>
   <p class="x40-cc-line rise">Privacy and audit don’t fight, <span class="spot-2">when the evidence lives in the platform.</span></p>
-</section>
-
-<!-- 43 · TAMING · "More Telemetry ≠ Better Telemetry" (p.40), reworked: the 142 vs 139 defect -->
-<section data-cut class="slide hero x-dark" data-label="Never sample the decisions">
-  <div class="hero-num cmyk-num rise"><span class="paper">142 vs 139</span><span class="plate plate-c" aria-hidden="true">142 vs 139</span><span class="plate plate-m" aria-hidden="true">142 vs 139</span><span class="plate plate-y" aria-hidden="true">142 vs 139</span></div>
-  <p class="hero-caption x40-hc">Spans in Jaeger vs a second backend. The missing three were exactly the decisions. <span class="spot-2">Never sample them.</span></p>
 </section>
 
 <!-- 44 · NEW · Requirement → artifact, Ch 14's six-row table; walk two rows (Art. 86 / C-203/22 and DORA) -->

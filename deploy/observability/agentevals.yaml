@@ -19,7 +19,8 @@
 # does not follow span links. Those are in the trace, read by a person (Jaeger,
 # `scripts/demo evidence`), and no evaluator judges them.
 #
-# The four code evaluators are this repo's, from the ConfigMap
+# The five code evaluators are this repo's (one of them, prompt_injection,
+# calls a model through LiteLLM with the pod's ANTHROPIC_API_KEY), from the ConfigMap
 # `agentevals-evaluators` that scripts/setup-kind.sh builds from
 # deploy/observability/agentevals/evaluators. Sessions live in memory: a restart
 # empties the UI. The results already sent are in the collector's logs

@@ -39,9 +39,8 @@ kind: Component
 metadata:
   name: claims-agent
   description: >-
-    Intake and delegation for motor claims: files the claim, evaluates policy
-    via policy-decision-service, and delegates settlement to settlement-agent
-    over A2A.
+    Intake and delegation for motor claims: reads the customer's words into a
+    claim with a model (called through agentgateway under its SPIFFE identity), and delegates settlement to settlement-agent over A2A.
   annotations:
     backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-id: claims-agent

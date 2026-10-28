@@ -51,7 +51,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import uuid
 
 import pytest
 
@@ -65,6 +64,7 @@ from tests.e2e.test_policy_denial import (  # noqa: F401 -- reused, not reimplem
     ATTR_POLICY_RULE,
     EXECUTE_TOOL,
     _decisions,
+    PERMITTED_STORY,
     _drive_browser,
     browser_test,
     claims_agent_route,
@@ -177,7 +177,7 @@ def test_the_same_claim_refuses_then_settles_when_only_the_contract_changes(
     """
     contract.set_targeted_branch(contract.ASSISTED)
     try:
-        refused = _drive_browser(f"CLM-AUTONOMY-{uuid.uuid4().hex[:8]}", AMOUNT)
+        refused = _drive_browser(PERMITTED_STORY)
         assert refused.reply.get("status") == "awaiting_approval", refused.reply
         refused_decisions = _decisions(refused.trace, EXECUTE_TOOL)
         assert len(refused_decisions) == 1, (
@@ -195,7 +195,7 @@ def test_the_same_claim_refuses_then_settles_when_only_the_contract_changes(
 
         contract.set_targeted_branch(contract.AUTONOMOUS)
 
-        settled = _drive_browser(f"CLM-AUTONOMY-{uuid.uuid4().hex[:8]}", AMOUNT)
+        settled = _drive_browser(PERMITTED_STORY)
         assert settled.reply.get("status") == "executed", settled.reply
         settled_decisions = _decisions(settled.trace, EXECUTE_TOOL)
         assert len(settled_decisions) == 1, (

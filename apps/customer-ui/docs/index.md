@@ -5,11 +5,15 @@ component in the system a customer touches directly.
 
 ## Responsibilities
 
-- Present the claim form (pre-filled: `CLM-1842`, `POL-77120`, €6,200).
+- Take the claim in the customer's own words: one text box, pre-filled with the
+  standard claim (EUR 1,450, `POL-77120`), and three chips, **Standard claim**
+  (EUR 1,450), **Large claim** (EUR 8,500) and **Tricky claim** (EUR 2,400, with
+  an instruction to pay EUR 80,000) (`src/presets.ts`). There is no form, so every claim is read
+  by claims-agent's model, which also names it (`CLM-INTAKE-...`).
 - Start the `northstar.claim.submit` span, which is the root of the whole distributed
-  trace. It has no parent, and its two attributes
-  (`northstar.claim.id`, `northstar.claim.policy_number`) are set here in the
-  browser, propagated from nowhere.
+  trace. It has no parent; its two attributes (`northstar.claim.id`,
+  `northstar.claim.policy_number`) are set here in the browser once
+  claims-agent's first reply names the claim.
 - Submit over A2A to `claims-agent` and render the determination. When the claim waits for a person, the outcome arrives by push (below).
 
 ## What the claimant sees
@@ -55,18 +59,20 @@ The server is its own service, `customer-ui-server` (the browser keeps
 span. Linkerd lets only claims-agent's identity call `POST /a2a/push` on `8080` (any
 other caller gets a 403); the page and the other paths stay open.
 
-## A note for anyone editing the form
+## A note for anyone editing the page
 
-Three suites drive this page with Playwright, and they address it structurally:
+Two suites drive this page with Playwright (`tests/e2e/test_browser_root_span.py`,
+`tests/e2e/test_policy_denial.py`), and they address it structurally:
 
-- `input >> nth=0` — the claim reference must stay the **first** `<input>`
-- `input[type=number]` — the amount must stay the **only** number input
+- `textarea` — the claim text must stay the **only** `<textarea>` before a
+  result exists (the answer box appears only when claims-agent asks)
 - `button[type=submit]` — one
 - `h2:text-is('Outcome') + pre` — adjacent siblings, nothing between them
 - `text=Outcome` is *waited on* and substring-matched, so the word must appear
   **nowhere** on the page before a result exists
 
-Each is marked with a comment beside the element that carries it.
+The tricky chip's text must stay equal to `DEFAULT_INJECTION` in
+`scripts/demo.py`; `tests/unit/test_demo_driver.py` holds the two equal.
 
 ## Known limits
 

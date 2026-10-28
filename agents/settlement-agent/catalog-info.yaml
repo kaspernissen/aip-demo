@@ -17,7 +17,8 @@ metadata:
   description: >-
     Proposes and executes settlements for motor claims, reading the
     `northstar-autonomy` FeatureFlag contract to decide whether a settlement
-    executes assisted (human-reviewed) or autonomously.
+    executes assisted (human-reviewed) or autonomously. Its model calls go
+    through agentgateway under its SPIFFE identity; it holds no model key.
   annotations:
     backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-id: settlement-agent

@@ -1,18 +1,30 @@
 [
- {
-  "secs": 60,
-  "note": "WILLIAM\n\nLet me point at the holes before you go looking. An audience of platform engineers will spot all of these, and naming them first is worth more than the features.\n\nOn the left, Northstar as built. Identity is checked on one hop only, the tools/call into the payment tool. The tool and the ledger just trust the network. The reviewer isn't logged in: one human, one click, once. Backstage: the backend checks a credential, but anyone who can reach port 7007 can mint one. They can flip the contract, and nothing else. The claim id stops at the MCP boundary, so the evidence joins on trace id. Model calls skip the gateway. One GenAI metric of twelve arrives.\n\nOn the right, dashed, two layers the demo lacks. A context layer needs retrieval and memory spans. Multi-agent over shared context needs span links and one identity per agent.\n\nSource: Ch 14, Ch 11\n[verify: 1 of 12 GenAI metrics still true at slide freeze]"
- },
- {
-  "secs": 45,
-  "note": "WILLIAM\n\nBecoming an AI observability wizard starts with six basics. They're on the left, dimmed, and they all still hold. One footnote: Northstar's step five is the deterministic auditor you just saw, not a model judge.\n\nRegulated domains add three steps. Seven: decide at a choke point. Like airport security: every passenger goes through one gate, and if the gate is down, nobody boards. Eight: make identity an input. The caller is half the policy key: the same payment that the settlement agent may not release is one the reviewer-ui may release, because the platform asks who is calling and reads what the ledger says. Nine: keep every decision span. Never sample it away.\n\nSource: Ch 3, Ch 14"
- },
- {
-  "secs": 45,
-  "note": "WILLIAM\n\nSo what do you do on Monday? Five verbs, and none of them needs a purchase order.\n\nInstrument: turn on what your agent framework already emits, follow the gen_ai conventions, and carry trace context over every hop: A2A, MCP, skills, the policy call. Put a gateway in the path: one choke point, a decision span, and failClosed written down. Make identity an input: one SPIFFE identity per agent, a passport for a workload, checked at the gateway. Contribute upstream: seventeen findings are written up and waiting. Map to the standard: nobody has mapped OTel's GenAI conventions to ISO/IEC 24970, the AI logging standard, yet.\n\nSeventeen findings. Pick one.\n\nSource: Ch 14\n[verify: ISO/IEC 24970 still at FDIS the week of the talk; seventeen findings still unfiled at slide freeze]"
- },
- {
-  "secs": 35,
-  "note": "WILLIAM\n\nIf you keep three sentences, keep these.\n\nOne: guardrails live in the platform, not in the prompt. Identity, reach, limits, and a human where the rule says, and the agent cannot edit any of them.\n\nTwo: instrument the decisions, not only the errors. A permit, a hold and a sign-off are spans with a rule, a limit and an identity, and the names are a published schema. Then the evidence is a byproduct of the checks.\n\nThree: build it from upstream projects. CNCF and AAIF already ship the pieces. The only part you write is your rules.\n\nSo, the boundary will not come from the agent. Draw it in the platform, make it the default, and let the rings hold it.\n\nPause. Then the line from the cover.\n\nIf you can't trace it, you can't govern it.\n\n[verify: agentgateway joined AAIF 2026-06-04 (agentgateway.dev blog); A2A joined 2026-08-17 (secondary source; check aaif.io/projects)]\n\nSource: Ch 14 (Fig 14.4, reworded: the stop is now a hold for a person, not a refusal); William Rizzo, KCD Sofia 2026, closing slide (\"The boundary will not come from the agent.\")"
- }
+  {
+    "secs": 50,
+    "note": "WILLIAM\n\nLet me point at the holes before you go looking. An audience of platform engineers will spot all of these, and naming them first is worth more than the features.\n\nNorthstar, as built. Identity is checked on one hop only, the tools/call into the payment tool; the tool and the ledger trust the network. The reviewer isn't logged in: one human, one click, once.\n\nAnd the one you might have been waiting for: a customer who lies believably. \"The repair is five thousand\", for a scratch. Under the limit, the model reads it as written and the agent pays it. The platform bounds how much can go wrong, at six thousand, and the trace records exactly what was claimed. It doesn't judge whether the claim is true. That's a fraud check, and it's a different job.\n\nThe claim id stops at the MCP boundary, so the evidence joins on trace id. Model calls pass the gateway, but nobody reads the prompt there. One GenAI metric of twelve arrives.\n\nSource: Ch 14, Ch 11; the under-limit trick: apps/customer-ui/src/presets.ts (the tricky claim) and platform/policy-decision-service/pds/rules.py EXECUTE_LIMITS\n[verify: 1 of 12 GenAI metrics still true at slide freeze]"
+  },
+  {
+    "secs": 25,
+    "note": "WILLIAM\n\nThree words, one more time.\n\nDecide: the rings held. Identity, reach, the limits, and a keystone the agent couldn't touch.\n\nTrace: every claim became one trace, and every decision a span with its rule.\n\nProve: AgentEvals graded the agent's work, from that trace, after the fact.\n\nThe auditor's five questions, answered from what the platform recorded."
+  },
+  {
+    "secs": 45,
+    "note": "WILLIAM\n\nSo, autonomy and the human in the loop.\n\nRead it left to right, by amount. Under the line, the agent pays on its own. Above it, a person decides. Past the fifty-thousand ceiling, nobody: the gateway refuses, whoever asks.\n\nWhere the line sits is one value in the platform: the autonomy flag. Assisted puts it at zero, so every payout goes to a person. Autonomous puts it at six thousand. Nothing is redeployed to move it, and it moves back just as fast. The agent can't touch it; that's the keystone.\n\nThe human is not removed. The platform decides where the human stands. And the evidence, run after run, graded from the trace, is what earns the next notch.\n\nSource: platform/policy-decision-service/pds/rules.py EXECUTE_LIMITS; deploy/platform/openfeature/featureflag.yaml; agentgateway CEL ceiling (EUR 50,000)"
+  },
+  {
+    "secs": 25,
+    "note": "WILLIAM\n\nWe opened with this: an agent will do exactly what its tools let it do.\n\nSo the boundary will not come from the agent. Draw it in the platform, make it the default, and let the rings hold it.\n\nPause.\n\nSource: William Rizzo, KCD Sofia 2026 keynote, slide 16"
+  },
+  {
+    "secs": 45,
+    "note": "WILLIAM\n\nBecoming an AI observability wizard starts with six basics. They're on the left, dimmed, and they all still hold. One footnote: Northstar's step five is the deterministic auditor you just saw, not a model judge.\n\nRegulated domains add three steps. Seven: decide at a choke point. Like airport security: every passenger goes through one gate, and if the gate is down, nobody boards. Eight: make identity an input. The caller is half the policy key: the same payment that the settlement agent may not release is one the reviewer-ui may release, because the platform asks who is calling and reads what the ledger says. Nine: keep every decision span. Never sample it away.\n\nSource: Ch 3, Ch 14"
+  },
+  {
+    "secs": 45,
+    "note": "WILLIAM\n\nSo what do you do on Monday? Five verbs, and none of them needs a purchase order.\n\nInstrument: turn on what your agent framework already emits, follow the gen_ai conventions, and carry trace context over every hop: A2A, MCP, skills, the policy call. Put a gateway in the path: one choke point, a decision span, and failClosed written down. Make identity an input: one SPIFFE identity per agent, a passport for a workload, checked at the gateway. Contribute upstream: seventeen findings are written up and waiting. Map to the standard: nobody has mapped OTel's GenAI conventions to ISO/IEC 24970, the AI logging standard, yet.\n\nSeventeen findings. Pick one.\n\nSource: Ch 14\n[verify: ISO/IEC 24970 still at FDIS the week of the talk; seventeen findings still unfiled at slide freeze]"
+  },
+  {
+    "secs": 40,
+    "note": "WILLIAM\n\nIf you keep three sentences, keep these.\n\nOne: guardrails live in the platform, not in the prompt. Identity, reach, limits, and a human where the rule says, and the agent cannot edit any of them.\n\nTwo: instrument the decisions, not only the errors. A permit, a hold and a sign-off are spans with a rule, a limit and an identity, and the names are a published schema. Then the evidence is a byproduct of the checks.\n\nThree: build it from upstream projects. CNCF and AAIF already ship the pieces. The only part you write is your rules.\n\nPause. Then the line from the cover.\n\nIf you can't trace it, you can't govern it.\n\n[verify: agentgateway joined AAIF 2026-06-04 (agentgateway.dev blog); A2A joined 2026-08-17 (secondary source; check aaif.io/projects)]\n\nSource: Ch 14 (Fig 14.4, reworded: the stop is now a hold for a person, not a refusal); William Rizzo, KCD Sofia 2026, closing slide (\"The boundary will not come from the agent.\")"
+  }
 ]

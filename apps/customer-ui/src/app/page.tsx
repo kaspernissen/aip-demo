@@ -7,30 +7,15 @@ import {
   getPushConfig,
   streamClaim,
   streamReply,
-  type Claim,
-  type ClaimInput,
   type ClaimResult,
   type TaskSnapshot,
 } from "../a2a";
+import { PRESETS, STANDARD_CLAIM, selectedPreset } from "../presets";
 import { determinationView, formatElapsed, outcomeWord, questionOf } from "../view";
 import { getTracer, initTelemetry } from "../telemetry";
 
 const CLAIMS_AGENT_URL =
   process.env.NEXT_PUBLIC_CLAIMS_AGENT_URL ?? "http://localhost:19001";
-
-const DEFAULT_CLAIM: Claim = {
-  claimId: "CLM-1842",
-  policyNumber: "POL-77120",
-  description: "Rear-end collision at a junction",
-  estimatedAmount: 6200,
-};
-
-const DEFAULT_STORY =
-  "Someone reversed into my car in a car park yesterday. The rear bumper and a " +
-  "parking sensor need replacing; the garage quoted 1,450 euro. My policy is POL-77120.";
-
-/** How the claim is entered: the structured form, or the customer's own words. */
-type Mode = "form" | "text";
 
 /** A claim waiting for the customer's answer to the agent's question. */
 type Asking = {
@@ -44,25 +29,9 @@ type Asking = {
 };
 
 export default function Page() {
-  const [mode, setMode] = useState<Mode>("form");
-  const [claim, setClaim] = useState<Claim>(DEFAULT_CLAIM);
-  const [story, setStory] = useState(DEFAULT_STORY);
+  const [story, setStory] = useState(STANDARD_CLAIM.text);
   const [asking, setAsking] = useState<Asking | null>(null);
   const [answer, setAnswer] = useState("");
-  // The amount is held as TEXT, not as a number, and parsed once at submit.
-  //
-  // Holding it as `value={claim.estimatedAmount}` against
-  // `onChange={... Number(e.target.value)}` has a specific and very visible
-  // failure: clearing the field makes `e.target.value` the empty string,
-  // `Number("")` is `0`, and the controlled input immediately re-renders
-  // showing `0`. The field can therefore never be emptied -- the caret sits
-  // beside a zero you cannot delete -- and the next digits typed land next
-  // to it, so changing 6200 to 5800 by hand produces `05800`. It still
-  // parses to 5800, so nothing fails; it just looks broken at exactly the
-  // point in a demo where the amount is changed live. Playwright's `fill()`
-  // replaces the whole value in one step, which is why no test would catch
-  // this.
-  const [amountText, setAmountText] = useState(String(DEFAULT_CLAIM.estimatedAmount));
   const [log, setLog] = useState<string[]>([]);
   const [result, setResult] = useState<ClaimResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -123,9 +92,8 @@ export default function Page() {
     setResult(null);
     setAsking(null);
 
-    const submitted: ClaimInput =
-      mode === "text" ? story : { ...claim, estimatedAmount: Number(amountText) };
-    setLog([typeof submitted === "string" ? "Submitting your claim…" : `Submitting ${submitted.claimId}…`]);
+    const submitted = story;
+    setLog(["Submitting your claim…"]);
 
     // The browser owns the root span. Everything downstream is its child.
     // startActiveSpan returns the callback's value, so awaiting it awaits the
@@ -133,12 +101,8 @@ export default function Page() {
     // returns: either the claim is decided, or it is waiting for a person.
     let waiting: { taskId: string; context: SpanContext; token: string; claimId: string } | null = null;
     await getTracer().startActiveSpan("northstar.claim.submit", async (span) => {
-      // A form claim names itself. A free-text claim gets its id from
-      // claims-agent, so the span is named when the first snapshot says it.
-      if (typeof submitted !== "string") {
-        span.setAttribute("northstar.claim.id", submitted.claimId);
-        span.setAttribute("northstar.claim.policy_number", submitted.policyNumber);
-      }
+      // The claim gets its id from claims-agent, so the span is named when
+      // the first snapshot says it.
       try {
         // This server's own origin: it issues the push token and relays the push.
         const uiBase = window.location.origin;
@@ -148,7 +112,7 @@ export default function Page() {
         const snap = await context.with(trace.setSpan(context.active(), span), () =>
           streamClaim(CLAIMS_AGENT_URL, submitted, (s) => {
             if (s.result) setResult(s.result);
-            if (typeof submitted === "string") nameClaim(span, s);
+            nameClaim(span, s);
           }, push),
         );
         waiting = afterStream(snap, span, push.token);
@@ -233,8 +197,8 @@ export default function Page() {
       <div className="intro">
         <h1>File a vehicle-damage claim</h1>
         <p>
-          Your claim is assessed as soon as it is submitted. You will see the
-          determination on this page.
+          Tell us what happened in your own words. You will see how we read
+          your claim, and its outcome, on this page.
         </p>
       </div>
 
@@ -244,119 +208,51 @@ export default function Page() {
           <span className="ref">Motor / First notification of loss</span>
         </div>
         <div className="panel-body">
-          {/* Buttons, not inputs or radios: the form's first <input> must stay
-              the claim reference (see below). */}
-          <div className="modes" role="group" aria-label="How to enter the claim">
-            <button
-              type="button"
-              className={mode === "form" ? "mode is-active" : "mode"}
-              aria-pressed={mode === "form"}
-              onClick={() => setMode("form")}
-              disabled={busy}
-            >
-              Fill in the form
-            </button>
-            <button
-              type="button"
-              className={mode === "text" ? "mode is-active" : "mode"}
-              aria-pressed={mode === "text"}
-              onClick={() => setMode("text")}
-              disabled={busy}
-            >
-              Describe it in your own words
-            </button>
+          {/* Two prepared claims. A chip replaces the text and submits
+              nothing; the text stays editable, and an edited text selects
+              no chip. */}
+          <div className="modes" role="group" aria-label="Prepared claims">
+            {PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                className={[
+                  "mode",
+                  preset.id === "tricky" ? "is-tricky" : "",
+                  selectedPreset(story) === preset.id ? "is-active" : "",
+                ].filter(Boolean).join(" ")}
+                aria-pressed={selectedPreset(story) === preset.id}
+                onClick={() => setStory(preset.text)}
+                disabled={busy}
+              >
+                {preset.label}
+              </button>
+            ))}
           </div>
           <form onSubmit={submit}>
-            {mode === "text" ? (
-              <div className="fields">
-                <label className="field wide">
-                  <span>Tell us what happened</span>
-                  <textarea
-                    className="story"
-                    value={story}
-                    onChange={(e) => setStory(e.target.value)}
-                    required
-                  />
-                </label>
-                <p className="fineprint wide">
-                  Include your policy number, the date, what was damaged and a
-                  rough cost in euro. If anything is missing, we will ask.
-                </p>
-              </div>
-            ) : (
             <div className="fields">
-              {/* Claim reference is deliberately the FIRST <input> on the page:
-                  tests/e2e/test_policy_denial.py addresses it as
-                  `input >> nth=0`. Do not introduce an input above it. */}
-              <label className="field">
-                <span>Claim reference</span>
-                <input
-                  value={claim.claimId}
-                  onChange={(e) => setClaim({ ...claim, claimId: e.target.value })}
-                  required
-                />
-              </label>
-
-              <label className="field">
-                <span>Policy number</span>
-                <input
-                  value={claim.policyNumber}
-                  onChange={(e) =>
-                    setClaim({ ...claim, policyNumber: e.target.value })
-                  }
-                  required
-                />
-              </label>
-
               <label className="field wide">
-                <span>What happened</span>
+                <span>Tell us what happened</span>
                 <textarea
-                  value={claim.description}
-                  onChange={(e) =>
-                    setClaim({ ...claim, description: e.target.value })
-                  }
-                />
-              </label>
-
-              {/* The only input[type=number] on the page — the amount that
-                  tests/e2e/test_policy_denial.py fills to drive the €6,200
-                  refusal and the €5,800 settlement. */}
-              <label className="field amount">
-                <span>Estimated amount</span>
-                <span className="currency" aria-hidden="true">
-                  €
-                </span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="0"
-                  step="1"
-                  value={amountText}
-                  onChange={(e) => setAmountText(e.target.value)}
-                  aria-label="Estimated amount in euro"
+                  className="story"
+                  value={story}
+                  onChange={(e) => setStory(e.target.value)}
                   required
                 />
               </label>
-
-              {/* Deliberately a static cell, not an input: it balances the
-                  amount's row and explains the € prefix, and adding a real
-                  field here would put a second control between the claim
-                  reference (`input >> nth=0`) and the amount
-                  (`input[type=number]`) that two e2e suites address. */}
-              <div className="field">
-                <span>Currency</span>
-                <div className="static">EUR &mdash; euro</div>
-              </div>
+              <p className="fineprint wide">
+                Include your policy number, the date, what was damaged and a
+                rough cost in euro. If anything is missing, we will ask.
+              </p>
             </div>
-            )}
 
             <div className="actions">
               <button type="submit" disabled={busy}>
                 {busy ? "Submitting…" : "Submit claim"}
               </button>
               <p className="fineprint">
-                Submitting sends this claim to Northstar&rsquo;s settlement
-                agents for assessment.
+                Northstar&rsquo;s claims agent reads your claim and settles
+                it.
               </p>
             </div>
           </form>
@@ -442,7 +338,7 @@ function Determination({
         <strong>{heading}.</strong>{" "}
         {result.amount !== undefined && (
           <>
-            Amount assessed{" "}
+            Amount{" "}
             <span className="figure">
               {result.amount} {result.currency ?? "EUR"}
             </span>

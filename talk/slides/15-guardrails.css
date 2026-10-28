@@ -1,0 +1,77 @@
+/* 15-guardrails (Broadsheet): William's guardrails act. The ring slides reuse 90-thanks' x90-r* classes; only "What this asks us to build" is x15-*. */
+.x15-lede { margin: calc(0.4 * var(--baseline)) 0 0; font-size: var(--type-body); }
+.x15-b { display: grid; grid-template-columns: 1.55fr 1fr; gap: 80px; align-items: start; margin-top: calc(0.8 * var(--baseline)); }
+.x15-rows { margin: 0; display: grid; grid-template-columns: auto auto; column-gap: 48px; row-gap: 18px; align-items: baseline; }
+.x15-rows dt { font-size: var(--type-small); line-height: 1.25; }
+.x15-rows dd { margin: 0; font-family: var(--font-heading); font-weight: 700; font-size: var(--type-small); color: var(--color-accent-800); white-space: nowrap; }
+.x15-new { padding: 34px 40px 38px; border-radius: var(--radius-md); background: var(--color-accent-2-100); box-shadow: inset 0 0 0 2px var(--color-accent-2); }
+.x15-k { margin: 0 0 14px; font-size: var(--type-kicker); letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-accent-2-700); }
+.x15-new ul { margin: 0; padding-left: 1.1em; font-size: var(--type-small); line-height: 1.35; }
+.x15-new li + li { margin-top: 10px; }
+.x15-thin { margin: 22px 0 0; font-size: var(--type-small); font-style: italic; }
+.x15-line { margin: calc(0.9 * var(--baseline)) 0 0; font-family: var(--font-heading); font-weight: 700; font-size: 44px; line-height: 1.2; }
+
+.x15-g { list-style: none; margin: calc(0.9 * var(--baseline)) 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px 40px; }
+.x15-g li { display: grid; grid-template-columns: 84px 1fr; grid-template-rows: auto auto; column-gap: 24px; align-items: center; padding: 22px 28px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+.x15-g img, .x15-g i { grid-row: 1 / 3; width: 84px; height: 84px; object-fit: contain; font-size: 84px; line-height: 1; color: var(--color-accent-2-600); }
+.x15-g b { align-self: end; font-family: var(--font-heading); font-size: 36px; line-height: 1.15; }
+.x15-g span { align-self: start; font-size: var(--type-small); color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+
+/* Four checks, like an airport */
+.x15-air { list-style: none; margin: calc(0.9 * var(--baseline)) 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 40px; }
+.x15-air li { position: relative; display: flex; flex-direction: column; gap: 8px; }
+.x15-air li + li::before { content: "\2192"; position: absolute; left: -32px; top: 34px; font-size: 32px; color: color-mix(in srgb, var(--color-text) 45%, transparent); }
+.x15-air i { font-size: 96px; line-height: 1; color: var(--color-accent-2-600); }
+.x15-air b { margin-top: 14px; font-family: var(--font-heading); font-size: 44px; line-height: 1.1; }
+.x15-air .p { font-size: var(--type-small); font-weight: 700; color: var(--color-accent-800); }
+.x15-air .s { font-size: var(--type-small); line-height: 1.3; color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+.x15-air-k { display: flex; align-items: center; gap: 18px; margin: calc(1 * var(--baseline)) 0 0; padding: 18px 28px; border-radius: var(--radius-md);
+  background: var(--color-text); color: var(--color-bg); font-size: var(--type-small); }
+.x15-air-k i { font-size: 44px; }
+
+/* The keystone, as a picture */
+.x15-ks { display: grid; row-gap: 24px; margin-top: calc(0.9 * var(--baseline)); }
+.x15-ks .r { display: grid; grid-template-columns: 1.2fr 1fr 0.6fr; align-items: center; column-gap: 40px; padding: 26px 36px; border-radius: var(--radius-md); }
+.x15-ks .r.no { background: var(--color-accent-2-100); box-shadow: inset 0 0 0 2px var(--color-accent-2); }
+.x15-ks .r.ok { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+.x15-ks p { margin: 0; }
+.x15-ks .w { display: flex; align-items: center; gap: 20px; font-family: var(--font-heading); font-weight: 700; font-size: 40px; }
+.x15-ks .w i { font-size: 60px; }
+.x15-ks .a { font-size: var(--type-small); }
+.x15-ks .a::before { content: "\2192\00a0"; }
+.x15-ks .o { justify-self: start; font-weight: 700; font-size: var(--type-small); padding: 8px 20px; border-radius: var(--radius-sm); }
+.x15-ks .no .o { background: var(--color-accent-2); color: var(--color-bg); }
+.x15-ks .ok .o { background: var(--color-accent-100); color: var(--color-accent-800); }
+
+/* Essential config: the ring layout with fewer lines, larger type */
+.x15-ess .x90-rp { margin-top: calc(0.8 * var(--baseline)); }
+.x15-ess .x90-rh { font-size: 26px; }
+.x15-ess .x90-rh span + span { font-size: 22px; }
+.x15-ess .x90-code-d { font-size: 25px; line-height: 1.45; padding: 26px 30px; }
+.x15-ess .x90-rt { margin-top: calc(0.8 * var(--baseline)); font-size: 40px; }
+.x15-ks-code.x90-code-d { margin-top: 24px !important; font-size: 26px; line-height: 1.45; padding: 20px 26px; }
+.x15-ks { row-gap: 16px; margin-top: calc(0.6 * var(--baseline)); }
+.x15-ks .r { padding: 16px 32px; }
+.x15-ks-code.x90-code-d { margin-top: 18px !important; font-size: 24px; padding: 16px 24px; }
+.x15-ks ~ .x15-line { margin-top: calc(0.5 * var(--baseline)); }
+.x15-ks-code.x90-code-d { flex: none; }
+
+/* The flag slide: why a flag, as one icon row */
+.x15-why { display: flex; flex-wrap: wrap; gap: 12px 26px; margin: 18px 0 0; font-size: 22px; color: color-mix(in srgb, var(--color-text) 75%, transparent); }
+.x15-why span { display: inline-flex; align-items: center; gap: 10px; }
+.x15-why i { font-size: 28px; color: var(--color-accent-600); }
+
+/* Config slides before the demo: the config alone, full width */
+.x90-rp.x15-one { grid-template-columns: 1fr; }
+.x15-one .x90-code-d { font-size: 28px; line-height: 1.45; }
+/* project icon beside a config slide's title, so the project reads at a glance */
+.x15-pt { display: flex; align-items: center; gap: 28px; }
+.x15-pi { flex: none; width: 84px; height: 84px; object-fit: contain; font-size: 84px; line-height: 1; color: var(--color-accent-600); }
+.x15-one .x90-code-d.x15-gwc { font-size: 25px; line-height: 1.4; }
+/* the merged flag slide: the chain beside the rule */
+.x15-ff { grid-template-columns: 560px 1fr; gap: 56px; margin-top: calc(0.5 * var(--baseline)); }
+.x15-ff .nd { padding: 14px 22px; }
+.x15-ff .lk { padding: 6px 0 6px 26px; }
+.x15-ff .x90-code-d { margin: 0; font-size: 23px; line-height: 1.4; }
+.x15-ff .x15-why { margin-top: 18px; }
+.x15-ess .x15-ff + .x90-rt { margin-top: calc(0.5 * var(--baseline)); }

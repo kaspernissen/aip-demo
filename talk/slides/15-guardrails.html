@@ -1,0 +1,176 @@
+<!-- G0 · WILLIAM · what this asks us to build, from William's KCD Sofia 2026 keynote (slide 15), each row with the project Northstar actually runs (replaces "The toolbox") -->
+<section class="slide content" data-label="What this asks us to build">
+  <h2 class="slide-title">What this asks us to build</h2>
+  <p class="x15-lede rise">Integration and rigor, <span class="spot-2">not invention.</span></p>
+  <ul class="x15-g rise">
+    <li><img src="assets/logos/spiffe.svg" alt=""><b>SPIFFE &middot; SPIRE</b><span>who is acting</span></li>
+    <li><img src="assets/logos/linkerd.svg" alt=""><b>Linkerd</b><span>what it can reach</span></li>
+    <li><i class="ph-duotone ph-door-open"></i><b>agentgateway</b><span>what it may call</span></li>
+    <li><img src="assets/logos/openfeature.svg" alt=""><b>OpenFeature</b><span>how far it may go today</span></li>
+    <li><img src="assets/logos/kyverno.svg" alt=""><b>Kyverno</b><span>hands off its own rules</span></li>
+    <li><i class="ph-duotone ph-git-branch"></i><b>Git</b><span>the only way to change it</span></li>
+  </ul>
+  <p class="x15-line rise">Every one is a production-grade project today.</p>
+</section>
+
+<!-- 22c0 · NEW · WILLIAM · concept before the passport: what SPIFFE and SPIRE are (the standard and the issuer), and how a pod gets an identity without a secret: deploy/platform/spire/registration.yaml (k8s:ns + k8s:sa selectors, the SPIFFE CSI driver socket) -->
+<section class="slide content" data-label="What SPIFFE and SPIRE are">
+  <p class="ring">Core &middot; Identity</p>
+  <h2 class="slide-title">SPIFFE and SPIRE, in one minute</h2>
+  <div class="x30-sp rise">
+    <div class="col"><img src="assets/logos/spiffe.svg" alt=""><div><p class="n">SPIFFE</p><p class="r">the standard &middot; what a passport looks like</p>
+      <p class="d">An ID for a workload, not a person: <span class="code">spiffe://northstar.local/ns/&hellip;/sa/&hellip;</span>, carried in a short-lived signed document, the <b>SVID</b>.</p></div></div>
+    <div class="col"><img src="assets/logos/spire.svg" alt=""><div><p class="n">SPIRE</p><p class="r">the issuer &middot; the passport office</p>
+      <p class="d">An agent on every node checks <em>where</em> a pod runs before the server signs: its namespace, its service account.</p></div></div>
+  </div>
+  <ol class="x30-sp-flow rise">
+    <li><i class="ph-duotone ph-cube"></i><b>A pod asks</b><span>over a local socket, no secret</span></li>
+    <li><i class="ph-duotone ph-magnifying-glass"></i><b>SPIRE checks</b><span>namespace, service account</span></li>
+    <li><i class="ph-duotone ph-seal-check"></i><b>SPIRE signs</b><span>an SVID that expires soon</span></li>
+    <li><i class="ph-duotone ph-identification-card"></i><b>The pod shows it</b><span>at the gateway, on every call</span></li>
+  </ol>
+  <p class="x30-sp-line rise">No password to leak. <span class="spot-2">The identity is proven by where it runs, not by what it says.</span></p>
+</section>
+
+<!-- G1e · WILLIAM · Core · identity, essentials only: the SPIRE template beside the passport the gateway saw (scripts/demo guard, part 3, 2026-10-24 smoke-test run). The full version is the backup "Who is acting" -->
+<section class="slide content x90-rs x15-ess" data-label="The passport, in config">
+  <p class="x90-tag">Core &middot; identity</p>
+  <h2 class="slide-title x15-pt"><img class="x15-pi" src="assets/logos/spire.svg" alt="SPIRE">The passport, in config</h2>
+  <div class="x90-rp x15-one rise">
+    <div><p class="x90-rh"><span>The rule</span><span>SPIRE</span></p>
+<pre class="x90-code-d"><span class="p"># spire/registration.yaml</span>
+kind: ClusterSPIFFEID
+spiffeIDTemplate:
+  "spiffe://{{ .TrustDomain }}
+   /ns/{{ .PodMeta.Namespace }}
+   /sa/{{ .PodSpec.ServiceAccountName }}"
+podSelector: {app: settlement-agent}</pre></div>
+  </div>
+  <p class="x90-rt">Built from where the pod runs, not from what the agent says.</p>
+</section>
+
+<!-- G2b · NEW · WILLIAM · Ring 1 · reach, in config (2026-10-27): deploy/platform/reach/linkerd-policies.yaml (Server accessPolicy deny + AuthorizationPolicy requiring the agentgateway mTLS identity, for payments-mcp and the PDS) and network-policies.yaml (settlement-agent-egress / claims-agent-egress: agentgateway on 3000 and 4000, no internet; the Anthropic range rule removed 2026-10-28 when the model moved behind the gateway) -->
+<section class="slide content x90-rs x15-ess" data-label="The reach, in config">
+  <p class="x90-tag">Ring 1 &middot; reach</p>
+  <h2 class="slide-title x15-pt"><img class="x15-pi" src="assets/logos/linkerd.svg" alt="Linkerd">No road around the gateway</h2>
+  <div class="x90-rp x15-one rise">
+    <div><p class="x90-rh"><span>The rule</span><span>Linkerd &middot; NetworkPolicy</span></p>
+<pre class="x90-code-d x15-gwc"><span class="p"># reach/linkerd-policies.yaml: the way in</span>
+kind: Server               <span class="p"># payments-mcp :8000</span>
+  accessPolicy: deny
+kind: AuthorizationPolicy  <span class="p"># payments-mcp-gateway-only</span>
+  requiredAuthenticationRefs:
+  - kind: MeshTLSAuthentication
+    name: agentgateway     <span class="p"># by mTLS identity</span>
+<span class="p"># reach/network-policies.yaml: the way out</span>
+kind: NetworkPolicy        <span class="p"># settlement-agent-egress</span>
+  egress:
+  - to: [{podSelector: {app: agentgateway}}]
+    ports: [{port: 3000}, {port: 4000}]  <span class="p"># tools, model</span>
+  <span class="p"># no rule to the internet, not even to the model</span></pre></div>
+  </div>
+  <p class="x90-rt">Go around the gateway: <span class="spot-2">403, and counted.</span></p>
+</section>
+
+<!-- G3e · WILLIAM · Ring 2 · the gateway, essentials only: jwtAuth, the CEL ceiling and the remote guardrail (deploy/platform/agentgateway/config.yaml, condensed), beside scripts/demo ceiling as it printed on 2026-10-27. Replaces "CEL, and when to delegate" in the main flow; the full version is the backup "What it may call" -->
+<section class="slide content x90-rs x15-ess" data-label="The gateway, in config">
+  <p class="x90-tag">Ring 2 &middot; per call</p>
+  <h2 class="slide-title x15-pt"><img class="x15-pi" src="assets/logos/agentgateway-icon.svg" alt="agentgateway">One door, three checks</h2>
+  <div class="x90-rp x15-one rise">
+    <div><p class="x90-rh"><span>The rule</span><span>agentgateway</span></p>
+<pre class="x90-code-d x15-gwc"><span class="p"># 1 no passport: 401</span>
+jwtAuth: {mode: strict}
+<span class="p"># 2 CEL: two callers, and a ceiling</span>
+- allow: 'jwt.sub in [".../settlement-agent", ".../reviewer-ui"]
+   &amp;&amp; (mcp.tool.name != "execute_payment"
+       || mcp.tool.arguments.amount &lt;= 50000)'
+<span class="p"># 3 ask the policy service; no answer: no</span>
+mcpGuardrails:
+- kind: remote
+  methods: {"tools/call": request}
+  host: policy-decision-service:9100
+  metadata: {caller: 'jwt.sub'}
+  failureMode: failClosed</pre></div>
+  </div>
+  <p class="x90-rt">CEL for what the request proves. <span class="spot-2">Ask when the answer needs a lookup.</span></p>
+</section>
+
+<!-- G3f · NEW · WILLIAM · Ring 2 · the model behind the same gateway (2026-10-28): deploy/platform/agentgateway/config.yaml `llm:` block, condensed (jwtAuth as on the MCP route, authorization to the two agents' SPIFFE IDs, the models allowlist, the key from a mounted file); 401, 403 and 404 measured on the cluster 2026-10-28 -->
+<section class="slide content x90-rs x15-ess" data-label="The model, in config">
+  <p class="x90-tag">Ring 2 &middot; per call</p>
+  <h2 class="slide-title x15-pt"><img class="x15-pi" src="assets/logos/agentgateway-icon.svg" alt="agentgateway">The model, through the same door</h2>
+  <div class="x90-rp x15-one rise">
+    <div><p class="x90-rh"><span>The rule</span><span>agentgateway</span></p>
+<pre class="x90-code-d x15-gwc">llm:
+  policies:
+    jwtAuth: {mode: strict}   <span class="p"># 1 no passport: 401</span>
+    authorization:            <span class="p"># 2 not one of the two agents: 403</span>
+    - allow: 'jwt.sub in [".../sa/claims-agent",
+                          ".../sa/settlement-agent"]'
+  models:                     <span class="p"># 3 any other model: 404</span>
+  - name: claude-sonnet-5
+    provider: anthropic
+    params:
+      apiKey: {file: .../ANTHROPIC_API_KEY}</pre></div>
+  </div>
+  <p class="x90-rt">The agent holds no key. <span class="spot-2">The platform does.</span></p>
+</section>
+
+<!-- G4 · WILLIAM · Ring 2 · the feature flag on one slide (merged "The decision and the live policy" and "The flag, in config", 2026-10-27): where the level lives and how it is asked (FeatureFlag -> flagd -> OpenFeature SDK in the PDS, pds/autonomy.py) beside the config itself (deploy/platform/openfeature/featureflag.yaml condensed; the committed if[1] is "assisted", scripts/demo start sets "autonomous"; platform/policy-decision-service/pds/rules.py EXECUTE_LIMITS) -->
+<section class="slide content x15-ess" data-label="The flag, in config">
+  <p class="ring">Ring 2 &middot; Capability</p>
+  <h2 class="slide-title x15-pt"><img class="x15-pi" src="assets/logos/openfeature.svg" alt="OpenFeature">One flag, one table</h2>
+  <div class="x30-pv x15-ff rise">
+    <div class="chain">
+      <p class="lab">Where the level lives</p>
+      <div class="nd flag"><i class="ph-duotone ph-toggle-right"></i><div><b>FeatureFlag</b><code>northstar-autonomy</code></div></div>
+      <p class="lk">served by</p>
+      <div class="nd"><i class="ph-duotone ph-broadcast"></i><div><b>flagd</b><span class="s">the provider, a sidecar</span></div></div>
+      <p class="lk">asked by</p>
+      <div class="nd pds"><i class="ph-duotone ph-scales"></i><div><b>Decision service</b><span class="s">through the OpenFeature SDK, per SPIFFE ID</span></div></div>
+    </div>
+    <div class="rule">
+      <p class="lab">The rule</p>
+<pre class="x90-code-d"><span class="p"># openfeature/featureflag.yaml</span>
+northstar-autonomy:
+  defaultVariant: assisted
+  targeting:
+    if:
+    - in: [var: spiffeId,
+           [&hellip;/sa/settlement-agent]]
+    - <span class="c">"autonomous"</span>
+<span class="p"># pds/rules.py</span>
+EXECUTE_LIMITS = {assisted:      0,
+                  autonomous: 6000}</pre>
+      <p class="x15-why"><span><i class="ph-duotone ph-rocket-launch"></i>no deploy</span><span><i class="ph-duotone ph-git-diff"></i>a one-word diff</span><span><i class="ph-duotone ph-identification-badge"></i>per caller</span><span><i class="ph-duotone ph-footprints"></i>leaves a trace</span></p>
+    </div>
+  </div>
+  <p class="x90-rt">Same agent, same code, same image. <span class="spot-2">Only the flag decides how free.</span></p>
+</section>
+
+<!-- G6 · WILLIAM · the keystone as a picture, after William's KCD Sofia 2026 slide 12 (left half): the agent's identity is denied, a reviewed commit is applied. The code and recorded output moved to the backup "It cannot rewrite its own bounds" -->
+<section class="slide content" data-label="The keystone">
+  <p class="ring">Keystone</p>
+  <h2 class="slide-title x15-pt"><img class="x15-pi" src="assets/logos/kyverno.svg" alt="Kyverno">It cannot rewrite its own bounds</h2>
+  <p class="x15-lede rise">The flag, its permissions, the policies, the routes, its SPIFFE ID: <span class="spot-2">the objects that define its authority.</span></p>
+  <div class="x15-ks rise">
+    <div class="r no"><p class="w"><i class="ph-duotone ph-robot"></i>The agent&rsquo;s identity</p><p class="a">change its own flag</p><p class="o">Denied</p></div>
+    <div class="r ok"><p class="w"><i class="ph-duotone ph-users"></i>A person or a pipeline</p><p class="a">a reviewed commit</p><p class="o">Applied</p></div>
+  </div>
+  <pre class="x90-code-d x15-ks-code rise"><span class="p"># kyverno/keystone-policy.yaml</span>
+kind: ValidatingPolicy        <span class="p"># agents-cannot-edit-their-own-authority</span>
+validationActions: [Deny]
+matchConditions:
+- expression: request.userInfo.username.startsWith(
+    'system:serviceaccount:northstar-agents:')</pre>
+  <p class="x15-line rise">Even when RBAC says yes, <span class="spot-2">Kyverno says no.</span></p>
+</section>
+
+<!-- section divider: Trace; the handover to Kasper -->
+<section class="slide content x10-thesis x-dark" data-label="Section: Trace">
+  <div class="x10-words rise">
+    <p class="x10-w dim">Decide<span class="spot-2">.</span></p><p class="x10-g dim">what an agent may do <span class="x10-st done">done</span></p>
+    <div class="x10-w cmyk-num"><span class="paper">Trace<span class="spot-2">.</span></span><span class="plate plate-c" aria-hidden="true">Trace.</span><span class="plate plate-m" aria-hidden="true">Trace.</span><span class="plate plate-y" aria-hidden="true">Trace.</span></div><p class="x10-g">what it actually did</p>
+    <p class="x10-w dim">Prove<span class="spot-2">.</span></p><p class="x10-g dim">it afterwards, from the trace</p>
+  </div>
+</section>

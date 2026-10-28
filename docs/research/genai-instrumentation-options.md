@@ -11,9 +11,8 @@ This note answers three questions:
    what we use?
 
 Everything below was measured offline, without the cluster, without an API key and without
-spending tokens. The harness and every span dump are committed under
-`experiments/genai-instrumentation/`. `experiments/genai-instrumentation/reproduce.sh`
-rebuilds the virtualenvs and regenerates every dump.
+spending tokens. The harness and its span dumps were removed from the repo on 2026-10-27;
+they are in git history before that date, under `experiments/genai-instrumentation/`.
 
 ## Short answer
 
@@ -447,4 +446,4 @@ count, and the gate row has to be re-measured after it.
 - OpenLLMetry: https://github.com/traceloop/openllmetry , https://pypi.org/project/opentelemetry-instrumentation-anthropic/ , https://pypi.org/project/traceloop-sdk/
 - ServiceNow acquires Traceloop: https://www.calcalistech.com/ctechnews/article/sjghwiqf11e
 - OpenTelemetry upstream GenAI instrumentations: https://github.com/open-telemetry/opentelemetry-python-genai , https://pypi.org/project/opentelemetry-instrumentation-genai-anthropic/ , https://pypi.org/project/opentelemetry-util-genai/
-- Versions and dates above were read from the PyPI JSON API on 2026-10-24 (`experiments/genai-instrumentation/common/pypi_versions.py`).
+- Versions and dates above were read from the PyPI JSON API on 2026-10-24.
