@@ -1,0 +1,51 @@
+<section class="slide-sec" id="s21">
+ <header class="sh"><span class="num">21</span><h2>Meet Northstar Insurance</h2><span class="meta">KASPER · starts 14:35 · 40 s</span></header>
+ <figure class="slide"><img src="img/s-21.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p>This is Northstar, a made-up motor insurer. All of it runs in a kind cluster on this laptop.</p>
+  <p class="stage">[point left to right along the boxes]</p>
+  <p>A customer describes what happened in their own words, in the customer UI. The claims agent sends those words to a model, Claude, which turns them into a claim: amount, policy, date. The claims agent decides nothing about money. It hands the claim to the settlement agent over A2A. The settlement agent has a model too. It proposes the payment, and to pay it calls agentgateway over MCP. It never calls the payment tool directly.</p>
+  <p>The gateway checks who is calling, enforces the ceiling, and asks the policy service whether this payment is allowed. The policy service reads the autonomy flag. Only on a yes does the call go on to payments-mcp and the ledger. And note the dashed line at the top: the model calls go through the same gateway, and the API key lives there, not in the agents.</p>
+  <p class="stage">[point at the two bars at the bottom]</p>
+  <p>Underneath, Linkerd and network policy make the gateway the only road to the tool. And every service reports to one OpenTelemetry Collector, at one hundred percent, with no sampling.</p>
+  <p>If this looks familiar, it's William's deterministic spine, built: the agent proposes, the platform decides, a gate pays.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>This is the first slide of the Trace half and the bridge from William's guardrails to the live demo. William showed each guardrail as config. This slide puts them all on one map, in the order a claim travels, so that when the browser opens the audience already knows which box is which. The audience should come away knowing three things: there are two agents and each has one job, every payment goes through one gateway, and every service reports to one collector.</p>
+ <p>It sets up slide 22 (the same tools listed by the job they do) and slide 23 (the demo itself).</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Separation of duties between agents.</b> The claims agent turns free text into structured data. The settlement agent decides what to propose. Neither can move money. In banking terms that is a maker/checker split before a human ever appears, and it narrows what an injection can do: the model that reads the customer's words is not the one holding the payment tool.</p>
+ <p><b>A single enforcement point.</b> Every policy architecture separates the place that enforces (the Policy Enforcement Point, here agentgateway) from the place that decides (the Policy Decision Point, here the policy decision service, PDS). The enforcement point is only worth something if nothing can go around it. That is why the bottom bar matters: Linkerd admits only the gateway's mTLS identity into payments-mcp, and NetworkPolicy gives the agents no route out except to the gateway.</p>
+ <p><b>Namespaces as trust zones.</b> The four coloured areas are Kubernetes namespaces: <code>northstar-agents</code>, <code>northstar-platform</code>, <code>northstar-tools</code>, <code>northstar-systems</code>. The agents' SPIFFE IDs and the keystone policy both key on the namespace, so a namespace is a security boundary here, not just a folder.</p>
+
+ <h3>Configuration and options</h3>
+ <table>
+  <tr><th>Box</th><th>What runs</th><th>Where it is configured</th></tr>
+  <tr><td>customer-ui</td><td>Next.js, OTel JS web SDK; owns the trace root <code>northstar.claim.submit</code></td><td><code>apps/customer-ui/</code>; presets in <code>src/presets.ts</code></td></tr>
+  <tr><td>claims-agent</td><td>a2a-sdk 0.3.7, PydanticAI 2.42 (<code>pydantic-ai-slim==2.42.0</code>)</td><td><code>agents/claims-agent/</code>, <code>deploy/k8s/claims-agent.yaml</code></td></tr>
+  <tr><td>settlement-agent</td><td>PydanticAI 2.42, <code>mcp==2.2.0</code> client</td><td><code>agents/settlement-agent/</code></td></tr>
+  <tr><td>agentgateway</td><td><code>v1.6.0</code>, standalone (ConfigMap + Deployment), port 3000 tools, 4000 model</td><td><code>deploy/platform/agentgateway/config.yaml</code></td></tr>
+  <tr><td>PDS + flagd</td><td>gRPC guardrail hook on 9100; flagd sidecar injected by the Open Feature Operator</td><td><code>platform/policy-decision-service/</code>, <code>deploy/platform/openfeature/featureflag.yaml</code></td></tr>
+  <tr><td>payments-mcp</td><td>FastMCP 4.0.3 (<code>fastmcp==4.0.3</code>)</td><td><code>tools/payments-mcp/</code></td></tr>
+  <tr><td>payments-api</td><td>Go, <code>otelhttp</code>; the ledger</td><td><code>systems/</code></td></tr>
+ </table>
+ <p>Things not on the slide: the reviewer-ui (port 8081) is also a gateway caller, with its own SPIFFE ID and its own rule (<code>human-approved.execute</code>). Dash0 is an optional second exporter, added by <code>deploy/observability/collector-dash0-overlay.yaml</code> only when <code>DASH0_AUTH_TOKEN</code> is set; nothing in the application changes. The model is <code>claude-sonnet-5</code>, the only entry in the gateway's <code>models:</code> allowlist.</p>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>One agent instead of two.</b> Simpler, but the model that reads untrusted customer text would then also hold the payment tool. Two agents show A2A and make the hand-off a traced, governed hop.</li>
+  <li><b>Agent calls the tool directly, with a library-level check.</b> Works until someone forgets the check. A gateway is enforcement the agent's code cannot skip.</li>
+  <li><b>A different gateway</b> (Envoy with ext_authz, Kong, an API gateway with an OPA plugin). They can authorize HTTP, but agentgateway parses MCP, so a rule can name <code>mcp.tool.name</code> and <code>mcp.tool.arguments.amount</code>.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Is this a real insurer's architecture?</dt><dd>No. It is a reference demo, small enough to run on a laptop, built so each guardrail and each trace hop is visible. The shape (intake, proposal, gated execution) is a common one for regulated payout flows.</dd>
+  <dt>Why does the model call go through the gateway too?</dt><dd>So the agents hold no API key and have no route to the internet. The gateway's span records which agent called which model under its SPIFFE identity.</dd>
+  <dt>What happens if the PDS is down?</dt><dd>The gateway's guardrail is <code>failureMode: failClosed</code>: no answer means no payment.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> Pinned versions on the slide (agentgateway v1.6.0, a2a-sdk 0.3.7, PydanticAI 2.42, mcp 2.2.0, FastMCP 4.0.3) still match the repo's requirements and manifests in November.</div>
+</section>

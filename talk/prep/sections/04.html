@@ -1,0 +1,52 @@
+<section class="slide-sec" id="s04">
+ <header class="sh"><span class="num">04</span><h2>The auditor's questions</h2><span class="meta">KASPER · starts 1:25 · 60 s</span></header>
+ <figure class="slide"><img src="img/s-04.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p>Thanks, William. William's half is about deciding what an agent may do. Mine is the other two words, and I want to start with the person who will check them.</p>
+  <p>Picture an auditor sitting next to you, holding one decision your agent made. These are the five questions they will ask. The big line is the question; the small tag is the rule behind it.</p>
+  <p>One: <b>what did the agent do?</b> The EU AI Act, Article 12: automatic logs, for the life of the system.</p>
+  <p>Two: <b>who allowed it, and within what limits?</b> FINRA calls this scope and authority.</p>
+  <p>Three: <b>could a human stop it, or reverse it?</b> Article 14, human oversight.</p>
+  <p>Four: <b>can you explain this one decision to the person it affected?</b> Article 86, and the EU court's Dun &amp; Bradstreet ruling: "the procedure and principles actually applied". Not the model in general. Their case.</p>
+  <p>Five: <b>are the records complete, kept, and tamper-evident?</b> At least six months, says Article 19. DORA wants them protected. And ISO 24970, a draft standard, will say what an AI log contains.</p>
+  <p>Hold on to these five. By the end, we'll answer every one of them from what Northstar recorded. And to be clear: this is engineering, not legal advice.</p>
+  <p class="stage">[click, back to William]</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>This slide turns regulation into five engineering questions. Every later slide answers one of them, and the close (slide 37) says so. Notice that four of the five are about <em>records</em>, not controls: the auditor cannot watch the system run, they can only read what it left behind. That is the bridge from "Decide" to "Trace" and "Prove".</p>
+ <p>Where each is answered: Q3 in demo step 2 and on 31; Q1, Q2 and Q4 in demo step 4 and on 24, 26 and 30; Q5 on 30, 32 and 36, gaps said out loud. Slide 37 closes the loop.</p>
+
+ <h3>The theory behind it: each question, read as an engineer</h3>
+ <table>
+  <tr><th>Question</th><th>Source</th><th>What it asks of a platform</th></tr>
+  <tr><td>1 What did it do?</td><td>EU AI Act Art. 12: high-risk systems "shall technically allow for the automatic recording of events (logs) over the lifetime of the system"</td><td>A telemetry requirement: automatic, structured, queryable, per decision. Never sampled on decision paths.</td></tr>
+  <tr><td>2 Who allowed it, within what limits?</td><td>FINRA 2026 Annual Regulatory Oversight Report (Dec 2025), GenAI section: "how to track agent actions and decisions", guardrails "to limit or restrict agent behaviors"</td><td>Least-privilege tool access keyed on a verified identity, enforced outside the agent, with each decision recorded with its rule and limit.</td></tr>
+  <tr><td>3 Could a human stop or reverse it?</td><td>Art. 14(4): overseers can "disregard, override or reverse" the output and "interrupt the system"</td><td>An approval path, and a record of what the human did.</td></tr>
+  <tr><td>4 Explain this one decision</td><td>Art. 86 (right to explanation); GDPR Art. 15(1)(h) as read in CJEU C-203/22 (27 Feb 2025)</td><td>A query: from one person's case back to its inputs, the rule applied and the outcome. A model card cannot do this; a trace can.</td></tr>
+  <tr><td>5 Complete, kept, tamper-evident</td><td>Art. 19 (providers keep logs ≥ 6 months); DORA RTS on ICT risk management, Delegated Reg. (EU) 2024/1774, Art. 12; ISO/IEC 24970 (AI system logging, at FDIS)</td><td>Retention, protection against tampering and deletion, clock sync, and detecting when logging itself fails.</td></tr>
+ </table>
+ <p><b>Why "actually applied" matters.</b> In C-203/22 the Court said meaningful information about the logic means "the procedure and principles actually applied" so a person can understand which of their data was used and how. A model card describes a system in general. Only a per-decision record can tell one person what happened in their case.</p>
+ <p><b>The timeline.</b> The Digital Omnibus on AI (Regulation (EU) 2026/1744, in force 27 July 2026) moved the high-risk dates: Annex III to 2 December 2027, Annex I to 2 August 2028. The record-keeping, oversight and explanation articles were not rewritten. Talk line if it comes up: "The deadline moved. The requirements didn't."</p>
+
+ <h3>How Northstar answers them (preview for the close)</h3>
+ <ul>
+  <li><b>Q1</b>: one trace per claim, rooted at <code>northstar.claim.submit</code>, with <code>invoke_agent</code>, <code>chat</code>, <code>execute_tool</code>, gateway spans and <code>northstar.policy.decision</code>; 100% sampling.</li>
+  <li><b>Q2</b>: one SPIFFE ID per agent; the decision span carries caller, rule, limit, requested amount and autonomy level.</li>
+  <li><b>Q3</b>: the reviewer UI releases held payments; <code>northstar.review.decision</code> records it, linked to the agent's trace. Lowering the flag to <code>assisted</code> sends every payout to a person.</li>
+  <li><b>Q4</b>: <code>scripts/demo evidence</code> joins customer text, model reading, decision, approver and ledger for one claim.</li>
+  <li><b>Q5</b>: partly. Weaver checks the names; nothing is sampled. Retention and tamper evidence are not built (see below).</li>
+ </ul>
+
+ <h3>Honest gaps (say them before someone else does)</h3>
+ <p>Northstar is a demo. Storage has no retention floor and no tamper evidence (no WORM or signing). There is no "stop" button that halts agents; the autonomy dial lowers authority but does not interrupt. The reviewer UI has no login: the reviewer id is a string from the form. There is no reversal of an executed payment.</p>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Is a motor-claims agent even high-risk under the AI Act?</dt><dd>On a plain reading, probably not; Annex III covers things like life and health insurance pricing and credit scoring. The same platform pointed at those would be in scope with no change to the platform layers. EIOPA's August 2025 opinion also asks insurers for record-keeping, explainability and oversight even for AI that isn't high-risk.</dd>
+  <dt>What about the US?</dt><dd>FINRA's 2026 report is the first US regulatory text with agent-specific considerations. The banking model-risk guidance SR 26-2 (April 2026) explicitly scopes generative and agentic AI out and leaves it to the bank's own governance.</dd>
+  <dt>Does OpenTelemetry map to ISO/IEC 24970?</dt><dd>Not yet. A public mapping from <code>gen_ai.*</code> and governance attributes onto 24970 doesn't exist; it's an open contribution.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> ISO/IEC 24970 still at FDIS (a vote could publish it around late October). The DORA RTS Art. 12 enumeration comes from a secondary summary; check Delegated Regulation (EU) 2024/1774 on EUR-Lex. "Arts. 12, 14, 19 and 86 unchanged by the Omnibus" rests on a secondary analysis.</div>
+</section>

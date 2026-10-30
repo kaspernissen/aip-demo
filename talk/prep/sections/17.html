@@ -1,0 +1,56 @@
+<section class="slide-sec" id="s17">
+ <header class="sh"><span class="num">17</span><h2>The model, through the same door</h2><span class="meta">WILLIAM · starts 11:35 · 40 s · Ring 2 · per call</span></header>
+ <figure class="slide"><img src="img/s-17.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>The same gateway has a second door: the model. Every model call from both agents goes through it.</p>
+  <p>Three checks again. The passport: no SPIFFE token, 401. One rule: only the claims agent and the settlement agent may call a model at all. Anything else, even with a valid passport: 403. Then a list of models: ask for one that isn't on it, 404, and the request never leaves the cluster.</p>
+  <p class="stage">[point at apiKey]</p>
+  <p>And the API key lives here, in the gateway, read from a mounted secret. The agents hold none, and the network policy gives them no road to the internet. So the gateway's span says which agent called which model, and what it cost, under the same passport.</p>
+  <p class="say">The agent holds no key. The platform does.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>Model traffic is the other half of what an agent can do. Without this slide the audience might assume agents call a model provider directly with a key in an environment variable. That key would be a credential the agent holds, and the model would be a road out of the cluster. This slide closes both and ties the model call to the same identity as the tool call.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> A shared API key is a password everyone in the building knows. Move it into the gateway and the agents stop holding a secret at all: they prove who they are with their passport, and the gateway makes the call on their behalf. Rotate the key in one place; revoke one agent by removing it from one list.</p>
+ <p><b>Why this matters for evidence.</b> The provider only sees "the gateway". The gateway sees which SPIFFE ID asked, which model, how many tokens. Its span carries the same <code>gen_ai.*</code> names as the agent's own chat span, plus <code>jwt.sub</code> and cost, so per-agent spend is a query, not a guess.</p>
+ <p><b>Three answers, measured on the cluster (2026-10-28).</b> No token: 401 "no bearer token found". reviewer-ui with a valid SVID: 403 "authorization failed". An unlisted model: 404 <code>model_not_found</code>.</p>
+
+ <h3>Configuration and options</h3>
+ <pre><code># deploy/platform/agentgateway/config.yaml, the llm block (port 4000)
+llm:
+  port: 4000
+  policies:
+    jwtAuth: { mode: strict, … same issuer and audience as the MCP route }
+    authorization:
+      rules:
+      - allow: 'jwt.sub in [".../sa/claims-agent", ".../sa/settlement-agent"]'
+  models:
+  - name: claude-sonnet-5
+    provider: anthropic
+    params: { apiKey: { file: /etc/agentgateway-model/ANTHROPIC_API_KEY } }</code></pre>
+ <ul>
+  <li>The key comes from the <code>northstar-model</code> Secret in <code>northstar-platform</code>, mounted as a file and read once at startup. Rotating it needs a gateway restart. <code>setup-kind.sh</code> prints <code>ANTHROPIC_API_KEY: SET</code>/<code>EMPTY</code>; empty means every pod comes up Running and the first claim fails at the model call.</li>
+  <li>The agents send <code>Authorization: Bearer &lt;JWT-SVID&gt;</code> (<code>agents/settlement-agent/model_client.py</code>), audience from <code>NORTHSTAR_GATEWAY_AUDIENCE</code>; a wrong audience is a 401.</li>
+  <li>Network: the agents' egress policy allows agentgateway on port 4000 and no <code>ipBlock</code> to the provider.</li>
+  <li><b>Options not on</b>: agentgateway ships prompt guards for model traffic (regex and PII rules, a webhook, hosted moderation services), rate limits and token budgets, and multiple providers with failover. Northstar turns none of them on; the injection is caught after the fact by AgentEvals (slide 36).</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>LiteLLM</b>: model proxy strongest on routing, budgets and cost tracking; virtual keys rather than workload identity.</li>
+  <li><b>Agent Router</b> (formerly Envoy AI Gateway): Envoy-based LLM and MCP gateway in AAIF.</li>
+  <li><b>Kong AI Gateway</b>, or a cloud provider's own gateway (Bedrock, Vertex) with workload identity federation.</li>
+  <li><b>Key per agent in a Secret</b>: simplest, but the agent holds a credential and needs an internet route; one leaked key bypasses every check here.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Does the gateway read the prompt?</dt><dd>It can, with prompt guards. None are on in Northstar. The tricky claim's injection is flagged afterwards by the <code>prompt_injection</code> evaluator in AgentEvals.</dd>
+  <dt>Don't I double-count tokens now?</dt><dd>Yes, if you sum across every span: the agent's chat span and the gateway's span both carry usage. Pick one source.</dd>
+  <dt>Why 404 and not 403 for an unknown model?</dt><dd>That's agentgateway's answer when no model in the list matches. The request never leaves the cluster either way.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> The model name on the slide (<code>claude-sonnet-5</code>) matches what <code>config.yaml</code> and the agents request on the day.</div>
+</section>

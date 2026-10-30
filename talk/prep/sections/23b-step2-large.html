@@ -1,0 +1,41 @@
+<section class="slide-sec" id="s23-2">
+ <header class="sh"><span class="num">23·2</span><h2>Demo step 2 · The Large claim, held for a person</h2><span class="meta">KASPER · customer tab → reviewer tab → customer tab · ~75 s</span></header>
+
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p class="stage">[Customer tab. Click Large claim, then Submit claim.]</p>
+  <p>Now eighty-five hundred. Same agent, same code, same request. It tried to pay, and the policy service said no: above six thousand, a person decides. Remember William's six-thousand-euro line? The instruction in the prompt couldn't hold it. Here the platform holds it.</p>
+  <p class="say">"The agent didn't choose to ask. The platform parked the payment."</p>
+  <p class="stage">[Reviewer tab, reload. The claim is at the top. Point at the rule, the limit, and what the agent told the customer.]</p>
+  <p>Here's what the person sees: the rule that held it, the limit, and what the agent told the customer. The agent's output was a proposal, never an outcome.</p>
+  <p class="stage">[Type a reviewer name. Approve. Switch back to the customer tab: it has flipped to EXECUTED without a reload.]</p>
+  <p class="say">"A human released the money. The customer's page updated by itself."</p>
+ </div>
+
+ <p class="step-claim">"Last night a van clipped my car on the motorway and smashed the front wing and headlight. Policy POL-77120. The garage quoted EUR 8,500."</p>
+
+ <h3>What the audience sees</h3>
+ <figure class="shot narrow"><img src="img/demo-03-large-held-crop.png"><figcaption>Customer tab: AWAITING_APPROVAL. Nothing was paid. The agent tells the customer a person will review it, and the page shows the limit (€6,000) and how long it has waited.</figcaption></figure>
+ <div class="cols">
+  <figure class="shot"><img src="img/demo-04-rev-held-crop.png"><figcaption>Reviewer tab: the held payment with its rule (<code>settlement-agent.autonomous.execute_limit</code>), the limit 6000, and the agent's narrative.</figcaption></figure>
+  <figure class="shot"><img src="img/demo-05-rev-approved-crop.png"><figcaption>After Approve: "Paid by the platform after your approval", with how long the claim waited. The execute ran under the reviewer UI's own identity and rule, <code>human-approved.execute</code> (evidence: "SETTLED by reviewer-ui").</figcaption></figure>
+ </div>
+ <figure class="shot narrow"><img src="img/demo-06-large-settled-crop.png"><figcaption>Customer tab after the approval: EXECUTED, pushed to the page; no polling, no reload.</figcaption></figure>
+
+ <h3>What it pays off</h3>
+ <table>
+  <tr><th>Thread</th><th>Planted</th><th>Here, and later</th></tr>
+  <tr><td>The €6,000 line has to live where the agent can't argue with it</td><td>8, then 18 (the table row)</td><td>The line held. Read back as a span on 24 (left panel) and 30</td></tr>
+  <tr><td>A proposal, never an outcome</td><td>10 (the spine)</td><td>The agent proposed; a limit and then a person decided; a gate paid</td></tr>
+  <tr><td>The human stands where the platform says</td><td>18 (assisted €0, autonomous €6,000)</td><td>Traced as two linked traces on 31; set by one value on 38</td></tr>
+  <tr><td>Auditor's question 3: could a human stop it?</td><td>4</td><td>A person decided before any money moved</td></tr>
+ </table>
+ <p>Underneath, two different callers were asked about. The settlement agent at €8,500 got <code>deny</code> under its autonomous rule. The reviewer UI, executing the same payment after a person approved it, got <code>permit</code> under <code>human-approved.execute</code>, because the decision service read the ledger and saw the payment waiting for a human. Nothing was overridden.</p>
+
+ <h3>If it misbehaves</h3>
+ <ul>
+  <li><b>The claim isn't in the reviewer queue</b>: reload the reviewer tab once more. The queue reads the ledger; it lags a second.</li>
+  <li><b>Nothing is held at all</b>: file it from the terminal, then approve it there:<br><code>scripts/demo claim --text "…EUR 8,500." --expect awaiting_approval</code>, then <code>scripts/demo approve last</code></li>
+  <li><b>The customer tab never flips to EXECUTED</b>: the payment is settled either way; only the tab is stale. <code>scripts/demo approve last</code> confirms it from the ledger.</li>
+ </ul>
+</section>

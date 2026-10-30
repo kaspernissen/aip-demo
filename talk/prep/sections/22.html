@@ -1,0 +1,52 @@
+<section class="slide-sec" id="s22">
+ <header class="sh"><span class="num">22</span><h2>The toolbox, by the job it does</h2><span class="meta">KASPER · starts 15:15 · 55 s</span></header>
+ <figure class="slide"><img src="img/s-22.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p>Here is every tool in that picture, grouped by the job it does. William introduced most of them; this is them in one place.</p>
+  <p class="stage">[sweep the top row]</p>
+  <p>Top row: the claim path. A2A is how the agents talk to each other, and MCP is how an agent calls a tool. Linkerd and network policy make the gateway the only road to the tool. SPIFFE and SPIRE give each agent its passport. agentgateway checks the passport and asks for a decision. The decision service is our own code: it says permit or deny, and records why. OpenFeature and flagd hold the autonomy level.</p>
+  <p class="stage">[sweep the bottom row]</p>
+  <p>Bottom row: what sits around the path, and this is my half. The OpenTelemetry Collector takes every span, unsampled, and sends it to Jaeger and Prometheus. Jaeger is where you read one trace. Weaver checks every span against our schema. AgentEvals grades what the agent did from those same traces and writes the grade back. And Kyverno is the keystone: the agent can't edit any of it.</p>
+  <p>Almost all of it is CNCF. A2A, MCP and agentgateway sit in the Agentic AI Foundation. The one tinted chip is the only piece we wrote.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>It answers the question most people in a KubeCon room have at this point: "what would I have to install?" It also makes the talk's third takeaway concrete before it is said: build from upstream projects and own only the rules. The one red chip, "this repo", is the point. Everything Northstar wrote that enforces anything is the decision service and its rule table; everything else is configuration of existing projects.</p>
+ <p>The two rows also map onto the talk's three words. The top row is <b>Decide</b> (William's half). The bottom row is <b>Trace</b> and <b>Prove</b> (Kasper's half), plus the keystone that protects all of it.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Grouping by job, not by vendor.</b> A tool list by vendor invites "why not X?" debates. A list by job tells the audience what must exist in any implementation: a protocol, a network boundary, an identity, an enforcement point, a decision, a live policy, a telemetry pipeline, a trace store, a schema check, an evaluator and an admission guard. Swap any box and the architecture holds.</p>
+ <p><b>Foundations.</b> CNCF hosts Kubernetes-era infrastructure (Linkerd, SPIFFE/SPIRE, OpenFeature, OpenTelemetry, Jaeger, Prometheus, Kyverno). The Agentic AI Foundation (AAIF), under the Linux Foundation, hosts agent protocols and agent-specific infrastructure: MCP, A2A and agentgateway. Weaver is a project of OpenTelemetry itself, so the chip says "OTel". AgentEvals is plain open source, not in a foundation.</p>
+
+ <h3>Configuration and options</h3>
+ <table>
+  <tr><th>Tool</th><th>Pinned in Northstar</th><th>Configured in</th></tr>
+  <tr><td>Linkerd</td><td><code>edge-26.10.1</code> (chart 2026.10.1)</td><td><code>deploy/platform/linkerd/</code>, <code>deploy/platform/reach/</code></td></tr>
+  <tr><td>SPIRE</td><td>Helm chart 0.30.2</td><td><code>deploy/platform/spire/registration.yaml</code></td></tr>
+  <tr><td>agentgateway</td><td><code>v1.6.0</code></td><td><code>deploy/platform/agentgateway/config.yaml</code></td></tr>
+  <tr><td>OpenFeature</td><td>Open Feature Operator + flagd sidecar</td><td><code>deploy/platform/openfeature/</code></td></tr>
+  <tr><td>OTel Collector</td><td>contrib <code>0.162.0</code></td><td><code>deploy/observability/collector-config.yaml</code></td></tr>
+  <tr><td>Jaeger</td><td><code>2.20.0</code></td><td><code>deploy/observability/</code></td></tr>
+  <tr><td>AgentEvals</td><td><code>0.11.0</code></td><td><code>deploy/observability/agentevals.yaml</code>, <code>agentevals/evaluators/</code></td></tr>
+  <tr><td>Kyverno</td><td><code>v1.19.1</code> (chart 3.9.1)</td><td><code>deploy/platform/kyverno/keystone-policy.yaml</code></td></tr>
+ </table>
+ <p>The collector fans out each signal to several exporters. Traces go to Jaeger, Weaver live-check, AgentEvals and the debug exporter. Metrics go to Prometheus's OTLP endpoint and Weaver. Logs (including AgentEvals' <code>gen_ai.evaluation.result</code> events) go to Weaver, and to Dash0 when the overlay is applied. There is no sampler anywhere in the pipeline: completeness is a requirement, not a cost setting.</p>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>Mesh:</b> Istio ambient or Cilium can do the identity-based "only the gateway may call the tool" rule. Cilium also enforces egress itself, which would replace the separate NetworkPolicy layer.</li>
+  <li><b>Identity:</b> cloud workload identity (EKS Pod Identity, GKE Workload Identity) or Kubernetes projected service-account tokens. SPIFFE gives one ID format across clusters and clouds.</li>
+  <li><b>Decision:</b> OPA or Cedar instead of our own service. A small custom PDS was chosen because the rule needs a ledger lookup and a flag read and must write a decision span with exactly our attributes.</li>
+  <li><b>Trace store:</b> Tempo, or any OTLP backend (Dash0 is wired as an option). <b>Evaluators:</b> OpenLIT, Arize Phoenix, Langfuse (slide 36).</li>
+  <li><b>Admission:</b> a Kubernetes ValidatingAdmissionPolicy (built in, CEL) can express the keystone too; Kyverno adds reporting and a policy lifecycle.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Is agentgateway a CNCF project?</dt><dd>No. It is a Linux Foundation project hosted in the Agentic AI Foundation.</dd>
+  <dt>How much code did you write?</dt><dd>The enforcing part is the decision service and its rule table (<code>pds/rules.py</code>). The agents, UIs and ledger are demo applications. Everything else is configuration.</dd>
+  <dt>Can I swap Jaeger for my backend?</dt><dd>Yes, that is one exporter in the collector config. The Dash0 overlay shows it: one extra exporter, no application change.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> a2a-sdk 0.3.7, mcp 2.2.0, Linkerd edge-26.10.1, SPIRE 1.15.3, agentgateway v1.6.0, Open Feature Operator v0.9.3, flagd v0.16.2, Collector contrib 0.162.0, Jaeger 2.20.0, AgentEvals 0.11.0, Prometheus v3.14.0, Kyverno v1.19.1. A2A joined AAIF on 2026-08-17 (secondary source; check aaif.io/projects). OpenFeature still CNCF Incubating.</div>
+</section>

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Verticalizing Platform Intelligence — Prep Book</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+@page { size: A4; margin: 13mm 15mm 14mm 15mm;
+  @bottom-right { content: counter(page); font: 8pt Inter, sans-serif; color: #888; } }
+:root { --ink:#1b1d22; --mute:#5d6470; --rule:#d9dce1; --cyan:#0a7ea4; --mag:#b0246b; --paper:#fff; --tint:#f3f6f8; --warm:#fbf6ee; }
+* { box-sizing: border-box; }
+body { margin:0; font: 9.4pt/1.4 "Source Serif 4", Georgia, serif; color: var(--ink); background: var(--paper); }
+h1,h2,h3,h4,.sh .meta,.tag,table th,.kicker { font-family: Inter, Helvetica, sans-serif; }
+h1 { font-size: 26pt; line-height:1.1; margin: 0 0 6mm; }
+h2 { font-size: 15pt; margin: 0; line-height:1.2; }
+h3 { font-size: 8.8pt; text-transform: uppercase; letter-spacing: .06em; color: var(--cyan); margin: 3.2mm 0 1mm; break-after: avoid; }
+h4 { font-size: 9.5pt; margin: 3mm 0 1mm; break-after: avoid; }
+p { margin: 0 0 2mm; }
+ul, ol { margin: 0 0 2mm; padding-left: 5mm; }
+li { margin: 0 0 .8mm; }
+code, pre { font-family: "JetBrains Mono", Menlo, monospace; font-size: 8pt; }
+code { background: var(--tint); padding: 0 2px; border-radius: 2px; }
+pre { background: var(--tint); border-left: 2px solid var(--cyan); padding: 2mm 3mm; margin: 1mm 0 2.5mm; white-space: pre-wrap; break-inside: avoid; line-height: 1.38; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 1mm 0 3mm; font-size: 8.4pt; }
+tr { break-inside: avoid; }
+th, td { text-align: left; vertical-align: top; padding: 1.2mm 2mm; border-bottom: 1px solid var(--rule); }
+th { font-size: 7.8pt; text-transform: uppercase; letter-spacing: .04em; color: var(--mute); font-weight: 600; }
+a { color: var(--cyan); text-decoration: none; }
+
+section.slide-sec { break-before: page; }
+.sh { display:flex; align-items: baseline; gap: 3mm; border-bottom: 2px solid var(--ink); padding-bottom: 1.5mm; margin-bottom: 3mm; }
+.sh .num { font: 700 15pt Inter, sans-serif; color: var(--mag); }
+.sh h2 { flex: 1; }
+.sh .meta { font-size: 8pt; color: var(--mute); white-space: nowrap; }
+figure.slide { margin: 0 auto 2.5mm; width: 66%; }
+figure.slide img { width: 100%; display:block; border: 1px solid var(--rule); }
+.script { background: var(--warm); border-left: 3px solid var(--mag); padding: 2.5mm 4mm 1.5mm; margin: 0 0 2mm; }
+.script h3 { color: var(--mag); margin-top: 0; }
+.script p { font-size: 9.8pt; }
+.script .who { font: 600 7.8pt Inter, sans-serif; letter-spacing: .08em; color: var(--mag); margin: 1.5mm 0 .5mm; }
+.script .stage { font: italic 9pt "Source Serif 4", serif; color: var(--mute); }
+.script .say { font-weight: 600; }
+figure.shot { margin: 1mm 0 2.5mm; break-inside: avoid; }
+figure.shot img { width: 100%; display: block; border: 1px solid var(--rule); }
+figure.shot.narrow { width: 78%; margin-left: auto; margin-right: auto; }
+figure.shot figcaption { font: 7.8pt/1.35 Inter, sans-serif; color: var(--mute); margin-top: 1mm; }
+.cols figure.shot { margin: 0; }
+pre.term { background: #0f1a2b; color: #e6edf3; border-left: 2px solid var(--mag); font-size: 7.4pt; line-height: 1.32; }
+pre.term b { color: #7fd1ff; font-weight: 500; }
+pre.term i { color: #ff8fb8; font-style: normal; }
+.step-claim { font-style: italic; color: var(--mute); border-left: 2px solid var(--rule); padding-left: 3mm; margin: 0 0 2.5mm; }
+.callout { background: var(--tint); border-radius: 2px; padding: 2mm 3mm; margin: 2mm 0 3mm; break-inside: avoid; }
+.callout.verify { background: #fff4e5; border-left: 3px solid #d9822b; }
+.callout b:first-child { font-family: Inter, sans-serif; font-size: 8pt; text-transform: uppercase; letter-spacing: .05em; }
+dl.qa dt { font-weight: 700; margin-top: 1.6mm; }
+dl.qa dd { margin: .5mm 0 1mm 4mm; }
+.tag { display:inline-block; font-size: 7pt; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; padding: .3mm 1.5mm; border-radius: 2px; background: var(--tint); color: var(--mute); }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+
+/* front and back matter */
+.cover { height: 255mm; display:flex; flex-direction: column; justify-content: center; }
+.cover .kicker { font-size: 9pt; letter-spacing: .1em; text-transform: uppercase; color: var(--mag); margin-bottom: 4mm; }
+.cover .sub { font-size: 14pt; font-style: italic; color: var(--mute); margin-bottom: 12mm; }
+.cover img { width: 100%; border: 1px solid var(--rule); margin-bottom: 8mm; }
+.matter { break-before: page; }
+</style></head><body>

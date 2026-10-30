@@ -1,0 +1,24 @@
+<section class="slide-sec" id="s03">
+ <header class="sh"><span class="num">03</span><h2>An autonomous agent will do exactly what its tools let it do</h2><span class="meta">WILLIAM · starts 0:55 · 30 s</span></header>
+ <figure class="slide"><img src="img/s-03.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>Let's start with one sentence.</p>
+  <p class="say">An autonomous agent will do exactly what its tools let it do, and no more.</p>
+  <p>That sounds reassuring. It isn't. Because the set of things its tools let it do is almost never the set anyone deliberately chose.</p>
+  <p class="stage">[pause]</p>
+  <p>And afterwards, someone will ask what it did, and who allowed it. Hold on to that question. Kasper is going to show you the auditor's own list.</p>
+  <p class="stage">[click, hand to Kasper]</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>This is the opening claim, and the whole talk hangs off it. Two ideas in two lines. First: an agent's real authority is defined by its <em>capabilities</em> (tools, credentials, network reach), not by its instructions. Second: those capabilities usually grow by accident. The third line ("someone will ask what it did") sets up slide 4, the auditor's questions. The final slides (39 and 40) return to this sentence: "the boundary will not come from the agent."</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> Think of a new employee given a master key "just for today". They may only ever open the doors they need, but what they <em>can</em> open is every door. Security is about what is possible, not what is intended.</p>
+ <p><b>Precisely.</b> An LLM-based agent is a loop: the model reads context, picks a tool, the runtime executes that tool with whatever credentials the process holds, and the result feeds the next step. The model does not execute anything itself; the tool binding does. So the upper bound of an agent's behaviour is the union of everything its tool bindings and credentials allow. The model's choices only select a path inside that set, and that selection is probabilistic (slide 8).</p>
+ <p>The security community has names for this. OWASP lists <b>Excessive Agency</b> (LLM06) in its Top 10 for LLM applications and has a separate Agentic Top 10 (ASI01–ASI10); the recommended principle is "least agency": the smallest set of actions an agent needs. The classic failure where a privileged component is tricked into acting for someone who should not have that power is the <b>confused deputy</b>.</p>
+
+ <h3>How Northstar makes the sentence true in the safe direction</h3>
+ <p>In the demo, the settlement agent can call <code>execute_payment</code>, but only through agentgateway, and only with its SPIFFE identity. Its tools let it <em>ask</em> for a payment of any amount; the platform decides. <code>agents/settlement-agent/settlement.py</code> has no spending limit, deliberately; the check lives in the Policy Decision Service.</p>
+</section>

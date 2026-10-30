@@ -1,0 +1,57 @@
+<section class="slide-sec" id="s32">
+ <header class="sh"><span class="num">32</span><h2>Our own names, as a contract</h2><span class="meta">KASPER · starts 29:30 · 55 s</span></header>
+ <figure class="slide"><img src="img/s-32.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p>Every name in that trace comes from somewhere. The semantic conventions name the common things: http-dot-something for web calls, gen_ai-dot-something for model and agent calls.</p>
+  <p>But a policy decision, a human review, an autonomy level: those names are ours. No convention covers them. So we write them down, in Weaver, OpenTelemetry's own tool for this.</p>
+  <p class="stage">[the four icons, left to right]</p>
+  <p>Define them in YAML, on top of the official conventions. Check the registry in CI. Generate the docs from it. And live-check: the Collector sends Weaver a copy of everything the cluster really emits, and it fails if we emit one of our names that we never defined.</p>
+  <p class="say">"Telemetry names are an API. Weaver checks the API against what really runs."</p>
+  <p>So the record is complete, and its names are checked. Last word: Prove. Who grades the agent?</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>It closes the Trace section by answering a question an auditor would ask about the evidence itself: <em>how do you know the fields mean what you say?</em> It's the fifth OpenTelemetry word: <b>names</b>. The audience should leave seeing attribute names as a contract with consumers (dashboards, alerts, evaluators, auditors), not as free text a developer picks on the day.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> If one service writes <code>policy.decision</code> and another <code>policyDecision</code>, every query and alert silently misses half the data. Semantic conventions are OpenTelemetry's shared dictionary. Weaver is the spell-checker for your own additions to it. Think of an API schema (OpenAPI) for telemetry: the producer and every consumer agree on names, types and allowed values.</p>
+ <p><b>Why our own namespace.</b> The repo's governing rule (<code>docs/telemetry-contract.md</code>): use what frameworks emit, instrument only our own code, and where a convention gap exists, report it upstream rather than papering over it. Names this project defines are prefixed <code>northstar.</code> so a reader sees at a glance which attributes a framework emitted and which we chose. There is no OpenTelemetry convention for a policy or autonomy decision (Gap 3 in the contract), so the decision span is ours, defined in the open.</p>
+ <p><b>The four steps, precisely.</b></p>
+ <ol>
+  <li><b>Define:</b> <code>telemetry/registry/</code> holds <code>manifest.yaml</code> (registry <code>northstar</code>, depends on semantic-conventions <code>v1.44.0</code>) plus <code>claim.yaml</code>, <code>contract.yaml</code>, <code>policy.yaml</code>, <code>review.yaml</code>, <code>metrics.yaml</code>. Everything is <code>stability: development</code>.</li>
+  <li><b>Check:</b> <code>scripts/check-registry.sh</code> runs <code>otel/weaver:v0.28.0 registry check -r telemetry/registry</code>.</li>
+  <li><b>Generate:</b> the same script runs <code>registry generate … markdown</code> and fails if the generated region of <code>docs/telemetry-contract.md</code> is stale, so the docs can't drift from the registry.</li>
+  <li><b>Live-check:</b> a <code>weaver-live-check</code> Deployment in <code>observability</code>, fed by the collector's <code>otlp_grpc/weaver</code> exporter (traces, metrics and logs), policy in <code>telemetry/live-check.toml</code> with <code>fail_on = "violation"</code>.</li>
+ </ol>
+<pre><code>- id: northstar.policy.decision
+  type:
+    members:
+      - {id: permit, value: permit}
+      - {id: deny,   value: deny}
+  brief: What the policy-decision-service decided.</code></pre>
+
+ <h3>Configuration and options</h3>
+ <ul>
+  <li><b>Findings policy.</b> Most traffic live-check sees is not ours (semconv, Kyverno, Linkerd, SPIRE, agentgateway). Those findings stay at <code>information</code>. For <code>northstar.*</code> names, <code>missing_attribute</code> and <code>undefined_enum_variant</code> are raised to violations. Overrides are first-match-wins, so the specific rule comes before the catch-all.</li>
+  <li><b>What live-check does not catch (v0.28.0, measured):</b> a missing <em>required</em> attribute (a mutation dropping <code>northstar.policy.rule</code> survived), and span names (a misspelled <code>northstar.claim.submit</code> isn't flagged). Behaviour tests cover both: <code>test_policy_denial.py</code>, <code>test_human_in_the_loop.py</code>, <code>test_demo_flow.py</code>, <code>test_registry_live_check.py</code>.</li>
+  <li><b><code>gen_ai.*</code> can't be referenced.</b> semconv v1.44.0 excludes <code>gen_ai.*</code> from dependency resolution, so the decision span uses the owned <code>northstar.policy.tool.name</code>, not <code>gen_ai.tool.name</code>.</li>
+  <li><b>Operational cost.</b> Live-check keeps every sample: about 3.8 MB/min on an idle demo cluster, limit 4Gi (≈17 h). It also clones semconv from GitHub on every start, so it needs egress. Fine for a gate, not for a long-lived production sidecar as-is.</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>Constants in code only</b> (a shared module of attribute names). Stops typos within one language; no cross-language docs, no live check.</li>
+  <li><b>Backend-side schema</b> (tests or dashboards that fail on missing fields). Catches drift late, after the data is already wrong.</li>
+  <li><b>Collector processors</b> (<code>transform</code>, <code>attributes</code>) to rename at ingest. Hides drift instead of fixing it, and the repo's rule forbids rewriting third-party spans.</li>
+  <li><b>Proposing upstream conventions.</b> The long-term fix for decision spans; Weaver is also how upstream semconv itself is defined, so a registry like this is a ready draft.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Does Weaver validate gen_ai.* too?</dt>
+  <dd>Not here. Standard names show up as "not in registry" at information level; only ours fail the gate.</dd>
+  <dt>Does live-check run in production?</dt>
+  <dd>In this demo it runs in-cluster as a gate. Its unbounded memory makes it a CI/staging tool today rather than an always-on production component.</dd>
+ </dl>
+</section>

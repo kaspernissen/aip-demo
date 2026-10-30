@@ -1,0 +1,34 @@
+<div class="matter">
+<h2 style="font-size:18pt;margin-bottom:3mm">Glossary</h2>
+<p style="color:#5d6470">Each term in plain words, then what it is in Northstar.</p>
+<table style="font-size:8.6pt">
+<tr><th style="width:24%">Term</th><th>Plain words</th><th style="width:34%">In Northstar</th></tr>
+<tr><td><b>A2A</b> (Agent2Agent)</td><td>The protocol one agent uses to hand a task to another agent. A task has a lifecycle (working, input required, completed).</td><td>Claims agent → settlement agent. a2a-sdk; trace context read by our own middleware.</td></tr>
+<tr><td><b>AAIF</b></td><td>Agentic AI Foundation, a Linux Foundation home for agent protocols and tools.</td><td>MCP, A2A and agentgateway sit there.</td></tr>
+<tr><td><b>Admission control</b></td><td>A Kubernetes API checkpoint that can reject a change before it is stored.</td><td>Kyverno’s keystone policy.</td></tr>
+<tr><td><b>agentgateway</b></td><td>A proxy built for agent traffic (MCP, A2A, model calls). It checks identity and policy on every call.</td><td>The only door to <code>payments-mcp</code> (port 3000) and to the model (port 4000).</td></tr>
+<tr><td><b>AgentEvals</b></td><td>An open-source evaluator that grades agent runs from their OpenTelemetry traces.</td><td>Five evaluators per claim. Grades written back as <code>gen_ai.evaluation.result</code>.</td></tr>
+<tr><td><b>Autonomy level</b></td><td>How much the agent may do on its own today.</td><td><code>assisted</code> (€0) or <code>autonomous</code> (€6,000), from one OpenFeature flag.</td></tr>
+<tr><td><b>Baggage</b></td><td>Key/value pairs that travel with the trace context across hops.</td><td>The claim id from the browser onwards.</td></tr>
+<tr><td><b>CEL</b></td><td>Common Expression Language: small, side-effect-free expressions, fast to evaluate.</td><td>The gateway’s caller allowlist and €50,000 ceiling. Kyverno’s match condition.</td></tr>
+<tr><td><b>Collector</b> (OTel)</td><td>A pipeline that receives, processes and exports telemetry.</td><td>One Collector, no sampling. Exports to Jaeger, Prometheus, Weaver live-check, AgentEvals, and optionally Dash0.</td></tr>
+<tr><td><b>Content capture</b></td><td>Recording the actual prompts and answers in spans. Opt-in, because it is sensitive.</td><td>On, so the trace says <i>why</i> as well as <i>what</i>.</td></tr>
+<tr><td><b>Fail closed</b></td><td>If the checker can’t answer, the answer is no.</td><td>The gateway’s remote guardrail. flagd failures fall back to <code>assisted</code>.</td></tr>
+<tr><td><b>flagd</b></td><td>A feature-flag daemon that serves flags to OpenFeature SDKs.</td><td>A sidecar beside the policy decision service.</td></tr>
+<tr><td><b>gen_ai.*</b></td><td>OpenTelemetry semantic conventions for model and agent calls.</td><td><code>invoke_agent</code>, <code>chat</code>, <code>execute_tool</code> spans.</td></tr>
+<tr><td><b>Keystone</b></td><td>The rule that the agent can never edit what defines its own authority.</td><td>Kyverno <code>ValidatingPolicy</code> <code>agents-cannot-edit-their-own-authority</code>.</td></tr>
+<tr><td><b>Linkerd</b></td><td>A service mesh: a proxy beside every pod adds mTLS, identity-based authorization and telemetry.</td><td>Only the gateway’s mTLS identity may reach <code>payments-mcp</code> and the PDS.</td></tr>
+<tr><td><b>LLM-as-judge</b></td><td>Using a second model to grade something that needs meaning, not rules.</td><td><code>prompt_injection</code> evaluator. It only flags, because judges drift.</td></tr>
+<tr><td><b>MCP</b></td><td>Model Context Protocol: how an agent lists and calls tools.</td><td>Settlement agent → gateway → <code>payments-mcp</code>.</td></tr>
+<tr><td><b>mTLS</b></td><td>TLS where both sides show a certificate, so each knows who the other is.</td><td>Linkerd, between every meshed pod.</td></tr>
+<tr><td><b>NetworkPolicy</b></td><td>Kubernetes firewall rules, enforced by the network plugin in the node.</td><td>Agents may reach the gateway (3000, 4000) and nothing on the internet.</td></tr>
+<tr><td><b>OpenFeature</b></td><td>A CNCF standard API for asking “what is this flag’s value for this caller?”. The provider behind it is pluggable.</td><td>The PDS asks for <code>autonomy-level</code> by SPIFFE ID.</td></tr>
+<tr><td><b>PDS</b></td><td>Policy Decision Service: Northstar’s own code that permits or denies, and records why.</td><td><code>platform/policy-decision-service</code>, gRPC on 9100.</td></tr>
+<tr><td><b>Safe Operating Model</b></td><td>Rings of least privilege: identity, reach, capability (and data), with a keystone.</td><td>From Francesco Beltramini (ControlPlane). The data ring is out of scope.</td></tr>
+<tr><td><b>Semantic conventions</b></td><td>The agreed names for telemetry attributes, so every tool reads them the same way.</td><td><code>http.*</code>, <code>gen_ai.*</code>, plus our own <code>northstar.*</code> in Weaver.</td></tr>
+<tr><td><b>Span / trace / link</b></td><td>A span is one step. A trace is all steps of one run. A link joins two traces without nesting them.</td><td>One trace per claim. The human approval is a second trace, linked back.</td></tr>
+<tr><td><b>SPIFFE / SPIRE / SVID</b></td><td>SPIFFE is the identity standard. SPIRE issues the identities. An SVID is the signed, short-lived document that carries one.</td><td><code>spiffe://northstar.local/ns/&lt;ns&gt;/sa/&lt;sa&gt;</code>, shown to the gateway as a JWT.</td></tr>
+<tr><td><b>traceparent</b></td><td>The W3C header that carries the trace id from hop to hop.</td><td>HTTP and A2A headers, MCP <code>params._meta</code>.</td></tr>
+<tr><td><b>Weaver</b></td><td>OpenTelemetry’s tool to define, check, document and live-check telemetry names.</td><td><code>telemetry/registry/</code>, <code>scripts/check-registry.sh</code>, live-check in-cluster.</td></tr>
+</table>
+</div>

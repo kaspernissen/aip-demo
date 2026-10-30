@@ -1,0 +1,60 @@
+<section class="slide-sec" id="s27">
+ <header class="sh"><span class="num">27</span><h2>OpenTelemetry: a 1,000-mile view</h2><span class="meta">KASPER · starts 25:20 · 60 s</span></header>
+ <figure class="slide"><img src="img/s-27.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p>Everything in that evidence is OpenTelemetry, so first the thousand-mile view.</p>
+  <p>Two words before the picture. A span is the record of one step, like one tool call. A trace is every span of one run, held together by one trace id that every hop passes on, through MCP and A2A too.</p>
+  <p class="stage">[left boxes]</p>
+  <p>On the left, where telemetry is born. Instrumentation: the OpenTelemetry API and SDK in our own code, and auto-instrumentation for the frameworks we didn't write. And infrastructure: Kubernetes, and here the Linkerd proxies, which emit spans of their own.</p>
+  <p class="stage">[middle]</p>
+  <p>All of it goes to one place, the OpenTelemetry Collector. It receives traces, metrics and logs, processes them, and exports them to whatever backend you choose. Here that's Jaeger for traces, Prometheus for metrics, and Dash0 for all three. Analysis tools sit on top of the backends.</p>
+  <p class="say">"Generate once, send anywhere. The backend is a choice, not a rewrite."</p>
+  <p>Keep five words: span, one step. Trace, one run. Propagation, the id passed hop to hop. Link, two traces joined. Names, what each attribute means. Each of the next slides is one of them. The claim crossed two protocols on its way. Here they are.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>Part of the audience has never worked with OpenTelemetry. This slide gives them just enough vocabulary to read the next five slides, and gives everyone the architectural point: instrumentation and backend are decoupled by an open protocol (OTLP) and a vendor-neutral pipeline (the Collector). The "five words" are the outline of the rest of the Trace section: span (26), propagation (29), trace (30), link (31), names (32).</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain version.</b> Think of a parcel tracking system. Every depot that touches the parcel scans it (a span). The tracking number (the trace id) is printed on the parcel and read at every depot (propagation). All scans with the same number make up the journey (the trace). The Collector is the sorting centre: every depot sends its scans there, and it forwards them to whoever needs them.</p>
+ <p><b>The pieces.</b></p>
+ <ul>
+  <li><b>API and SDK.</b> The API is what code calls to create spans and metrics; the SDK is the implementation that batches and exports them. Libraries depend only on the API, so they stay silent until an application installs an SDK.</li>
+  <li><b>Auto-instrumentation.</b> Instrumentation libraries that wrap frameworks (HTTP clients, ASGI servers, PydanticAI, the MCP SDK) and create spans without changing application code.</li>
+  <li><b>OTLP.</b> The OpenTelemetry Protocol, over gRPC (port 4317) or HTTP (4318). Every service in Northstar speaks it.</li>
+  <li><b>The Collector.</b> A pipeline of receivers, processors and exporters, defined per signal. It can batch, enrich, filter, redact, and fan out to several backends at once.</li>
+  <li><b>Semantic conventions.</b> Agreed names for attributes (<code>http.request.method</code>, <code>gen_ai.request.model</code>), so a backend can understand data from any source.</li>
+ </ul>
+
+ <h3>Configuration and options</h3>
+ <pre><code># deploy/observability/collector-config.yaml (condensed)
+receivers:  otlp (grpc 4317, http 4318, CORS for localhost:8080),
+            prometheus/spire (scrapes SPIRE server/agent metrics)
+processors: resource_detection (env), batch (1s)
+pipelines:
+  traces:  otlp -&gt; jaeger, weaver live-check, agentevals, debug
+  metrics: otlp + spire -&gt; prometheus (OTLP), weaver, debug
+  logs:    otlp -&gt; weaver, debug</code></pre>
+ <ul>
+  <li><b>No sampler</b> in any SDK or in the collector: every span is kept.</li>
+  <li><b>The browser</b> exports OTLP/HTTP directly to the collector; that is why the receiver lists <code>http://localhost:8080</code> in <code>allowed_origins</code>.</li>
+  <li><b>Dash0</b> is an overlay (<code>collector-dash0-overlay.yaml</code>) passed as a second <code>--config</code> when <code>DASH0_AUTH_TOKEN</code> is set. It adds one exporter to each pipeline; no processor renames anything, so Dash0 gets the same names Jaeger does.</li>
+  <li><b>Linkerd proxies</b> export OTLP/gRPC to the collector over mTLS, with no sampling of their own: a proxy span exists only for a request whose incoming <code>traceparent</code> is sampled.</li>
+  <li>Options not used here: tail sampling, attribute redaction (e.g. to strip message content before a backend), a gateway/agent collector topology.</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>Vendor agents and SDKs</b>: often richer out of the box, but each backend change means re-instrumenting.</li>
+  <li><b>Export directly from SDK to backend</b>, no collector: fewer moving parts, but no central place to fan out, redact or buffer, and every service needs backend credentials.</li>
+  <li><b>Other pipelines</b> (Fluent Bit, Vector) can carry OTLP, but the Collector is where OpenTelemetry's own processors and receivers live.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Why Jaeger and not Tempo?</dt><dd>Either works; it's one exporter. Jaeger v2 is itself built on the Collector, and its UI is simple to show on stage.</dd>
+  <dt>What does 100% cost in production?</dt><dd>More storage and network. For decision spans in a regulated flow, the absence of a span is evidence, so dropping any of them breaks the audit. You can still sample high-volume, non-decision traffic separately.</dd>
+  <dt>Logs, too?</dt><dd>Yes, the logs pipeline carries AgentEvals' <code>gen_ai.evaluation.result</code> events to Weaver and, with the overlay, to Dash0.</dd>
+ </dl>
+</section>

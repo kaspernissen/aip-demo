@@ -1,0 +1,32 @@
+<section class="slide-sec" id="s37">
+ <header class="sh"><span class="num">37</span><h2>Decide. Trace. Prove. (recap)</h2><span class="meta">WILLIAM · starts 33:20 · 25 s</span></header>
+ <figure class="slide"><img src="img/s-37.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>Thanks, Kasper. Three words, one more time.</p>
+  <p>Decide: the rings held. Identity, reach, the limits, and a keystone the agent couldn't touch.</p>
+  <p>Trace: every claim became one trace, and every decision a span with its rule.</p>
+  <p>Prove: AgentEvals graded the agent's work, from that trace, after the fact.</p>
+  <p class="say">"The auditor's five questions, answered from what the platform recorded."</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>The handback from Kasper to William, and the bridge into the close. It pays off slide 4 (the auditor's questions) and slide 5 (the three words). Keep it short; the room has just absorbed three dense slides.</p>
+
+ <h3>The five questions, answered (keep in your head, don't read out)</h3>
+ <table>
+  <tr><th>Auditor's question</th><th>Northstar's artefact</th><th>Where the room saw it</th></tr>
+  <tr><td>1 · What did the agent do? (AI Act Art. 12)</td><td>One unsampled trace per claim; gen_ai chat and execute_tool spans with content capture on.</td><td>Demo step 4; slides 26, 30, 34</td></tr>
+  <tr><td>2 · Who allowed it, within what limits? (FINRA scope and authority)</td><td><code>northstar.policy.decision</code> with rule, limit, amount, caller SPIFFE ID and autonomy level.</td><td>Demo steps 2 and 4; slide 24 (left and right panels)</td></tr>
+  <tr><td>3 · Could a human stop or reverse it? (Art. 14)</td><td>The hold above the limit; <code>northstar.review.decision</code> in trace B, linked to trace A; the approval-wait histogram.</td><td>Demo step 2; slide 31</td></tr>
+  <tr><td>4 · Explain this one decision (Art. 86, CJEU C-203/22)</td><td>That claim's decision span: "the procedure and principles actually applied", for this case.</td><td>Demo step 4 (one evidence block per claim); slide 26</td></tr>
+  <tr><td>5 · Complete, kept, tamper-evident? (Art. 19, DORA, ISO/IEC 24970)</td><td>Partly: complete (no sampling, Weaver-checked names). Retention and tamper evidence are backend choices the demo does not build.</td><td>Slides 30 (never sample), 32 (Weaver), 36 (grades in the same pipeline)</td></tr>
+ </table>
+ <p>Be honest on row 5 if asked: Jaeger in the demo is in-memory. Retention of six months or more, and tamper evidence (WORM storage, hashing, signed exports), belong to the backend and storage layer.</p>
+
+ <h3>Delivery</h3>
+ <ul>
+  <li>Handover from Kasper: Kasper ends slide 36 and passes the clicker; William can open with "Thanks, Kasper."</li>
+  <li>One beat per word. No new content here.</li>
+ </ul>
+</section>

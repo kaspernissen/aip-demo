@@ -1,0 +1,51 @@
+<section class="slide-sec" id="s26">
+ <header class="sh"><span class="num">26</span><h2>The audit trail is a trace</h2><span class="meta">KASPER · starts 24:35 · 45 s</span></header>
+ <figure class="slide"><img src="img/s-26.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p>William said every gate records, and evidence is a byproduct. This is the Large claim from the demo, start to finish, as those gates recorded it.</p>
+  <p class="stage">[walk the five icons left to right]</p>
+  <p>The customer wrote their claim, and the claims agent's model call recorded exactly what it was given. The model read eighty-five hundred euros, and the same span recorded what it answered. The policy service decided: deny, limit six thousand, in its own span. A person approved it four seconds later, and the reviewer UI recorded who. And the ledger paid, recorded by the payment service.</p>
+  <p>Five services, five records, joined by the claim id and by trace links. And every one of them speaks the same open standard: OpenTelemetry.</p>
+  <p class="say">"Nobody wrote an audit log. The system recorded what it did."</p>
+  <p>So let's look at OpenTelemetry from a thousand miles up.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>It reframes tracing from a debugging tool to an audit record, using one concrete claim the audience just watched. It pays off "evidence is a byproduct" from slide 10 and answers the auditor's first and fourth questions from slide 4 ("what did the agent do?", "explain this one decision") in one picture, and it introduces the idea that each step's record is a named field on a span. It is the bridge into the OpenTelemetry slides that follow.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Evidence as a byproduct.</b> A hand-written audit log is a second system that must be kept in sync with the first, and it records what developers remembered to log. Here the record is emitted by the same code path that does the work: the policy service cannot decide without emitting <code>northstar.policy.decision</code>, the reviewer UI cannot approve without emitting <code>northstar.review.decision</code>. The record and the action can't drift apart.</p>
+ <p><b>Why "linked traces" and not one trace.</b> The approval happens later, by a person. Northstar models that as two traces: trace A (submit, model, decision, hand-off) and trace B (the approval, the execute, the resume), with a span link from B back to A. Slide 31 covers why. What joins everything for a reader is the claim id, <code>northstar.claim.id</code>, carried in W3C baggage and stamped on spans by a baggage span processor.</p>
+ <p><b>The five fields.</b></p>
+ <table>
+  <tr><th>Step</th><th>Span / attribute</th><th>Emitted by</th></tr>
+  <tr><td>Customer wrote</td><td><code>gen_ai.input.messages</code> on <code>chat claude-sonnet-5</code></td><td>claims-agent (PydanticAI instrumentation, content capture on)</td></tr>
+  <tr><td>Model read</td><td><code>gen_ai.output.messages</code>, same span</td><td>claims-agent</td></tr>
+  <tr><td>Policy decided</td><td><code>northstar.policy.decision</code> = deny, with rule, limit 6000, requested 8500, caller, level</td><td>policy-decision-service</td></tr>
+  <tr><td>Person approved</td><td><code>northstar.review.decision</code>, reviewer id, wait time</td><td>reviewer-ui (trace B root)</td></tr>
+  <tr><td>Ledger paid</td><td><code>POST /payments/{paymentId}/execute</code></td><td>payments-api (<code>otelhttp</code>)</td></tr>
+ </table>
+ <p>The numbers on the slide come from a real run on 2026-10-27: claim <code>CLM-INTAKE-E59B79</code>, reviewer <code>kasper.nissen</code> after 4 s, payment <code>PAY-000018</code>.</p>
+
+ <h3>Configuration and options</h3>
+ <ul>
+  <li><b>Content capture</b> is the knob that makes "customer wrote / model read" possible. Northstar uses <code>NORTHSTAR_CAPTURE_CONTENT="true"</code> in <code>deploy/k8s/claims-agent.yaml</code> and <code>settlement-agent.yaml</code>, read by <code>bootstrap.py</code> into PydanticAI's <code>include_content</code>. The GenAI conventions make message content opt-in because it is the most sensitive data in the trace.</li>
+  <li><b>Retention and integrity</b> are backend settings, not instrumentation. Jaeger in the demo keeps traces in memory. For a real audit trail you would choose storage with the retention the regulation asks (EU AI Act Art. 19: at least six months) and tamper evidence. Slide 4's fifth question.</li>
+  <li><b>Claim id coverage</b>: <code>BaggageSpanProcessor</code> (<code>opentelemetry-processor-baggage==0.65b0</code>) with a predicate that admits only the claim id key, so arbitrary upstream baggage is never copied onto spans.</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>A dedicated audit-log table</b> written by each service. Familiar to auditors, queryable with SQL, but a second source of truth and no causality between entries.</li>
+  <li><b>Event sourcing</b> on the ledger. Excellent for the money side, silent about the model's reasoning and the policy decision.</li>
+  <li><b>Export traces to an immutable store</b> (object storage with object lock) via a second collector exporter. Keeps the trace as the source and adds tamper evidence.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Isn't storing prompts and outputs a GDPR problem?</dt><dd>It can be. That is why content capture is opt-in in the spec. You turn it on deliberately, scope who can read it, and set retention. For an explainability obligation (Art. 86), the content is what explains the decision.</dd>
+  <dt>Is a trace store an acceptable audit log?</dt><dd>The data is there; whether the store is acceptable depends on retention, access control and tamper evidence, which are backend choices. Not legal advice.</dd>
+  <dt>What if spans get dropped?</dt><dd>Then the audit trail has a hole, which is why nothing is sampled and the e2e gate checks span parity. A missing span must mean "didn't happen", not "got lost".</dd>
+ </dl>
+</section>

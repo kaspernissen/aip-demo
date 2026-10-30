@@ -1,0 +1,51 @@
+<section class="slide-sec" id="s24">
+ <header class="sh"><span class="num">24</span><h2>What you just saw</h2><span class="meta">KASPER · starts 22:40 · 70 s</span></header>
+ <figure class="slide"><img src="img/s-24.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p>Back to the slides. William showed you the config before the demo. Here is the same config, answering.</p>
+  <p class="stage">[left panel]</p>
+  <p>On the left, the flag. Eighty-five hundred, and the decision span says deny, under the autonomous rule, limit six thousand, eighty-five hundred requested. So it waited, and a person released it. The agent's output was a proposal, never an outcome.</p>
+  <p class="stage">[middle panel]</p>
+  <p>In the middle, the ceiling. The customer told the model to pay eighty thousand. The model read twenty-four hundred. And when we sent eighty thousand anyway, with the agent's own identity, the gateway said 403 on its own. The policy service was never asked. Intent lives in the prompt; capability lives in the gateway. Capability won.</p>
+  <p class="stage">[right panel]</p>
+  <p>On the right, the core. The settlement agent's passport, as the gateway read it: the same SPIFFE ID you saw as "caller identity" on every claim in the evidence. It comes from where the agent runs, and its audience is the gateway. Every check you just saw keyed off that one identity.</p>
+  <p class="stage">[bottom strip]</p>
+  <p>Along the bottom, the rest. Fourteen fifty, under the limit, paid alone because the level allowed it. The keystone: the agent couldn't change its own flag, even after RBAC said yes. And evidence: every claim, read back from the trace.</p>
+  <p class="say">"Every line of config you saw has a line of output like this."</p>
+  <p>Every one of those answers came out of a trace. So why does an agent need one, more than any other service?</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>The demo moves fast and the terminal output is small. This slide freezes the three outputs that matter and labels each with the ring it belongs to, so the audience can connect what they just saw to William's model. It closes the loop on the promise "you'll see this again in the demo" from slides 8, 16 and 18, and gives the auditor's second question (who allowed it, within what limits?) its answer on one screen: a rule, a limit, a caller. It is also the pivot from Decide to Trace: the last sentence sets up why agents need tracing more than ordinary services.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Two independent "no"s.</b> The left and middle panels are two different kinds of refusal. The flag panel is a <i>contextual</i> decision: it depends on who is asking, today's autonomy level and the ledger, so the gateway asks the policy service. The ceiling panel is a <i>static</i> invariant: no payment above €50,000, whoever asks, written as one CEL expression in the gateway. CEL can't look things up, so it holds only facts that never change. Because the ceiling refuses before the remote guardrail runs, "policy service never asked" is literally true: there is no <code>northstar.policy.decision</code> span for that call.</p>
+ <p><b>Defence in depth against prompt injection.</b> The model ignoring the instruction is good behaviour, but behaviour is probabilistic. The ceiling is deterministic. The demo tests both layers separately: <code>inject</code> first reads what the model did (from the <code>chat</code> span), then sends the worst case anyway, so the second layer is proven even when the first one held.</p>
+ <p><b>Identity as the shared key.</b> The right panel is a decoded JWT-SVID. <code>sub</code> is the SPIFFE ID SPIRE minted from namespace and service account. <code>aud</code> is the gateway's own SPIFFE ID, so a token stolen from this hop is useless anywhere else. The CEL rule, the PDS rule lookup, the flag targeting and the span attribute <code>jwt.sub</code> all use that same string.</p>
+
+ <h3>Configuration and options</h3>
+ <pre><code># deploy/platform/agentgateway/config.yaml (the ceiling, condensed)
+- allow: 'jwt.sub in [".../sa/settlement-agent", ".../sa/reviewer-ui"]
+   &amp;&amp; (mcp.tool.name != "execute_payment"
+       || (mcp.tool.arguments.amount &gt; 0
+           &amp;&amp; mcp.tool.arguments.amount &lt;= 50000))'</code></pre>
+ <ul>
+  <li>Limit table: <code>platform/policy-decision-service/pds/rules.py</code>, <code>EXECUTE_LIMITS</code>, keyed by (caller, level): assisted 0, autonomous 6000. No row means deny (<code>unknown_caller</code>).</li>
+  <li>Rule name on the span: <code>northstar.policy.rule = settlement-agent.autonomous.execute_limit</code>; a human release uses <code>human-approved.execute</code>.</li>
+  <li>The commands behind each panel: <code>scripts/demo evidence</code> (left), <code>scripts/demo inject</code> / <code>ceiling</code> (middle), <code>scripts/demo guard</code> (right, decodes the SVID, never prints the token).</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li>Put the ceiling in the PDS too: one place for all rules, but then a PDS bug or outage could affect the hard limit. Keeping it in the gateway means the ceiling holds with no network call.</li>
+  <li>Put the €6,000 limit in CEL: possible for a single fixed value, but it would need a gateway config change to move it and could not read the flag or the ledger.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Why is the 403 at the gateway and not a PDS deny?</dt><dd>Two ways to say no. The ceiling is a fixed invariant, so it lives in CEL and is checked first. The limit depends on caller and level, so it needs a lookup.</dd>
+  <dt>Is the decision span an error when it denies?</dt><dd>No. A deny is the platform working; the span status stays Unset. The refused <code>execute_tool</code> span on the agent side is the one shown in red.</dd>
+  <dt>Could someone replay the token?</dt><dd>The SVID is short-lived and audience-bound to the gateway; the mesh also carries mTLS on every hop.</dd>
+ </dl>
+</section>

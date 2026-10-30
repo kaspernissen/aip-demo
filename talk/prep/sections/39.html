@@ -1,0 +1,30 @@
+<section class="slide-sec" id="s39">
+ <header class="sh"><span class="num">39</span><h2>The boundary will not come from the agent.</h2><span class="meta">WILLIAM · starts 34:30 · 25 s</span></header>
+ <figure class="slide"><img src="img/s-39.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>We opened with this: an agent will do exactly what its tools let it do.</p>
+  <p class="say">"So the boundary will not come from the agent."</p>
+  <p>Draw it in the platform, make it the default, and let the rings hold it.</p>
+  <p class="stage">[pause; let it sit before clicking]</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>The thesis line, set like slide 3 so the room hears the callback. It is a statement, not an explanation; everything it rests on has been shown. Its three verbs each map to something concrete:</p>
+ <ul>
+  <li><b>Draw it in the platform:</b> identity (SPIRE), reach (Linkerd + NetworkPolicy), capability (agentgateway, policy service, flag), keystone (Kyverno). Not in the prompt.</li>
+  <li><b>Make it the default:</b> deny by default everywhere. payments-mcp's Linkerd <code>Server</code> is <code>accessPolicy: deny</code>; the agents' egress allows only the gateway; the policy service denies unknown callers and levels; the guardrail is <code>failClosed</code>; the flag's committed default is <code>assisted</code> (€0).</li>
+  <li><b>Let the rings hold it:</b> each layer assumes the one before it failed. Going around the gateway hits Linkerd; a valid passport still meets CEL; a passing CEL still meets the policy service; and the agent can't edit any of them.</li>
+ </ul>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> We don't ask a microservice to promise it won't read another team's database; we don't give it the credentials. The same applies to agents, with more reason: their control loop is a model, which follows instructions most of the time, not all of the time. "Secure by default" and "least privilege" are old ideas; the slide argues they are sufficient for agents if applied at the platform layer.</p>
+ <p><b>Why defaults matter more for agents.</b> Authority accumulates (slide 7): a tool added for one workflow stays for all. With a deny-by-default platform, every new capability is an explicit, reviewable grant. With allow-by-default, every gap is an unreviewed grant the model may discover at run time.</p>
+
+ <h3>Delivery</h3>
+ <ul>
+  <li>Slow down. This is the line people quote.</li>
+  <li>Don't add a sentence after the pause; click to "Three things to remember".</li>
+ </ul>
+ <p class="stage">Source: William Rizzo, KCD Sofia 2026 keynote, slide 16.</p>
+</section>

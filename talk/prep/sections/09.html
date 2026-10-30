@@ -1,0 +1,39 @@
+<section class="slide-sec" id="s09">
+ <header class="sh"><span class="num">09</span><h2>An agent is a workload</h2><span class="meta">WILLIAM · starts 4:25 · 40 s</span></header>
+ <figure class="slide"><img src="img/s-09.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>Here's the reframe. A microservice will do whatever its identity, its network access and its permissions allow. So will an agent. Read the two boxes: they say the same thing. The only difference is the last line. The agent's control loop is non-deterministic.</p>
+  <p>We spent fifteen years in cloud native learning not to trust a workload to police itself. We already know how to bound workloads. So we bound agents the same way.</p>
+  <p class="say">Bounded autonomy is a property of the platform, not of the agent.</p>
+  <p>Put an agent in a pod and it gets what every workload gets: a service account, an identity, a place on the network. That identity is where the platform starts.</p>
+  <p class="stage">[click]</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>It is the reassuring turn after two problem slides. Agents are new; the controls are not. A platform team already owns workload identity, network policy, admission control and gateways. This slide gives them permission to apply what they know, and it sets up the next slides, which do exactly that.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> A workload is any running piece of software the platform schedules: a pod, a job. The platform doesn't trust what a workload says about itself; it checks where it runs, gives it an identity, and limits what it can reach and change. An agent is software in a pod. It gets the same treatment.</p>
+ <p><b>The "fifteen years".</b> The lessons cloud native already absorbed:</p>
+ <ul>
+  <li><b>Don't trust self-description.</b> Identity is attested by the platform (Kubernetes ServiceAccounts, SPIFFE), not claimed by the app.</li>
+  <li><b>Zero trust networking.</b> Being inside the cluster grants nothing; every connection is authenticated (mTLS) and authorised.</li>
+  <li><b>Policy outside the code.</b> Admission control, gateways and sidecars enforce rules the application can't skip or edit.</li>
+  <li><b>Declarative and reviewed.</b> The desired state is in Git; changes go through review.</li>
+ </ul>
+ <p><b>What's actually new about agents.</b> The non-deterministic control loop. A microservice's next call is determined by its code; an agent's next call is chosen by a model at run time. That makes two things more important than before: per-call authorization (you can't pre-approve a call graph you can't draw, see slide 25) and a full record of what happened (you can't infer it from the code).</p>
+
+ <h3>How Northstar applies it</h3>
+ <p>Each agent runs as a normal Deployment with its own ServiceAccount in the <code>northstar-agents</code> namespace. SPIRE turns namespace plus ServiceAccount into a SPIFFE ID such as <code>spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent</code>. Linkerd derives its mTLS identity from the same pair, so reach and capability key off the same name. RBAC grants agent ServiceAccounts no writes. Nothing about the agents is special-cased: the gateway, the mesh and Kyverno treat them as workloads with names.</p>
+
+ <h3>Alternatives</h3>
+ <p>Agent-specific identity schemes (agent cards, OAuth client registrations per agent, vendor agent IDs) describe what an agent claims to be. They are useful for discovery and for user-delegated authorization, but on their own they are self-description. Northstar's A2A agent cards (<code>contracts/agent-cards/*.json</code>) carry no identity binding; William's line for them is "the brochure, not the passport".</p>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>What about agents that run outside Kubernetes, like a coding agent on a laptop?</dt><dd>The principle holds: identity, reach and capability enforced outside the agent. The mechanisms change (SPIFFE works on VMs and bare metal; a gateway can sit in front of any tool). The demo uses Kubernetes because that's where the platform controls already exist.</dd>
+  <dt>Does treating an agent as a workload cover the user it acts for?</dt><dd>No. Workload identity says which software is acting. Acting on behalf of a specific person needs delegated user identity as well (for example OAuth token exchange). Northstar uses workload identity only.</dd>
+ </dl>
+ <p style="font-size:8.5pt;color:#5d6470">Source: William Rizzo, KCD Sofia 2026, slide 6.</p>
+</section>

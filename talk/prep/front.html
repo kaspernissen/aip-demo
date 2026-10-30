@@ -1,0 +1,110 @@
+<div class="cover">
+  <div class="kicker">Speaker prep book · KubeCon + CloudNativeCon NA 2026 · Salt Lake City</div>
+  <h1>Verticalizing Platform Intelligence for Regulated Domains</h1>
+  <div class="sub">If you can’t trace it, you can’t govern it.</div>
+  <img src="img/s-01.png">
+  <p><b>William Rizzo</b> and <b>Kasper Borg Nissen</b><br>
+  Wednesday 11 November 2026, 11:00–11:30 · Salt Palace, Level 2, 255 EF · Platform Engineering, Advanced</p>
+  <p style="color:#5d6470;font-size:9pt">Built from the 41-page deck of 30 October 2026, the speaker notes in <code>talk/notes/</code>, the Northstar repository and the research reports in <code>talk/reports/</code>.</p>
+</div>
+
+<div class="matter">
+<h2 style="font-size:18pt;margin-bottom:4mm">How to use this book</h2>
+<p>Every slide gets its own section, starting on a new page. Each section has the same parts, in the same order:</p>
+<table>
+<tr><th style="width:32%">Part</th><th>What it gives you</th></tr>
+<tr><td><b>Manuscript</b></td><td>The spoken script, sized to the slide’s time at about 140 words a minute. Bold lines are the ones that must land word for word. Grey italics are stage directions.</td></tr>
+<tr><td><b>What the slide is for</b></td><td>The point of the slide, what the room should leave with, and how it links to the slides on either side.</td></tr>
+<tr><td><b>The theory behind it</b></td><td>The concept in plain words first, then the precise detail.</td></tr>
+<tr><td><b>Configuration and options</b></td><td>The real Northstar files and the settings the slide doesn’t show.</td></tr>
+<tr><td><b>Alternatives</b></td><td>Other tools and designs, with honest trade-offs. This is what you need when someone asks “why not X?”.</td></tr>
+<tr><td><b>Demo steps 23·1 to 23·5</b></td><td>After slide 23, one section per demo step: the manuscript, what the room sees (real screenshots and terminal output from one run), which threads it pays off, and what to do if it misbehaves.</td></tr>
+<tr><td><b>If someone asks</b></td><td>Likely questions, with short answers.</td></tr>
+<tr><td><b>Verify before the talk</b></td><td>Facts that move fast (versions, foundation membership, draft standards). Check each one in the week of the talk.</td></tr>
+</table>
+
+<h3>The talk in one paragraph</h3>
+<p>Agents change the nature of complexity: the model draws the call graph at run time, and an agent will do whatever its tools let it do. So the boundary can’t live in the prompt. The platform has to <b>decide</b> what an agent may do, through identity, reach, per-call capability, a live autonomy level and a keystone the agent can’t edit. It has to <b>trace</b> what the agent actually did, as one OpenTelemetry trace per claim with every decision as a span. And it has to <b>prove</b> it afterwards from that trace, with evaluations that read the agent’s own spans. Every piece is an upstream CNCF or AAIF project. The only code Northstar owns is its rules.</p>
+
+<h3>The three things the room should remember</h3>
+<ol>
+<li><b>Guardrails live in the platform,</b> not in the prompt, and the agent can’t move them.</li>
+<li><b>Instrument decisions, not only errors.</b> A permit, a hold and a sign-off are spans with a rule, a limit and an identity.</li>
+<li><b>Build it from upstream projects.</b> Own only the rules.</li>
+</ol>
+
+<h3>Speaker split</h3>
+<p><b>William</b> runs the open and <i>Decide</i> (slides 1–20), then the close (37–41). <b>Kasper</b> runs the auditor’s questions (4), then <i>Trace</i> and <i>Prove</i> with the live demo (21–36). The handover is on slide 20, and William hands back to the auditor framing on slide 37.</p>
+</div>
+
+<div class="matter">
+<h2 style="font-size:18pt;margin-bottom:3mm">Run of show</h2>
+<p style="color:#5d6470">Times are from the plan, built long (about 36 minutes). The cut-first list at the bottom brings it to the 30-minute slot.</p>
+<table style="font-size:8.3pt">
+<tr><th>#</th><th>Slide</th><th>Who</th><th>Start</th><th>Secs</th></tr>
+<tr><td>1</td><td>Cover</td><td>W</td><td>0:00</td><td>15</td></tr>
+<tr><td>2</td><td>Who?</td><td>W+K</td><td>0:15</td><td>40</td></tr>
+<tr><td>3</td><td>An autonomous agent will do exactly what its tools let it do</td><td>W</td><td>0:55</td><td>30</td></tr>
+<tr><td>4</td><td>The auditor’s questions</td><td>K</td><td>1:25</td><td>60</td></tr>
+<tr><td>5</td><td>Decide. Trace. Prove.</td><td>W</td><td>2:25</td><td>20</td></tr>
+<tr><td>6</td><td>Section: Decide</td><td>W</td><td>2:45</td><td>5</td></tr>
+<tr><td>7</td><td>Authority accumulates</td><td>W</td><td>2:50</td><td>45</td></tr>
+<tr><td>8</td><td>The agent cannot hold its own boundary</td><td>W</td><td>3:35</td><td>50</td></tr>
+<tr><td>9</td><td>An agent is a workload</td><td>W</td><td>4:25</td><td>40</td></tr>
+<tr><td>10</td><td>The deterministic spine</td><td>W</td><td>5:05</td><td>60</td></tr>
+<tr><td>11</td><td>The Safe Operating Model</td><td>W</td><td>6:05</td><td>70</td></tr>
+<tr><td>12</td><td>What this asks us to build</td><td>W</td><td>7:15</td><td>60</td></tr>
+<tr><td>13</td><td>SPIFFE and SPIRE</td><td>W</td><td>8:15</td><td>60</td></tr>
+<tr><td>14</td><td>The passport, in config</td><td>W</td><td>9:15</td><td>40</td></tr>
+<tr><td>15</td><td>No road around the gateway</td><td>W</td><td>9:55</td><td>45</td></tr>
+<tr><td>16</td><td>One door, three checks</td><td>W</td><td>10:40</td><td>55</td></tr>
+<tr><td>17</td><td>The model, through the same door</td><td>W</td><td>11:35</td><td>40</td></tr>
+<tr><td>18</td><td>One flag, one table</td><td>W</td><td>12:15</td><td>75</td></tr>
+<tr><td>19</td><td>It cannot rewrite its own bounds</td><td>W</td><td>13:30</td><td>45</td></tr>
+<tr><td>20</td><td>Section: Trace (handover)</td><td>W→K</td><td>14:15</td><td>20</td></tr>
+<tr><td>21</td><td>Meet Northstar Insurance</td><td>K</td><td>14:35</td><td>40</td></tr>
+<tr><td>22</td><td>The toolbox, by the job it does</td><td>K</td><td>15:15</td><td>55</td></tr>
+<tr><td>23</td><td><b>LIVE: Demo time</b> · steps 23·1–23·5 follow</td><td>K</td><td>16:10</td><td>390</td></tr>
+<tr><td>24</td><td>What you just saw</td><td>K</td><td>22:40</td><td>70</td></tr>
+<tr><td>25</td><td>The call graph is no longer something you drew</td><td>K</td><td>23:50</td><td>45</td></tr>
+<tr><td>26</td><td>The audit trail is a trace</td><td>K</td><td>24:35</td><td>45</td></tr>
+<tr><td>27</td><td>OpenTelemetry: a 1,000-mile view</td><td>K</td><td>25:20</td><td>60</td></tr>
+<tr><td>28</td><td>Two protocols, two jobs</td><td>K</td><td>26:20</td><td>55</td></tr>
+<tr><td>29</td><td>One trace id, every hop</td><td>K</td><td>27:15</td><td>45</td></tr>
+<tr><td>30</td><td>One trace, and the absence that proves it</td><td>K</td><td>28:00</td><td>45</td></tr>
+<tr><td>31</td><td>The agent makes it. A human checks it.</td><td>K</td><td>28:45</td><td>45</td></tr>
+<tr><td>32</td><td>Our own names, as a contract</td><td>K</td><td>29:30</td><td>55</td></tr>
+<tr><td>33</td><td>Section: Prove</td><td>K</td><td>30:25</td><td>5</td></tr>
+<tr><td>34</td><td>The gen_ai.* names: what a trace can say</td><td>K</td><td>30:30</td><td>60</td></tr>
+<tr><td>35</td><td>What did the agent actually do?</td><td>K</td><td>31:30</td><td>60</td></tr>
+<tr><td>36</td><td>AgentEvals (the auditor)</td><td>K</td><td>32:30</td><td>50</td></tr>
+<tr><td>37</td><td>Decide. Trace. Prove. (recap)</td><td>W</td><td>33:20</td><td>25</td></tr>
+<tr><td>38</td><td>Autonomy is a platform setting</td><td>W</td><td>33:45</td><td>45</td></tr>
+<tr><td>39</td><td>The boundary will not come from the agent</td><td>W</td><td>34:30</td><td>25</td></tr>
+<tr><td>40</td><td>Three things to remember</td><td>W</td><td>34:55</td><td>40</td></tr>
+<tr><td>41</td><td>Thank you · Q&amp;A</td><td>W+K</td><td>35:35</td><td>—</td></tr>
+</table>
+<div class="callout"><b>Getting to 30 minutes</b> The plan is about 6 minutes over. These have the least to lose: slide 28 (the two protocols, about 55 s; slide 29 still names MCP and A2A per hop), slide 25 (the call graph, about 45 s; say one sentence of it on slide 24), and a tighter Who? (about 20 s). After that, trim the demo narration toward the rehearsed 5:50, and merge 33 into 34. Don’t cut 4, 23, 24, 30 or 36: they set up and pay off the auditor’s questions.</div>
+</div>
+<div class="matter">
+<h2 style="font-size:18pt;margin-bottom:3mm">Storyline threads</h2>
+<p style="color:#5d6470">Each thread is planted in one place and paid off in another. If a slide is cut, check that its threads still land somewhere.</p>
+<table style="font-size:8.3pt">
+<tr><th style="width:24%">Thread</th><th style="width:13%">Planted</th><th style="width:20%">Paid off</th><th>The line that pays it off</th></tr>
+<tr><td>The auditor's five questions</td><td>4</td><td>Demo 2 and 4; 24, 26, 30, 31; closed on 37</td><td>"The auditor's five questions, answered from what the platform recorded." (37)</td></tr>
+<tr><td>What its tools let it do</td><td>3</td><td>39</td><td>"So the boundary will not come from the agent."</td></tr>
+<tr><td>The €6,000 line, and <code>execute_payment</code></td><td>8; the table on 18</td><td>Demo 2 (Large claim); 24 left; 30</td><td>"Above six thousand, a person decides. The platform parked the payment."</td></tr>
+<tr><td>Intent is not capability</td><td>8; the CEL ceiling on 16</td><td>Demo 3 (Tricky + inject); 24 middle</td><td>"When intent and capability disagree, capability wins." / "Capability won."</td></tr>
+<tr><td>The deterministic spine: a proposal, never an outcome</td><td>10</td><td>21 (the map); demo 1–3; 24 left</td><td>"The agent's output was a proposal, never an outcome."</td></tr>
+<tr><td>Evidence is a byproduct</td><td>10, 11</td><td>Demo 4; 26</td><td>"Nobody wrote an audit log. The system recorded what it did."</td></tr>
+<tr><td>The passport</td><td>13, 14</td><td>16, 18; demo 3 (forged call with the real SVID) and 4 (<code>caller identity</code>); 24 right; 30 (<code>jwt.sub</code>)</td><td>"Every check you just saw keyed off that one identity."</td></tr>
+<tr><td>Who may change that value?</td><td>18</td><td>19; demo 5; 24 bottom; 38</td><td>"Even when RBAC says yes, Kyverno says no."</td></tr>
+<tr><td>The absence that proves it, and never sampling</td><td>21 (100%, no sampler)</td><td>Demo 4 (no execute below the deny); 30</td><td>"The execute never reached the tool. The absence is the evidence."</td></tr>
+<tr><td>Where the human stands</td><td>18 (assisted €0, autonomous €6,000)</td><td>Demo 2; 31 (two traces and a link); 38</td><td>"The human is not removed. The platform decides where the human stands."</td></tr>
+<tr><td>A judge only flags</td><td>Demo 3 (the injection)</td><td>Demo 4 (FLAG); 35, 36</td><td>"Code where the answer must never vary. A judge where it needs meaning."</td></tr>
+<tr><td>Upstream first, own only the rules</td><td>12; 22 (the one tinted chip)</td><td>40</td><td>"The only part you write is your rules."</td></tr>
+<tr><td>If you can't trace it, you can't govern it</td><td>1</td><td>40</td><td>The same line, last.</td></tr>
+</table>
+<p><b>Handovers.</b> William → Kasper on 3 → 4 ("Kasper is going to show you the auditor's own list") and back on 4 → 5. William → Kasper on 20 ("The other two words are Kasper's. Kasper?"). Kasper → William on 36 → 37 ("That's the third word. William?" / "Thanks, Kasper."). In each, whoever speaks next holds the clicker before they speak.</p>
+</div>
+

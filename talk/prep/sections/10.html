@@ -1,0 +1,52 @@
+<section class="slide-sec" id="s10">
+ <header class="sh"><span class="num">10</span><h2>The deterministic spine</h2><span class="meta">WILLIAM · starts 5:05 · 60 s</span></header>
+ <figure class="slide"><img src="img/s-10.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>Here's the shape we want, as a claims payout.</p>
+  <p class="stage">[walk the four boxes left to right]</p>
+  <p>The workflow owns the process. A claim comes in. The agent works inside one step: it reads what the customer wrote, drafts the claim, and proposes a payment. Then a decision it doesn't make: under a limit, or a person above it. Then a deterministic gate moves the money.</p>
+  <p>The agent is non-deterministic, and that's fine, because its output is a proposal, never an outcome. What it must not do: decide its own limit, approve above it, or move the money itself.</p>
+  <p>The agent has no path to the outcome except through a gate it does not control. And because every gate checks and records, evidence is a byproduct: identity verified, reach declared, capability granted per call, outcome reviewed.</p>
+  <p class="say">Every gate records. Evidence is a byproduct.</p>
+  <p>Keep this picture. It's exactly what Kasper runs live later.</p>
+  <p class="stage">[click]</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>It shows where the non-determinism is allowed to live: inside one box, surrounded by deterministic steps. This is the architecture the demo implements, and the phrase "a proposal, never an outcome" comes back in demo step 2 (the held Large claim) and on slide 24 ("What you just saw"). The demo's three claims are three walks along this spine with three different answers. The second bold line, "evidence is a byproduct", is the hinge to Kasper's half: if every gate emits a record as part of doing its job, nobody has to write an audit log. Kasper pays that off in demo step 4 ("Nothing reconstructed") and on slide 26 ("Nobody wrote an audit log").</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> Let the agent do what it's good at (reading messy text, drafting) and keep it away from what must be exact (limits, approvals, moving money). It's like a junior clerk who fills in the payment form; a supervisor or a rule decides whether it's paid, and the bank executes it. The clerk never touches the vault.</p>
+ <p><b>Precisely.</b> Three patterns combine:</p>
+ <ul>
+  <li><b>Propose / execute split.</b> The agent produces an intent (a proposed payment). A separate, deterministic component turns intent into effect. The agent's output is data, not an action.</li>
+  <li><b>Maker-checker</b> (four-eyes), standard in finance: whoever prepares a transaction can't also release it above a threshold.</li>
+  <li><b>Policy enforcement point vs. decision point.</b> The gateway enforces (it is the gate on the path); the policy service decides (it holds the rules). The agent is neither.</li>
+ </ul>
+
+ <h3>How Northstar implements the spine</h3>
+ <table>
+  <tr><th>Box</th><th>Northstar component</th></tr>
+  <tr><td>Claim in</td><td>customer-ui; the claims agent's model reads free text into amount, policy, date. It decides nothing about money.</td></tr>
+  <tr><td>Propose</td><td>settlement-agent calls <code>propose_payment</code>, then <code>execute_payment</code>, via agentgateway over MCP.</td></tr>
+  <tr><td>Decide</td><td>agentgateway (CEL ceiling) and the policy decision service (<code>EXECUTE_LIMITS</code> by caller and autonomy level). Above the limit: the ledger records <code>awaiting_approval</code> and a person decides in reviewer-ui.</td></tr>
+  <tr><td>Pay</td><td>payments-mcp and payments-api execute only after a permit. The reviewer releases a held payment under its own identity and rule <code>human-approved.execute</code>.</td></tr>
+ </table>
+ <p>The policy service also refuses an execute that was never proposed (<code>settlement-agent.payment_not_proposed</code>), so the agent can't skip the proposal step. The agent's reply to the customer takes amount and status from the ledger's record, never from model output.</p>
+ <p><b>Honest detail.</b> Northstar has no separate workflow engine. The order is held by the agent code plus the gateway and policy service, which refuse anything outside it. In a larger system the "workflow owns the process" box is often a durable-execution engine.</p>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>Workflow engines</b> (Temporal, Argo Workflows, Step Functions, Dapr workflows) host the spine explicitly and call the agent as one activity. Strong on retries and long waits; the authorization still needs a gate the agent doesn't control.</li>
+  <li><b>Agent frameworks with human-in-the-loop interrupts</b> (pausing the graph for approval). Convenient, but the pause lives inside the agent's own process, so it's a suggestion the agent's code could skip.</li>
+  <li><b>Fully autonomous agents with post-hoc review.</b> Fine for reversible, low-value actions; not for payments.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Doesn't this make the agent pointless?</dt><dd>No. The hard part in the demo, reading free text into a structured claim and proposing the right amount, is the agent's. The platform only owns the boundary and the effect.</dd>
+  <dt>What happens while the claim waits for a person?</dt><dd>Nothing runs or polls. The agent's trace ends at the hand-off; the approval is a new trace with a span link back (slide 31).</dd>
+ </dl>
+ <p style="font-size:8.5pt;color:#5d6470">Source: William Rizzo, KCD Sofia 2026, slide 14 (there a loan origination), retold as a claims payout.</p>
+</section>

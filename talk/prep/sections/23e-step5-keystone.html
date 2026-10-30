@@ -1,0 +1,70 @@
+<section class="slide-sec" id="s23-5">
+ <header class="sh"><span class="num">23·5</span><h2>Demo step 5 · The keystone</h2><span class="meta">KASPER · terminal · ~60 s</span></header>
+
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p class="stage">[Terminal: <code>scripts/demo keystone</code>]</p>
+  <p>Last question, and William asked it on slide 18: if one value decides this much, who may change it? Could the agent just give itself more authority?</p>
+  <p class="stage">[Part 1: Forbidden.]</p>
+  <p>Here the agent tries to edit its own flag, as its own service account. RBAC says no. That's the first line.</p>
+  <p class="stage">[Part 2: the over-grant, "auth can-i" says yes.]</p>
+  <p>Now I make the mistake every platform team eventually makes: I grant the agent permission to patch that flag. RBAC would now allow it.</p>
+  <p class="stage">[Part 3: DENIED by Kyverno.]</p>
+  <p>Same patch. Kyverno says no, and names the policy. Then the mistake is taken back, and the flag is unchanged.</p>
+  <p class="say">"Authority changes go through a reviewed commit, never through the agent."</p>
+  <p class="stage">[Back to the deck: "What you just saw".]</p>
+ </div>
+
+ <h3>What the audience sees (trimmed)</h3>
+<pre class="term">$ scripts/demo keystone
+
+<b>KEYSTONE  the agent can never edit what constrains it</b>
+  acting as        system:serviceaccount:northstar-agents:settlement-agent
+  flag now         autonomous
+
+<b>1  The agent tries to edit its own autonomy flag</b>
+  $ kubectl --as=system:serviceaccount:northstar-agents:settlement-agent \
+      -n northstar-platform patch featureflag/northstar-autonomy --type=json -p '[…targeting/if/1…]'
+    Error from server (<i>Forbidden</i>): … cannot get resource "featureflags" in API group
+      "core.openfeature.dev" in the namespace "northstar-platform"
+  -&gt; <b>[RBAC says no]</b>  That is the first line.
+
+<b>2  Someone makes a mistake: the agent is over-granted patch on that one flag</b>
+  $ kubectl apply -f deploy/demo/keystone-overgrant.yaml
+    role.rbac.authorization.k8s.io/keystone-demo-overgrant created
+    rolebinding.rbac.authorization.k8s.io/keystone-demo-overgrant created
+  $ kubectl --as=…:settlement-agent auth can-i patch featureflag/northstar-autonomy
+  -&gt; yes   RBAC would now allow it
+
+<b>3  The same patch again. RBAC allows it. Kyverno does not.</b>
+    admission webhook "vpol.validate.kyverno.svc-fail-finegrained-agents-cannot-edit-their-own-authority"
+    denied the request: Policy agents-cannot-edit-their-own-authority failed:
+    <i>[DENIED]</i>: agent identity '…:settlement-agent' may not change the objects that define its own
+      authority (FeatureFlag/northstar-autonomy).
+    Authority changes go through a reviewed commit, never a runtime decision by the agent.
+
+<b>4  Take the mistake back</b>       keystone-demo-overgrant deleted
+<b>5  What does the flag resolve to now?</b>
+  -&gt; settlement-agent resolves: [autonomous]   (unchanged)
+
+The agent could not edit what constrains it, even with the grant.</pre>
+ <ul>
+  <li><b>Part 1</b>: plain RBAC. The agent's service account has no rights on FeatureFlags.</li>
+  <li><b>Part 3</b>: the Kyverno <code>ValidatingPolicy</code> from slide 19 matches on the requester (any service account in <code>northstar-agents</code> or <code>northstar-tools</code>), not on what RBAC allows. So a wrong RoleBinding cannot open the door.</li>
+  <li><b>Parts 4 and 5</b>: the over-grant is removed and flagd still resolves the same value. Nothing changed.</li>
+ </ul>
+
+ <h3>What it pays off</h3>
+ <table>
+  <tr><th>Thread</th><th>Planted</th><th>Here, and later</th></tr>
+  <tr><td>"If one value decides this much, who may change it?"</td><td>18</td><td>Not the agent, not even when RBAC says yes</td></tr>
+  <tr><td>The keystone: the agent can never edit what defines its authority</td><td>11, 19</td><td>Read back on 24 (bottom strip); recalled on 37 and 38</td></tr>
+  <tr><td>Git as the only way to change it</td><td>12</td><td>Kyverno's message names the alternative: a reviewed commit</td></tr>
+ </table>
+
+ <h3>If it misbehaves</h3>
+ <ul>
+  <li><b>"is not Ready"</b>: Kyverno or the policy isn't armed. Skip the run and say what it shows: RBAC says no; with a mistaken grant RBAC says yes; Kyverno still says no. Slide 19 has the rule on screen.</li>
+  <li><b>"over-grant is already applied"</b>: a previous run left it behind. Don't fix it on stage; skip with the same sentence.</li>
+ </ul>
+</section>

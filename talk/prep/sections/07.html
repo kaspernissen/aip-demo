@@ -1,0 +1,45 @@
+<section class="slide-sec" id="s07">
+ <header class="sh"><span class="num">07</span><h2>Authority accumulates</h2><span class="meta">WILLIAM · starts 2:50 · 45 s</span></header>
+ <figure class="slide"><img src="img/s-07.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>How does an agent end up able to do more than anyone chose? Not through one big decision. Through small ones nobody remembers making.</p>
+  <p>A tool gets added for one workflow, and it stays available for every workflow. A credential gets scoped for a demo, and it survives into production. A delegation gets added to unblock a Friday deploy, and it becomes a permanent edge in the graph.</p>
+  <p class="stage">[point at the box on the right]</p>
+  <p>On the right is what the agent's tools and credentials allow. The part anyone actually decided is that small box. Everything around it, the hatched area, nobody decided.</p>
+  <p class="say">Nobody decided to give the agent that reach. The agents behave. The boundaries erode anyway.</p>
+  <p class="stage">[click]</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>It explains <em>how</em> the gap from slide 3 appears, so the audience recognises it in their own systems. The key phrase is "the agents behave": this is not about a rogue model. Even a perfectly obedient agent ends up with authority nobody chose, because authority is granted in small, local, reasonable steps and never taken away. That makes it a platform problem, not a model problem, which sets up slides 8 and 9.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> It is the same as permission creep for people: someone changes teams and keeps their old access. Each grant was sensible when made. The total is something nobody would sign off on if asked directly.</p>
+ <p><b>Why agents make it worse.</b></p>
+ <ul>
+  <li><b>Tools are shared across tasks.</b> An MCP server exposes a list of tools (<code>tools/list</code>) and the model may pick any of them on any run. A tool added for workflow A is visible in workflow B unless something filters it.</li>
+  <li><b>Credentials are ambient.</b> If the agent process holds an API key or a broad token, every tool call carries it. Long-lived static secrets outlive the demo they were made for.</li>
+  <li><b>Delegation graphs grow.</b> With agent-to-agent protocols (A2A), agent X may hand a task to agent Y. Each new edge extends what X can cause, transitively.</li>
+  <li><b>Nobody reviews the union.</b> Reviews look at one change at a time. The effective authority is the sum of all of them, and it is rarely computed.</li>
+ </ul>
+ <p>Security standards name this as Excessive Agency (OWASP LLM06) and recommend "least agency". The practical point: authority has to be <em>declared</em> somewhere a reviewer can see it whole, and enforced against that declaration, rather than accumulated in code and config scattered across teams.</p>
+
+ <h3>How Northstar counters each line</h3>
+ <table>
+  <tr><th>Erosion</th><th>Northstar's control</th></tr>
+  <tr><td>Tool added for one workflow</td><td>agentgateway's CEL rule names exactly two callers that may use the payment tools; anything else gets 403 even with a valid identity.</td></tr>
+  <tr><td>Credential survives</td><td>No static secret in the agents: a SPIRE-issued, short-lived JWT-SVID per pod. The model API key lives only in the gateway.</td></tr>
+  <tr><td>Delegation becomes permanent</td><td>Linkerd authorization: settlement-agent admits only claims-agent; payments-mcp admits only the gateway. Edges are declared objects in <code>deploy/platform/reach/</code>.</td></tr>
+  <tr><td>Nobody sees the union</td><td>Every authority object is in Git and Kyverno stops agents editing them, so the declared set is the real set.</td></tr>
+ </table>
+
+ <h3>Alternatives</h3>
+ <p>Periodic access reviews and entitlement tooling (the identity-governance approach) find accumulated access after the fact. Policy-as-code with deny-by-default (OPA/Gatekeeper, Kyverno, Cedar, CEL in gateways) prevents it up front. Most teams need both: deny-by-default for agents, and a review process for what the allowlists contain.</p>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Isn't this just RBAC hygiene?</dt><dd>Partly. RBAC covers the Kubernetes API. An agent's authority also lives in tool lists, API keys, network paths and delegation edges, which RBAC doesn't see. The rings on slide 11 cover each of those.</dd>
+ </dl>
+ <p style="font-size:8.5pt;color:#5d6470">Source: William Rizzo, "The boundary problem is a platform problem", KCD Sofia 2026, slide 3.</p>
+</section>

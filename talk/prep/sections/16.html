@@ -1,0 +1,62 @@
+<section class="slide-sec" id="s16">
+ <header class="sh"><span class="num">16</span><h2>One door, three checks</h2><span class="meta">WILLIAM · starts 10:40 · 55 s · Ring 2 · per call</span></header>
+ <figure class="slide"><img src="img/s-16.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>agentgateway is the only door to the tools, and in a moment, to the model. For a tool call: three checks, in order, all in one config file.</p>
+  <p class="stage">[check 1]</p>
+  <p>One: the passport. No valid SPIFFE token: 401.</p>
+  <p class="stage">[check 2]</p>
+  <p>Two: one CEL rule. Only two workloads may use the tools at all: the settlement agent, and the reviewer UI when a person releases a payment. Anyone else, even with a valid passport: 403. And execute_payment above fifty thousand euros is refused. Always. Whoever asks.</p>
+  <p class="stage">[check 3]</p>
+  <p>Three: everything else goes to the policy service. And if the policy service can't answer, the answer is no. Fail closed.</p>
+  <p>Why two ways to say no? CEL is fast and needs no code, but it can't look anything up. So it holds the facts that never change. The everyday limit depends on who's asking, how much we trust them today, and what the ledger says. That needs a lookup, so the gateway asks.</p>
+  <p class="say">CEL for what the request proves. Ask when the answer needs a lookup.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>This is where intent meets capability. Whatever the model was told, the call it makes is checked here. The slide sets up two moments in the demo: the €80,000 call refused by CEL alone (slide 24, "the policy service was never asked"), and the €8,500 call refused by the policy service (the held claim). It also teaches the PEP/PDP split: the gateway enforces, the decision service decides.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> The bouncer checks your ID at the door and knows one house rule by heart: nobody carries more than €50,000 in. For anything that needs judgement ("is this guest's tab within their limit tonight?") he phones the manager and does what she says. The bouncer is the <b>policy enforcement point</b>; the manager is the <b>policy decision point</b>.</p>
+ <p><b>CEL</b> (Common Expression Language) is a small, side-effect-free expression language, also used by Kubernetes admission and Kyverno. It can read what's in the request: <code>jwt.sub</code>, <code>mcp.tool.name</code>, <code>mcp.tool.arguments.amount</code>. It can't call out, so it can't know today's autonomy level or the payment's ledger state.</p>
+ <p><b>Why an <i>allow</i> rule, not a deny rule.</b> If a CEL expression errors (amount is a string, or missing), an allow rule doesn't match, so the call is denied. A deny rule that errors is skipped, which fails open: in the CEL spike the string <code>"6200"</code> went through a deny rule and the payment executed. Write ceilings as allow rules.</p>
+ <p><b>"HTTP 200 means no."</b> When the PDS denies, agentgateway v1.6.0 answers with an ordinary MCP tool result marked <code>isError: true</code> on HTTP 200, carrying a tag like <code>[policy-denial rule=settlement-agent.autonomous.execute_limit limit=6000 requested=8500]</code>. The model reads it as a tool that said no and explains it to the customer. A dashboard counting 5xx sees success. The trace is where the refusal is unmistakable.</p>
+
+ <h3>Configuration and options</h3>
+ <pre><code># deploy/platform/agentgateway/config.yaml (port 3000, condensed)
+jwtAuth: { mode: strict, issuer: …spire-spiffe-oidc-discovery-provider…,
+           audiences: [spiffe://northstar.local/ns/northstar-platform/sa/agentgateway],
+           jwks: { url: …/keys } }
+authorization: { rules: [ allow: 'jwt.sub in [settlement-agent, reviewer-ui]
+   &amp;&amp; (request.method != "POST" || mcp.methodName != "tools/call"
+       || mcp.tool.name != "execute_payment"
+       || (mcp.tool.arguments.amount &gt; 0 &amp;&amp; mcp.tool.arguments.amount &lt;= 50000))' ] }
+mcpGuardrails: { processors: [ { kind: remote, methods: {"tools/call": request},
+   host: policy-decision-service…:9100, failureMode: failClosed,
+   metadata: { caller: 'jwt.sub' },
+   requestHeaders: { allowed: [traceparent, tracestate] } } ] }</code></pre>
+ <ul>
+  <li><b><code>jwtAuth.mode</code></b>: <code>strict</code> (no valid token: 401), <code>optional</code> (validate if present), <code>permissive</code>. Wrong audience, expired or forged: 401, span <code>reason=JwtAuth</code>, the PDS is never called.</li>
+  <li><b><code>failureMode</code></b>: <code>failClosed</code> or <code>failOpen</code>. One word turns a PDS outage into "everything allowed". Northstar's tests pin it.</li>
+  <li><b><code>metadata.caller: 'jwt.sub'</code></b>: the <i>verified</i> subject is handed to the PDS. Identity is an input to the decision, not a label on it.</li>
+  <li><b><code>requestHeaders.allowed</code></b>: forwards <code>traceparent</code> so the decision span lands in the same trace.</li>
+  <li>The remote guardrail speaks agentgateway's ExtMCP gRPC protocol (<code>/agentgateway.dev.ext_mcp.ExtMcp/CheckRequest</code>).</li>
+  <li>Not used: the built-in <code>mcpAuthorization</code> (it hides denied tools from <code>tools/list</code> but can't see arguments), rate limits, A2A routes. Tracing is never sampled: <code>randomSampling: true</code>.</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>Gateways</b>: Agent Router (formerly Envoy AI Gateway; CEL MCP authorization, fails closed since v1.2), Kong AI Gateway (MCP tool ACLs, Enterprise), IBM ContextForge, LiteLLM.</li>
+  <li><b>Decision engines</b> behind the gateway: OPA/Rego (CNCF graduated; can pull external data), Cedar (analysable policy language; agentgateway has an integration), OpenFGA or SpiceDB for relationship-based checks. Northstar's PDS is ~275 lines of Python so the rule is readable on one screen.</li>
+  <li><b>All in CEL</b>: possible only if the limit never depends on a lookup. Here it does (flag + ledger).</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>What if the policy service is down?</dt><dd>Fail closed: the call is refused. A Guardrail span with a non-zero gRPC status tells "the service was down" apart from "the policy said no" (gRPC status 0 plus a deny decision span).</dd>
+  <dt>Can I hot-reload the CEL?</dt><dd>The config is a ConfigMap; the reload took about 55 s in the spike (kubelet propagation). Too slow for a live edit on stage; fine for GitOps.</dd>
+  <dt>Does the ceiling stop prompt injection?</dt><dd>Only above €50,000. An injected amount under the ceiling goes to the PDS like any other amount; the PDS checks the limit and the ledger, not what the customer wrote.</dd>
+ </dl>
+<div class="callout verify"><b>Verify before the talk</b> The <code>jwtAuth</code> modes other than <code>strict</code> (<code>optional</code>, <code>permissive</code>) are listed from the agentgateway docs, not tested on Northstar. Check them against the v1.6.0 docs.</div>
+</section>

@@ -1,0 +1,63 @@
+<section class="slide-sec" id="s29">
+ <header class="sh"><span class="num">29</span><h2>One trace id, every hop</h2><span class="meta">KASPER · starts 27:15 · 45 s</span></header>
+ <figure class="slide"><img src="img/s-29.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p>One trace id, carried across every hop. Read it top to bottom; it's the claim's path.</p>
+  <p>The browser starts the trace and sends traceparent as an HTTP header, and the claim id rides along as baggage.</p>
+  <p>Claims agent to settlement agent is A2A. The traceparent is in the header, but the A2A SDK doesn't read it, so we do it ourselves.</p>
+  <p>Settlement agent to the gateway is MCP. The id goes in the message itself, params underscore meta, the convention MCP adopted, and in the header too.</p>
+  <p>The gateway asks the policy service over a gRPC hook and forwards the traceparent, so the policy decision lands in the same trace. Then on to the tool and the ledger: MCP, then plain HTTP.</p>
+  <p>The one hop that can't be one trace is the person. Someone approves minutes later, so that's a new trace, with a span link back. And underneath it all, Linkerd's proxies add their own spans to the same trace.</p>
+  <p class="say">"Drop the id at one hop, and the story falls apart."</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>It shows that "one trace" is engineering work, hop by hop, and that each protocol carries the id differently. Platform teams will own this plumbing, so the honest gaps (A2A SDK, gateway ingress) are part of the message: propagation is not free just because every component "supports OpenTelemetry".</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain version.</b> Propagation is passing the tracking number to the next depot. If one depot forgets to read it, it starts a new number and the parcel's journey splits in two. Nothing errors; you just get two half-stories.</p>
+ <p><b>W3C Trace Context.</b> The <code>traceparent</code> header is <code>00-&lt;32 hex trace id&gt;-&lt;16 hex parent span id&gt;-&lt;flags&gt;</code>; the last byte's sampled bit tells downstream services to record. <code>tracestate</code> carries vendor data. <b>W3C Baggage</b> carries application key-value pairs (here, only the claim id) across the same hops.</p>
+ <p><b>Hop by hop, as Northstar does it:</b></p>
+ <table>
+  <tr><th>Hop</th><th>Carrier</th><th>Detail</th></tr>
+  <tr><td>Browser → claims-agent</td><td>HTTP headers</td><td>OTel JS web SDK owns the root <code>northstar.claim.submit</code>. claims-agent's CORS <code>allow_headers</code> must list <code>traceparent</code>, <code>tracestate</code>, <code>baggage</code> or the preflight strips them.</td></tr>
+  <tr><td>claims → settlement</td><td>A2A, HTTP header</td><td><code>a2a-sdk</code> 0.3.7 extracts nothing inbound. <code>opentelemetry-instrumentation-starlette</code> wrapping the built ASGI app does it (telemetry contract, Gap 1).</td></tr>
+  <tr><td>settlement → gateway</td><td>MCP <code>params._meta</code> + header</td><td>SEP-414 puts <code>traceparent</code>, <code>tracestate</code>, <code>baggage</code> as unprefixed keys in <code>_meta</code>. agentgateway reads only the HTTP header on ingress; the header is there because the httpx2 client under the MCP transport is instrumented.</td></tr>
+  <tr><td>gateway → PDS</td><td>gRPC guardrail hook</td><td><code>requestHeaders.allowed: [traceparent, tracestate]</code>. Baggage is not forwarded, so the decision span carries no <code>northstar.claim.id</code>; it is tied to the claim by the trace id alone.</td></tr>
+  <tr><td>gateway → payments-mcp → ledger</td><td><code>_meta</code>, then HTTP</td><td>The gateway writes SEP-414 <code>_meta</code> on every message it forwards (egress). payments-api uses <code>otelhttp</code>.</td></tr>
+  <tr><td>Person approves</td><td>new trace + span link</td><td>reviewer-ui roots trace B; the resume span links back to the hand-off in trace A.</td></tr>
+ </table>
+ <p><b>Linkerd.</b> Each meshed hop adds four proxy spans (outbound server and client on the caller's proxy, inbound server and client on the callee's). The proxies only join traces whose incoming <code>traceparent</code> is sampled; they never start one. In the measured Large-claim trace, 148 of 304 spans were <code>linkerd-proxy</code>.</p>
+
+ <h3>Configuration and options</h3>
+ <pre><code># deploy/platform/agentgateway/config.yaml
+mcpGuardrails:
+  processors:
+  - kind: remote
+    host: policy-decision-service...:9100
+    requestHeaders:
+      allowed: ["traceparent", "tracestate"]
+frontendPolicies:
+  tracing: {randomSampling: true, parentNotSampled: true}</code></pre>
+ <ul>
+  <li>Proxy tracing is enabled in <code>deploy/platform/linkerd/values.yaml</code>.</li>
+  <li>Baggage is read by a <code>BaggageSpanProcessor</code> whose predicate admits only <code>northstar.claim.id</code>; <code>ALLOW_ALL_BAGGAGE_KEYS</code> is deliberately not used.</li>
+  <li>The browser helper must be a static import: under <code>ZoneContextManager</code>, an <code>await</code> before reading the active span loses it.</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li>Put the trace id in the message body yourself (an application field): works over any transport, but every service has to know your convention and no library will pick it up.</li>
+  <li>Correlate by claim id only, no propagation: you can find all records of a claim, but you lose the parent/child causality that shows which call caused which.</li>
+  <li>Let the mesh create the trace: Linkerd won't start traces, and a mesh can't see inside MCP messages anyway.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Does agentgateway support SEP-414?</dt><dd>On egress, yes: it stamps <code>_meta</code> on what it forwards. On ingress it reads only the HTTP <code>traceparent</code> header. A client that carried context only in <code>_meta</code> (stdio, or uninstrumented HTTP) would fragment the trace at the gateway.</dd>
+  <dt>Why not make the human approval part of the same trace?</dt><dd>The wait can be minutes or hours with nothing running. A parent span spanning that time misstates duration and what was executing. Slide 31.</dd>
+  <dt>What is SEP-414?</dt><dd>The MCP spec enhancement proposal that defines W3C trace context in <code>params._meta</code>, so context travels with the message on any transport.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> "An upstream gap we filed" (A2A SDK): the repo lists it as filing-ready (<code>docs/upstream-findings.md</code> Finding 1), not filed. File it, or say "an upstream gap".</div>
+</section>

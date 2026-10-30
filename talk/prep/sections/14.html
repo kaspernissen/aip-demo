@@ -1,0 +1,54 @@
+<section class="slide-sec" id="s14">
+ <header class="sh"><span class="num">14</span><h2>The passport, in config</h2><span class="meta">WILLIAM · starts 9:15 · 40 s · Core · Identity</span></header>
+ <figure class="slide"><img src="img/s-14.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>Here's the passport office's rule, as config. One object, a ClusterSPIFFEID.</p>
+  <p class="stage">[point at the template]</p>
+  <p>The ID is a template: the trust domain, then the pod's namespace, then its service account. Where it runs. And the pod selector says which pods get this passport: the settlement agent.</p>
+  <p>Nothing the agent says goes into it. Not its name, not its card, not its prompt. If you want a different passport, you have to run somewhere else, and that's a deploy, which goes through review.</p>
+  <p>The gateway reads this passport on every call. You'll see it in Kasper's trace, as the caller on the decision.</p>
+  <p class="say">Built from where the pod runs, not from what the agent says.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>Slide 13 explained the idea; this one shows that it's a few lines of declarative config, not a project. It plants the exact string the audience will see again four times: in the gateway's CEL rule (slide 16), in the flag's targeting (slide 18), as <code>caller identity</code> on every claim in demo step 4, and in the decoded SVID on "What you just saw" (slide 24).</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> A registration entry is the passport office's rulebook: "a pod in this namespace, running as this service account, gets this ID." The SPIRE controller manager watches pods, and for every pod the <code>ClusterSPIFFEID</code> selects, it writes a registration entry into the SPIRE server. When that pod later asks the node agent for an SVID, the agent attests it (kernel → kubelet → namespace and service account), finds the matching entry and returns a signed document.</p>
+ <p><b>Why namespace + service account.</b> Both are set by whoever deploys the pod, and both are protected objects. The keystone (slide 19) denies an agent identity any write to pods, deployments, service accounts' tokens, RBAC, and the <code>spire.spiffe.io</code> CRDs. So an agent can't move itself into another namespace, run as another service account, or edit this registration.</p>
+
+ <h3>Configuration and options</h3>
+ <pre><code># deploy/platform/spire/registration.yaml (one of several)
+kind: ClusterSPIFFEID
+metadata: { name: northstar-settlement-agent }
+spec:
+  className: northstar-platform-spire
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  podSelector:       { matchLabels: { app: settlement-agent } }
+  namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: northstar-agents } }
+  workloadSelectorTemplates:
+    - "k8s:ns:{{ .PodMeta.Namespace }}"
+    - "k8s:sa:{{ .PodSpec.ServiceAccountName }}"
+  fallback: false</code></pre>
+ <ul>
+  <li><b>One object per workload</b>: settlement-agent, claims-agent, reviewer-ui, agentgateway and the policy decision service each get their own, each pinned to its namespace with <code>namespaceSelector</code>, so a pod with the same label in another namespace gets nothing.</li>
+  <li><b><code>className</code></b> ties the object to this SPIRE install's controller manager; another SPIRE in the cluster ignores it.</li>
+  <li><b><code>fallback: false</code></b>: this entry is not a catch-all default for pods nothing else matches.</li>
+  <li><b>Hardening knobs</b> not used here: add <code>k8s:container-image</code> or a pod-label selector to <code>workloadSelectorTemplates</code>; set <code>dnsNameTemplates</code> for X.509 SVIDs; federate trust domains with <code>ClusterFederatedTrustDomain</code> for cross-cluster calls.</li>
+ </ul>
+ <p>The resulting ID for the settlement agent is <code>spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent</code>. Its audience when calling the gateway is <code>spiffe://northstar.local/ns/northstar-platform/sa/agentgateway</code>.</p>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>Static registration entries</b> (<code>spire-server entry create</code> or <code>ClusterStaticEntry</code>): explicit, but they don't follow pods as they scale.</li>
+  <li><b>A different path scheme</b>: some teams encode the app or the environment instead of the service account. The ns/sa scheme matches what Istio uses, so IDs stay readable across meshes.</li>
+  <li><b>No SPIRE at all</b>: projected ServiceAccount tokens with an audience give a similar "who is calling" claim, without node attestation.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Could someone label their own pod <code>app: settlement-agent</code>?</dt><dd>Only in <code>northstar-agents</code>, the namespace selector requires it, and it would still need the <code>settlement-agent</code> service account to get that ID. Creating pods in that namespace is a deploy-time permission no agent holds, and the keystone denies it to agent identities even if RBAC is loosened.</dd>
+  <dt>Where's the agent's key?</dt><dd>There isn't one in the pod. The SVID is fetched over the Workload API socket that the SPIFFE CSI driver mounts, and the socket only ever answers with the identity of whoever is calling it.</dd>
+ </dl>
+</section>

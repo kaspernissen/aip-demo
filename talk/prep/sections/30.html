@@ -1,0 +1,57 @@
+<section class="slide-sec" id="s30">
+ <header class="sh"><span class="num">30</span><h2>One trace, and the absence that proves it</h2><span class="meta">KASPER · starts 28:00 · 45 s</span></header>
+ <figure class="slide"><img src="img/s-30.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p>This is the Large claim's trace, the one I opened from the evidence, drawn without the plumbing. Read it the way the line at the bottom says: indented means "called by the line above", struck through means "never happened".</p>
+  <p class="stage">[point top to bottom as you go]</p>
+  <p>The root starts in the customer's browser and carries the claim id. The claims agent's chat span holds what the customer wrote and what the model read. The settlement agent proposes, permitted, then asks to execute. The gateway records who called: the settlement agent's SPIFFE ID. And the policy service decides: deny, eighty-five hundred over a limit of six thousand.</p>
+  <p class="stage">[point at the struck-through lines]</p>
+  <p>Then these three lines. The gateway's call to the tool, the tool's execute, the ledger's execute. They never happened.</p>
+  <p class="say">"The execute never reached the tool. The absence is the evidence."</p>
+  <p>And that only holds because we never sample. That's the auditor's fifth question: complete.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>This is the trace the audience saw for a few seconds in Jaeger during the demo, redrawn so the room can read it. It answers the auditor's first question, <em>what did the agent do?</em>, in one picture, and it introduces the talk's least intuitive idea: a missing span can be proof. The audience should leave knowing how to read a trace waterfall (indentation = parent/child) and that a refusal shows up as a <em>decision</em>, not an error.</p>
+ <p>It follows "One trace id, every hop" (how the id got across) and sets up "The agent makes it. A human checks it." (what happens after the deny, in a second trace).</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> A trace is a family tree of work. Every step (a span) records who did it, when, how long it took and some facts about it. A child span sits under its parent, indented. If you know a step <em>must</em> produce a child span whenever it runs, then the lack of that child says the step didn't run. Think of a door with a turnstile counter: if the counter didn't move, nobody walked through.</p>
+ <p><b>Why "deny" is not ERROR.</b> A refusal is the platform working correctly. If the decision span were marked ERROR, on-call would get paged for correct behaviour, and error-rate dashboards would rise every time the guardrail did its job. So <code>northstar.policy.decision</code> leaves span status <code>Unset</code> on a deny. The agent's own <code>execute_tool execute_payment</code> span is ERROR, because from the agent's point of view the tool call failed.</p>
+ <p><b>"The policy said no" vs "the policy service was down".</b> The gateway's <code>Guardrail</code> CLIENT span carries <code>grpc.status = 0</code>: the call to the decision service worked, and the deny is in the payload. An unreachable policy service under <code>failClosed</code> shows a different gRPC status. Same refusal for the agent, two very different stories for the operator.</p>
+ <p><b>HTTP 200 means no.</b> The gateway's <code>tools/call</code> SERVER span shows <code>http.response.status_code = 200</code> even on a deny. MCP returns the refusal as a tool result marked <code>isError</code> inside a successful HTTP response. That span does carry <code>error=true</code>, <code>otel.status_code=ERROR</code> and a <code>[policy-denial rule=… limit=… requested=…]</code> tag in its status description. Anyone alerting on HTTP status alone will miss every refusal.</p>
+ <p><b>Measured detail.</b> Trace <code>703c00f1880d8973b696a2c257ccf1be</code> (2026-10-27, CLM-INTAKE-0E6260, autonomous, €8,500 held at €6,000): 304 spans, 148 of them from <code>linkerd-proxy</code>. The slide hides proxy spans and A2A plumbing. Per settlement there are two or three decision spans, one per tool call: a refused settlement has three (propose permit, execute deny, refuse permit). The slide's last line, <code>refuse_payment permit</code>, is the third.</p>
+ <p><b>One gap to know.</b> The decision span carries no <code>northstar.claim.id</code>: agentgateway forwards only <code>traceparent</code> to the guardrail hook, never <code>baggage</code>. The decision is joined to the claim by trace id. That's why the Jaeger fallback searches by service and operation, not by the claim tag on the decision span.</p>
+
+ <h3>Configuration and options</h3>
+ <ul>
+  <li><b>No sampling, anywhere.</b> The Python services use the SDK default (parent-based, always on), and <code>tests/unit/test_no_sampling.py</code> asserts nobody configured otherwise. agentgateway's <code>frontendPolicies.tracing</code> has <code>randomSampling: true</code>; Linkerd's proxy has no sampler of its own and follows the incoming <code>traceparent</code> (<code>deploy/platform/linkerd/values.yaml</code>).</li>
+  <li><b>The collector</b> (<code>deploy/observability/collector-config.yaml</code>) has only <code>resource_detection</code> and <code>batch</code> processors on traces. No filter, no tail sampler. Traces fan out to Jaeger, Weaver live-check and AgentEvals.</li>
+  <li><b>The decision span's attributes</b> are declared once in <code>pds/telemetry.py</code> (<code>ATTRIBUTES</code>) and defined in <code>telemetry/registry/policy.yaml</code>. A unit test asserts the emitted set equals the declared set.</li>
+  <li><b>The shape is tested.</b> <code>tests/e2e/test_policy_denial.py</code> pins the gateway SERVER span's children by exact equality: <code>Guardrail</code> (CLIENT) and <code>northstar.policy.decision</code> (SERVER) as siblings, and no CLIENT span to payments-mcp.</li>
+ </ul>
+<pre><code>northstar.policy.decision          "deny"
+northstar.policy.rule              "settlement-agent.autonomous.execute_limit"
+northstar.policy.limit.amount      6000
+northstar.policy.request.amount    8500
+northstar.policy.caller.spiffe_id  "spiffe://northstar.local/ns/northstar-agents/sa/settlement-agent"
+northstar.policy.autonomy.level    "autonomous"
+northstar.policy.retryable         false</code></pre>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>Head sampling (e.g. 10%).</b> Cheap, standard, and it breaks this slide: a missing execute span could mean "never happened" or "not sampled". For decision spans that is hard to defend when the right to an explanation applies to each decision.</li>
+  <li><b>Tail sampling in the collector</b> (keep every trace that contains a <code>northstar.policy.decision</code> or an error). Workable in production: keeps all governed traces, drops routine noise. Cost: the collector must buffer whole traces, and the rule set becomes something you have to audit too.</li>
+  <li><b>A hand-written audit log.</b> Easy to read, but it records what someone remembered to log, and it can't show an absence. It also drifts from what the code actually did.</li>
+  <li><b>Marking deny as ERROR.</b> Simpler to query, but it pollutes error SLOs and hides real faults among correct refusals.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Isn't 100% tracing too expensive in production?</dt>
+  <dd>Keep every decision span; that's the evidence. Sample the rest if you must, tier retention, and move message content to cheaper storage with separate access control. In the demo, 100% is asserted by a test.</dd>
+  <dt>Why is the agent's execute span red but the decision isn't?</dt>
+  <dd>The agent's tool call failed from its point of view. The decision service did its job. ERROR is reserved for faults.</dd>
+ </dl>
+</section>

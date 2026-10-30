@@ -1,0 +1,47 @@
+<section class="slide-sec" id="s25">
+ <header class="sh"><span class="num">25</span><h2>The call graph is no longer something you drew</h2><span class="meta">KASPER · starts 23:50 · 45 s</span></header>
+ <figure class="slide"><img src="img/s-25.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p>Why does an agent need all this more than a normal service? In a normal system you can draw the call graph, the map of who calls whom, on a whiteboard before it runs.</p>
+  <p class="stage">[point at the prompt on the left, then each run]</p>
+  <p>An agent is different. One prompt: "settle this car-damage claim". The same prompt, run three times. Run one reads the claim, then pays. Run two reads the claim and stops to ask a human. Run three checks the policy instead of the claim, and pays. And the orange bars underneath are the tokens each run used, so even the cost changes.</p>
+  <p>It's like a taxi driver who picks a new route every ride. The code tells you what the agent may do, not what it will do. A test that passed on run two tells you nothing about run three.</p>
+  <p class="say">"The model draws the call graph at run time."</p>
+  <p>So if you can't draw the path in advance, you record it as it happens. Here's what got recorded for the Large claim.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>It justifies the whole Trace half. Platform engineers know tracing from microservices; this slide says what is new with agents. For a microservice, the call graph is a property of the code: you can read it, test it, draw it. For an agent, the code only defines the set of tools, and the model picks a path through them at run time. So the trace stops being a debugging aid and becomes the only reliable record of what happened. That leads straight into "The audit trail is a trace".</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain version.</b> An agent is a loop: the model reads the situation, either answers or asks to call a tool, the tool result goes back to the model, and the loop repeats until the model stops. Which tools it calls, in which order, and how many turns it takes, are decided by the model each time. Models are sampled, so the same input can give different outputs, and the inputs themselves (customer text, tool results) vary.</p>
+ <p><b>Consequences for operations.</b></p>
+ <ul>
+  <li><b>Testing gives evidence about paths, not guarantees.</b> A passing test covers the path it saw. Coverage of an agent is statistical: you need many runs, and you need to grade each run (that is what slides 35 and 36 do).</li>
+  <li><b>Cost and latency vary per request.</b> Each extra model turn adds input and output tokens. The <code>chat</code> span records <code>gen_ai.usage.input_tokens</code> and <code>gen_ai.usage.output_tokens</code> per call, so cost per run is measurable after the fact.</li>
+  <li><b>Static architecture diagrams are no longer authoritative.</b> The only accurate call graph is the observed one. That is why Northstar never samples: a run you dropped is a path you never saw.</li>
+ </ul>
+ <p><b>In OpenTelemetry terms</b>, each box in the figure is a span: <code>chat</code> for a model turn, <code>execute_tool &lt;name&gt;</code> for a tool call, all under one <code>invoke_agent</code> span. The three runs would be three traces with different shapes. Slide 34 names these spans properly.</p>
+
+ <h3>Configuration and options</h3>
+ <ul>
+  <li>The figure is illustrative (book Ch 1, relabelled to a claim settlement). Northstar's real settlement path is constrained: the settlement agent has three tools, <code>propose_payment</code>, <code>execute_payment</code> and <code>refuse_payment</code>, and the evaluator <code>took_a_known_path</code> checks the order afterwards.</li>
+  <li>Variance can be narrowed (lower temperature, fewer tools, structured outputs, a deterministic workflow around the agent, which is William's "deterministic spine"), but not removed while a model chooses the next step.</li>
+  <li>Sampling: no sampler in any SDK or in the collector; agentgateway sets <code>randomSampling: true</code> so even a headerless caller is traced.</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>Constrain the agent into a fixed workflow</b> (a state machine where the model only fills in values). Makes the graph drawable again, at the cost of the flexibility that made an agent worth using. Northstar does this partly: the workflow owns propose, decide, pay.</li>
+  <li><b>Log-based recording</b> of prompts and tool calls. Captures content, but loses causality across services: you can't see which tool call caused which downstream request without a shared trace id.</li>
+  <li><b>Replay/eval harnesses offline.</b> Useful before release, but they test the runs you thought of, not the ones that happened in production.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Isn't this just non-determinism, which we already handle with retries and timeouts?</dt><dd>Retries handle a known path failing. Here the path itself changes. You can't put a timeout on a step you didn't know would happen.</dd>
+  <dt>Does setting temperature to zero fix it?</dt><dd>It reduces variance for identical inputs, but inputs differ every time (customer text, tool results), and providers don't guarantee bit-identical outputs at temperature zero.</dd>
+  <dt>Is the token bar real data?</dt><dd>No, it is illustrative. The real numbers per call are on each <code>chat</code> span in Jaeger.</dd>
+ </dl>
+</section>

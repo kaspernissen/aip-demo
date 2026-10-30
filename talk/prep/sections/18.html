@@ -1,0 +1,62 @@
+<section class="slide-sec" id="s18">
+ <header class="sh"><span class="num">18</span><h2>One flag, one table</h2><span class="meta">WILLIAM · starts 12:15 · 75 s · Ring 2 · Capability</span></header>
+ <figure class="slide"><img src="img/s-18.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>Ring two has a second half: how free is the agent today? That's a live setting, its autonomy level, and it's a feature flag. OpenFeature is the CNCF standard for asking about feature flags. The question is standard; what answers it is pluggable. Like a wall socket: every appliance fits the same socket, whatever power station is behind it.</p>
+  <p class="stage">[left column, top to bottom]</p>
+  <p>Where the level lives: a FeatureFlag, a plain Kubernetes object. flagd, the provider, serves it as a sidecar. And the decision service asks one question through the OpenFeature SDK: what's the autonomy level for this SPIFFE ID? The caller comes from the passport on the call.</p>
+  <p class="stage">[right column]</p>
+  <p>The config. The flag gives one value to one identity, the settlement agent. The default is assisted; Kasper's demo sets it to autonomous. Under it, the policy service's table: assisted, zero euros, so a person signs every payout. Autonomous, up to six thousand, and above that a person decides. Any other caller has no row, and no row means deny.</p>
+  <p class="stage">[the four icons]</p>
+  <p>Why a flag for a policy knob? No deploy. A one-word diff you can review. Answered per caller. And it leaves a trace: every decision is a span with rule, limit, amount, caller and level. If flagd can't answer, the level falls back to assisted.</p>
+  <p class="say">Same agent, same code, same image. Only the flag decides how free.</p>
+  <p>Keep one question in your head: if one value decides this much, who may change it? That's the keystone.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>This makes "bounded autonomy" concrete: autonomy is a number in a table, selected by one flag value per identity. It sets up the demo (the flag is at autonomous when it starts), the €8,500 hold in demo step 2 (above 6,000), the close ("Autonomy is a platform setting", slide 38), and the keystone (slide 19) by ending on "who may change it?". Demo step 5 answers that question live.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> The flag says <i>which column</i> of the rulebook applies to this agent today; the table says <i>what that column allows</i>. Moving the agent from assisted to autonomous is like moving a new employee's signing limit from zero to €6,000: same person, same job, more trust, and the limit is written down.</p>
+ <p><b>OpenFeature</b> is a vendor-neutral API and SDK for evaluating flags. Your code calls <code>get_string_details("autonomy-level", default, context)</code>; a <i>provider</i> answers. Swap the provider and the code doesn't change. <b>flagd</b> is OpenFeature's reference provider; the <b>Open Feature Operator</b> injects it as a sidecar and feeds it the <code>FeatureFlag</code> CRD.</p>
+ <p><b>Targeting</b> uses JsonLogic: <code>if: [ in(spiffeId, [...settlement-agent]), "assisted", "assisted" ]</code>, i.e. if/then/else. The evaluation context carries the caller's SPIFFE ID, so the answer is per identity.</p>
+ <p><b>Fail closed, twice.</b> The SDK returns the default value on a provider error; <code>pds/autonomy.py</code> passes <code>"assisted"</code> as that default <i>and</i> forces <code>assisted</code> itself whenever an error code is present, so a future SDK change can't widen authority. A flagd outage silently lowers authority; it never raises it.</p>
+
+ <h3>Configuration and options</h3>
+ <pre><code># deploy/platform/openfeature/featureflag.yaml (committed: both branches "assisted")
+autonomy-level:
+  state: ENABLED
+  variants: { assisted: "assisted", autonomous: "autonomous" }
+  defaultVariant: assisted
+  targeting:
+    if:
+      - in: [ {var: spiffeId}, ["spiffe://…/sa/settlement-agent"] ]
+      - "assisted"       # if[1]: scripts/demo start patches this to "autonomous"
+      - "assisted"
+# platform/policy-decision-service/pds/rules.py
+EXECUTE_LIMITS = { (settlement-agent, "assisted"): 0.0,
+                   (settlement-agent, "autonomous"): 6000.0 }</code></pre>
+ <ul>
+  <li>The table is keyed by <code>(SPIFFE ID, level)</code>, so identity is structurally required. A miss is <code>unknown_caller</code> or <code>unknown_autonomy_level</code>: deny.</li>
+  <li>Rule names on the span: <code>settlement-agent.&lt;level&gt;.execute_limit</code>; the human path is <code>human-approved.execute</code> (reviewer-ui, only for payments the ledger shows <code>awaiting_approval</code>).</li>
+  <li><code>scripts/demo autonomy &lt;assisted|autonomous&gt;</code> patches <code>if[1]</code>, checks flagd resolved it, and checks no pod restarted.</li>
+  <li>Telemetry: the decision span records level, reason, variant and <code>feature_flag.version</code>; the lookup also emits a <code>feature_flag.evaluation</code> log record. A <code>kubectl</code> flip itself leaves no span (only Backstage's flip emits <code>northstar.autonomy_contract.change</code>).</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li>A ConfigMap read per decision: no SDK, no targeting, no evaluation telemetry.</li>
+  <li>Put the level in the rule table: every change is a code change and a deploy.</li>
+  <li>Commercial or other OSS providers behind the same OpenFeature call: LaunchDarkly, Flagsmith, Unleash, GO Feature Flag, ConfigCat. Gains UI, audit log and approvals; adds an external dependency on the decision path.</li>
+  <li>Encode the limit in OPA data or Cedar policy instead of a flag: works, but then "how free today" and "what the rule is" live in the same artifact.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Isn't changing a flag at runtime exactly the risk?</dt><dd>Yes, which is why the flag is a protected object: an agent identity can't write it (Kyverno), and a person changes it through a reviewed commit.</dd>
+  <dt>How fast does a flip take effect?</dt><dd>flagd watches the CRD; the next decision uses the new level. No restart. The demo verifies that no pod restarted.</dd>
+  <dt>Why not more levels?</dt><dd>Nothing stops it: add a variant and a row. Two keep the demo legible.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> OFO v0.9.3 still injects flagd v0.16.2; OpenFeature still CNCF Incubating.</div>
+</section>

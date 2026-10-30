@@ -1,0 +1,56 @@
+<section class="slide-sec" id="s34">
+ <header class="sh"><span class="num">34</span><h2>The gen_ai.* names: what a trace can say</h2><span class="meta">KASPER · starts 30:30 · 60 s</span></header>
+ <figure class="slide"><img src="img/s-34.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p>So how do you describe what an agent did, in telemetry? OpenTelemetry has a set of names for it: the gen_ai semantic conventions. Three span types carry the agent's work.</p>
+  <p class="stage">[left card]</p>
+  <p>invoke_agent: an agent takes a task. It names the agent, and the conversation id. Here that's the claim id, so every trace of one claim belongs together.</p>
+  <p class="stage">[middle card]</p>
+  <p>chat: one call to the model. Which model, how many tokens, and the finish reason: did the model answer, or ask to use a tool?</p>
+  <p class="stage">[right card]</p>
+  <p>execute_tool: the agent uses a tool. Which tool, and a call id that ties it back to the model's request.</p>
+  <p class="stage">[the legend]</p>
+  <p>The solid names are recorded by default, and they already tell you what the agent did. The dashed ones are the content: the system prompt, what the model was told and answered, the tool's arguments and result. That's the most sensitive data, so the spec makes it opt-in. We turn it on, because it's exactly what explains why. You saw it in the demo.</p>
+  <p class="say">"By default, the trace says what the agent did. With content on, it also says why."</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>It gives the audience the vocabulary the next two slides depend on. Evaluation (slide 35) asks questions of these spans; AgentEvals (slide 36) reads them. Without this slide, "read from execute_tool spans" means nothing to a newcomer. It also plants the trade-off every regulated team has to decide: content capture.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> HTTP spans have had standard names for years (<code>http.request.method</code>, <code>http.response.status_code</code>), which is why any backend can draw a latency chart for any web service. The gen_ai conventions do the same for model and agent calls, so a tool like AgentEvals, Phoenix or Langfuse can read an agent it has never seen.</p>
+ <p><b>The three span types</b> (span name = operation + target):</p>
+ <table>
+  <tr><th>Span</th><th>Demo example</th><th>Default attributes</th><th>Opt-in content</th></tr>
+  <tr><td><code>invoke_agent</code></td><td>invoke_agent settlement_agent</td><td><code>gen_ai.agent.name</code>, <code>gen_ai.conversation.id</code></td><td><code>gen_ai.system_instructions</code></td></tr>
+  <tr><td><code>chat</code></td><td>chat claude-sonnet-5</td><td><code>gen_ai.request.model</code>, <code>gen_ai.usage.input_tokens</code> / <code>output_tokens</code>, <code>gen_ai.response.finish_reasons</code></td><td><code>gen_ai.input.messages</code>, <code>gen_ai.output.messages</code></td></tr>
+  <tr><td><code>execute_tool</code></td><td>execute_tool execute_payment</td><td><code>gen_ai.tool.name</code>, <code>gen_ai.tool.call.id</code></td><td><code>gen_ai.tool.call.arguments</code>, <code>gen_ai.tool.call.result</code></td></tr>
+ </table>
+ <p><b>Conversation id = claim id.</b> Both agents set <code>gen_ai.conversation.id</code> to the claim id. That one choice is what lets AgentEvals group the intake (claims-agent) and the settlement (settlement-agent) into one session, even across traces.</p>
+ <p><b>Who emits them.</b> PydanticAI's instrumentation in both agents emits these spans. agentgateway also writes a span per model call with the same gen_ai names plus <code>jwt.sub</code> and cost. Trap: summing tokens across every span counts each call twice. Pick the agent's chat spans or the gateway's.</p>
+
+ <h3>Configuration and options</h3>
+ <ul>
+  <li><b>One switch:</b> <code>NORTHSTAR_CAPTURE_CONTENT</code>, read by <code>capture_content_enabled()</code> in each agent's <code>bootstrap.py</code> and passed to PydanticAI's <code>InstrumentationSettings(include_content=...)</code>. Deployed <code>"true"</code> in <code>deploy/k8s/settlement-agent.yaml</code> and <code>claims-agent.yaml</code>. Unset = on; <code>false/0/no/off</code> = off.</li>
+  <li><b>What off loses (measured):</b> the gen_ai layer shrinks from 28 to 25 distinct keys; message text, tool arguments and results disappear. The platform's evidence (<code>northstar.policy.*</code>, <code>northstar.review.*</code>, claim id) is unchanged. What's lost is the model's own account: independent corroboration of the requested amount, what it was told about this claim, and what the ledger said back.</li>
+  <li><b>Collector-side redaction</b> is the middle path: keep emitting, hash or drop sensitive attributes in an <code>attributes</code> processor before the backend. Not built in the repo.</li>
+  <li><b>Never removed:</b> <code>model_request_parameters</code> (static instructions and tool schemas, no claim data) and <code>gen_ai.tool.definitions</code>.</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>OpenInference</b> (Arize's convention): older, widely used by Phoenix; overlaps with gen_ai and maps to it.</li>
+  <li><b>Vendor SDK traces</b> (Langfuse, LangSmith native SDKs): rich, but tie your telemetry to one backend.</li>
+  <li><b>Store content outside the trace</b> (object store, referenced by id), with its own access control. The conventions recommend this for sensitive content.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Isn't gen_ai.system_instructions deprecated?</dt>
+  <dd>The whole gen_ai namespace moved out of the core semantic-conventions repo into <code>open-telemetry/semantic-conventions-genai</code>. Core marks every gen_ai attribute "deprecated: moved". In the new repo, system_instructions is current: development stability, opt-in.</dd>
+  <dt>Doesn't capturing prompts violate GDPR?</dt>
+  <dd>It can. That's why it's opt-in. The demo shows the trade: with capture off the governance evidence survives intact; the model's own account of itself doesn't. Engineering, not legal advice.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> The GenAI conventions are at Development stability; names may still move. Check the semantic-conventions-genai repo for renames the week of the talk.</div>
+</section>

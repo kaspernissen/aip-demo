@@ -1,0 +1,37 @@
+<section class="slide-sec" id="s40">
+ <header class="sh"><span class="num">40</span><h2>Three things to remember</h2><span class="meta">WILLIAM · starts 34:55 · 40 s</span></header>
+ <figure class="slide"><img src="img/s-40.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>If you keep three sentences, keep these.</p>
+  <p>One: guardrails live in the platform, not in the prompt. Identity, reach, limits, and a human where the rule says. And the agent cannot move any of them.</p>
+  <p>Two: instrument the decisions, not only the errors. A permit, a hold, a sign-off: those are spans with a rule, a limit and an identity, and their names are a published schema. Then the evidence is a byproduct of the checks.</p>
+  <p>Three: build it from upstream projects. CNCF and the Agentic AI Foundation already ship the pieces. The only part you write is your rules.</p>
+  <p class="stage">[pause, then the line from the cover]</p>
+  <p class="say">"If you can't trace it, you can't govern it."</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>The takeaway slide; the one people photograph. Each point is actionable on Monday, and each has a concrete artefact from the demo behind it. The closing line repeats the cover's subtitle so the talk ends where it began.</p>
+
+ <h3>Each point, with what backs it</h3>
+ <h4>1 · Guardrails live in the platform</h4>
+ <p>Backed by the rings: SPIFFE/SPIRE (identity), Linkerd + NetworkPolicy (reach), agentgateway + policy service + OpenFeature (capability), Kyverno (keystone). The demo's Tricky claim showed the point directly: an instruction in the customer's text did not change what the gateway allowed. <b>Monday action:</b> list where your agent's limits live today. Anything that exists only in a system prompt is a suggestion.</p>
+ <h4>2 · Instrument decisions, not only errors</h4>
+ <p>Most services emit a span when something fails. Governance needs a span when something is <em>decided</em>, including "permit". The slide's example, <code>northstar.policy.decision deny · 6000</code>, is the record that answers "who allowed it, within what limits". The names are defined in a Weaver registry and checked in CI and live. A refusal is not an ERROR; it's a decision with a rule. <b>Monday action:</b> find the code path where your platform says yes or no to an agent, and make it emit a span with rule, limit, caller and outcome. Turn off sampling for it.</p>
+ <h4>3 · Build it from upstream projects</h4>
+ <p>Everything on the toolbox slide except the policy service's rules is an open project: SPIFFE/SPIRE, Linkerd, Kyverno, OpenFeature, OpenTelemetry (Collector, Weaver, semconv), Jaeger, Prometheus (CNCF); agentgateway, MCP and A2A (Agentic AI Foundation); AgentEvals (open source). The repo's governing rule: where a convention gap exists, report it upstream rather than inventing a private workaround. <b>Monday action:</b> before writing a governance component, check whether one of these already does it; write only the rules.</p>
+
+ <h3>Alternatives and honest caveats</h3>
+ <ul>
+  <li><b>Managed agent platforms</b> bundle identity, gateways, guardrails and tracing. Faster to start; the boundary then lives in a vendor's control plane and its telemetry may not follow open conventions.</li>
+  <li><b>What this does not do</b> (keep ready for Q&amp;A): no data ring (which records an agent may read), no authenticated reviewer, no timeout or second approver, no tamper-evident storage, and nothing on the platform side stops a believable lie under the limit.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Is there a book or repo?</dt>
+  <dd>Point to the speakers' links on the footer. The deck carries no QR: the book isn't hosted yet.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> agentgateway joined AAIF 2026-06-04 (agentgateway.dev blog); A2A joined 2026-08-17 (secondary source; check aaif.io/projects). OpenFeature still CNCF Incubating.</div>
+</section>

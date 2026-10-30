@@ -1,0 +1,25 @@
+<section class="slide-sec" id="s05">
+ <header class="sh"><span class="num">05</span><h2>Decide. Trace. Prove.</h2><span class="meta">WILLIAM · starts 2:25 · 20 s</span></header>
+ <figure class="slide"><img src="img/s-05.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>Three words for the next half hour, and together they answer those five questions.</p>
+  <p><b>Decide</b>: what an agent may do. That's mine.</p>
+  <p><b>Trace</b>: what it actually did. And <b>Prove</b>: it afterwards, from the trace. Those two are Kasper's.</p>
+  <p class="stage">[click]</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>The agenda, in three verbs. It returns four times: here as the overview, as the section opener for each half (slides 6, 20, 33) with a "DONE" marker on the parts already covered, and as the recap (slide 37). Repetition is deliberate: in a 30-minute talk with a live demo in the middle, the audience needs a fixed frame to know where they are.</p>
+
+ <h3>How the three words map to the auditor's questions</h3>
+ <table>
+  <tr><th>Word</th><th>Answers</th><th>Built from</th></tr>
+  <tr><td>Decide</td><td>Q2 (who allowed it, within what limits) and Q3 (could a human stop it)</td><td>SPIFFE/SPIRE, Linkerd, NetworkPolicy, agentgateway, the policy decision service, OpenFeature, Kyverno</td></tr>
+  <tr><td>Trace</td><td>Q1 (what did it do) and Q4 (explain this decision)</td><td>OpenTelemetry SDKs and Collector, Jaeger, Weaver</td></tr>
+  <tr><td>Prove</td><td>Q5 (complete and checked), and whether the agent behaved inside its bounds</td><td>AgentEvals reading the same traces</td></tr>
+ </table>
+
+ <h3>The idea underneath</h3>
+ <p>Decide without Trace is a rule nobody can show was applied. Trace without Decide is a detailed record of an agent doing whatever it liked. Prove is the step regulators and risk teams actually consume: a grade or a verdict built from the record, not a claim from the team that wrote the code. The order matters: the decisions are designed so that each one emits a span, which is why "evidence is a byproduct" (slide 10) is possible at all.</p>
+</section>

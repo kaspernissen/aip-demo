@@ -1,0 +1,66 @@
+<section class="slide-sec" id="s41">
+ <header class="sh"><span class="num">41</span><h2>Thank you, and the Q&amp;A</h2><span class="meta">WILLIAM + KASPER · starts 35:35 · Q&amp;A</span></header>
+ <figure class="slide"><img src="img/s-41.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p class="stage">[both speakers on stage]</p>
+  <p class="say">"Thank you. Kasper and I will both take questions."</p>
+  <p class="stage">[Routing: demo, trace and eval questions go to Kasper; platform, guardrail and regulation questions stay with William. Repeat each question into the mic before answering.]</p>
+ </div>
+
+ <h3>How to run the Q&amp;A</h3>
+ <ul>
+  <li>Repeat the question. Answer in about 30 seconds. Offer the hallway for the long version.</li>
+  <li>If the answer is "the demo doesn't do that", say so plainly and name what would. Honest limits read as credibility in a regulated-industry room.</li>
+  <li>Not legal advice: say it once if a regulation question gets specific.</li>
+ </ul>
+
+ <h3>Likely questions, with 30-second answers</h3>
+ <p class="tag">William · platform, guardrails, regulation</p>
+ <dl class="qa">
+  <dt>Isn't agentgateway a CNCF project?</dt>
+  <dd>No. It's a Linux Foundation project, hosted in the Agentic AI Foundation since June 2026. The confusion is usually kgateway, which is CNCF Sandbox.</dd>
+  <dt>Why not just put the limit in a CEL rule on the gateway?</dt>
+  <dd>Two ways to say no. CEL holds what never changes and needs no lookup: the €50,000 ceiling, and which two identities may call tools at all. The everyday limit depends on who asks, today's autonomy level and the ledger's state, so the gateway asks the policy service. That also gives a decision span with rule, limit and caller; a CEL deny names no rule.</dd>
+  <dt>What if the policy service is down?</dt>
+  <dd>Every tool call is refused: the guardrail is <code>failClosed</code>, set explicitly. A fail-open gateway looks exactly like a governing one until someone reads a trace. The trace separates the two: <code>grpc.status = 0</code> on the Guardrail span means "the policy said no"; an outage shows a different status.</dd>
+  <dt>Can the agent go around the gateway?</dt>
+  <dd>Not on the network. Linkerd: payments-mcp's Server denies by default and admits only the gateway's mTLS identity, so a direct call is a 403 and counted. NetworkPolicy: the agents' egress allows only the gateway (tools on 3000, model on 4000), DNS, the collector and the mesh control plane. No internet, not even the model provider.</dd>
+  <dt>Why both Linkerd and NetworkPolicy?</dt>
+  <dd>Linkerd checks the caller's identity on the way in. Its egress control applies to a whole namespace and matches the name the client claims; a NetworkPolicy is enforced in the node and holds even for a pod that skips its proxy.</dd>
+  <dt>What stops the agent from raising its own limit?</dt>
+  <dd>The keystone: a Kyverno ValidatingPolicy denies any change from an agent service account to the flag, RBAC, policies, routes, network policies or SPIFFE registrations. Even if someone grants the agent RBAC by mistake, Kyverno still says no. Changes go through a reviewed commit.</dd>
+  <dt>Does this make us EU AI Act compliant?</dt>
+  <dd>No demo satisfies a regulation; conformity is an organisational process. Northstar shows the artefacts Articles 12, 14 and 86 ask for, built from open source. A motor-claims agent is, on a plain reading, not an Annex III use; the same platform pointed at health-insurance pricing or credit scoring would be, with no change to the layers. The Digital Omnibus moved Annex III obligations to 2 December 2027: the deadline moved, the requirements didn't.</dd>
+  <dt>What about the data ring?</dt>
+  <dd>The Safe Operating Model has a data ring: which records an agent may touch, enforced where the data lives with the same identity. Northstar doesn't build it, so we left it out.</dd>
+  <dt>Isn't SPIFFE overkill? We have Kubernetes service account tokens.</dt>
+  <dd>SPIRE attests where the pod runs before signing, issues short-lived SVIDs that rotate on their own, and gives one identity format that works across clusters and outside Kubernetes. The gateway validates it as a JWT against SPIRE's OIDC discovery endpoint.</dd>
+ </dl>
+
+ <p class="tag">Kasper · demo, traces, evaluation</p>
+ <dl class="qa">
+  <dt>Why is a deny not an error span?</dt>
+  <dd>A refusal is the platform working. ERROR would page on-call for correct behaviour. The policy service's span stays Unset on a deny. Watch out: agentgateway's own <code>tools/call</code> span does mark the deny ERROR while returning HTTP 200, so alert on the decision span, not on HTTP status.</dd>
+  <dt>No sampling at all? Isn't that expensive?</dt>
+  <dd>The right to an explanation applies to each decision, and retention floors start at six months, so head-sampling decision spans is hard to defend. Keep every decision span, tier retention, move content to cheaper storage, and sample the routine rest if you must. In the demo, 100% is asserted by a test.</dd>
+  <dt>Doesn't capturing prompts violate GDPR?</dt>
+  <dd>It can, which is why the conventions make it opt-in. We measured the trade: with capture off, the governance evidence survives intact; what's lost is the model's own account of the amount. You can also redact in the collector. Engineering, not legal advice.</dd>
+  <dt>Who approved it? Is the reviewer authenticated?</dt>
+  <dd>No. The reviewer id is the name typed into the form. The SPIFFE ID on the review span is the reviewer UI's own. What's governed is the execution: it runs as reviewer-ui, through the same gateway and policy service, under its own rule, and only for a payment the ledger shows awaiting approval.</dd>
+  <dt>What stops a believable lie under the limit?</dt>
+  <dd>Nothing on the platform side. The model reads the claim as written, and €2,400 under €6,000 is paid. That's fraud detection, a different layer. What the platform guarantees is that a lie can't move more than the limit, and that the record shows exactly what was claimed and paid.</dd>
+  <dt>Why didn't the gateway block the injected prompt?</dt>
+  <dd>It could: agentgateway has prompt guards (regex, PII, a webhook, hosted moderation). None are on in Northstar. We wanted to show that the platform doesn't need the model to resist: even if it had been fooled, €80,000 is above the ceiling. AgentEvals flags the attempt afterwards.</dd>
+  <dt>Why AgentEvals and not Langfuse or Phoenix?</dt>
+  <dd>It grades traces we already emit and writes the grade back as a standard <code>gen_ai.evaluation.result</code> event, so there's no second SDK in the agent. The others read the same gen_ai spans and are fine choices; the spans are the contract.</dd>
+  <dt>What about the new stateless MCP spec?</dt>
+  <dd>MCP 2026-07-28 removed sessions and <code>initialize</code>, made <code>_meta</code> trace context official, and added <code>Mcp-Method</code>/<code>Mcp-Name</code> headers a gateway can authorize on. Northstar still runs session-ful streamable HTTP. An amount rule still needs the body.</dd>
+  <dt>Does A2A carry the trace for you?</dt>
+  <dd>Not yet. The traceparent travels in the HTTP header, but the a2a SDK doesn't extract it, so the claims and settlement agents do it themselves. It's filed as a convention gap; the A2A semantic-conventions work is in progress upstream.</dd>
+  <dt>Why Jaeger and not a commercial backend?</dt>
+  <dd>Any OTLP backend works; that's the point of the Collector. The demo exports to Jaeger and Prometheus, and to Dash0 when a token is set. Note that Jaeger here is in-memory (20,000 traces): retention and tamper evidence are backend choices.</dd>
+ </dl>
+
+ <div class="callout verify"><b>Verify before the talk</b> agentgateway AAIF date (2026-06-04) and A2A AAIF date (2026-08-17, secondary source). MCP 2026-07-28 spec details. The Digital Omnibus date for Annex III (2 December 2027) and that Arts. 12, 14 and 86 are unchanged rest on a secondary analysis. The outage shape of the Guardrail span under failClosed (a non-zero grpc.status) is described in the contract but its exact span shape was not measured in the study edition. Ch 14's Q&amp;A sheet in the study edition is partly stale (Cilium, agentgateway 1.5.x, a €25,000 senior-agent row); the answers above follow the current repo (Linkerd + NetworkPolicy, agentgateway v1.6.0 with a CEL ceiling on arguments, reviewer-ui under human-approved.execute).</div>
+</section>

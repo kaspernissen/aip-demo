@@ -1,0 +1,29 @@
+<section class="slide-sec" id="s01">
+ <header class="sh"><span class="num">01</span><h2>Verticalizing Platform Intelligence for Regulated Domains</h2><span class="meta">WILLIAM · starts 0:00 · 15 s</span></header>
+ <figure class="slide"><img src="img/s-01.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="stage">[Both on stage. Say nothing for a beat. Let the room settle and the doors close.]</p>
+  <p class="who">WILLIAM</p>
+  <p>Good morning. This talk is about AI agents doing real work in places where someone will later ask for proof: insurance, banking, healthcare. And it comes down to the six words under the title.</p>
+  <p class="say">If you can't trace it, you can't govern it.</p>
+  <p class="stage">[click]</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>The title is fixed by the CFP, and it is abstract. The subtitle does the concrete work: it is the thesis of the whole talk in six words, and the final slide (40) closes on the same line. Say it once, slowly, and let it sit. Everything after this either <em>governs</em> an agent (the Decide half, William) or <em>traces</em> it and proves it afterwards (the Trace and Prove halves, Kasper).</p>
+
+ <h3>The words in the title, in plain terms</h3>
+ <ul>
+  <li><b>Platform intelligence</b>: the knowledge and controls that live in the internal platform (Kubernetes, the mesh, gateways, policy, telemetry) rather than in each application team's code.</li>
+  <li><b>Verticalizing</b>: shaping that platform for one industry's rules. A generic platform gives you identity and networking; a vertical platform also knows that a payout above a limit needs a person, and that the record must be kept.</li>
+  <li><b>Regulated domains</b>: sectors where an outside party (a regulator, an auditor, a court) can demand to see what a system did and why. The talk uses a fictional motor insurer, Northstar, as the example.</li>
+ </ul>
+
+ <h3>The thesis, unpacked</h3>
+ <p>"Govern" means two things in this talk: decide in advance what an agent may do, and show afterwards that it stayed inside those bounds. The second half is only possible if every decision left a record. A rule you cannot observe being applied is, from an auditor's point of view, the same as no rule. That is why the observability work (OpenTelemetry traces, every decision as a span, nothing sampled) is not a nice-to-have bolted onto the guardrails; it is how the guardrails become evidence.</p>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Is this a product pitch?</dt><dd>No. Every component in the demo is an open-source project (CNCF or the Linux Foundation's Agentic AI Foundation); the only code Northstar owns is its rules and the demo services.</dd>
+ </dl>
+</section>

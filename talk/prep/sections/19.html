@@ -1,0 +1,58 @@
+<section class="slide-sec" id="s19">
+ <header class="sh"><span class="num">19</span><h2>It cannot rewrite its own bounds</h2><span class="meta">WILLIAM · starts 13:30 · 45 s · Keystone</span></header>
+ <figure class="slide"><img src="img/s-19.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>And the keystone. That flag is one value on one object. So who may change it? If the answer is "the agent", every limit you've seen is a suggestion.</p>
+  <p class="stage">[the subtitle]</p>
+  <p>The objects that define the agent's authority: its flag, its permissions, the policies, the gateway routes, its SPIFFE registration.</p>
+  <p class="stage">[the two rows]</p>
+  <p>If the agent's own identity tries to change any of them: denied, at admission. A person or a pipeline, through a reviewed commit: applied. The rule itself is a few lines of Kyverno, in CEL: if the request comes from a service account in the agents' namespace, deny.</p>
+  <p>And it holds when someone makes a mistake. Grant the agent the permission by accident, so RBAC says yes, and Kyverno still says no. Kasper ends the demo on exactly that.</p>
+  <p class="say">Even when RBAC says yes, Kyverno says no.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>It answers the question slide 18 ended on, and it's the clasp of the Safe Operating Model: an agent that could edit its rings has no rings. It also sets up demo step 5 (<code>scripts/demo keystone</code>), so the audience knows what "RBAC says no, then Kyverno says no" will mean when they see it.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> RBAC is the list of keys someone has been given. Admission control is a guard at the door who checks every change regardless of keys. Mistakes happen in RBAC (one wide RoleBinding, one copied ClusterRole); the keystone exists for that day.</p>
+ <p><b>How admission works.</b> Every write to the Kubernetes API passes authentication, then authorization (RBAC), then admission webhooks, then storage. Kyverno registers a validating webhook. Its <code>ValidatingPolicy</code> type uses CEL, the same shape as Kubernetes' built-in ValidatingAdmissionPolicy, with Kyverno's reporting and exceptions on top.</p>
+ <p><b>Two walls, in order.</b> First, RBAC grants agent ServiceAccounts no writes at all. Second, the keystone denies writes from agent identities even if RBAC is loosened. The demo proves the second wall by deliberately over-granting <code>patch</code> on the flag (<code>deploy/demo/keystone-overgrant.yaml</code>), then removing it on every exit path.</p>
+
+ <h3>Configuration and options</h3>
+ <pre><code># deploy/platform/kyverno/keystone-policy.yaml (condensed)
+kind: ValidatingPolicy            # policies.kyverno.io/v1
+metadata: { name: agents-cannot-edit-their-own-authority }
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  matchConditions:
+  - expression: request.userInfo.username.startsWith('system:serviceaccount:northstar-agents:')
+             || request.userInfo.username.startsWith('system:serviceaccount:northstar-tools:')
+  validations:
+  - expression: "!variables.isProtected"</code></pre>
+ <ul>
+  <li><b>Protected objects</b> (CREATE/UPDATE/DELETE): FeatureFlags and FeatureFlagSources in <code>northstar-platform</code>; the <code>agentgateway-config</code> ConfigMap; pods, namespaces; deployments, replicasets, statefulsets, daemonsets; jobs, cronjobs; NetworkPolicies; every Linkerd policy kind; HTTPRoutes; SPIRE's ClusterSPIFFEID, ClusterStaticEntry and federation CRDs; Roles, RoleBindings and their cluster forms; every Kyverno policy kind; and CREATE of <code>serviceaccounts/token</code>.</li>
+  <li><b><code>failurePolicy: Fail</code></b>: an unreachable Kyverno refuses matched writes. The flip side: a graceful Kyverno stop deletes its own webhook registrations, after which the keystone is silently off while the policy object still exists. <code>scripts/preflight.sh</code> checks the registration, not just the policy.</li>
+  <li><b>The slide shows one prefix</b>; the file also matches <code>northstar-tools</code>.</li>
+  <li><b><code>validationActions</code></b> could be <code>[Audit]</code> or <code>[Warn]</code> for a dry run before enforcing.</li>
+  <li>Kyverno v1.19 deprecates the legacy <code>ClusterPolicy</code> (kyverno#16868); this uses the CEL-based type.</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>ValidatingAdmissionPolicy</b> (built into Kubernetes, GA in 1.30): the same CEL rule, evaluated in the API server, no webhook to run or to lose. Lacks Kyverno's reports, exceptions and telemetry.</li>
+  <li><b>OPA Gatekeeper</b>: Rego-based admission; strong if you already run OPA.</li>
+  <li><b>Kubewarden</b> (CNCF sandbox): policies as WebAssembly modules.</li>
+  <li><b>Tight RBAC alone</b>: necessary, and the first wall here, but one mistaken binding opens everything.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>What about an agent with node or shell access?</dt><dd>Out of scope. The keystone guards the Kubernetes API only; anything that edits state outside the API isn't covered.</dd>
+  <dt>How do you know the denial came from Kyverno and not RBAC?</dt><dd>The message names the webhook and the policy. One test once passed for the wrong reason: <code>kubectl annotate</code> reads before it patches, so RBAC refused the read and Kyverno never saw the write. The over-grant now includes <code>get</code>.</dd>
+  <dt>Who can change the flag, then?</dt><dd>Humans, CI and the platform's own writer identity, through a reviewed commit. Anyone outside the agents' and tools' namespaces is not matched.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> Kyverno graduated in the CNCF on 24 March 2026; chart 3.9.1 / v1.19.1 still pinned.</div>
+</section>

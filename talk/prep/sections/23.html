@@ -1,0 +1,38 @@
+<section class="slide-sec" id="s23">
+ <header class="sh"><span class="num">23</span><h2>Live: Northstar</h2><span class="meta">KASPER · starts 16:10 · 6:30 (390 s)</span></header>
+ <figure class="slide"><img src="img/s-23.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p class="say">"Let's run it. About six minutes."</p>
+  <p>Everything William showed you as config is running on this laptop. Three claims, the same agent each time, and the platform decides each one differently. Then we read back what it recorded, and we try to break the keystone.</p>
+  <p class="stage">[The slide stays up behind you. Switch to the browser. The five steps and their full manuscripts are on the next pages (23·1 to 23·5). Come back to the deck for "What you just saw".]</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>The demo is the proof that every slide before it is running config, not a diagram. It has the shape of William's deterministic spine (slide 10): a claim comes in, the agent proposes, a limit or a person decides, a gate pays. Three claims walk that spine and get three different answers from the same agent and the same code. Then the record is read back, and the keystone is tested. Each step lands a thread planted in the Decide half and is picked up again after the demo.</p>
+
+ <h3>The run sheet</h3>
+ <table>
+  <tr><th>Step</th><th>Where</th><th>You do</th><th>The room sees</th><th>Pays off</th><th>Time</th></tr>
+  <tr><td>1 · Setup, Standard €1,450</td><td>customer, reviewer</td><td>show both tabs · Submit</td><td>EXECUTED, nobody asked</td><td>18 (the table), 10 (the spine)</td><td>0:30 + 0:45</td></tr>
+  <tr><td>2 · Large €8,500</td><td>customer → reviewer</td><td>Large claim · Submit · Approve</td><td>AWAITING_APPROVAL → EXECUTED</td><td>8 (the €6,000 line), 18, auditor's Q3</td><td>1:15</td></tr>
+  <tr><td>3 · Tricky + <code>inject</code></td><td>customer → terminal</td><td>Tricky claim · Submit · <code>scripts/demo inject</code></td><td>read €2,400 · [IGNORED] · 403</td><td>8 (capability wins), 16 (CEL ceiling)</td><td>1:15</td></tr>
+  <tr><td>4 · Evidence + Jaeger</td><td>terminal → Jaeger</td><td><code>scripts/demo evidence</code> · open the trace</td><td>rule, limit, caller, approver · FLAG</td><td>auditor's Q1, Q2, Q4; 10 (evidence is a byproduct); 14 (the passport)</td><td>1:15</td></tr>
+  <tr><td>5 · Keystone</td><td>terminal</td><td><code>scripts/demo keystone</code></td><td>Forbidden · over-grant · DENIED · unchanged</td><td>18's question, 19</td><td>1:00</td></tr>
+ </table>
+ <p>About 6:30 with narration; 5:50 rehearsed. Each model call takes a few seconds. If a step fails, say so in one sentence and move on; each step page has its own "If it misbehaves".</p>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>Recorded video</b> instead of live: safer, but loses the "click the link and check it yourself" moment.</li>
+  <li><b>Showing the flag flip live</b> (<code>scripts/demo autonomy assisted|autonomous</code>): cut for time. Slide 18 shows the flag; the demo starts at autonomous.</li>
+  <li><b>Off-flow commands</b> for questions: <code>scripts/demo guard</code> (401 with no identity, a direct call around the gateway dropped), <code>scripts/demo ceiling</code>, <code>scripts/demo config</code>.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Is the model call real?</dt><dd>Yes. Both agents call Claude through agentgateway's <code>llm</code> listener; the key is mounted in the gateway, not in the agents.</dd>
+  <dt>What if the customer lies believably under the limit?</dt><dd>The platform can't catch that: the model reads the claim as written. That is fraud detection, outside these guardrails. AgentEvals flags explicit instructions, not plausible lies.</dd>
+  <dt>Who is the reviewer, really?</dt><dd>A name typed into a form. There is no login, second approver, timeout or expiry on the reviewer-ui. It is a known limit of the demo.</dd>
+ </dl>
+</section>

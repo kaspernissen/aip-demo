@@ -1,0 +1,46 @@
+<section class="slide-sec" id="s28">
+ <header class="sh"><span class="num">28</span><h2>Two protocols, two jobs</h2><span class="meta">KASPER · starts 26:20 · 55 s · cut first for 30 min</span></header>
+ <figure class="slide"><img src="img/s-28.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p>Two protocols carried every hop you just saw.</p>
+  <p class="stage">[left]</p>
+  <p>On the left, MCP, the Model Context Protocol. It reaches down, from an agent to a tool. The agent asks the tool server what it can do: tools/list. The server answers with its tools. The model picks one and calls it, here execute_payment with an amount, and gets a result back. Call, answer. That's it.</p>
+  <p class="stage">[right]</p>
+  <p>On the right, A2A, Agent2Agent. It reaches across, from one agent to another. First the claims agent reads the other agent's card: who are you, what can you do, where do I find you. Then it hands over a task: settle this claim. And the task has a life: working, then input required while it waits on someone, then completed.</p>
+  <p>The platform questions differ. For MCP: which tool, which arguments, who is asking? For A2A: who may delegate to whom, and does the original identity survive the hand-off?</p>
+  <p class="say">"Both open, both in the Agentic AI Foundation. Neither one decides what an agent may do."</p>
+  <p>That's the platform's job. And neither protocol carries the trace for you. So how did one trace id get across all of it?</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>It names the two protocols the trace has to cross, in the simplest form that is still correct, and plants the key line: protocols connect, they don't govern. It is the first slide to cut for a 30-minute slot; if cut, slide 29 still works because it names each hop's protocol.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>MCP (Model Context Protocol).</b> JSON-RPC 2.0 messages between a client (inside the agent) and a server that exposes tools, resources and prompts. Northstar uses the streamable HTTP transport. The lifecycle is <code>initialize</code>, then <code>tools/list</code> (discover), then <code>tools/call</code> with <code>{name, arguments}</code>. The model never talks to the server; the agent's code turns a model's tool request into a <code>tools/call</code>. That is the point where a gateway can sit and read the tool name and arguments, which is exactly what agentgateway's CEL rule (<code>mcp.tool.name</code>, <code>mcp.tool.arguments.amount</code>) uses.</p>
+ <p><b>A2A (Agent2Agent).</b> Also JSON-RPC over HTTP, between peers. A server publishes an <b>agent card</b> (name, skills, endpoint URL, supported features). A client sends a message that creates a <b>task</b>; the task moves through states (<code>submitted</code>, <code>working</code>, <code>input-required</code>, <code>completed</code>, plus <code>failed</code>, <code>canceled</code>, <code>rejected</code>). Results come back as messages and artifacts, by polling, streaming or push notification. In Northstar, the held Large claim sits in <code>input-required</code> while a person decides, and the outcome is pushed back to the customer's page.</p>
+ <p><b>Why "neither decides".</b> MCP has an authorization spec for authenticating the client to the server (OAuth-based), and A2A cards can declare security schemes. Both answer "can this client connect", not "may this agent pay €8,500 today". Per-call business authorization has to live outside the protocol, at the gateway and the decision service.</p>
+ <p><b>The agent card is a brochure, not a passport.</b> Anyone can publish a card claiming any name. Northstar's identity comes from SPIFFE, not from the card (<code>contracts/agent-cards/*.json</code> carry no identity binding).</p>
+
+ <h3>Configuration and options</h3>
+ <ul>
+  <li>MCP: <code>mcp==2.2.0</code> client in settlement-agent, FastMCP 4.0.3 server in payments-mcp (tools <code>propose_payment</code>, <code>execute_payment</code>, <code>refuse_payment</code>, <code>get_payment</code>). The client opens a fresh session per call, so each tool call is <code>MCP send initialize</code> plus <code>MCP send tools/call &lt;tool&gt;</code>.</li>
+  <li>A2A: <code>a2a-sdk==0.3.7</code> on both agents; delegation is configured explicitly in <code>agents/claims-agent/delegation.py</code>, never discovered at run time.</li>
+  <li>A2A's own spans carry almost no attributes (no task id, no context id); see the telemetry contract's Gap 1. Northstar uses <code>gen_ai.conversation.id</code> = claim id instead.</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li>Plain REST/gRPC between agents and tools: works, but loses tool discovery and the shared vocabulary that lets a gateway understand calls generically.</li>
+  <li>Framework-internal tools (PydanticAI or LangChain function tools) with no protocol: simplest, but nothing sits between the model's request and the side effect.</li>
+  <li>Message queues for agent hand-off: durable, but no standard task lifecycle or card.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Does MCP's OAuth authorization replace the gateway?</dt><dd>No. It authenticates the client to the server. It doesn't express "amounts over €6,000 need a person at this autonomy level".</dd>
+  <dt>Why A2A between two agents in the same cluster?</dt><dd>It makes the hand-off a governed, traced protocol hop with a task lifecycle, which is how the "input required" wait and the push back to the customer work.</dd>
+  <dt>Are you on A2A v1.0?</dt><dd>No, a2a-sdk 0.3.7. The 1.x SDK (protocol v1.0) exists; per the repo's notes it still has no trace propagation code.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> MCP and A2A both in AAIF (A2A joined 2026-08-17, secondary source), the week of the talk. A2A task state names include working, input-required, completed in the spec version shown.</div>
+</section>

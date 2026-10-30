@@ -1,0 +1,53 @@
+<section class="slide-sec" id="s15">
+ <header class="sh"><span class="num">15</span><h2>No road around the gateway</h2><span class="meta">WILLIAM · starts 9:55 · 45 s · Ring 1 · Reach</span></header>
+ <figure class="slide"><img src="img/s-15.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>Ring 1, reach: what may the agent connect to? Two layers: the way in, and the way out.</p>
+  <p class="stage">[top half of the code]</p>
+  <p>The way in is Linkerd, a service mesh: a small proxy beside every pod that checks who is calling, by the caller's mTLS identity. The tool server, payments-mcp, denies everything by default. One authorization policy lets exactly one identity in: the gateway's. The policy decision service is set up the same way.</p>
+  <p class="stage">[bottom half]</p>
+  <p>The way out is a plain Kubernetes network policy, enforced on the node. The agents may reach the gateway, on two ports, tools and model, and nothing on the internet. Not even the model provider. The model sits behind the gateway too; that's two slides from now.</p>
+  <p class="say">Go around the gateway: 403, and counted.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>The gateway on the next slide is only a guardrail if it's the <i>only</i> road. This slide closes the bypass. Without it, an agent (or anything that compromises it) could call payments-mcp directly and skip every check. The audience should leave knowing that reach has two directions, and that each needs a different tool.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> NetworkPolicy is the building's corridors: some doors simply can't be reached. Linkerd is a doorman at each flat who asks for a passport (the caller's mTLS certificate), checks the guest list, says no out loud, and writes the refusal in a book.</p>
+ <p><b>Why two tools.</b> Linkerd's ingress check is strong because it uses cryptographic identity, and it's visible: a refused request gets an HTTP 403 (gRPC <code>PERMISSION_DENIED</code> at the PDS) and increments <code>inbound_http_authz_deny_total</code> on the callee's proxy. But a mesh can't guarantee egress on its own: a pod that skips its proxy goes straight out. NetworkPolicy is enforced by the CNI in the node's kernel, so it holds even for a pod with no proxy. The trade is that it's silent: a drop leaves no span, no log, no counter.</p>
+ <p><b>Default deny.</b> Linkerd's cluster default stays <code>all-unauthenticated</code>; a port is locked only when a <code>Server</code> covers it. Northstar puts <code>Server</code> objects on five ports: payments-mcp:8000, PDS:9100, settlement-agent:9002, payments-api:8080 (per route) and customer-ui:8080 (the push route).</p>
+
+ <h3>Configuration and options</h3>
+ <pre><code># deploy/platform/reach/linkerd-policies.yaml
+kind: Server                       # policy.linkerd.io/v1beta3
+spec: { podSelector: {matchLabels: {app: payments-mcp}},
+        port: 8000, proxyProtocol: HTTP/1, accessPolicy: deny }
+kind: MeshTLSAuthentication        # agentgateway
+spec: { identities: [agentgateway.northstar-platform.serviceaccount.identity.linkerd.cluster.local] }
+kind: AuthorizationPolicy          # payments-mcp-gateway-only
+spec: { targetRef: {kind: Server, name: payments-mcp},
+        requiredAuthenticationRefs: [{kind: MeshTLSAuthentication, name: agentgateway}] }</code></pre>
+ <ul>
+  <li>The file holds 34 documents: 5 Servers, 9 HTTPRoutes, 12 AuthorizationPolicies, 6 MeshTLS- and 2 NetworkAuthentications. On payments-api the authorization is per route: <code>POST ^/payments/PAY-[0-9]{6}/execute$</code> is payments-mcp's alone.</li>
+  <li><code>network-policies.yaml</code> gives each agent an egress allowlist: DNS, agentgateway on 3000 (tools) and 4000 (model), plus 4143 (Linkerd's inbound proxy port, because a meshed source reaches every port of a meshed peer through it), the OTel Collector, and the Linkerd control plane. No <code>ipBlock</code>: the Anthropic range rule was removed when model calls moved behind the gateway.</li>
+  <li>Probes: a <code>Server</code> with routes refuses the kubelet's HTTP probe, so the PDS and payments-mcp use <code>tcpSocket</code> probes.</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>Istio</b>: <code>AuthorizationPolicy</code> on SPIFFE-formatted mTLS identity; ambient mode moves L7 checks into waypoints.</li>
+  <li><b>Cilium</b>: eBPF enforcement, identity-aware L3–L7 policy, DNS-aware <code>toFQDNs</code> egress, Hubble flow logs. It would make the silent egress drop visible.</li>
+  <li><b>Calico</b> tiered policies, or <b>AdminNetworkPolicy</b> (SIG Network) for cluster-scoped rules tenants can't override.</li>
+  <li><b>Mesh egress gateways</b> (Istio egress gateway, Linkerd <code>EgressNetwork</code>): name-based, but bypassable unless the network also forces traffic through them.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Why not Linkerd for egress too?</dt><dd>Linkerd's egress rule applies to a whole namespace and matches only the name the client claims. Linkerd's own docs say no mesh can give a strong egress guarantee by itself. A network policy holds even for a pod that skips its proxy.</dd>
+  <dt>Does a TCP connect to payments-mcp succeed?</dt><dd>Yes. The destination proxy accepts the connection and refuses per request. That's why Northstar's reach probes assert on status code and the deny counter, never on connect.</dd>
+  <dt>Is the 403 in Prometheus?</dt><dd>The counter lives on each proxy's admin port (:4191/metrics); it isn't scraped into Prometheus in Northstar (that needs pod-discovery RBAC for the Collector). <code>scripts/demo guard</code> reads it through the API server's pod proxy.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> Linkerd edge-26.10.1 still the pinned release; "no OSS stable since February 2024" still true.</div>
+</section>

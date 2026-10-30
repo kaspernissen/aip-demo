@@ -1,0 +1,58 @@
+<section class="slide-sec" id="s38">
+ <header class="sh"><span class="num">38</span><h2>Autonomy is a platform setting</h2><span class="meta">WILLIAM · starts 33:45 · 45 s</span></header>
+ <figure class="slide"><img src="img/s-38.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>So, autonomy, and the human in the loop.</p>
+  <p class="stage">[sweep left to right along the bar]</p>
+  <p>Read it left to right, by amount. Under the line, the agent pays on its own. Above it, a person decides. Past the fifty-thousand ceiling, nobody: the gateway refuses, whoever asks.</p>
+  <p>Where that line sits is one value in the platform: the autonomy flag. Assisted puts it at zero, so every payout goes to a person. Autonomous puts it at six thousand. Nothing is redeployed to move it, and it moves back just as fast. And the agent can't touch it. That's the keystone.</p>
+  <p>You saw it in the demo: fourteen fifty paid alone, eighty-five hundred waited for a person, and eighty thousand, sent in the agent's own name, refused outright.</p>
+  <p class="say">"The human is not removed. The platform decides where the human stands."</p>
+  <p>And the evidence, run after run, graded from the trace, is what earns the next notch.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>It reframes "human in the loop" from a yes/no property of an agent into a <em>position</em> set by the platform. It ties together three mechanisms the audience saw separately: the policy service's limit (the line), the gateway's CEL ceiling (the hatched zone) and the OpenFeature flag (what moves the line). The last sentence links Prove back to Decide: evaluation results are the evidence a team uses to justify moving the line.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> Think of a new employee's signing authority. Day one: everything needs a manager's signature. After a few months of clean work: up to a limit on their own. Some things nobody signs alone, ever. The employee doesn't set their own limit; the organisation does, on the record. Here the "organisation" is the platform, and the record is a reviewed commit.</p>
+ <p><b>Three zones, three mechanisms.</b></p>
+ <table>
+  <tr><th>Zone</th><th>Enforced by</th><th>Where it lives</th></tr>
+  <tr><td>€0 to the line: agent pays</td><td>policy service permits <code>execute_payment</code> ≤ limit</td><td><code>pds/rules.py</code> <code>EXECUTE_LIMITS</code></td></tr>
+  <tr><td>Line to €50,000: a person decides</td><td>deny with <code>settlement-agent.&lt;level&gt;.execute_limit</code>; reviewer-ui executes under <code>human-approved.execute</code></td><td><code>pds/rules.py</code> <code>HUMAN_APPROVERS</code></td></tr>
+  <tr><td>Above €50,000: nobody</td><td>agentgateway CEL authorization rule, 403, policy service never asked</td><td><code>deploy/platform/agentgateway/config.yaml</code></td></tr>
+ </table>
+ <p><b>Why the ceiling is separate.</b> CEL holds the fact that never changes and needs no lookup; the line depends on who asks and today's level, so it needs the policy service. Two independent layers: a bug in one doesn't remove the other.</p>
+
+ <h3>Configuration and options</h3>
+<pre><code># pds/rules.py
+EXECUTE_LIMITS = {
+  (".../sa/settlement-agent", "assisted"):   0.0,
+  (".../sa/settlement-agent", "autonomous"): 6000.0,
+}
+# featureflag.yaml: committed default for the settlement agent is "assisted";
+# scripts/demo start / scripts/demo autonomy autonomous flips it live.</code></pre>
+ <ul>
+  <li><b>Moving the line in practice:</b> change the flag variant (a one-word diff on the <code>FeatureFlag</code>), reviewed and applied by a person or pipeline. Kyverno denies the change from any agent identity.</li>
+  <li><b>Fail-safe direction:</b> if flagd can't answer, the level falls back to <code>assisted</code> (limit €0). Unknown caller or unknown level means deny.</li>
+  <li><b>Measuring whether to move it:</b> the approval-wait histogram by autonomy level, approval vs reject counts, and AgentEvals results across runs.</li>
+  <li><b>Finer dials</b> (not built): per-claim-type or per-customer-segment limits via flag targeting on more context, or more levels in the table.</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>Limit in the prompt.</b> Probabilistic; the opening slides showed why it can't hold.</li>
+  <li><b>Limit as an env var or config in the agent.</b> Deterministic, but needs a redeploy and lives where the agent's own deployment pipeline can change it.</li>
+  <li><b>Limit in the gateway's CEL only.</b> Works for a fixed number; can't do per-level lookups or ledger state, and a CEL deny names no rule in a decision span.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Who decides to move the line?</dt>
+  <dd>Whoever owns the risk, through a reviewed change. The platform makes it a one-word diff and records every decision made under each level.</dd>
+  <dt>Can the line move per customer?</dt>
+  <dd>The flag targets by SPIFFE ID today. OpenFeature targeting can use any evaluation context, so yes in principle; the table would gain rows.</dd>
+ </dl>
+</section>

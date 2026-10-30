@@ -1,0 +1,46 @@
+<section class="slide-sec" id="s23-1">
+ <header class="sh"><span class="num">23·1</span><h2>Demo step 1 · The setup, then the Standard claim</h2><span class="meta">KASPER · customer tab, reviewer tab · ~30 s + 45 s</span></header>
+ <p class="stage" style="color:#5d6470;font-size:8.6pt">Every screenshot and terminal block in steps 1–5 comes from one real run on the kind cluster, 28 October 2026. Claim ids, payment ids and trace ids are different on every run; read the shape, not the ids.</p>
+
+ <div class="cols">
+  <figure class="shot"><img src="img/demo-00-cust-start.png"><figcaption>Customer tab at the start: three prepared claims, Standard selected, its text in the box.</figcaption></figure>
+  <figure class="shot"><img src="img/demo-01-rev-empty.png"><figcaption>Reviewer tab: "Payments awaiting approval", empty.</figcaption></figure>
+ </div>
+
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER · THE SETUP · ~30 s</p>
+  <p class="stage">[Customer tab. Let the room read the page for a second.]</p>
+  <p>Northstar Insurance takes motor claims. A customer describes what happened in their own words. One agent reads it, a second agent pays it, and every payment goes through the platform: the passport, the gateway, the policy service. Everything William showed you as config.</p>
+  <p class="stage">[Reviewer tab: the empty queue.]</p>
+  <p>This is where a person sees the payments the platform holds back. Right now it's empty. Today the agent may settle up to six thousand euros on its own. That allowance is one OpenFeature flag, the one on William's slide, and changing it restarts nothing.</p>
+  <p class="who">STEP 1 · STANDARD CLAIM, €1,450 · ~45 s</p>
+  <p class="stage">[Customer tab. Standard claim is already selected. Press Submit claim.]</p>
+  <p>A wing mirror, about fourteen fifty. The model reads the customer's words into a claim: amount, policy, date. It's under the line, so the agent pays it.</p>
+  <p class="stage">[The status turns to EXECUTED.]</p>
+  <p class="say">"Settled, and nobody had to look at it."</p>
+ </div>
+
+ <p class="step-claim">"Yesterday someone scraped my car in a car park and broke the wing mirror. Policy POL-77120. The repair is about EUR 1,450."</p>
+
+ <h3>What the audience sees</h3>
+ <figure class="shot narrow"><img src="img/demo-02-std-outcome-crop.png"><figcaption>The Progress panel after Submit: EXECUTED, amount 1450 EUR, a payment reference. No person was asked; the reviewer queue stays empty.</figcaption></figure>
+ <ul>
+  <li><b>The status</b>: settled by the agent. On the decision span (step 4) this is <code>permit</code> under <code>settlement-agent.autonomous.execute_limit</code>, limit 6000, requested 1450.</li>
+  <li><b>The reviewer tab stays empty.</b> Worth one glance: the absence of a review is the point.</li>
+ </ul>
+
+ <h3>What it pays off</h3>
+ <table>
+  <tr><th>Thread</th><th>Planted</th><th>Here</th></tr>
+  <tr><td>Bounded autonomy works in the "yes" direction</td><td>18 (the flag and the table)</td><td>The agent is useful, not only blocked: under the line, it acts alone</td></tr>
+  <tr><td>The deterministic spine</td><td>10</td><td>Claim in → the agent proposes → a limit decides → the gate pays. All four boxes ran; nobody saw them</td></tr>
+  <tr><td>Auditor's question 2: within what limits?</td><td>4</td><td>Even a permit is a decision with a rule and a limit (shown in step 4)</td></tr>
+ </table>
+
+ <h3>If it misbehaves</h3>
+ <ul>
+  <li><b>The page asks a question</b> ("needs information"): the model wants a missing detail. Answer it in the box. That is the claims agent working as designed.</li>
+  <li><b>The claim waits for a person instead of settling</b>: the flag is at <code>assisted</code>, where the line sits at €0. Say so, because it is the point of slide 18: "Today it's at assisted, so even this one goes to a person." Approve it in the reviewer tab and carry on.</li>
+  <li><b>A model or network error</b>: one sentence, then the terminal fallback, which files the same claim through the same agents:<br><code>scripts/demo claim --text "…EUR 1,450." --expect executed</code></li>
+ </ul>
+</section>

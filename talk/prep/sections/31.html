@@ -1,0 +1,58 @@
+<section class="slide-sec" id="s31">
+ <header class="sh"><span class="num">31</span><h2>The agent makes it. A human checks it.</h2><span class="meta">KASPER · starts 28:45 · 45 s</span></header>
+ <figure class="slide"><img src="img/s-31.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p>Maker and checker. The agent makes the payment, a human checks it. And that's two traces.</p>
+  <p class="stage">[left]</p>
+  <p>Trace A, the maker. The claim came in, the agent asked to execute, the policy said a person decides. The agent records "input required", and its trace ends at the hand-off. Nothing moved.</p>
+  <p class="stage">[middle]</p>
+  <p>Then human time. Minutes, maybe hours. Nothing runs, nothing polls.</p>
+  <p class="stage">[right]</p>
+  <p>Trace B, the checker. A person approves in the reviewer UI. It asks the gateway to execute under its own identity and its own rule, human-approved.execute. The policy service checks the ledger, sees the payment waiting for a human, and permits.</p>
+  <p class="say">"Nothing was overridden. A different caller was asked about."</p>
+  <p class="stage">[the dashed arrow]</p>
+  <p>The dashed line is a span link: B points back to A. A link, not a parent. Work separated by human time is two traces and a link. You saw it in the demo: the approval's trace has a link icon back to the agent's. And at the bottom, how long humans take: one histogram, p95 by autonomy level. Where the human stands is William's last word.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>It answers the auditor's third question, <em>could a human stop it?</em>, and shows how to trace it honestly. Maker/checker (four-eyes) is a control every bank and insurer already has. The slide shows that an agent fits into it without special casing: the human approval is just another governed caller with its own rule. Technically it introduces the fourth of the five OpenTelemetry words from the 1,000-mile slide: <b>link</b>.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> A parent/child relation says "this happened <em>inside</em> that". A span link says "this is <em>related to</em> that". If you made the approval a child of the agent's work, the agent's trace would appear to run for three hours, and every duration chart would be wrong. Analogy: a parcel that sits in a depot overnight. The next morning's delivery is a new trip with the tracking number on the label, not one 14-hour drive.</p>
+ <p><b>Why two traces.</b> A trace models one continuous piece of work. Human time breaks that: no process is running while the claim waits. A link keeps the causal connection without lying about duration or about what was executing. OpenTelemetry's spec describes links for exactly this: batch and asynchronous work that relates to other traces.</p>
+ <p><b>The precise chain (as built).</b></p>
+ <ul>
+  <li>Trace A: <code>execute_tool execute_payment</code> is denied (<code>settlement-agent.autonomous.execute_limit</code>), the ledger marks the payment <code>awaiting_approval</code>, claims-agent parks the A2A task in <code>input-required</code> with <code>northstar.a2a.parked_reason = awaiting_approval</code>.</li>
+  <li>Trace B root: <code>northstar.review.decision</code> (SERVER, reviewer-ui), with one span link to the refusal span in trace A. Attributes: <code>northstar.review.decision</code>, <code>…reviewer.id</code>, <code>…reviewer.spiffe_id</code>, <code>…wait.duration</code>, <code>…payment.id</code>, <code>northstar.claim.id</code>.</li>
+  <li>The execute goes through agentgateway again; the decision span says <code>permit</code>, rule <code>human-approved.execute</code>, <code>ledger.status = awaiting_approval</code>.</li>
+  <li><code>northstar.a2a.resume</code> resumes the task and links back to the parking span (<code>northstar.a2a.link.reason = resume</code>). The outcome is pushed to the customer's page; the browser's own <code>northstar.claim.wait</code> span is a third trace, linked to the submit.</li>
+ </ul>
+
+ <h3>Configuration and options</h3>
+ <ul>
+  <li><b>The approver's rule</b> in <code>platform/policy-decision-service/pds/rules.py</code>: <code>HUMAN_APPROVERS = {…/sa/reviewer-ui}</code>; it may execute <em>only</em> a payment the ledger shows <code>awaiting_approval</code>. No limit on that rule, so the decision span has no <code>limit.amount</code>. The gateway CEL ceiling (≤ €50,000) still applies to reviewer-ui.</li>
+  <li><b>The histogram</b> <code>northstar.approval.wait.duration</code> (unit <code>s</code>), created in <code>apps/reviewer-ui/approval_metrics.py</code>. Attributes: <code>northstar.review.decision</code> and <code>northstar.policy.autonomy.level</code>. The reviewer id is deliberately absent (one series per person is high cardinality). The value is the span's own <code>wait.duration</code>, read from the ledger's <code>awaitingSince</code>, so metric and span can't disagree. In Prometheus: <code>northstar_approval_wait_duration_seconds_*</code>, default buckets 0…10000 s.</li>
+ </ul>
+<pre><code>histogram_quantile(0.95,
+  sum by (le, northstar_policy_autonomy_level) (
+    rate(northstar_approval_wait_duration_seconds_bucket[1h])))</code></pre>
+ <p>That query answers "did widening the band from assisted to autonomous cut the human's load?" Compare the count of approvals per level, and the p95 wait.</p>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>Keep the trace open</b> (a long-running parent span). Simple to view as one waterfall, but durations become meaningless and an unended span is lost if the process restarts.</li>
+  <li><b>Correlate only by claim id</b> (no link). Works for search, but the causal edge is lost; a link lets Jaeger jump from B to A.</li>
+  <li><b>Workflow engines</b> (Temporal, Argo Workflows, a BPM tool) own the wait and the resume. They give timeouts, escalation and durable state that Northstar lacks, and they emit their own traces; you would still link across the wait.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Is the reviewer authenticated?</dt>
+  <dd>No. <code>northstar.review.reviewer.id</code> is the name typed into the form, a claim on the span, not a verified credential. The SPIFFE ID on the span is reviewer-ui's own workload identity. What's governed is the execution: it runs as reviewer-ui, through the same gateway and policy service, under its own rule.</dd>
+  <dt>What if nobody approves?</dt>
+  <dd>The claim waits. There is no timeout, no expiry and no second approver in the demo. Reject is final and the customer is told the claim was declined.</dd>
+  <dt>Could the reviewer UI pay anything it likes?</dt>
+  <dd>Only a payment the ledger shows <code>awaiting_approval</code>, and never above the €50,000 gateway ceiling.</dd>
+ </dl>
+</section>

@@ -1,0 +1,54 @@
+<section class="slide-sec" id="s12">
+ <header class="sh"><span class="num">12</span><h2>What this asks us to build</h2><span class="meta">WILLIAM · starts 7:15 · 60 s</span></header>
+ <figure class="slide"><img src="img/s-12.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>So what does this ask us to build? Integration and rigor. Not invention.</p>
+  <p class="stage">[gesture across the top row, left to right]</p>
+  <p>Workload identity for every agent: SPIFFE and SPIRE, who is acting. Reach enforced on that identity: Linkerd, plus plain Kubernetes network policy, what it can reach. Authorization on every call at the tool boundary: agentgateway, what it may call.</p>
+  <p class="stage">[bottom row]</p>
+  <p>A live autonomy level per identity: an OpenFeature flag, how far it may go today. The agent kept out of its own guardrails: Kyverno, at admission. And Git as the only way to change any of it.</p>
+  <p>These are the exact projects in the demo Kasper runs in a few minutes. Almost all of them are CNCF; agentgateway sits in the Linux Foundation's Agentic AI Foundation.</p>
+  <p>What's genuinely new is small: agent identity and limits as declarative objects, and per-tool authorization for agent protocols like MCP. A thin new layer on a deep, stable foundation.</p>
+  <p class="say">Each one is a production-grade project today.</p>
+  <p>Let's start at the core: who is acting.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>This is the bridge from the model (the Safe Operating Model's rings, slide 11) to the tools. The audience has just seen abstract rings; here they get one project per job, with the job in four or five words. The point to land is that none of this needs a new platform: bounding an agent uses the same identity, network and admission machinery we already run for microservices. "Not invention" is the claim; the next seven slides back it with config.</p>
+ <p>Each card maps to a ring and to a later slide: SPIFFE/SPIRE is the core (13, 14), Linkerd is Ring 1 (15), agentgateway is Ring 2 (16, 17), OpenFeature is the second half of Ring 2 (18), Kyverno is the keystone (19). Git has no slide of its own; it is the answer to the keystone's question "then who may change it?".</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> Think of a building. Identity is the badge, reach is which corridors lead where, capability is what the badge opens once you're at a door, the flag is today's clearance level, and the keystone is that nobody can print their own badge or rewrite the clearance list. Git is the paper trail for every change to the rules.</p>
+ <p><b>Why separate jobs.</b> Each layer assumes the one before it can fail. A gateway rule is worthless if a pod can walk around the gateway (that's why reach exists); a reach rule keyed on a name is worthless if anyone can claim the name (that's why identity is the core); and all of them are worthless if the agent can edit them (the keystone). This is defence in depth, applied to an agent.</p>
+ <p><b>Policy enforcement point vs decision point.</b> The cards mix two roles. agentgateway, Linkerd, NetworkPolicy and Kyverno <i>enforce</i>: they sit in the path and block. The decision service and the flag <i>decide</i>: they answer "may this caller do this, today?". Keeping those apart is what lets one rule change without touching the proxies.</p>
+
+ <h3>Configuration and options</h3>
+ <table>
+  <tr><th>Card</th><th>Northstar file</th><th>Pinned</th></tr>
+  <tr><td>SPIFFE · SPIRE</td><td><code>deploy/platform/spire/registration.yaml</code>, <code>values.yaml</code></td><td>chart 0.30.2, SPIRE 1.15.3</td></tr>
+  <tr><td>Linkerd + NetworkPolicy</td><td><code>deploy/platform/reach/linkerd-policies.yaml</code>, <code>network-policies.yaml</code></td><td>edge-26.10.1</td></tr>
+  <tr><td>agentgateway</td><td><code>deploy/platform/agentgateway/config.yaml</code></td><td>v1.6.0</td></tr>
+  <tr><td>OpenFeature</td><td><code>deploy/platform/openfeature/featureflag.yaml</code>; PDS <code>pds/autonomy.py</code></td><td>OFO v0.9.3, flagd v0.16.2</td></tr>
+  <tr><td>Kyverno</td><td><code>deploy/platform/kyverno/keystone-policy.yaml</code></td><td>chart 3.9.1, app v1.19.1</td></tr>
+ </table>
+ <p><b>Git, honestly.</b> Northstar has no GitOps controller. The cluster is applied by <code>scripts/setup-kind.sh</code> from the repo, and the keystone's denial message says "Authority changes go through a reviewed commit". In production that sentence is enforced by Argo CD or Flux pulling from a protected branch, with the platform's own deploy identity as the only writer the keystone lets through.</p>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>Identity:</b> projected ServiceAccount tokens (no extra system, Kubernetes-only, no attestation beyond the API server), cloud workload identity (IRSA, GKE Workload Identity), cert-manager's csi-driver-spiffe.</li>
+  <li><b>Reach:</b> Istio or Cilium instead of Linkerd; Cilium also gives DNS-aware egress (<code>toFQDNs</code>) and flow logs.</li>
+  <li><b>Gateway:</b> Agent Router (formerly Envoy AI Gateway), Kong AI Gateway, IBM ContextForge, LiteLLM.</li>
+  <li><b>Flags:</b> any OpenFeature provider (LaunchDarkly, Flagsmith, Unleash, GO Feature Flag) behind the same SDK call.</li>
+  <li><b>Admission:</b> Kubernetes ValidatingAdmissionPolicy, OPA Gatekeeper, Kubewarden.</li>
+ </ul>
+ <p>The rings don't care which you pick. That's the slide's real message: the tooling is an implementation detail.</p>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Is agentgateway CNCF?</dt><dd>No. It was donated to the Linux Foundation in August 2025 and joined the Agentic AI Foundation (AAIF) on 4 June 2026. MCP and A2A are in AAIF too.</dd>
+  <dt>"Production-grade" for Linkerd, when OSS ships edge releases only?</dt><dd>True: there has been no open-source stable release since February 2024; stable builds come from vendors. The project is CNCF graduated and the policy CRDs used here are long-standing. Say this plainly if a regulated-industry listener asks.</dd>
+  <dt>Why not one tool that does it all?</dt><dd>Because each layer must hold if the one beside it fails. One tool is one misconfiguration away from no guardrail.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> agentgateway joined AAIF 2026-06-04 (agentgateway.dev blog). OpenFeature still CNCF Incubating. Pinned versions still current.</div>
+</section>

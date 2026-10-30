@@ -1,0 +1,52 @@
+<section class="slide-sec" id="s36">
+ <header class="sh"><span class="num">36</span><h2>AgentEvals (the auditor)</h2><span class="meta">KASPER · starts 32:30 · 50 s</span></header>
+ <figure class="slide"><img src="img/s-36.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">KASPER</p>
+  <p>So who runs those checks? An open-source evaluator called AgentEvals. Think of it as an auditor that reads the agent's work after the fact. Follow the arrows.</p>
+  <p>The agents emit spans, as always. Nothing is added for the auditor. The Collector already sends every span to Jaeger; it sends AgentEvals a copy. AgentEvals files every trace of one claim together and runs our five checks. And the grade goes back as telemetry, on the agent's own span.</p>
+  <p class="stage">[the panel]</p>
+  <p>Here's the Tricky claim from the demo. Known path: pass. Stopped when refused: it was never refused, so not applicable. Paid what it proposed: pass. Told the customer no figure: pass. Prompt injection: flag. The customer tried to instruct the agent. The agent did nothing wrong, so it's a flag, not a fail.</p>
+  <p class="say">"OpenTelemetry in, OpenTelemetry out. The agent is never touched."</p>
+  <p>And it's one choice among several: OpenLIT, Phoenix, Langfuse, Agent Health all read the same gen_ai spans. The spans are the contract, not the tool.</p>
+  <p>That's the third word. William?</p>
+  <p class="stage">[HANDOVER: William takes the clicker. Kasper steps back, not off.]</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>It closes Prove and Kasper's half. It shows the evaluation loop end to end and makes the architectural point: evaluation is a consumer of standard telemetry, not an SDK inside the agent. The panel is real output (<code>scripts/demo evidence</code>, CLM-INTAKE-B1BEF0, 2026-10-27). It also answers the auditor's fifth question in part: the grade is itself a record, in the same pipeline.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> The agent writes its diary (spans). The Collector photocopies the diary for the auditor. The auditor reads it, writes its marks on sticky notes, and posts them back to the same filing cabinet, attached to the right page. The agent never knows the auditor exists, so it can't behave differently while being watched.</p>
+ <p><b>Sessions.</b> AgentEvals groups spans into sessions by <code>gen_ai.conversation.id</code>. Both agents set it to the claim id, so one session = one claim, spanning intake and settlement, across traces.</p>
+ <p><b>The grade's shape.</b> One <code>gen_ai.evaluation.result</code> log event per check, attached to the operation it judged, with name, score, label and (enabled here) an explanation. That's the primary form in the GenAI conventions, so any backend that reads OpenTelemetry logs can show the grade beside the work.</p>
+ <p><b>What it can't see.</b> Only the agent's own GenAI spans: tool calls, results, final answer. Not the policy decision, the human's approval or the caller's identity. That side is read in Jaeger and with <code>demo evidence</code>. So the two halves are complementary: the platform's spans prove what was <em>allowed</em>; the agent's spans, graded, show what it <em>attempted</em>.</p>
+
+ <h3>Configuration and options</h3>
+ <ul>
+  <li><code>deploy/observability/agentevals.yaml</code>: image <code>ghcr.io/agentevals-dev/agentevals:0.11.0</code>, <code>agentevals serve</code> with OTLP HTTP on 4318 and gRPC on 4317, UI/API on 8001 (kind host port 18001). <code>AGENTEVALS_EVALUATION_EVENTS=true</code> and <code>…_EXPLANATION=true</code> turn on the write-back. <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> points back at the collector.</li>
+  <li>Collector: an <code>otlp_http/agentevals</code> exporter on the traces pipeline, with sending queue and retry.</li>
+  <li><b>When checks run:</b> the demo driver triggers them. <code>scripts/demo evidence</code> POSTs to <code>/api/streaming/evaluate-sessions</code> with the five code evaluators (judge model in <code>config.judge_model</code>, 60 s timeout for <code>prompt_injection</code>). <code>scripts/demo evals</code> adds the built-in judged metrics.</li>
+  <li><b>Where the grade lands:</b> the event goes to the collector's logs pipeline, which exports to Weaver live-check and, with the Dash0 overlay enabled (<code>DASH0_AUTH_TOKEN</code> set), to Dash0. Jaeger is traces-only, so it doesn't show the events.</li>
+  <li><b>Label quirk (0.11.0):</b> the event label is fixed to <code>pass | fail | not_evaluated</code>, so a flag reads <code>fail</code>; the explanation and <code>scripts/demo</code> say "flagged".</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <table>
+  <tr><th>Tool</th><th>Notes</th></tr>
+  <tr><td>OpenLIT</td><td>OTel-native SDK plus evals and guards; more of a full platform.</td></tr>
+  <tr><td>Arize Phoenix</td><td>Accepts OTLP; built on OpenInference with a gen_ai mapping; strong eval tooling and UI.</td></tr>
+  <tr><td>Langfuse</td><td>OTLP endpoint (<code>/api/public/otel</code>); tracing, prompt management, evals; its own data model.</td></tr>
+  <tr><td>OpenSearch Agent Health</td><td>Measured 0.8.0 on 2026-10-21; agent-focused views over OpenSearch.</td></tr>
+ </table>
+ <p>Why AgentEvals here: it grades traces the system already emits and writes the grade back in the standard shape, so no second instrumentation and no second store. The others are reasonable; the portable part is the gen_ai spans.</p>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Does the evaluation slow the payment down?</dt>
+  <dd>No. It runs after the fact, off a copy of the spans. It blocks nothing.</dd>
+  <dt>Is gen_ai.evaluation.result the standard shape?</dt>
+  <dd>Yes, the primary form of the convention: a log event with name, score and label, attached to the operation it judged.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> Arize Phoenix and Langfuse accept OTLP traces and read gen_ai.* attributes (Phoenix via OpenInference + OTel GenAI mapping; Langfuse OTLP endpoint /api/public/otel); OpenLIT evals and guards per docs.openlit.io (read 2026-10-19); OpenSearch Agent Health 0.8.0 (measured 2026-10-21). AgentEvals 0.11.0 still the pinned and latest release.</div>
+</section>

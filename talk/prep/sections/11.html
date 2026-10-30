@@ -1,0 +1,48 @@
+<section class="slide-sec" id="s11">
+ <header class="sh"><span class="num">11</span><h2>The Safe Operating Model</h2><span class="meta">WILLIAM · starts 6:05 · 70 s</span></header>
+ <figure class="slide"><img src="img/s-11.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>So where does the platform draw the line? This is the Safe Operating Model, from Francesco Beltramini at ControlPlane. Rings of least privilege, and each outer ring depends on the one inside it.</p>
+  <p class="stage">[point at the core]</p>
+  <p>Start in the middle. The core is identity: <b>what is acting?</b> An attested workload identity, not a name the agent claims. Without an identity you can't say who may do what. Identity is the passport. In Northstar that passport is the SPIFFE ID that SPIRE issues each agent, not the agent card it publishes. The card is the brochure.</p>
+  <p>Ring 1, reach: <b>what may it connect to?</b> Enforced on the network, per connection.</p>
+  <p>Ring 2, capability: <b>what may it hold, and call?</b> Admission, and the tool gateway.</p>
+  <p>The model has a further ring, data: which records are its business. We leave it out today, because our demo doesn't build it.</p>
+  <p class="stage">[point at the line under the keystone]</p>
+  <p>One line here is ours, not Francesco's: around every ring, evidence. Every decision a ring makes is a span, keyed by the same identity. That's what the agent actually did, and it's Kasper's half of this talk.</p>
+  <p class="stage">[point at the keystone bar]</p>
+  <p>And under all of it, the keystone: the agent can never edit what defines its authority. If it could rewrite its own rules, the rings would mean nothing.</p>
+  <p>The tooling is an implementation detail. Pick what fits; the rings stay. Next, the tools we picked.</p>
+  <p class="stage">[click]</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>This is the map for the rest of William's half. Every slide from 13 to 19 carries a ring tag in its top-right corner (Core · identity, Ring 1 · reach, Ring 2 · capability, Keystone), and "What you just saw" (slide 24) sorts the demo's outcomes by ring. If the audience remembers one diagram from the Decide section, it should be this one.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> Least privilege means giving something exactly the access it needs, nothing more. The model applies that in layers. The inner ring asks <em>who</em>. Every outer ring asks a narrower question about that same verified actor. Because each ring is keyed on the one inside it, a ring is only as strong as the ring inside it: a network rule that names "settlement-agent" is worthless if anyone can claim to be settlement-agent.</p>
+ <p><b>Analogy: a bank branch.</b> The core is the staff badge with your photo, issued after security checked who you are. Reach is which doors that badge opens. Capability is what you may sign at your desk, and up to which amount. Data is which customer files you may open. The keystone: nobody can reprogram their own badge. A cashier who could edit their own signing limit wouldn't need to break any other rule.</p>
+
+ <h3>Each ring in Northstar</h3>
+ <table>
+  <tr><th>Ring</th><th>Question</th><th>Northstar</th></tr>
+  <tr><td>Core · identity</td><td>What is acting?</td><td>SPIRE issues a short-lived JWT-SVID per pod from namespace + ServiceAccount; agentgateway verifies it on every call (<code>jwtAuth: strict</code>). Linkerd's mTLS identity comes from the same ServiceAccount.</td></tr>
+  <tr><td>Ring 1 · reach</td><td>What may it connect to?</td><td>Ingress: Linkerd <code>Server</code> + <code>AuthorizationPolicy</code> (payments-mcp and the policy service admit only the gateway; 403 and a counter otherwise). Egress: NetworkPolicy allowlists, the agents may reach only the gateway (ports 3000 tools, 4000 model) plus DNS, the collector and the mesh control plane.</td></tr>
+  <tr><td>Ring 2 · capability</td><td>What may it hold, and call?</td><td>Hold: RBAC grants agents no writes. Call: agentgateway CEL ceiling (€50,000), then the policy service, fail-closed, with the limit row chosen by the OpenFeature flag (assisted €0, autonomous €6,000).</td></tr>
+  <tr><td>Ring 3 · data</td><td>Which records are its business?</td><td>Not in this talk. Northstar covers it only at route level (Linkerd per-route authorization on payments-api) and by data minimisation in the settlement prompt; no per-record authorization.</td></tr>
+  <tr><td>Keystone</td><td>Can it edit what defines its authority?</td><td>Kyverno <code>ValidatingPolicy agents-cannot-edit-their-own-authority</code>, <code>failurePolicy: Fail</code>, denies agent identities writes to flags, RBAC, reach policies, SPIRE registrations, workloads and Kyverno itself.</td></tr>
+  <tr><td>Evidence</td><td>(not a ring)</td><td>OpenTelemetry at 100%, <code>northstar.*</code> names in a Weaver registry, AgentEvals grades.</td></tr>
+ </table>
+
+ <h3>Alternatives</h3>
+ <p>Other framings cover similar ground: zero-trust architecture (NIST SP 800-207) for identity and per-request authorization; defence in depth (the "airport" analogy in the appendix: corridor, passport, scanner, gate staff); OWASP's least agency. The rings' advantage for a talk is the explicit dependency order and the keystone, which most frameworks leave implicit. The tools are swappable: Cilium or Istio instead of Linkerd for reach, OPA or Cedar instead of the custom policy service, any admission controller for the keystone.</p>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Why is evidence not a ring?</dt><dd>It doesn't restrict anything. It records what each ring decided, keyed by the same identity, so the rings can be shown to have worked.</dd>
+  <dt>Why leave out the data ring?</dt><dd>Because the demo doesn't build it, and the talk only shows what runs. A real deployment needs it: any identity that may read one payment by id may read every payment by id.</dd>
+  <dt>Where can I read the model?</dt><dd>It's credited to Francesco Beltramini at ControlPlane. Point people there rather than paraphrasing beyond the slide.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> The wording of the "FINOS agentic AI work and the CNCF gateway working group reached the same conclusion" line (identity first) with William before saying it. Northstar's agent cards (<code>contracts/agent-cards/*.json</code>) carry no identity binding.</div>
+</section>

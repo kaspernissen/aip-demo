@@ -1,0 +1,54 @@
+<section class="slide-sec" id="s13">
+ <header class="sh"><span class="num">13</span><h2>SPIFFE and SPIRE</h2><span class="meta">WILLIAM · starts 8:15 · 60 s · Core · Identity</span></header>
+ <figure class="slide"><img src="img/s-13.png"></figure>
+ <div class="script"><h3>Manuscript</h3>
+  <p class="who">WILLIAM</p>
+  <p>The core first: who is acting. Everything after this keys off it. So, one minute on the two projects that answer it, with one picture: a passport.</p>
+  <p class="stage">[left]</p>
+  <p>SPIFFE is the standard: what a passport looks like. An ID for a workload, not a person: spiffe, colon, slash slash, northstar dot local, the namespace, the service account. And the document that carries it, the SVID: short-lived, and signed.</p>
+  <p class="stage">[right]</p>
+  <p>SPIRE is the passport office. It runs an agent on every node. When a pod asks for its identity, that agent checks where the pod really runs, its namespace and its service account, and only then does the SPIRE server sign.</p>
+  <p class="stage">[the four boxes, left to right]</p>
+  <p>Four steps. The pod asks, over a local socket, with no secret. SPIRE checks. SPIRE signs something that expires soon and renews on its own. And the pod shows that passport at the gateway, on every call.</p>
+  <p>And the agent card an agent publishes? That's the brochure, not the passport. Anyone can print a brochure.</p>
+  <p class="say">No password to leak. The identity is proven by where it runs, not by what it says.</p>
+ </div>
+
+ <h3>What the slide is for</h3>
+ <p>Every later check uses the caller's identity as an input: the gateway's CEL rule, the model allowlist, the flag targeting, the decision table, the keystone. If identity were a name the agent could claim, every one of those would be decoration. This slide gives the audience the vocabulary (SPIFFE, SPIRE, SVID, attestation) in plain terms before the config slide.</p>
+
+ <h3>The theory behind it</h3>
+ <p><b>Plain words.</b> A password proves you <i>know</i> something, and anything you know can leak. Attestation proves where you <i>are</i>: the node agent asks the kernel which process is calling, then asks the kubelet which pod and service account that process belongs to. Nothing secret sits in the pod to be stolen.</p>
+ <p><b>The pieces.</b></p>
+ <ul>
+  <li><b>SPIFFE ID</b>: a URI, <code>spiffe://&lt;trust domain&gt;/&lt;path&gt;</code>. Northstar's path is <code>/ns/&lt;namespace&gt;/sa/&lt;service account&gt;</code>.</li>
+  <li><b>SVID</b> (SPIFFE Verifiable Identity Document): either an X.509 certificate (for mTLS) or a JWT (a bearer token with an audience). Northstar uses <b>JWT-SVIDs</b> to call the gateway.</li>
+  <li><b>Workload API</b>: a Unix socket on the node. The SPIFFE CSI driver mounts it into the pod; the agent calls it and gets an SVID back.</li>
+  <li><b>Trust bundle / JWKS</b>: the public keys a verifier uses. The gateway fetches them from SPIRE's OIDC discovery provider.</li>
+ </ul>
+ <p><b>Why the audience matters.</b> A JWT-SVID is minted for one verifier: <code>aud = spiffe://northstar.local/ns/northstar-platform/sa/agentgateway</code>. Stolen and replayed against a different service, it fails. Expiry limits the window further; <code>agents/settlement-agent/svid.py</code> refreshes a cached token when less than 30 seconds of life remain, so an in-flight expiry is not mistaken for an identity failure.</p>
+
+ <h3>Configuration and options</h3>
+ <ul>
+  <li><b>Trust domain</b>: <code>northstar.local</code>, set in <code>deploy/platform/spire/values.yaml</code> under the chart's <code>global.spire</code> block (a root-level <code>trustDomain:</code> is silently ignored by the umbrella chart).</li>
+  <li><b>Selectors</b>: <code>k8s:ns</code> and <code>k8s:sa</code>. More are available (<code>k8s:pod-label</code>, <code>k8s:container-image</code>, node attestation by cloud instance identity) if a team wants identity tied to the exact image too.</li>
+  <li><b>SVID lifetime</b>: SPIRE's server default for JWT-SVIDs is short (minutes); the chart can set <code>defaultJwtSvidTTL</code> and <code>defaultX509SvidTTL</code>. Northstar leaves the chart default.</li>
+  <li><b>Telemetry</b>: SPIRE has no OpenTelemetry tracing; server and agent expose Prometheus metrics on 9988. The identity shows up downstream as <code>jwt.sub</code> on the gateway's span and <code>northstar.policy.caller.spiffe_id</code> on the decision span.</li>
+ </ul>
+
+ <h3>Alternatives</h3>
+ <ul>
+  <li><b>Projected ServiceAccount tokens</b>: audience-bound and short-lived, no extra system. Kubernetes-only, and the only attestation is "the API server says so".</li>
+  <li><b>Mesh identity</b> (Linkerd, Istio): mTLS certificates from the ServiceAccount. Proves the TCP peer, but it isn't a credential in the request, so a gateway can't easily hand it to a policy engine. Istio's IDs are SPIFFE-formatted.</li>
+  <li><b>Cloud workload identity</b> (EKS Pod Identity/IRSA, GKE, Azure): good for cloud APIs, vendor-specific.</li>
+  <li><b>cert-manager csi-driver-spiffe</b>: SPIFFE X.509 SVIDs without SPIRE's attestation model.</li>
+ </ul>
+
+ <h3>If someone asks</h3>
+ <dl class="qa">
+  <dt>Why JWT and not mTLS SVIDs?</dt><dd>The gateway needs the caller in the request so it can pass it to CEL and to the decision service as <code>jwt.sub</code>. A JWT is a bearer token, so audience and expiry are what limit replay; binding it to the TLS connection is recorded in <code>docs/architecture.md</code> as later hardening.</dd>
+  <dt>Does every service hold an SVID?</dt><dd>No. It's enforced on the hops into the gateway (settlement-agent and reviewer-ui for tools, both agents for the model). The tool and the ledger rely on Linkerd's mesh identity (slide 15).</dd>
+  <dt>What's wrong with the agent card?</dt><dd>An A2A agent card is self-published metadata. Northstar's cards (<code>contracts/agent-cards/*.json</code>) carry no identity binding, so they describe, they don't prove.</dd>
+ </dl>
+ <div class="callout verify"><b>Verify before the talk</b> SPIFFE and SPIRE graduated in the CNCF in 2022. Check the JWT-SVID TTL default for SPIRE 1.15 if anyone is likely to ask for the number.</div>
+</section>
