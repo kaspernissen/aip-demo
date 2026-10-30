@@ -932,7 +932,8 @@ def test_evidence_folds_in_each_claims_agentevals_verdicts(monkeypatch, tmp_path
         "metricResults": [
             metric("narrative_states_no_amount", "FAILED", 0.0, "the narrative states an amount: 2400"),
             metric("took_a_known_path", "PASSED", 1.0, "held path"),
-            metric("amount_executed_matches_proposed", "NOT_EVALUATED", None)]}})
+            # AgentEvals 0.11.0 requires a score even when nothing was judged
+            metric("amount_executed_matches_proposed", "NOT_EVALUATED", 1.0)]}})
     assert demo.main(["evidence"]) == 0
     printed = capsys.readouterr().out
     lines = [line for line in printed.splitlines() if "[PASS]" in line or "[FAIL]" in line or "n/a" in line]
@@ -941,6 +942,9 @@ def test_evidence_folds_in_each_claims_agentevals_verdicts(monkeypatch, tmp_path
         "took_a_known_path", "amount_executed_matches_proposed", "narrative_states_no_amount"]
     assert "[PASS]  1.00  took_a_known_path" in printed and "held path" not in printed
     assert "[FAIL]  0.00  narrative_states_no_amount" in printed and "states an amount: 2400" in printed
+    # n/a prints no score: a 1.00 beside it reads as a pass
+    na = next(line for line in lines if "n/a" in line)
+    assert "1.00" not in na and " - " in na
     assert "customer wrote" not in printed, "a JSON claim has no customer text"
 
 

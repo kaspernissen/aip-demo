@@ -1725,7 +1725,8 @@ def eval_rows(result: dict) -> list[tuple[str, float | None, str, str]]:
 def eval_line(verdict: str, score: float | None, name: str, why: str, name_width: int = 40) -> str:
     mark = (word("PASS", "go") if verdict == "PASS" else word("FAIL", "stop") if verdict == "FAIL"
             else word("FLAG", "warn") if verdict == "FLAG" else paint("n/a   ", "dim"))
-    value = f"{score:4.2f}" if score is not None else "  - "
+    # n/a carries a score only because AgentEvals requires one; 1.00 beside it reads as a pass
+    value = f"{score:4.2f}" if score is not None and verdict != "n/a" else "  - "
     return f"{mark}  {value}  {name:<{name_width}} {why[:WIDTH]}".rstrip()
 
 

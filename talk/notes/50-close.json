@@ -17,7 +17,7 @@
   },
   {
     "secs": 45,
-    "note": "WILLIAM\n\nBecoming an AI observability wizard starts with six basics. They're on the left, dimmed, and they all still hold. One footnote: Northstar's step five is the deterministic auditor you just saw, not a model judge.\n\nRegulated domains add three steps. Seven: decide at a choke point. Like airport security: every passenger goes through one gate, and if the gate is down, nobody boards. Eight: make identity an input. The caller is half the policy key: the same payment that the settlement agent may not release is one the reviewer-ui may release, because the platform asks who is calling and reads what the ledger says. Nine: keep every decision span. Never sample it away.\n\nSource: Ch 3, Ch 14"
+    "note": "WILLIAM\n\nBecoming an AI observability wizard starts with six basics. They're on the left, dimmed, and they all still hold. One footnote: Northstar's step five is the auditor you just saw. Four of its checks are plain code; the fifth is a model judge, and it only raises a flag.\n\nRegulated domains add three steps. Seven: decide at a choke point. Like airport security: every passenger goes through one gate, and if the gate is down, nobody boards. Eight: make identity an input. The caller is half the policy key: the same payment that the settlement agent may not release is one the reviewer-ui may release, because the platform asks who is calling and reads what the ledger says. Nine: keep every decision span. Never sample it away.\n\nSource: Ch 3, Ch 14"
   },
   {
     "secs": 45,

@@ -132,7 +132,7 @@
   <p class="x40-gn-k rise"><span><span class="code">solid</span> always recorded</span><span><span class="code o">dashed</span> opt-in: the words themselves</span></p>
 </section>
 
-<!-- 30e · NEW · KASPER · what to check in an agent's trace: the questions, the gen_ai.* data that answers each, the code check Northstar wrote for it (deploy/observability/agentevals/evaluators/*.py) and why, and where LLM-as-judge fits (its drift measured in the AgentEvals trial 2026-10-21). Replaces "Grade the claim, not the trace" -->
+<!-- 30e · NEW · KASPER · what to check in an agent's trace: the questions, the gen_ai.* data that answers each, the code check Northstar wrote for it (deploy/observability/agentevals/evaluators/*.py) and why, and the one judged by a model, prompt_injection (judge drift measured in the AgentEvals trial 2026-10-21). Replaces "Grade the claim, not the trace" -->
 <section class="slide content" data-label="What to check in the agent's trace">
   <h2 class="slide-title">What did the agent actually do?</h2>
   <p class="x40-ck-lede rise">The <span class="code c">gen_ai.*</span> spans record every model call and every tool call. <span class="spot-2">Ask them questions.</span></p>
@@ -142,7 +142,7 @@
     <p class="q hot">Going round in a loop?</p><p class="f">tool calls after a refusal</p><p class="c hot">stopped_when_refused</p><p class="w">a refused agent that tries again is working around the platform</p>
     <p class="q">Paid what it proposed?</p><p class="f">tool arguments</p><p class="c">amount_executed_matches_proposed</p><p class="w">no drift between the two calls</p>
     <p class="q">Said what it shouldn&rsquo;t?</p><p class="f"><span class="code">gen_ai.output.messages</span></p><p class="c">narrative_states_no_amount</p><p class="w">the amount comes from the ledger, never the model</p>
-    <p class="q j">Was the answer good, and true?</p><p class="f j">input and output messages</p><p class="c j">LLM as judge</p><p class="w j">a second model grades it, and wavers: one claim, three runs, 0.60, 0.40, 0.40</p>
+    <p class="q">Did the customer try to instruct it?</p><p class="f">the customer&rsquo;s words, at intake</p><p class="c">prompt_injection</p><p class="w">needs meaning, so a second model judges it: a flag, never a fail</p>
   </div>
   <p class="x40-ck-line rise">Code where the answer must never vary. <span class="spot-2">A judge where it needs meaning.</span></p>
 </section>

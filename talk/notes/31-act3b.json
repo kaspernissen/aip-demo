@@ -61,7 +61,7 @@
   },
   {
     "secs": 20,
-    "note": "KASPER\n\nThe gateway has a second family of guardrails, for the model's own traffic. We read the list from the source, at the v1.6.0 tag. Regex rules mask or reject text. Personal data, like card numbers and emails, is found and masked. A moderation model can judge a prompt. A webhook lets your own service judge. And there are connectors for Amazon Bedrock Guardrails, Azure Content Safety and Google Model Armor.\n\nSAY, plainly: \"Northstar's model calls do not go through the gateway today. So none of these are in the demo.\" Routing them through the gateway is a separate piece of work.\n\nSource: agentgateway v1.6.0, crates/agentgateway/src/llm/policy/ (mod.rs, pii/, webhook.rs, moderation.rs, bedrock_guardrails.rs, azure_content_safety.rs, google_model_armor.rs)"
+    "note": "KASPER\n\nThe gateway has a second family of guardrails, for the model's own traffic. We read the list from the source, at the v1.6.0 tag. Regex rules mask or reject text. Personal data, like card numbers and emails, is found and masked. A moderation model can judge a prompt. A webhook lets your own service judge. And there are connectors for Amazon Bedrock Guardrails, Azure Content Safety and Google Model Armor.\n\nSAY, plainly: \"Northstar's model calls go through the gateway. None of these guards are switched on.\" The gateway checks who is calling and which model; it does not read the prompt.\n\nSource: agentgateway v1.6.0, crates/agentgateway/src/llm/policy/ (mod.rs, pii/, webhook.rs, moderation.rs, bedrock_guardrails.rs, azure_content_safety.rs, google_model_armor.rs)"
   },
   {
     "secs": 40,

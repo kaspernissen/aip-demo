@@ -13,7 +13,7 @@ with Northstar's projects, "Four checks, like an airport" (corridor, passport, s
 (SPIFFE/SPIRE) and its config, the gateway's three checks in config, the model behind the same gateway, the feature flag (OpenFeature, the two-key rule,
 then the flag and limit table in config), the keystone with its Kyverno rule, and "Decide. Trace. Prove." as the handover. **Kasper, slides 22–35 (~17 min):** the auditor's questions, why agents are harder to trace,
 MCP and A2A, Meet Northstar, the toolbox (every tool, with its logo, by the job it does), "What you'll see", the live demo, then the recap and the observability and eval layer
-(OpenTelemetry and Weaver, one trace, maker and checker, what to check in an agent's trace: the questions, the gen_ai.* data, our four code checks and LLM-as-judge, then how AgentEvals runs them). **William closes, slides 36–39:**
+(OpenTelemetry and Weaver, one trace, maker and checker, what to check in an agent's trace: the questions, the gen_ai.* data, four code checks and one judged by a model (prompt_injection), then how AgentEvals runs them). **William closes, slides 36–39:**
 what this does not do, "Autonomy is a platform setting", "The boundary will not come from the agent", three things.
 The *Who* column is read from each note's first line.
 
