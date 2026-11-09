@@ -63,6 +63,17 @@ global:
 
 ## spire-server -----------------------------------------------------------
 spire-server:
+  # The lifetime of SPIRE's X.509 CA and of its JWT signing key (the chart
+  # default is 24h). This is a laptop demo, and the laptop sleeps: the
+  # Docker VM freezes, SPIRE's rotation timers fire late, and on 2026-11-09
+  # it woke up and *activated* a JWT key that had expired the day before.
+  # Tokens still verified only because the expired key was still in the
+  # JWKS. The bundle pruner had already tried to drop that key, and once the
+  # next key existed it could have, which would have 401'd every call through
+  # agentgateway. Fourteen days keeps a key valid across any sleep the demo
+  # will see. Workload SVIDs stay short (4h X.509, 1h JWT), so this changes
+  # how long a signing key lives, not how long a stolen token is good for.
+  caTTL: 336h
   # SPIRE's own telemetry, turned on deliberately: a platform component with
   # no telemetry configured is a silent hop in the one demo whose whole point
   # is that you can trace it (the same seam agentgateway's own deployment
