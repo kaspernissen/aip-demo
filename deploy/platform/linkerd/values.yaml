@@ -16,6 +16,12 @@ identity:
   issuer:
     issuanceLifetime: 168h0m0s
 
+# No heartbeat. The chart's daily CronJob only reports a version check to
+# versioncheck.linkerd.io. On a laptop that is offline or on flaky wifi it
+# fails, and its Job leaves seven pods in Error in `kubectl get pods -A`, the
+# first thing the demo shows. It does nothing for the mesh.
+disableHeartBeat: true
+
 # Everything else is the chart default, deliberately: native sidecar is on
 # (nativeSidecar: true), proxy-init needs only NET_ADMIN (cniEnabled: false, so
 # no linkerd-cni), default inbound policy is all-unauthenticated (only ports
