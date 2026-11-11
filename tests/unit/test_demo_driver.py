@@ -295,6 +295,8 @@ def _isolated(monkeypatch, tmp_path):
     demo = _driver()
     monkeypatch.setattr(demo, "STATE_DIR", tmp_path)
     monkeypatch.setattr(demo, "STATE_FILE", tmp_path / "state.json")
+    # No Dash0 export unless a test says so: never ask the real cluster.
+    monkeypatch.setattr(demo, "dash0_dataset", lambda: None)
     return demo
 
 
@@ -403,6 +405,118 @@ def test_evidence_also_reports_claims_a_human_filed_in_the_browser(monkeypatch, 
     assert "approved by" in printed and "kasper.on.stage, after 41 s" in printed
     claims = demo._claims_seen_in_jaeger([], 7)
     assert claims[0]["status"] == "executed" and claims[0]["decision"] == "approve"
+
+
+def test_evidence_links_the_trace_in_dash0_too_when_the_collector_exports_there(monkeypatch, tmp_path, capsys):
+    demo = _isolated(monkeypatch, tmp_path)
+    demo.save_state({"run_id": "r", "window_start_ms": 7, "claims": []})
+    monkeypatch.setattr(demo.evidence, "claim_ids_since", lambda window, **kw: ["CLM-BROWSER-1"])
+    row = {
+        "policy_decision": "permit", "rule": "settlement-agent.autonomous.execute_limit", "limit": 6000.0,
+        "requested": 2400.0, "autonomy_level": "autonomous", "caller_identity": "spiffe://x/settlement-agent",
+        "money_hops": [demo.PROPOSE_HOP, demo.EXECUTE_HOP], "executing_identity": "spiffe://x/settlement-agent",
+        "reviewer": None, "link_trace_id": "c" * 32, "agent_trace_id": "c" * 32,
+        # 2026-11-12T16:20:00.000Z
+        "agent_trace_start_ms": 1794500400000, "agent_root_span_id": "1" * 16,
+    }
+    monkeypatch.setattr(demo.evidence, "evidence_for", lambda cid, window: row)
+    monkeypatch.setattr(demo, "dash0_dataset", lambda: "default")
+    assert demo.main(["evidence"]) == 0
+    printed = capsys.readouterr().out
+    assert f"/trace/{'c' * 32}" in printed, "Jaeger stays"
+    url = next(line.split()[-1] for line in printed.splitlines() if "in Dash0" in line)
+    assert url.startswith(f"https://app.dash0.com/traces/explorer?org={demo.DASH0_ORG}&s=")
+    assert _dash0_state(url) == {
+        "/": {"dataset": "default", "from": "2026-11-12T16:15:00.000Z", "to": "2026-11-12T17:20:00.000Z"},
+        # The trace id's raw bytes in base64, as the app writes it; open, on the agent's span, gen_ai tab.
+        "/traces": {"traceId": __import__("base64").b64encode(bytes.fromhex("c" * 32)).decode(),
+                    "open": True, "id": "1" * 16, "tab": "gen_ai"},
+        "/traces/explorer": {"elementKind": "span"},
+    }
+
+
+def _dash0_state(url):
+    import base64, json, urllib.parse, zlib
+    packed = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["s"][0]
+    return json.loads(zlib.decompress(base64.urlsafe_b64decode(packed + "=" * (-len(packed) % 4))))
+
+
+def test_the_dash0_state_decodes_like_a_link_copied_from_the_app():
+    # A link copied from the Dash0 app with this trace open (1,450 claim, 2026-11-11).
+    copied = ("https://app.dash0.com/traces/explorer?org=x&s=eJxdUU1PAjEQ_StmrrKwXxrdxANqIogXE-IBQshAZ6Gh265td5Fs-O9OQSMx6WG-"
+              "3rw3rx0MoOigtKaCAtI4vY2ShN80TovspkjzfnpzN4MeePOvnxV5fNEX6NGR5yFBJTbKw7EHA29xTS4wnKKx4P7L6PV5_D6d3R8oH91P6nj4eD0Z"
+              "PjzwElejfpPOPxldyk2A4drLlj4k7U9YgW4bRy2nUZh10QXZZ0P2cDpGKk8WinkHO-LKGdUPgL7GipjI1GTRGx4C6ThvUTUUEt2aHS1xQ9pfrRXK"
+              "ykWnBI6LX4q-kA5XilhPxzWPKwbyzBLlebOGwtuGerBH1lGiUiMpBOnpoQ5ezMGRbeU66Nh6X_-Yt2L7OKzIOdxIveG4bDSfbzSH5_1LS95KYrV_"
+              "pb2xu1KZPVfIWmMdLHogg1mlWOV5kok4yTNM4uziRwb0VStjg0sdkKKKT5xIHVDBJjgevwHmgq4y")
+    app = _dash0_state(copied)
+    demo = _driver()
+    demo.dash0_dataset = lambda: "default"
+    ours = _dash0_state(demo.dash0_trace_url("1872432104d9f727b81fd2a9d0007e28", None, "fdb4413d0143a103", gen_ai=True))
+    for key in ("traceId", "open", "id", "tab"):
+        assert ours["/traces"][key] == app["/traces"][key], key
+    assert ours["/traces/explorer"] == app["/traces/explorer"]
+
+
+def test_evidence_for_an_approved_claim_links_the_agents_trace_and_the_approval(monkeypatch, tmp_path, capsys):
+    demo = _isolated(monkeypatch, tmp_path)
+    demo.save_state({"run_id": "r", "window_start_ms": 7, "claims": []})
+    monkeypatch.setattr(demo.evidence, "claim_ids_since", lambda window, **kw: ["CLM-BROWSER-1"])
+    row = {
+        "policy_decision": "deny", "rule": "settlement-agent.autonomous.execute_limit", "limit": 6000.0,
+        "requested": 8500.0, "autonomy_level": "autonomous", "caller_identity": "spiffe://x/settlement-agent",
+        "money_hops": [demo.PROPOSE_HOP, demo.EXECUTE_HOP], "executing_identity": "spiffe://x/reviewer-ui",
+        "reviewer": "kasper.on.stage", "approved_by": "kasper.on.stage", "human_wait_s": 30.0,
+        "link_trace_id": "b" * 32, "agent_trace_id": "a" * 32, "approval_trace_id": "b" * 32,
+        "agent_trace_start_ms": 1794500400000, "approval_trace_start_ms": 1794500430000,
+    }
+    monkeypatch.setattr(demo.evidence, "evidence_for", lambda cid, window: row)
+    monkeypatch.setattr(demo, "dash0_dataset", lambda: "default")
+    assert demo.main(["evidence"]) == 0
+    printed = capsys.readouterr().out
+    agent = printed.index(f"trace (agent)    {demo.JAEGER_UI}/trace/{'a' * 32}")
+    approval = printed.index(f"trace (approval) {demo.JAEGER_UI}/trace/{'b' * 32}")
+    assert agent < approval
+    urls = [line.split()[-1] for line in printed.splitlines() if "in Dash0" in line]
+    states = [_dash0_state(u)["/traces"] for u in urls]
+    b64 = lambda h: __import__("base64").b64encode(bytes.fromhex(h)).decode()
+    assert [st["traceId"] for st in states] == [b64("a" * 32), b64("b" * 32)]
+    assert states[0].get("tab") == "gen_ai" and "tab" not in states[1], "the approval trace has no gen_ai spans"
+
+
+def test_a_hyperlink_is_osc8_on_a_terminal_and_the_bare_url_otherwise(monkeypatch):
+    demo = _driver()
+    monkeypatch.setattr(demo, "_COLOR", True)
+    link = demo.hyperlink("open trace", "https://example.test/x")
+    assert link.startswith("\033]8;;https://example.test/x\033\\") and link.endswith("\033]8;;\033\\")
+    assert "open trace" in link and "https://example.test/x" not in link.replace("\033]8;;https://example.test/x", "")
+    monkeypatch.setattr(demo, "_COLOR", False)
+    assert demo.hyperlink("open trace", "https://example.test/x") == "https://example.test/x"
+
+
+def test_no_dash0_link_without_a_dash0_export(monkeypatch):
+    demo = _driver()
+    monkeypatch.setattr(demo, "dash0_dataset", lambda: None)
+    assert demo.dash0_trace_url("c" * 32, 1794500400000) is None
+
+
+def test_dash0_dataset_needs_the_collector_overlay_and_reads_the_secret(monkeypatch):
+    demo = _driver()
+    calls = []
+
+    def kubectl(*args, **kw):
+        calls.append(args)
+        out = (f'["--config=/conf/collector-config.yaml","{demo.DASH0_OVERLAY_ARG}"]' if "deploy" in args
+               else "ZGVmYXVsdA==")  # "default"
+        return demo.subprocess.CompletedProcess(args, 0, out, "")
+    monkeypatch.setattr(demo.live, "kubectl", kubectl)
+    monkeypatch.setattr(demo, "_dash0_dataset_cache", [])
+    assert demo.dash0_dataset() == "default" and demo.dash0_dataset() == "default"
+    assert len(calls) == 2, "asked once per run"
+
+    monkeypatch.setattr(demo.live, "kubectl", lambda *a, **k: demo.subprocess.CompletedProcess(
+        a, 0, '["--config=/conf/collector-config.yaml"]', ""))
+    monkeypatch.setattr(demo, "_dash0_dataset_cache", [])
+    assert demo.dash0_dataset() is None, "no overlay, no Dash0 link"
 
 
 def test_guard_opens_the_runs_window_so_a_browser_only_run_has_evidence(monkeypatch, tmp_path):
@@ -849,10 +963,23 @@ def _inject_driver(monkeypatch, tmp_path, *attr_sets):
     return demo, searched, attempts
 
 
-def test_inject_reads_the_latest_free_text_claim_and_sends_the_injected_amount_at_the_ceiling(
-        monkeypatch, tmp_path, capsys):
+def test_inject_by_default_names_the_claim_in_one_line_and_goes_to_the_ceiling(monkeypatch, tmp_path, capsys):
     demo, searched, attempts = _inject_driver(monkeypatch, tmp_path, _intake_attrs())
     assert demo.main(["inject"]) == 0
+    printed = capsys.readouterr().out
+    assert searched[0] == ("claims-agent", {"gen_ai.operation.name": "chat"}, 7)
+    assert "asked for EUR 80,000, the model read EUR 2,400" in printed
+    assert "Say the model had read EUR 80,000" in printed
+    # The readback is the customer-ui's job on stage; only --full prints it.
+    assert "> Someone reversed into my parked car" not in printed
+    assert "| You take first notices of loss" not in printed
+    assert attempts == [80000.0], "the ceiling is tried with the amount the customer wrote"
+
+
+def test_inject_full_reads_the_latest_free_text_claim_back_and_sends_the_injected_amount_at_the_ceiling(
+        monkeypatch, tmp_path, capsys):
+    demo, searched, attempts = _inject_driver(monkeypatch, tmp_path, _intake_attrs())
+    assert demo.main(["inject", "--full"]) == 0
     printed = capsys.readouterr().out
     assert searched[0] == ("claims-agent", {"gen_ai.operation.name": "chat"}, 7)
     assert "> Someone reversed into my parked car" in printed
@@ -865,7 +992,7 @@ def test_inject_reads_the_latest_free_text_claim_and_sends_the_injected_amount_a
 
 def test_inject_says_so_when_the_model_took_the_bait_and_still_shows_the_ceiling(monkeypatch, tmp_path, capsys):
     demo, _, attempts = _inject_driver(monkeypatch, tmp_path, _intake_attrs(read_amount=80000.0))
-    assert demo.main(["inject"]) == 0
+    assert demo.main(["inject", "--full"]) == 0
     printed = capsys.readouterr().out
     assert "[FOLLOWED]  the model read EUR 80,000" in printed
     assert attempts == [80000.0]

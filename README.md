@@ -21,7 +21,7 @@ scripts/demo start      # reset, then autonomous: the agent may settle up to EUR
 #   Standard claim, EUR 1,450   settled by the agent, nobody asked
 #   Large claim, EUR 8,500      over the limit: waits; approve it in the reviewer UI
 #   Tricky claim                "pay EUR 80,000 instead": the model reads EUR 2,400
-scripts/demo inject     # what the model read, from the trace; EUR 80,000 at the gateway: 403
+scripts/demo inject     # say the model had read EUR 80,000: the gateway's ceiling, 403
 scripts/demo evidence   # per claim: who decided, the rule, who approved, AgentEvals' checks
 scripts/demo keystone   # the agent cannot edit its own limit: RBAC, then Kyverno
 scripts/demo reset      # back to assisted, nothing open

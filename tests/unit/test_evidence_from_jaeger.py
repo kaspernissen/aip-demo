@@ -62,6 +62,10 @@ def test_the_row_is_built_from_the_decision_and_review_spans(monkeypatch):
     assert row["money_hops"] == ["POST /payments/{paymentId}/execute"]
     # The link is the approval's own trace when there is one.
     assert row["link_trace_id"] == "b" * 32
+    # The agent's trace holds the first decision (and the gen_ai spans); the approval's is the human's.
+    assert row["agent_trace_id"] == "a" * 32 and row["approval_trace_id"] == "b" * 32
+    assert row["agent_trace_start_ms"] is not None and row["approval_trace_start_ms"] is not None
+    assert row["agent_root_span_id"] and row["approval_root_span_id"]
     assert row["trace_ids"] == ["a" * 32, "b" * 32]
 
 
@@ -70,6 +74,7 @@ def test_a_claim_with_no_approval_links_its_first_trace(monkeypatch):
     row = evidence.evidence_for(CLAIM, T0 // 1000 - 1000)
     assert row["approved_by"] is None and row["human_wait_s"] is None
     assert row["link_trace_id"] == "a" * 32
+    assert row["agent_trace_id"] == "a" * 32 and row["approval_trace_id"] is None
 
 
 def test_a_resume_only_review_is_not_the_approval(monkeypatch):

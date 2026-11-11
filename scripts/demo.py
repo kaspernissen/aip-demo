@@ -13,11 +13,13 @@
                           The claim may have been filed here or in the customer-ui:
                           the reviewer-ui's queue is asked, not only this run's notes
     reject <claim|last>   a human declines a waiting claim. Nothing is paid
-    inject                the latest free-text claim in this run, read back from its
-                          trace: what the customer wrote, what the model read it as,
-                          the system prompt it ran under. Then the highest amount the
-                          customer asked for, sent to the gateway as settlement-agent:
-                          403 from the CEL ceiling, the PDS never asked
+    inject                the latest free-text claim in this run, found in its trace,
+                          in one line: what the customer asked for, what the model read.
+                          Then: say the model had read the highest amount. It is sent
+                          to the gateway as settlement-agent: 403 from the CEL ceiling,
+                          the PDS never asked
+    inject --full         the same, after the whole readback: what the customer wrote,
+                          what the model read it as, the system prompt it ran under
     inject --submit       the same, after filing the default injection text itself
                           (--text "..." files that text instead): rehearsal, no browser
     autonomy <level>      flip the one live value: assisted | autonomous
@@ -77,6 +79,7 @@ the run started.
 from __future__ import annotations
 
 import argparse
+import base64
 import importlib.util
 import json
 import os
@@ -87,7 +90,9 @@ import sys
 import textwrap
 import time
 import uuid
+import zlib
 from pathlib import Path
+from urllib.parse import urlencode
 
 ROOT = Path(__file__).resolve().parents[1]
 # The harness is imported as `tests.harness`, exactly as the e2e tests import it.
@@ -115,6 +120,64 @@ JAEGER_API = os.environ.get("JAEGER_URL", "http://localhost:16686")
 # The host URL setup-kind.sh prints for Jaeger (a kind host port).
 # Overridable for a laptop that maps it elsewhere.
 JAEGER_UI = os.environ.get("JAEGER_UI_URL", "http://localhost:16686")
+
+# The same traces in Dash0, when the collector exports there: setup-kind.sh adds
+# deploy/observability/collector-dash0-overlay.yaml to the collector when
+# DASH0_AUTH_TOKEN is set, and the dataset comes from the dash0-secrets Secret it
+# reads. Without the overlay there is no Dash0 link, never a dead one.
+DASH0_APP = os.environ.get("DASH0_APP_URL", "https://app.dash0.com")
+# The org the collector's token writes into: a Dash0 user in several orgs lands in
+# the wrong one without it. Not a secret (it is in every URL the app shows).
+DASH0_ORG = os.environ.get("DASH0_ORG_ID", "6517f2d8-1d85-41db-9450-f98f5e38294e")
+DASH0_OVERLAY_ARG = "--config=/conf/collector-dash0-overlay.yaml"
+# A deep link names a fixed time range (a relative one goes stale): from a little
+# before the trace began to well after it.
+DASH0_BEFORE_S, DASH0_AFTER_S = 5 * 60, 60 * 60
+_dash0_dataset_cache: list[str | None] = []
+
+
+def dash0_dataset() -> str | None:
+    """The Dash0 dataset the collector exports to, or None when it does not
+    export to Dash0. Asked once per run."""
+    if not _dash0_dataset_cache:
+        dataset = None
+        args = live.kubectl("-n", "observability", "get", "deploy", "otel-collector",
+                            "-o", "jsonpath={.spec.template.spec.containers[0].args}")
+        if args.returncode == 0 and DASH0_OVERLAY_ARG in args.stdout:
+            raw = live.kubectl("-n", "observability", "get", "secret", "dash0-secrets",
+                               "-o", "jsonpath={.data.dash0-dataset}")
+            if raw.returncode == 0 and raw.stdout.strip():
+                dataset = base64.b64decode(raw.stdout.strip()).decode().strip() or None
+        _dash0_dataset_cache.append(dataset)
+    return _dash0_dataset_cache[0]
+
+
+def dash0_trace_url(trace_id: str, start_ms: int | None, span_id: str | None = None,
+                    gen_ai: bool = False) -> str | None:
+    """Dash0's Trace Explorer with this trace open, or None without a Dash0 export.
+
+    The app keeps its view state in `s`: JSON, zlib-compressed, base64url. This is
+    the shape of a link copied from the app with a trace open: `traceId` is the
+    trace id's raw bytes in base64, `open` plus a selected span `id` open the
+    trace (a `goto` link with only trace_id lands on the explorer with nothing
+    open), and `tab: gen_ai` opens on the agent's model calls."""
+    dataset = dash0_dataset()
+    if dataset is None:
+        return None
+    iso = lambda ms: time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(ms / 1000)) + f".{int(ms) % 1000:03d}Z"
+    view = {"dataset": dataset}
+    if start_ms is not None:
+        view |= {"from": iso(start_ms - DASH0_BEFORE_S * 1000), "to": iso(start_ms + DASH0_AFTER_S * 1000)}
+    trace = {"traceId": base64.b64encode(bytes.fromhex(trace_id)).decode(), "open": True}
+    if span_id:
+        trace["id"] = span_id
+    if gen_ai:
+        trace["tab"] = "gen_ai"
+    state = {"/": view, "/traces": trace, "/traces/explorer": {"elementKind": "span"}}
+    packed = base64.urlsafe_b64encode(zlib.compress(json.dumps(state, separators=(",", ":")).encode()))
+    query = urlencode({**({"org": DASH0_ORG} if DASH0_ORG else {}), "s": packed.decode().rstrip("=")})
+    return f"{DASH0_APP}/traces/explorer?{query}"
+
 
 AGENTS_NS = "northstar-agents"
 TOOLS_NS = "northstar-tools"
@@ -230,6 +293,15 @@ def paint(text: str, style: str) -> str:
     if not _COLOR or not _STYLES[style]:
         return text
     return f"\033[{_STYLES[style]}m{text}\033[0m"
+
+
+def hyperlink(text: str, url: str) -> str:
+    """`text`, clickable, on a terminal (OSC 8: iTerm2, Ghostty, WezTerm, kitty, VS
+    Code; Cmd-click in iTerm2). Without a terminal (a pipe, a log, the tests) the
+    whole URL, so nothing is lost. Underlined, so it reads as a link."""
+    if not _COLOR:
+        return url
+    return f"\033]8;;{url}\033\\\033[4m{text}\033[0m\033]8;;\033\\"
 
 
 def word(text: str, kind: str) -> str:
@@ -1320,8 +1392,21 @@ def cmd_evidence(_: argparse.Namespace) -> None:
         else:
             kv("approved by", "none")
         _show_verdicts(verdicts, claim["id"])
-        if row.get("link_trace_id"):
-            kv("trace", f"{JAEGER_UI}/trace/{row['link_trace_id']}")
+        # The agent's trace (its model calls and the policy decision), and for an
+        # approved claim also the human's: two traces, linked to each other by a span link.
+        links = [("trace (agent)" if row.get("approval_trace_id") else "trace",
+                  row.get("agent_trace_id") or row.get("link_trace_id"), row.get("agent_trace_start_ms"),
+                  row.get("agent_root_span_id"))]
+        if row.get("approval_trace_id"):
+            links.append(("trace (approval)", row["approval_trace_id"], row.get("approval_trace_start_ms"),
+                          row.get("approval_root_span_id")))
+        for label, trace_id, began, root in links:
+            if not trace_id:
+                continue
+            kv(label, f"{JAEGER_UI}/trace/{trace_id}")
+            dash0 = dash0_trace_url(trace_id, began, root, gen_ai=label != "trace (approval)")
+            if dash0:
+                kv("  in Dash0", hyperlink(f"open trace {trace_id[:8]} in Dash0", dash0))
         # The record must agree with what the run saw at the time.
         if (claim["status"] == "executed") != outcome_executed:
             problems.append(f"{claim['id']}: the run saw {claim['status']!r} but Jaeger says executed={outcome_executed}")
@@ -1637,7 +1722,7 @@ def cmd_inject(args: argparse.Namespace) -> None:
             out(paint(f"  (the claim ended without an outcome: {exc})", "dim"))
         claim_id = load_state()["claims"][-1]["id"]
 
-    title("INJECT  the customer tells the model what to pay")
+    title("INJECT  what if the model had done what the customer said?")
     state = load_state()
     since = state.get("window_start_ms") or int((time.time() - evidence.CLAIM_LOOKBACK_S) * 1000)
     which = claim_id or "the latest free-text claim in this run"
@@ -1647,8 +1732,16 @@ def cmd_inject(args: argparse.Namespace) -> None:
         raise Fail(f"no claims-agent chat span for {which} in Jaeger: file a free-text claim in the "
                    "customer-ui first (or run `scripts/demo inject --submit`)")
     view = intake_view(span.attrs)
-    kv("claim", str(view["claim_id"] or "-"), indent=2, key_width=8)
-    injected = show_intake(view, span.trace_id)
+    if args.full:
+        kv("claim", str(view["claim_id"] or "-"), indent=2, key_width=8)
+        injected = show_intake(view, span.trace_id)
+    else:
+        # The audience has just watched this claim settle in the customer-ui, so one line
+        # ties the beat to it; `--full` is the whole readback, for rehearsal.
+        injected = injected_amount(view)
+        read = f"EUR {view['amount']:,.0f}" if view["amount"] is not None else "no amount"
+        asked = f"asked for EUR {injected:,.0f}, " if injected is not None else ""
+        kv("claim", f"{view['claim_id'] or '-'}   {asked}the model read {read}", indent=2, key_width=8)
 
     step("We don't rely on the model")
     ceiling = live.ceiling_eur()
@@ -1877,10 +1970,13 @@ def main(argv: list[str] | None = None) -> int:
         decide = sub.add_parser(name, help=text)
         decide.add_argument("claim", help="a claim id from this run, or 'last'")
         decide.set_defaults(fn=cmd_approve if name == "approve" else cmd_reject)
-    inject = sub.add_parser("inject", help="a claim that tells the model what to pay: what it read, then the ceiling")
+    inject = sub.add_parser("inject", help="say the model had paid what the customer asked: the gateway's ceiling refuses it")
     inject.add_argument("--submit", action="store_true",
                         help="file the default injection text first (rehearsal, no browser)")
     inject.add_argument("--text", help="file this text first instead of the default")
+    inject.add_argument("--full", action="store_true",
+                        help="first read the claim back: what the customer wrote, what the model "
+                             "read, its system prompt")
     inject.set_defaults(fn=cmd_inject)
     sub.add_parser("keystone", help="the agent tries to edit what constrains it").set_defaults(fn=cmd_keystone)
     sub.add_parser("evidence", help="who decided and why, from Jaeger, with AgentEvals' verdicts").set_defaults(fn=cmd_evidence)

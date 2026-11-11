@@ -171,10 +171,38 @@ def evidence_for(claim_id: str, window_start_ms: int) -> dict:
 
     trace_ids = [t.trace_id for t in traces]
     link_trace = approval.trace_id if approval else (trace_ids[0] if trace_ids else None)
+    # The agent's trace: the one holding the first policy decision, which is also where
+    # the agents' gen_ai spans (invoke_agent, chat, execute_tool) are. An approval's trace
+    # is the human's half and has none, so a demo links both.
+    agent_trace = decisions[0].trace_id if decisions else (trace_ids[0] if trace_ids else None)
+    approval_trace = approval.trace_id if approval else None
+
+    def began_ms(trace_id: str | None) -> int | None:
+        starts = [s.start_us for t in traces if t.trace_id == trace_id for s in t.spans]
+        return min(starts) // 1000 if starts else None
+
+    def root_span(trace_id: str | None) -> str | None:
+        """The trace's root: the earliest span whose parent is not in the trace."""
+        own = [s for t in traces if t.trace_id == trace_id for s in t.spans]
+        ids = {s.span_id for s in own}
+        roots = sorted((s for s in own if not s.parent_id or s.parent_id not in ids), key=lambda s: s.start_us)
+        return roots[0].span_id if roots else None
+
     return {
         "claim_id": claim_id,
         "trace_ids": trace_ids,
         "link_trace_id": link_trace,
+        "agent_trace_id": agent_trace,
+        "approval_trace_id": approval_trace,
+        # When each began, for a link that needs a time range (Dash0's).
+        "agent_trace_start_ms": began_ms(agent_trace),
+        "approval_trace_start_ms": began_ms(approval_trace),
+        # A deep link selects a span to open the trace itself (Dash0's does).
+        # For the agent's trace, its first invoke_agent span: the agent at work.
+        "agent_root_span_id": next((s.span_id for s in spans if s.trace_id == agent_trace
+                                    and s.attrs.get("gen_ai.operation.name") == "invoke_agent"),
+                                   root_span(agent_trace)),
+        "approval_root_span_id": root_span(approval_trace),
         "policy_decision": first_decision.get(ATTR_DECISION),
         "rule": first_decision.get(ATTR_POLICY_RULE),
         "limit": first_decision.get(ATTR_POLICY_LIMIT),
